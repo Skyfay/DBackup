@@ -5,17 +5,17 @@ Store backups on a Windows share, NAS, or any SMB/CIFS-compatible network storag
 ## Configuration
 
 ::: info Credential Profile required
-SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Settings → Vault → Credentials** before saving the destination. For anonymous access, the credential profile username defaults to `guest` with no password.
+SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Vault → Credentials** before saving the destination. For anonymous access, the credential profile username defaults to `guest` with no password.
 :::
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Address** | UNC share path (e.g. `//server/share`) | - | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
 | **Domain** | Windows domain / workgroup | - | ❌ |
-| **Max Protocol** | Highest SMB protocol version to use | `SMB3` | ❌ |
-| **Path Prefix** | Subfolder within the share | - | ❌ |
+| **Highest SMB version** | Highest SMB protocol version to use | `SMB3` | ❌ |
+| **Folder** | Subfolder within the share. The folder button beside it browses the share once the connection and its login are filled in | - | ❌ |
 
 ### Protocol Versions
 
@@ -27,15 +27,15 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 
 ## Setup Guide
 
-1. Create a `USERNAME_PASSWORD` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure the SMB share is accessible from the DBackup server
 3. Create a dedicated user with write access to the share (recommended)
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **SMB / CIFS**
+4. Go to **Connections** → **Destinations** → **New destination** → **SMB / CIFS**
 5. Enter the **Address** in UNC format: `//hostname-or-ip/sharename`
-6. Select the credential profile in the **Primary Credential** picker (or leave empty for anonymous access)
+6. Pick the credential profile under **Login** (or leave empty for anonymous access)
 7. (Optional) Set **Domain** if authenticating against a Windows domain
-8. (Optional) Set **Path Prefix** for a subfolder within the share
-9. Click **Test** to verify the connection
+8. (Optional) Set a **Folder** in the **Location** part for a subfolder within the share, or pick it with the folder button (📂)
+9. Click **Test connection** to verify the connection
 
 ::: tip NAS Devices
 Synology, QNAP, TrueNAS, and OpenMediaVault all support SMB shares. Create a dedicated share and user for backups in your NAS admin panel.
@@ -114,7 +114,7 @@ NT_STATUS_ACCESS_DENIED
 NT_STATUS_INVALID_NETWORK_RESPONSE
 ```
 
-**Solution:** Try lowering **Max Protocol** to `SMB2` or `NT1`. Some older NAS firmware doesn't support SMB3.
+**Solution:** Try lowering **Highest SMB version** to `SMB2` or `NT1`. Some older NAS firmware doesn't support SMB3.
 
 ### Share Not Found
 
@@ -128,4 +128,4 @@ NT_STATUS_BAD_NETWORK_NAME
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

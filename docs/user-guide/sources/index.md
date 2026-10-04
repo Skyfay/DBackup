@@ -19,15 +19,14 @@ DBackup supports a wide variety of database engines.
 
 ## Directory Sources
 
-The Connections page has a **Directory Sources** tab: storage adapters whose
+The Connections page has a **Directory sources** tab: storage adapters whose
 folders can be backed up as files rather than as a database dump. They use the same
 backends as [Storage Destinations](/user-guide/destinations/) but are configured as their
 own adapters, because the two roles use the configured path differently - a destination
 writes backup and chain folders into it, a source only reads folders out of it. An adapter
 is one or the other, never both.
 
-To use the same server for both, use **Create as Directory Source** on the destination's
-row (or the reverse here) and adjust the path on the copy.
+To use the same server for both, pick **Create as directory source** in the menu of the destination, or **Create as backup destination** here, and adjust the path on the copy.
 
 One backend exists only on this side: [Docker Volumes](/user-guide/sources/docker-volumes)
 reads the contents of Docker volumes, which is data a container holds and nothing else can
@@ -39,13 +38,13 @@ Beyond configuring sources for backups, DBackup includes a **Database Explorer**
 
 ## Adding a Source
 
-1. Navigate to **Connections** → **Databases** → **Add New**
+1. Navigate to **Connections** → **Databases** → **New database**
 2. Select the database type
-3. Choose **Connection Mode**: Direct or SSH (see below)
-4. Fill in connection details (host, port, credentials)
-5. Click **Test Connection** to verify
-6. Click **Fetch Databases** to list available databases
-7. Select which databases to backup → **Save**
+3. Under **How DBackup connects**, pick **Direct** or **Over SSH** (see below). The parts that depend on it appear once you have.
+4. Fill in the parts listed on the left: host, port and **Login**, and over SSH the **SSH server** as well. A check marks each part that has everything it needs.
+5. Click **Test connection** to verify, then **Create database**. A database is tested once more before it is created, and you are asked before saving one that cannot connect.
+
+Which databases to back up is picked in the job that uses the source.
 
 ## Connection Modes
 
@@ -54,7 +53,7 @@ DBackup supports two connection modes for most database types:
 | Mode | Description | Use Case |
 | :--- | :--- | :--- |
 | **Direct** | DBackup connects directly to the database via TCP | Database is on the same network / Docker network or connected via VPN (recommended) |
-| **SSH** | DBackup connects via SSH and runs database tools on the remote host | Database is on a remote server, not directly reachable, or no local CLI tools installed |
+| **Over SSH** | DBackup connects via SSH and runs database tools on the remote host | Database is on a remote server, not directly reachable, or no local CLI tools installed |
 
 ### SSH Mode
 
@@ -72,8 +71,8 @@ When using SSH mode, the required database client tools **must be installed on t
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
 | **SSH Username** | SSH login username | - | ✅ |
 | **SSH Auth Type** | Authentication method: Password, Private Key, or Agent | `Password` | ✅ |
 | **SSH Password** | SSH password (for password auth) | - | ❌ |

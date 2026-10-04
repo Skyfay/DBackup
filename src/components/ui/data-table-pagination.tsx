@@ -4,6 +4,7 @@ import * as React from "react";
 import { Table } from "@tanstack/react-table";
 
 import { Button } from "@/components/ui/button";
+import { PAGE_SIZES } from "@/lib/core/table-preferences";
 import {
     Select,
     SelectContent,
@@ -29,7 +30,7 @@ export function DataTablePagination<TData>({ table, totalRows }: DataTablePagina
     const selectedCount = table.getFilteredSelectedRowModel().rows.length;
 
     return (
-        <div className="flex items-center justify-between px-2 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-2 py-4">
             <div className="flex-1 text-sm text-muted-foreground">
                 {selectedCount > 0
                     ? `${selectedCount} of ${totalRows} row(s) selected.`
@@ -37,7 +38,8 @@ export function DataTablePagination<TData>({ table, totalRows }: DataTablePagina
                 }
             </div>
             <div className="flex items-center space-x-6 lg:space-x-8">
-                <div className="flex items-center space-x-2">
+                {/* A phone has no room for it, and shows the rows per page of the profile. */}
+                <div className="hidden items-center space-x-2 sm:flex">
                     <p className="text-sm font-medium">Rows per page</p>
                     <Select
                         value={`${table.getState().pagination.pageSize}`}
@@ -49,7 +51,7 @@ export function DataTablePagination<TData>({ table, totalRows }: DataTablePagina
                             <SelectValue placeholder={table.getState().pagination.pageSize} />
                         </SelectTrigger>
                         <SelectContent side="top">
-                            {[10, 20, 30, 40, 50].map((pageSize) => (
+                            {PAGE_SIZES.map((pageSize) => (
                                 <SelectItem key={pageSize} value={`${pageSize}`}>
                                     {pageSize}
                                 </SelectItem>

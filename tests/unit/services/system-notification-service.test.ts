@@ -242,9 +242,10 @@ describe("SystemNotificationService", () => {
         expect.objectContaining({ host: "smtp.test.com" }),
         expect.stringContaining("Alice"),
         expect.objectContaining({
-          title: "User Login",
+          title: "Alice signed in",
           success: true,
           eventType: "user_login",
+          reason: 'You get this because "Someone signs in" is on under Settings, Notifications.',
         })
       );
     });
@@ -327,7 +328,7 @@ describe("SystemNotificationService", () => {
 
       prismaMock.adapterConfig.findMany.mockResolvedValue([emailChannel]);
 
-      await notify({
+      const result = await notify({
         eventType: NOTIFICATION_EVENTS.USER_LOGIN,
         data: {
           userName: "Alice",
@@ -338,6 +339,8 @@ describe("SystemNotificationService", () => {
 
       // Should only send one user-targeted email, not admin + user
       expect(mockSend).toHaveBeenCalledTimes(1);
+      // The email to the user counts, so a test of it no longer reports nothing sent.
+      expect(result).toEqual({ succeeded: 1, failed: 0 });
       // The user-targeted call should have the user's email as `to`
       expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({ to: "alice@test.com" }),

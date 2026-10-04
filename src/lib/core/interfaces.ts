@@ -2,6 +2,8 @@ import { z } from "zod";
 import { LogLevel, LogType } from "./logs";
 import type { AdapterCredentialRequirements } from "./credentials";
 import type { ExecutionHost, TransportResolver } from "@/lib/transport/types";
+import type { NotificationPayload } from "@/lib/notifications/types";
+import type { NotificationBrand } from "@/lib/notifications/brand";
 
 /**
  * Base configuration type for adapters.
@@ -86,7 +88,7 @@ export interface BackupMetadata {
      * Whether this backup stores everything or only what changed.
      *
      * Written for **every** backup, including database-only ones that have no notion of
-     * chains yet, so the Storage Explorer can label them uniformly and a future
+     * chains yet, so the Backups page can label them uniformly and a future
      * incremental database mode does not need a second signal.
      */
     backupType?: 'full' | 'incremental';
@@ -114,6 +116,8 @@ export interface BackupMetadata {
         passed: boolean;
         trigger: 'manual' | 'post-upload' | 'scheduled';
         actualChecksum?: string;
+        /** How it was checked: by the checksum the destination keeps, or by downloading and hashing it. Absent on older checks. */
+        method?: 'native' | 'download';
     };
     /** Trigger information - what initiated the backup */
     trigger?: {
@@ -399,6 +403,13 @@ export type FileInfo = {
      * others.
      */
     chainId?: string;
+    /**
+     * The job that made this backup, read from its `.meta.json`.
+     *
+     * Retention leaves a backup of another job alone. A job named like a deleted one writes
+     * into the same folder, and the backups the deleted job left there are not its to delete.
+     */
+    jobId?: string;
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */
@@ -499,8 +510,9 @@ export interface DirectoryDownloadOptions {
      * Aborts the collection.
      *
      * Checked before the listing, by the walk itself where the adapter supports it, and
-     * before each file transfer starts. Transfers already in flight run to completion, so
-     * cancellation is bounded by one file rather than by the rest of the source.
+     * before each file transfer starts. A transfer already in flight is torn down rather
+     * than waited out - the connections underneath it are dropped, and Rsync kills the
+     * process it drives - so a cancel takes effect on a single large file too.
      */
     signal?: AbortSignal;
     /**
@@ -903,6 +915,23 @@ export interface NotificationContext {
     color?: string;
     /** Optional badge label override (e.g. "Alert") */
     badge?: string;
+
+    // ── What a mail shows beyond the fields, the rest of a NotificationPayload ──
+    message?: string;
+    tone?: NotificationPayload["tone"];
+    icon?: NotificationPayload["icon"];
+    stats?: NotificationPayload["stats"];
+    problem?: NotificationPayload["problem"];
+    destinations?: NotificationPayload["destinations"];
+    usage?: NotificationPayload["usage"];
+    details?: NotificationPayload["details"];
+    note?: string;
+    actions?: NotificationPayload["actions"];
+    preheader?: string;
+    reason?: string;
+    timestamp?: string;
+    /** The name, address and time zone of the instance, read once by the sender. */
+    brand?: NotificationBrand;
 }
 
 export interface NotificationAdapter extends BaseAdapter {

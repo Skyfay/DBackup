@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { jobService } from "@/services/jobs/job-service";
+import { jobAuditName } from "@/services/jobs/job-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
@@ -25,6 +28,14 @@ export async function POST(
 
     try {
         const clonedJob = await jobService.cloneJob(params.id, body.name?.trim() || undefined);
+        const originalName = await jobAuditName(params.id);
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.CREATE,
+            AUDIT_RESOURCES.JOB,
+            { name: clonedJob.name, ...(originalName ? { clonedFromName: originalName } : {}) },
+            clonedJob.id
+        );
         return NextResponse.json(clonedJob, { status: 201 });
     } catch (error: unknown) {
         log.error("Clone job error", { jobId: params.id }, wrapError(error));

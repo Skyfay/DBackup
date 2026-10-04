@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PassThrough } from 'stream';
 import { prismaMock } from '@/lib/testing/prisma-mock';
-import { StorageService } from '@/services/storage/storage-service';
+import { StorageService, clearListingState } from '@/services/storage/storage-service';
 import { registry } from '@/lib/core/registry';
 import { StorageAdapter, FileInfo } from '@/lib/core/interfaces';
 import { EncryptionKeyRequiredError } from '@/lib/logging/errors';
@@ -161,6 +161,7 @@ describe('StorageService', () => {
     let service: StorageService;
 
     beforeEach(() => {
+        clearListingState();
         service = new StorageService();
         vi.clearAllMocks();
         // Default: resolve config by parsing the stored JSON

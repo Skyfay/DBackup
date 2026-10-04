@@ -22,6 +22,23 @@ export interface FileVerificationResult {
     expectedChecksum?: string;
     actualChecksum?: string;
     verifiedAt: string;
+    /** How the copy was checked, for a check that got that far. */
+    method?: 'native' | 'download';
+}
+
+export interface VerifyOptions {
+    skipIfPassed?: boolean;
+    /** Bytes of a download so far, for a copy that has to be downloaded to be hashed. */
+    onProgress?: (processed: number, total: number) => void;
+}
+
+/**
+ * Whether a destination of this adapter checks a copy by the checksum it keeps, without a
+ * download. It can still fall back to a download when that checksum is missing for a file.
+ */
+export function checksNatively(adapterId: string): boolean {
+    const adapter = registry.get(adapterId) as StorageAdapter | undefined;
+    return typeof adapter?.verifyChecksum === "function";
 }
 
 export class VerificationService {
@@ -29,7 +46,7 @@ export class VerificationService {
         adapterConfigId: string,
         remotePath: string,
         trigger: 'manual' | 'post-upload' | 'scheduled',
-        options?: { skipIfPassed?: boolean }
+        options?: VerifyOptions
     ): Promise<FileVerificationResult> {
         const verifiedAt = new Date().toISOString();
 
@@ -93,20 +110,21 @@ export class VerificationService {
                         verifiedAt,
                         passed,
                         trigger,
+                        method: 'native',
                     });
 
                     if (passed) {
-                        return { status: 'passed', expectedChecksum: metadata.checksum, verifiedAt };
+                        return { status: 'passed', expectedChecksum: metadata.checksum, verifiedAt, method: 'native' };
                     }
 
                     // Native check failed — compute actual checksum via download for diagnostics.
                     if (metadata.checksum) {
                         const tempFile = path.join(getTempDir(), `verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
                         try {
-                            const downloadOk = await adapter.download(config, remotePath, tempFile);
+                            const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
                             if (downloadOk) {
                                 const actual = await calculateFileChecksum(tempFile);
-                                return { status: 'failed', expectedChecksum: metadata.checksum, actualChecksum: actual, verifiedAt };
+                                return { status: 'failed', expectedChecksum: metadata.checksum, actualChecksum: actual, verifiedAt, method: 'native' };
                             }
                         } catch (e: unknown) {
                             log.warn("Could not compute actual checksum after native failure", { remotePath }, wrapError(e));
@@ -115,7 +133,7 @@ export class VerificationService {
                         }
                     }
 
-                    return { status: 'failed', expectedChecksum: metadata.checksum, verifiedAt };
+                    return { status: 'failed', expectedChecksum: metadata.checksum, verifiedAt, method: 'native' };
                 }
             } catch (e: unknown) {
                 log.warn("Native checksum verification error, falling back to download", { remotePath }, wrapError(e));
@@ -129,9 +147,9 @@ export class VerificationService {
 
         const tempFile = path.join(getTempDir(), `verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
         try {
-            const downloadOk = await adapter.download(config, remotePath, tempFile);
+            const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
             if (!downloadOk) {
-                return { status: 'download_error', verifiedAt };
+                return { status: 'download_error', verifiedAt, method: 'download' };
             }
 
             const actual = await calculateFileChecksum(tempFile);
@@ -142,6 +160,7 @@ export class VerificationService {
                 passed,
                 trigger,
                 actualChecksum: passed ? undefined : actual,
+                method: 'download',
             });
 
             return {
@@ -149,10 +168,11 @@ export class VerificationService {
                 expectedChecksum: metadata.checksum,
                 actualChecksum: passed ? undefined : actual,
                 verifiedAt,
+                method: 'download',
             };
         } catch (e: unknown) {
             log.error("Download-based verification failed", { remotePath }, wrapError(e));
-            return { status: 'download_error', verifiedAt };
+            return { status: 'download_error', verifiedAt, method: 'download' };
         } finally {
             await fs.unlink(tempFile).catch(() => {});
         }
@@ -181,6 +201,7 @@ export class VerificationService {
                     verifiedAt: verification.verifiedAt,
                     passed: verification.passed,
                     trigger: verification.trigger,
+                    ...(verification.method ? { method: verification.method } : {}),
                 },
             }).catch(() => {});
         });

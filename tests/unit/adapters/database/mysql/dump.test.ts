@@ -140,6 +140,48 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL dump over a %s host", (kind) =
         expect(host.calls.spawn[0]).toContain("--quick");
     });
 
+    it("asks for a snapshot, the routines and the events by default", async () => {
+        const host = dumpHost(kind);
+        await dump(baseConfig, "/tmp/out.sql", host);
+
+        expect(host.calls.spawn[0]).toEqual(expect.arrayContaining(["--single-transaction", "--routines", "--events"]));
+        expect(host.calls.spawn[0]).not.toContain("--set-gtid-purged=OFF");
+    });
+
+    it("leaves out the events the login may not read, with a warning instead of a failed dump", async () => {
+        const host = createFakeHost({
+            kind,
+            onExec: (argv) => (argv.at(-1) === "SHOW EVENTS"
+                ? { code: 1, stderr: "ERROR 1044 (42000) at line 1: Access denied for user 'root'@'%' to database 'shop'" }
+                : undefined),
+        });
+        const onLog = vi.fn();
+        const result = await dump(baseConfig, "/tmp/out.sql", host, onLog);
+
+        expect(result.success).toBe(true);
+        expect(host.calls.spawn[0]).not.toContain("--events");
+        expect(host.calls.spawn[0]).toContain("--routines");
+        expect(onLog.mock.calls.some(([message, level]) => level === "warning" && String(message).includes("Events of shop left out"))).toBe(true);
+    });
+
+    it("turns off the GTID set for MySQL's own mysqldump only", async () => {
+        const mysql = createFakeHost({
+            kind,
+            onWhich: (candidates) => (candidates.includes("mysqldump") ? "mysqldump" : undefined),
+            onExec: (argv) => (argv[1] === "--version" ? { stdout: "mysqldump  Ver 8.0.46 for Linux on aarch64 (MySQL Community Server - GPL)" } : undefined),
+        });
+        const mariadb = createFakeHost({
+            kind,
+            onExec: (argv) => (argv[1] === "--version" ? { stdout: "mariadb-dump  Ver 10.19 Distrib 10.11.18-MariaDB" } : undefined),
+        });
+
+        await dump(baseConfig, "/tmp/out.sql", mysql);
+        await dump(baseConfig, "/tmp/out.sql", mariadb);
+
+        expect(mysql.calls.spawn[0]).toContain("--set-gtid-purged=OFF");
+        expect(mariadb.calls.spawn[0]).not.toContain("--set-gtid-purged=OFF");
+    });
+
     it("fails when the dump file ends up empty", async () => {
         mockFsStat.mockResolvedValue({ size: 0 });
         const result = await dump(baseConfig, "/tmp/out.sql", dumpHost(kind));

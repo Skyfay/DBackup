@@ -45,7 +45,7 @@ vi.mock('@/lib/temp-dir', () => ({
 }));
 
 vi.mock('@/services/config/import', () => ({
-  importConfiguration: vi.fn(),
+  importConfiguration: vi.fn(async () => ({ notes: [] })),
 }));
 
 vi.mock('@/lib/logging/logger', () => ({
@@ -144,7 +144,7 @@ describe('restoreFromStorage', () => {
 
   it('marks execution as Success after a successful pipeline run', async () => {
     (registry.get as any).mockReturnValue(makeStorageAdapter());
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     await restoreFromStorage(storageConfigId, filePath);
     await flushAsync();
@@ -154,6 +154,20 @@ describe('restoreFromStorage', () => {
         data: expect.objectContaining({ status: 'Success' }),
       }),
     );
+  });
+
+  it('writes what did not come back to the log of the run as warnings', async () => {
+    (registry.get as any).mockReturnValue(makeStorageAdapter());
+    (importConfiguration as any).mockResolvedValue({ notes: ['1 job is paused so it does not back up unencrypted, its encryption key is not here: Shop.'] });
+
+    await restoreFromStorage(storageConfigId, filePath);
+    await flushAsync();
+
+    const final = (prismaMock.execution.update as any).mock.calls.at(-1)[0];
+    expect(final.data.status).toBe('Success');
+    expect(JSON.parse(final.data.logs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ level: 'warn', message: expect.stringContaining('encryption key is not here') }),
+    ]));
   });
 
   it('marks execution as Failed when storage adapter config is not found', async () => {
@@ -217,7 +231,7 @@ describe('restoreFromStorage', () => {
       id: encProfileId,
       secretKey: 'ENC_' + 'a'.repeat(64),
     } as any);
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     await restoreFromStorage(storageConfigId, 'backups/config.enc', encProfileId);
     await flushAsync();
@@ -260,7 +274,7 @@ describe('restoreFromStorage', () => {
 
   it('attaches gunzip stream when filePath contains .gz (compressed backup, lines 217-220)', async () => {
     (registry.get as any).mockReturnValue(makeStorageAdapter());
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     await restoreFromStorage(storageConfigId, 'backups/config.json.gz');
     await flushAsync();
@@ -284,7 +298,7 @@ describe('restoreFromStorage', () => {
 
   it('logs warning and still succeeds when backup sourceType is not SYSTEM (line 248)', async () => {
     (registry.get as any).mockReturnValue(makeStorageAdapter());
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     const nonSystemBackup = JSON.stringify({
       metadata: { version: '1.0.0', sourceType: 'MANUAL' },
@@ -321,7 +335,7 @@ describe('restoreFromStorage', () => {
       id: encProfileId,
       secretKey: 'ENC_' + 'a'.repeat(64),
     } as any);
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     // Pass explicit decryptionProfileId; filePath has no .enc extension
     await restoreFromStorage(storageConfigId, 'backups/config.json', encProfileId);
@@ -343,7 +357,7 @@ describe('restoreFromStorage', () => {
     (registry.get as any).mockReturnValue(adapter);
 
     (encryptionService.getProfileMasterKey as any).mockResolvedValue(Buffer.alloc(32));
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     // No explicit decryptionProfileId; pipeline must derive it from flat meta
     await restoreFromStorage(storageConfigId, 'backups/config.json');
@@ -376,7 +390,7 @@ describe('restoreFromStorage', () => {
     ]);
     // Candidate key resolves successfully
     (encryptionService.getProfileMasterKey as any).mockResolvedValue(Buffer.alloc(32));
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     await restoreFromStorage(storageConfigId, 'backups/config.enc');
     await flushAsync();
@@ -407,7 +421,7 @@ describe('restoreFromStorage', () => {
       read: vi.fn().mockRejectedValue(new Error('Permission denied')), // metadata read throws
     });
     (registry.get as any).mockReturnValue(adapter);
-    (importConfiguration as any).mockResolvedValue(undefined);
+    (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     // Sidecar read failure is caught and logged - pipeline continues with filename detection
     await restoreFromStorage(storageConfigId, filePath); // plain .json, no encryption

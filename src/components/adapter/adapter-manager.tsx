@@ -1,38 +1,58 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useImperativeHandle, type Ref } from "react";
 import { STORAGE_ROLES, storageRoleLabel, supportsStorageRole, canOfferCounterpart, counterpartStorageRole, type StorageRole } from "@/lib/core/storage-roles";
-import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle } from "lucide-react";
-import Link from "next/link";
+import { cn } from "@/lib/utils";
+import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Activity, ArrowLeftRight, FolderOpen, ListChecks } from "lucide-react";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
-import { DEFAULT_DOCKER_SOCKET } from "@/lib/adapters/definitions/storage";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DataTable, type BulkAction } from "@/components/ui/data-table";
-import { requestBulk } from "@/lib/bulk-request";
-import { ColumnDef } from "@tanstack/react-table";
-import { Badge } from "@/components/ui/badge";
-import { Edit, Trash, BarChart3, SearchCode, Copy, ArrowLeftRight } from "lucide-react";
+import { JOIN_END } from "@/components/ui/page-head";
+import { DataTable } from "@/components/ui/data-table";
+import { ListEmpty } from "@/components/ui/list-empty";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
-import { AdapterForm } from "./adapter-form";
-import { AdapterPicker } from "./adapter-picker";
-import { AdapterIcon } from "@/components/adapter/adapter-icon";
-import { HealthStatusBadge } from "@/components/ui/health-status-badge";
+import { ConnectionForm } from "./connection-form";
+import { AdapterPickerDialog } from "./adapter-picker";
 import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-history-modal";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { CloneDialog } from "@/components/ui/clone-dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useTableLayout } from "@/hooks/use-table-layout";
+import { useVisibleInterval } from "@/hooks/use-visible-interval";
+import { connectionColumns, type ConnectionKind } from "./connection-columns";
+import { ConnectionStrip } from "./connection-strip";
+import { EMPTY_TABS as EMPTY } from "./connection-empty";
+import { ConnectionRowActions } from "./connection-row-actions";
+import { ConnectionContextMenu } from "./connection-context-menu";
+import type { ConnectionActionHandlers } from "./connection-actions";
+import { ConnectionStatusFilter, matchesStatus, type StatusFilter } from "./connection-status-filter";
+import { ConnectionDetailsSheet } from "./connection-details-sheet";
+import { ConnectionDetailsContent } from "./connection-details-content";
+import { ConnectionCard } from "./connection-card";
+import { ConnectionSplitView } from "./connection-split-view";
+import { adapterTypeIcon } from "./connection-type-icon";
+import { connectionBulkActions, deleteBlocker } from "./connection-bulk-actions";
+import { ConnectionDeleteDialog } from "./connection-delete-dialog";
+import { useTrash } from "@/components/trash/use-trash";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
-export function AdapterManager({ type, title, description, canManage = true, permissions = [], roleFilter, defaultRole, hidePageHeading = false }: AdapterManagerProps) {
+/** What the page around a manager can trigger, such as the Add button beside the tabs. */
+export interface AdapterManagerHandle {
+    openCreate: () => void;
+}
+
+const SEARCH_NOUNS: Record<ConnectionKind, string> = {
+    database: "databases",
+    source: "sources",
+    destination: "destinations",
+    notification: "channels",
+};
+
+export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -45,8 +65,25 @@ export function AdapterManager({ type, title, description, canManage = true, per
     // the opposite role, so the same NAS does not have to be configured twice by hand.
     const [cloneTarget, setCloneTarget] = useState<{ id: string; name: string; role?: StorageRole } | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string } | null>(null);
+    // Only the first load shows a skeleton. A refresh keeps the rows and spins the button.
+    const [hasLoaded, setHasLoaded] = useState(false);
+    const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string; adapterId: string } | null>(null);
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+    // The id stays after closing, so the panel keeps its content while it slides out. The view
+    // it was opened in is kept too, so leaving that view closes it for good.
+    const [details, setDetails] = useState<{ id: string; open: boolean; view: typeof view } | null>(null);
+    // The split view shows one connection at a time. Null picks the first one listed.
+    const [splitId, setSplitId] = useState<string | null>(null);
     const router = useRouter();
+    const layout = useTableLayout(tableId, initialLayout);
+    // A link can open the details of one connection with `?open=`, like the connections a credential
+    // profile of the Vault lists or the search in the header.
+    useOpenFromLink(hasLoaded ? configs : null, (config) => setDetails({ id: config.id, open: true, view }));
+
+    const kind: ConnectionKind =
+        type === "database" ? "database"
+            : type === "notification" ? "notification"
+                : roleFilter === STORAGE_ROLES.SOURCE ? "source" : "destination";
 
     // A storage adapter has exactly one role; a manager instance scoped to one (the
     // "Directory Sources" section, the Destinations page) only shows configs in it -
@@ -56,10 +93,14 @@ export function AdapterManager({ type, title, description, canManage = true, per
         return data.filter((c) => (c.storageRole ?? STORAGE_ROLES.DESTINATION) === roleFilter);
     }, [roleFilter, type]);
 
+    // The overview adds usage, last backup and health. The server caches it for a minute,
+    // so the frequent status poll stays cheap.
+    const listUrl = `/api/adapters?type=${type}&overview=true`;
+
     const fetchConfigs = useCallback(async () => {
         setIsLoading(true);
         try {
-            const res = await fetch(`/api/adapters?type=${type}`);
+            const res = await fetch(listUrl);
             if (res.ok) {
                 const data = await res.json();
                 setConfigs(applyRoleFilter(data));
@@ -71,13 +112,14 @@ export function AdapterManager({ type, title, description, canManage = true, per
             toast.error("Failed to load configurations");
         } finally {
             setIsLoading(false);
+            setHasLoaded(true);
         }
-    }, [type, applyRoleFilter]);
+    }, [listUrl, applyRoleFilter]);
 
     // Silent polling refresh (no loading spinner, no error toasts)
     const silentRefresh = useCallback(async () => {
         try {
-            const res = await fetch(`/api/adapters?type=${type}`);
+            const res = await fetch(listUrl);
             if (res.ok) {
                 const data = await res.json();
                 setConfigs(applyRoleFilter(data));
@@ -85,7 +127,13 @@ export function AdapterManager({ type, title, description, canManage = true, per
         } catch {
             // Silent - don't disturb the user on background poll failures
         }
-    }, [type, applyRoleFilter]);
+    }, [listUrl, applyRoleFilter]);
+
+    // After a change the counts beside the tabs are stale too, and they come from the server.
+    const afterChange = useCallback(() => {
+        fetchConfigs();
+        router.refresh();
+    }, [fetchConfigs, router]);
 
     // The role a config created here will hold. Destinations and Directory Sources are two
     // instances over the same `type="storage"` list, so the type alone cannot say which
@@ -94,7 +142,15 @@ export function AdapterManager({ type, title, description, canManage = true, per
 
     // The dialogs used to say "Destination" for every storage adapter, so the Directory
     // Sources page invited you to add a destination and then filed it under sources.
-    const storageNoun = pickerRole ? storageRoleLabel(pickerRole) : "Storage Connection";
+    const storageNoun = pickerRole ? storageRoleLabel(pickerRole) : "Storage connection";
+
+    const openCreate = useCallback(() => {
+        setEditingId(null);
+        setSelectedAdapterForNew(null);
+        setIsPickerOpen(true);
+    }, []);
+
+    useImperativeHandle(ref, () => ({ openCreate }), [openCreate]);
 
     useEffect(() => {
         // Filtered by type, and for storage also by the role this page creates. An adapter
@@ -107,36 +163,8 @@ export function AdapterManager({ type, title, description, canManage = true, per
         fetchConfigs();
     }, [type, pickerRole, fetchConfigs]);
 
-    // Poll every 10 seconds to keep health status up to date
-    useEffect(() => {
-        const interval = setInterval(silentRefresh, 10000);
-        return () => clearInterval(interval);
-    }, [silentRefresh]);
-
-    const handleDelete = (id: string) => {
-        setDeletingId(id);
-    };
-
-    const confirmDelete = async () => {
-        if (!deletingId) return;
-        const id = deletingId;
-
-        try {
-            const res = await fetch(`/api/adapters/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-
-            if (res.ok && data.success) {
-                toast.success("Configuration deleted");
-                setConfigs(configs.filter(c => c.id !== id));
-            } else {
-                toast.error(data.error || "Failed to delete");
-            }
-        } catch (_error) {
-             toast.error("Error deleting configuration");
-        } finally {
-            setDeletingId(null);
-        }
-    };
+    // Keeps the health of the connections current every 10 seconds, never in a hidden tab.
+    useVisibleInterval(silentRefresh, 10_000);
 
     const cloneAdapter = async (id: string, name: string, role?: StorageRole) => {
         setCloningId(id);
@@ -151,9 +179,9 @@ export function AdapterManager({ type, title, description, canManage = true, per
                 // A counterpart lands in the other role, so it will not show up in this
                 // list - say where it went instead of leaving the user looking for it.
                 toast.success(role
-                    ? `Created "${name}" as a ${storageRoleLabel(role)}. Adjust its path there.`
+                    ? `Created "${name}" as a ${storageRoleLabel(role).toLowerCase()}. Adjust its path there.`
                     : "Configuration cloned successfully");
-                fetchConfigs();
+                afterChange();
             } else {
                 toast.error(data.error || "Failed to clone configuration");
             }
@@ -165,406 +193,217 @@ export function AdapterManager({ type, title, description, canManage = true, per
         }
     };
 
-    const getSummary = (adapterId: string, configJson: string) => {
-        try {
-            const config = JSON.parse(configJson);
-            switch (adapterId) {
-                case 'mysql':
-                case 'postgres':
-                case 'mariadb':
-                case 'mssql':
-                case 'azure-sql':
-                case 'mongodb':
-                    return <span className="text-muted-foreground">{config.user}@{config.host}:{config.port}</span>;
-                case 'redis':
-                case 'valkey':
-                    return <span className="text-muted-foreground">{config.host}:{config.port} (DB {config.database ?? 0})</span>;
-                case 'firebird': {
-                    const aliasCount = Array.isArray(config.databases) ? config.databases.length : 0;
-                    return <span className="text-muted-foreground">{config.host}:{config.port} ({aliasCount} database{aliasCount === 1 ? '' : 's'})</span>;
-                }
-                case 'local-filesystem':
-                    return <span className="text-muted-foreground">{config.basePath}</span>;
-                case 'docker-volume': {
-                    // The socket is this adapter's whole address, so it is what belongs here.
-                    // Shown as the default when the field was left empty, because that is
-                    // what the backup will actually use.
-                    const socket = config.socketPath || DEFAULT_DOCKER_SOCKET;
-                    return (
-                        <span className="text-muted-foreground">
-                            {config.connectionMode === 'ssh' && config.sshHost
-                                ? `${config.sshHost} · ${socket}`
-                                : socket}
-                        </span>
-                    );
-                }
-                case 'smb':
-                    return <span className="text-muted-foreground">{config.pathPrefix || config.address}</span>;
-                case 'sftp':
-                    return <span className="text-muted-foreground">{config.pathPrefix || `${config.host}:${config.port}`}</span>;
-                case 'webdav':
-                    return <span className="text-muted-foreground">{config.pathPrefix || config.url}</span>;
-                case 'ftp':
-                    return <span className="text-muted-foreground">{config.pathPrefix || `${config.host}:${config.port}`}</span>;
-                case 'rsync':
-                    return <span className="text-muted-foreground">{config.pathPrefix || `${config.host}:${config.port}`}</span>;
-                case 'google-drive':
-                    return <span className="text-muted-foreground">{config.folderId ? `Folder: ${config.folderId.substring(0, 12)}...` : 'Root'}</span>;
-                case 'dropbox':
-                    return <span className="text-muted-foreground">{config.folderPath || '/ (Root)'}</span>;
-                case 'onedrive':
-                    return <span className="text-muted-foreground">{config.folderPath || '/ (Root)'}</span>;
-                case 'discord':
-                case 'slack':
-                case 'teams':
-                    return <span className="text-muted-foreground">Webhook</span>;
-                case 'generic-webhook':
-                    return <span className="text-muted-foreground">{config.method || 'POST'} → {config.webhookUrl}</span>;
-                case 'gotify':
-                    return <span className="text-muted-foreground">{config.serverUrl}</span>;
-                case 'ntfy':
-                    return <span className="text-muted-foreground">{config.serverUrl}/{config.topic}</span>;
-                case 'telegram':
-                    return <span className="text-muted-foreground">Chat {config.chatId}</span>;
-                case 'twilio-sms':
-                    return <span className="text-muted-foreground">{config.from} → {config.to}</span>;
-                case 'email': {
-                    const to = Array.isArray(config.to)
-                        ? config.to.length > 2
-                            ? `${config.to.slice(0, 2).join(", ")} +${config.to.length - 2}`
-                            : config.to.join(", ")
-                        : config.to;
-                    return <span className="text-muted-foreground">{config.from} → {to}</span>;
-                }
-                default:
-                    // S3 variants (s3-aws, s3-generic, s3-r2, s3-hetzner, s3-minio)
-                    if (adapterId.startsWith('s3')) {
-                        return <span className="text-muted-foreground">{config.bucket}</span>;
-                    }
-                    return <span className="text-muted-foreground">-</span>;
-            }
-        } catch {
-            return <span className="text-destructive">Invalid Config</span>;
-        }
-    };
+    const canViewHealth = permissions.includes(type === "database" ? PERMISSIONS.SOURCES.VIEW : PERMISSIONS.DESTINATIONS.READ);
+    const canViewStorage = permissions.includes(PERMISSIONS.STORAGE.READ);
 
-    const columns: ColumnDef<AdapterConfig>[] = [
-        // Health status column – not relevant for notification adapters
-        ...(type !== 'notification' ? [{
-            id: "status",
-            header: "Status",
-            cell: ({ row }: { row: any }) => {
-                // Determine health status from config props
-                const lastCheck = row.original.lastHealthCheck;
-                // If lastHeathCheck is null, default to PENDING
-                const status = lastCheck ? (row.original.lastStatus || "ONLINE") : "PENDING";
+    /**
+     * What one connection can do. The panel shows Explore and Edit as buttons of their own,
+     * so its menu leaves them out.
+     */
+    const rowHandlers = useCallback((config: AdapterConfig, inPanel = false): ConnectionActionHandlers => {
+        // Same server and credentials in the other role. An adapter that only works one way
+        // round has no counterpart, and the API would refuse the clone.
+        const counterpartOf = () => {
+            const current = config.storageRole ?? STORAGE_ROLES.DESTINATION;
+            const counterpart = counterpartStorageRole(current);
+            const definition = ADAPTER_DEFINITIONS.find((d) => d.id === config.adapterId);
+            if (!canOfferCounterpart(definition?.supportedRoles, current)) return undefined;
+            return {
+                label: `Create as ${storageRoleLabel(counterpart).toLowerCase()}`,
+                onSelect: () => setCloneTarget({ id: config.id, name: config.name, role: counterpart }),
+            };
+        };
 
-                // Health history popover requires sources:view (database) or destinations:read (storage)
-                const healthPerm = type === "database" ? PERMISSIONS.SOURCES.VIEW : PERMISSIONS.DESTINATIONS.READ;
-                const canViewHealth = permissions.includes(healthPerm);
+        // Only a destination holds backups, so only it has a storage history.
+        const isDestination = type === "storage" && (config.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION;
 
-                return (
-                    <HealthStatusBadge
-                        status={status}
-                        adapterId={row.original.id}
-                        lastChecked={lastCheck}
-                        interactive={canViewHealth}
-                    />
-                );
-            }
-        }] as ColumnDef<AdapterConfig>[] : []),
-        {
-            accessorKey: "name",
-            header: "Name",
-            cell: ({ row }) => (
-                <div className="font-medium">{row.getValue("name")}</div>
-            )
-        },
-        {
-            accessorKey: "adapterId",
-            header: "Type",
-            filterFn: (row, id, value) => value.includes(row.getValue(id)),
-            cell: ({ row }) => {
-                const def = ADAPTER_DEFINITIONS.find(d => d.id === row.getValue("adapterId"));
-                return (
-                    <div className="flex items-center gap-2">
-                         <AdapterIcon adapterId={row.getValue("adapterId")} className="h-4 w-4" />
-                         <Badge variant="outline">{def?.name || row.getValue("adapterId")}</Badge>
-                    </div>
-                );
-            }
-        },
-        // Database Version Column
-        ...(type === 'database' ? [{
-            id: "version",
-            header: "Version",
-            cell: ({ row }: { row: any }) => {
-                try {
-                    if (!row.original.metadata) return <span className="text-muted-foreground">-</span>;
-                    const meta = JSON.parse(row.original.metadata);
-                    if (!meta.engineVersion) return <span className="text-muted-foreground">-</span>;
-                    return <Badge variant="secondary" className="font-mono text-xs">{meta.engineVersion}</Badge>;
-                } catch { return <span className="text-muted-foreground">-</span>; }
-            }
-        }] : []),
-        {
-            id: "summary",
-            header: "Details",
-            cell: ({ row }) => getSummary(row.original.adapterId, row.original.config)
-        },
-        {
-            id: "actions",
-            header: () => <div className="text-right">Actions</div>,
-            cell: ({ row }) => {
-                return (
-                    <div className="flex justify-end gap-1">
-                        {type === "database" && (
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Inspect Databases"
-                                onClick={() => router.push(`/dashboard/explorer?sourceId=${row.original.id}`)}
-                            >
-                                <SearchCode className="h-4 w-4" />
-                            </Button>
-                        )}
-                        {type === "storage" && permissions.includes(PERMISSIONS.STORAGE.READ) && (
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Storage History"
-                                onClick={() => setHistoryAdapter({ id: row.original.id, name: row.original.name })}
-                            >
-                                <BarChart3 className="h-4 w-4" />
-                            </Button>
-                        )}
-                        {canManage && (
-                            <>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Clone"
-                                    disabled={cloningId === row.original.id}
-                                    onClick={() => setCloneTarget({ id: row.original.id, name: row.original.name })}
-                                >
-                                    <Copy className="h-4 w-4" />
-                                </Button>
-                                {type === 'storage' && (() => {
-                                    const current = row.original.storageRole ?? STORAGE_ROLES.DESTINATION;
-                                    const counterpart = counterpartStorageRole(current);
-                                    // An adapter that only works one way round has no counterpart, and the
-                                    // API refuses the clone - the button could only produce a rejected save.
-                                    const definition = ADAPTER_DEFINITIONS.find((d) => d.id === row.original.adapterId);
-                                    if (!canOfferCounterpart(definition?.supportedRoles, current)) return null;
-                                    return (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            title={`Create as ${storageRoleLabel(counterpart)}`}
-                                            disabled={cloningId === row.original.id}
-                                            onClick={() => setCloneTarget({
-                                                id: row.original.id,
-                                                name: `${row.original.name} (${counterpart === STORAGE_ROLES.SOURCE ? 'Source' : 'Destination'})`,
-                                                role: counterpart,
-                                            })}
-                                        >
-                                            <ArrowLeftRight className="h-4 w-4" />
-                                        </Button>
-                                    );
-                                })()}
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => { setEditingId(row.original.id); setIsDialogOpen(true); }}
-                                >
-                                    <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleDelete(row.original.id)}
-                                >
-                                    <Trash className="h-4 w-4 text-destructive" />
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                );
-            }
-        }
-    ];
+        return {
+            onExplore: !inPanel && type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined,
+            onHistory: isDestination && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name, adapterId: config.adapterId }) : undefined,
+            onEdit: !inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
+            onClone: canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
+            counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
+            onDelete: canManage ? () => {
+                // The row already knows whether a job or a template still holds the connection.
+                const blocker = deleteBlocker(config);
+                if (blocker) toast.error(`${config.name} cannot be deleted. ${blocker}.`);
+                else setDeletingId(config.id);
+            } : undefined,
+            busy: cloningId === config.id,
+        };
+    }, [type, canViewStorage, canManage, cloningId, router]);
+
+    const renderActions = useCallback(
+        (config: AdapterConfig, inPanel = false) => <ConnectionRowActions name={config.name} {...rowHandlers(config, inPanel)} />,
+        [rowHandlers]
+    );
+
+    const openDetails = useCallback((config: AdapterConfig) => setDetails({ id: config.id, open: true, view }), [view]);
+
+    const columns = useMemo(
+        () => connectionColumns({ kind, canViewHealth, renderActions: (config) => renderActions(config), onOpen: openDetails }),
+        [kind, canViewHealth, renderActions, openDetails]
+    );
+
+    // A deleted connection has no row left to show, so its panel closes with it.
+    const detailsConfig = details ? configs.find((config) => config.id === details.id) ?? null : null;
+    const deleting = deletingId ? configs.find((config) => config.id === deletingId) : undefined;
+    const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);
+
+    /** What the details of one connection offer, the same in the side panel and in the split view. */
+    const detailProps = (config: AdapterConfig) => ({
+        kind,
+        canTest: canManage && type !== "notification",
+        canViewHistory,
+        exploreHref: type === "database" ? `/dashboard/explorer?sourceId=${config.id}` : undefined,
+        onEdit: canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
+        menu: renderActions(config, true),
+    });
+
+    const visibleConfigs = useMemo(() => configs.filter((config) => matchesStatus(config, statusFilter)), [configs, statusFilter]);
 
     // Only show filter options for adapter types that have at least one config entry
     const typeFilterColumns = useMemo(() => {
         const usedAdapterIds = new Set(configs.map(c => c.adapterId));
         const options = availableAdapters
             .filter(a => usedAdapterIds.has(a.id))
-            .map(a => ({ label: a.name, value: a.id }));
+            .map(a => ({ label: a.name, value: a.id, icon: adapterTypeIcon(a.id) }));
 
         if (options.length <= 1) return [];
         return [{ id: "adapterId", title: "Type", options }];
     }, [configs, availableAdapters]);
 
-    const bulkActions = useMemo<BulkAction<AdapterConfig>[]>(() => {
-        if (!canManage) return [];
+    const trash = useTrash("connection", afterChange);
+    const bulkActions = useMemo(() => connectionBulkActions(kind, canManage, trash), [kind, canManage, trash]);
 
-        return [
-            {
-                id: "delete",
-                labels: { verb: "delete", verbPast: "deleted", noun: "connection" },
-                icon: Trash,
-                variant: "destructive",
-                itemName: (config) => config.name,
-                confirm: {
-                    title: (rows) => `Delete ${rows.length} connection${rows.length === 1 ? "" : "s"}?`,
-                    // A connection still referenced by a job is refused per entry rather
-                    // than up front, because the reason names the jobs holding it.
-                    description: () =>
-                        "This cannot be undone. Connections still used by a job or a notification template are kept and listed afterwards.",
-                    confirmLabel: "Delete",
-                },
-                run: (rows) => requestBulk("/api/adapters/bulk", {
-                    action: "delete",
-                    ids: rows.map((config) => config.id),
-                }),
-            },
-        ];
-    }, [canManage]);
-
-    // Stable reference for the adapter list passed to AdapterForm - prevents the
-    // useEffect inside AdapterForm from re-running (and wiping typed values) when
-    // unrelated state changes cause the parent to re-render.
-    const adapterFormList = useMemo(
-        () => selectedAdapterForNew
-            ? availableAdapters.filter(a => a.id === selectedAdapterForNew)
-            : availableAdapters,
-        [selectedAdapterForNew, availableAdapters]
-    );
+    // The connection the form edits, or the type picked for a new one.
+    const editingConfig = editingId ? configs.find((config) => config.id === editingId) : undefined;
+    const formAdapterId = editingConfig?.adapterId ?? selectedAdapterForNew;
+    const formAdapter = formAdapterId ? ADAPTER_DEFINITIONS.find((definition) => definition.id === formAdapterId) : undefined;
+    const backToPicker = () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); setIsPickerOpen(true); };
+    const afterSave = () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); afterChange(); };
 
     return (
-        <div className="space-y-6">
-            {!hidePageHeading && (
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
-                        <p className="text-muted-foreground">{description}</p>
+        <div className="flex flex-col gap-4 md:gap-0">
+            {!hasLoaded || !view ? (
+                <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
+                    <span className="sr-only">Loading connections</span>
+                    <div className="flex gap-2">
+                        <Skeleton className="h-8 w-60" />
+                        <Skeleton className="h-8 w-24" />
                     </div>
+                    {Array.from({ length: 4 }, (_, index) => (
+                        <Skeleton key={index} className="h-11 w-full" />
+                    ))}
                 </div>
-            )}
-
-            <CredentialUpgradeBanner configs={configs} />
-
-            {isLoading ? (
-                <Card>
-                    <CardHeader>
-                         <div className="flex items-center justify-between">
-                            <div className="space-y-2">
-                                <Skeleton className="h-5 w-32" />
-                                <Skeleton className="h-4 w-48" />
-                            </div>
-                            <Skeleton className="h-10 w-28" />
-                         </div>
-                    </CardHeader>
-                    <CardContent>
-                         <div className="space-y-4">
-                             <Skeleton className="h-10 w-full" />
-                             <Skeleton className="h-10 w-full" />
-                             <Skeleton className="h-10 w-full" />
-                         </div>
-                    </CardContent>
-                </Card>
+            ) : configs.length === 0 ? (
+                <ListEmpty
+                    icon={EMPTY[kind].icon}
+                    title={EMPTY[kind].title}
+                    description={EMPTY[kind].description}
+                    action={canManage ? { label: EMPTY[kind].action, onClick: openCreate } : undefined}
+                />
             ) : (
-                <Card>
-                    <CardHeader>
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <CardTitle>{title}</CardTitle>
-                                {/* With the page heading hidden the caller's description has
-                                    nowhere else to go, so the card carries it instead of the
-                                    generic line - which would otherwise duplicate the heading. */}
-                                <CardDescription>{hidePageHeading ? description : `Manage your ${type} configurations.`}</CardDescription>
-                            </div>
-                            {canManage && (
-                                <Button onClick={() => { setEditingId(null); setSelectedAdapterForNew(null); setIsPickerOpen(true); }}>
-                                    <Plus className="mr-2 h-4 w-4" /> Add New
-                                </Button>
-                            )}
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <DataTable
-                            columns={columns}
-                            data={configs}
-                            searchKey="name"
-                            onRefresh={fetchConfigs}
-                            filterableColumns={typeFilterColumns}
-                            enableRowSelection={canManage}
-                            // Load-bearing here: this list is re-fetched by a poll every
-                            // 10 seconds, and index-keyed selection would jump each time.
-                            getRowId={(config) => config.id}
-                            bulkActions={bulkActions}
-                            onBulkActionComplete={fetchConfigs}
-                        />
-                    </CardContent>
-                </Card>
+                <>
+                    <ConnectionStrip kind={kind} configs={configs} />
+                    <DataTable
+                        joined
+                        columns={columns}
+                        data={visibleConfigs}
+                        searchKey="name"
+                        searchPlaceholder={`Search ${SEARCH_NOUNS[kind]}`}
+                        onRefresh={fetchConfigs}
+                        isLoading={isLoading}
+                        filterableColumns={typeFilterColumns}
+                        toolbarExtra={
+                            <ConnectionStatusFilter
+                                value={statusFilter}
+                                onChange={setStatusFilter}
+                                configs={configs}
+                                withHealth={type !== "notification"}
+                            />
+                        }
+                        // Selecting for bulk actions is a table thing. Cards keep to one connection at a time.
+                        enableRowSelection={canManage && view === "table"}
+                        // Load-bearing here: this list is re-fetched by a poll every
+                        // 10 seconds, and index-keyed selection would jump each time.
+                        getRowId={(config) => config.id}
+                        bulkActions={bulkActions}
+                        onBulkActionComplete={afterChange}
+                        columnLayout={layout}
+                        onRowClick={openDetails}
+                        view={view}
+                        renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}
+                        renderRowMenu={(config, bulk) => (
+                            <ConnectionContextMenu config={config} bulk={bulk} {...rowHandlers(config)} />
+                        )}
+                        renderSplit={(rows) => (
+                            <ConnectionSplitView
+                                configs={rows.map((row) => row.original)}
+                                withHealth={type !== "notification"}
+                                selectedId={splitId}
+                                onSelect={setSplitId}
+                                renderPanel={(config) => (
+                                    <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />
+                                )}
+                                renderMenu={(config) => <ConnectionContextMenu config={config} bulk={null} {...rowHandlers(config)} />}
+                            />
+                        )}
+                    />
+                </>
             )}
+
+            <ConnectionDetailsSheet
+                // The split view shows the details itself, so the panel only opens in the view it was opened from.
+                open={details !== null && details.open && details.view === view}
+                config={detailsConfig}
+                onClose={() => setDetails((current) => current && { ...current, open: false })}
+                {...(detailsConfig ? detailProps(detailsConfig) : { kind, canTest: false, canViewHistory, menu: null })}
+            />
 
             {/* Step 1: Adapter Picker */}
             <Dialog open={isPickerOpen} onOpenChange={setIsPickerOpen}>
-                <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0" aria-describedby={undefined}>
-                    <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-                        <DialogTitle>{type === 'notification' ? "Select Notification Type" : (type === 'database' ? "Select Database Type" : (type === 'storage' ? `Select ${storageNoun} Type` : "Select Type"))}</DialogTitle>
-                    </DialogHeader>
-                    <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(90vh-9rem)]">
-                        <div className="px-6 pb-6">
-                            <AdapterPicker
-                                adapters={availableAdapters}
-                                onSelect={(adapter) => {
-                                    setSelectedAdapterForNew(adapter.id);
-                                    setIsPickerOpen(false);
-                                    setIsDialogOpen(true);
-                                }}
-                            />
-                        </div>
-                    </ScrollArea>
+                <DialogContent tone="create" showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-lg")}>
+                    <AdapterPickerDialog
+                        adapters={availableAdapters}
+                        title={type === 'notification' ? "New channel" : (type === 'database' ? "New database" : `New ${storageNoun.toLowerCase()}`)}
+                        onSelect={(adapter) => {
+                            setSelectedAdapterForNew(adapter.id);
+                            setIsPickerOpen(false);
+                            setIsDialogOpen(true);
+                        }}
+                    />
                 </DialogContent>
             </Dialog>
 
-            {/* Step 2: Adapter Form */}
+            {/* Step 2: the form. A connection with a single part, like a Teams webhook, has no list
+                beside it and gets the narrower dialog. */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0" aria-describedby={undefined}>
-                    <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-                        <DialogTitle>{editingId ? "Edit Configuration" : (type === 'notification' ? "Add New Notification" : (type === 'database' ? "Add New Source" : (type === 'storage' ? `Add New ${storageNoun}` : "Add New Configuration")))}</DialogTitle>
-                    </DialogHeader>
-                    {isDialogOpen && (
-                        <AdapterForm
-                            type={type}
-                            adapters={adapterFormList}
-                            onSuccess={() => { setIsDialogOpen(false); setSelectedAdapterForNew(null); fetchConfigs(); }}
-                            initialData={editingId ? configs.find(c => c.id === editingId) : undefined}
-                            onBack={!editingId ? () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); setIsPickerOpen(true); } : undefined}
-                            defaultRole={defaultRole}
+                <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-3xl sm:has-data-[single-part]:max-w-xl")}>
+                    {isDialogOpen && formAdapter && (
+                        <ConnectionForm
+                            adapter={formAdapter}
+                            initialData={editingConfig}
+                            defaultRole={pickerRole}
+                            step="Step 2 of 2"
+                            onBack={editingId ? undefined : backToPicker}
+                            onSaved={afterSave}
                         />
                     )}
                 </DialogContent>
             </Dialog>
 
-            <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete this configuration.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Delete
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+            {deleting && (
+                <ConnectionDeleteDialog
+                    config={deleting}
+                    onClose={() => setDeletingId(null)}
+                    onDeleted={(id) => {
+                        setConfigs((current) => current.filter((config) => config.id !== id));
+                        router.refresh();
+                    }}
+                    onRestored={afterChange}
+                />
+            )}
 
             {historyAdapter && (
                 <StorageHistoryModal
@@ -572,69 +411,50 @@ export function AdapterManager({ type, title, description, canManage = true, per
                     onOpenChange={(open) => { if (!open) setHistoryAdapter(null); }}
                     configId={historyAdapter.id}
                     adapterName={historyAdapter.name}
+                    adapterId={historyAdapter.adapterId}
                 />
             )}
 
-            <CloneDialog
-                open={!!cloneTarget}
-                onOpenChange={(open) => !open && setCloneTarget(null)}
-                defaultName={cloneTarget?.name ?? ""}
-                existingNames={configs.map((c) => c.name)}
-                isLoading={!!cloningId}
-                onConfirm={(name) => cloneAdapter(cloneTarget!.id, name, cloneTarget!.role)}
-            />
+            {cloneTarget && (
+                <CloneDialog
+                    {...cloneCopy(cloneTarget)}
+                    noun="connection"
+                    existingNames={configs.map((c) => c.name)}
+                    isLoading={!!cloningId}
+                    onConfirm={(name) => cloneAdapter(cloneTarget.id, name, cloneTarget.role)}
+                    onClose={() => setCloneTarget(null)}
+                />
+            )}
         </div>
     );
 }
 
 /**
- * Banner shown at the top of the adapter manager when one or more adapters
- * are flagged OFFLINE due to a missing credential profile assignment.
- *
- * The startup-checks job sets `lastError = "No credential profile assigned"`
- * for adapters that existed before the credential vault (v2.0.0 migration).
- * New adapters where the user intentionally leaves the credential field empty
- * are never flagged and therefore never appear here.
- *
- * TODO(2026-06-28): Remove this migration banner. It was added for the v1.5
- * credential profiles rollout to guide users through reassigning their
- * credentials. By this point all active installs should have migrated.
+ * What the clone dialog says for a copy of a connection, or for the same connection in the other
+ * storage role, which lands in the other list with the path of this one.
  */
-function CredentialUpgradeBanner({ configs }: { configs: AdapterConfig[] }) {
-    const affected = configs.filter(
-        (c) => (c.lastStatus === "OFFLINE" || c.lastStatus === "DEGRADED") && c.lastError === "No credential profile assigned"
-    );
-    if (affected.length === 0) return null;
-
-    return (
-        <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Credential profiles required</AlertTitle>
-            <AlertDescription>
-                <p className="mb-2">
-                    {affected.length === 1 ? "1 adapter" : `${affected.length} adapters`} need a credential profile to come back online:
-                </p>
-                <ul className="list-disc pl-5 space-y-0.5 mb-2">
-                    {affected.slice(0, 5).map((a) => (
-                        <li key={a.id}>
-                            <span className="font-medium">{a.name}</span>{" "}
-                            <span className="text-xs">({a.adapterId})</span>
-                        </li>
-                    ))}
-                    {affected.length > 5 && (
-                        <li className="text-xs italic">
-                            ...and {affected.length - 5} more.
-                        </li>
-                    )}
-                </ul>
-                <p className="text-sm">
-                    Create reusable profiles in the{" "}
-                    <Link href="/dashboard/vault" className="underline font-medium">
-                        Security Vault
-                    </Link>
-                    , then assign them by editing each adapter.
-                </p>
-            </AlertDescription>
-        </Alert>
-    );
+function cloneCopy({ name, role }: { name: string; role?: StorageRole }) {
+    if (!role) {
+        return {
+            title: "Clone connection",
+            from: name,
+            confirmLabel: "Clone connection",
+            facts: [
+                { icon: ListChecks, text: `The copy has every setting of ${name}, its saved logins included.` },
+                { icon: Activity, text: "Its health checks start from scratch." },
+            ],
+        };
+    }
+    const noun = storageRoleLabel(role).toLowerCase();
+    return {
+        title: `Create as ${noun}`,
+        from: name,
+        label: role === STORAGE_ROLES.SOURCE ? "Source" : "Destination",
+        icon: ArrowLeftRight,
+        confirmLabel: `Create ${noun}`,
+        facts: [
+            { icon: ListChecks, text: `The same server and login as ${name}, set up as a ${noun}.` },
+            { icon: FolderOpen, text: "Check its path afterwards, since the files to back up and the backups rarely share a folder." },
+        ],
+    };
 }

@@ -17,6 +17,7 @@ export const DATABASE_BUSY = "DATABASE_BUSY";
 
 const globalForMaintenance = globalThis as unknown as {
     databaseMaintenanceActive: boolean | undefined;
+    databaseMaintenanceWaiting: boolean | undefined;
 };
 
 export function isDatabaseMaintenanceActive(): boolean {
@@ -32,6 +33,26 @@ export function beginDatabaseMaintenance(): boolean {
 
 export function endDatabaseMaintenance(): void {
     globalForMaintenance.databaseMaintenanceActive = false;
+}
+
+/**
+ * Set while a scheduled maintenance waits for the runs of now to end before it starts. The queue
+ * starts no new run meanwhile, so the wait has an end. Everything else carries on, since only the
+ * maintenance itself holds the connection.
+ */
+export function isRunHoldActive(): boolean {
+    return globalForMaintenance.databaseMaintenanceWaiting === true;
+}
+
+/** Holds new runs back. Returns false when another maintenance holds them already. */
+export function beginRunHold(): boolean {
+    if (globalForMaintenance.databaseMaintenanceWaiting) return false;
+    globalForMaintenance.databaseMaintenanceWaiting = true;
+    return true;
+}
+
+export function endRunHold(): void {
+    globalForMaintenance.databaseMaintenanceWaiting = false;
 }
 
 /** Throws for a run that would otherwise start in the middle of maintenance. */

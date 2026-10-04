@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import * as encryptionService from "@/services/backup/encryption-service";
 import { buildRecoveryKit, RecoveryKitProfile } from "@/services/backup/recovery-kit";
 import { auditService } from "@/services/audit-service";
+import { VAULT_AUDIT } from "@/services/vault/vault-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
 import { logger } from "@/lib/logging/logger";
@@ -38,11 +39,11 @@ export async function GET(request: NextRequest) {
         return new NextResponse("No encryption profiles selected", { status: 400 });
     }
 
-    await auditService.log(
-        ctx.userId,
+    await auditService.logFor(
+        ctx,
         AUDIT_ACTIONS.EXPORT,
         AUDIT_RESOURCES.VAULT,
-        { action: "recovery_kit_download", profileIds: ids },
+        { action: VAULT_AUDIT.KIT, profileIds: ids },
         ids.length === 1 ? ids[0] : undefined
     );
 
@@ -61,6 +62,9 @@ export async function GET(request: NextRequest) {
         }
 
         const zipBuffer = await buildRecoveryKit({ profiles });
+        // Kept on the keys, so the Vault stops warning about a key that was never in a kit. The
+        // audit entry above is cleaned after a while, this is not.
+        await encryptionService.markRecoveryKit(ids);
 
         // Named after the profile when there is one, so a folder of kits stays tellable
         // apart. A combined kit says how many it covers instead.

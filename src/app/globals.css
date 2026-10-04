@@ -5,28 +5,33 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-page: var(--page);
+  --color-raised: var(--raised);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --color-success: var(--success);
   --color-info: var(--info);
+  --color-warning: var(--warning);
+  --color-tone: var(--tone);
+  --color-tone-foreground: var(--tone-foreground);
+  --color-tone-ring: var(--tone-ring);
+  --color-tone-control: var(--tone-control);
+  --color-tone-control-foreground: var(--tone-control-foreground);
+  --color-control-neutral: var(--control-neutral);
+  --color-control-neutral-foreground: var(--control-neutral-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -43,84 +48,186 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
 }
 
 :root {
   --radius: 0.625rem;
-  /* Light Theme - Clean & Modern */
-  --background: oklch(0.99 0 0); /* Almost white */
-  --foreground: oklch(0.15 0 0); /* Near black */
-  --card: oklch(1 0 0); /* Pure white */
-  --card-foreground: oklch(0.15 0 0);
+  /* Light Theme - same structure as dark: a gray page with white surfaces on top */
+  --background: oklch(1 0 0); /* White, the base for dialogs and controls */
+  --page: oklch(0.967 0.001 286.4); /* #f4f4f5 dashboard canvas */
+  --foreground: oklch(0.141 0.004 285.8); /* zinc-950 */
+  --card: oklch(1 0 0); /* White surface */
+  --card-foreground: oklch(0.141 0.004 285.8);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0 0);
-  --primary: oklch(0.15 0 0); /* Dark/Black for buttons */
-  --primary-foreground: oklch(1 0 0); /* White text */
-  --secondary: oklch(0.96 0 0); /* Light gray */
-  --secondary-foreground: oklch(0.25 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.96 0 0);
-  --accent-foreground: oklch(0.25 0 0);
+  --popover-foreground: oklch(0.141 0.004 285.8);
+  --raised: oklch(1 0 0); /* White, a panel that floats over a card */
+  --primary: oklch(0.21 0.006 285.9); /* zinc-900 buttons */
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.934 0.004 286); /* #e9e9ec, one step below the page so tab tracks and hovers show on it */
+  --secondary-foreground: oklch(0.21 0.006 285.9);
+  --muted: oklch(0.934 0.004 286);
+  --muted-foreground: oklch(0.51 0.014 286); /* #65656e, readable on white and on the page */
+  --accent: oklch(0.934 0.004 286);
+  --accent-foreground: oklch(0.21 0.006 285.9);
   --destructive: oklch(0.577 0.245 27.325); /* Red */
-  --success: oklch(0.65 0.17 160); /* Emerald for success states */
-  --info: oklch(0.55 0.15 250); /* Darker Blue for info/running */
-  --border: oklch(0.9 0 0); /* Subtle gray border */
-  --input: oklch(0.9 0 0);
-  --ring: oklch(0.15 0 0); /* Dark ring */
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(1 0 0); /* White sidebar */
-  --sidebar-foreground: oklch(0.15 0 0);
-  --sidebar-primary: oklch(0.15 0 0); /* Dark */
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.96 0 0);
-  --sidebar-accent-foreground: oklch(0.25 0 0);
-  --sidebar-border: oklch(0.9 0 0);
+  --destructive-text: oklch(0.505 0.213 27.518); /* red-700, the red of text on a red tint, where the red above misses 4.5:1 */
+  --success: oklch(0.527 0.137 150.1); /* #15803d, readable as text on white and on the page */
+  --info: oklch(0.546 0.215 262.9); /* #2563eb, running */
+  --warning: oklch(0.555 0.146 49); /* #b45309, partial */
+  --warning-foreground: oklch(0.985 0 0);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success-foreground: oklch(0.985 0 0);
+  /* The colors of a task, which the tones below hand to dialogs, popovers, menus and buttons */
+  --create: oklch(0.546 0.215 262.9); /* #2563eb, adding a new entry */
+  --create-foreground: oklch(0.985 0 0);
+  --edit: oklch(0.541 0.247 293); /* #7c3aed, changing an entry */
+  --edit-foreground: oklch(0.985 0 0);
+  --pick: oklch(0.52 0.094 223.1); /* #0e7490, choosing an entry that exists */
+  --pick-foreground: oklch(0.985 0 0);
+  --filter: oklch(0.591 0.293 322.9); /* #c026d3, narrowing what a list shows */
+  --filter-foreground: oklch(0.985 0 0);
+  /* A switch that is on, a checked box or a picked radio outside a task: a soft gray, darker than
+     off and calmer than the black of a button */
+  --control-neutral: oklch(0.37 0.013 285.8); /* #3f3f46 zinc-700 */
+  --control-neutral-foreground: oklch(0.985 0 0);
+  --border: oklch(0.92 0.004 286.3); /* #e4e4e7 zinc-200 */
+  --input: oklch(0.871 0.006 286.3); /* #d4d4d8 zinc-300 */
+  --ring: oklch(0.51 0.014 286); /* #65656e, a quiet focus ring that still passes 3:1 on white */
+  --sidebar: oklch(1 0 0); /* White, same as cards and the top bar */
+  --sidebar-foreground: oklch(0.141 0.004 285.8);
+  --sidebar-accent: oklch(0.967 0.001 286.4); /* Same gray as the page */
+  --sidebar-accent-foreground: oklch(0.21 0.006 285.9);
+  --sidebar-border: oklch(0.92 0.004 286.3);
   --sidebar-ring: oklch(0.15 0 0);
 }
 
 .dark {
-  /* Dark Theme - Inspired by Modern Log Viewer */
-  --background: oklch(0.12 0 0); /* zinc-950-like */
-  --foreground: oklch(0.95 0 0); /* Near white */
-  --card: oklch(0.17 0 0); /* zinc-900 */
-  --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.12 0 0); /* zinc-950 */
-  --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.95 0 0); /* White for buttons */
-  --primary-foreground: oklch(0.12 0 0); /* Dark text on white button */
-  --secondary: oklch(0.22 0 0); /* zinc-800 */
-  --secondary-foreground: oklch(0.95 0 0);
-  --muted: oklch(0.22 0 0); /* zinc-800 */
-  --muted-foreground: oklch(0.6 0 0); /* zinc-400 */
-  --accent: oklch(0.22 0 0); /* zinc-800 */
-  --accent-foreground: oklch(0.95 0 0);
-  --destructive: oklch(0.6 0.22 25); /* Red-500 */
-  --success: oklch(0.65 0.17 160); /* Emerald-500 for success */
-  --info: oklch(0.55 0.15 250); /* Darker Blue for info/running */
-  --border: oklch(1 0 0 / 0.1); /* white/10 */
-  --input: oklch(1 0 0 / 0.15); /* white/15 */
-  --ring: oklch(0.95 0 0); /* White ring */
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.17 0 0); /* zinc-900 */
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.95 0 0); /* White */
-  --sidebar-primary-foreground: oklch(0.12 0 0);
-  --sidebar-accent: oklch(0.22 0 0); /* zinc-800 */
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(1 0 0 / 0.1); /* white/10 */
+  /* Dark Theme - zinc neutrals, raised surfaces on a darker page */
+  --background: oklch(0.169 0.004 286); /* #0f0f11 page */
+  --page: var(--background); /* Dark mode has no separate canvas color */
+  --foreground: oklch(0.985 0 0); /* #fafafa */
+  --card: oklch(0.219 0.004 286.1); /* #1a1a1c */
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.219 0.004 286.1);
+  --popover-foreground: oklch(0.985 0 0);
+  --raised: oklch(0.237 0.005 286); /* #1f1f22, one step above the cards so a panel over a table stands out */
+  --primary: oklch(0.985 0 0); /* White for buttons */
+  --primary-foreground: oklch(0.21 0.006 285.9); /* Dark text on white button */
+  --secondary: oklch(0.266 0.006 286); /* #252528 */
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.266 0.006 286);
+  --muted-foreground: oklch(0.712 0.013 286.1); /* #a1a1aa */
+  --accent: oklch(0.266 0.006 286);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.659 0.19 22.2); /* #f0555a */
+  --destructive-text: var(--destructive);
+  --success: oklch(0.773 0.153 163.2); /* #34d399 */
+  --info: oklch(0.714 0.143 254.6); /* #60a5fa */
+  --warning: oklch(0.837 0.164 84.4); /* #fbbf24 */
+  --warning-foreground: oklch(0.169 0.004 286); /* Dark text on the light colors of dark mode */
+  --destructive-foreground: oklch(0.169 0.004 286);
+  --success-foreground: oklch(0.169 0.004 286);
+  --create: oklch(0.714 0.143 254.6); /* #60a5fa */
+  --create-foreground: oklch(0.169 0.004 286);
+  --edit: oklch(0.709 0.159 293.5); /* #a78bfa */
+  --edit-foreground: oklch(0.169 0.004 286);
+  --pick: oklch(0.797 0.134 211.5); /* #22d3ee */
+  --pick-foreground: oklch(0.169 0.004 286);
+  --filter: oklch(0.74 0.238 322.2); /* #e879f9 */
+  --filter-foreground: oklch(0.169 0.004 286);
+  --control-neutral: oklch(0.871 0.006 286.3); /* #d4d4d8 zinc-300, brighter than off, calmer than white */
+  --control-neutral-foreground: oklch(0.21 0.006 285.9);
+  --border: oklch(0.287 0.007 285.9); /* #2a2a2e */
+  --input: oklch(0.316 0.011 285.8); /* #313137 */
+  --ring: oklch(0.712 0.013 286.1); /* #a1a1aa, the same quiet ring on the dark surfaces */
+  --sidebar: oklch(0.219 0.004 286.1); /* #1a1a1c, same as cards and the top bar */
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.266 0.006 286); /* #252528 */
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.287 0.007 285.9);
   --sidebar-ring: oklch(0.95 0 0);
+}
+
+/*
+ * The tone of a dialog, a popover, a menu entry or a button is the color of its task. The
+ * `data-tone` attribute sets it for the element and everything inside, and whatever carries a
+ * color reads it through the `tone` utilities: `bg-tone`, `text-tone`, `border-tone/60`.
+ * Without an attribute everything is neutral. The tones are listed in `src/components/ui/tone.ts`,
+ * the rules for picking one under Color in `src/app/dashboard/CLAUDE.md`.
+ *
+ * `--tone-ring` is the focus ring of a field. It follows adding, editing, picking and filtering and
+ * stays the quiet gray everywhere else, since a red or amber border on a field reads as an error.
+ *
+ * `--tone-control` colors switches, checkboxes, radio buttons and picked cards that are on. It is
+ * the tone of the task, and the soft gray `--control-neutral` where there is none, like in Settings:
+ * brighter than off in dark, darker than off in light, without the glare of the white or black of a
+ * button and without a color that means something else. The current step of Quick Setup and of a
+ * restore takes it too, through `bg-control-neutral`, so it stays gray inside a task as well.
+ */
+:root,
+.dark,
+[data-tone="neutral"] {
+  --tone: var(--primary);
+  --tone-foreground: var(--primary-foreground);
+  --tone-ring: var(--ring);
+  --tone-control: var(--control-neutral);
+  --tone-control-foreground: var(--control-neutral-foreground);
+}
+
+[data-tone="create"] {
+  --tone: var(--create);
+  --tone-foreground: var(--create-foreground);
+  --tone-ring: var(--create);
+  --tone-control: var(--create);
+  --tone-control-foreground: var(--create-foreground);
+}
+
+[data-tone="edit"] {
+  --tone: var(--edit);
+  --tone-foreground: var(--edit-foreground);
+  --tone-ring: var(--edit);
+  --tone-control: var(--edit);
+  --tone-control-foreground: var(--edit-foreground);
+}
+
+[data-tone="pick"] {
+  --tone: var(--pick);
+  --tone-foreground: var(--pick-foreground);
+  --tone-ring: var(--pick);
+  --tone-control: var(--pick);
+  --tone-control-foreground: var(--pick-foreground);
+}
+
+[data-tone="filter"] {
+  --tone: var(--filter);
+  --tone-foreground: var(--filter-foreground);
+  --tone-ring: var(--filter);
+  --tone-control: var(--filter);
+  --tone-control-foreground: var(--filter-foreground);
+}
+
+[data-tone="warning"] {
+  --tone: var(--warning);
+  --tone-foreground: var(--warning-foreground);
+  --tone-ring: var(--ring);
+  --tone-control: var(--warning);
+  --tone-control-foreground: var(--warning-foreground);
+}
+
+[data-tone="destructive"] {
+  --tone: var(--destructive);
+  --tone-foreground: var(--destructive-foreground);
+  --tone-ring: var(--ring);
+  --tone-control: var(--destructive);
+  --tone-control-foreground: var(--destructive-foreground);
+}
+
+[data-tone="success"] {
+  --tone: var(--success);
+  --tone-foreground: var(--success-foreground);
+  --tone-ring: var(--ring);
+  --tone-control: var(--success);
+  --tone-control-foreground: var(--success-foreground);
 }
 
 @layer base {
@@ -145,5 +252,74 @@
 
   .animate-indeterminate {
     animation: indeterminate 1.5s infinite linear;
+  }
+}
+
+/*
+ * The time a toast has left, as a line along its foot in the color of its kind (see
+ * `components/ui/sonner.tsx`). Sonner stops the timer of every toast while the stack is hovered
+ * and marks them expanded, so the line stops with it. A toast that is still loading has no timer
+ * until it turns into a result. Kept out of the Tailwind layers, like the CSS sonner adds itself.
+ */
+[data-sonner-toast] {
+  background-image: linear-gradient(var(--toast-time-color, var(--muted-foreground)), var(--toast-time-color, var(--muted-foreground)));
+  background-repeat: no-repeat;
+  background-origin: padding-box;
+  background-position: left bottom;
+  background-size: 100% 2px;
+  animation: toast-time var(--toast-duration, 4000ms) linear forwards;
+}
+
+[data-sonner-toast][data-expanded="true"] {
+  animation-play-state: paused;
+}
+
+[data-sonner-toast][data-type="loading"] {
+  background-image: none;
+  animation: none;
+}
+
+/* The toasts behind the front one show only their edge, as sonner's own look does. */
+[data-sonner-toast][data-expanded="false"][data-front="false"] > * {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast] {
+    background-image: none;
+  }
+}
+
+@keyframes toast-time {
+  to {
+    background-size: 0% 2px;
+  }
+}
+
+/*
+ * The login page (`components/auth/login-panel.tsx`): the tint of its left side, the rows of logos
+ * that drift in turns and the logo that fills once. The classes that start them carry `motion-safe:`,
+ * so nothing moves with Reduce motion in the system.
+ */
+.login-tint {
+  background-image: linear-gradient(160deg, color-mix(in oklab, var(--create) 10%, transparent), color-mix(in oklab, var(--create) 4%, transparent) 45%, transparent 75%);
+}
+
+.dark .login-tint {
+  background-image: linear-gradient(160deg, color-mix(in oklab, var(--create) 22%, transparent), color-mix(in oklab, var(--create) 7%, transparent) 45%, transparent 75%);
+}
+
+@keyframes login-drift {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes login-fill {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
   }
 }

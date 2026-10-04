@@ -8,7 +8,7 @@ import path from "path";
 import { pipeline } from "stream/promises";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
 
 const log = logger.child({ adapter: "google-drive" });
@@ -18,6 +18,17 @@ interface GoogleDriveConfig {
     clientSecret: string;
     refreshToken?: string;
     folderId?: string;
+}
+
+/** What Google makes the ID of a file or folder of, `root` included. */
+const DRIVE_ID = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Whether a folder ID from a request can go into a Drive query. The query quotes it, so a quote
+ * in a crafted ID could widen a list of folders to every file of the drive.
+ */
+export function isDriveFolderId(value: string): boolean {
+    return DRIVE_ID.test(value);
 }
 
 /**
@@ -392,9 +403,12 @@ export const GoogleDriveAdapter: StorageAdapter = {
      * not a path string. Empty subPath means "start at this adapter's configured root".
      */
     async browseDirectories(config: GoogleDriveConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        const parentId = subPath || config.folderId || "root";
+        if (!isDriveFolderId(parentId)) {
+            throw new ValidationError("Not a Google Drive folder ID.", { field: "path" });
+        }
         try {
             const drive = createDriveClient(config);
-            const parentId = subPath || config.folderId || "root";
 
             const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
             const entries: DirectoryBrowseEntry[] = [];

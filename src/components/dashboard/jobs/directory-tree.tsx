@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronRight, ChevronDown, Folder, HardDrive, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ChevronRight, ChevronDown, Folder, HardDrive } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -23,6 +24,8 @@ export interface DirectoryTreeRow {
     path: string;
     excludePatterns: string[];
     excludePatternPresetIds?: string[];
+    /** Docker volumes only: whether the containers holding it stop while it is read. */
+    stopContainers?: boolean;
 }
 
 interface DirectoryTreeProps {
@@ -31,19 +34,19 @@ interface DirectoryTreeProps {
     rows: DirectoryTreeRow[];
     /** Called with the full replacement row list for this adapter on every toggle - no separate confirm step. */
     onRowsChange: (rows: DirectoryTreeRow[]) => void;
-    /** Renders the per-root panel (exclude pattern editing) below a checked/indeterminate root-level row. */
-    renderRootPanel?: (row: DirectoryTreeRow, onChange: (patch: Partial<DirectoryTreeRow>) => void) => ReactNode;
-    /**
-     * This adapter has no level below its root - a Docker volume is a name, not a folder.
-     *
-     * Drops the expand controls, which would only ever reveal "No subfolders", and turns the
-     * top row from "back up this adapter's root" into "tick every one of them". The root
-     * path is not a thing an adapter like this can read, so selecting it has to mean
-     * selecting the items instead.
-     */
-    flat?: boolean;
-    /** What one item is called, singular. Only used for wording. */
-    itemNoun?: string;
+}
+
+/** A row that is on, in the soft tint of the tone of the dialog, like every list that picks. */
+const PICKED_ROW = "bg-tone-control/5 hover:bg-tone-control/10 dark:bg-tone-control/10";
+
+/** Rows of the width of folder names, while a level loads. */
+function LoadingRows({ indent, count = 2 }: { indent: number; count?: number }) {
+    return (
+        <div className="space-y-2 py-2" style={{ paddingLeft: indent }} aria-busy="true">
+            <span className="sr-only">Loading the folders</span>
+            {Array.from({ length: count }, (_, index) => <Skeleton key={index} className={cn("h-4", index % 2 ? "w-28" : "w-40")} />)}
+        </div>
+    );
 }
 
 function isAtOrUnder(candidate: string, base: string): boolean {
@@ -74,14 +77,10 @@ export function DirectoryTree({
     configId,
     rows,
     onRowsChange,
-    renderRootPanel,
-    flat = false,
-    itemNoun = "folder",
 }: DirectoryTreeProps) {
     const [nodesByKey, setNodesByKey] = useState<Map<string, TreeNodeInfo>>(new Map());
     const [childrenByKey, setChildrenByKey] = useState<Map<string, string[] | "loading">>(new Map());
     const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-    const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set());
 
     const fetchChildren = useCallback(async (parentKey: string): Promise<BrowseEntry[]> => {
         setChildrenByKey((prev) => new Map(prev).set(parentKey, "loading"));
@@ -89,12 +88,12 @@ export function DirectoryTree({
             const res = await fetch(`/api/adapters/${encodeURIComponent(configId)}/browse?path=${encodeURIComponent(parentKey)}`);
             const json = await res.json();
             if (!json.success) {
-                toast.error(json.error || "Failed to load folders");
+                toast.error(json.error || "The folders could not be loaded.");
                 setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
                 return [];
             }
             if (json.supported === false) {
-                toast.error("This adapter does not support folder browsing");
+                toast.error("This connection cannot list its folders.");
                 setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
                 return [];
             }
@@ -107,7 +106,7 @@ export function DirectoryTree({
             setChildrenByKey((prev) => new Map(prev).set(parentKey, entries.map((e) => e.path)));
             return entries;
         } catch {
-            toast.error("Network error while browsing folders");
+            toast.error("The folders could not be loaded.");
             setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
             return [];
         }
@@ -188,23 +187,6 @@ export function DirectoryTree({
 
     /** Core toggle logic keyed by an already-resolved path - shared by real tree nodes and the synthetic root row (path=""). */
     const toggleAtPath = useCallback((path: string) => {
-        // A flat adapter has no hierarchy, so none of the tree's machinery below applies:
-        // no root row that owns the others, and no structural `<child>/**` exclude to stand
-        // in for an unticked child. Each item is simply its own row.
-        //
-        // Sharing that machinery was the bug behind two symptoms at once. A leftover root
-        // row made `findOwningRow` claim every volume, so unticking one wrote
-        // `<volume>/**` into that row's exclude patterns instead of removing a row - and the
-        // root row itself was invisible in flat mode, so it could never be unticked and came
-        // back on every save as a `/` source the adapter cannot read.
-        if (flat) {
-            const existing = rows.find((r) => r.path === path);
-            onRowsChange(existing
-                ? rows.filter((r) => r !== existing)
-                : [...rows, { path, excludePatterns: [], excludePatternPresetIds: [] }]);
-            return;
-        }
-
         const state = getNodeState(path);
 
         if (state === "checked") {
@@ -233,7 +215,7 @@ export function DirectoryTree({
                 onRowsChange(rows.map((r) => (r === owningRow ? { ...r, excludePatterns: newExcludes } : r)));
             }
         }
-    }, [flat, getNodeState, findOwningRow, rows, onRowsChange]);
+    }, [getNodeState, findOwningRow, rows, onRowsChange]);
 
     const toggleNode = useCallback((key: string) => {
         const path = reconstructPath(key);
@@ -241,34 +223,8 @@ export function DirectoryTree({
         toggleAtPath(path);
     }, [reconstructPath, toggleAtPath]);
 
-    /**
-     * The top row.
-     *
-     * For a tree it stores the adapter's root as one row, and everything under it comes
-     * along. For a flat adapter that path is not readable - a Docker volume source with an
-     * empty name would mount nothing - so here it means "tick them all", producing exactly
-     * the rows you would get by clicking each one. A volume created later is then not
-     * silently swept in, which for a backup is the safer direction.
-     */
-    const toggleRoot = useCallback(() => {
-        if (!flat) {
-            toggleAtPath("");
-            return;
-        }
-        const names = (childrenByKey.get("") === "loading" ? [] : (childrenByKey.get("") ?? []) as string[])
-            .map((key) => nodesByKey.get(key)?.name)
-            .filter((name): name is string => !!name);
-        const allSelected = names.length > 0 && names.every((name) => rows.some((r) => r.path === name));
-
-        onRowsChange(allSelected
-            ? rows.filter((r) => !names.includes(r.path))
-            : [
-                ...rows,
-                ...names
-                    .filter((name) => !rows.some((r) => r.path === name))
-                    .map((name) => ({ path: name, excludePatterns: [], excludePatternPresetIds: [] })),
-            ]);
-    }, [flat, toggleAtPath, childrenByKey, nodesByKey, rows, onRowsChange]);
+    /** The top row stores the adapter's root as one row, and everything under it comes along. */
+    const toggleRoot = useCallback(() => toggleAtPath(""), [toggleAtPath]);
 
     const handleExpandToggle = useCallback((key: string) => {
         setExpandedKeys((prev) => {
@@ -279,14 +235,6 @@ export function DirectoryTree({
         if (!childrenByKey.has(key)) fetchChildren(key);
     }, [childrenByKey, fetchChildren]);
 
-    const togglePanel = useCallback((path: string) => {
-        setExpandedPanels((prev) => {
-            const next = new Set(prev);
-            if (next.has(path)) next.delete(path); else next.add(path);
-            return next;
-        });
-    }, []);
-
     const renderNode = (key: string, depth: number) => {
         const info = nodesByKey.get(key);
         if (!info) return null;
@@ -294,63 +242,34 @@ export function DirectoryTree({
         const state = getNodeState(path);
         const expanded = expandedKeys.has(key);
         const kids = childrenByKey.get(key);
-        const owningRow = state !== "unchecked" ? findOwningRow(path) : undefined;
-        const isRoot = owningRow?.path === path;
-        const panelOpen = isRoot && expandedPanels.has(path);
 
         return (
             <div key={key}>
                 <div
-                    className={cn(
-                        "flex items-center gap-2 py-2 px-2 rounded-md",
-                        state !== "unchecked" && "bg-accent/40"
-                    )}
+                    className={cn("flex items-center gap-2 rounded-md px-2 py-2 hover:bg-muted/50", state !== "unchecked" && PICKED_ROW)}
                     style={{ paddingLeft: depth * 24 + 8 }}
                 >
-                    {flat ? (
-                        // The spacer keeps the checkboxes aligned with the row above, which
-                        // still has to sit where the expand control used to.
-                        <span className="w-5 h-4 shrink-0" />
-                    ) : (
-                        <button
-                            type="button"
-                            className="p-0.5 rounded hover:bg-muted shrink-0"
-                            onClick={() => handleExpandToggle(key)}
-                        >
-                            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </button>
-                    )}
+                    <button
+                        type="button"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                        onClick={() => handleExpandToggle(key)}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? "Close" : "Open"} ${info.name}`}
+                    >
+                        {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                    </button>
                     <Checkbox
                         className="size-4.5"
                         checked={state === "indeterminate" ? "indeterminate" : state === "checked"}
                         onCheckedChange={() => toggleNode(key)}
+                        aria-label={`Back up ${info.name}`}
                     />
-                    {flat
-                        ? <HardDrive className="h-4.5 w-4.5 text-muted-foreground shrink-0" />
-                        : <Folder className="h-4.5 w-4.5 text-amber-500 shrink-0" />}
-                    <span className="text-sm truncate flex-1">{info.name}</span>
-                    {isRoot && renderRootPanel && (
-                        <button
-                            type="button"
-                            className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted shrink-0"
-                            onClick={() => togglePanel(path)}
-                        >
-                            Excludes{owningRow!.excludePatterns.length > 0 ? ` (${owningRow!.excludePatterns.length})` : ""}
-                        </button>
-                    )}
+                    <Folder className="size-4.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-sm">{info.name}</span>
                 </div>
-                {panelOpen && owningRow && renderRootPanel && (
-                    <div style={{ paddingLeft: depth * 24 + 40 }} className="pb-2 pr-3">
-                        {renderRootPanel(owningRow, (patch) => {
-                            onRowsChange(rows.map((r) => (r === owningRow ? { ...r, ...patch } : r)));
-                        })}
-                    </div>
-                )}
                 {expanded && (
                     kids === "loading" ? (
-                        <div style={{ paddingLeft: (depth + 1) * 24 + 8 }} className="py-1.5">
-                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        </div>
+                        <LoadingRows indent={(depth + 1) * 24 + 8} />
                     ) : kids && kids.length > 0 ? (
                         kids.map((childKey) => renderNode(childKey, depth + 1))
                     ) : (
@@ -363,38 +282,19 @@ export function DirectoryTree({
         );
     };
 
-    const flatNames = flat
-        ? ((childrenByKey.get("") === "loading" ? [] : (childrenByKey.get("") ?? []) as string[])
-            .map((key) => nodesByKey.get(key)?.name)
-            .filter((name): name is string => !!name))
-        : [];
-    const flatSelected = flatNames.filter((name) => rows.some((r) => r.path === name)).length;
-    // Derived from the items rather than from a stored root row, because for a flat adapter
-    // there is no root row - the checkbox describes a selection, not a path.
-    const rootState = flat
-        ? (flatSelected === 0 ? "unchecked" : flatSelected === flatNames.length ? "checked" : "indeterminate")
-        : getNodeState("");
+    const rootState = getNodeState("");
 
     const rootRow = (
-        <div
-            className={cn(
-                "flex items-center gap-2 py-2 px-2 rounded-md",
-                rootState !== "unchecked" && "bg-accent/40"
-            )}
-            style={{ paddingLeft: 8 }}
-        >
-            <span className="w-5 h-4 shrink-0" />
+        <div className={cn("flex items-center gap-2 rounded-md py-2 pr-2 pl-2 hover:bg-muted/50", rootState !== "unchecked" && PICKED_ROW)}>
+            <span className="h-4 w-5 shrink-0" />
             <Checkbox
                 className="size-4.5"
                 checked={rootState === "indeterminate" ? "indeterminate" : rootState === "checked"}
                 onCheckedChange={toggleRoot}
+                aria-label="Back up everything"
             />
-            <HardDrive className="h-4.5 w-4.5 text-muted-foreground shrink-0" />
-            <span className="text-sm font-medium flex-1">
-                {flat
-                    ? `Every ${itemNoun} on this host`
-                    : "Back up everything (this adapter's root)"}
-            </span>
+            <HardDrive className="size-4.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 flex-1 text-sm font-medium">Back up everything at the root of this connection</span>
         </div>
     );
 
@@ -404,9 +304,8 @@ export function DirectoryTree({
         return (
             <div>
                 {rootRow}
-                <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
+                <div className="my-1 border-t" />
+                <LoadingRows indent={40} count={5} />
             </div>
         );
     }
@@ -415,8 +314,8 @@ export function DirectoryTree({
         return (
             <div>
                 {rootRow}
-                <div className="text-center text-sm text-muted-foreground py-8">
-                    No folders found at this adapter&apos;s configured root.
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                    No folders at the root of this connection.
                 </div>
             </div>
         );

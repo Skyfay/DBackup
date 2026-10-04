@@ -1,106 +1,70 @@
 import Link from "next/link";
 import Image from "next/image";
-import { buttonVariants } from "@/components/ui/button";
-import { GithubStarsWidget } from "@/components/site/github-stars-widget";
-import { GithubIcon } from "@/components/site/github-icon";
-import { DiscordIcon } from "@/components/site/discord-icon";
-import { DOCS_URL, API_DOCS_URL, DISCORD_URL, GITHUB_REPO } from "@/lib/content";
+import {
+  DOCS_URL,
+  API_DOCS_URL,
+  CHANGELOG_URL,
+  DISCORD_URL,
+  GITHUB_URL,
+  SPONSOR_URL,
+} from "@/lib/content";
 
 const FOOTER_COLUMNS = [
   {
     title: "Product",
     links: [
       { href: "/#features", label: "Features" },
-      { href: "/blog", label: "Blog" },
-      { href: `https://github.com/${GITHUB_REPO}`, label: "GitHub", external: true },
+      { href: "/#integrations", label: "Integrations" },
+      { href: "/roadmap", label: "Roadmap" },
     ],
   },
   {
     title: "Resources",
     links: [
       { href: DOCS_URL, label: "Documentation", external: true },
-      { href: API_DOCS_URL, label: "API Reference", external: true },
-      { href: `${DOCS_URL}/changelog`, label: "Changelog", external: true },
-      { href: "/roadmap", label: "Roadmap" },
+      { href: API_DOCS_URL, label: "API reference", external: true },
+      { href: CHANGELOG_URL, label: "Changelog", external: true },
     ],
   },
   {
     title: "Community",
     links: [
+      { href: GITHUB_URL, label: "GitHub", external: true },
       { href: DISCORD_URL, label: "Discord", external: true },
-      { href: `https://github.com/${GITHUB_REPO}/issues`, label: "Issues", external: true },
-      { href: "mailto:support@dbackup.app", label: "Support" },
+      { href: "/blog", label: "Blog" },
+      { href: SPONSOR_URL, label: "Sponsor", external: true },
     ],
   },
 ];
 
 export function Footer() {
   return (
-    <footer className="relative isolate overflow-hidden">
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
-      <div className="bg-dot-grid absolute inset-0 -z-10 opacity-40" />
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
-          <div>
-            <div className="flex items-center gap-2">
-              <Image src="/logo.svg" alt="DBackup" width={24} height={24} />
-              <span className="font-semibold">DBackup</span>
-            </div>
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              Self-hosted backup automation for databases and files, with
-              encryption, compression, and smart retention.
-            </p>
-            <div className="mt-4 flex items-center gap-2">
-              <GithubStarsWidget />
-              <a
-                href={`https://github.com/${GITHUB_REPO}`}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="DBackup on GitHub"
-                className={buttonVariants({ variant: "ghost", size: "icon" })}
+    <footer className="relative mt-28 border-t border-border/70 text-[13px] sm:mt-36">
+      <div className="mx-auto grid max-w-[1200px] gap-8 px-6 py-10 sm:grid-cols-3 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+        <div className="flex flex-col gap-2.5 sm:col-span-3 lg:col-span-1">
+          <Link href="/" className="flex items-center gap-2.5 text-sm font-semibold">
+            <Image src="/logo.svg" alt="" width={24} height={24} />
+            DBackup
+          </Link>
+          <span className="text-faint">Self-hosted backups · GPL-3.0</span>
+        </div>
+
+        {FOOTER_COLUMNS.map((column) => (
+          <div key={column.title} className="flex flex-col gap-2">
+            <h2 className="font-medium">{column.title}</h2>
+            {column.links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noreferrer" : undefined}
+                className="w-fit text-muted-foreground transition-colors hover:text-foreground"
               >
-                <GithubIcon className="size-4" />
-              </a>
-              <a
-                href={DISCORD_URL}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Join our Discord"
-                className={buttonVariants({ variant: "ghost", size: "icon" })}
-              >
-                <DiscordIcon className="size-4" />
-              </a>
-            </div>
+                {link.label}
+              </Link>
+            ))}
           </div>
-
-          {FOOTER_COLUMNS.map((column) => (
-            <div key={column.title}>
-              <h3 className="text-sm font-semibold">{column.title}</h3>
-              <ul className="mt-3 flex flex-col gap-2">
-                {column.links.map((link) => (
-                  <li key={link.href}>
-                    <Link
-                      href={link.href}
-                      target={link.external ? "_blank" : undefined}
-                      rel={link.external ? "noreferrer" : undefined}
-                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-10 flex flex-col items-start justify-between gap-4 border-t border-border/60 pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center">
-          <p className="flex items-center gap-2">
-            <Image src="/logo.svg" alt="" width={16} height={16} aria-hidden="true" />
-            &copy; {new Date().getFullYear()} DBackup. Licensed under GPL-3.0.
-          </p>
-          <p>Self-hosted. Open source. No vendor lock-in.</p>
-        </div>
+        ))}
       </div>
     </footer>
   );

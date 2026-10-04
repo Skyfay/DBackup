@@ -22,17 +22,24 @@ Services must not perform permission checks - that is the caller's job. Services
 
 ```
 src/services/
-  jobs/          job-service.ts
+  jobs/          job-service.ts, job-list-service.ts and job-overview.ts (the Jobs page), schedule-load-service.ts (the schedule picker), job-timeline-service.ts (the Timeline and Upcoming views, with the queue played through by `planQueue` in `lib/core/queue-plan.ts`)
   backup/        backup-service.ts (runJob), retention-service.ts (GFS), encryption-service.ts, integrity-service.ts
   restore/       restore-service.ts, preflight.ts, pipeline.ts, smart-recovery.ts, types.ts
-  auth/          auth-service.ts, api-key-service.ts, credential-service.ts
-  sso/           oidc-provider-service.ts, oidc-registry.ts
+  auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key), login-page-service.ts (what the public login page shows, never a secret of a provider), password-policy-service.ts (the rules of Settings > Passwords)
+  sso/           oidc-provider-service.ts, oidc-registry.ts, oidc-discovery.ts (the endpoints of a provider), sso-providers-model.ts (SSO tab page model)
   storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
-  notifications/ notification-log-service.ts, system-notification-service.ts
-  system/        healthcheck-service.ts, system-task-service.ts, update-service.ts, db-version-service.ts, certificate-service.ts
-  config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts
-  templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts
-  user/          user-service.ts
+  databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
+  history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts
+  vault/         vault-keys.ts and vault-credentials.ts (the tabs of the Vault page), vault-audit.ts (what the audit log knows), key-id.ts, vault-counts.ts
+  notifications/ notification-log-service.ts, system-notification-service.ts, notification-settings-service.ts (the Notifications part: events, default channels, Send a test), notification-test-data.ts
+  system/        healthcheck-service.ts, system-task-service.ts (with -definitions, -runs, -settings), update-service.ts, db-version-service.ts, certificate-service.ts, settings-model.ts (Settings page model), system-settings-service.ts (General, Sign-in, Privacy), rate-limit-settings-service.ts, data-retention-service.ts, database-service.ts, database-optimize.ts (the system task Optimize the database), login-image-service.ts (the picture of the login page, checked by its bytes)
+  config/        database-copy.ts (the copy the backup uploads), copy-inspect.ts, copy-rekey.ts, open-backup.ts, pending-restores.ts, restore-staging.ts and restore-flow.ts (its restore), import.ts with import-context.ts and one import-*.ts per part (JSON files of older versions), config-service.ts, parse.ts, restore-pipeline.ts, config-backup-settings.ts (the Configuration backup part)
+  templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
+  user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts (table layouts, views and the colors of the tasks), profile-model.ts (Profile page model), avatar-service.ts (the pictures of the people, in the database) with avatar-import.ts (moves the files of earlier versions in once at the start)
+  trash/         Recently deleted: trash-snapshot.ts (keepInTrash, the snapshot a delete keeps), trash-restore.ts, trash-service.ts (list, restore, purge, cleanup)
+  dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
+  audit/         the Audit log tab: audit-list-service.ts (page, filters, numbers), audit-details.ts, audit-timeline.ts, audit-export.ts (CSV)
+  search/        search-service.ts (what the search in the header finds by name, only of the kinds its caller allows) with search-admin.ts (people, templates, Vault), search-types.ts (shared with the browser)
   audit-service.ts, dashboard-service.ts   (flat, no subdirectory)
 ```
 
@@ -74,6 +81,37 @@ Rules:
 - Intentionally public routes (health check, auth callbacks, OAuth redirects) need an explicit comment saying why.
 
 Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `STORAGE`, `HISTORY`, `DASHBOARD`, `AUDIT`, `NOTIFICATIONS`, `VAULT`, `PROFILE`, `SETTINGS`, `API_KEYS`. Storage has extra verbs (`DOWNLOAD`, `RESTORE`, `DELETE`), jobs have `EXECUTE`.
+
+### SuperAdmin only
+
+No permission is enough for what decides who is a SuperAdmin or who signs in as whom. These actions check their permission first, then refuse anyone whose group is not SuperAdmin:
+
+- Making someone a SuperAdmin, and changing the group, the password, the second factor or the sessions of a SuperAdmin or deleting one (`actions/auth/user.ts`, `user-security.ts`, `group.ts`).
+- Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts` and the routes under `api/settings/config-backup/restore`, which also refuse API keys). The routes under `api/setup/restore` answer only while no account exists, and `src/lib/auth/sign-up-guard.ts` refuses a sign-up from the browser once one does, so New user signs up from the server.
+
+Nobody changes or deletes the group they are in, and an API key never gets more than its owner holds. A new action of this kind follows the same pattern and gets a guard test.
+
+### The own profile
+
+The `profile:*` permissions decide what someone changes of their own account, on the server as well as on the page. The actions in `actions/auth/profile.ts` check the permission of each field that changes, `updateOwnPassword`, `togglePasskeyTwoFactor` and the SSO link actions check theirs, and `src/lib/auth/profile-guard.ts` refuses the better-auth endpoints the browser calls itself, like `/two-factor/enable` or `/passkey/delete-passkey`, from `beforeAuth` in `src/lib/auth/index.ts`. A new better-auth endpoint that changes the profile goes into `PROFILE_ENDPOINTS`.
+
+## Password rules
+
+Every new password follows the rules of Settings > Passwords, in `src/lib/auth/password-policy.ts` for the server and the browser alike. `authService.createUser` and `authService.setPassword` check them through `assertPasswordAllowed`, and `password-guard.ts` checks the better-auth endpoints the browser calls itself, like sign-up and change-password. A new way to set a password goes through one of them, and its field shows `PasswordChecklist` from `components/auth/` under it, with Generate from the same module.
+
+## Global search
+
+`GET /api/search` searches each kind only while the viewer may open the page that lists it, from the flags of `SearchScope` the route sets. A new kind gets a flag, a finder in `src/services/search/` that selects no secret, and rows with `needs` in `src/components/layout/search-items.ts`, which also hide a recent entry once its permission is gone.
+
+## Audit log
+
+Every Server Action and API route that changes something, runs something, restores or hands out data writes an entry once it succeeded: `auditService.log(user.id, ...)` in an action, `auditService.logFor(ctx, ...)` in a route, which records the API key of the request. The service reads the address and browser of the request and keeps the name of the user, so callers never pass them.
+
+- Every entry names its record in `details.name` (a backup: `file`, `destination`), read before a delete.
+- An update keeps `changes` from `diffFields` in `src/lib/core/audit-diff.ts`, before and after as a person reads them. A secret is a field with `secret: true`, never a value.
+- Sign-ins, failed sign-ins and sign-outs are written by the better-auth hooks in `src/lib/auth/sign-in-audit.ts`, never by the browser.
+
+The sentence the Audit log tab shows comes from `describeEntry` in `src/lib/core/audit-sentence.ts`, which lists the details keys it reads. See `docs/developer-guide/advanced/audit.md`.
 
 ## Validation
 
@@ -138,6 +176,8 @@ Context flows through `RunnerContext` in `src/lib/runner/types.ts`. Add a step b
 
 **Execution statuses**: `Pending`, `Running`, `Success`, `Partial`, `Failed`, `Cancelled`. `Partial` is set in `03-upload.ts` when some destinations succeed and others fail.
 
+**Air-gapped destinations** (`src/lib/core/air-gap.ts`, `airGapped` in the metadata of the connection) are connected only now and then. The upload asks one right before it with `isConnected` from `steps/air-gap.ts` and skips it when it does not answer, which keeps the run a `Success`. Anything that counts copies, connections that do not answer or offline alerts leaves one out through `isAirGapped` or `isNotConnected`, so a new place that does goes through them too.
+
 ## Queue system (`src/lib/execution/queue-manager.ts`)
 
 FIFO queue with configurable concurrency:
@@ -150,7 +190,7 @@ runJob(jobId) -> Execution (Pending) -> processQueue()
                     starts next pending job if a slot is free
 ```
 
-`processQueue()` runs after every enqueue and every completion. Jobs execute via `performExecution()` in `src/lib/runner.ts`.
+`processQueue()` runs after every enqueue and every completion. Jobs execute via `performExecution()` in `src/lib/runner.ts`. A pending run waits while another run of the same job is Running, so a job never runs twice at once. Every run keeps its archive and sidecars in its own directory (`ctx.runDir`), which `stepCleanup` removes.
 
 ## Encryption (two layers)
 
@@ -190,21 +230,27 @@ A version guard rejects restoring a newer dump onto an older server.
 
 ## System tasks (`src/services/system/system-task-service.ts`)
 
-Background tasks on cron schedules with enable/disable toggles. Runner infrastructure in `src/lib/runner/system-task-runner.ts`, managed via Settings > System Tasks or `POST /api/settings/system-tasks`.
+Background tasks on cron schedules, defined with their defaults and words in `system-task-definitions.ts`. What each does lives in `system-task-runs.ts`, the Settings page and Run now in `system-task-settings.ts`. Runner infrastructure in `src/lib/runner/system-task-runner.ts`, managed via Settings > System tasks or `POST /api/settings/system-tasks`.
 
-| Task | Default schedule | Enabled |
-| :--- | :--- | :--- |
-| `HEALTH_CHECK` | Every minute | Yes |
-| `UPDATE_DB_VERSIONS` | Hourly | Yes |
-| `REFRESH_STORAGE_STATS` | Hourly | Yes |
-| `WARMUP_STORAGE_CACHE` | Hourly | Yes |
-| `CHECK_FOR_UPDATES` | Daily midnight | Yes |
-| `CLEAN_OLD_LOGS` | Daily midnight | Yes |
-| `SYNC_PERMISSIONS` | Daily midnight | Yes |
-| `CONFIG_BACKUP` | Daily 3 AM | No |
-| `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No |
+| Task | Default schedule | Enabled | Follows |
+| :--- | :--- | :--- | :--- |
+| `HEALTH_CHECK` | Every minute | Yes | |
+| `STUCK_EXECUTION_CHECK` | Every 5 minutes | Yes | the stuck run timeout, off at `0` |
+| `UPDATE_DB_VERSIONS` | Hourly | Yes | |
+| `REFRESH_STORAGE_STATS` | Hourly | Yes | |
+| `WARMUP_STORAGE_CACHE` | Hourly | Yes | |
+| `CHECK_FOR_UPDATES` | Daily midnight | Yes | `general.checkForUpdates` |
+| `CLEAN_OLD_LOGS` | Daily midnight | Yes | |
+| `SYNC_PERMISSIONS` | Daily midnight | Yes | |
+| `CONFIG_BACKUP` | Daily 3 AM | No | `config.backup.enabled`, `config.backup.schedule` |
+| `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No | |
+| `OPTIMIZE_DATABASE` | Monthly, the 1st at 5 AM | Yes | |
+
+A task that follows a setting has no switch of its own: `getTaskEnabled` and `setTaskEnabled` read and write that setting, so the two never disagree. A schedule is checked with `isValidCron` before it is stored. Every run records its start, length, whether it needs a look and a short result under `task.<id>.lastRun`, and each run function returns that result as a `TaskOutcome`. A task set to run at start runs once in `scheduler.init()`, never from `refresh()`, which runs after every saved job or setting. Run now goes through `startSystemTask`, which answers at once and refuses a task that runs already.
 
 Scheduled and internal tasks run as system and bypass permission checks.
+
+`OPTIMIZE_DATABASE` (`database-optimize.ts`) holds new runs back with `beginRunHold()` from `src/lib/server/database-maintenance.ts` and waits up to an hour for the running ones before its VACUUM. The hold only stops the queue, while the maintenance flag of the VACUUM itself also skips system tasks and refuses restores.
 
 ## Health checks (`src/services/system/healthcheck-service.ts`)
 
@@ -217,29 +263,39 @@ Runs every minute. Pings all configured adapters and writes `HealthCheckLog` rec
 
 ## Storage alerts (`src/services/storage/storage-alert-service.ts`)
 
-Per-destination alerts: usage spike (growth over X%), storage limit (total size over threshold), missing backup (nothing new in N hours). Notifies once on trigger, re-notifies after a 24 h cooldown while still active, resets automatically when resolved.
+Per-destination alerts: usage spike (growth over X%), storage limit (total size over threshold), missing backup (nothing new in N hours). Notifies once on trigger, re-notifies after the reminder of its event while still active (24 h by default, never with the reminder at `0`), resets automatically when resolved.
 
 ## Notifications
 
 Defined in `src/lib/notifications/` - `types.ts` holds the `NOTIFICATION_EVENTS` map, `events.ts` holds `EVENT_DEFINITIONS`.
 
-**Global events** (configurable system-wide under Settings > Notifications):
+**Global events** (configurable system-wide under Settings > Notifications, each with its name, default and default reminder in `EVENT_DEFINITIONS`):
 
 | Category | Events |
 | :--- | :--- |
 | Auth | `USER_LOGIN`, `USER_CREATED` |
 | Restore | `RESTORE_COMPLETE`, `RESTORE_FAILURE` |
 | System | `CONFIG_BACKUP`, `SYSTEM_ERROR` |
-| Storage | `STORAGE_USAGE_SPIKE`, `STORAGE_LIMIT_WARNING`, `STORAGE_MISSING_BACKUP` |
+| Storage | `STORAGE_USAGE_SPIKE`, `STORAGE_LIMIT_WARNING`, `STORAGE_MISSING_BACKUP`, `AIRGAP_SKIPPED` |
 | Updates | `UPDATE_AVAILABLE` |
 | Backup | `INTEGRITY_CHECK_FAILURE` |
 | Health | `CONNECTION_OFFLINE`, `CONNECTION_ONLINE`, `DB_VERSION_CHANGED` |
 
-**Per-job events** (`BACKUP_SUCCESS`, `BACKUP_PARTIAL`, `BACKUP_FAILURE`) are deliberately **not** in `EVENT_DEFINITIONS`. They are configured per job (Job > Notify tab), their templates live in `src/lib/notifications/templates.ts`, and the runner fires them from `04-completion.ts`.
+**Per-job events** (`BACKUP_SUCCESS`, `BACKUP_PARTIAL`, `BACKUP_FAILURE`) are deliberately **not** in `EVENT_DEFINITIONS`. They are configured per job (Job > Notify tab), their templates live in `src/lib/notifications/templates/backup.ts`, and the runner fires them from `04-completion.ts` with the data of `steps/notification-data.ts`.
+
+**The mail** of every notification is `renderNotificationEmail()` in `src/components/email/`, tables and inline styles with a dark mode sheet. Its icons are PNGs under `docs/public/email/`, drawn by `pnpm email:icons` from the lists in `email-icons.ts`, since mail clients draw no SVG.
 
 ## Config backup (`src/lib/runner/config-runner.ts`)
 
-`CONFIG_BACKUP` system task exports the full system configuration (adapters, jobs, users, groups, settings, schedules, policies) as `.tar.gz` or `.tar.gz.enc` to a chosen destination. Including secrets requires an encryption profile - secrets can never be exported unencrypted. Disabled by default.
+`CONFIG_BACKUP` system task uploads a copy of the whole database (`createConfigCopy` in `src/services/config/database-copy.ts`), gzipped and always encrypted with the key picked for it, as `config_backup_<time>.db.gz.enc`. The copy leaves sign-ins and caches out, the history without Include the history, and carries `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` in a row that only ever exists in a copy. Disabled by default.
+
+A restore checks a copy first (`restore-flow.ts`: integrity, no migration this version does not know, its keys), then lays it beside the live database as `restore-pending.db` and restarts. `scripts/apply-pending-restore.js` swaps it in before `prisma migrate deploy`, keeping the old database as `dbackup.db.before-restore`. A copy from an instance with other keys is encrypted again by `copy-rekey.ts`, which searches the copy for encrypted values instead of listing columns, so a new table needs no code there.
+
+JSON files of older versions still restore through `importConfiguration()`, which checks every link before it writes, drops one to a record neither in the file nor here and returns a note for each kind of change. A foreign key error during a restore is a bug. See `docs/developer-guide/advanced/config-backup.md`.
+
+## Recently deleted (`src/services/trash/`)
+
+Deleting an encryption key, a credential profile, a connection, a job or a user keeps a snapshot of the record and everything that cascades from it in `DeletedRecord`, in the transaction of the delete, unless `permanently`. The delete functions of those services take `DeleteOptions` (`permanently`, `by`), the routes read `?permanently=true` or `permanently` in a bulk body. A restore creates the rows again under their old ids and drops links to what is gone with a note. The actions in `src/app/actions/settings/trash.ts` check the permission of every row they touch, stored with the row, and only a SuperAdmin handles the account of a SuperAdmin. Restoring, purging and deleting `permanently` also need `TRASH_ADMIN_PERMISSION` (`settings:write`), so someone who may only delete a record cannot make that final. Undo needs no more than the kind's right, for the viewer's own delete of the last 5 minutes. A new table that cascades from one of the five belongs in its snapshot in `trash-snapshot.ts`, or a restore loses it. The retention is `deletedItems` under Data retention, 30 days by default.
 
 ## Credential profiles (`src/services/auth/credential-service.ts`)
 
@@ -250,7 +306,11 @@ Reusable named credential sets encrypted with the system key. Types: `USERNAME_P
 ```
 src/lib/adapters/oidc/                    Provider adapters
 src/services/sso/oidc-provider-service.ts CRUD for SSO providers
-src/services/sso/oidc-registry.ts         Runtime registration for better-auth
+src/services/sso/oidc-registry.ts         The adapters the dialogs offer
+src/services/sso/oidc-discovery.ts        Checks the fields of a type and reads its endpoints
+src/lib/auth/sso-guard.ts                 Refuses a provider that is off and unwanted sign-ups, places new people in a group
 ```
 
-Providers: `authentik.ts`, `pocket-id.ts`, `keycloak.ts`, `generic.ts`. A new provider implements the `OIDCAdapter` interface with `inputs` (form fields), `inputSchema` (Zod), and `getEndpoints()`, then registers in the OIDC adapter index. The `SsoProvider` model stores encrypted `clientId` / `clientSecret`, endpoints, and a domain for email-based matching.
+Run `ls src/lib/adapters/oidc/` for the providers. A new provider implements the `OIDCAdapter` interface with `inputs` (form fields), `inputSchema` (Zod), and `getEndpoints()`, calls `validateOutboundUrl` before it fetches, registers in `OIDC_ADAPTERS`, and gets a logo in `src/components/oidc/provider-logos.ts`. The `SsoProvider` model stores encrypted `clientId` / `clientSecret`, endpoints, a domain for email-based matching and the group of new people.
+
+The Prisma client decrypts `clientId`, `clientSecret` and `oidcConfig` on every read of `ssoProvider`, so a whole row holds the secret in plain text. A read whose result leaves the server selects its fields like `PROVIDER_SELECT` in `sso-providers-model.ts`, and never `clientSecret` or `oidcConfig`. Whatever the browser sends to better-auth, like `requestSignUp`, is checked against the saved provider in `sso-guard.ts`. See `docs/developer-guide/advanced/sso.md`.

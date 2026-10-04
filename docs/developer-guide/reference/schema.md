@@ -29,6 +29,7 @@ prisma/schema.prisma
 │  ──▶ RetentionPolicy (default for destination)   │
 │  ──▶ HealthCheckLog, DbVersionHistory            │
 │  ──▶ StorageListCache                            │
+│  ──▶ DatabaseListCache                           │
 └────────────┬─────────────────────────────────────┘
              │
 ┌────────────▼──────────────────────────────────────┐
@@ -195,6 +196,7 @@ model AdapterConfig {
   healthLogs       HealthCheckLog[]
   versionHistory   DbVersionHistory[]
   storageListCache StorageListCache?
+  databaseListCache DatabaseListCache?
 }
 ```
 
@@ -463,7 +465,7 @@ model Verification {
 
 ### SsoProvider
 
-Stores OIDC / SAML provider configuration. `clientId` and `clientSecret` are encrypted before storage.
+Stores OIDC / SAML provider configuration. `clientId` and `clientSecret` are encrypted before storage, and the Prisma client decrypts them on every read, so a read that leaves the server selects its fields. See [SSO / OIDC](/developer-guide/advanced/sso).
 
 ```prisma
 model SsoProvider {
@@ -494,6 +496,7 @@ model SsoProvider {
   name                  String             // Display name
   enabled               Boolean  @default(true)
   allowProvisioning     Boolean  @default(true) // Auto-create new users on first SSO login
+  defaultGroupId        String?            // The group they start in, null for none
 
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -567,16 +570,19 @@ model DbVersionHistory {
 
 ### AuditLog
 
-Tracks user and system actions for compliance.
+Tracks user and system actions for compliance. See [Audit Log System](/developer-guide/advanced/audit).
 
 ```prisma
 model AuditLog {
   id         String   @id @default(uuid())
-  userId     String?             // Nullable for system actions or deleted users
-  action     String              // "LOGIN" | "CREATE" | "UPDATE" | "DELETE"
-  resource   String              // "USER" | "JOB" | "SOURCE" | "DESTINATION" | "SETTINGS" | etc.
+  userId     String?             // Null for a failed sign-in or a user deleted before names were kept
+  actorName  String?             // The name of the user when the entry was written
+  apiKeyId   String?             // The API key the request came with
+  apiKeyName String?             // Its name at the time
+  action     String              // "LOGIN" | "LOGIN_FAILED" | "CREATE" | "UPDATE" | "RESTORE" | etc.
+  resource   String              // "USER" | "JOB" | "BACKUP" | "SYSTEM" | etc.
   resourceId String?
-  details    String?             // JSON: action details / diff
+  details    String?             // JSON: name, changes before and after, variant
   ipAddress  String?
   userAgent  String?
   createdAt  DateTime @default(now())
@@ -585,6 +591,7 @@ model AuditLog {
 
   @@index([userId])
   @@index([resource])
+  @@index([action])
   @@index([createdAt])
 }
 ```
@@ -618,6 +625,22 @@ model StorageListCache {
   adapterConfigId String        @id
   filesJson       String        // JSON: cached file listing
   cachedAt        DateTime      @default(now())
+
+  adapterConfig   AdapterConfig @relation(...)
+}
+```
+
+### DatabaseListCache
+
+Keeps the databases of a database connection for the Database Explorer, so the page opens without asking a server. One row per connection (keyed by `adapterConfigId`). The `UPDATE_DB_VERSIONS` system task refreshes it every hour and `POST /api/databases/read` on demand. A failed read keeps the list and only sets `error`.
+
+```prisma
+model DatabaseListCache {
+  adapterConfigId String        @id
+  databasesJson   String        @default("[]") // JSON: [{ name, sizeInBytes?, tableCount? }]
+  readAt          DateTime?     // Last read in full
+  error           String?       // Why the latest read failed, null after a good one
+  attemptedAt     DateTime      @default(now())
 
   adapterConfig   AdapterConfig @relation(...)
 }

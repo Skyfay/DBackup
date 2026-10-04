@@ -28,9 +28,31 @@ function getEncryptionKey(): Buffer {
  */
 export function encrypt(text: string): string {
   if (!text) return text;
+  return encryptWithKey(text, getEncryptionKey());
+}
+
+/**
+ * Decrypts a text string using AES-256-GCM.
+ * Expects format: "iv:authTag:encryptedContent" (hex encoded)
+ */
+export function decrypt(text: string): string {
+  if (!text) return text;
+
+  // Return original text if it doesn't look like our encrypted format
+  // simplistic check: contains 2 colons
+  if (text.split(':').length !== 3) return text;
+
+  return decryptWithKey(text, getEncryptionKey());
+}
+
+/**
+ * `encrypt` with a key other than ENCRYPTION_KEY, like the key of the DBackup a configuration
+ * backup came from while its values are encrypted again for this one.
+ */
+export function encryptWithKey(text: string, key: Buffer): string {
+  if (!text) return text;
 
   try {
-    const key = getEncryptionKey();
     const iv = randomBytes(IV_LENGTH);
     const cipher = createCipheriv(ALGORITHM, key, iv);
 
@@ -49,19 +71,12 @@ export function encrypt(text: string): string {
   }
 }
 
-/**
- * Decrypts a text string using AES-256-GCM.
- * Expects format: "iv:authTag:encryptedContent" (hex encoded)
- */
-export function decrypt(text: string): string {
+/** `decrypt` with a key other than ENCRYPTION_KEY. A value the key does not open throws. */
+export function decryptWithKey(text: string, key: Buffer): string {
   if (!text) return text;
-
-  // Return original text if it doesn't look like our encrypted format
-  // simplistic check: contains 2 colons
   if (text.split(':').length !== 3) return text;
 
   try {
-    const key = getEncryptionKey();
     const parts = text.split(':');
 
     const iv = Buffer.from(parts[0], 'hex');

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DBackup API
-  version: 3.4.0
+  version: 4.0.0
   description: |
     REST API for DBackup - a self-hosted database backup automation platform with encryption, compression, and smart retention.
 
@@ -53,6 +53,10 @@ tags:
     description: View execution history and notification logs
   - name: Dashboard
     description: Dashboard summary and calendar heatmap data
+  - name: Search
+    description: Find any record by its name, limited to what the caller may open
+  - name: Database Explorer
+    description: Every database of every database connection, with the jobs that back it up
   - name: Adapters
     description: "Manage database sources, storage destinations, and notification channels"
   - name: Connection Testing
@@ -72,7 +76,10 @@ paths:
     get:
       tags: [Jobs]
       summary: List Jobs
-      description: Returns all backup jobs with their source, destination, and encryption profile details.
+      description: |
+        Returns all backup jobs, newest first, with what each one backs up, where it stores it and how it is doing. The connections a job uses come with their name, type and health only, never with their config.
+
+        **Required permission:** `jobs:read`
       operationId: listJobs
       security:
         - BearerAuth: []
@@ -84,7 +91,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Job"
+                  $ref: "#/components/schemas/JobListItem"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -110,6 +117,55 @@ paths:
                 $ref: "#/components/schemas/Job"
         "409":
           description: Job with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/bulk:
+    post:
+      tags: [Jobs]
+      summary: Bulk Job Action
+      description: |
+        Applies one action to several jobs in a single request.
+
+        A job that could not be processed does not fail the request. The response is always
+        `200` with per-job outcomes in `data`, so a partial result is reported rather than
+        discarded.
+
+        **Required permission:** `jobs:write`
+      operationId: bulkJobAction
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action:
+                  type: string
+                  enum: [delete, enable, disable]
+                ids:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+      responses:
+        "200":
+          description: Action applied, with per-job outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
           content:
             application/json:
               schema:
@@ -251,6 +307,95 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /jobs/schedules:
+    get:
+      tags: [Jobs]
+      summary: Get Job Schedules
+      description: |
+        Returns the schedules of the enabled jobs with how long a run of each usually takes, how many runs the queue takes at once and the scheduler's time zone. The schedule picker uses it to warn before runs would have to wait for a free slot.
+
+        **Required permission:** `jobs:read`
+      operationId: getJobSchedules
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Schedules and queue slots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/ScheduleLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/timeline:
+    get:
+      tags: [Jobs]
+      summary: Get Job Timeline
+      description: |
+        Returns the runs of every job a week back and the runs its schedule plans a week ahead. A run that runs or waits in the queue and every planned run come with when the queue is expected to start and end it and which jobs hold the slots while it waits. The Timeline and Upcoming views of the Jobs page cut their range from it.
+
+        **Required permission:** `jobs:read`
+      operationId: getJobTimeline
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Runs and plan of every job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/JobTimeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/{id}/runs:
+    get:
+      tags: [Jobs]
+      summary: Get Job Runs
+      description: |
+        Returns the latest 30 runs of a job with their length and size, its success rate over the last 30 days and its last successful run.
+
+        **Required permission:** `jobs:read`
+      operationId: getJobRuns
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Run history of the job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/JobRunHistory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   # ─── Executions ────────────────────────────────────────────────
   /executions/{id}:
     get:
@@ -365,11 +510,100 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /history/runs:
+    get:
+      tags: [History]
+      summary: List Runs
+      description: |
+        One page of the runs of the History page: backups, restores and system tasks, newest first, with the count beside every filter, the options of the Job and Started by filters and the numbers of the last 30 days. Every filter may repeat to match any of its values.
+
+        **Required permission:** `history:read`
+      operationId: listRuns
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: type
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: Type of the run, like `Backup`, `Restore` or a system task
+        - name: status
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [Pending, Running, Success, Partial, Failed, Cancelled]
+          style: form
+          explode: true
+        - name: job
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: ID of a job
+        - name: by
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: Who started the run, `schedule`, `manual:<person>`, `api:<key name>` or `none`
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          description: One page of runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/RunPage"
+        "400":
+          description: Invalid query parameters
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /notification-logs:
     get:
       tags: [History]
       summary: List Notification Logs
-      description: Paginated list of all sent notifications with optional filters.
+      description: |
+        Paginated list of all sent notifications with optional filters. Every filter may repeat to match any of its values.
+
+        **Required permission:** `history:read`
       operationId: listNotificationLogs
       security:
         - BearerAuth: []
@@ -383,22 +617,67 @@ paths:
           in: query
           schema:
             type: integer
+            maximum: 100
             default: 50
         - name: adapterId
           in: query
           schema:
-            type: string
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
           description: Filter by notification adapter type
+        - name: channel
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: Filter by the name of the channel
         - name: eventType
           in: query
           schema:
-            type: string
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
           description: Filter by event type
         - name: status
           in: query
           schema:
+            type: array
+            items:
+              type: string
+              enum: [Success, Failed]
+          style: form
+          explode: true
+        - name: executionId
+          in: query
+          schema:
             type: string
-            enum: [success, error]
+          description: Only the notifications of one run
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+          description: Finds the title
+        - name: facets
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Adds `facets`, the count of every value of each filter under the other filters
+        - name: stats
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Adds `stats`, the numbers of the last 30 days, and `options`, the channels and events to filter by
       responses:
         "200":
           description: Notification logs
@@ -411,8 +690,51 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/NotificationLog"
-                  pagination:
-                    $ref: "#/components/schemas/Pagination"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pageSize:
+                    type: integer
+                  facets:
+                    type: object
+                    description: Only with `facets=true`. Per value of each filter, how many entries the other filters leave.
+                    properties:
+                      adapterId:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      channelName:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      eventType:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                  stats:
+                    $ref: "#/components/schemas/NotificationStats"
+                  options:
+                    type: object
+                    description: Only with `stats=true`.
+                    properties:
+                      channels:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            adapterId:
+                              type: string
+                      events:
+                        type: array
+                        items:
+                          type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -571,6 +893,76 @@ paths:
                           completed yet, in which case the figures are estimated from execution history.
                         example: "2026-09-13T10:00:00.000Z"
 
+  # ─── Search ────────────────────────────────────────────────────
+  /search:
+    get:
+      tags: [Search]
+      summary: Search
+      description: |
+        Finds jobs, their backups, connections, databases, runs, people, groups, API keys, templates, encryption keys and saved logins by name, up to 5 of each kind. Each kind is searched only while the caller may open the page that lists it, so the endpoint needs no permission of its own and a caller who may see none of them gets no hits.
+
+        **Required permission:** none beyond the one of each kind
+      operationId: search
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: What to find. Fewer than 2 characters find nothing.
+      responses:
+        "200":
+          description: The hits, grouped by kind in a fixed order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      hits:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/SearchHit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Database Explorer ─────────────────────────────────────────
+  /databases:
+    get:
+      tags: [Database Explorer]
+      summary: List Databases
+      description: |
+        Every database of every database connection as DBackup last read them, with the servers they live on. The jobs that back each database up and its last backup come along for a caller with `jobs:read`.
+
+        **Required permission:** `sources:view`
+      operationId: listDatabases
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Servers, databases and jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/DatabaseOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   # ─── Adapters ──────────────────────────────────────────────────
   /adapters/check-snapshot:
     post:
@@ -693,6 +1085,85 @@ paths:
                 $ref: "#/components/schemas/AdapterConfig"
         "409":
           description: Adapter with this name and type already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /adapters/bulk:
+    post:
+      tags: [Adapters]
+      summary: Bulk Delete Adapters or Switch Their Settings
+      description: |
+        Deletes several adapter configurations in a single request, or switches one setting
+        of the Behavior part on all of them.
+
+        Permissions are checked per distinct adapter type in the selection, so a mixed
+        batch requires every matching write permission (`sources:write`,
+        `destinations:write`, `notifications:write`).
+
+        An adapter still referenced by a job, a directory source or a notification template
+        is kept and reported in `data.failed` with the names holding it. The request itself
+        still answers `200`.
+
+        | Action | What it switches | Applies to |
+        | :--- | :--- | :--- |
+        | `disable-health-alerts`, `enable-health-alerts` | The offline and back notifications | Databases, directory sources and destinations |
+        | `exclude-from-restore`, `include-in-restore` | Whether it is a restore target | Databases |
+        | `disable-integrity-checks`, `enable-integrity-checks` | Whether the scheduled integrity check includes it | Destinations |
+        | `mark-air-gapped`, `unmark-air-gapped` | Whether it is connected only now and then | Destinations |
+
+        An adapter a setting does not apply to is reported in `data.failed` with the reason.
+      operationId: bulkDeleteAdapters
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - delete
+                    - disable-health-alerts
+                    - enable-health-alerts
+                    - exclude-from-restore
+                    - include-in-restore
+                    - disable-integrity-checks
+                    - enable-integrity-checks
+                    - mark-air-gapped
+                    - unmark-air-gapped
+                ids:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+                permanently:
+                  type: boolean
+                  description: A delete skips Recently deleted. Needs `settings:write`.
+      responses:
+        "200":
+          description: Deletion or change applied, with per-adapter outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: None of the given ids exist
           content:
             application/json:
               schema:
@@ -1235,6 +1706,87 @@ paths:
                       $ref: "#/components/schemas/ColumnInfo"
 
   # ─── Storage Explorer ──────────────────────────────────────────
+  /storage/explorer:
+    get:
+      tags: [Storage Explorer]
+      summary: List Destinations and Jobs of the Backups
+      description: |
+        Every destination with its status, size, growth and alerts, and every job with the number, size and age of its backups across all destinations. Jobs that were deleted and backups no job claims appear as their own entries.
+
+        **Required permission:** `storage:read`
+      operationId: getStorageExplorerIndex
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Destinations and jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/ExplorerIndex"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /storage/{id}/files/bulk:
+    post:
+      tags: [Storage]
+      summary: Bulk Backup Action
+      description: |
+        Deletes, locks or unlocks several backups on a destination in a single request.
+
+        A locked backup is never deleted - it is reported in `data.failed` instead. An
+        incremental chain can be deleted as a whole, and members are removed newest-first
+        so no snapshot is left depending on one that is gone. Selecting only part of a
+        chain is still refused per file.
+
+        **Required permission:** `storage:delete`
+      operationId: bulkBackupAction
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, paths]
+              properties:
+                action:
+                  type: string
+                  enum: [delete, lock, unlock]
+                paths:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+      responses:
+        "200":
+          description: Action applied, with per-backup outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /storage/{id}/files:
     get:
       tags: [Storage Explorer]
@@ -1336,6 +1888,56 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /storage/{id}/download-url:
+    get:
+      tags: [Storage Explorer]
+      summary: Get Download Link Status
+      description: |
+        Tells the creator of a download link whether it is still open, was fetched or has run out. A link of someone else answers `expired`.
+
+        **Required permission:** `storage:download`
+      operationId: getDownloadUrlStatus
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The `data.token` of the link
+      responses:
+        "200":
+          description: State of the link
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      state:
+                        type: string
+                        enum: [open, fetched, expired]
+                      expiresAt:
+                        type: integer
+                        description: Unix time in milliseconds
+                      fetchedAt:
+                        type: integer
+                        description: Unix time in milliseconds, once fetched
+                      fetchedFrom:
+                        type: string
+                        description: Address that fetched it
+        "400":
+          description: The token is missing
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       tags: [Storage Explorer]
       summary: Generate Download URL
@@ -1811,26 +2413,35 @@ paths:
                           format: date-time
 
   # ─── Vault ─────────────────────────────────────────────────────
-  /vault/{id}/recovery-kit:
+  /vault/recovery-kit:
     get:
       tags: [Vault]
       summary: Download Recovery Kit
       description: |
-        Download a ZIP file containing the master encryption key and helper scripts for offline decryption.
+        Download a ZIP file with the master keys of one or more encryption profiles and the tools
+        to decrypt a backup offline. Several profiles in one kit open the backups of every job that
+        uses one of them.
 
         The ZIP contains:
-        - `master.key` - Hex-encoded encryption key
-        - `decrypt_backup.js` - Node.js decryption script
-        - `decrypt_drag_drop_windows.bat` - Windows drag & drop helper
-        - `decrypt_linux_mac.sh` - Linux/macOS helper script
+        - `master.key` for one profile, or `keys/` with a file per profile and `keys/keys.json` naming them
+        - `dbackup-recover.js` - Node.js recovery tool
+        - `START-Windows.bat`, `START-macOS.command` and `START-Linux.sh` - launchers of the tool
         - `README.txt` - Usage instructions
+
+        **Required permission:** `vault:write`
 
         > This is a sensitive operation. An audit log entry is created.
       operationId: downloadRecoveryKit
       security:
         - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/ResourceId"
+        - name: ids
+          in: query
+          required: true
+          description: Comma separated ids of the encryption profiles the kit holds.
+          schema:
+            type: string
+          example: clx1abc2def,clx3ghi4jkl
       responses:
         "200":
           description: ZIP file download
@@ -1839,10 +2450,14 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: No encryption profile was named in `ids`
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: One of the encryption profiles does not exist
 
   # ─── Credentials ───────────────────────────────────────────────
   /credentials:
@@ -1862,6 +2477,14 @@ paths:
           schema:
             $ref: "#/components/schemas/CredentialType"
           required: false
+        - in: query
+          name: includeCounts
+          schema:
+            type: boolean
+          required: false
+          description: |
+            Adds `usageCount` and `usedBy` to every profile: how many connections use it, and
+            the adapter IDs of those connections.
       responses:
         "200":
           description: Sanitized credential profile list
@@ -1899,6 +2522,54 @@ paths:
                 $ref: "#/components/schemas/CredentialProfile"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /credentials/bulk:
+    post:
+      tags: [Credentials]
+      summary: Bulk Delete Credential Profiles
+      description: |
+        Deletes several credential profiles in a single request.
+
+        A profile still attached to an adapter is kept and reported in `data.failed` with
+        its reference count.
+
+        **Required permission:** `credentials:delete`
+      operationId: bulkDeleteCredentialProfiles
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action:
+                  type: string
+                  enum: [delete]
+                ids:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+      responses:
+        "200":
+          description: Deletion applied, with per-profile outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1944,8 +2615,7 @@ paths:
                 name:
                   type: string
                 description:
-                  type: string
-                  nullable: true
+                  type: [string, "null"]
                 data:
                   description: Type-specific payload (see CredentialProfileInput.data)
                   oneOf:
@@ -2346,15 +3016,19 @@ paths:
               properties:
                 taskId:
                   type: string
+                  example: system.health_check
                 schedule:
                   type: string
-                  description: Cron expression
+                  description: Cron expression the scheduler can read
                   example: "*/5 * * * *"
                 runOnStartup:
                   type: boolean
                 enabled:
                   type: boolean
+                  description: For a task that follows a setting, like Check for updates, this is that setting
       responses:
+        "400":
+          description: An unknown task or a schedule the scheduler cannot read
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2368,7 +3042,7 @@ paths:
     put:
       tags: [Settings]
       summary: Run System Task Now
-      description: Manually trigger a system task (non-blocking).
+      description: Starts a system task by hand and answers at once. The integrity check returns its run in History as `executionId`.
       operationId: runSystemTask
       security:
         - BearerAuth: []
@@ -2383,10 +3057,14 @@ paths:
                 taskId:
                   type: string
       responses:
+        "400":
+          description: An unknown task
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The task is running already, or DBackup optimizes or copies its database
         "200":
           description: Task started
           content:
@@ -2396,9 +3074,9 @@ paths:
                 properties:
                   success:
                     type: boolean
-                  message:
+                  executionId:
                     type: string
-                    example: "Task started"
+                    description: The run in History, for a task that writes one
 
   # ─── Health ────────────────────────────────────────────────────
   /health:
@@ -2490,15 +3168,43 @@ components:
           type: boolean
           example: true
 
-    Pagination:
+    BulkResponse:
       type: object
+      description: |
+        Outcome of an action applied to several records.
+
+        `success` describes the request, not the records. It is `true` whenever the request
+        was handled, including when every record failed - the per-record verdicts live in
+        `data`. Only authentication, permission, validation and unexpected server errors
+        produce `success: false` with a 4xx or 5xx status.
       properties:
-        page:
-          type: integer
-        pageSize:
-          type: integer
-        total:
-          type: integer
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          description: One-line summary, for example "8 of 10 jobs deleted".
+          example: 8 of 10 jobs deleted
+        data:
+          type: object
+          properties:
+            succeeded:
+              type: array
+              description: Ids (or paths, for storage) that were processed.
+              items: { type: string }
+            failed:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                    description: Human-readable label, when one is known.
+                  error:
+                    type: string
+                    description: Why this record was not processed.
 
     # ─── Credentials ─────────────────────────────────────────────
     CredentialType:
@@ -2528,8 +3234,7 @@ components:
         type:
           $ref: "#/components/schemas/CredentialType"
         description:
-          type: string
-          nullable: true
+          type: [string, "null"]
         createdAt:
           type: string
           format: date-time
@@ -2544,6 +3249,14 @@ components:
         fingerprint:
           type: string
           description: "`SHA256:...` fingerprint of `publicKey`, matching `ssh-keygen -lf`."
+        usageCount:
+          type: integer
+          description: With `includeCounts=true` only. The connections using the profile, in either slot.
+        usedBy:
+          type: array
+          items:
+            type: string
+          description: With `includeCounts=true` only. The adapter IDs of those connections, each once, like `mysql`.
 
     CredentialProfileInput:
       type: object
@@ -2554,8 +3267,7 @@ components:
         type:
           $ref: "#/components/schemas/CredentialType"
         description:
-          type: string
-          nullable: true
+          type: [string, "null"]
         data:
           description: Type-specific secret payload. Shape MUST match `type`.
           oneOf:
@@ -2689,10 +3401,15 @@ components:
             $ref: "#/components/schemas/JobDestination"
         source:
           type: object
+          description: The source connection, never with its config, which holds hosts and secrets.
           properties:
+            id:
+              type: string
             name:
               type: string
             type:
+              type: string
+            adapterId:
               type: string
         createdAt:
           type: string
@@ -2712,11 +3429,411 @@ components:
           description: JSON retention policy
         config:
           type: object
+          description: The destination connection, never with its config.
           properties:
+            id:
+              type: string
             name:
+              type: string
+            type:
               type: string
             adapterId:
               type: string
+
+    JobConnection:
+      type: object
+      description: A connection as the job list shows it, never with its config, which holds hosts and secrets.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Production MySQL"
+        adapterId:
+          type: string
+          example: "mysql"
+        lastStatus:
+          type: string
+          enum: [ONLINE, DEGRADED, OFFLINE]
+          description: Result of the latest health check.
+
+    JobListItem:
+      type: object
+      description: A job as the job list returns it.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Daily MySQL Backup"
+        schedule:
+          type: string
+          example: "0 2 * * *"
+        enabled:
+          type: boolean
+        sourceId:
+          type: [string, "null"]
+        databases:
+          type: string
+          description: JSON array of database names, empty for all of them
+          example: '["mydb", "analytics"]'
+        compression:
+          type: string
+          enum: [NONE, GZIP, BROTLI]
+        pgCompression:
+          type: string
+          description: Native PostgreSQL dump compression like `ZSTD:3`, empty for the default
+        encryptionProfileId:
+          type: [string, "null"]
+        encryptionProfile:
+          type: [object, "null"]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        schedulePresetId:
+          type: [string, "null"]
+        schedulePreset:
+          type: [object, "null"]
+          description: The preset whose schedule the job follows instead of its own
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            schedule:
+              type: string
+        namingTemplateId:
+          type: [string, "null"]
+        namingTemplate:
+          type: [object, "null"]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        notificationEvents:
+          type: string
+          example: "PARTIAL|FAILED"
+        skipVerification:
+          type: boolean
+        backupMode:
+          type: string
+          enum: [FULL, INCREMENTAL]
+        fullEveryDays:
+          type: integer
+        verifyByHash:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        source:
+          description: The database the job dumps. Null for a job that only backs up folders.
+          oneOf:
+            - $ref: "#/components/schemas/JobConnection"
+            - type: "null"
+        destinations:
+          type: array
+          items:
+            type: object
+            properties:
+              configId:
+                type: string
+              priority:
+                type: integer
+              retention:
+                type: string
+                description: JSON retention policy of this destination
+              retentionPolicyId:
+                type: [string, "null"]
+              retentionPolicy:
+                type: [object, "null"]
+                properties:
+                  name:
+                    type: string
+              config:
+                $ref: "#/components/schemas/JobConnection"
+        sources:
+          type: array
+          description: The folders the job backs up
+          items:
+            type: object
+            properties:
+              configId:
+                type: string
+              priority:
+                type: integer
+              path:
+                type: string
+              excludePatterns:
+                type: array
+                items:
+                  type: string
+              excludePatternPresetIds:
+                type: array
+                items:
+                  type: string
+              stopContainers:
+                type: boolean
+              config:
+                $ref: "#/components/schemas/JobConnection"
+        notifications:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              adapterId:
+                type: string
+        notificationTemplates:
+          type: array
+          items:
+            type: object
+            properties:
+              templateId:
+                type: string
+              priority:
+                type: integer
+              template:
+                type: object
+                properties:
+                  name:
+                    type: string
+        overview:
+          $ref: "#/components/schemas/JobOverview"
+
+    JobRunSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Execution ID
+        status:
+          type: string
+          enum: [Pending, Running, Success, Partial, Failed, Cancelled]
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: [string, "null"]
+          format: date-time
+
+    JobOverview:
+      type: object
+      description: How a job is doing.
+      properties:
+        status:
+          type: [string, "null"]
+          description: Running or Pending while a run is live, otherwise the status of the last finished run. Null before the first run.
+        runs:
+          type: array
+          maxItems: 12
+          description: The latest runs, oldest first, the live one included
+          items:
+            $ref: "#/components/schemas/JobRunSummary"
+        lastRun:
+          description: The newest run, live or finished
+          oneOf:
+            - $ref: "#/components/schemas/JobRunSummary"
+            - type: "null"
+        error:
+          type: [string, "null"]
+          description: The last error of the last finished run, when it failed or finished partially
+        live:
+          type: [object, "null"]
+          description: The run that is still going, with how far it got
+          properties:
+            executionId:
+              type: string
+            status:
+              type: string
+              enum: [Running, Pending]
+            startedAt:
+              type: string
+              format: date-time
+            stage:
+              type: [string, "null"]
+              example: "Uploading"
+            progress:
+              type: [integer, "null"]
+              minimum: 0
+              maximum: 100
+        nextRunAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the scheduler runs the job next. Null for a paused job.
+
+    JobRunHistory:
+      type: object
+      properties:
+        runs:
+          type: array
+          maxItems: 30
+          description: The latest runs, oldest first
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: Execution ID
+              status:
+                type: string
+                enum: [Pending, Running, Success, Partial, Failed, Cancelled]
+              startedAt:
+                type: string
+                format: date-time
+              endedAt:
+                type: [string, "null"]
+                format: date-time
+              size:
+                type: [integer, "null"]
+                description: Bytes stored by the run
+        successRate:
+          type: object
+          description: Finished runs of the last 30 days and how many of them succeeded
+          properties:
+            succeeded:
+              type: integer
+            total:
+              type: integer
+        lastSuccess:
+          type: [object, "null"]
+          properties:
+            at:
+              type: string
+              format: date-time
+            size:
+              type: [integer, "null"]
+
+    ScheduleLoad:
+      type: object
+      properties:
+        timezone:
+          type: string
+          description: The scheduler time zone every schedule is read in
+          example: "Europe/Zurich"
+        slots:
+          type: integer
+          description: How many runs the queue takes at once, the Max Concurrent Jobs setting
+          example: 1
+        jobs:
+          type: array
+          description: Every enabled job with a schedule
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              schedule:
+                type: string
+                description: The effective cron expression, the preset's when the job follows one
+                example: "0 3 * * *"
+              presetId:
+                type: [string, "null"]
+              estimatedMs:
+                type: integer
+                description: The average length of the job's recent finished runs, one minute without any
+                example: 360000
+
+    JobTimeline:
+      type: object
+      properties:
+        now:
+          type: string
+          format: date-time
+        from:
+          type: string
+          format: date-time
+          description: A week before now, the oldest run included
+        to:
+          type: string
+          format: date-time
+          description: A week after now, the last planned run included
+        slots:
+          type: integer
+          description: How many runs the queue takes at once, the Max Concurrent Jobs setting
+          example: 1
+        estimates:
+          type: object
+          description: The usual length of a run per job ID in milliseconds, from its recent finished runs
+          additionalProperties:
+            type: integer
+          example: { "a1b2c3": 1440000 }
+        failing:
+          type: array
+          description: Jobs whose newest outcome failed
+          items:
+            type: string
+        runs:
+          type: array
+          description: Runs that ran, run or wait in the queue, oldest first
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              jobId:
+                type: string
+              status:
+                type: string
+                enum: [Success, Failed, Partial, Cancelled, Running, Pending]
+              startedAt:
+                type: string
+                format: date-time
+                description: When it started, or when it was queued while it is Pending
+              endedAt:
+                type: [string, "null"]
+                format: date-time
+              stage:
+                type: [string, "null"]
+              progress:
+                type: [integer, "null"]
+              expectedStart:
+                type: [string, "null"]
+                format: date-time
+                description: For a run that runs or waits, when it is expected to start
+              expectedEnd:
+                type: [string, "null"]
+                format: date-time
+              waitsFor:
+                type: array
+                description: For a run that waits, the jobs whose runs hold the slots
+                items:
+                  type: string
+        planned:
+          type: array
+          description: The runs the schedules plan, soonest first
+          items:
+            type: object
+            properties:
+              jobId:
+                type: string
+              due:
+                type: string
+                format: date-time
+                description: When the schedule starts it
+              start:
+                type: string
+                format: date-time
+                description: When the queue is expected to start it, later than due while it waits for a slot
+              end:
+                type: string
+                format: date-time
+              waitsFor:
+                type: array
+                items:
+                  type: string
+        truncated:
+          type: array
+          description: Jobs that run more often than every five minutes, whose plan stops early
+          items:
+            type: string
 
     CreateJobRequest:
       type: object
@@ -3141,44 +4258,632 @@ components:
         adapterId:
           type: string
           description: Notification adapter type (discord, email, etc.)
+        channelId:
+          type: [string, "null"]
+          description: The channel it went to, null once that channel is deleted
         channelName:
           type: string
+          description: The name of the channel when it was sent
         eventType:
           type: string
         status:
           type: string
-          enum: [success, error]
+          enum: [Success, Failed]
         title:
           type: string
         message:
           type: string
-        payload:
-          type: object
-          description: Full notification payload as sent
+        fields:
+          type: [string, "null"]
+          description: JSON array of `{ name, value, inline? }`
+        color:
+          type: [string, "null"]
+        renderedHtml:
+          type: [string, "null"]
+          description: The mail as it was sent, email only
+        renderedPayload:
+          type: [string, "null"]
+          description: JSON of the message as the adapter sent it, like a Discord embed
         error:
           type: [string, "null"]
-        createdAt:
+        executionId:
+          type: [string, "null"]
+          description: The run that sent it
+        sentAt:
           type: string
           format: date-time
+
+    NotificationStats:
+      type: object
+      description: Only with `stats=true`. The notifications of the last 30 days.
+      properties:
+        sent:
+          type: integer
+        failed:
+          type: integer
+        lastFailed:
+          type: [object, "null"]
+          properties:
+            channelName:
+              type: string
+            at:
+              type: string
+              format: date-time
+        channels:
+          type: array
+          description: The channels that sent something, the busiest first
+          items:
+            type: string
+        events:
+          type: integer
+          description: How many kinds of event were sent
+
+    SearchHit:
+      type: object
+      description: |
+        One record the search found. `kind` says which, and the other fields depend on it:
+
+        - `job`: `id`, `name`, `enabled`, `schedule`, `adapterId`, `lastStatus`
+        - `backups`: `jobId`, `name`, the backups of one job
+        - `connection`: `id`, `name`, `adapterId`, `type`, `storageRole`, `status`
+        - `database`: `serverId`, `serverName`, `adapterId`, `name`, `sizeInBytes`
+        - `run`: `id`, `name`, `status`, `startedAt`, `adapterId`
+        - `user`: `id`, `name`, `email`, `group`
+        - `group`: `id`, `name`, `people`
+        - `apiKey`: `id`, `name`, `prefix`, `owner`, `enabled`, `expired`
+        - `template`: `id`, `name`, `template`, `detail`
+        - `key`: `id`, `name`, `jobs`, an encryption key
+        - `credential`: `id`, `name`, `type`, a saved login
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          enum: [job, backups, connection, database, run, user, group, apiKey, template, key, credential]
+        id:
+          type: string
+        name:
+          type: string
+        jobId:
+          type: string
+        serverId:
+          type: string
+        serverName:
+          type: string
+        adapterId:
+          type: [string, "null"]
+        enabled:
+          type: boolean
+        schedule:
+          type: string
+        lastStatus:
+          type: [string, "null"]
+        type:
+          type: string
+          description: The type of a connection (`database`, `storage`, `notification`) or of a saved login
+        storageRole:
+          type: [string, "null"]
+        status:
+          type: string
+        sizeInBytes:
+          type: [integer, "null"]
+        startedAt:
+          type: string
+          format: date-time
+        email:
+          type: string
+        group:
+          type: [string, "null"]
+        people:
+          type: integer
+        prefix:
+          type: string
+        owner:
+          type: string
+        expired:
+          type: boolean
+        template:
+          type: string
+          enum: [retention, naming, schedules, notifications, excludes]
+        detail:
+          type: [string, "null"]
+          description: The pattern of a naming template, the cron of a schedule, the description of the others
+        jobs:
+          type: integer
+          description: How many jobs use the encryption key
+
+    RunRow:
+      type: object
+      description: One run as a row of the History page.
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum: [Pending, Running, Success, Partial, Failed, Cancelled]
+        name:
+          type: string
+        sub:
+          type: string
+          description: What the run did, like "Backup · shop, billing"
+        adapterId:
+          type: [string, "null"]
+          description: The adapter of its source, null for a system task
+        jobId:
+          type: [string, "null"]
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: [string, "null"]
+          format: date-time
+        durationMs:
+          type: [integer, "null"]
+          description: How long a finished run took, null while it runs
+        usualMs:
+          type: [integer, "null"]
+          description: How long a run of its job usually takes
+        size:
+          type: [integer, "null"]
+        copies:
+          type: [object, "null"]
+          properties:
+            stored:
+              type: integer
+            total:
+              type: integer
+            failed:
+              type: array
+              description: The destinations that did not take the backup
+              items:
+                type: string
+        note:
+          type: [string, "null"]
+          description: What went wrong or what it found, in a few words
+        live:
+          type: [object, "null"]
+          description: The progress of a run that is running
+          properties:
+            stage:
+              type: [string, "null"]
+            percent:
+              type: [number, "null"]
+            detail:
+              type: [string, "null"]
+        starter:
+          type: object
+          properties:
+            key:
+              type: string
+              description: The value of the `by` filter
+            kind:
+              type: string
+              enum: [schedule, manual, api, none]
+            label:
+              type: string
+
+    RunPage:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunRow"
+        total:
+          type: integer
+          description: Runs under the filters
+        facets:
+          type: object
+          description: Per value of each filter, how many runs the other filters leave
+          properties:
+            type:
+              type: object
+              additionalProperties:
+                type: integer
+            status:
+              type: object
+              additionalProperties:
+                type: integer
+            job:
+              type: object
+              additionalProperties:
+                type: integer
+            starter:
+              type: object
+              additionalProperties:
+                type: integer
+        jobs:
+          type: array
+          description: The options of the Job filter
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              adapterId:
+                type: [string, "null"]
+        starters:
+          type: array
+          description: The options of the Started by filter
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              label:
+                type: string
+              group:
+                type: string
+                enum: [System, By hand, API keys, Other]
+        stats:
+          type: object
+          description: The runs of the last 30 days
+          properties:
+            total:
+              type: integer
+            succeeded:
+              type: integer
+            failed:
+              type: integer
+            lastFailed:
+              type: [object, "null"]
+              properties:
+                name:
+                  type: string
+                at:
+                  type: string
+                  format: date-time
+            partial:
+              type: integer
+            lastPartial:
+              type: [object, "null"]
+              properties:
+                name:
+                  type: string
+                at:
+                  type: string
+                  format: date-time
+            running:
+              type: array
+              description: Names of the runs running now
+              items:
+                type: string
+            queued:
+              type: array
+              description: Names of the runs waiting in the queue
+              items:
+                type: string
+
+    DatabaseOverview:
+      type: object
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerServer"
+        databases:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerDatabase"
+        jobs:
+          type: array
+          description: Empty without `jobs:read`
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              serverId:
+                type: string
+              enabled:
+                type: boolean
+              databases:
+                type: [array, "null"]
+                description: Null when the job backs up every database of its server
+                items:
+                  type: string
+              schedule:
+                type: [string, "null"]
+        coverage:
+          type: boolean
+          description: Whether the caller may see the jobs
+    ExplorerServer:
+      type: object
+      description: A database connection, the server its databases live on.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        adapterId:
+          type: string
+        version:
+          type: [string, "null"]
+          description: The version the hourly check read last
+        versionSince:
+          type: [string, "null"]
+          format: date-time
+          description: When the version last changed
+        previousVersion:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [ONLINE, DEGRADED, OFFLINE]
+        readAt:
+          type: [string, "null"]
+          format: date-time
+          description: When its databases were last read
+        readError:
+          type: [string, "null"]
+          description: Why the last read failed
+    ExplorerDatabase:
+      type: object
+      properties:
+        key:
+          type: string
+          description: "`serverId/name` for a database, the server ID for an instance"
+        serverId:
+          type: string
+        kind:
+          type: string
+          enum: [database, instance]
+          description: "`instance` is a Redis or Valkey server, which is backed up as a whole"
+        name:
+          type: string
+        sizeInBytes:
+          type: [integer, "null"]
+        tableCount:
+          type: [integer, "null"]
+        keyCount:
+          type: [integer, "null"]
+          description: Keys of an instance, null for a database
+        logical:
+          type: array
+          description: The numbered databases of an instance that hold keys
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              keys:
+                type: integer
+        emptyLogical:
+          type: integer
+          description: The numbered databases of an instance without a key
+        jobIds:
+          type: array
+          description: The enabled jobs that back it up
+          items:
+            type: string
+        lastBackup:
+          type: [object, "null"]
+          properties:
+            at:
+              type: string
+              format: date-time
+            jobId:
+              type: string
+            executionId:
+              type: string
+            size:
+              type: [integer, "null"]
+              description: The size of the whole backup, which may hold more databases
+            status:
+              type: string
+              enum: [Success, Partial]
+
+    ExplorerIndex:
+      type: object
+      properties:
+        destinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerDestination"
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerJob"
+    ExplorerDestination:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        adapterId:
+          type: string
+        airGapped:
+          type: boolean
+          description: Connected only now and then
+        checksNatively:
+          type: boolean
+          description: Checks a backup by its own checksum, without a download
+        listedAt:
+          type: [string, "null"]
+          format: date-time
+        listError:
+          type: [string, "null"]
+          description: Why the last listing failed, the cached list still counts
+        listing:
+          type: boolean
+          description: A listing runs in the background right now
+        health:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [ONLINE, DEGRADED, OFFLINE]
+            checkedAt:
+              type: [string, "null"]
+              format: date-time
+            error:
+              type: [string, "null"]
+            latencyMs:
+              type: [integer, "null"]
+            answeredAt:
+              type: [string, "null"]
+              format: date-time
+              description: When one that does not answer now last did
+        count:
+          type: integer
+          description: Backups in the listing
+        size:
+          type: integer
+          description: Bytes of those backups
+        growth:
+          type: [integer, "null"]
+          description: How much the stored size changed in the last 7 days, in bytes
+        alerts:
+          type: object
+          properties:
+            usageSpike:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                percent:
+                  type: number
+                active:
+                  type: boolean
+            storageLimit:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                bytes:
+                  type: integer
+                active:
+                  type: boolean
+            missingBackup:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                hours:
+                  type: integer
+                active:
+                  type: boolean
+    ExplorerJob:
+      type: object
+      properties:
+        key:
+          type: string
+          description: The ID of a job, or a key of its own for the other kinds
+        kind:
+          type: string
+          enum: [job, deleted, none, system]
+          description: "`deleted` is a job that is gone while its backups are not, `none` files that name no job, `system` the configuration backups"
+        name:
+          type: string
+        jobId:
+          type: [string, "null"]
+        sourceType:
+          type: [string, "null"]
+          description: Adapter of the database source, null for a job with folders only
+        sourceName:
+          type: [string, "null"]
+        hasFolders:
+          type: boolean
+        incremental:
+          type: boolean
+        configuredDestinationIds:
+          type: array
+          description: Where the job writes now, in its upload order
+          items:
+            type: string
+        destinationIds:
+          type: array
+          description: Every destination that holds a backup of it or should
+          items:
+            type: string
+        runs:
+          type: integer
+          description: Distinct backups, copies at two destinations count once
+        size:
+          type: integer
+          description: Bytes of every copy at every destination
+        newest:
+          type: [string, "null"]
+          format: date-time
+        oldest:
+          type: [string, "null"]
+          format: date-time
+        failedChecks:
+          type: integer
+        missingCopies:
+          type: integer
+        locked:
+          type: integer
+        retention:
+          type: object
+          description: The retention policy of each destination as JSON, by destination ID
+          additionalProperties:
+            type: string
 
     SystemTask:
       type: object
       properties:
         id:
           type: string
-          example: health-check
+          example: system.health_check
+        name:
+          type: string
+          example: "Health checks"
         label:
           type: string
-          example: "Health Check"
+          description: The same as name, kept for earlier clients
+          example: "Health checks"
         description:
           type: string
         schedule:
           type: string
-          example: "*/5 * * * *"
+          example: "*/1 * * * *"
         runOnStartup:
           type: boolean
         enabled:
           type: boolean
+        running:
+          type: boolean
+        nextRunAt:
+          type: [string, "null"]
+          format: date-time
+        lastRunAt:
+          type: [string, "null"]
+          format: date-time
+        lastRun:
+          type: [object, "null"]
+          properties:
+            at:
+              type: string
+              format: date-time
+            durationMs:
+              type: [number, "null"]
+            ok:
+              type: boolean
+              description: False when the run needs a look
+            summary:
+              type: [string, "null"]
+              example: "2,418 removed"
+            executionId:
+              type: string
+        follows:
+          type: [object, "null"]
+          description: The setting of another part of the Settings page that switches the task on and off
+          properties:
+            part:
+              type: string
+              enum: [general, config-backup]
+            setting:
+              type: string
+              example: "Look for new versions"
+        timezone:
+          type: string
+          example: Europe/Zurich
 
     HealthResponse:
       type: object

@@ -2,7 +2,7 @@
  * Restore scope - which half of a backup a restore should touch.
  *
  * A manifest v2 archive can hold databases and directory sources at once. Restoring both
- * is rarely what someone wants when they came for one of them, so the Storage Explorer
+ * is rarely what someone wants when they came for one of them, so the Backups page
  * asks up front and passes the answer to the restore page as a URL parameter. Everything
  * here is pure so the rules can be tested without rendering either side.
  */

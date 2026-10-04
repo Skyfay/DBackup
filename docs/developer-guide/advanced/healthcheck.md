@@ -76,6 +76,8 @@ const DEFAULT_REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 h: re-notify int
 6. Writes a `HealthCheckLog` record and updates the cached fields on `AdapterConfig`
 7. Sends an offline notification if the adapter just went `OFFLINE` (with 24 h cooldown for persistent failures)
 
+An air-gapped destination (`isAirGapped` in `src/lib/core/air-gap.ts`) is checked and logged like any other, but sends neither `CONNECTION_OFFLINE` nor `CONNECTION_ONLINE`, and an offline state left from before it was marked is dropped. The pages read a status other than `ONLINE` of one as not connected, with `isNotConnected`, never as offline.
+
 ### `ping()` vs `test()`
 
 `ping()` is a lightweight connectivity check that must not write any files to storage. `test()` is the full write/delete verification. The health check system always prefers `ping()` to avoid polluting storage with test files every minute.
@@ -106,7 +108,7 @@ if (success) {
 
 ### Retention
 
-Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, not on every health check run. Default retention is 2 days, configurable as **Health Check History** under Settings → General → Data Retention (`healthcheck.logRetentionDays`).
+Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, not on every health check run. Default retention is 2 days, configurable as **Health check history** under Settings → Data retention (`healthcheck.logRetentionDays`).
 
 ## System Task Integration
 
@@ -115,7 +117,7 @@ Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, n
 The healthcheck is integrated as a system task (`system.health_check`).
 
 - **Default Interval**: Every minute (`*/1 * * * *`)
-- **Configuration**: Settings → System Tasks
+- **Configuration**: Settings → System tasks
 - **Manual Trigger**: Can be run on-demand via UI
 
 ## Adapter Integration
@@ -151,27 +153,25 @@ The `test()` method performs more than just TCP connectivity:
 
 ## Frontend Components
 
-### Status Badge
+### Status Cell
 
-Visual indicator displayed in list views:
+The Status column of the connection tables shows a dot, the status and a short detail: the response time while online, the number of failed checks in a row while degraded.
 
-| Status | Color | Icon |
-|--------|-------|------|
-| ONLINE | Green | ✓ |
-| DEGRADED | Orange | ⚠ |
-| OFFLINE | Red | ✗ |
-| UNKNOWN | Grey | ? |
+| Status | Color |
+|--------|-------|
+| ONLINE | Green (`success`) |
+| DEGRADED | Amber (`warning`) |
+| OFFLINE | Red (`destructive`) |
+| PENDING | Grey, not checked yet |
 
-### Statistics Display
+### Status Popover
 
-Shows aggregated metrics:
-- **Uptime**: Percentage of successful checks (last 60 entries)
-- **Average Latency**: Mean response time in milliseconds
-- **Total Checks**: Number of checks in history
+A click on the status opens `ConnectionHealthPopover` in `src/components/adapter/connection-health-popover.tsx`. It loads the last 60 checks and shows:
 
-### History Grid
-
-Interactive popover grid visualizing the last hour of health checks with color-coded cells.
+- A head tinted in the status color that says in one sentence how the connection is doing and since when, like "Online for 3 h 12 min" or "Offline for 20 min". The line under it holds the response time, the time of the last answer or the latest error.
+- One bar per check, oldest on the left, and the share of checks that passed.
+- Up to three changes with their time, worked out by `healthEvents()` in `health-story.ts`. A degraded connection lists its failed checks, an offline one when it last answered, when the first check failed and when it went offline, and a failure that is over gets one line.
+- The mean and slowest response time of the passed checks, and a link to the details panel.
 
 ## API Reference
 
@@ -181,11 +181,14 @@ Interactive popover grid visualizing the last hour of health checks with color-c
 GET /api/adapters/[id]/health-history
 ```
 
+Needs the read permission of the connection's kind: `sources:view` for databases and directory sources, `destinations:read` for destinations, `notifications:read` for notification channels.
+
 **Query Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `limit` | number | 100 | Number of entries to return |
+| `limit` | number | 100 | Number of entries to return, at most 10080 |
+| `from` | ISO date | | Only checks at or after this time |
 
 **Response:**
 
@@ -196,17 +199,26 @@ GET /api/adapters/[id]/health-history
       "id": "clx123...",
       "status": "ONLINE",
       "latencyMs": 23,
-      "createdAt": "2026-01-31T10:00:00Z",
+      "createdAt": "2026-01-31T10:00:00.000Z",
       "error": null
     }
   ],
   "stats": {
     "uptime": 98.5,
     "avgLatency": 45,
+    "maxLatency": 81,
     "totalChecks": 60
-  }
+  },
+  "since": "2026-01-31T07:12:00.000Z",
+  "lastPassedAt": "2026-01-31T10:00:00.000Z"
 }
 ```
+
+- `history` holds the latest checks, newest first.
+- `stats.uptime` is the share of the returned checks that passed, in percent.
+- `stats.avgLatency` and `stats.maxLatency` are the mean and the slowest response time of the returned checks that passed, and 0 when none did. A failed check reports how long it waited, so it is left out.
+- `since` is when the status of the newest check began, also when that lies before the returned checks.
+- `lastPassedAt` is the newest check that passed, however long ago.
 
 ## Testing
 
@@ -220,9 +232,9 @@ tests/unit/services/healthcheck-service.test.ts
 
 ### Manual Testing
 
-1. Go to **Settings** → **System Tasks**
-2. Find "Health Check & Connectivity"
-3. Click **Run Now**
+1. Go to **Settings** → **System tasks**
+2. Find **Health checks**
+3. Click **Run now** at the end of its row
 4. Check the terminal logs for output
 5. Navigate to **Sources** or **Destinations** - status badges should be updated
 

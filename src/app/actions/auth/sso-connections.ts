@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { getCurrentUserWithGroup } from "@/lib/auth/access-control";
+import { getCurrentUserWithGroup, hasPermission } from "@/lib/auth/access-control";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { encrypt } from "@/lib/crypto";
@@ -90,6 +91,9 @@ export async function getMySsoConnections(): Promise<{
 export async function unlinkMySsoAccount(providerId: string, accountId: string) {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");
+    if (!(await hasPermission(PERMISSIONS.PROFILE.MANAGE_SSO))) {
+        return { success: false, error: "Your group may not change your sign-in providers." };
+    }
 
     const totalAccounts = await prisma.account.count({ where: { userId: currentUser.id } });
     if (totalAccounts <= 1) {
@@ -136,6 +140,9 @@ export async function initiateSsoConnect(
 ): Promise<{ success: true; callbackURL: string } | { success: false; error: string }> {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");
+    if (!(await hasPermission(PERMISSIONS.PROFILE.MANAGE_SSO))) {
+        return { success: false, error: "Your group may not change your sign-in providers." };
+    }
 
     const provider = await prisma.ssoProvider.findUnique({ where: { providerId } });
     if (!provider || !provider.enabled) {

@@ -24,13 +24,18 @@ function validateConfig(config: RetentionConfiguration): RetentionConfiguration 
   }
 }
 
+/** Every policy with how many destinations of jobs follow it. */
 export async function getRetentionPolicies() {
-  return prisma.retentionPolicy.findMany({ orderBy: { name: "asc" } });
+  return prisma.retentionPolicy.findMany({
+    include: { _count: { select: { jobDestinations: true } } },
+    orderBy: { name: "asc" },
+  });
 }
 
 export async function getRetentionPolicy(id: string) {
   const policy = await prisma.retentionPolicy.findUnique({ where: { id } });
   if (!policy) throw new NotFoundError("RetentionPolicy", id);
+  return policy;
 }
 
 export async function createRetentionPolicy(input: {
@@ -80,6 +85,10 @@ export async function updateRetentionPolicy(
 
   const policy = await prisma.retentionPolicy.findUnique({ where: { id } });
   if (!policy) throw new NotFoundError("RetentionPolicy", id);
+  // Without a default the destinations that follow it would silently keep every backup.
+  if (input.isDefault === false && policy.isDefault) {
+    throw new ServiceError("RetentionPolicyService", "updateRetentionPolicy", `"${policy.name}" is the default policy. Make another policy the default instead.`);
+  }
 
   if (input.name && input.name !== policy.name) {
     const existing = await prisma.retentionPolicy.findUnique({
@@ -121,12 +130,13 @@ export async function setDefaultRetentionPolicy(id: string) {
   return updated;
 }
 
-export async function unsetDefaultRetentionPolicy() {
-  await prisma.retentionPolicy.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
-  log.info("Default retention policy cleared");
-}
-
-export async function deleteRetentionPolicy(id: string) {
+/**
+ * Deletes a policy nothing depends on. A built-in one stays, it can be edited instead. The default
+ * stays too, since every destination without a policy of its own follows it and would silently
+ * keep every backup once it is gone. Another policy has to become the default first. Returns the
+ * name the policy had, for the audit log.
+ */
+export async function deleteRetentionPolicy(id: string): Promise<{ name: string }> {
   const policy = await prisma.retentionPolicy.findUnique({
     where: { id },
     include: {
@@ -135,15 +145,26 @@ export async function deleteRetentionPolicy(id: string) {
     },
   });
   if (!policy) throw new NotFoundError("RetentionPolicy", id);
+  if (policy.isSystem) {
+    throw new ServiceError("RetentionPolicyService", "deleteRetentionPolicy", `"${policy.name}" is built in. It can be edited but not deleted.`);
+  }
+  if (policy.isDefault) {
+    throw new ServiceError("RetentionPolicyService", "deleteRetentionPolicy", `"${policy.name}" is the default policy. Make another policy the default first.`);
+  }
 
-  const usageCount =
-    policy.jobDestinations.length + policy.adapterConfigs.length;
-  if (usageCount > 0) {
-    throw new ServiceError("RetentionPolicyService", "deleteRetentionPolicy", `Cannot delete: policy is used by ${usageCount} destination(s). Remove references first.`);
+  const destinations = policy.jobDestinations.length;
+  const connections = policy.adapterConfigs.length;
+  if (destinations + connections > 0) {
+    const users = [
+      ...(destinations > 0 ? [`${destinations} ${destinations === 1 ? "destination" : "destinations"} of jobs`] : []),
+      ...(connections > 0 ? [`${connections} ${connections === 1 ? "connection that starts" : "connections that start"} new jobs with it`] : []),
+    ];
+    throw new ServiceError("RetentionPolicyService", "deleteRetentionPolicy", `"${policy.name}" is still used by ${users.join(" and ")}. Pick another policy there first.`);
   }
 
   await prisma.retentionPolicy.delete({ where: { id } });
   log.info("Retention policy deleted", { id });
+  return { name: policy.name };
 }
 
 export function parseRetentionPolicyConfig(

@@ -44,25 +44,26 @@ When a verification is triggered, DBackup uses the best available method for eac
 
 For adapters without native checksum APIs, DBackup downloads the full file, recomputes the hash, and compares it against the stored value.
 
-The result is written back into the `.meta.json` sidecar so it persists across sessions and appears immediately in the Storage Explorer without re-verifying.
+The result is written back into the `.meta.json` sidecar so it persists across sessions and appears immediately on the Backups page without re-verifying.
 
 ## Triggering a Verification
 
 ### Manual Verification (on-demand)
 
-In the **Storage Explorer**, each backup row has a shield icon in the Actions column:
+In the **Backups** page, open the menu at the end of a backup's row and pick **Verify integrity**, or click **Verify** in the panel a click on the row opens. The dialog lists every copy of the backup, one per destination, with:
 
-- **Gray shield**: Never verified
-- **Green shield**: Last check passed
-- **Red shield**: Last check failed
+- where the copy lies, and whether that destination answers right now
+- how it is checked: by the checksum the destination keeps, without a download, or by downloading and hashing it, with the size that moves
+- its last check, with when and what ran it: after the upload, by the weekly check or by hand
+- **Passed**, **Does not match**, **Not checked**, or **Missing** for a copy whose upload failed
 
-Click the icon to trigger a verification. A loading toast appears while the check runs, then the result is shown and the badge in the table updates automatically.
+**Verify** on a row checks that copy, **Verify all** checks every copy there is. The copies with a checksum of their own go first, since they take seconds, the downloads after them. The dialog shows each copy while it is checked, with the bytes of a download, and closing it does not stop the check. It runs as one entry in **History**, and **Open in History** leads there.
+
+A copy that does not match shows at the top of the dialog. A restore or a download reads from a copy that passed, and the broken one can be verified again or deleted, so the next run of the job writes it anew. **Stored checksums** unfolds the SHA-256 and MD5 the upload recorded, each with Copy.
 
 ::: tip Re-verify anytime
-You can re-verify a backup at any time - clicking the green shield on an already-verified backup runs a fresh check.
+You can verify a backup again at any time, one copy or all of them.
 :::
-
-The **Integrity** column shows the same status at a glance without opening the actions menu.
 
 ### Post-Upload Verification (automatic)
 
@@ -80,7 +81,9 @@ For SFTP, FTP, SMB, WebDAV, Dropbox, and Rsync, automatic post-upload verificati
 
 DBackup includes a **Scheduled Integrity Check** job that periodically verifies all backups across all storage destinations. It runs through each destination, reads the `.meta.json` sidecar for each backup file, and runs the same native-first verification logic as the manual check.
 
-Results are written back to the sidecars as they complete, so the Storage Explorer badges stay up to date without any manual action.
+Results are written back to the sidecars as they complete, so the Backups page badges stay up to date without any manual action.
+
+A destination whose **Integrity checks** are off in the **Behavior** part of its form is left out, and an [air-gapped destination](/user-guide/destinations/#air-gapped-destinations) is checked whenever it is connected. Several destinations are switched at once: tick them on the **Destinations** tab of **Connections** and pick **Turn off integrity checks** or **Turn on integrity checks** under **More**.
 
 The scheduler can be configured under **Settings - Scheduler** (cron expression). A weekly or monthly check on your full archive is a reasonable default for most setups.
 
@@ -115,6 +118,6 @@ If you see a failed check on a backup you intend to use for a restore, treat it 
 
 ## Next Steps
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and manage backup files
+- [Backups](/user-guide/features/backups) - Browse and manage backup files
 - [Restore](/user-guide/features/restore) - Restore a backup to a database
 - [Encryption](/user-guide/security/encryption) - Encrypt backup files at rest

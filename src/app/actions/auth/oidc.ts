@@ -1,205 +1,192 @@
 "use server";
 
 import { z } from "zod";
-import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
-import { OidcProviderService } from "@/services/sso/oidc-provider-service";
-import { getOIDCAdapter } from "@/services/sso/oidc-registry";
 import { revalidatePath } from "next/cache";
+import { checkPermission } from "@/lib/auth/access-control";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { auditService } from "@/services/audit-service";
+import { ssoProviderChanges } from "@/services/sso/oidc-audit";
+import { discoverEndpoints } from "@/services/sso/oidc-discovery";
+import { OidcProviderService } from "@/services/sso/oidc-provider-service";
+import { SUPER_ADMIN_GROUP } from "@/services/user/users-model";
 
 const log = logger.child({ action: "oidc" });
 
+const PAGE = "/dashboard/users";
+
 // --- Schemas ---
 
+const providerFields = {
+    name: z.string().trim().min(1, "Give the provider a name.").max(100, "The name is too long."),
+    domain: z.string().trim().max(253).optional(),
+    clientId: z.string().trim().min(1, "The client ID is missing."),
+    allowProvisioning: z.boolean().optional(),
+    /** The group new people start in, null for none. */
+    defaultGroupId: z.string().min(1).nullable().optional(),
+    adapterConfig: z.record(z.string(), z.unknown()),
+};
+
 const createProviderSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  adapterId: z.string(),
-  providerId: z.string().min(1, "Provider ID is required").regex(/^[a-z0-9-_]+$/, "Only lowercase letters, numbers, dashes and underscores"),
-  domain: z.string().optional(),
-  clientId: z.string().min(1, "Client ID is required"),
-  clientSecret: z.string().min(1, "Client Secret is required"),
-  allowProvisioning: z.boolean().optional(),
-  adapterConfig: z.record(z.string(), z.any()),
+    ...providerFields,
+    adapterId: z.string().min(1),
+    providerId: z.string().min(1, "The provider ID is missing.").max(64).regex(/^[a-z0-9-_]+$/, "The provider ID takes lowercase letters, numbers, dashes and underscores."),
+    clientSecret: z.string().min(1, "The client secret is missing."),
 });
 
-const updateProviderSchema = createProviderSchema.extend({
-    id: z.string().min(1)
+/** The type and the ID of a provider stay as they were saved, and an empty secret keeps the saved one. */
+const updateProviderSchema = z.object({
+    ...providerFields,
+    id: z.string().min(1),
+    clientSecret: z.string().optional(),
 });
 
+const checkSchema = z.object({
+    adapterId: z.string().min(1),
+    adapterConfig: z.record(z.string(), z.unknown()),
+});
+
+export type CreateSsoProviderInput = z.input<typeof createProviderSchema>;
+export type UpdateSsoProviderInput = z.input<typeof updateProviderSchema>;
+
+const firstIssue = (error: z.ZodError) => error.issues[0]?.message ?? "Invalid request";
+
+/**
+ * Whoever controls a sign-in provider signs in as anyone whose email it names, and the second
+ * factor is not asked after it. So only a SuperAdmin adds, changes, switches and deletes one.
+ */
+const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a SuperAdmin adds and changes sign-in providers." };
+
+const isSuperAdmin = (user: { group: { name: string } | null }) => user.group?.name === SUPER_ADMIN_GROUP;
+
+/** The group new people start in, when it changes, has to exist still. */
+async function missingGroup(groupId: string | null | undefined, current: string | null): Promise<string | null> {
+    if (!groupId || groupId === current) return null;
+    return (await OidcProviderService.getGroup(groupId)) ? null : "The group no longer exists.";
+}
 
 // --- Actions ---
 
-export async function getPublicSsoProviders() {
-    // Audit compliance: Safe for public access because it returns [] if not logged in
-    await getUserPermissions();
-    return OidcProviderService.getEnabledProviders();
+/** Reads the endpoints of a provider from its fields, for the check in its dialog and in its panel. */
+export async function checkSsoConnection(input: z.input<typeof checkSchema>) {
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    const parsed = checkSchema.safeParse(input);
+    if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
+
+    const found = await discoverEndpoints(parsed.data.adapterId, parsed.data.adapterConfig);
+    if (!found.ok) return { success: false, error: found.error };
+    const { issuer, authorizationEndpoint, tokenEndpoint, userInfoEndpoint, jwksEndpoint } = found.endpoints;
+    return {
+        success: true,
+        data: { issuer: issuer ?? null, authorization: authorizationEndpoint, token: tokenEndpoint, userInfo: userInfoEndpoint, jwks: jwksEndpoint ?? null },
+    };
 }
 
-export async function getSsoProviders() {
-    await checkPermission(PERMISSIONS.SETTINGS.READ);
-    return OidcProviderService.getProviders();
-}
+export async function createSsoProvider(input: CreateSsoProviderInput) {
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    const parsed = createProviderSchema.safeParse(input);
+    if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
+    const { name, adapterId, providerId, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId } = parsed.data;
 
-export async function createSsoProvider(input: z.infer<typeof createProviderSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const missing = await missingGroup(defaultGroupId, null);
+    if (missing) return { success: false, error: missing };
 
-    const validation = createProviderSchema.safeParse(input);
-    if (!validation.success) {
-        return { success: false, error: validation.error.format() };
-    }
+    const found = await discoverEndpoints(adapterId, adapterConfig);
+    if (!found.ok) return { success: false, error: found.error };
 
-    const { name, adapterId, providerId, domain, clientId, clientSecret, adapterConfig, allowProvisioning } = validation.data;
-
-    // 1. Get Adapter
-    const adapter = getOIDCAdapter(adapterId);
-    if (!adapter) {
-        return { success: false, error: "Invalid Adapter ID" };
-    }
-
-    // 2. Validate Adapter Config
     try {
-        adapter.inputSchema.parse(adapterConfig);
-    } catch (e) {
-         if (e instanceof z.ZodError) {
-             return { success: false, error: "Invalid Adapter Configuration", details: e.format() };
-         }
-         return { success: false, error: "Invalid Adapter Configuration" };
-    }
-
-    // 3. Generate Endpoints
-    let endpoints;
-    try {
-        endpoints = await adapter.getEndpoints(adapterConfig);
-
-        // Validation: Detect Mixed Content (HTTPS Discovery -> HTTP Endpoints)
-        // This usually indicates a misconfigured Reverse Proxy (missing X-Forwarded-Proto)
-        if (endpoints.discoveryEndpoint?.startsWith("https://")) {
-            const insecureEndpoints = [
-                { name: "Authorization", url: endpoints.authorizationEndpoint },
-                { name: "Token", url: endpoints.tokenEndpoint }
-            ].filter(e => e.url.startsWith("http://"));
-
-            if (insecureEndpoints.length > 0) {
-                 const details = insecureEndpoints.map(e => `${e.name} (${e.url})`).join(", ");
-                 return {
-                    success: false,
-                    error: "Security Mismatch Detected",
-                    details: {
-                        _errors: [`The OIDC provider is accessed via HTTPS, but returned insecure HTTP endpoints: ${details}. This indicates a reverse proxy misconfiguration (missing headers like X-Forwarded-Proto) on the provider side. Please fix the provider configuration.`]
-                    }
-                };
-            }
-        }
-
-    } catch (e: unknown) {
-        return { success: false, error: `Endpoint discovery failed: ${getErrorMessage(e)}` };
-    }
-
-    // 4. Create in DB
-    try {
-        await OidcProviderService.createProvider({
+        const provider = await OidcProviderService.createProvider({
             name,
             adapterId,
             type: "oidc",
             providerId,
-            domain,
+            domain: domain || null,
             clientId,
             clientSecret,
             allowProvisioning: allowProvisioning ?? true,
-            adapterConfig: JSON.stringify(adapterConfig),
-
-            // Map endpoints from adapter (includes discoveryEndpoint for non-standard providers)
-            issuer: endpoints.issuer,
-            authorizationEndpoint: endpoints.authorizationEndpoint,
-            tokenEndpoint: endpoints.tokenEndpoint,
-            userInfoEndpoint: endpoints.userInfoEndpoint,
-            jwksEndpoint: endpoints.jwksEndpoint,
-            discoveryEndpoint: endpoints.discoveryEndpoint
+            defaultGroupId: defaultGroupId ?? null,
+            adapterConfig: JSON.stringify(found.config),
+            // The endpoints of the adapter, with the discovery endpoint for providers with an unusual path.
+            issuer: found.endpoints.issuer,
+            authorizationEndpoint: found.endpoints.authorizationEndpoint,
+            tokenEndpoint: found.endpoints.tokenEndpoint,
+            userInfoEndpoint: found.endpoints.userInfoEndpoint,
+            jwksEndpoint: found.endpoints.jwksEndpoint,
+            discoveryEndpoint: found.endpoints.discoveryEndpoint,
         });
 
-        revalidatePath("/dashboard/users");
-        return { success: true };
+        const state = await OidcProviderService.getAuditState(provider.id);
+        await auditService.log(
+            user.id,
+            AUDIT_ACTIONS.CREATE,
+            AUDIT_RESOURCES.SSO_PROVIDER,
+            { name: provider.name, adapterId: provider.adapterId, providerId: provider.providerId, ...(state?.groupName ? { group: state.groupName } : {}) },
+            provider.id
+        );
+
+        revalidatePath(PAGE);
+        return { success: true, data: { id: provider.id } };
     } catch (error: unknown) {
         log.error("Failed to create SSO provider", {}, wrapError(error));
         return { success: false, error: getErrorMessage(error) };
     }
 }
 
-export async function updateSsoProvider(input: z.infer<typeof updateProviderSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+export async function updateSsoProvider(input: UpdateSsoProviderInput) {
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    const parsed = updateProviderSchema.safeParse(input);
+    if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
+    const { id, name, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId } = parsed.data;
 
-    const validation = updateProviderSchema.safeParse(input);
-    if (!validation.success) {
-        return { success: false, error: validation.error.format() };
-    }
+    // Read with the secrets in plain text, so a new client secret shows as changed. It is never written.
+    const before = await OidcProviderService.getAuditState(id);
+    if (!before) return { success: false, error: "The provider no longer exists." };
 
-    const { id, name, adapterId, providerId, domain, clientId, clientSecret, adapterConfig, allowProvisioning } = validation.data;
+    const missing = await missingGroup(defaultGroupId, before.defaultGroupId);
+    if (missing) return { success: false, error: missing };
 
-    // 1. Get Adapter
-    const adapter = getOIDCAdapter(adapterId);
-    if (!adapter) {
-        return { success: false, error: "Invalid Adapter ID" };
-    }
+    const found = await discoverEndpoints(before.adapterId, adapterConfig);
+    if (!found.ok) return { success: false, error: found.error };
 
-    // 2. Validate Adapter Config
-    try {
-        adapter.inputSchema.parse(adapterConfig);
-    } catch (e) {
-         if (e instanceof z.ZodError) {
-             return { success: false, error: "Invalid Adapter Configuration", details: e.format() };
-         }
-         return { success: false, error: "Invalid Adapter Configuration" };
-    }
-
-    // 3. Generate Endpoints
-    let endpoints;
-    try {
-        endpoints = await adapter.getEndpoints(adapterConfig);
-
-        if (endpoints.discoveryEndpoint?.startsWith("https://")) {
-            const insecureEndpoints = [
-                { name: "Authorization", url: endpoints.authorizationEndpoint },
-                { name: "Token", url: endpoints.tokenEndpoint }
-            ].filter(e => e.url.startsWith("http://"));
-
-            if (insecureEndpoints.length > 0) {
-                 const details = insecureEndpoints.map(e => `${e.name} (${e.url})`).join(", ");
-                 return {
-                    success: false,
-                    error: "Security Mismatch Detected",
-                    details: {
-                        _errors: [`The OIDC provider is accessed via HTTPS, but returned insecure HTTP endpoints: ${details}. This indicates a reverse proxy misconfiguration (missing headers like X-Forwarded-Proto) on the provider side. Please fix the provider configuration.`]
-                    }
-                };
-            }
-        }
-
-    } catch (e: unknown) {
-        return { success: false, error: `Endpoint discovery failed: ${getErrorMessage(e)}` };
-    }
-
-    // 4. Update in DB
     try {
         await OidcProviderService.updateProvider(id, {
             name,
-            providerId,
-            domain: domain === "" ? null : domain,
+            domain: domain || null,
             clientId,
-            clientSecret,
+            // Empty keeps the saved secret, the browser never has it.
+            clientSecret: clientSecret || undefined,
             allowProvisioning,
-            adapterConfig: JSON.stringify(adapterConfig),
-
-            issuer: endpoints.issuer,
-            authorizationEndpoint: endpoints.authorizationEndpoint,
-            tokenEndpoint: endpoints.tokenEndpoint,
-            userInfoEndpoint: endpoints.userInfoEndpoint,
-            jwksEndpoint: endpoints.jwksEndpoint,
-            discoveryEndpoint: endpoints.discoveryEndpoint
+            defaultGroupId,
+            adapterConfig: JSON.stringify(found.config),
+            issuer: found.endpoints.issuer,
+            authorizationEndpoint: found.endpoints.authorizationEndpoint,
+            tokenEndpoint: found.endpoints.tokenEndpoint,
+            userInfoEndpoint: found.endpoints.userInfoEndpoint,
+            jwksEndpoint: found.endpoints.jwksEndpoint,
+            discoveryEndpoint: found.endpoints.discoveryEndpoint,
         });
 
-        revalidatePath("/dashboard/users");
+        const after = await OidcProviderService.getAuditState(id);
+        if (after) {
+            await auditService.log(
+                user.id,
+                AUDIT_ACTIONS.UPDATE,
+                AUDIT_RESOURCES.SSO_PROVIDER,
+                {
+                    name: after.name,
+                    ...(before.name !== after.name ? { renamedFrom: before.name } : {}),
+                    changes: ssoProviderChanges(before, after),
+                },
+                id
+            );
+        }
+
+        revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {
         log.error("Failed to update SSO provider", { providerId: id }, wrapError(error));
@@ -207,17 +194,13 @@ export async function updateSsoProvider(input: z.infer<typeof updateProviderSche
     }
 }
 
-
-export async function getSsoProviderDeletionImpact(id: string) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    return OidcProviderService.getDeletionImpact(id);
-}
-
 export async function deleteSsoProvider(id: string) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
     try {
-        await OidcProviderService.deleteProvider(id);
-        revalidatePath("/admin/settings");
+        const deleted = await OidcProviderService.deleteProvider(id);
+        await auditService.log(user.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.SSO_PROVIDER, { name: deleted.name, providerId: deleted.providerId }, id);
+        revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error) };
@@ -225,10 +208,12 @@ export async function deleteSsoProvider(id: string) {
 }
 
 export async function toggleSsoProvider(id: string, enabled: boolean) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
     try {
-        await OidcProviderService.toggleProvider(id, enabled);
-        revalidatePath("/admin/settings");
+        const provider = await OidcProviderService.toggleProvider(id, enabled);
+        await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SSO_PROVIDER, { name: provider.name, enabled: provider.enabled }, id);
+        revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error) };

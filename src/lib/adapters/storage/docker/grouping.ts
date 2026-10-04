@@ -25,6 +25,22 @@ export async function planVolumeGroups(
     engine: DockerEngine,
     volumes: readonly string[]
 ): Promise<string[][]> {
+    const users = new Map<string, string[]>();
+    for (const volume of volumes) {
+        users.set(volume, (await engine.containersUsingVolume(volume)).map((container) => container.id));
+    }
+    return groupVolumes(volumes, (volume) => users.get(volume) ?? []);
+}
+
+/**
+ * The same partition from what is already known about each volume, without asking the daemon.
+ * The volume picker of the job form uses it to show what a run will stop, so the two can never
+ * disagree. Containers only have to be told apart, by id or by name.
+ */
+export function groupVolumes(
+    volumes: readonly string[],
+    containersOf: (volume: string) => readonly string[]
+): string[][] {
     const parent = new Map<string, string>();
 
     const find = (key: string): string => {
@@ -53,9 +69,8 @@ export async function planVolumeGroups(
 
     for (const volume of volumes) {
         parent.set(volumeKey(volume), volumeKey(volume));
-        const users = await engine.containersUsingVolume(volume);
-        for (const container of users) {
-            union(volumeKey(volume), containerKey(container.id));
+        for (const container of containersOf(volume)) {
+            union(volumeKey(volume), containerKey(container));
         }
     }
 

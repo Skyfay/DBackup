@@ -20,96 +20,18 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-// prisma.$transaction([p1, p2]) returns Promise<[r1, r2]>
-(prisma.$transaction as any).mockImplementation(async (promises: Promise<any>[]) => {
-    return Promise.all(promises);
-});
+const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => 'trash-1') }));
+vi.mock('@/services/trash/trash-snapshot', () => trash);
+
+// prisma.$transaction([p1, p2]) returns Promise<[r1, r2]>, and a callback gets the client as its transaction.
+const transaction = async (work: Promise<any>[] | ((tx: unknown) => unknown)) =>
+  typeof work === 'function' ? work(prisma) : Promise.all(work);
+(prisma.$transaction as any).mockImplementation(transaction);
 
 describe('User Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (prisma.$transaction as any).mockImplementation(async (promises: Promise<any>[]) => {
-      return Promise.all(promises);
-    });
-  });
-
-  describe('getUsers', () => {
-    it('should return users with lastLogin when auditLog exists', async () => {
-      const loginDate = new Date('2026-01-01T00:00:00Z');
-      (prisma.user.findMany as any).mockResolvedValue([
-        { id: '1', name: 'Alice', auditLogs: [{ createdAt: loginDate }] },
-      ]);
-
-      const result = await userService.getUsers();
-
-      expect(result).toHaveLength(1);
-      expect(result[0].lastLogin).toBe(loginDate);
-      expect(result[0]).not.toHaveProperty('auditLogs');
-    });
-
-    it('should return null lastLogin when no auditLog exists', async () => {
-      (prisma.user.findMany as any).mockResolvedValue([
-        { id: '2', name: 'Bob', auditLogs: [] },
-      ]);
-
-      const result = await userService.getUsers();
-
-      expect(result[0].lastLogin).toBeNull();
-    });
-  });
-
-  describe('resetTwoFactor', () => {
-    it('should disable 2FA flags and delete twoFactor records', async () => {
-      const userId = 'user-123';
-
-      const mockUserUpdate = { id: userId, twoFactorEnabled: false };
-      const mockDeleteMany = { count: 1 };
-
-      (prisma.user.update as any).mockResolvedValue(mockUserUpdate);
-      (prisma.twoFactor.deleteMany as any).mockResolvedValue(mockDeleteMany);
-
-      await userService.resetTwoFactor(userId);
-
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: userId },
-        data: {
-          twoFactorEnabled: false,
-          passkeyTwoFactor: false,
-        },
-      });
-
-      expect(prisma.twoFactor.deleteMany).toHaveBeenCalledWith({
-        where: { userId },
-      });
-    });
-  });
-
-  describe('togglePasskeyTwoFactor', () => {
-    it('should enable passkey and generic 2FA when enabled is true', async () => {
-      const userId = 'user-123';
-      await userService.togglePasskeyTwoFactor(userId, true);
-
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: userId },
-        data: {
-          passkeyTwoFactor: true,
-          twoFactorEnabled: true,
-        },
-      });
-    });
-
-    it('should disable passkey and generic 2FA when enabled is false', async () => {
-      const userId = 'user-123';
-      await userService.togglePasskeyTwoFactor(userId, false);
-
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: userId },
-        data: {
-          passkeyTwoFactor: false,
-          twoFactorEnabled: false,
-        },
-      });
-    });
+    (prisma.$transaction as any).mockImplementation(transaction);
   });
 
   describe('updateUserGroup', () => {
@@ -162,12 +84,23 @@ describe('User Service', () => {
   });
 
   describe('deleteUser', () => {
-    it('should delete user if safe', async () => {
+    it('should delete user if safe, into Recently deleted', async () => {
       (prisma.user.findUnique as any).mockResolvedValue({ id: '1', group: { name: 'User' } });
       (prisma.user.count as any).mockResolvedValue(5);
 
-      await userService.deleteUser('1');
+      await userService.deleteUser('1', { by: 'admin' });
 
+      expect(trash.keepInTrash).toHaveBeenCalledWith(prisma, 'user', '1', 'admin');
+      expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: '1' } });
+    });
+
+    it('skips Recently deleted for a user deleted permanently', async () => {
+      (prisma.user.findUnique as any).mockResolvedValue({ id: '1', group: { name: 'User' } });
+      (prisma.user.count as any).mockResolvedValue(5);
+
+      await userService.deleteUser('1', { permanently: true });
+
+      expect(trash.keepInTrash).not.toHaveBeenCalled();
       expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: '1' } });
     });
 

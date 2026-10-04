@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { stepRetention } from '@/lib/runner/steps/05-retention';
 import { RunnerContext, DestinationContext } from '@/lib/runner/types';
 
@@ -27,6 +27,7 @@ vi.mock('@/services/storage/storage-service', () => ({
         appendStorageListCacheEntry: vi.fn().mockResolvedValue(undefined),
         updateStorageListCacheEntry: vi.fn().mockResolvedValue(undefined),
         removeStorageListCacheEntry: vi.fn().mockResolvedValue(undefined),
+        readCachedListing: vi.fn().mockResolvedValue(null),
     },
 }));
 
@@ -111,6 +112,20 @@ describe('stepRetention', () => {
         expect(ctx.log).toHaveBeenCalledWith(
             expect.stringContaining('Retention: Skipped (upload was not successful)'),
         );
+    });
+
+    it('leaves an air-gapped destination that was not connected until it is', async () => {
+        const { RetentionService } = await import('@/services/backup/retention-service');
+        const dest = makeDestination({
+            configName: 'USB rotation',
+            uploadResult: { success: false, skipped: true, error: 'Air-gapped and not connected' },
+        });
+        const ctx = makeCtx({ destinations: [dest] });
+
+        await stepRetention(ctx);
+
+        expect(RetentionService.calculateRetention).not.toHaveBeenCalled();
+        expect(ctx.log).toHaveBeenCalledWith('[USB rotation] Retention: Skipped until it is connected');
     });
 
     it('skips retention when destination has no policy (mode NONE)', async () => {
@@ -268,6 +283,129 @@ describe('stepRetention', () => {
         const ctx = makeCtx({ destinations: [dest] });
 
         await expect(stepRetention(ctx)).resolves.not.toThrow();
+    });
+
+    it('leaves the backups of another job in the folder out of the policy', async () => {
+        // A job named like a deleted one writes into the same folder. What the deleted job left
+        // there is not this job's to delete, and must not take up the places of its policy.
+        const { RetentionService } = await import('@/services/backup/retention-service');
+        const at = (name: string, day: string) => ({ name, path: `/Test Job/${name}`, size: 1024, lastModified: new Date(day) });
+        const own = at('own.sql', '2026-06-08');
+        const unknown = at('before-sidecars.sql', '2026-05-01');
+        const left = at('left-by-deleted-job.sql', '2026-04-01');
+        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({ keep: [own], delete: [], keptForChain: [] });
+
+        const jobs: Record<string, string | undefined> = { 'own.sql': 'job-1', 'left-by-deleted-job.sql': 'job-deleted' };
+        const dest = makeDestination({
+            uploadResult: { success: true, path: '/Test Job/own.sql' },
+            adapter: {
+                upload: vi.fn(),
+                list: vi.fn().mockResolvedValue([
+                    own, unknown, left,
+                    { name: 'own.sql.meta.json', path: '/Test Job/own.sql.meta.json', size: 200, lastModified: new Date() },
+                    { name: 'left-by-deleted-job.sql.meta.json', path: '/Test Job/left-by-deleted-job.sql.meta.json', size: 200, lastModified: new Date() },
+                ]),
+                delete: vi.fn(),
+                read: vi.fn(async (_config: unknown, remotePath: string) => {
+                    const name = remotePath.split('/').pop()!.replace('.meta.json', '');
+                    return JSON.stringify({ jobId: jobs[name] });
+                }),
+            } as any,
+        });
+        const ctx = makeCtx({ destinations: [dest] });
+
+        await stepRetention(ctx);
+
+        const judged = (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mock.calls[0][0] as { name: string }[];
+        // A backup without a sidecar still counts as the job's own, like before.
+        expect(judged.map((f) => f.name).sort()).toEqual(['before-sidecars.sql', 'own.sql']);
+        expect(dest.adapter.delete).not.toHaveBeenCalledWith(dest.config, left.path);
+        expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('1 backup(s) in this folder belong to another job and are left alone: left-by-deleted-job.sql'), 'info');
+    });
+
+    describe('a renamed job', () => {
+        const at = (path: string, day = '2026-06-01') => ({ name: path.split('/').pop()!, path, size: 1024, lastModified: new Date(day) });
+        const sidecarOf = (file: { path: string }) => ({ name: `${file.path.split('/').pop()}.meta.json`, path: `${file.path}.meta.json`, size: 200, lastModified: new Date() });
+
+        /** The current folder "Test Job" and the folder "Old Name" the job wrote into before its rename. */
+        function renamedJob(jobs: Record<string, string>) {
+            const current = at('Test Job/new.sql', '2026-06-08');
+            const old = at('Old Name/old.sql');
+            const other = at('Old Name/other.sql');
+            const folders: Record<string, ReturnType<typeof at>[]> = { 'Test Job': [current], 'Old Name': [old, other] };
+            const dest = makeDestination({
+                uploadResult: { success: true, path: 'Test Job/new.sql' },
+                adapter: {
+                    upload: vi.fn(),
+                    list: vi.fn(async (_config: unknown, dir: string) => (folders[dir] ?? []).flatMap((file) => [file, sidecarOf(file)])),
+                    delete: vi.fn().mockResolvedValue(undefined),
+                    read: vi.fn(async (_config: unknown, remotePath: string) => JSON.stringify({ jobId: jobs[remotePath.replace('.meta.json', '')] })),
+                } as any,
+            });
+            return { dest, current, old, other };
+        }
+
+        // Back to the defaults of the module mocks, so no later test runs on what these set.
+        afterEach(async () => {
+            const { RetentionService } = await import('@/services/backup/retention-service');
+            const { storageService } = await import('@/services/storage/storage-service');
+            (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({ keep: [], delete: [], keptForChain: [] });
+            (storageService.readCachedListing as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+        });
+
+        it('judges the backups it left in the folder of its old name with its policy', async () => {
+            const { RetentionService } = await import('@/services/backup/retention-service');
+            const { storageService } = await import('@/services/storage/storage-service');
+            const { dest, current, old } = renamedJob({ 'Test Job/new.sql': 'job-1', 'Old Name/old.sql': 'job-1', 'Old Name/other.sql': 'job-2' });
+            (storageService.readCachedListing as ReturnType<typeof vi.fn>).mockResolvedValue({
+                files: [{ ...current, jobId: 'job-1' }, { ...old, jobId: 'job-1' }],
+                listedAt: new Date(),
+                current: true,
+            });
+            (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockImplementation((files: { name: string }[]) => ({
+                keep: files.filter((f) => f.name === 'new.sql'),
+                delete: files.filter((f) => f.name === 'old.sql'),
+                keptForChain: [],
+            }));
+            const ctx = makeCtx({ destinations: [dest] });
+
+            await stepRetention(ctx);
+
+            const judged = (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mock.calls[0][0] as { path: string }[];
+            // The backup of another job in that folder is not this job's to judge.
+            expect(judged.map((f) => f.path).sort()).toEqual(['Old Name/old.sql', 'Test Job/new.sql']);
+            expect(dest.adapter.delete).toHaveBeenCalledWith(dest.config, 'Old Name/old.sql');
+            expect(dest.adapter.delete).toHaveBeenCalledWith(dest.config, 'Old Name/old.sql.meta.json');
+            expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Also judging 1 backup(s) this job left in Old Name/ before it was renamed.'));
+        });
+
+        it('never lists the root of the destination or its current folder a second time', async () => {
+            const { storageService } = await import('@/services/storage/storage-service');
+            const { dest, current } = renamedJob({ 'Test Job/new.sql': 'job-1' });
+            (storageService.readCachedListing as ReturnType<typeof vi.fn>).mockResolvedValue({
+                files: [{ ...current, jobId: 'job-1' }, { ...at('stray.sql'), jobId: 'job-1' }],
+                listedAt: new Date(),
+                current: true,
+            });
+
+            await stepRetention(makeCtx({ destinations: [dest] }));
+
+            expect(dest.adapter.list).toHaveBeenCalledTimes(1);
+            expect(dest.adapter.list).toHaveBeenCalledWith(dest.config, 'Test Job');
+        });
+
+        it('keeps to its current folder when the cached listing cannot be read', async () => {
+            const { RetentionService } = await import('@/services/backup/retention-service');
+            const { storageService } = await import('@/services/storage/storage-service');
+            const { dest } = renamedJob({ 'Test Job/new.sql': 'job-1', 'Old Name/old.sql': 'job-1' });
+            (storageService.readCachedListing as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('database is locked'));
+            (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({ keep: [], delete: [], keptForChain: [] });
+
+            await stepRetention(makeCtx({ destinations: [dest] }));
+
+            const judged = (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mock.calls[0][0] as { path: string }[];
+            expect(judged.map((f) => f.path)).toEqual(['Test Job/new.sql']);
+        });
     });
 
     it('warns by name when a file mtime disagrees with its recorded creation time', async () => {

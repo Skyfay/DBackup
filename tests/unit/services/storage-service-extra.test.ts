@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PassThrough } from 'stream';
 import { prismaMock } from '@/lib/testing/prisma-mock';
-import { StorageService, CACHE_SCHEMA_VERSION } from '@/services/storage/storage-service';
+import { StorageService, CACHE_SCHEMA_VERSION, clearListingState } from '@/services/storage/storage-service';
 import { registry } from '@/lib/core/registry';
 import { StorageAdapter, FileInfo } from '@/lib/core/interfaces';
 
@@ -97,6 +97,7 @@ vi.mock('@/lib/logging/logger', () => ({
 }));
 vi.mock('@/lib/logging/errors', () => ({
     wrapError: vi.fn((e: any) => e),
+    getErrorMessage: (e: any) => e?.message ?? String(e),
 }));
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ describe('StorageService - extra coverage', () => {
     beforeEach(() => {
         service = new StorageService();
         vi.clearAllMocks();
+        clearListingState();
         mockResolveAdapterConfig.mockImplementation((adapterConfig: any) =>
             Promise.resolve(JSON.parse(adapterConfig.config))
         );
@@ -507,11 +509,10 @@ describe('StorageService - extra coverage', () => {
             expect(result).toHaveLength(0);
         });
 
-        it('discards a payload written by an older schema version', async () => {
-            // This is how a fixed enrichment reaches rows that are already cached. Reconciliation
-            // only enriches files it has not seen before, so a row cached with a field missing
-            // keeps that field missing forever - the version bump is what rebuilds it. Without
-            // this, correcting the mapping fixes only backups made after the upgrade.
+        it('serves a payload of an older but readable version and rebuilds it in the background', async () => {
+            // A version bump is how a fixed enrichment reaches rows that are already cached, since
+            // reconciliation only enriches files it has not seen before. The old rows are served
+            // meanwhile, so a destination that does not answer keeps its list instead of losing it.
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
                 filesJson: JSON.stringify({
@@ -521,16 +522,23 @@ describe('StorageService - extra coverage', () => {
                 cachedAt: new Date(),
             } as any);
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
-            const adapter = makeAdapter({ list: vi.fn().mockResolvedValue([]) });
+            let finish!: (files: FileInfo[]) => void;
+            const adapter = makeAdapter({ list: vi.fn(() => new Promise<FileInfo[]>((resolve) => { finish = resolve; })) });
             vi.mocked(registry.get).mockReturnValue(adapter);
             prismaMock.job.findMany.mockResolvedValue([]);
             prismaMock.execution.findMany.mockResolvedValue([]);
+            prismaMock.storageListCache.upsert.mockResolvedValue({} as any);
 
             const result = await service.listFilesWithMetadata('conf-123');
 
-            // Listed from the destination again rather than served from the outdated payload.
-            expect(adapter.list).toHaveBeenCalled();
-            expect(result.some((f) => f.name === 'stale.sql')).toBe(false);
+            expect(result.map((f) => f.name)).toEqual(['stale.sql']);
+            await vi.waitFor(() => expect(adapter.list).toHaveBeenCalledTimes(1));
+            expect(service.isListing('conf-123')).toBe(true);
+
+            finish([]);
+            await vi.waitFor(() => expect(prismaMock.storageListCache.upsert).toHaveBeenCalled());
+            await vi.waitFor(() => expect(service.isListing('conf-123')).toBe(false));
+            expect(JSON.parse(prismaMock.storageListCache.upsert.mock.calls[0][0].update.filesJson as string).v).toBe(CACHE_SCHEMA_VERSION);
         });
 
         it('bypasses cache when bypassCache=true', async () => {

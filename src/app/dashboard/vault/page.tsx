@@ -1,57 +1,52 @@
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import type { Metadata } from "next";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { getUserPermissions } from "@/lib/auth/access-control";
+import { VaultClient } from "@/components/dashboard/vault/vault-client";
+import { VAULT_TABLE_IDS } from "@/components/dashboard/vault/vault-tables";
+import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { EncryptionProfilesList } from "@/components/settings/encryption-profiles-list";
-import { CredentialProfilesList } from "@/components/settings/credential-profiles-list";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getTablePreferences } from "@/services/user/preference-service";
+import { getVaultAttention, getVaultCounts } from "@/services/vault/vault-counts";
 
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Vault" };
+
+/**
+ * The Vault: the credential profiles connections log in with, and the keys backups are encrypted
+ * with. The lists load in the browser, the page only resolves who may do what.
+ */
 export default async function VaultPage() {
-    const headersList = await headers();
-    const session = await auth.api.getSession({
-        headers: headersList
-    });
+    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    // The login lives on the root page, there is no /login.
+    if (!user) redirect("/");
+    if (!permissions.includes(PERMISSIONS.VAULT.READ)) redirect("/dashboard");
 
-    if (!session) {
-        redirect("/login");
-    }
-
-    const permissions = await getUserPermissions();
-    if (!permissions.includes(PERMISSIONS.VAULT.READ)) {
-        redirect("/dashboard");
-    }
-
-    const canManageCredentials = permissions.includes(PERMISSIONS.CREDENTIALS.READ);
-    const canRevealCredentials = permissions.includes(PERMISSIONS.CREDENTIALS.REVEAL);
+    const canReadCredentials = permissions.includes(PERMISSIONS.CREDENTIALS.READ);
+    // The dot of a tab the viewer cannot open stays out, so the page never hints at it.
+    const [counts, attention, layouts] = await Promise.all([
+        getVaultCounts(),
+        getVaultAttention(canReadCredentials),
+        getTablePreferences(user.id, Object.values(VAULT_TABLE_IDS)),
+    ]);
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Security Vault</h2>
-                    <p className="text-muted-foreground">Manage encryption keys and reusable credential profiles for your adapters.</p>
-                </div>
-            </div>
-
-            <Tabs defaultValue={canManageCredentials ? "credentials" : "encryption"} className="w-full">
-                <TabsList>
-                    {canManageCredentials && (
-                        <TabsTrigger value="credentials">Credentials</TabsTrigger>
-                    )}
-                    <TabsTrigger value="encryption">Encryption</TabsTrigger>
-                </TabsList>
-
-                {canManageCredentials && (
-                    <TabsContent value="credentials" className="mt-4">
-                        <CredentialProfilesList canReveal={canRevealCredentials} />
-                    </TabsContent>
-                )}
-
-                <TabsContent value="encryption" className="mt-4">
-                    <EncryptionProfilesList />
-                </TabsContent>
-            </Tabs>
+        <div className="space-y-4 md:space-y-6">
+            {/* The header bar already names the page in its breadcrumb. */}
+            <h1 className="sr-only">Vault</h1>
+            <Suspense fallback={null}>
+                <VaultClient
+                    counts={counts}
+                    attention={attention}
+                    layouts={layouts}
+                    access={{
+                        canReadCredentials,
+                        canWrite: permissions.includes(PERMISSIONS.CREDENTIALS.WRITE),
+                        canDelete: permissions.includes(PERMISSIONS.CREDENTIALS.DELETE),
+                        canReveal: permissions.includes(PERMISSIONS.CREDENTIALS.REVEAL),
+                        canManageKeys: permissions.includes(PERMISSIONS.VAULT.WRITE),
+                    }}
+                />
+            </Suspense>
         </div>
     );
 }

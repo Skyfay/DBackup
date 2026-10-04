@@ -34,7 +34,11 @@ export interface LogFlusher {
     schedule(): void;
     /** Writes right now, cancelling any deferred write. Use for the final state of a run. */
     flush(): Promise<void>;
-    /** Drops a deferred write without performing it. Must be called when the run ends. */
+    /**
+     * Drops a deferred write without performing it. Must be called when the run ends. Lines
+     * written after it, like the notifications of a finished run, still reach the database, but
+     * without the progress metadata, which would replace what the run recorded when it ended.
+     */
     dispose(): void;
 }
 
@@ -58,6 +62,7 @@ export function createLogFlusher(options: LogFlusherOptions): LogFlusher {
     // is visible without waiting out a window first.
     let lastWrite = 0;
     let writing = false;
+    let disposed = false;
     let repeatRequested = false;
     let timer: NodeJS.Timeout | null = null;
 
@@ -73,7 +78,7 @@ export function createLogFlusher(options: LogFlusherOptions): LogFlusher {
         try {
             await prisma.execution.update({
                 where: { id: executionId },
-                data: {
+                data: disposed ? { logs: JSON.stringify(getLogs()) } : {
                     logs: JSON.stringify(getLogs()),
                     // The heartbeat is written here and nowhere else, precisely because it
                     // must record real progress. Nothing keeps it warm on a timer: a run whose
@@ -135,6 +140,7 @@ export function createLogFlusher(options: LogFlusherOptions): LogFlusher {
         },
 
         dispose() {
+            disposed = true;
             clearPending();
         },
     };

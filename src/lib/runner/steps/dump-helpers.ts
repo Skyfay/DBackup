@@ -1,12 +1,12 @@
 import path from "path";
 import prisma from "@/lib/prisma";
-import { getTempDir } from "@/lib/temp-dir";
-import { applyNamingPattern, chainSegment, patternUsesChain } from "@/lib/templates/naming-template-engine";
+import { applyNamingPattern, chainSegment, fileNameParts, patternUsesChain } from "@/lib/templates/naming-template-engine";
 import fs from "fs/promises";
 import { formatBytes } from "@/lib/utils";
 import { JobWithRelations, RunnerContext } from "../types";
 
 export interface ResolvedBackupFilename {
+    /** The directory of this run, which the archive and its sidecars share with nothing else. */
     tempDir: string;
     tempFile: string;
     fileName: string;
@@ -21,10 +21,15 @@ export interface ResolvedBackupFilename {
  * Resolves the final backup filename and temp path for a job from its naming template. Every
  * backup is a seekable archive, which is a TAR whatever the source, so the extension is fixed
  * rather than derived from an adapter.
+ *
+ * The file goes into the run's own directory. Two runs can resolve the same name, like two
+ * runs of a job on one day with a template that has only the date, and in a shared directory
+ * they would write into one file and delete it under each other.
  */
 export async function resolveBackupFilename(
     job: JobWithRelations,
-    chain?: { type: "full" | "incremental"; index: number }
+    chain: { type: "full" | "incremental"; index: number } | undefined,
+    runDir: string
 ): Promise<ResolvedBackupFilename> {
     const [tzSetting, patternSetting, namingTemplate] = await Promise.all([
         prisma.systemSetting.findUnique({ where: { key: "system.timezone" } }),
@@ -43,19 +48,15 @@ export async function resolveBackupFilename(
         } catch { return []; }
     })();
 
-    const dbNameRaw = jobDatabases.length === 0
-        ? 'all'
-        : jobDatabases.map(db => db.replace(/[^a-z0-9]/gi, '_')).join('_');
-    const sanitizedName = job.name.replace(/[^a-z0-9]/gi, '_');
+    const { jobName: sanitizedName, dbName: dbNameRaw } = fileNameParts(job.name, jobDatabases);
 
     // Only an incremental run has a position to write; for everything else the token resolves
     // to nothing and takes its separator with it.
     const chainValue = chain ? chainSegment(chain.type, chain.index) : "";
     const fileName = applyNamingPattern(pattern, sanitizedName, dbNameRaw, new Date(), timezone, chainValue) + ".tar";
-    const tempDir = getTempDir();
-    const tempFile = path.join(tempDir, fileName);
+    const tempFile = path.join(runDir, fileName);
 
-    return { tempDir, tempFile, fileName, chainInFileName: patternUsesChain(pattern) };
+    return { tempDir: runDir, tempFile, fileName, chainInFileName: patternUsesChain(pattern) };
 }
 
 /** Parses Job.databases (a JSON string array) defensively. */
@@ -72,9 +73,10 @@ export function parseJobDatabases(databasesJson: string | null | undefined): str
  * Shows how far a running dump has got, by watching its file grow.
  *
  * Adapters write their dump straight to disk and report no byte counts of their own, so the
- * file size is the only live progress there is. Returns the function that stops watching.
+ * file size is the only live progress there is. `onBytes` hears every new size. Returns the
+ * function that stops watching.
  */
-export function watchDumpSize(ctx: RunnerContext, file: string, label: string): () => void {
+export function watchDumpSize(ctx: RunnerContext, file: string, label: string, onBytes?: (bytes: number) => void): () => void {
     const startedAt = Date.now();
     const timer = setInterval(() => {
         fs.stat(file).then((stats) => {
@@ -82,6 +84,7 @@ export function watchDumpSize(ctx: RunnerContext, file: string, label: string): 
             const elapsed = (Date.now() - startedAt) / 1000;
             const speed = elapsed > 0 ? Math.round(stats.size / elapsed) : 0;
             ctx.updateDetail(`${label}: ${formatBytes(stats.size)} dumped - ${formatBytes(speed)}/s`);
+            onBytes?.(stats.size);
         }, () => { /* not written yet */ });
     }, 800);
     return () => clearInterval(timer);

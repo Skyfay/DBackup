@@ -20,6 +20,30 @@ export class BackupScheduler {
     async init() {
         log.info("Initializing scheduler");
         await this.refresh();
+        await this.runStartupTasks();
+    }
+
+    /**
+     * The system tasks set to run at start, once, a few seconds after DBackup started. A refresh
+     * after a saved job or setting schedules again, but never starts them a second time.
+     */
+    private async runStartupTasks() {
+        for (const taskId of Object.values(SYSTEM_TASKS)) {
+            try {
+                const [enabled, runOnStartup] = await Promise.all([
+                    systemTaskService.getTaskEnabled(taskId),
+                    systemTaskService.getTaskRunOnStartup(taskId),
+                ]);
+                if (!enabled || !runOnStartup) continue;
+                log.debug("Scheduling startup run for system task", { taskId, delayMs: 10000 });
+                setTimeout(() => {
+                    log.debug("Running startup task", { taskId });
+                    systemTaskService.runTask(taskId).catch((e) => log.error("Startup task failed", { taskId }, wrapError(e)));
+                }, 10000);
+            } catch (error) {
+                log.error("Failed to schedule startup run", { taskId }, wrapError(error));
+            }
+        }
     }
 
     async refresh() {
@@ -103,16 +127,6 @@ export class BackupScheduler {
                             systemTaskService.runTask(taskId).catch((e) => log.error("System task failed", { taskId }, wrapError(e)));
                         }, { timezone });
                         this.tasks.set(taskId, task);
-                    }
-
-                    // Check for Run on Startup
-                    const runOnStartup = await systemTaskService.getTaskRunOnStartup(taskId);
-                    if (runOnStartup) {
-                        log.debug("Scheduling startup run for system task", { taskId, delayMs: 10000 });
-                        setTimeout(() => {
-                            log.debug("Running startup task", { taskId });
-                            systemTaskService.runTask(taskId).catch((e) => log.error("Startup task failed", { taskId }, wrapError(e)));
-                        }, 10000);
                     }
                 } catch (error) {
                     log.error("Failed to schedule task", { taskId }, wrapError(error));

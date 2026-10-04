@@ -38,9 +38,9 @@ src/lib/rate-limit/
 └── server.ts   → Server-only functions: reloadRateLimits(), getRateLimitConfig() (uses Prisma)
 src/middleware.ts                             → Enforcement: fetch config, consume limits
 src/app/api/internal/rate-limit-config/route.ts → Internal endpoint: serves DB config
-src/app/actions/rate-limit-settings.ts       → Server action: save/reset settings
-src/components/settings/rate-limit-settings.tsx → UI: auto-save settings form
-src/app/dashboard/settings/page.tsx          → Settings page: Rate Limits tab
+src/app/actions/settings/rate-limit-settings.ts        → Server action: save the limits
+src/services/system/rate-limit-settings-service.ts     → Writes the keys and reloads the limiters
+src/components/dashboard/settings/rate-limits-part.tsx → The Rate limits part of the Settings page, with the save bar
 ```
 
 ## Rate Limit Module (`src/lib/rate-limit/`)
@@ -52,7 +52,7 @@ src/app/dashboard/settings/page.tsx          → Settings page: Rate Limits tab
 | `getAuthLimiter()` | Any | Returns the `RateLimiterMemory` instance for auth |
 | `getApiLimiter()` | Any | Returns the `RateLimiterMemory` instance for API reads |
 | `getMutationLimiter()` | Any | Returns the `RateLimiterMemory` instance for mutations |
-| `applyExternalConfig(config)` | Edge | Rebuilds limiter instances from fetched config |
+| `applyExternalConfig(config)` | Edge | Rebuilds the limiters whose limit changed, the others keep their counters |
 | `reloadRateLimits()` | Server only | Reads DB via Prisma, rebuilds local limiters |
 | `getRateLimitConfig()` | Server only | Reads DB and returns config for UI display |
 | `RATE_LIMIT_DEFAULTS` | Any | Default values: auth 5/60s, api 100/60s, mutation 20/60s |
@@ -62,7 +62,9 @@ src/app/dashboard/settings/page.tsx          → Settings page: Rate Limits tab
 
 1. **Server startup** - `instrumentation.ts` calls `reloadRateLimits()` → reads DB → rebuilds limiters in server context
 2. **Settings change** - Server action calls `reloadRateLimits()` → updates server context limiters
-3. **Middleware request** - `syncRateLimitConfig()` fetches `/api/internal/rate-limit-config` (cached 30s) → calls `applyExternalConfig()` → rebuilds Edge limiter instances
+3. **Middleware request** - `syncRateLimitConfig()` fetches `/api/internal/rate-limit-config` (cached 30s) → calls `applyExternalConfig()` → rebuilds the Edge limiters whose limit changed
+
+A new `RateLimiterMemory` starts counting from zero, so `applyExternalConfig()` keeps a limiter whose points and duration are the ones it already has. Rebuilding all of them on every sync started every counter over each 30 seconds.
 
 ## Middleware Integration
 
@@ -113,19 +115,16 @@ If no values exist in the DB, the defaults from `RATE_LIMIT_DEFAULTS` are used.
 
 ## Server Action
 
-The server action in `src/app/actions/rate-limit-settings.ts` follows the standard pattern:
+The server action in `src/app/actions/settings/rate-limit-settings.ts` follows the standard pattern:
 
 ```typescript
 export async function updateRateLimitSettings(data: RateLimitFormData) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    // Zod validation → $transaction of upserts → reloadRateLimits() → revalidatePath
-}
-
-export async function resetRateLimitSettings() {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    // Delete all rateLimit.* keys → reloadRateLimits() → revalidatePath
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    // Zod validation → saveRateLimitConfig() ($transaction of upserts, reloadRateLimits()) → audit → revalidatePath
 }
 ```
+
+**Reset to defaults** in the part puts the defaults into its fields, which the save bar saves like any other change.
 
 ## Internal API Endpoint
 

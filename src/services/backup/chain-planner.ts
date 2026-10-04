@@ -21,6 +21,8 @@ import { ArchiveIndex } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { latestChainSnapshotWhere } from "./chain-query";
+import { isAirGapped } from "@/lib/core/air-gap";
+import { isConnected } from "@/lib/runner/steps/air-gap";
 
 const log = logger.child({ service: "ChainPlanner" });
 
@@ -95,20 +97,28 @@ async function readMeta(configId: string, remotePath: string): Promise<BackupMet
     }
 }
 
-/** True when every archive of the chain is present at the destination. */
-async function chainIntactAt(configId: string, chainDir: string, expectedCount: number): Promise<boolean> {
+/**
+ * Whether every archive of the chain is present at the destination. An air-gapped destination that
+ * is not connected is away and left out of this run, so it never forces a full. It is asked first,
+ * the way the upload asks it, since a disk that is unplugged lists a missing folder as empty. Once
+ * it is connected again and lacks part of the chain, that starts one.
+ */
+async function chainStateAt(configId: string, chainDir: string, expectedCount: number): Promise<"intact" | "broken" | "away"> {
     const row = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-    if (!row || row.type !== "storage") return false;
+    if (!row || row.type !== "storage") return "broken";
 
     const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter) return false;
+    if (!adapter) return "broken";
 
+    const airGapped = isAirGapped(row);
     try {
-        const files = await adapter.list(await resolveAdapterConfig(row), chainDir);
+        const config = await resolveAdapterConfig(row);
+        if (airGapped && !(await isConnected({ adapter, config, configName: row.name }))) return "away";
+        const files = await adapter.list(config, chainDir);
         const archives = files.filter((f) => f.name.endsWith(".tar"));
-        return archives.length >= expectedCount;
+        return archives.length >= expectedCount ? "intact" : "broken";
     } catch {
-        return false;
+        return airGapped ? "away" : "broken";
     }
 }
 
@@ -161,7 +171,15 @@ export async function planChain(input: ChainPlanInput): Promise<ChainPlan> {
         return fresh(`the chain reached its maximum age of ${input.job.fullEveryDays} day(s)`);
     }
 
-    const chainDir = path.posix.basename(path.posix.dirname(previous.remotePath.replace(/\\/g, "/")));
+    const previousPath = previous.remotePath.replace(/\\/g, "/");
+    const chainDir = path.posix.basename(path.posix.dirname(previousPath));
+
+    // The chain lies in the folder named after the job when it started. A renamed job writes
+    // into a new folder, where the chain cannot go on, so it starts over and says why.
+    const folderOf = (value: string) => value.replace(/^\/+|\/+$/g, "");
+    if (folderOf(path.posix.dirname(path.posix.dirname(previousPath))) !== folderOf(input.job.name)) {
+        return fresh("the job was renamed, so a new chain starts in the folder of its new name");
+    }
 
     // The metadata is read from the first destination that can serve it - all destinations
     // receive identical archives, so any of them describes the run.
@@ -227,7 +245,7 @@ export async function planChain(input: ChainPlanInput): Promise<ChainPlan> {
     // chain unrestorable from that destination, so the run starts over everywhere.
     const expectedArchives = previous.chainIndex + 1;
     for (const configId of input.destinationConfigIds) {
-        if (!(await chainIntactAt(configId, path.posix.join(input.job.name, chainDir), expectedArchives))) {
+        if ((await chainStateAt(configId, path.posix.join(input.job.name, chainDir), expectedArchives)) === "broken") {
             return fresh("a destination is missing part of the chain");
         }
     }

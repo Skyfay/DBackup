@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs/promises";
-import { RunnerContext } from "../types";
+import { RunnerContext, type DumpState } from "../types";
 import { createHost, resolveTransport } from "@/lib/transport";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { ArchiveSourceEntry, DumpFormat } from "@/lib/archive/types";
@@ -146,6 +146,11 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
         const entries: ArchiveSourceEntry[] = [];
         ctx.setStage(PIPELINE_STAGES.DUMPING);
 
+        // Every database with where its dump stands, so the page of the run fills a row for each.
+        const dumps: DumpState[] = dbNames.map((name) => ({ name, state: "waiting", bytes: null, startedAt: null, endedAt: null }));
+        const report = () => ctx.setDumps?.(dumps.map((dump) => ({ ...dump })));
+        report();
+
         for (const [position, dbName] of dbNames.entries()) {
             // Between databases rather than only between steps, so cancelling a multi-DB job
             // does not have to wait out every remaining dump first.
@@ -155,7 +160,16 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
             await fs.mkdir(path.dirname(dest), { recursive: true });
 
             ctx.log(`Dumping database: ${dbName}`, "info");
-            const stopWatching = watchDumpSize(ctx, dest, dbName);
+            const dump = dumps[position];
+            dump.state = "dumping";
+            dump.startedAt = new Date().toISOString();
+            report();
+            const stopWatching = watchDumpSize(ctx, dest, dbName, (bytes) => {
+                // A size read just before the dump ended may arrive after it, and is older.
+                if (dump.state !== "dumping") return;
+                dump.bytes = bytes;
+                report();
+            });
             try {
                 await adapter.dumpOne(
                     { ...sourceConfig, detectedVersion: engineVersion },
@@ -164,9 +178,18 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
                     host,
                     (msg, level, type, details) => ctx.log(msg, level, type, details)
                 );
+            } catch (error) {
+                dump.state = "failed";
+                dump.endedAt = new Date().toISOString();
+                report();
+                throw error;
             } finally {
                 stopWatching();
             }
+            dump.bytes = (await fs.stat(dest).catch(() => null))?.size ?? dump.bytes;
+            dump.state = "done";
+            dump.endedAt = new Date().toISOString();
+            report();
 
             entries.push({ kind: "database", dbName, path: dest, format, nativeCompression });
             ctx.updateStageProgress(Math.round(((position + 1) / dbNames.length) * 100));

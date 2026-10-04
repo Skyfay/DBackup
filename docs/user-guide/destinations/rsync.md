@@ -14,7 +14,7 @@ The default DBackup Docker image includes rsync. If you're running DBackup outsi
 ## Configuration
 
 ::: info Credential Profile required
-Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Settings → Vault → Credentials** before saving the destination.
+Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -22,8 +22,8 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Host** | Hostname or IP of the remote server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
-| **Primary Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-| **Path Prefix** | Remote directory for backups | - | ✅ |
+| **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ✅ |
 | **Options** | Additional rsync flags (e.g. `--bwlimit=1000`) | - | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
@@ -36,7 +36,7 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 
 ## Setup Guide
 
-1. Create an `SSH_KEY` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create an `SSH_KEY` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure the target server has rsync and SSH installed
 3. Create a dedicated user with write access to the backup directory:
    ```bash
@@ -44,11 +44,11 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
    sudo mkdir -p /backups/dbackup
    sudo chown dbackup: /backups/dbackup
    ```
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **Rsync**
-5. Enter Host and select the credential profile in the **Primary Credential** picker
-6. Set **Path Prefix** to the remote directory (e.g. `/backups/dbackup`)
+4. Go to **Connections** → **Destinations** → **New destination** → **Rsync**
+5. Enter Host and pick the credential profile under **Login**
+6. Set the **Folder** in the **Location** part to the remote directory (e.g. `/backups/dbackup`), or pick it with the folder button (📂)
 7. (Optional) Add custom **Options** for bandwidth limiting or other flags
-8. Click **Test** to verify the connection
+8. Click **Test connection** to verify the connection
 
 ## How It Works
 
@@ -81,7 +81,17 @@ ssh: connect to host ... port 22: Connection refused
 rsync: mkstemp failed: Permission denied (13)
 ```
 
-**Solution:** Ensure the SSH user has write access to the Path Prefix directory on the remote server.
+**Solution:** Ensure the SSH user has write access to the folder on the remote server.
+
+### Listing a Very Large Folder
+
+```
+The server answered with more than 256 MB. Back up its subfolders as separate sources.
+```
+
+DBackup lists a folder with one `find` over SSH before it copies it, and that list may run for 10 minutes and hold up to 256 MB, enough for millions of files.
+
+**Solution:** Split the folder into several directory sources, one per subfolder. A message that the server did not finish within 600 seconds means the same, often on a server whose `find` lacks `-printf`, like macOS, where each file costs a `stat` of its own.
 
 ### Bandwidth Limiting
 
@@ -91,4 +101,4 @@ To limit transfer speed, add `--bwlimit=1000` (KB/s) in the **Options** field. U
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

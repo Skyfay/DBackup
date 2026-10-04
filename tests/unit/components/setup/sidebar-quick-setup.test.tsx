@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { Sidebar } from "@/components/layout/sidebar";
+import { render as renderWithoutProvider, screen } from "@testing-library/react";
+import { AppSidebar } from "@/components/layout/app-sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+
+// The sidebar reads its collapsed state from the provider, which the dashboard layout supplies.
+const render = (ui: React.ReactElement) => renderWithoutProvider(<SidebarProvider>{ui}</SidebarProvider>);
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -65,7 +69,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should NOT show Quick Setup when showQuickSetup is false", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={allPermissions}
                 isSuperAdmin={false}
                 showQuickSetup={false}
@@ -77,7 +81,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should show Quick Setup when showQuickSetup is true", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={allPermissions}
                 isSuperAdmin={false}
                 showQuickSetup={true}
@@ -89,7 +93,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should NOT show Quick Setup by default (no prop passed)", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={allPermissions}
                 isSuperAdmin={false}
             />
@@ -100,7 +104,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should NOT show Quick Setup even for SuperAdmin when showQuickSetup is false", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={[]}
                 isSuperAdmin={true}
                 showQuickSetup={false}
@@ -112,7 +116,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should show Quick Setup for SuperAdmin when showQuickSetup is true", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={[]}
                 isSuperAdmin={true}
                 showQuickSetup={true}
@@ -124,7 +128,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should NOT show Quick Setup when user lacks write permissions even if showQuickSetup is true", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={[PERMISSIONS.SOURCES.READ]}
                 isSuperAdmin={false}
                 showQuickSetup={true}
@@ -137,7 +141,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should show Quick Setup when user has required write permissions and showQuickSetup is true", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={[
                     PERMISSIONS.SOURCES.WRITE,
                     PERMISSIONS.DESTINATIONS.WRITE,
@@ -153,7 +157,7 @@ describe("Sidebar - Quick Setup visibility", () => {
 
     it("should show Quick Setup link pointing to /dashboard/setup", () => {
         render(
-            <Sidebar
+            <AppSidebar
                 permissions={allPermissions}
                 isSuperAdmin={false}
                 showQuickSetup={true}

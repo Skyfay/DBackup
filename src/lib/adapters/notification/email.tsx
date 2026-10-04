@@ -1,11 +1,15 @@
 import { NotificationAdapter } from "@/lib/core/interfaces";
 import { EmailSchema } from "@/lib/adapters/definitions";
 import nodemailer from "nodemailer";
-import React from "react";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { loadNotificationBrand, senderWithName, type NotificationBrand } from "@/lib/notifications/brand";
+import { smtpTestTemplate } from "@/lib/notifications/templates";
+import type { NotificationPayload } from "@/lib/notifications/types";
 
 const log = logger.child({ adapter: "email" });
+
+const SECURITY_LABELS: Record<string, string> = { ssl: "SSL/TLS", starttls: "STARTTLS", none: "None" };
 
 const createTransporter = (config: any) => {
     const secure = config.secure === "ssl";
@@ -26,6 +30,22 @@ const createTransporter = (config: any) => {
     return nodemailer.createTransport(options);
 };
 
+function recipients(config: any): string {
+    return Array.isArray(config.to) ? config.to.join(", ") : config.to;
+}
+
+/** The payload a caller hands over, or a plain one around the message for a caller that sends only text. */
+function payloadOf(message: string, context: any): NotificationPayload {
+    if (context?.title) return { ...context, message: context.message ?? message, success: context.success ?? true };
+    return { title: "DBackup notification", message, success: context?.success ?? true };
+}
+
+async function mailFor(payload: NotificationPayload, brand: NotificationBrand) {
+    // Loaded when a mail goes out, so the React renderer never lands in the graph of a page.
+    const { renderNotificationEmail } = await import("@/components/email/render-email");
+    return renderNotificationEmail(payload, brand);
+}
+
 export const EmailAdapter: NotificationAdapter = {
     id: "email",
     type: "notification",
@@ -38,22 +58,22 @@ export const EmailAdapter: NotificationAdapter = {
             const transporter = createTransporter(config);
             await transporter.verify();
 
-            const recipient = Array.isArray(config.to) ? config.to.join(", ") : config.to;
+            const to = recipients(config);
+            const brand = await loadNotificationBrand();
+            const mail = await mailFor(
+                smtpTestTemplate({ host: config.host, port: config.port, security: SECURITY_LABELS[config.secure] ?? config.secure, from: config.from, to }),
+                brand,
+            );
 
             await transporter.sendMail({
-                from: config.from,
-                to: recipient,
-                subject: "DBackup - Test Email",
-                text: "This is a test email sent by DBackup to verify that your SMTP configuration is working correctly.",
-                html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
-  <h2 style="color:#22c55e;margin-bottom:8px">Test Email</h2>
-  <p style="color:#374151">This is a test email sent by <strong>DBackup</strong> to verify that your SMTP configuration is working correctly.</p>
-  <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0"/>
-  <p style="color:#9ca3af;font-size:12px">You can safely ignore this message.</p>
-</div>`,
+                from: senderWithName(config.from, brand),
+                to,
+                subject: mail.subject,
+                text: mail.text,
+                html: mail.html,
             });
 
-            return { success: true, message: `SMTP connection verified. Test email sent to ${recipient}` };
+            return { success: true, message: `SMTP connection verified. Test email sent to ${to}` };
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             return { success: false, message: message || "Failed to send test email" };
@@ -67,31 +87,15 @@ export const EmailAdapter: NotificationAdapter = {
             // Verify connection configuration
             await transporter.verify();
 
-            const subject = context?.title || "DBackup Notification";
-
-            // Dynamic import to avoid build errors with server components in some contexts
-            const { renderToStaticMarkup } = await import("react-dom/server");
-            const { SystemNotificationEmail } = await import(
-                "@/components/email/system-notification-template"
-            );
-
-            const html = renderToStaticMarkup(
-                <SystemNotificationEmail
-                    title={context?.title || "Notification"}
-                    message={message}
-                    fields={context?.fields}
-                    color={context?.color}
-                    success={context?.success ?? true}
-                    badge={context?.badge}
-                />
-            );
+            const brand: NotificationBrand = context?.brand ?? await loadNotificationBrand();
+            const mail = await mailFor(payloadOf(message, context), brand);
 
             const info = await transporter.sendMail({
-                from: config.from,
-                to: Array.isArray(config.to) ? config.to.join(", ") : config.to,
-                subject: subject,
-                text: message, // fallback
-                html: html,
+                from: senderWithName(config.from, brand),
+                to: recipients(config),
+                subject: mail.subject,
+                text: mail.text,
+                html: mail.html,
             });
 
             log.info("Email notification sent", { messageId: info.messageId });

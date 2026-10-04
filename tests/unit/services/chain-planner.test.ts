@@ -15,6 +15,8 @@ const loadIndex = vi.fn();
 vi.mock("@/services/backup/archive-index-service", () => ({
     archiveIndexService: { load: (...a: unknown[]) => loadIndex(...a) },
 }));
+const isConnected = vi.fn();
+vi.mock("@/lib/runner/steps/air-gap", () => ({ isConnected: (...a: unknown[]) => isConnected(...a) }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() }) },
 }));
@@ -100,6 +102,59 @@ describe("planChain", () => {
         expect(plan.previousIndex).toBeDefined();
     });
 
+    describe("with an air-gapped destination", () => {
+        /** dest-1 holds the whole chain, the air-gapped usb holds only the snapshot given. */
+        function withUsb(usbList: ReturnType<typeof vi.fn>) {
+            prismaMock.adapterConfig.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+                id: where.id, name: where.id, type: "storage", storageRole: "DESTINATION", adapterId: where.id, config: "{}",
+                metadata: where.id === "usb" ? JSON.stringify({ airGapped: true }) : null,
+            }));
+            registryGet.mockImplementation((adapterId: string) => ({
+                read: vi.fn().mockResolvedValue(META),
+                list: adapterId === "usb" ? usbList : vi.fn().mockResolvedValue([
+                    { name: "full-a.tar", path: `plex/${CHAIN_DIR}/full-a.tar`, size: 1, lastModified: NOW },
+                    { name: "inc-yesterday.tar", path: PREV_PATH, size: 1, lastModified: NOW },
+                ]),
+            }));
+        }
+
+        it("continues the chain while it is not connected, without listing it", async () => {
+            // An unplugged disk lists a missing folder as empty, which must not read as a broken chain.
+            const usbList = vi.fn().mockResolvedValue([]);
+            withUsb(usbList);
+            isConnected.mockResolvedValue(false);
+
+            const plan = await planChain(input({ destinationConfigIds: ["dest-1", "usb"] }));
+
+            expect(plan.type).toBe("incremental");
+            expect(usbList).not.toHaveBeenCalled();
+        });
+
+        it("continues the chain when it answered but could not be listed", async () => {
+            withUsb(vi.fn().mockRejectedValue(new Error("unplugged meanwhile")));
+            isConnected.mockResolvedValue(true);
+
+            const plan = await planChain(input({ destinationConfigIds: ["dest-1", "usb"] }));
+
+            expect(plan.type).toBe("incremental");
+        });
+
+        it("starts a full once it is connected again and lacks part of the chain", async () => {
+            withUsb(vi.fn().mockResolvedValue([{ name: "full-a.tar", path: `plex/${CHAIN_DIR}/full-a.tar`, size: 1, lastModified: NOW }]));
+            isConnected.mockResolvedValue(true);
+
+            const plan = await planChain(input({ destinationConfigIds: ["dest-1", "usb"] }));
+
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/missing part of the chain/i) });
+        });
+
+        it("never asks a destination that is not air-gapped", async () => {
+            await planChain(input());
+
+            expect(isConnected).not.toHaveBeenCalled();
+        });
+    });
+
     describe("degrades to a full backup when", () => {
         it("the job is not in incremental mode", async () => {
             const plan = await planChain(input({ job: { ...input().job, backupMode: "FULL" } }));
@@ -171,6 +226,13 @@ describe("planChain", () => {
                 sources: [{ jobSourceId: "src-9", excludePatterns: ["*.log"] }],
             }));
             expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/added or replaced/i) });
+        });
+
+        it("the job was renamed since the chain started", async () => {
+            // The chain lies in the folder of the old name, the job writes into a new one.
+            const plan = await planChain(input({ job: { ...input().job, name: "plex media" } }));
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/job was renamed/i) });
+            expect(registryGet).not.toHaveBeenCalled();
         });
 
         it("a destination is missing part of the chain", async () => {

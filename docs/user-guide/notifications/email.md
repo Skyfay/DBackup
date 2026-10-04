@@ -5,7 +5,7 @@ Send HTML notifications via any SMTP server. Supports multiple recipients and pe
 ## Configuration
 
 ::: info Credential Profile required
-Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SMTP`. Create one in **Settings → Vault → Credentials** before saving the notification.
+Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SMTP`. Create one in **Vault → Credentials** before saving the notification.
 :::
 
 | Field | Description | Default | Required |
@@ -13,7 +13,7 @@ Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-pro
 | **SMTP Host** | Mail server hostname | - | ✅ |
 | **Port** | SMTP port | `587` | ❌ |
 | **Security** | `none`, `ssl`, or `starttls` | `starttls` | ❌ |
-| **Primary Credential** | `SMTP` credential profile (SMTP username + password) | - | ❌ |
+| **SMTP login** | `SMTP` credential profile (SMTP username + password) | - | ❌ |
 | **From** | Sender email address | - | ✅ |
 | **To** | Recipient email address(es) | - | ✅ |
 
@@ -21,12 +21,12 @@ Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-pro
 
 ## Setup Guide
 
-1. Create an `SMTP` credential profile in **Settings → Vault → Credentials** with your SMTP username and password ([guide](/user-guide/security/credential-profiles))
-2. In DBackup: **Notifications** → **Add Notification** → **Email (SMTP)**
+1. Create an `SMTP` credential profile in **Vault → Credentials** with your SMTP username and password ([guide](/user-guide/security/credential-profiles))
+2. In DBackup: **Connections** → **Channels** → **New channel** → **Email (SMTP)**
 3. Enter your SMTP server details (host, port, security mode)
-4. Select the credential profile in the **Primary Credential** picker
-5. Set the From and To addresses (multiple recipients supported)
-6. Click **Test** → check the recipient's inbox (and spam folder) → **Save**
+4. Pick the credential profile under **SMTP login**
+5. In the **Message** part, set the From address and add the recipients under To (several are supported)
+6. Click **Send test** → check the recipient's inbox (and spam folder) → **Create channel**
 
 <details>
 <summary>Common SMTP provider settings</summary>
@@ -43,7 +43,14 @@ Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-pro
 
 ## How It Works
 
-- **HTML template** with colored header bar (green = success, red = failure, blue = info)
+- **One template for every mail**: a banner in the color of the status (green when all went well, red for a failure, amber for a partial run or an alert, gray for news), then a card with the key numbers, what went wrong in plain words with the message as the server wrote it, the destinations of a run and the details.
+- **Buttons into DBackup**: Open run, Open job, Open destination and the like lead to the right page. They use the address in `BETTER_AUTH_URL`, and a mail without that address leaves them out.
+- **Times** follow the time zone under **Settings → General**, like `4 Oct 2026, 02:00`.
+- **Sender name**: a From that is only an address goes out as `DBackup · <Name>`, with the name under **Settings → General**. A From that has a name keeps it.
+- **Why it came**: the last line names the job or the event that sent the mail and where to change it.
+- **Dark mode**: Apple Mail, iOS Mail and other clients that follow the system show the mail dark. Gmail darkens it on its own.
+- **Pictures** load from `docs.dbackup.app`. A client that blocks them still shows every word, and every mail carries a plain text part for clients without HTML.
+- **Send test** sends a mail in the same template.
 - **Multiple recipients**: Add multiple email addresses in the To field
 - **Per-user delivery**: For login and account events, DBackup can email the affected user directly - configure in **Settings → Notifications** (see [System Notifications](/user-guide/features/notifications#notify-user-directly))
 

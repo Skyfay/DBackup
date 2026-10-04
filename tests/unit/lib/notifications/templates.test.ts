@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderTemplate } from "@/lib/notifications/templates";
-import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
-// Import from the barrel to give index.ts coverage
+import { NOTIFICATION_EVENTS, type BackupResultData, type NotificationEventData } from "@/lib/notifications/types";
 import {
   NOTIFICATION_EVENTS as BARREL_EVENTS,
   renderTemplate as barrelRenderTemplate,
@@ -9,706 +8,213 @@ import {
   getEventsByCategory,
 } from "@/lib/notifications";
 
-describe("Notification Templates", () => {
-  describe("renderTemplate", () => {
-    describe("USER_LOGIN", () => {
-      it("should render login payload with all fields", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.USER_LOGIN,
-          data: {
-            userName: "Alice",
-            email: "alice@example.com",
-            ipAddress: "192.168.1.1",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
+const field = (payload: { fields?: Array<{ name: string; value: string }> }, name: string) =>
+  payload.fields?.find((entry) => entry.name === name)?.value;
+const stat = (payload: { stats?: Array<{ label: string; value: string }> }, label: string) =>
+  payload.stats?.find((entry) => entry.label === label)?.value;
 
-        expect(payload.title).toBe("User Login");
-        expect(payload.message).toContain("Alice");
-        expect(payload.message).toContain("alice@example.com");
-        expect(payload.success).toBe(true);
-        expect(payload.color).toBe("#3b82f6"); // blue
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "User", value: "Alice" }),
-            expect.objectContaining({ name: "Email", value: "alice@example.com" }),
-            expect.objectContaining({ name: "IP Address", value: "192.168.1.1" }),
-            expect.objectContaining({ name: "Time" }),
-          ])
-        );
-      });
+const RUN: BackupResultData = {
+  jobName: "mysql-shop",
+  jobId: "job-1",
+  sourceName: "MySQL Shop",
+  sourceType: "MySQL 8.4",
+  duration: 134_000,
+  size: 1_524_713_390,
+  executionId: "run-1",
+  timestamp: "2026-10-04T01:17:21.000Z",
+  startedAt: "2026-10-04T01:15:07.000Z",
+  trigger: "Scheduler",
+  databases: 3,
+  encryptionKey: "Main key",
+  destinations: [
+    { name: "S3 Archive", adapterId: "s3-aws", state: "ok", detail: "Uploaded" },
+    { name: "NAS Backup", adapterId: "smb", state: "ok", detail: "Uploaded" },
+  ],
+};
 
-      it("should omit IP address field when not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.USER_LOGIN,
-          data: {
-            userName: "Bob",
-            email: "bob@example.com",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
+const backup = (eventType: string, data: Partial<BackupResultData> = {}) =>
+  renderTemplate({ eventType, data: { ...RUN, ...data } } as NotificationEventData);
 
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("IP Address");
-        expect(fieldNames).toContain("User");
-        expect(fieldNames).toContain("Email");
-      });
+describe("the mails of a backup run", () => {
+  it("names the job first and says where the databases went", () => {
+    const payload = backup(NOTIFICATION_EVENTS.BACKUP_SUCCESS);
+
+    expect(payload.title).toBe("mysql-shop finished");
+    expect(payload.message).toBe("3 databases from MySQL Shop are now in 2 destinations.");
+    expect(payload.preheader).toBe("1.42 GB went to S3 Archive and NAS Backup in 2 min 14 s.");
+    expect(payload.tone).toBe("success");
+    expect(payload.success).toBe(true);
+  });
+
+  it("shows when it started, how long it took, its size and who started it as tiles", () => {
+    const payload = backup(NOTIFICATION_EVENTS.BACKUP_SUCCESS);
+
+    expect(payload.stats).toEqual([
+      { label: "Started", value: "01:15" },
+      { label: "Duration", value: "2 min 14 s" },
+      { label: "Size", value: "1.42 GB" },
+      { label: "Trigger", value: "Schedule" },
+    ]);
+    expect(payload.details).toContainEqual({ name: "Source", value: "MySQL Shop · MySQL 8.4" });
+    expect(payload.details).toContainEqual({ name: "Encrypted", value: "with Main key" });
+  });
+
+  it("links a finished run to its page", () => {
+    const payload = backup(NOTIFICATION_EVENTS.BACKUP_SUCCESS);
+
+    expect(payload.actions).toEqual([{ label: "Open run", href: "/dashboard/history/run?id=run-1&from=history", icon: "history" }]);
+  });
+
+  it("names the destinations that did not get a partial backup", () => {
+    const payload = backup(NOTIFICATION_EVENTS.BACKUP_PARTIAL, {
+      destinations: [
+        ...RUN.destinations!,
+        { name: "Dropbox", adapterId: "dropbox", state: "failed", detail: "Upload failed", error: "Error 401: expired_access_token" },
+      ],
     });
 
-    describe("USER_CREATED", () => {
-      it("should render user created payload", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.USER_CREATED,
-          data: {
-            userName: "NewUser",
-            email: "new@example.com",
-            createdBy: "Admin",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
+    expect(payload.title).toBe("mysql-shop finished partially");
+    expect(payload.message).toBe("2 of 3 destinations got the backup. Dropbox did not.");
+    expect(stat(payload, "Destinations")).toBe("2 of 3");
+    expect(field(payload, "Failed")).toBe("Dropbox");
+    expect(payload.tone).toBe("warning");
+    expect(payload.actions?.map((action) => action.label)).toEqual(["Open run", "Open job"]);
+  });
 
-        expect(payload.title).toBe("New User Created");
-        expect(payload.message).toContain("NewUser");
-        expect(payload.success).toBe(true);
-        expect(payload.color).toBe("#22c55e"); // green
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Created By", value: "Admin" }),
-          ])
-        );
-      });
-
-      it("should omit createdBy when not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.USER_CREATED,
-          data: {
-            userName: "NewUser",
-            email: "new@example.com",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Created By");
-      });
+  it("tells a failure in plain words with the message as it was written", () => {
+    const payload = backup(NOTIFICATION_EVENTS.BACKUP_FAILURE, {
+      destinations: [{ name: "S3 Archive", adapterId: "s3-aws", state: "skipped", detail: "Not reached" }],
+      problem: { title: "MySQL Shop refused the login", raw: "Access denied for user 'backup'", where: "Dumping databases · 03:15:09" },
+      failedInARow: 3,
+      lastSuccessAt: "2026-10-02T01:16:00.000Z",
     });
 
-    describe("BACKUP_SUCCESS", () => {
-      it("should render successful backup with all details", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.BACKUP_SUCCESS,
-          data: {
-            jobName: "Daily MySQL",
-            sourceName: "mysql-prod",
-            duration: 5000,
-            size: 1048576,
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
+    expect(payload.title).toBe("mysql-shop failed");
+    expect(payload.message).toBe("The run stopped while dumping databases, so no destination got a backup.");
+    expect(payload.preheader).toBe("MySQL Shop refused the login. Last clean run 2 days ago.");
+    expect(stat(payload, "Failed in a row")).toBe("3");
+    expect(field(payload, "Error")).toBe("Access denied for user 'backup'");
+    expect(payload.details).toContainEqual({ name: "Last clean run", value: "2 Oct 2026, 01:16" });
+    expect(payload.tone).toBe("failure");
+  });
 
-        expect(payload.title).toBe("Backup Successful: Daily MySQL");
-        expect(payload.message).toContain("Daily MySQL");
-        expect(payload.success).toBe(true);
-        expect(payload.color).toBe("#22c55e");
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Job", value: "Daily MySQL" }),
-            expect.objectContaining({ name: "Source", value: "mysql-prod" }),
-            expect.objectContaining({ name: "Duration", value: "5s" }),
-            expect.objectContaining({ name: "Size", value: expect.stringContaining("1") }),
-          ])
-        );
-      });
+  it("keeps the raw error of a failure for a caller that has no plain words for it", () => {
+    const payload = backup(NOTIFICATION_EVENTS.BACKUP_FAILURE, { error: "Something broke", destinations: undefined });
 
-      it("should omit optional fields when not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.BACKUP_SUCCESS,
-          data: {
-            jobName: "Minimal Job",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
+    expect(payload.problem).toEqual({ title: "The run stopped with an error", raw: "Something broke" });
+    expect(payload.message).toBe("The run stopped with an error, so no destination got a backup.");
+  });
 
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).toContain("Job");
-        expect(fieldNames).not.toContain("Source");
-        expect(fieldNames).not.toContain("Duration");
-        expect(fieldNames).not.toContain("Size");
-      });
+  it("works with the job name alone", () => {
+    const payload = renderTemplate({
+      eventType: NOTIFICATION_EVENTS.BACKUP_SUCCESS,
+      data: { jobName: "files", timestamp: "2026-10-04T01:17:21.000Z" },
     });
 
-    describe("BACKUP_FAILURE", () => {
-      it("should render failure with error details", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.BACKUP_FAILURE,
-          data: {
-            jobName: "Daily MySQL",
-            error: "Connection refused",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Backup Failed: Daily MySQL");
-        expect(payload.message).toContain("Connection refused");
-        expect(payload.success).toBe(false);
-        expect(payload.color).toBe("#ef4444"); // red
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Error", value: "Connection refused" }),
-          ])
-        );
-      });
-
-      it("should handle failure without error message", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.BACKUP_FAILURE,
-          data: {
-            jobName: "Job",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        expect(payload.success).toBe(false);
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Error");
-      });
-    });
-
-    describe("RESTORE_COMPLETE", () => {
-      it("should render successful restore", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.RESTORE_COMPLETE,
-          data: {
-            sourceName: "mysql-prod",
-            targetDatabase: "staging_db",
-            duration: 3000,
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Restore Completed");
-        expect(payload.message).toContain("staging_db");
-        expect(payload.success).toBe(true);
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Target DB", value: "staging_db" }),
-            expect.objectContaining({ name: "Duration", value: "3s" }),
-          ])
-        );
-      });
-
-      it("should render all optional fields when provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.RESTORE_COMPLETE,
-          data: {
-            sourceName: "mysql-prod",
-            targetDatabase: "staging_db",
-            databaseType: "mysql",
-            storageName: "s3-bucket",
-            backupFile: "backup.sql",
-            size: 2048,
-            duration: 4000,
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).toContain("Database Type");
-        expect(fieldNames).toContain("Storage");
-        expect(fieldNames).toContain("Backup File");
-        expect(fieldNames).toContain("Size");
-      });
-
-      it("should omit Target DB from message when targetDatabase is not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.RESTORE_COMPLETE,
-          data: { timestamp: "2026-02-15T12:00:00Z" },
-        });
-
-        expect(payload.message).not.toContain("Target:");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Target DB");
-      });
-    });
-
-    describe("RESTORE_FAILURE", () => {
-      it("should render failed restore with error", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE,
-          data: {
-            sourceName: "mysql-prod",
-            error: "Permission denied",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Restore Failed");
-        expect(payload.success).toBe(false);
-        expect(payload.color).toBe("#ef4444");
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Error", value: "Permission denied" }),
-          ])
-        );
-      });
-
-      it("should render all optional fields when provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE,
-          data: {
-            sourceName: "mysql-prod",
-            databaseType: "mysql",
-            targetDatabase: "staging_db",
-            backupFile: "backup.sql",
-            error: "timeout",
-            duration: 1000,
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).toContain("Database Type");
-        expect(fieldNames).toContain("Target DB");
-        expect(fieldNames).toContain("Backup File");
-        expect(fieldNames).toContain("Duration");
-      });
-
-      it("should render minimal payload when no optional fields are provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE,
-          data: { timestamp: "2026-02-15T12:00:00Z" },
-        });
-
-        expect(payload.success).toBe(false);
-        expect(payload.message).toBe("Database restore failed.");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Source");
-        expect(fieldNames).not.toContain("Error");
-      });
-    });
-
-    describe("CONFIG_BACKUP", () => {
-      it("should render config backup notification", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.CONFIG_BACKUP,
-          data: {
-            fileName: "config_backup.json.gz.enc",
-            size: 2048,
-            encrypted: true,
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Configuration Backup Created");
-        expect(payload.message).toContain("Encrypted");
-        expect(payload.success).toBe(true);
-        expect(payload.color).toBe("#8b5cf6"); // purple
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "File", value: "config_backup.json.gz.enc" }),
-            expect.objectContaining({ name: "Encrypted", value: "Yes" }),
-          ])
-        );
-      });
-
-      it("should show unencrypted status", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.CONFIG_BACKUP,
-          data: {
-            encrypted: false,
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Encrypted", value: "No" }),
-          ])
-        );
-      });
-    });
-
-    describe("SYSTEM_ERROR", () => {
-      it("should render system error with details", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.SYSTEM_ERROR,
-          data: {
-            component: "Scheduler",
-            error: "Cron parse error",
-            details: "Invalid expression: '* * *'",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("System Error");
-        expect(payload.message).toContain("Scheduler");
-        expect(payload.message).toContain("Cron parse error");
-        expect(payload.success).toBe(false);
-        expect(payload.color).toBe("#ef4444");
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Component", value: "Scheduler" }),
-            expect.objectContaining({ name: "Error", value: "Cron parse error" }),
-            expect.objectContaining({ name: "Details", value: "Invalid expression: '* * *'" }),
-          ])
-        );
-      });
-
-      it("should omit details field when not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.SYSTEM_ERROR,
-          data: {
-            component: "Queue",
-            error: "Timeout",
-            timestamp: "2026-02-15T12:00:00Z",
-          },
-        });
-
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Details");
-      });
-    });
-
-    describe("Unknown event type fallback", () => {
-      it("should return generic payload for unknown events", () => {
-        const payload = renderTemplate({
-          eventType: "unknown_event" as any,
-          data: {} as any,
-        });
-
-        expect(payload.title).toBe("Notification");
-        expect(payload.message).toBe("An event occurred.");
-        expect(payload.success).toBe(true);
-      });
-    });
-
-    // ── Storage Alert Templates ──────────────────────────────────
-
-    describe("STORAGE_USAGE_SPIKE", () => {
-      it("should render spike payload for increase", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
-          data: {
-            storageName: "S3 Prod",
-            previousSize: 1073741824, // 1 GB
-            currentSize: 1610612736,  // 1.5 GB
-            changePercent: 50,
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Storage Usage Spike");
-        expect(payload.message).toContain("S3 Prod");
-        expect(payload.message).toContain("increased");
-        expect(payload.message).toContain("50.0%");
-        expect(payload.success).toBe(false);
-        expect(payload.badge).toBe("Alert");
-        expect(payload.color).toBe("#f59e0b"); // amber
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Storage", value: "S3 Prod" }),
-            expect.objectContaining({ name: "Change", value: "+50.0%" }),
-            expect.objectContaining({ name: "Previous Size" }),
-            expect.objectContaining({ name: "Current Size" }),
-            expect.objectContaining({ name: "Time" }),
-          ])
-        );
-      });
-
-      it("should render spike payload for decrease", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
-          data: {
-            storageName: "Local Backup",
-            previousSize: 2147483648, // 2 GB
-            currentSize: 1073741824,  // 1 GB
-            changePercent: -50,
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.message).toContain("decreased");
-        expect(payload.message).toContain("50.0%");
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Change", value: "-50.0%" }),
-          ])
-        );
-      });
-    });
-
-    describe("STORAGE_LIMIT_WARNING", () => {
-      it("should render limit warning payload", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
-          data: {
-            storageName: "NAS Storage",
-            currentSize: 9663676416,  // ~9 GB
-            limitSize: 10737418240,   // 10 GB
-            usagePercent: 90,
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Storage Limit Warning");
-        expect(payload.message).toContain("NAS Storage");
-        expect(payload.message).toContain("90.0%");
-        expect(payload.success).toBe(false);
-        expect(payload.badge).toBe("Alert");
-        expect(payload.color).toBe("#ef4444"); // red
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Storage", value: "NAS Storage" }),
-            expect.objectContaining({ name: "Usage", value: "90.0%" }),
-            expect.objectContaining({ name: "Current Size" }),
-            expect.objectContaining({ name: "Limit" }),
-            expect.objectContaining({ name: "Time" }),
-          ])
-        );
-      });
-    });
-
-    describe("STORAGE_MISSING_BACKUP", () => {
-      it("should render missing backup payload with last backup date", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
-          data: {
-            storageName: "S3 Archive",
-            lastBackupAt: "2026-02-20T08:00:00Z",
-            thresholdHours: 48,
-            hoursSinceLastBackup: 50,
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Missing Backup Alert");
-        expect(payload.message).toContain("S3 Archive");
-        expect(payload.message).toContain("50 hours");
-        expect(payload.message).toContain("48h");
-        expect(payload.success).toBe(false);
-        expect(payload.badge).toBe("Alert");
-        expect(payload.color).toBe("#3b82f6"); // blue
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Storage", value: "S3 Archive" }),
-            expect.objectContaining({ name: "Hours Since Last Backup", value: "50h" }),
-            expect.objectContaining({ name: "Threshold", value: "48h" }),
-            expect.objectContaining({ name: "Last Backup" }),
-            expect.objectContaining({ name: "Time" }),
-          ])
-        );
-      });
-
-      it("should omit last backup field when not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
-          data: {
-            storageName: "Local",
-            thresholdHours: 24,
-            hoursSinceLastBackup: 30,
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Last Backup");
-        expect(fieldNames).toContain("Storage");
-        expect(fieldNames).toContain("Hours Since Last Backup");
-      });
-    });
-
-    // ── Update / Connection Templates ─────────────────────────────
-
-    describe("UPDATE_AVAILABLE", () => {
-      it("should render update available payload with releaseUrl", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.UPDATE_AVAILABLE,
-          data: {
-            latestVersion: "2.0.0",
-            currentVersion: "1.5.0",
-            releaseUrl: "https://github.com/dbackup/releases/2.0.0",
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Update Available");
-        expect(payload.message).toContain("2.0.0");
-        expect(payload.message).toContain("1.5.0");
-        expect(payload.success).toBe(true);
-        expect(payload.badge).toBe("Update");
-        expect(payload.color).toBe("#3b82f6");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).toContain("Latest Version");
-        expect(fieldNames).toContain("Current Version");
-        expect(fieldNames).toContain("Release Notes");
-      });
-
-      it("should omit Release Notes field when releaseUrl is not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.UPDATE_AVAILABLE,
-          data: {
-            latestVersion: "2.0.0",
-            currentVersion: "1.5.0",
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Release Notes");
-      });
-    });
-
-    describe("CONNECTION_OFFLINE", () => {
-      it("should render database source as offline with last error", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.CONNECTION_OFFLINE,
-          data: {
-            adapterName: "prod-mysql",
-            adapterType: "database",
-            adapterId: "mysql",
-            consecutiveFailures: 3,
-            lastError: "ECONNREFUSED",
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Source Offline");
-        expect(payload.message).toContain("prod-mysql");
-        expect(payload.message).toContain("3");
-        expect(payload.success).toBe(false);
-        expect(payload.badge).toBe("Offline");
-        expect(payload.color).toBe("#ef4444");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).toContain("Source");
-        expect(fieldNames).toContain("Type");
-        expect(fieldNames).toContain("Failed Checks");
-        expect(fieldNames).toContain("Last Error");
-      });
-
-      it("should use Destination label for storage adapter type", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.CONNECTION_OFFLINE,
-          data: {
-            adapterName: "s3-bucket",
-            adapterType: "storage",
-            adapterId: "s3",
-            consecutiveFailures: 1,
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Destination Offline");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Last Error");
-      });
-    });
-
-    describe("CONNECTION_ONLINE", () => {
-      it("should render database source as recovered with downtime", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.CONNECTION_ONLINE,
-          data: {
-            adapterName: "prod-mysql",
-            adapterType: "database",
-            adapterId: "mysql",
-            downtime: "15m",
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Source Recovered");
-        expect(payload.message).toContain("prod-mysql");
-        expect(payload.message).toContain("15m");
-        expect(payload.success).toBe(true);
-        expect(payload.badge).toBe("Recovered");
-        expect(payload.color).toBe("#22c55e");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).toContain("Downtime");
-      });
-
-      it("should use Destination label for storage adapter and omit downtime when not provided", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.CONNECTION_ONLINE,
-          data: {
-            adapterName: "s3-bucket",
-            adapterType: "storage",
-            adapterId: "s3",
-            timestamp: "2026-02-22T10:00:00Z",
-          },
-        });
-
-        expect(payload.title).toBe("Destination Recovered");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Downtime");
-      });
-    });
-
-    describe("DB_VERSION_CHANGED", () => {
-      it("renders payload with all fields including edition", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.DB_VERSION_CHANGED,
-          data: {
-            sourceName: "prod-mssql",
-            sourceId: "src-1",
-            adapterId: "mssql",
-            previousVersion: "15.0.4280.7",
-            newVersion: "15.0.4360.2",
-            edition: "Enterprise Edition",
-            timestamp: "2026-05-31T10:00:00Z",
-            isDowngrade: false,
-          },
-        });
-
-        expect(payload.title).toBe("Database Version Upgraded: prod-mssql");
-        expect(payload.message).toContain("prod-mssql");
-        expect(payload.message).toContain("15.0.4280.7");
-        expect(payload.message).toContain("15.0.4360.2");
-        expect(payload.success).toBe(true);
-        expect(payload.color).toBe("#3b82f6");
-        expect(payload.badge).toBe("Upgrade");
-
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).toEqual(
-          expect.arrayContaining([
-            "Source",
-            "Adapter",
-            "Previous Version",
-            "New Version",
-            "Edition",
-            "Time",
-          ])
-        );
-      });
-
-      it("falls back to 'unknown' for previousVersion=null and omits edition when missing", () => {
-        const payload = renderTemplate({
-          eventType: NOTIFICATION_EVENTS.DB_VERSION_CHANGED,
-          data: {
-            sourceName: "prod-mysql",
-            sourceId: "src-2",
-            adapterId: "mysql",
-            previousVersion: null,
-            newVersion: "8.0.31",
-            timestamp: "2026-05-31T10:00:00Z",
-            isDowngrade: false,
-          },
-        });
-
-        expect(payload.message).toContain("unknown");
-        expect(payload.message).toContain("8.0.31");
-        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
-        expect(fieldNames).not.toContain("Edition");
-        expect(payload.fields).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "Previous Version", value: "unknown" }),
-          ])
-        );
-      });
-    });
+    expect(payload.title).toBe("files finished");
+    expect(payload.message).toBe("files finished.");
+    expect(payload.actions).toEqual([]);
   });
 });
 
-// ── Barrel export (index.ts) ──────────────────────────────────
+describe("times in the mails", () => {
+  it("writes every time in the time zone of the instance", () => {
+    const payload = renderTemplate(
+      { eventType: NOTIFICATION_EVENTS.BACKUP_SUCCESS, data: { ...RUN } },
+      { timeZone: "Europe/Zurich" },
+    );
+
+    expect(stat(payload, "Started")).toBe("03:15");
+    expect(field(payload, "Time")).toBe("4 Oct 2026, 03:17");
+  });
+
+  it("falls back to UTC for a time zone the runtime does not know", () => {
+    const payload = renderTemplate({ eventType: NOTIFICATION_EVENTS.BACKUP_SUCCESS, data: { ...RUN } }, { timeZone: "Mars/Olympus" });
+
+    expect(field(payload, "Time")).toBe("4 Oct 2026, 01:17");
+  });
+});
+
+describe("the mails about a restore", () => {
+  it("names the database that came back", () => {
+    const payload = renderTemplate({
+      eventType: NOTIFICATION_EVENTS.RESTORE_COMPLETE,
+      data: { sourceName: "MySQL Prod", targetDatabase: "app_db", databaseType: "mysql", size: 1024, duration: 8000, executionId: "r1", timestamp: "2026-10-04T01:00:00.000Z" },
+    });
+
+    expect(payload.title).toBe("app_db was restored");
+    expect(stat(payload, "Type")).toBe("MYSQL");
+    expect(payload.actions?.[0].href).toBe("/dashboard/history/run?id=r1&from=history");
+  });
+
+  it("tells a failed restore in plain words", () => {
+    const payload = renderTemplate({
+      eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE,
+      data: { sourceName: "MySQL Prod", targetDatabase: "app_db", error: "Access denied for user 'root'", timestamp: "2026-10-04T01:00:00.000Z" },
+    });
+
+    expect(payload.title).toBe("The restore of app_db failed");
+    expect(payload.problem?.title).toBe("MySQL Prod refused the login");
+    expect(payload.problem?.raw).toBe("Access denied for user 'root'");
+    expect(payload.success).toBe(false);
+  });
+
+  it("works without any of its optional facts", () => {
+    const payload = renderTemplate({ eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE, data: { timestamp: "2026-10-04T01:00:00.000Z" } });
+
+    expect(payload.title).toBe("A restore failed");
+    expect(payload.problem).toBeUndefined();
+    expect(payload.fields?.map((entry) => entry.name)).toEqual(["Time"]);
+  });
+});
+
+describe("the mails about people", () => {
+  const login = {
+    eventType: NOTIFICATION_EVENTS.USER_LOGIN,
+    data: {
+      userName: "Anna Keller",
+      email: "anna@example.com",
+      ipAddress: "203.0.113.24",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.6; rv:131.0) Gecko/20100101 Firefox/131.0",
+      timestamp: "2026-10-04T07:14:00.000Z",
+    },
+  } as const;
+
+  it("tells the channels who signed in, from which browser", () => {
+    const payload = renderTemplate(login);
+
+    expect(payload.title).toBe("Anna Keller signed in");
+    expect(payload.message).toBe("Anna Keller (anna@example.com) signed in from Firefox on macOS.");
+    expect(field(payload, "IP Address")).toBe("203.0.113.24");
+    expect(payload.note).toBeUndefined();
+  });
+
+  it("tells the person themselves what to do when it was not them", () => {
+    const payload = renderTemplate(login, { audience: "user" });
+
+    expect(payload.title).toBe("New sign-in to your account");
+    expect(payload.note).toContain("Not you?");
+    expect(payload.actions).toEqual([{ label: "Open sessions", href: "/dashboard/profile?part=sessions", icon: "user-round" }]);
+  });
+
+  it("tells a new person their account is ready", () => {
+    const data = { userName: "Ben", email: "ben@example.com", createdBy: "Anna Keller", timestamp: "2026-10-04T07:14:00.000Z" };
+
+    expect(renderTemplate({ eventType: NOTIFICATION_EVENTS.USER_CREATED, data }).title).toBe("Ben has an account now");
+    const toUser = renderTemplate({ eventType: NOTIFICATION_EVENTS.USER_CREATED, data }, { audience: "user" });
+    expect(toUser.title).toBe("Your DBackup account is ready");
+    expect(toUser.message).toBe("Anna Keller made an account for ben@example.com.");
+  });
+});
+
+describe("an event no template knows", () => {
+  it("still gives a payload", () => {
+    const payload = renderTemplate({ eventType: "unknown_event", data: {} } as unknown as NotificationEventData);
+
+    expect(payload.title).toBe("Notification");
+    expect(payload.success).toBe(true);
+  });
+});
 
 describe("notifications/index barrel exports", () => {
   it("re-exports NOTIFICATION_EVENTS", () => {
@@ -718,18 +224,16 @@ describe("notifications/index barrel exports", () => {
   it("re-exports renderTemplate and it works", () => {
     const payload = barrelRenderTemplate({
       eventType: BARREL_EVENTS.SYSTEM_ERROR,
-      data: { component: "test", error: "fail", timestamp: "2026-01-01T00:00:00Z" },
+      data: { component: "Configuration backup", error: "fail", timestamp: "2026-01-01T00:00:00Z" },
     });
-    expect(payload.title).toBe("System Error");
+    expect(payload.title).toBe("Configuration backup failed");
   });
 
   it("re-exports getEventDefinition", () => {
-    const def = getEventDefinition(BARREL_EVENTS.USER_LOGIN);
-    expect(def?.id).toBe("user_login");
+    expect(getEventDefinition(BARREL_EVENTS.USER_LOGIN)?.id).toBe("user_login");
   });
 
   it("re-exports getEventsByCategory", () => {
-    const grouped = getEventsByCategory();
-    expect(Object.keys(grouped).length).toBeGreaterThan(0);
+    expect(Object.keys(getEventsByCategory()).length).toBeGreaterThan(0);
   });
 });

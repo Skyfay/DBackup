@@ -15,7 +15,7 @@ setting one up and what each adapter supports.
 | Storage for 7 daily copies of 60 GB | ~420 GB | ~66 GB |
 | Losing one backup file costs | That one backup | Everything the chain built on it |
 
-Incremental is **off by default** and only appears on jobs that have directory sources.
+Incremental is **off by default**, also for a job of folders. The **Incremental** part of a job only appears once the job backs up folders, since a job of only a database always makes full backups.
 
 ::: warning Database dumps are always full
 An incremental archive contains **every database in full**, plus only the directory files
@@ -24,17 +24,22 @@ that changed. If your job is mostly a large database, incremental saves very lit
 
 ## Enabling it
 
-1. Open the job and go to **Options**.
-2. Turn on **Incremental backups**.
-3. Set **Full backup every N days** (default 7).
+1. Open the job and go to the **Incremental** part, right after **Source**. It shows once the job backs up folders.
+2. Pick **Only what changed**.
+3. Set **Full backup every** N days (default 7).
 4. Optionally turn on **Detect changes by content**.
+
+The part draws a chain on the job's schedule, the full backup and the incremental ones after it, and says how many backups a chain holds. **What takes part** lists the sources of the job: every folder stores only its changes, and a database is dumped whole in every run.
+
+Switching the source of a job to **A database** alone turns incremental off, so folders added later start with full backups again.
 
 ### Full backup every N days
 
-Starts a fresh chain on this interval. It is the safety valve: a shorter interval uses more
-storage but limits how many backups a single damaged archive can affect.
+Starts a fresh chain on this interval. It is the safety valve: a shorter interval uses more storage but limits how many backups a single damaged archive can affect.
 
-With the default of 7 and a daily schedule you get one full and six incrementals per week.
+With the default of 7 and a daily schedule you get one full and six incrementals per week. A new setting counts from the next run, so a chain older than it ends there.
+
+A chain of more than 31 backups, a month of daily ones, gets a warning with a shorter setting to use. An hourly job with the default of 7 days builds chains of 168 backups, and a full backup every day keeps them at 24. A job that already makes a full backup every day is not warned, since no chain gets shorter.
 
 ### Detect changes by content
 
@@ -109,7 +114,7 @@ knowing anything about DBackup.
 
 ## Restoring
 
-Every snapshot is a complete, restorable point in time - the Storage Explorer shows one row
+Every snapshot is a complete, restorable point in time - the Backups page shows one row
 per snapshot with its full size, not just what that archive stores. Restoring reads from
 whichever archives of the chain hold the data, automatically.
 
@@ -170,6 +175,7 @@ This is automatic and logged in the execution. It happens when:
 - the configured interval has elapsed
 - the previous backup's metadata or file index cannot be read
 - a destination is missing part of the chain
+- the job was renamed, since the chain lies in the folder of its old name
 - the encryption profile changed
 - a directory source was added, removed or replaced
 - a directory source's exclude patterns changed
@@ -206,6 +212,6 @@ changes, a chunk-based tool is the better fit.
 
 ## Next Steps
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - browsing and restoring files
+- [Backups](/user-guide/features/backups) - browsing and restoring files
 - [Retention Policies](/user-guide/features/templates) - configuring what is kept
 - [Recovery Kit](/user-guide/security/recovery-kit) - restoring without DBackup

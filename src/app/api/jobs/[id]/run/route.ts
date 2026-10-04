@@ -9,6 +9,7 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ApiKeyError } from "@/lib/logging/errors";
 import { apiKeyService } from "@/services/auth/api-key-service";
+import { jobAuditName } from "@/services/jobs/job-audit";
 import prisma from "@/lib/prisma";
 
 const triggerBodySchema = z.object({
@@ -68,16 +69,18 @@ export async function POST(
 
         const result = await backupService.executeJob(id, triggerInfo, { lock });
 
-        // Audit log
         if (result.success) {
-            await auditService.log(
-                ctx.userId,
+            const name = await jobAuditName(id);
+            await auditService.logFor(
+                ctx,
                 AUDIT_ACTIONS.EXECUTE,
                 AUDIT_RESOURCES.JOB,
                 {
+                    ...(name ? { name } : {}),
                     executionId: result.executionId,
                     trigger: ctx.authMethod === "apikey" ? "api" : "manual",
                     lock: lock ?? false,
+                    // The key has a column of its own now, the details keep it for readers that look here.
                     ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
                 },
                 id

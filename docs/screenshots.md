@@ -28,11 +28,11 @@ Manage your backup jobs with scheduling, compression, and encryption options.
 
 ![Backup Jobs](/screenshots/jobs.png)
 
-## Storage Explorer
+## Backups
 
 Browse your backups, download files, or restore databases directly from the UI.
 
-![Storage Explorer](/screenshots/storage-explorer.png)
+![Backups](/screenshots/storage-explorer.png)
 
 ## Database Explorer
 

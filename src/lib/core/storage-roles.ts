@@ -29,7 +29,7 @@ export function isStorageRole(value: unknown): value is StorageRole {
 
 /** Human-readable label for the role, used in list badges and form options. */
 export function storageRoleLabel(role: StorageRole): string {
-    return role === STORAGE_ROLES.SOURCE ? "Directory Source" : "Backup Destination";
+    return role === STORAGE_ROLES.SOURCE ? "Directory source" : "Destination";
 }
 
 /**

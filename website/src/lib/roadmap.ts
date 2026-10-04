@@ -1,4 +1,4 @@
-import { GITHUB_REPO } from "@/lib/content";
+import { DOCS_URL, GITHUB_REPO } from "@/lib/content";
 
 export type RoadmapStatus = "idea" | "planned" | "in-progress";
 
@@ -183,17 +183,9 @@ export const ROADMAP_ITEMS: RoadmapItem[] = [
     category: "developer-experience",
   },
   {
-    slug: "mobile-responsive-ui",
-    title: "Mobile Responsive UI",
-    description: "Optimized layouts for tablet and mobile, so backup status can be checked on the go.",
-    status: "idea",
-    category: "developer-experience",
-  },
-  {
-    slug: "dark-mode-refinement",
-    title: "Dark Mode Refinement",
-    description:
-      "A systematic pass over every component for dark mode consistency, plus a high-contrast accessibility mode.",
+    slug: "high-contrast-mode",
+    title: "High-Contrast Mode",
+    description: "A high-contrast theme next to light and dark, for better readability and accessibility.",
     status: "idea",
     category: "developer-experience",
   },
@@ -225,6 +217,41 @@ export interface ShippedItem {
 }
 
 export const SHIPPED_ITEMS: ShippedItem[] = [
+  {
+    slug: "redesigned-interface",
+    title: "Redesigned Interface",
+    description:
+      "Every page is rebuilt in a new design that also works on phones and tablets, with a search across all jobs, connections, backups and runs. New pages for the backups, the databases and the history of each run, a Quick Setup that adds the first backup in one place, and notification emails in the same look.",
+    version: "v4.0.0",
+    releaseDate: "2026-10-04",
+    changelogAnchor: "v4-0-0-redesigned-interface-global-search-air-gapped-destinations-and-recently-deleted",
+  },
+  {
+    slug: "single-database-restores-downloads",
+    title: "Single Database Restores & Downloads",
+    description:
+      "Restore or download one database out of a multi-database backup, reading only that database from the destination. Old execution logs and history entries can be cleaned up automatically, and Settings shows and optimizes the size of the DBackup database.",
+    version: "v3.4.0",
+    releaseDate: "2026-09-16",
+    changelogAnchor: "v3-4-0-single-database-restores-and-downloads-data-retention-improvement-and-bug-fixes",
+  },
+  {
+    slug: "300-github-stars",
+    title: "300 GitHub Stars",
+    description: "DBackup crossed 300 stars on GitHub, thanks to everyone in the community.",
+    releaseDate: "2026-08-25",
+    link: { href: `https://github.com/${GITHUB_REPO}/stargazers`, label: "View on GitHub" },
+    star: true,
+  },
+  {
+    slug: "azure-sql-database-support",
+    title: "Azure SQL Database Support",
+    description:
+      "Azure SQL Database as a new source in beta, backed up through a BACPAC export, plus an hourly tier for Smart (GFS) retention policies.",
+    version: "v3.3.0",
+    releaseDate: "2026-08-15",
+    changelogAnchor: "v3-3-0-azure-sql-database-support-s3-upload-rework-and-general-improvements",
+  },
   {
     slug: "docker-volume-backups",
     title: "Docker Volume Backups",
@@ -385,12 +412,22 @@ export interface Milestone {
 
 export const MILESTONES: Milestone[] = [
   {
-    slug: "300-github-stars",
-    title: "300 GitHub Stars",
+    slug: "500-github-stars",
+    title: "500 GitHub Stars",
     description: "Help DBackup reach its next community milestone.",
-    target: 300,
+    target: 500,
     unit: "stars",
     liveSource: "github-stars",
     fallbackCurrent: 0,
   },
 ];
+
+/** Where a shipped entry links to: its own link, its changelog section or the changelog. */
+export function shippedHref(item: ShippedItem): string {
+  if (item.link) return item.link.href;
+  return item.changelogAnchor ? `${DOCS_URL}/changelog#${item.changelogAnchor}` : `${DOCS_URL}/changelog`;
+}
+
+export function issueHref(issueNumber: number): string {
+  return `https://github.com/${GITHUB_REPO}/issues/${issueNumber}`;
+}

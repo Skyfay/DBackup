@@ -203,9 +203,11 @@ async function runRestorePipeline(
 
     // Execute Import
     log("Applying configuration settings (Database Transaction)...");
-    await importConfiguration(backupData, "OVERWRITE", options);
+    const { notes } = await importConfiguration(backupData, "OVERWRITE", options);
 
-    log("Restoration completed successfully.", "info");
+    // What did not come back as it was, like a job paused for its missing key, needs a look.
+    for (const note of notes) log(note, "warn");
+    log(notes.length > 0 ? "Restoration completed, see the warnings above." : "Restoration completed successfully.", "info");
 
     await flushLogs();
     await prisma.execution.update({

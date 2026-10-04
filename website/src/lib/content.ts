@@ -5,67 +5,10 @@ export const GITHUB_REPO = "Skyfay/DBackup";
 export const DOCS_URL = "https://docs.dbackup.app";
 export const API_DOCS_URL = "https://api.dbackup.app";
 export const DISCORD_URL = "https://discord.com/invite/YvgPyky";
-export const GETTING_STARTED_URL = `${DOCS_URL}/user-guide/getting-started`;
-
-export const STATS = [
-  { value: "9", label: "Database Engines" },
-  { value: "14", label: "Storage Adapters" },
-  { value: "9", label: "Notification Channels" },
-  { value: "GPL-3.0", label: "Open Source" },
-];
-
-export const FEATURES = [
-  {
-    title: "Database Backup",
-    description:
-      "9 database engines, selective per-database backup, multi-database jobs with a unified TAR format, AES-256-GCM encryption, GZIP/Brotli compression, and SSH remote execution.",
-  },
-  {
-    title: "File & Folder Backup",
-    description:
-      "An application's config and data directories in the same job as its database, with a folder tree picker, reusable exclude presets, incremental chains, Docker volumes, and VSS shadow copies on SMB.",
-  },
-  {
-    title: "Storage & Destinations",
-    description:
-      "14 storage adapters, usable as backup destinations or as directory sources, multi-destination jobs for redundancy, a Storage Explorer, and alerts for usage spikes or missing backups.",
-  },
-  {
-    title: "Restore & Recovery",
-    description:
-      "Restore a whole backup, a single database, or a single file - fetching just that file's bytes instead of the whole archive - plus integrity verification and a Recovery Kit for restoring without DBackup itself.",
-  },
-  {
-    title: "Monitoring & Visibility",
-    description:
-      "Live progress tracking, an interactive dashboard, a GitHub-style backup calendar, a Database Explorer, and full execution history.",
-  },
-  {
-    title: "Notifications",
-    description:
-      "9 notification channels, per-job notification settings, system event notifications, and configurable reminder intervals.",
-  },
-  {
-    title: "Scheduling & Retention",
-    description:
-      "Cron-based scheduling with a visual picker, reusable GFS retention policy templates, naming templates, and automated config backups.",
-  },
-  {
-    title: "Access Control & Security",
-    description:
-      "SSO/OIDC, RBAC with granular permissions, 2FA and passkeys, a credential vault, and HTTPS by default.",
-  },
-  {
-    title: "API & Automation",
-    description:
-      "A full REST API, fine-grained API keys with expiration, and ready-made cURL, Bash, and Ansible examples.",
-  },
-  {
-    title: "Designed for Simplicity",
-    description:
-      "Configure almost everything from the UI instead of environment variables - a guided setup for beginners, deep configurability for power users.",
-  },
-];
+export const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
+export const SPONSOR_URL = "https://github.com/sponsors/Skyfay";
+export const CHANGELOG_URL = `${DOCS_URL}/changelog`;
+export const ARCHIVE_FORMAT_URL = `${DOCS_URL}/developer-guide/reference/archive-format`;
 
 export interface AdapterItem {
   id: string;
@@ -113,22 +56,6 @@ export const NOTIFICATION_CHANNELS: AdapterItem[] = [
   { id: "twilio-sms", label: "SMS (Twilio)" },
   { id: "email", label: "Email (SMTP)" },
 ];
-
-export const QUICK_START_SNIPPET = `# docker-compose.yml
-services:
-  dbackup:
-    image: skyfay/dbackup:latest
-    container_name: dbackup
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      - ENCRYPTION_KEY=       # openssl rand -hex 32
-      - BETTER_AUTH_URL=https://localhost:3000
-      - BETTER_AUTH_SECRET=   # openssl rand -base64 32
-    volumes:
-      - ./data:/data
-      - ./backups:/backups`;
 
 export const FAQS = [
   {

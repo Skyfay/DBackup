@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getNotificationLogFacets, getNotificationLogs } from "@/services/notifications/notification-log-service";
+import { logger } from "@/lib/logging/logger";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
+import {
+  getNotificationFilterOptions, getNotificationLogFacets, getNotificationLogs, getNotificationStats,
+} from "@/services/notifications/notification-log-service";
+
+const log = logger.child({ route: "notification-logs" });
 
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext(await headers());
@@ -18,6 +24,7 @@ export async function GET(req: NextRequest) {
     const pageSize = parseInt(searchParams.get("pageSize") || "50", 10);
     // Repeatable filters match any of the given values.
     const adapterId = searchParams.getAll("adapterId");
+    const channelName = searchParams.getAll("channel");
     const eventType = searchParams.getAll("eventType");
     const status = searchParams.getAll("status");
     const executionId = searchParams.get("executionId") || undefined;
@@ -27,19 +34,28 @@ export async function GET(req: NextRequest) {
       page: Number.isFinite(page) ? page : 1,
       pageSize: Number.isFinite(pageSize) ? pageSize : undefined,
       adapterId,
+      channelName,
       eventType,
       status,
       executionId,
       search,
     };
     const withFacets = searchParams.get("facets") === "true";
-    const [result, facets] = await Promise.all([
+    // The History page also asks for the numbers above the list and the options of its filters.
+    const withStats = searchParams.get("stats") === "true";
+    const [result, facets, stats, options] = await Promise.all([
       getNotificationLogs(query),
       withFacets ? getNotificationLogFacets(query) : Promise.resolve(undefined),
+      withStats ? getNotificationStats() : Promise.resolve(undefined),
+      withStats ? getNotificationFilterOptions() : Promise.resolve(undefined),
     ]);
 
-    return NextResponse.json(facets ? { ...result, facets } : result);
-  } catch (_error) {
+    return NextResponse.json({ ...result, ...(facets ? { facets } : {}), ...(stats ? { stats, options } : {}) });
+  } catch (error: unknown) {
+    if (error instanceof PermissionError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    log.error("Failed to fetch notification logs", {}, wrapError(error));
     return NextResponse.json(
       { error: "Failed to fetch notification logs" },
       { status: 500 }

@@ -3,3 +3,6 @@ contact_links:
   - name: Docs / Documentation
     url: https://docs.dbackup.app
     about: Check the documentation before opening an issue
+  - name: Report a security vulnerability
+    url: https://github.com/Skyfay/DBackup/security/advisories/new
+    about: Report it privately, never in a public issue. See SECURITY.md

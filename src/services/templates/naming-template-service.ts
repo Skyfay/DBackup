@@ -5,8 +5,9 @@ import { NotFoundError, ServiceError } from "@/lib/logging/errors";
 
 const log = logger.child({ service: "NamingTemplateService" });
 
+/** Every naming template with how many jobs name their backups by it. */
 export async function getNamingTemplates() {
-  return prisma.namingTemplate.findMany({ orderBy: { name: "asc" } });
+  return prisma.namingTemplate.findMany({ include: { _count: { select: { jobs: true } } }, orderBy: { name: "asc" } });
 }
 
 export async function getNamingTemplate(id: string) {
@@ -67,6 +68,10 @@ export async function updateNamingTemplate(
   if (template.isSystem && (input.name !== undefined || input.pattern !== undefined || input.description !== undefined)) {
     throw new ServiceError("NamingTemplateService", "updateNamingTemplate", "System templates cannot be modified.");
   }
+  // There is always a default, which every job without a template of its own is named by.
+  if (input.isDefault === false && template.isDefault) {
+    throw new ServiceError("NamingTemplateService", "updateNamingTemplate", `"${template.name}" is the default template. Make another template the default instead.`);
+  }
 
   if (input.name && input.name !== template.name) {
     const existing = await prisma.namingTemplate.findUnique({
@@ -98,7 +103,8 @@ export async function updateNamingTemplate(
   return updated;
 }
 
-export async function deleteNamingTemplate(id: string) {
+/** Deletes a template nothing depends on. Returns the name it had, for the audit log. */
+export async function deleteNamingTemplate(id: string): Promise<{ name: string }> {
   const template = await prisma.namingTemplate.findUnique({
     where: { id },
     include: { jobs: { select: { id: true } } },
@@ -116,6 +122,7 @@ export async function deleteNamingTemplate(id: string) {
 
   await prisma.namingTemplate.delete({ where: { id } });
   log.info("Naming template deleted", { id });
+  return { name: template.name };
 }
 
 /**

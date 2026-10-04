@@ -108,4 +108,16 @@ describe("applyExternalConfig", () => {
         expect(after).not.toBe(before);
         expect(after.points).toBe(50);
     });
+
+    it("keeps a limiter and its counters when its limit did not change", async () => {
+        const auth = getAuthLimiter();
+        await auth.consume("203.0.113.7");
+
+        // The middleware applies the same config every 30 seconds.
+        applyExternalConfig({ ...newConfig, auth: { ...RATE_LIMIT_DEFAULTS.auth } });
+
+        expect(getAuthLimiter()).toBe(auth);
+        expect((await auth.get("203.0.113.7"))?.consumedPoints).toBe(1);
+        expect(getApiLimiter().points).toBe(200);
+    });
 });

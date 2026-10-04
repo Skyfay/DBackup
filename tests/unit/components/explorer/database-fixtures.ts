@@ -1,0 +1,136 @@
+import { vi } from "vitest";
+import type {
+    DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase, ServersOverview, VersionPeriod,
+} from "@/services/databases/database-explorer-types";
+import type { ExplorerBackup } from "@/services/storage/explorer-types";
+
+const HOUR = 3_600_000;
+export const ago = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
+
+const database = (entry: Pick<ExplorerDatabase, "key" | "serverId" | "name" | "sizeInBytes" | "tableCount" | "jobIds" | "lastBackup">): ExplorerDatabase => ({
+    kind: "database", keyCount: null, logical: [], emptyLogical: 0, ...entry,
+});
+
+export const overview: DatabaseOverview = {
+    coverage: true,
+    servers: [
+        { id: "s1", name: "Shop cluster", adapterId: "postgres", version: "16.4", versionSince: ago(240), previousVersion: "16.2", status: "ONLINE", readAt: ago(0.1), readError: null },
+        { id: "s2", name: "ERP", adapterId: "mssql", version: "16.0.4135", versionSince: null, previousVersion: null, status: "ONLINE", readAt: ago(0.1), readError: null },
+        { id: "s3", name: "Cache", adapterId: "redis", version: "7.2.5", versionSince: null, previousVersion: null, status: "ONLINE", readAt: ago(0.1), readError: null },
+    ],
+    jobs: [
+        { id: "nightly", name: "Shop nightly", serverId: "s1", enabled: true, databases: ["shop"], schedule: "0 3 * * *" },
+        { id: "erp-nightly", name: "ERP nightly", serverId: "s2", enabled: true, databases: null, schedule: "30 4 * * *" },
+        { id: "cache-daily", name: "Cache daily", serverId: "s3", enabled: true, databases: null, schedule: "0 21 * * *" },
+    ],
+    databases: [
+        database({ key: "s1/shop", serverId: "s1", name: "shop", sizeInBytes: 2_100_000_000, tableCount: 46, jobIds: ["nightly"], lastBackup: { at: ago(6), jobId: "nightly", executionId: "r1", size: 104_000_000, status: "Success" } }),
+        database({ key: "s1/analytics", serverId: "s1", name: "analytics", sizeInBytes: 12_400_000_000, tableCount: 130, jobIds: [], lastBackup: null }),
+        database({ key: "s2/erp", serverId: "s2", name: "erp", sizeInBytes: null, tableCount: null, jobIds: ["erp-nightly"], lastBackup: null }),
+        {
+            key: "s3", serverId: "s3", kind: "instance", name: "Cache", sizeInBytes: null, tableCount: null, keyCount: 184_344,
+            logical: [{ name: "0", keys: 184_332 }, { name: "3", keys: 12 }], emptyLogical: 14, jobIds: ["cache-daily"], lastBackup: null,
+        },
+    ],
+};
+
+const json = (body: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response);
+
+/** What the Servers tab adds to the servers of the overview. ERP is behind a newer backup of its engine. */
+export const serversOverview: ServersOverview = {
+    newVersions: 2,
+    backups: true,
+    servers: [
+        { id: "s1", address: "db.internal:5432", latencyMs: 4, keptBackups: 38, lastBackupAt: ago(6), behind: null },
+        { id: "s2", address: "erp-sql.internal:1433", latencyMs: 9, keptBackups: 30, lastBackupAt: ago(5), behind: { version: "16.0.4200", serverName: "ERP test" } },
+        { id: "s3", address: "cache.internal:6379, DB 0", latencyMs: 1, keptBackups: 0, lastBackupAt: null, behind: null },
+    ],
+};
+
+/** Seven versions of a server, newest first, as the versions route pages them. */
+export const versionHistory: VersionPeriod[] = [
+    { version: "16.4", since: "2026-09-17T02:14:00.000Z", until: null, change: { kind: "up", from: "16.2" }, kept: 10, made: 20 },
+    { version: "16.2", since: "2026-03-03T01:40:00.000Z", until: "2026-09-17T02:14:00.000Z", change: { kind: "up", from: "15.6" }, kept: 20, made: 396 },
+    { version: "15.6", since: "2025-11-12T03:10:00.000Z", until: "2026-03-03T01:40:00.000Z", change: { kind: "up", from: "15.5" }, kept: 0, made: 226 },
+    { version: "15.5", since: "2025-08-02T02:05:00.000Z", until: "2025-11-12T03:10:00.000Z", change: { kind: "up", from: "15.4" }, kept: 0, made: 204 },
+    { version: "15.4", since: "2025-07-30T14:20:00.000Z", until: "2025-08-02T02:05:00.000Z", change: { kind: "down", from: "15.5" }, kept: 0, made: 6 },
+    { version: "15.5", since: "2025-07-28T02:10:00.000Z", until: "2025-07-30T14:20:00.000Z", change: { kind: "up", from: "15.4" }, kept: 0, made: 4 },
+    { version: "15.4", since: "2025-02-12T10:02:00.000Z", until: "2025-07-28T02:10:00.000Z", change: null, kept: 0, made: 78 },
+];
+export const fetchMock = vi.fn();
+
+/** Runs a check at the width of a phone, which gets the cards. */
+export async function onPhone(check: () => Promise<void>) {
+    const width = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 375, configurable: true });
+    try {
+        await check();
+    } finally {
+        Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
+    }
+}
+
+/** A run with what a test does not care about filled in. */
+export function dbRun(overrides: Partial<DatabaseRun> & Pick<DatabaseRun, "id" | "startedAt">): DatabaseRun {
+    return {
+        jobId: "nightly", serverId: "s1", status: "Success", endedAt: null, size: 104_000_000, path: null, databases: ["shop"], destinations: [], error: null,
+        ...overrides,
+    };
+}
+
+/** The runs the way the API sends them, every list of names once. */
+export function wire(runs: DatabaseRuns): DatabaseRunsData {
+    const names: string[][] = [];
+    return {
+        ...runs,
+        names,
+        runs: runs.runs.map((run) => {
+            const found = names.findIndex((list) => list.join() === run.databases.join());
+            const index = found >= 0 ? found : names.push(run.databases) - 1;
+            return { ...run, databases: index };
+        }),
+    };
+}
+
+/** Answers the routes of the Database Explorer, the tables and rows of a server included. */
+export function serve({ data = overview, runs, tables, backup }: { data?: DatabaseOverview; runs?: DatabaseRuns; tables?: unknown; backup?: ExplorerBackup } = {}) {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === "/api/databases") return json({ success: true, data });
+        if (url === "/api/databases/read") return json({ success: true, data });
+        if (url.startsWith("/api/databases/runs")) return json({ success: true, data: wire(runs ?? { runs: [], versionChanges: [], planned: [] }) });
+        if (url === "/api/databases/servers") return json({ success: true, data: serversOverview });
+        const versions = url.match(/^\/api\/databases\/servers\/([^/]+)\/versions\?page=(\d+)&size=(\d+)$/);
+        if (versions) {
+            const [page, size] = [Number(versions[2]), Number(versions[3])];
+            return json({ success: true, data: { versions: versionHistory.slice((page - 1) * size, page * size), total: versionHistory.length, page, size } });
+        }
+        const server = url.match(/^\/api\/databases\/servers\/([^/?]+)$/);
+        if (server) {
+            const summary = serversOverview.servers.find((entry) => entry.id === server[1]);
+            return summary ? json({ success: true, data: { ...summary, uptime: 99.9 } }) : json({ success: false, error: "Server not found" });
+        }
+        if (url.startsWith("/api/storage/explorer/backup")) return json({ success: true, data: backup ?? { run: null, job: null, chain: null, destinations: [] } });
+        if (url === "/api/adapters/database-tables") {
+            return json(tables ?? { success: true, tables: [{ name: "orders", rowCount: 1204332, sizeInBytes: 820_000_000 }, { name: "coupons", rowCount: 1210, sizeInBytes: 1_000_000 }] });
+        }
+        if (url === "/api/adapters/database-table-data") {
+            const body = JSON.parse(String(init?.body ?? "{}"));
+            if (body.table === "Keys") {
+                const keys = body.search ? ["session:1", "session:2"] : ["session:1", "session:2", "cart:1"];
+                return json({
+                    success: true,
+                    totalCount: body.search ? keys.length : 184_332,
+                    columns: [{ name: "key", dataType: "string" }, { name: "type", dataType: "string" }, { name: "ttl", dataType: "integer" }],
+                    rows: keys.map((key) => ({ key, type: "hash", ttl: "no expiry" })),
+                });
+            }
+            return json({ success: true, totalCount: 2, columns: [{ name: "id", dataType: "bigint", primaryKey: true }, { name: "status", dataType: "text" }], rows: [{ id: 1, status: body.sortBy ? "shipped" : "paid" }, { id: 2, status: null }] });
+        }
+        return json({ success: false, error: `Unexpected ${url}` });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+}
+
+/** The bodies posted to a route, oldest first. */
+export const posted = (url: string) => fetchMock.mock.calls.filter(([called]) => called === url).map(([, init]) => JSON.parse(String(init?.body ?? "{}")));

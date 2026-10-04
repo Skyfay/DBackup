@@ -1,6 +1,6 @@
 {
   "name": "dbackup-docs",
-  "version": "3.4.0",
+  "version": "4.0.0",
   "private": true,
   "scripts": {
     "dev": "vitepress dev",
@@ -11,12 +11,13 @@
   "devDependencies": {
     "vitepress": "^1.6.0",
     "vitepress-plugin-tabs": "^0.9.1",
-    "vue": "^3.5.40"
+    "vue": "^3.5.43"
   },
   "pnpm": {
     "overrides": {
-      "postcss": ">=8.5.18",
-      "rollup": "^4.59.0"
+      "postcss": ">=8.5.23",
+      "rollup": "^4.59.0",
+      "nanoid@3": "^3.3.18"
     }
   }
 }

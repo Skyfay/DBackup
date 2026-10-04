@@ -26,11 +26,11 @@ Retention is configured **individually for each destination** within a job. This
 
 ### Configuration
 
-In the job form, expand each destination row to configure its retention:
-1. Click the expand arrow on a destination
-2. Select the retention mode (None / Simple / Smart)
-3. Configure mode-specific settings
-4. Each destination saves its retention independently
+In the **Destinations** part of the job form, every destination row has its own retention policy picker:
+1. Open the **Destinations** part of the job
+2. Pick a policy on each destination, or **Default policy** for the one marked as the system default
+3. Policies are created under **Administration → Templates → Retention policies**, where what they keep is set: everything, the last few or a smart rotation
+4. Each destination keeps its backups by its own policy
 
 ## Simple Retention
 
@@ -134,7 +134,7 @@ Now      last 24h        7 days         weeks        months        years
 
 Prevent specific backups from being deleted:
 
-1. Go to **Storage Explorer**
+1. Go to **Backups**
 2. Find the backup
 3. Click **Lock** icon
 
@@ -202,7 +202,7 @@ Retention runs as the **final step** of each backup job, applied **per destinati
 
 1. Backup upload completes for a destination
 2. List all backups for this job in that specific destination
-3. Read each backup's metadata sidecar for its lock status, chain and creation time
+3. Read each backup's metadata sidecar for its lock status, chain, job and creation time
 4. Apply that destination's retention policy
 5. Delete expired backups
 6. Repeat for each remaining destination
@@ -210,6 +210,12 @@ Retention runs as the **final step** of each backup job, applied **per destinati
 ::: tip Skipped on Failure
 Retention is skipped for any destination where the upload failed. This prevents deleting old backups when the new backup didn't arrive.
 :::
+
+### Which Backups Count
+
+Retention only removes backups the job made itself, known by the job id in their `.meta.json` sidecar. A job named like a deleted one writes into the same folder, and the backups the deleted job left there stay until you delete them in the [Backups](/user-guide/features/backups#backups-of-a-deleted-job). The run log names them. A backup without a sidecar counts as the job's own, like before DBackup recorded the job.
+
+A renamed job writes into a folder with its new name. Retention follows it into the folder of its old name and judges the backups there together with the new ones, so the policy keeps covering every backup the job made. DBackup finds those folders in its list of the destination, and only backups whose sidecar names the job count there. The run log says how many it found in each folder.
 
 ### Which Time a Backup Is Judged By
 
@@ -338,5 +344,5 @@ Retention configuration in job:
 ## Next Steps
 
 - [Creating Jobs](/user-guide/jobs/) - Configure backup jobs
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and lock backups
+- [Backups](/user-guide/features/backups) - Browse and lock backups
 - [Encryption](/user-guide/security/encryption) - Secure your backups

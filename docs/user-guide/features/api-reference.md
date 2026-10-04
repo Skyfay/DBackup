@@ -27,13 +27,13 @@ Used automatically when logged in via the web UI. Session cookies are sent with 
 
 ### API Key Authentication (Programmatic)
 
-For scripts, CI/CD pipelines, and external integrations. Create an API key under **Access Management → API Keys**.
+For scripts, CI/CD pipelines, and external integrations. Create an API key under **Users & Groups → API keys**.
 
 ```
 Authorization: Bearer dbackup_your_api_key
 ```
 
-> **Note:** API keys do not inherit SuperAdmin privileges. Only explicitly assigned permissions are available.
+> **Note:** API keys do not inherit SuperAdmin privileges. Only explicitly assigned permissions are available, and never more than the group of the key's owner allows.
 
 ### Error Responses
 
@@ -60,7 +60,7 @@ Authorization: Bearer dbackup_your_api_key
 | GET requests | 100/min per IP |
 | POST / PUT / DELETE | 20/min per IP |
 
-Rate limits are configurable in **Settings → Rate Limits**.
+Rate limits are configurable in **Settings → Rate limits**.
 
 ## Endpoints
 
@@ -73,15 +73,23 @@ For the full endpoint documentation with request/response schemas, examples, and
 
 | Section | Endpoints | Description |
 | :--- | :--- | :--- |
-| Jobs | `GET/POST/PUT/DELETE /api/jobs` | CRUD + trigger backups |
+| Jobs | `GET/POST/PUT/DELETE /api/jobs` | CRUD + trigger backups. A delete moves the job to [Recently deleted](/user-guide/admin/recently-deleted), `?permanently=true` deletes it at once with `settings:write` |
 | Executions | `GET /api/executions/:id` | Poll execution status |
 | History | `GET /api/history` | List execution history, paged with `page`, `pageSize`, `scope`, `type`, `status`, `trigger`, `search` and `facets` |
+| Runs of the History page | `GET /api/history/runs`, `GET /api/history/runs/:id`, `GET /api/history/attention` | A page of runs with `page`, `pageSize` and the repeatable filters `type`, `status`, `job` and `by` (`schedule`, `manual:<person>`, `api:<key name>` or `none`), with the counts beside each filter and the numbers of the last 30 days. One run with its steps, its log, what to look at, its copies and notifications, or only its row with `row=1`. The jobs whose last run failed or missed a copy and the channels whose last message failed, as `runs` and `notifications` with a `tone` and a `note` |
+| Notification logs | `GET /api/notification-logs` | The notifications sent, paged with `page` and `pageSize`, filtered by the repeatable `channel`, `eventType`, `status` and `adapterId`, by `executionId` and `search`. `facets=true` adds the counts beside each filter, `stats=true` the numbers of the last 30 days and the options of the filters |
 | Dashboard | `GET /api/dashboard/stats`, `GET /api/dashboard/calendar` | Overview statistics and calendar heatmap |
-| Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications |
+| Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications. A delete moves the connection to [Recently deleted](/user-guide/admin/recently-deleted), `?permanently=true` deletes it at once with `settings:write` |
 | Connection Testing | `POST /api/adapters/test-connection` | Test adapter connections |
-| Storage Explorer | `GET/POST/DELETE /api/storage/:id/*` | Browse, download, delete, restore backups |
+| Folder Browsing | `POST /api/adapters/browse-location` | List the folders of a storage connection from the values of its form |
+| Backups page | `GET/POST/DELETE /api/storage/:id/*` | Browse, download, delete, restore backups |
+| Backups across destinations | `GET /api/storage/explorer`, `GET /api/storage/explorer/runs`, `GET /api/storage/explorer/execution?path=`, `GET /api/storage/explorer/backup?path=` | Every job and destination with its backup counts, every backup with its copies at every destination, the run that made a backup, and one backup by the path its run recorded |
+| Databases | `GET /api/databases`, `POST /api/databases/read`, `GET /api/databases/runs?from=&until=[&errors=1]` | Every database of every server with the jobs that back it up, reading them from the servers now, and the runs and version changes of a time span for the Database Explorer, with the last error of each failed run on `errors=1`. A run names its databases by an index into `names`, which lists each set once |
+| Database servers | `GET /api/databases/servers`, `GET /api/databases/servers/:id`, `GET /api/databases/servers/:id/versions?page=&size=` | Every database server with its address, response time, kept backups and the newer backup of its engine it is behind, one server with its uptime over 30 days, and the versions it ran newest first with the backups made and kept on each, 5 a page unless `size` asks for up to 50. The kept backups need `storage:read` and the backups made `jobs:read` |
 | Vault | `GET /api/vault/:id/recovery-kit` | Download encryption recovery kit |
-| Settings | `GET/POST/PUT /api/settings/system-tasks` | System tasks configuration |
+| Settings | `GET/POST/PUT /api/settings/system-tasks` | The system tasks with their schedule, their last run and what each follows (`GET`), a change of one by its `taskId` (`POST`, an unknown task or a schedule the scheduler cannot read answers 400), and Run now (`PUT`, 409 while the task runs) |
+| Search | `GET /api/search?q=` | The jobs, backups of a job, connections, databases, latest runs, people (by name or email), groups, API keys, templates, encryption keys and saved logins whose name holds `q`, from two letters on, as `hits`. It needs no permission of its own and finds only the kinds the key may read, like jobs with `jobs:read`, backups with `storage:read` and saved logins with `vault:read` and `credentials:read`. It never returns a secret |
+| Login picture | `GET /api/login-image`, `GET/POST/DELETE /api/settings/login-image` | The picture of the login page, public and only while **Your own image** is picked. Under settings the picture for the preview with `settings:read`, a new one as `file` in a form and its removal with `settings:write`. Only PNG, JPG or WebP up to 5 MB |
 | Health | `GET /api/health` | Health check (public, no auth) |
 
 ## Permissions
@@ -167,6 +175,8 @@ wget --content-disposition "$URL"
 
 Naming several databases in `databases` returns them together as a `.tar.gz`. Backups written by earlier versions for database-only jobs are single files, so they can only be downloaded whole.
 
+`download-url` takes the same pick as `restore-files`: `databases`, `selections` of folder sources, or both, returned as one dump or one `.tar.gz`. The response carries the link as `data.url` with `data.token` and `data.fileName`, and `url` stays at the top for older scripts. The link streams, works for one complete download within 5 minutes, and a download that broke off can run again with it. `GET /api/storage/{id}/download-url?token=...` tells the user who made the link whether it is `open`, `fetched` (with `fetchedAt` and `fetchedFrom`) or `expired`.
+
 ### Show Statistics on a Homepage Dashboard
 
 Create an API key with only `dashboard:read` and point your dashboard widget at the stats endpoint:
@@ -195,5 +205,5 @@ curl -s "${BASE_URL}/api/dashboard/stats" \
 Any dashboard that can send an `Authorization` header works, for example the [Homepage Custom API widget](https://gethomepage.dev/widgets/services/customapi/). The figures are nested under `data`, so map the fields from there.
 
 ::: tip Storage figures
-`totalSnapshots` and `totalStorageBytes` come from the storage statistics cache, which refreshes hourly by default and after every backup. Polling more often does not make them more current.
+`totalSnapshots` and `totalStorageBytes` come from the storage statistics cache, which refreshes hourly by default and after every backup. Polling more often does not make them more current. A destination that cannot be listed during a refresh counts with the values of its last successful scan.
 :::

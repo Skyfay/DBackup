@@ -48,15 +48,11 @@ prisma/dev.db-shm
 prisma/dev.db-wal
 db-data/
 
-# backups
-backups/
+# backups (Docker mount point, root only so src/app/dashboard/backups stays tracked)
+/backups/
 
-# persistent data (Docker mount point)
-data/
-
-# uploads
-storage/avatars/*
-!storage/avatars/.gitkeepstorage/avatars/.gitkeep
+# persistent data (Docker mount point, root only)
+/data/
 
 # Jetbrains
 .idea
@@ -74,3 +70,7 @@ storage/avatars/*
 security/*
 # SSH key pair generated for the integration tests
 .ssh-test/
+
+# The sponsors workflow installs sponsorkit and writes its images here, never committed
+.github/sponsors/node_modules/
+.github/sponsors/sponsorkit/

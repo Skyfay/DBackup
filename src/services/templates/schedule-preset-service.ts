@@ -5,8 +5,12 @@ import { NotFoundError, ServiceError } from "@/lib/logging/errors";
 
 const log = logger.child({ service: "SchedulePresetService" });
 
+/** Every preset with how many jobs follow it. */
 export async function getSchedulePresets() {
-  return prisma.schedulePreset.findMany({ orderBy: { name: "asc" } });
+  return prisma.schedulePreset.findMany({
+    include: { _count: { select: { jobs: true } } },
+    orderBy: { name: "asc" },
+  });
 }
 
 export async function getSchedulePreset(id: string) {
@@ -72,12 +76,22 @@ export async function updateSchedulePreset(
   return updated;
 }
 
-export async function deleteSchedulePreset(id: string) {
+/**
+ * Deletes a preset. The jobs that follow it keep running at its time on their own: its schedule is
+ * written into each of them first, since the copy a job holds may be older than the last change of
+ * the preset, which never reached the job itself. The caller refreshes the scheduler. Returns the
+ * name the preset had, for the audit log.
+ */
+export async function deleteSchedulePreset(id: string): Promise<{ name: string }> {
   const preset = await prisma.schedulePreset.findUnique({ where: { id } });
   if (!preset) throw new NotFoundError("SchedulePreset", id);
 
-  await prisma.schedulePreset.delete({ where: { id } });
-  log.info("Schedule preset deleted", { id });
+  const [followers] = await prisma.$transaction([
+    prisma.job.updateMany({ where: { schedulePresetId: id }, data: { schedule: preset.schedule, schedulePresetId: null } }),
+    prisma.schedulePreset.delete({ where: { id } }),
+  ]);
+  log.info("Schedule preset deleted", { id, jobs: followers.count });
+  return { name: preset.name };
 }
 
 /**

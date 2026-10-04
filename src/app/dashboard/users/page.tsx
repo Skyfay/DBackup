@@ -1,154 +1,76 @@
-import { getUsers } from "@/app/actions/auth/user";
-import { getGroups } from "@/app/actions/auth/group";
-import { getSsoProviders } from "@/app/actions/auth/oidc";
-import { getApiKeys } from "@/app/actions/auth/api-key";
-import { UserTable } from "./user-table";
-import { GroupTable } from "./group-table";
-import { AddSsoProviderDialog } from "@/components/oidc/add-sso-provider-dialog";
-import { SsoProviderList } from "@/components/oidc/sso-provider-list";
-import { CreateUserDialog } from "./create-user-dialog";
-import { CreateGroupDialog } from "./create-group-dialog";
-import { CreateApiKeyDialog } from "@/components/api-keys/create-api-key-dialog";
-import { ApiKeyTable } from "@/components/api-keys/api-key-table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getUserPermissions, getCurrentUserWithGroup } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { Metadata } from "next";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AuditTable } from "@/components/audit/audit-table";
+import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
+import { AUDIT_PAGE_ID } from "@/components/dashboard/audit/audit-tables";
+import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
+import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
+import { UsersClient } from "@/components/dashboard/users/users-client";
+import { USERS_TABLE_ID, type UsersPageAttention } from "@/components/dashboard/users/users-tables";
+import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
+import { getUsersPageAttention } from "@/services/user/users-model";
 
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Users & Groups" };
+
+/**
+ * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and
+ * the ways to sign in. Every tab loads in the browser, the page only decides which ones show.
+ */
 export default async function UsersPage() {
-    const permissions = await getUserPermissions();
+    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    // The login lives on the root page, there is no /login.
+    if (!user) redirect("/");
 
-    const hasReadUsers = permissions.includes(PERMISSIONS.USERS.READ);
-    const hasReadGroups = permissions.includes(PERMISSIONS.GROUPS.READ);
-    const hasReadAudit = permissions.includes(PERMISSIONS.AUDIT.READ);
-    const hasReadApiKeys = permissions.includes(PERMISSIONS.API_KEYS.READ);
+    const can = (permission: string) => permissions.includes(permission);
+    const canReadUsers = can(PERMISSIONS.USERS.READ);
+    const canReadGroups = can(PERMISSIONS.GROUPS.READ);
+    const canReadAudit = can(PERMISSIONS.AUDIT.READ);
+    const canReadApiKeys = can(PERMISSIONS.API_KEYS.READ);
+    const canReadSettings = can(PERMISSIONS.SETTINGS.READ);
+    if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
 
-    if (!hasReadUsers && !hasReadGroups && !hasReadAudit && !hasReadApiKeys) {
-        redirect("/dashboard");
-    }
+    const [attention, layouts, groupsView, apiKeysView, auditView, signInView] = await Promise.all([
+        getUsersPageAttention(),
+        getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID, API_KEYS_TABLE_ID, SIGN_IN_TABLE_ID]),
+        getViewMode(user.id, GROUPS_PAGE_ID),
+        getViewMode(user.id, API_KEYS_PAGE_ID),
+        getViewMode(user.id, AUDIT_PAGE_ID),
+        getViewMode(user.id, SIGN_IN_PAGE_ID),
+    ]);
 
-    const canManageUsers = permissions.includes(PERMISSIONS.USERS.WRITE);
-    const canManageGroups = permissions.includes(PERMISSIONS.GROUPS.WRITE);
-    const canManageApiKeys = permissions.includes(PERMISSIONS.API_KEYS.WRITE);
-    const hasReadSettings = permissions.includes(PERMISSIONS.SETTINGS.READ);
-    const hasWriteSettings = permissions.includes(PERMISSIONS.SETTINGS.WRITE);
-
-    // Fetch data only if permission is granted, otherwise provide empty array to avoid server action errors
-    // The table needs this to keep the signed-in account out of a bulk selection. The
-    // action refuses it server-side too, this only avoids offering it.
-    const currentUser = await getCurrentUserWithGroup();
-    const users = hasReadUsers ? await getUsers() : [];
-    const groups = hasReadGroups ? await getGroups() : [];
-    const ssoProviders = hasReadSettings ? await getSsoProviders() : [];
-    const apiKeys = hasReadApiKeys ? await getApiKeys() : [];
+    // The dot of a tab the viewer cannot open stays out, so the page never hints at it.
+    const visibleAttention: UsersPageAttention = {
+        users: canReadUsers ? attention.users : undefined,
+        apikeys: canReadApiKeys ? attention.apikeys : undefined,
+    };
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Access Management</h2>
-                    <p className="text-muted-foreground">
-                        Manage users, groups and their permissions.
-                    </p>
-                </div>
-            </div>
-
-            <Tabs defaultValue={hasReadUsers ? "users" : hasReadGroups ? "groups" : hasReadApiKeys ? "apikeys" : "audit"} className="space-y-4">
-                <TabsList>
-                    {hasReadUsers && <TabsTrigger value="users">Users</TabsTrigger>}
-                    {hasReadGroups && <TabsTrigger value="groups">Groups</TabsTrigger>}
-                    {hasReadApiKeys && <TabsTrigger value="apikeys">API Keys</TabsTrigger>}
-                    {hasReadAudit && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
-                    {hasReadSettings && <TabsTrigger value="sso">SSO / OIDC</TabsTrigger>}
-                </TabsList>
-                {hasReadUsers && (
-                    <TabsContent value="users" className="space-y-4">
-                        <Card>
-                            <CardHeader>
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <CardTitle>Users</CardTitle>
-                                        <CardDescription>Manage system users and their assignments.</CardDescription>
-                                    </div>
-                                    {canManageUsers && <CreateUserDialog />}
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <UserTable data={users} groups={groups} canManage={canManageUsers} currentUserId={currentUser?.id ?? null} />
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-                )}
-                {hasReadGroups && (
-                    <TabsContent value="groups" className="space-y-4">
-                        <Card>
-                            <CardHeader>
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <CardTitle>Groups</CardTitle>
-                                        <CardDescription>Manage permission groups.</CardDescription>
-                                    </div>
-                                    {canManageGroups && <CreateGroupDialog />}
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <GroupTable data={groups} canManage={canManageGroups} />
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-                )}
-                {hasReadApiKeys && (
-                    <TabsContent value="apikeys" className="space-y-4">
-                        <Card>
-                            <CardHeader>
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <CardTitle>API Keys</CardTitle>
-                                        <CardDescription>Create and manage API keys for external integrations and automation.</CardDescription>
-                                    </div>
-                                    {canManageApiKeys && <CreateApiKeyDialog />}
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <ApiKeyTable data={apiKeys} canManage={canManageApiKeys} />
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-                )}
-                {hasReadAudit && (
-                    <TabsContent value="audit" className="space-y-4">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Audit Logs</CardTitle>
-                                <CardDescription>View system activity and user actions.</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <AuditTable />
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-                )}
-                {hasReadSettings && (
-                    <TabsContent value="sso" className="space-y-4">
-                        <Card>
-                             <CardHeader>
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <CardTitle>Single Sign-On</CardTitle>
-                                        <CardDescription>Manage OpenID Connect providers.</CardDescription>
-                                    </div>
-                                    {hasWriteSettings && <AddSsoProviderDialog />}
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <SsoProviderList providers={ssoProviders} />
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-                )}
-            </Tabs>
+        <div className="space-y-4 md:space-y-6">
+            {/* The header bar already names the page in its breadcrumb. */}
+            <h1 className="sr-only">Users & Groups</h1>
+            <Suspense fallback={null}>
+                <UsersClient
+                    canReadUsers={canReadUsers}
+                    canManageUsers={can(PERMISSIONS.USERS.WRITE)}
+                    canReadGroups={canReadGroups}
+                    canManageGroups={can(PERMISSIONS.GROUPS.WRITE)}
+                    canReadApiKeys={canReadApiKeys}
+                    canManageApiKeys={can(PERMISSIONS.API_KEYS.WRITE)}
+                    canOpenRuns={can(PERMISSIONS.HISTORY.READ)}
+                    canReadAudit={canReadAudit}
+                    canReadSignIn={canReadSettings}
+                    viewerSuperAdmin={user.group?.name === "SuperAdmin"}
+                    attention={visibleAttention}
+                    layouts={layouts}
+                    groupsView={groupsView ?? "table"}
+                    apiKeysView={apiKeysView ?? "table"}
+                    auditView={auditView ?? "table"}
+                    signInView={signInView ?? "table"}
+                />
+            </Suspense>
         </div>
     );
 }

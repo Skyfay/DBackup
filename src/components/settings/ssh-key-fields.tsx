@@ -1,5 +1,9 @@
 "use client";
 
+import { useId, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -20,150 +24,148 @@ const KEY_TYPE_LABELS: Record<SshKeyType, string> = {
     "ecdsa-p384": "ECDSA P-384",
 };
 
+const AUTH_METHODS = [
+    { value: "password", title: "Password", description: "The password of the SSH user." },
+    { value: "privateKey", title: "Private key", description: "A key you paste or DBackup makes." },
+    { value: "agent", title: "SSH agent", description: "The agent running beside DBackup." },
+];
+
+const KEY_SOURCES = [
+    { value: "paste", title: "Use my key", description: "Paste a key you already have." },
+    { value: "generate", title: "Generate one", description: "DBackup makes a keypair and shows the public key." },
+];
+
+/** A pasted private key, masked like a password until its eye is pressed. */
+function PrivateKeyField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+    const id = useId();
+    const [shown, setShown] = useState(false);
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+                <Label htmlFor={id}>Private key</Label>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-7 text-muted-foreground"
+                    aria-label={shown ? "Hide private key" : "Show private key"}
+                    aria-pressed={shown}
+                    onClick={() => setShown((current) => !current)}
+                >
+                    {shown ? <EyeOff /> : <Eye />}
+                </Button>
+            </div>
+            <Textarea
+                id={id}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className="h-16 resize-y font-mono text-xs field-sizing-fixed"
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                autoComplete="off"
+                spellCheck={false}
+                style={!shown ? ({ WebkitTextSecurity: "disc", textSecurity: "disc" } as React.CSSProperties) : undefined}
+            />
+            {value.includes("BEGIN ENCRYPTED PRIVATE KEY") && (
+                <p className="text-xs text-warning">This key is encrypted, so it needs its passphrase below.</p>
+            )}
+        </div>
+    );
+}
+
 /**
  * Payload fields of an `SSH_KEY` credential profile.
  *
- * Private-key auth can either take a pasted key or ask DBackup to generate one. The generate
- * path sends a `generate` request instead of key material, so the private key is created on
- * the server and never reaches the browser.
+ * The way to sign in and the source of the key change what the form asks for, so both are
+ * cards rather than selects. Private-key auth can take a pasted key or ask DBackup to generate
+ * one. The generate path sends a `generate` request instead of key material, so the private key
+ * is created on the server and never reaches the browser.
  */
 export function SshKeyFields({
     data,
     update,
-    showSecrets,
     defaultComment,
 }: {
     data: SshFieldState;
     update: (key: string, value: string) => void;
-    showSecrets: boolean;
     /** Suggested key comment, derived from the profile name. */
     defaultComment: string;
 }) {
-    const secret = showSecrets ? "text" : "password";
     const authType = data.authType ?? "password";
     const keySource = (data.keySource ?? "paste") as SshKeySource;
+    const keyTypeId = useId();
 
     return (
-        <div className="space-y-3">
-            <CredentialField
-                label="Username"
-                value={data.username ?? ""}
-                onChange={(v) => update("username", v)}
-            />
+        <div className="space-y-4">
+            <CredentialField label="Username" value={data.username ?? ""} onChange={(v) => update("username", v)} />
 
-            <div className="space-y-1.5">
-                <Label className="text-xs">Auth method</Label>
-                <Select value={authType} onValueChange={(v) => update("authType", v)}>
-                    <SelectTrigger>
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="password">Password</SelectItem>
-                        <SelectItem value="privateKey">Private Key</SelectItem>
-                        <SelectItem value="agent">SSH Agent</SelectItem>
-                    </SelectContent>
-                </Select>
+            <div className="space-y-2">
+                <Label id={`${keyTypeId}-auth`}>Sign in with</Label>
+                <ChoiceCards
+                    value={authType}
+                    onValueChange={(value) => update("authType", value)}
+                    options={AUTH_METHODS}
+                    aria-labelledby={`${keyTypeId}-auth`}
+                    className="grid gap-2.5 sm:grid-cols-3"
+                />
             </div>
 
             {authType === "password" && (
-                <CredentialField
-                    label="Password"
-                    type={secret}
-                    value={data.password ?? ""}
-                    onChange={(v) => update("password", v)}
-                />
+                <CredentialField label="Password" secret value={data.password ?? ""} onChange={(v) => update("password", v)} />
             )}
 
             {authType === "privateKey" && (
                 <>
-                    <div className="space-y-1.5">
-                        <Label className="text-xs">Private key</Label>
-                        <Select value={keySource} onValueChange={(v) => update("keySource", v)}>
-                            <SelectTrigger>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="paste">Use an existing key</SelectItem>
-                                <SelectItem value="generate">Generate a new keypair</SelectItem>
-                            </SelectContent>
-                        </Select>
+                    <div className="space-y-2">
+                        <Label id={`${keyTypeId}-source`}>Key</Label>
+                        <ChoiceCards
+                            value={keySource}
+                            onValueChange={(value) => update("keySource", value)}
+                            options={KEY_SOURCES}
+                            aria-labelledby={`${keyTypeId}-source`}
+                        />
                     </div>
 
                     {keySource === "paste" ? (
                         <>
-                            <div className="space-y-1.5">
-                                <Label className="text-xs">Private key (PEM)</Label>
-                                <Textarea
-                                    value={data.privateKey ?? ""}
-                                    onChange={(e) => update("privateKey", e.target.value)}
-                                    className="font-mono text-xs resize-y h-16 field-sizing-fixed"
-                                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                                    style={
-                                        !showSecrets
-                                            ? ({
-                                                  WebkitTextSecurity: "disc",
-                                                  textSecurity: "disc",
-                                              } as React.CSSProperties)
-                                            : undefined
-                                    }
-                                />
-                                {(data.privateKey ?? "").includes("BEGIN ENCRYPTED PRIVATE KEY") && (
-                                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                                        PKCS#8 encrypted key detected. Make sure to fill in the
-                                        passphrase field below.
-                                    </p>
-                                )}
-                            </div>
-                            <CredentialField
-                                label="Key passphrase (optional)"
-                                type={secret}
-                                value={data.passphrase ?? ""}
-                                onChange={(v) => update("passphrase", v)}
-                            />
+                            <PrivateKeyField value={data.privateKey ?? ""} onChange={(v) => update("privateKey", v)} />
+                            <CredentialField label="Key passphrase" hint="Optional" secret value={data.passphrase ?? ""} onChange={(v) => update("passphrase", v)} />
                         </>
                     ) : (
                         <>
-                            <div className="space-y-1.5">
-                                <Label className="text-xs">Key type</Label>
-                                <Select
-                                    value={data.keyType ?? "ed25519"}
-                                    onValueChange={(v) => update("keyType", v)}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {SSH_KEY_TYPES.map((t) => (
-                                            <SelectItem key={t} value={t}>
-                                                {KEY_TYPE_LABELS[t]}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                            <div className="grid gap-4 sm:grid-cols-[11rem_minmax(0,1fr)]">
+                                <div className="space-y-2">
+                                    <Label htmlFor={keyTypeId}>Key type</Label>
+                                    <Select value={data.keyType ?? "ed25519"} onValueChange={(v) => update("keyType", v)}>
+                                        <SelectTrigger id={keyTypeId} className="w-full">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {SSH_KEY_TYPES.map((t) => (
+                                                <SelectItem key={t} value={t}>
+                                                    {KEY_TYPE_LABELS[t]}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <CredentialField
+                                    label="Comment"
+                                    hint="In authorized_keys"
+                                    value={data.keyComment ?? ""}
+                                    onChange={(v) => update("keyComment", v)}
+                                    placeholder={defaultComment}
+                                />
                             </div>
-                            <CredentialField
-                                label="Comment"
-                                value={data.keyComment ?? ""}
-                                onChange={(v) => update("keyComment", v)}
-                                placeholder={defaultComment}
-                            />
-                            <CredentialField
-                                label="Key passphrase (optional)"
-                                type={secret}
-                                value={data.passphrase ?? ""}
-                                onChange={(v) => update("passphrase", v)}
-                            />
+                            <CredentialField label="Key passphrase" hint="Optional" secret value={data.passphrase ?? ""} onChange={(v) => update("passphrase", v)} />
                             {data.passphrase && (
-                                <p className="text-xs text-amber-600 dark:text-amber-400">
-                                    A Rsync destination cannot use a passphrase-protected key.
-                                    It runs the OpenSSH client in batch mode, which has no way
-                                    to answer the prompt.
+                                <p className="text-xs text-warning">
+                                    A Rsync destination cannot use a key with a passphrase. It runs the OpenSSH client in batch
+                                    mode, which has no way to answer the prompt.
                                 </p>
                             )}
                             <p className="text-xs text-muted-foreground">
-                                The keypair is created on the server when you save. The private
-                                key is stored encrypted and never shown. The public key is
-                                displayed afterwards so you can install it on the host.
+                                The keypair is made on the server when you save. The private key is stored encrypted and never
+                                shown, the public key comes up afterwards so you can install it on the host.
                             </p>
                         </>
                     )}
@@ -172,4 +174,3 @@ export function SshKeyFields({
         </div>
     );
 }
-

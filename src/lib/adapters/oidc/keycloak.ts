@@ -2,6 +2,7 @@ import { OIDCAdapter } from "@/lib/core/oidc-adapter";
 import { z } from "zod";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { validateOutboundUrl } from "@/lib/url-validation";
 
 const log = logger.child({ adapter: "keycloak" });
 
@@ -45,6 +46,7 @@ export const KeycloakAdapter: OIDCAdapter = {
     const discoveryUrl = `${baseUrl}/realms/${config.realm}/.well-known/openid-configuration`;
 
     try {
+      validateOutboundUrl(discoveryUrl);
       const response = await fetch(discoveryUrl, {
         headers: {
           "User-Agent": "Mozilla/5.0 (compatible; DBackup/1.0; +https://github.com/Skyfay/DBackup)",

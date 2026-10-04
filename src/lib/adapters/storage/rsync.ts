@@ -1,8 +1,7 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadOptions, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
 import { RsyncSchema, type SFTPConfig } from "@/lib/adapters/definitions";
 import { connectSFTP, endSftpClient } from "./sftp";
 import { Readable } from "stream";
-import Rsync from "rsync";
 import { exec, execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -13,6 +12,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { toRelativePath } from "./common/download-directory";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
+import { formatExcludeSummary, summariseExcluded } from "@/lib/exclude-summary";
+import { runRsync, sanitizeCommand, type RsyncCommand } from "./rsync-process";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -29,20 +30,6 @@ interface RsyncConfig {
     passphrase?: string;
     pathPrefix: string;
     options?: string;
-}
-
-/**
- * Strips sensitive data (passwords, keys, key paths) from command strings for safe logging.
- * IMPORTANT: Never log raw commands - always sanitize first.
- */
-function sanitizeCommand(cmd: string): string {
-    return cmd
-        .replace(/sshpass\s+-e\s+/g, "sshpass -e ")
-        .replace(/sshpass\s+-p\s+'[^']*'/g, "sshpass -p '***'")
-        .replace(/sshpass\s+-p\s+"[^"]*"/g, 'sshpass -p "***"')
-        .replace(/sshpass\s+-p\s+\S+/g, "sshpass -p ***")
-        .replace(/-i\s+\/[^\s]+/g, "-i ***")
-        .replace(/SSHPASS=[^\s]+/g, "SSHPASS=***");
 }
 
 /**
@@ -69,6 +56,17 @@ function sanitizeError(error: unknown): string {
 async function writeTempKey(privateKey: string): Promise<string> {
     const tmpFile = path.join(os.tmpdir(), `rsync-key-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await fs.writeFile(tmpFile, privateKey, { mode: 0o600 });
+    return tmpFile;
+}
+
+/**
+ * Writes the relative paths a directory download transfers to a temporary file for
+ * `--files-from`, each ended by a NUL for `--from0`, since a file name may hold a newline.
+ * Returns the path to the temp file. Caller must delete it after use.
+ */
+async function writeFileList(relativePaths: string[]): Promise<string> {
+    const tmpFile = path.join(os.tmpdir(), `rsync-files-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.writeFile(tmpFile, relativePaths.map((relativePath) => `${relativePath}\0`).join(""), { mode: 0o600 });
     return tmpFile;
 }
 
@@ -205,12 +203,28 @@ async function checkSshpass(): Promise<boolean> {
     return _sshpassAvailable;
 }
 
+/** How long an SSH command may take and how much it may print, when the default does not fit. */
+interface SshExecOptions {
+    timeout?: number;
+    maxBuffer?: number;
+}
+
+const SSH_TIMEOUT_MS = 30_000;
+
+/**
+ * The limits of a `find` over a whole tree. Node keeps the output of execFile in memory and
+ * stops at 1 MB by default, which a tree of some 15,000 files already prints (#168), and a BSD
+ * `find` that runs `stat` once per file takes longer than the 30 seconds of a short command.
+ * Bounded all the same, so a runaway listing ends with a message instead of filling the memory.
+ */
+const LISTING_LIMITS: Required<SshExecOptions> = { timeout: 10 * 60_000, maxBuffer: 256 * 1024 * 1024 };
+
 /**
  * Executes an SSH command on the remote host.
  * Uses execFile (no shell) to prevent command injection via config values.
  * Uses SSHPASS env var for password auth (never passes password on command line).
  */
-async function execSSH(config: RsyncConfig, command: string, keyFile?: string, controlPath?: string): Promise<string> {
+async function execSSH(config: RsyncConfig, command: string, keyFile?: string, controlPath?: string, options: SshExecOptions = {}): Promise<string> {
     const sshArgs = buildSshArgArray(config, keyFile, controlPath);
     const target = `${config.username}@${config.host}`;
     const env = getPasswordEnv(config) ?? process.env;
@@ -230,10 +244,17 @@ async function execSSH(config: RsyncConfig, command: string, keyFile?: string, c
         args = [...sshArgs, target, command];
     }
 
+    const timeout = options.timeout ?? SSH_TIMEOUT_MS;
     try {
-        const { stdout } = await execFileAsync(binary, args, { timeout: 30000, env });
+        const { stdout } = await execFileAsync(binary, args, { timeout, env, ...(options.maxBuffer ? { maxBuffer: options.maxBuffer } : {}) });
         return stdout.trim();
     } catch (error: unknown) {
+        const failure = error as { code?: unknown; killed?: boolean };
+        if (failure?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+            const limit = Math.round((options.maxBuffer ?? 1024 * 1024) / (1024 * 1024));
+            throw new Error(`The server answered with more than ${limit} MB. Back up its subfolders as separate sources.`);
+        }
+        if (failure?.killed) throw new Error(`The server did not finish within ${Math.round(timeout / 1000)} seconds.`);
         // Re-throw with sanitized message (strips raw command from exec errors)
         throw new Error(sanitizeError(error));
     }
@@ -249,40 +270,6 @@ async function execSSH(config: RsyncConfig, command: string, keyFile?: string, c
 async function closeSshMaster(config: RsyncConfig, keyFile: string | undefined, controlPath: string): Promise<void> {
     const args = [...buildSshArgArray(config, keyFile, controlPath), "-O", "exit", `${config.username}@${config.host}`];
     await execFileAsync("ssh", args, { timeout: 10000 }).catch(() => { });
-}
-
-/**
- * Wraps rsync.execute in a Promise.
- * All error messages are sanitized to prevent password/key leaks.
- */
-function executeRsync(rsync: Rsync, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<void> {
-    return new Promise((resolve, reject) => {
-        rsync.execute(
-            (error: Error | null, code: number, cmd: string) => {
-                if (error) {
-                    reject(new Error(`rsync exited with code ${code}: ${sanitizeCommand(error.message)} (cmd: ${sanitizeCommand(cmd)})`));
-                } else {
-                    resolve();
-                }
-            },
-            (data: Buffer) => {
-                if (!onLog) return;
-                // A chunk regularly carries several lines - a filename followed by its progress,
-                // for instance. Reported one by one so each can be judged on its own.
-                for (const line of data.toString().split("\n")) {
-                    const trimmed = line.trim();
-                    if (trimmed) onLog(trimmed, "info", "storage");
-                }
-            },
-            (data: Buffer) => {
-                if (!onLog) return;
-                for (const line of data.toString().split("\n")) {
-                    const trimmed = line.trim();
-                    if (trimmed) onLog(sanitizeCommand(`stderr: ${trimmed}`), "warning", "storage");
-                }
-            }
-        );
-    });
 }
 
 /**
@@ -319,7 +306,9 @@ async function findRemoteEntries(
         const output = await execSSH(
             config,
             `find '${safeStartDir}' ${selector} -printf '%p\\t%s\\t%T@\\t%y\\t%l\\n' 2>/dev/null || find '${safeStartDir}' -type f -exec stat -f '%N\\t%z\\t%m' {} \\; 2>/dev/null`,
-            keyFile
+            keyFile,
+            undefined,
+            LISTING_LIMITS
         );
 
         if (!output) return { files: [], unsupportedSymlinks: [] };
@@ -375,50 +364,38 @@ async function findRemoteEntries(
 }
 
 /**
- * Creates a configured Rsync instance with shell and auth settings.
- * For password auth, uses SSHPASS env var via sshpass -e.
- * Must be called after checkSshpass() for password auth.
+ * The options every rsync of a connection runs with: archive mode, the SSH command of the
+ * connection and its additional options. For password auth, sshpass reads the password from
+ * the SSHPASS variable of the environment, never from the command line.
+ * Must be called after checkSshpass() for password auth, which it does itself.
  */
-async function createRsyncInstance(config: RsyncConfig, keyFile?: string, controlPath?: string): Promise<Rsync> {
+async function buildRsyncArgs(config: RsyncConfig, keyFile?: string, controlPath?: string): Promise<RsyncCommand> {
     // Archive mode, but deliberately without `-z`. Compressing in transit costs CPU on both ends
     // and changes nothing about what gets stored: DBackup compresses each archive entry itself in
     // the packing stage afterwards, so `-z` is the same work done twice. It also only pays off at
     // all on data that compresses, and a backup source is mostly the opposite - archives, images,
     // video, installers. On a slow link with genuinely compressible data it can still be worth it,
     // which is what the connection's "Additional rsync options" field is for.
-    const rsync = new Rsync()
-        .flags("a")
-        .set("partial")
-        .set("progress");
+    const args = ["-a", "--partial", "--progress"];
 
+    // rsync splits the -e command into its words itself, the same as it always did.
     const sshCmd = buildSshCommand(config, keyFile, controlPath);
-
-    // For password auth, prepend sshpass -e (reads password from SSHPASS env var)
+    let env: NodeJS.ProcessEnv | undefined;
     if (config.authType === "password" && config.password) {
         if (!await checkSshpass()) {
             throw new Error("Password authentication requires 'sshpass' to be installed. Install it or use SSH key / agent authentication instead.");
         }
-        rsync.shell(`sshpass -e ${sshCmd}`);
-        rsync.env({ ...process.env, SSHPASS: config.password } as Record<string, string>);
+        args.push("-e", `sshpass -e ${sshCmd}`);
+        env = getPasswordEnv(config);
     } else {
-        rsync.shell(sshCmd);
+        args.push("-e", sshCmd);
     }
 
-    // Apply additional user-defined options
-    if (config.options) {
-        const extraArgs = config.options.split(/\s+/).filter(Boolean);
-        for (const arg of extraArgs) {
-            const cleaned = arg.replace(/^-+/, "");
-            if (cleaned.length === 1) {
-                rsync.flags(cleaned);
-            } else {
-                const [key, ...rest] = cleaned.split("=");
-                rsync.set(key, rest.length > 0 ? rest.join("=") : undefined as any);
-            }
-        }
-    }
+    // The additional options go to rsync as they were written. Taking them apart turned a
+    // combined `-avz` into the option `--avz`, which rsync refuses.
+    if (config.options) args.push(...config.options.split(/\s+/).filter(Boolean));
 
-    return rsync;
+    return { args, ...(env ? { env } : {}) };
 }
 
 /**
@@ -457,12 +434,10 @@ async function performRsyncUpload(
 
         if (onLog) onLog(`Starting rsync upload to: ${config.host}:${remotePath}`, "info", "storage");
 
-        const rsync = await createRsyncInstance(config, keyFile, controlPath);
-        rsync.source(localPath);
-        rsync.destination(destination);
+        const command = await buildRsyncArgs(config, keyFile, controlPath);
 
         let lastPercent = 0;
-        await executeRsync(rsync, (msg, level, type, details) => {
+        await runRsync(command, { source: localPath, destination }, (msg, level, type, details) => {
             const progressMatch = msg.match(/(\d+)%/);
             if (progressMatch && onProgress) {
                 const percent = parseInt(progressMatch[1], 10);
@@ -573,13 +548,10 @@ export const RsyncAdapter: StorageAdapter = {
             const localDir = path.dirname(localPath);
             await fs.mkdir(localDir, { recursive: true });
 
-            const rsync = await createRsyncInstance(config, keyFile);
+            const command = await buildRsyncArgs(config, keyFile);
             const source = buildRemotePath(config, remotePath);
 
-            rsync.source(source);
-            rsync.destination(localPath);
-
-            await executeRsync(rsync, (msg, level, type, details) => {
+            await runRsync(command, { source, destination: localPath }, (msg, level, type, details) => {
                 // Parse transferred bytes from rsync output
                 const bytesMatch = msg.match(/^\s*([\d,]+)\s+\d+%/);
                 if (bytesMatch && onProgress) {
@@ -602,10 +574,17 @@ export const RsyncAdapter: StorageAdapter = {
     /**
      * Native directory download: unlike upload/download (single file each), this syncs an
      * entire remote directory tree in one native `rsync -a` transfer, preserving rsync's
-     * delta-transfer advantage (kept for directory-source (JobSource) backups). Exclude
-     * patterns map to rsync's native --exclude flag, so excluded files are never transferred
-     * at all. The file index (for the manifest's Tier-A searchable listing) comes from the
-     * existing recursive list() (a fast SSH `find`), not parsed from rsync's own output.
+     * delta-transfer advantage (kept for directory-source (JobSource) backups). The file
+     * index (for the manifest's Tier-A searchable listing) comes from the existing recursive
+     * listing (a fast SSH `find`), filtered by the exclude patterns like every other adapter,
+     * and the transfer takes exactly that list, so excluded files are never transferred at all.
+     *
+     * An incremental run narrows that same list to the files the chain does not already hold,
+     * so the whole source is listed but only the changed part is transferred.
+     *
+     * A cancel ends the transfer: rsync cannot be asked to stop, so the process is killed.
+     * Before that, a cancel only took effect between two sources, which on a single large
+     * source meant waiting out the whole thing.
      */
     async downloadDirectory(
         config: RsyncConfig,
@@ -613,10 +592,16 @@ export const RsyncAdapter: StorageAdapter = {
         localPath: string,
         excludePatterns?: string[],
         onProgress?: (processedBytes: number, totalBytes: number, processedFiles: number, totalFiles: number) => void,
-        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+        options?: DirectoryDownloadOptions
     ): Promise<DirectoryDownloadResult> {
         let keyFile: string | undefined;
+        let listFile: string | undefined;
         try {
+            // Checked before the listing, so a run cancelled while an earlier source was still
+            // finishing never opens an SSH session for this one.
+            options?.signal?.throwIfAborted();
+
             if (config.authType === "privateKey" && config.privateKey) {
                 keyFile = await writeTempKey(config.privateKey);
             }
@@ -635,41 +620,92 @@ export const RsyncAdapter: StorageAdapter = {
                 );
             }
 
-            const entries: DirectoryFileEntry[] = allFiles
-                .map((f) => ({
-                    relativePath: toRelativePath(f.path, remotePath),
-                    size: f.size,
-                    lastModified: f.lastModified,
-                    ...(f.linkTarget !== undefined ? { linkTarget: f.linkTarget } : {}),
-                }))
-                .filter((e) => !matchesAnyExcludePattern(e.relativePath, excludePatterns));
+            const listed: DirectoryFileEntry[] = allFiles.map((f) => ({
+                relativePath: toRelativePath(f.path, remotePath),
+                size: f.size,
+                lastModified: f.lastModified,
+                ...(f.linkTarget !== undefined ? { linkTarget: f.linkTarget } : {}),
+            }));
+            const entries = listed.filter((e) => !matchesAnyExcludePattern(e.relativePath, excludePatterns));
 
-            const totalBytes = entries.reduce((sum, e) => sum + e.size, 0);
+            // Excluding files silently is the one thing a backup must not do. Reported per pattern
+            // rather than per file, like the other adapters, so a node_modules does not write tens
+            // of thousands of paths into the execution log on every run.
+            if (entries.length < listed.length && onLog) {
+                const kept = new Set(entries.map((e) => e.relativePath));
+                const excluded = listed.filter((e) => !kept.has(e.relativePath)).map((e) => ({ path: e.relativePath, size: e.size }));
+                const { message, details } = formatExcludeSummary(summariseExcluded(excluded, excludePatterns ?? [], []));
+                onLog(message, "info", "storage", details);
+            }
+
+            // Incremental runs hand down a predicate that answers, per file, whether the chain
+            // already holds it. Honoured by narrowing the --files-from list rather than by
+            // handing the source to the generic per-file collector: that one calls download()
+            // once per file, which here means one rsync process and one SSH login each, so a
+            // source of many small files would come out slower than transferring all of them
+            // in a single native sync. The destination tree is new on every run, so rsync's
+            // own quick check has nothing to compare against and cannot make this decision.
+            //
+            // A link is never asked about, the same order the generic collector keeps: there
+            // are no bytes to skip, and answering "unchanged" would mark it for carry-forward,
+            // which links deliberately do not take part in - it would drop out of the snapshot.
+            const toTransfer: DirectoryFileEntry[] = [];
+            const resultEntries: DirectoryFileEntry[] = [];
+            for (const entry of entries) {
+                if (entry.linkTarget === undefined && options?.shouldDownload && !options.shouldDownload(entry)) {
+                    resultEntries.push({ ...entry, unchanged: true });
+                    continue;
+                }
+                toTransfer.push(entry);
+                resultEntries.push(entry);
+            }
+
             const totalFiles = entries.length;
+            const transferFiles = toTransfer.length;
+            const unchangedFiles = totalFiles - transferFiles;
+            // Only what moves counts, which is the same split the generic collector reports:
+            // an unchanged file lands in the file count at zero bytes.
+            const totalBytes = toTransfer.reduce((sum, e) => sum + e.size, 0);
 
             if (totalFiles === 0) {
                 if (onLog) onLog(`No files found under ${remotePath}`, "info", "storage");
                 return { files: 0, bytes: 0, entries: [], failures: [] };
             }
 
+            if (unchangedFiles > 0 && onLog) {
+                onLog(`${unchangedFiles} of ${totalFiles} file(s) unchanged, not transferred`, "info", "storage");
+            }
+
+            // The chain already holds every file of this source. rsync reads an empty
+            // --files-from without complaining, but a transfer that copies nothing still
+            // costs an SSH login, so it is skipped outright.
+            if (transferFiles === 0) {
+                if (onProgress) onProgress(0, 0, totalFiles, totalFiles);
+                return { files: totalFiles, bytes: 0, entries: resultEntries, failures: [] };
+            }
+
             await fs.mkdir(localPath, { recursive: true });
 
-            if (onLog) onLog(`Starting rsync directory download from: ${config.host}:${remotePath} (${totalFiles} file(s))`, "info", "storage");
+            if (onLog) onLog(`Starting rsync directory download from: ${config.host}:${remotePath} (${transferFiles} file(s))`, "info", "storage");
 
-            const rsync = await createRsyncInstance(config, keyFile);
+            const command = await buildRsyncArgs(config, keyFile);
             // Without it the transfer still reports progress, just per file rather than as one
             // figure for the whole directory - `--progress` is set either way.
-            if (await supportsInfoProgress()) rsync.set("info", "progress2");
-            if (excludePatterns && excludePatterns.length > 0) {
-                rsync.exclude(excludePatterns);
-            }
+            const extra = (await supportsInfoProgress()) ? ["--info=progress2"] : [];
+
+            // The transfer takes exactly the files of the index. rsync's own --exclude reads the
+            // same patterns by other rules: an unanchored pattern with a slash matches at any
+            // depth, and a slash-free one also matches a folder and drops it whole. The index
+            // then named files that never arrived, and hashing them failed the run. With
+            // --files-from, -a copies links as links and does not recurse, and rsync 2.6.9,
+            // rsync 3 and Apple's openrsync all read the list, NUL-separated with --from0.
+            listFile = await writeFileList(toTransfer.map((e) => e.relativePath));
+            extra.push(`--files-from=${listFile}`, "--from0");
 
             // Trailing slash: sync the directory's CONTENTS into localPath, not the directory itself
             const source = `${buildRemotePath(config, remotePath)}/`;
-            rsync.source(source);
-            rsync.destination(localPath);
 
-            await executeRsync(rsync, (msg, level, type, details) => {
+            await runRsync(command, { source, destination: localPath, extra }, (msg, level, type, details) => {
                 // Progress lines come in two dialects, and the remaining-files counter is spelled
                 // differently in each: `to-chk` from rsync 3's --info=progress2, `to-check` from
                 // the 2.6.9 format that openrsync also speaks.
@@ -681,7 +717,10 @@ export const RsyncAdapter: StorageAdapter = {
                     const remaining = parseInt(match[3], 10);
                     const totalToCheck = parseInt(match[4], 10);
                     const processedFiles = Math.max(0, totalToCheck - remaining);
-                    onProgress(bytes, totalBytes, Math.min(processedFiles, totalFiles), totalFiles);
+                    // rsync counts only what it was given, so its figure is offset by the
+                    // files that never entered the list. Without that the bar of an
+                    // incremental would start at zero out of the full source and jump.
+                    onProgress(bytes, totalBytes, unchangedFiles + Math.min(processedFiles, transferFiles), totalFiles);
                 }
 
                 // rsync narrates every file and every progress tick on stdout. Execution logs are
@@ -691,18 +730,23 @@ export const RsyncAdapter: StorageAdapter = {
                 // reported through onProgress and the totals are summarised below, so only what
                 // rsync sends to stderr (warnings, refusals) earns a line here.
                 if (onLog && level && level !== "info") onLog(msg, level, type, details);
-            });
+            }, options?.signal);
 
             if (onProgress) onProgress(totalBytes, totalBytes, totalFiles, totalFiles);
-            if (onLog) onLog(`Rsync directory download completed: ${totalFiles} file(s), ${totalBytes} bytes`, "info", "storage");
+            if (onLog) onLog(`Rsync directory download completed: ${transferFiles} file(s), ${totalBytes} bytes`, "info", "storage");
 
-            return { files: totalFiles, bytes: totalBytes, entries, failures: [] };
+            return { files: totalFiles, bytes: totalBytes, entries: resultEntries, failures: [] };
         } catch (error: unknown) {
+            // A transfer torn down by the cancellation is a cancelled run, not a source that
+            // failed. Logged as an error it would leave a red line in the history of a run
+            // whose only story is that someone stopped it.
+            if (options?.signal?.aborted) throw error;
             log.error("Rsync directory download failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog) onLog(`Rsync directory download failed: ${sanitizeError(error)}`, "error", "storage");
             throw error;
         } finally {
             if (keyFile) await fs.unlink(keyFile).catch(() => {});
+            if (listFile) await fs.unlink(listFile).catch(() => {});
         }
     },
 
@@ -722,12 +766,7 @@ export const RsyncAdapter: StorageAdapter = {
             } catch {
                 // Fallback: download via rsync
                 const source = buildRemotePath(config, remotePath);
-                const rsync = await createRsyncInstance(config, keyFile);
-
-                rsync.source(source);
-                rsync.destination(tmpPath);
-
-                await executeRsync(rsync);
+                await runRsync(await buildRsyncArgs(config, keyFile), { source, destination: tmpPath });
                 return await fs.readFile(tmpPath, "utf-8");
             }
         } catch {
@@ -797,16 +836,20 @@ export const RsyncAdapter: StorageAdapter = {
 
             const startDir = path.posix.join(config.pathPrefix, subPath);
             const safeStartDir = shellEscapeSingleQuote(startDir);
+            // Whole paths rather than GNU find's -printf, which the BSD find of macOS lacks, and
+            // which left the list empty there. The last part of each path is the name.
             const output = await execSSH(
                 config,
-                `find '${safeStartDir}' -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null`,
-                keyFile
+                `find '${safeStartDir}' -mindepth 1 -maxdepth 1 -type d 2>/dev/null`,
+                keyFile,
+                undefined,
+                LISTING_LIMITS
             );
 
             if (!output) return [];
             return output
                 .split("\n")
-                .map((name) => name.trim())
+                .map((line) => path.posix.basename(line.replace(/\r$/, "")))
                 .filter(Boolean)
                 .map((name) => ({ name, path: subPath ? `${subPath}/${name}` : name }));
         } catch (error: unknown) {
@@ -884,12 +927,7 @@ export const RsyncAdapter: StorageAdapter = {
             await fs.writeFile(tmpPath, "Connection Test");
 
             const destination = buildRemotePath(config, `.dbackup/test/${testFileName}`);
-            const rsync = await createRsyncInstance(config, keyFile);
-
-            rsync.source(tmpPath);
-            rsync.destination(destination);
-
-            await executeRsync(rsync);
+            await runRsync(await buildRsyncArgs(config, keyFile), { source: tmpPath, destination });
             remoteFileCreated = true;
 
             // 2. Delete Test

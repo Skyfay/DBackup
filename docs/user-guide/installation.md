@@ -38,12 +38,15 @@ services:
 ```
 
 ```bash [Docker Run]
+# Once: write both secrets to .env and keep the file
+echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" > .env
+echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> .env
+
 docker run -d \
   --name dbackup \
   --restart always \
   -p 3000:3000 \
-  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
-  -e BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
+  --env-file .env \
   -e BETTER_AUTH_URL="https://localhost:3000" \
   -v "$(pwd)/data:/data" \
   -v "$(pwd)/backups:/backups" \
@@ -51,6 +54,10 @@ docker run -d \
   skyfay/dbackup:latest
 ```
 
+:::
+
+::: warning Keep both secrets for good
+Generate them once and start every new container with the same values, for example after `docker rm` for an update. A new `ENCRYPTION_KEY` leaves every saved login and key unreadable. A new `BETTER_AUTH_SECRET` signs everyone out and breaks two-factor sign-in. Do not put `$(openssl rand ...)` straight into `docker run`, since it makes new values every time the command runs.
 :::
 
 ### Generate Secrets
@@ -198,7 +205,7 @@ secrets:
 
 | Mount Point | Required | Purpose |
 | :--- | :---: | :--- |
-| `/data` | ✅ | All persistent data (database, uploads, certificates) |
+| `/data` | ✅ | All persistent data (database and certificates) |
 | `/backups` | ❌ | Optional: used for local backups |
 | `/tmp` | ❌ | Recommended: staging space while a backup is being built |
 
@@ -345,6 +352,9 @@ For contributing or local development:
 git clone https://github.com/Skyfay/DBackup.git
 cd DBackup
 
+# Work from dev, which holds everything finished since the last release
+git checkout dev
+
 # Install dependencies
 pnpm install
 
@@ -352,39 +362,36 @@ pnpm install
 cp .env.example .env
 # Edit .env with your configuration
 
-# Initialize database
-npx prisma db push
-npx prisma generate
-
-# Start development server
+# Start development server, which applies the database migrations first
 pnpm dev
 ```
+
+Pull requests go into `dev`, never into `main`. See the [Developer Guide](/developer-guide/#branches-and-pull-requests).
 
 Open [http://localhost:3000](http://localhost:3000).
 
 ## Updating
 
+### Backup Before Updating
+
+Back up the database before every update. Stop the container first, so nothing writes while you copy, then copy the whole `db` folder, which holds `dbackup.db` together with its `-wal` and `-shm` files:
+
+```bash
+docker compose stop dbackup
+cp -a ./data/db ./data/db-backup-$(date +%Y%m%d)
+```
+
 ### Docker Compose
 
 ```bash
-# Pull latest image
-docker-compose pull
+# Pull the latest image
+docker compose pull
 
-# Restart with new image
-docker-compose up -d
+# Start the container with the new image
+docker compose up -d
 ```
 
-### Backup Before Updating
-
-Always backup your data before updating:
-
-```bash
-# Backup database
-cp ./db/prod.db ./db/prod.db.backup
-
-# Backup configuration (use System Backup feature)
-# Or manually backup the db folder
-```
+The first start of a new version runs its database migrations, which can take a while on an instance with a long history. Leave the container running until its log (`docker compose logs -f dbackup`) shows `All migrations have been successfully applied`. A container stopped halfway leaves a migration marked as failed, and the next start stops with an error.
 
 ## Troubleshooting
 

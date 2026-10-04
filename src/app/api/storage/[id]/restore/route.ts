@@ -7,6 +7,9 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
 import prisma from "@/lib/prisma";
+import { auditService } from "@/services/audit-service";
+import { restoreAuditDetails } from "@/services/storage/backup-audit";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 const log = logger.child({ route: "storage/restore" });
 
@@ -52,6 +55,19 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 : {}),
             triggerInfo: { type: "Manual", label: user?.name ?? "Unknown" },
         });
+
+        // Written once the restore was accepted and runs, with where it goes and what it picked.
+        const details = await restoreAuditDetails({
+            destinationId: params.id,
+            file,
+            executionId: result.executionId,
+            scope: scope === 'databases' || scope === 'files' ? scope : undefined,
+            targetSourceId,
+            targetDatabaseName,
+            databaseMapping,
+            directoryMapping,
+        });
+        await auditService.logFor(ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, details, params.id);
 
         // result contains { success: true, executionId: string, message: "Restore started" }
         return NextResponse.json(result, { status: 202 });

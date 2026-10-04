@@ -17,6 +17,7 @@ import {
     getFacetedRowModel,
     getFacetedUniqueValues,
     useReactTable,
+    type Row,
 } from "@tanstack/react-table";
 
 import {
@@ -29,11 +30,19 @@ import {
 } from "@/components/ui/table";
 import { DataTableToolbar } from "./data-table-toolbar";
 import { DataTablePagination } from "./data-table-pagination";
+import { ContextMenu, ContextMenuTrigger } from "./context-menu";
 import { DataTableBulkBar } from "./data-table-bulk-bar";
+import { useBulkActions } from "./use-bulk-actions";
 import { selectColumn } from "./data-table-selection";
-import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption } from "./data-table-types";
+import { DataTableColumnSettings } from "./data-table-column-settings";
+import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
+import { useTableDefaults } from "./table-defaults";
+import { isPlainClick, toggleOnClick } from "./row-click";
+import { JOIN_END } from "./page-head";
+import { cn } from "@/lib/utils";
+import type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
 
-export type { BulkAction, DataTableFilterableColumn, DataTableFilterOption };
+export type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk };
 
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[];
@@ -42,7 +51,8 @@ interface DataTableProps<TData, TValue> {
     filterableColumns?: DataTableFilterableColumn<TData>[];
     initialColumnVisibility?: VisibilityState;
     autoResetPageIndex?: boolean;
-    onRefresh?: () => void;
+    /** Loads the rows again. A promise keeps the refresh button turning until it settles. */
+    onRefresh?: () => unknown;
     isLoading?: boolean;
 
     // Row selection & bulk actions
@@ -66,6 +76,52 @@ interface DataTableProps<TData, TValue> {
     bulkActions?: BulkAction<TData>[];
     /** Runs after a bulk action settles, whether fully or partly successful. Refetch here. */
     onBulkActionComplete?: () => void | Promise<void>;
+
+    /** From md up the card goes on from a `PageHead` above it, square on top. In the cards and split views that is the card of the toolbar. */
+    joined?: boolean;
+    /** The card look without its own frame, for a table that fills a pane of a card around it, like the system tasks of the Settings page. */
+    frameless?: boolean;
+    /**
+     * Turns on the Columns menu: switch columns on and off, move them, pick a row height. The
+     * rows per page are kept with it. Feed it from `useTableLayout`, which saves the layout to
+     * the user's account. Without it the table follows the defaults of the profile.
+     */
+    columnLayout?: ColumnLayoutOption;
+    /** Extra controls after the filters, such as quick status filters. */
+    toolbarExtra?: React.ReactNode;
+    /** A line under the toolbar of the card look, like a legend for the marks in the rows. */
+    toolbarNote?: React.ReactNode;
+    /**
+     * A part of the card look between the toolbar and the rows, like a timeline that picks what the rows show.
+     * As a function it gets every row that passes the search and the filters, so it can draw them itself.
+     */
+    aboveRows?: React.ReactNode | ((rows: Row<TData>[]) => React.ReactNode);
+    /** Leaves out the rows and the pages of the card look, for a list that waits for a pick in `aboveRows`. */
+    hideRows?: boolean;
+    searchPlaceholder?: string;
+    /**
+     * Makes the whole row clickable. Clicks on controls inside the row, and inside popovers
+     * they open, are left to those controls. Give the row a button as well for keyboard users.
+     */
+    onRowClick?: (row: TData) => void;
+    /** The id of the row whose details show elsewhere on the page, which stays marked while they do. */
+    activeRowId?: string | null;
+    /**
+     * "cards" draws the rows through `renderCard` in a grid, "split" hands every filtered row
+     * to `renderSplit` at once. Both keep the toolbar, the search and the filters.
+     */
+    view?: "table" | "cards" | "split";
+    /** One card. Its cells come from `row.getVisibleCells()`, so the Columns menu decides what a card shows. */
+    renderCard?: (row: Row<TData>) => React.ReactNode;
+    /** The columns of the card grid, for cards that need more room than the three abreast they get by default. */
+    cardGridClassName?: string;
+    /**
+     * The right click menu of a row, as a `ContextMenuContent`. It gets the bulk context when
+     * the row is one of several selected, so the menu can act on all of them.
+     */
+    renderRowMenu?: (row: TData, bulk: RowMenuBulk<TData> | null) => React.ReactNode;
+    /** The split view, given all rows that pass search and filters. It has no pages. */
+    renderSplit?: (rows: Row<TData>[]) => React.ReactNode;
 
     // Manual Pagination & Sorting Capabilities
     pageCount?: number;
@@ -95,6 +151,21 @@ export function DataTable<TData, TValue>({
     isRowSelectable,
     bulkActions = [],
     onBulkActionComplete,
+    joined = false,
+    frameless = false,
+    columnLayout,
+    toolbarExtra,
+    toolbarNote,
+    aboveRows,
+    hideRows = false,
+    searchPlaceholder,
+    onRowClick,
+    activeRowId,
+    view = "table",
+    renderCard,
+    cardGridClassName,
+    renderRowMenu,
+    renderSplit,
     pageCount,
     rowCount,
     pagination: controlledPagination,
@@ -107,13 +178,16 @@ export function DataTable<TData, TValue>({
     manualSorting = false,
     manualFiltering = false,
 }: DataTableProps<TData, TValue>) {
+    // The rows per page and the row height of the profile, unless the table keeps its own.
+    const defaults = useTableDefaults();
+
     // Internal state (used if no controlled state is provided)
     const [internalSorting, setInternalSorting] = React.useState<SortingState>([]);
     const [internalColumnFilters, setInternalColumnFilters] = React.useState<ColumnFiltersState>([]);
-    const [internalPagination, setInternalPagination] = React.useState<PaginationState>({
+    const [internalPagination, setInternalPagination] = React.useState<PaginationState>(() => ({
         pageIndex: 0,
-        pageSize: 10,
-    });
+        pageSize: columnLayout?.initial?.pageSize ?? defaults.pageSize,
+    }));
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(initialColumnVisibility);
     const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
@@ -133,11 +207,21 @@ export function DataTable<TData, TValue>({
         () => (enableRowSelection ? [selectColumn<TData>() as ColumnDef<TData, TValue>, ...columns] : columns),
         [enableRowSelection, columns]
     );
+    const layout = useColumnLayout(columns, columnLayout, enableRowSelection);
+    const density = layout?.density ?? defaults.density;
+
+    // A table with a column layout keeps the rows per page it was switched to.
+    const changePagination: OnChangeFn<PaginationState> = (updater) => {
+        const next = typeof updater === "function" ? updater(pagination) : updater;
+        if (layout && next.pageSize !== pagination.pageSize) layout.setPageSize(next.pageSize);
+        setPagination(next);
+    };
 
     const table = useReactTable({
         data,
         columns: tableColumns,
         getRowId,
+        meta: { density },
         enableRowSelection: enableRowSelection
             ? (row) => (isRowSelectable ? isRowSelectable(row.original) : true)
             : false,
@@ -145,7 +229,8 @@ export function DataTable<TData, TValue>({
         state: {
             sorting,
             columnFilters,
-            columnVisibility,
+            columnVisibility: layout?.columnVisibility ?? columnVisibility,
+            columnOrder: layout?.columnOrder ?? [],
             rowSelection,
             pagination,
         },
@@ -154,8 +239,13 @@ export function DataTable<TData, TValue>({
         manualFiltering,
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
-        onPaginationChange: setPagination,
-        onColumnVisibilityChange: setColumnVisibility,
+        onPaginationChange: changePagination,
+        onColumnVisibilityChange: layout
+            ? (updater) => {
+                  const next = typeof updater === "function" ? updater(layout.columnVisibility) : updater;
+                  layout.setHidden(Object.keys(next).filter((id) => next[id] === false));
+              }
+            : setColumnVisibility,
         onRowSelectionChange: setRowSelection,
 
         // When pagination is controlled externally, auto-reset would overwrite the parent's pageIndex on every data update.
@@ -193,76 +283,212 @@ export function DataTable<TData, TValue>({
         ? table.getFilteredSelectedRowModel().rows.map((row) => row.original)
         : [];
 
-    return (
-        <div className="w-full">
-            <DataTableToolbar
-                table={table}
-                searchKey={searchKey}
-                filterableColumns={filterableColumns}
-                onRefresh={onRefresh}
-                isLoading={isLoading}
-            />
-            {enableRowSelection && bulkActions.length > 0 && (
-                <DataTableBulkBar
-                    selectedRows={selectedRows}
-                    actions={bulkActions}
-                    onClearSelection={() => setRowSelection({})}
-                    onComplete={onBulkActionComplete}
+    const compact = density === "compact";
+    // The whole checkbox cell ticks the box, so a near miss beside it does not open the row
+    // instead. The gap before the next column moves into that cell to widen it.
+    const wideCheckbox = enableRowSelection;
+
+    const clearSelection = React.useCallback(() => setRowSelection({}), []);
+    const bulk = useBulkActions({
+        selectedRows,
+        actions: bulkActions,
+        onClearSelection: clearSelection,
+        onComplete: onBulkActionComplete,
+        getRowId,
+    });
+    const hasBulk = enableRowSelection && bulkActions.length > 0;
+    // The dialogs of a bulk action belong to the table rather than to the bar: the right click
+    // menu of a selected row starts the same actions, and the cards have no bar at all.
+    const bulkDialogs = hasBulk && bulk.dialogs;
+
+    /** Wraps a row or a card in its right click menu, with the bulk context when it is one of several. */
+    const withRowMenu = (row: Row<TData>, element: React.ReactNode) => {
+        const many = hasBulk && selectedRows.length > 1 && row.getIsSelected();
+        const menu = renderRowMenu?.(
+            row.original,
+            many ? { selected: selectedRows, actions: bulk.visibleActions, start: bulk.start, clearSelection } : null
+        );
+        if (!menu) return element;
+        return (
+            <ContextMenu key={row.id}>
+                <ContextMenuTrigger asChild>{element}</ContextMenuTrigger>
+                {menu}
+            </ContextMenu>
+        );
+    };
+
+    const toolbar = (
+        <DataTableToolbar
+            table={table}
+            searchKey={searchKey}
+            filterableColumns={filterableColumns}
+            onRefresh={onRefresh}
+            isLoading={isLoading}
+            searchPlaceholder={searchPlaceholder}
+            toolbarExtra={toolbarExtra}
+            columnSettings={layout ? (
+                <DataTableColumnSettings
+                    {...layout.settings}
+                    onReset={() => {
+                        layout.settings.onReset();
+                        if (pagination.pageSize !== defaults.pageSize) setPagination({ pageIndex: 0, pageSize: defaults.pageSize });
+                    }}
+                    showDensity={view === "table"}
                 />
-            )}
-            <div className="rounded-md border overflow-x-auto max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-22rem)]">
-                <Table>
-                    <TableHeader>
-                        {table.getHeaderGroups().map((headerGroup) => (
-                            <TableRow key={headerGroup.id}>
-                                {headerGroup.headers.map((header) => {
-                                    return (
-                                        <TableHead key={header.id}>
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                      header.column.columnDef.header,
-                                                      header.getContext()
-                                                  )}
-                                        </TableHead>
-                                    );
-                                })}
-                            </TableRow>
-                        ))}
-                    </TableHeader>
-                    <TableBody>
-                        {table.getRowModel().rows?.length ? (
-                            table.getRowModel().rows.map((row) => (
-                                <TableRow
-                                    key={row.id}
-                                    data-state={row.getIsSelected() && "selected"}
-                                >
-                                    {row.getVisibleCells().map((cell) => (
-                                        <TableCell key={cell.id}>
-                                            {flexRender(
-                                                cell.column.columnDef.cell,
-                                                cell.getContext()
-                                            )}
-                                        </TableCell>
-                                    ))}
-                                </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell
-                                    // Counted from the table, not from `columns`, so the
-                                    // prepended select column does not break the span.
-                                    colSpan={table.getVisibleLeafColumns().length}
-                                    className="h-24 text-center"
-                                >
-                                    No results.
-                                </TableCell>
-                            </TableRow>
+            ) : undefined}
+        />
+    );
+    const bulkBar = hasBulk && (
+        <DataTableBulkBar
+            selectedRows={selectedRows}
+            actions={bulk.visibleActions}
+            runningId={bulk.runningId}
+            onStart={bulk.start}
+            onClearSelection={clearSelection}
+        />
+    );
+    const grid = (
+        <Table>
+            <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow
+                        key={headerGroup.id}
+                        className={cn(
+                            "hover:bg-transparent",
+                            wideCheckbox && "[&>th:first-child]:cursor-pointer [&>th:first-child]:pr-3 [&>th:nth-child(2)]:pl-0"
                         )}
-                    </TableBody>
-                </Table>
+                    >
+                        {headerGroup.headers.map((header) => (
+                            <TableHead
+                                key={header.id}
+                                {...(layout?.headerDrag(header.column.id) ?? {})}
+                                onClick={
+                                    wideCheckbox && header.column.id === "select"
+                                        ? toggleOnClick(() => table.toggleAllPageRowsSelected(!table.getIsAllPageRowsSelected()))
+                                        : undefined
+                                }
+                                className={cn(
+                                    "px-3 text-xs text-muted-foreground first:pl-4 last:pr-4",
+                                    // The checkbox and the actions keep to their content. A full-width table
+                                    // would hand them spare width too, which pushes the name further right
+                                    // the fewer columns a table has.
+                                    (header.column.id === "select" || header.column.columnDef.meta?.pin === "end") && "w-px",
+                                    // Movable headers can be dragged, and show where a dragged one lands.
+                                    "[&[draggable=true]]:cursor-grab data-[drop-target]:shadow-[inset_2px_0_0_var(--foreground)]"
+                                )}
+                            >
+                                {header.isPlaceholder
+                                    ? null
+                                    : flexRender(header.column.columnDef.header, header.getContext())}
+                            </TableHead>
+                        ))}
+                    </TableRow>
+                ))}
+            </TableHeader>
+            <TableBody>
+                {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => withRowMenu(row, (
+                        <TableRow
+                            key={row.id}
+                            data-state={row.getIsSelected() && "selected"}
+                            data-active={activeRowId && row.id === activeRowId ? "true" : undefined}
+                            onClick={onRowClick ? (event) => isPlainClick(event) && onRowClick(row.original) : undefined}
+                            className={cn(
+                                // Cells can show controls on hover of their row, like a card does.
+                                "group/row",
+                                "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
+                                compact ? "[&>td]:py-1" : "[&>td]:py-2.5",
+                                wideCheckbox && "[&>td:first-child]:cursor-pointer [&>td:first-child]:pr-3 [&>td:nth-child(2)]:pl-0",
+                                onRowClick && "cursor-pointer",
+                                // The row stays marked while its right click menu is open, or its details show.
+                                "data-[state=open]:bg-muted/50 data-[active=true]:bg-muted/60 data-[active=true]:hover:bg-muted/60"
+                            )}
+                        >
+                            {row.getVisibleCells().map((cell) => (
+                                <TableCell
+                                    key={cell.id}
+                                    onClick={wideCheckbox && cell.column.id === "select" ? toggleOnClick(() => row.toggleSelected()) : undefined}
+                                >
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                </TableCell>
+                            ))}
+                        </TableRow>
+                    )))
+                ) : (
+                    <TableRow>
+                        <TableCell
+                            // Counted from the table, not from `columns`, so the
+                            // prepended select column does not break the span.
+                            colSpan={table.getVisibleLeafColumns().length}
+                            className="h-24 text-center text-muted-foreground"
+                        >
+                            No results.
+                        </TableCell>
+                    </TableRow>
+                )}
+            </TableBody>
+        </Table>
+    );
+
+    if (view === "split" && renderSplit) {
+        return (
+            <div className="min-w-0 space-y-4">
+                <div className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>{toolbar}</div>
+                {renderSplit(table.getPrePaginationRowModel().rows)}
+                {bulkDialogs}
             </div>
-            <DataTablePagination table={table} totalRows={totalRows} />
+        );
+    }
+
+    if (view === "cards" && renderCard) {
+        const rows = table.getRowModel().rows;
+        return (
+            <div className="min-w-0 space-y-4">
+                <div className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
+                    {toolbar}
+                    {toolbarNote}
+                </div>
+                {rows.length > 0 ? (
+                    // One column as wide as the screen on a phone, so a long name truncates instead of widening its card.
+                    <div className={cn("grid grid-cols-1 gap-4", cardGridClassName ?? "sm:grid-cols-2 xl:grid-cols-3")}>
+                        {rows.map((row) =>
+                            withRowMenu(row, (
+                                // `contents` keeps the card itself the grid item, the wrapper only carries the menu.
+                                <div key={row.id} className="group/row contents">
+                                    {renderCard(row)}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                ) : (
+                    <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">No results.</div>
+                )}
+                <DataTablePagination table={table} totalRows={totalRows} />
+                {bulkDialogs}
+            </div>
+        );
+    }
+
+    return (
+        <div className={cn("min-w-0 overflow-hidden", !frameless && "rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
+            {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
+            <div className="relative">
+                {toolbar}
+                {!aboveRows && toolbarNote}
+                {bulkBar}
+            </div>
+            {aboveRows && <div className="border-t">{typeof aboveRows === "function" ? aboveRows(table.getPrePaginationRowModel().rows) : aboveRows}</div>}
+            {!hideRows && (
+                <>
+                    {/* With a part above the rows, their legend moves down to them. */}
+                    {aboveRows && toolbarNote && <div className="border-t pt-3">{toolbarNote}</div>}
+                    <div className="border-t">{grid}</div>
+                    <div className="border-t px-2">
+                        <DataTablePagination table={table} totalRows={totalRows} />
+                    </div>
+                </>
+            )}
+            {bulkDialogs}
         </div>
     );
 }

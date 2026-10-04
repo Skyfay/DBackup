@@ -6,6 +6,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { notify, getNotificationConfig } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "HealthCheckService" });
 
@@ -215,6 +216,16 @@ export class HealthCheckService {
         let stateChanged = false;
         const currentState = offlineStates[configRow.id];
 
+        // An air-gapped destination is away on purpose, so it reports neither going nor coming back.
+        // A state left from before it was marked goes too, or it would report coming back later.
+        if (isAirGapped(configRow)) {
+            if (currentState) {
+                delete offlineStates[configRow.id];
+                stateChanged = true;
+            }
+            return stateChanged;
+        }
+
         // Skip notifications if explicitly disabled for this adapter
         const meta = configRow.metadata ? JSON.parse(configRow.metadata) : {};
         if (meta.healthNotificationsDisabled === true) {
@@ -231,6 +242,7 @@ export class HealthCheckService {
                             adapterName: configRow.name || configRow.id,
                             adapterType: configRow.type as "database" | "storage",
                             adapterId: configRow.adapterId,
+                            configId: configRow.id,
                             consecutiveFailures,
                             lastError: errorMsg || undefined,
                             timestamp: new Date().toISOString(),
@@ -261,6 +273,7 @@ export class HealthCheckService {
                         adapterName: configRow.name || configRow.id,
                         adapterType: configRow.type as "database" | "storage",
                         adapterId: configRow.adapterId,
+                        configId: configRow.id,
                         downtime,
                         timestamp: new Date().toISOString(),
                     },

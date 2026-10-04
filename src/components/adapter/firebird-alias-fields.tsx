@@ -13,21 +13,29 @@ import { Plus, Trash2 } from "lucide-react";
  * runner pipeline, restore UI) consumes these names via getDatabases() like
  * any other adapter - see src/lib/adapters/database/firebird/connection.ts.
  */
-export function FirebirdAliasFields() {
-    const { control } = useFormContext();
+export function FirebirdAliasFields({ showIntro = true }: {
+    /** False where a heading around the list already explains it. */
+    showIntro?: boolean;
+} = {}) {
+    const { control, getFieldState, formState } = useFormContext();
     const { fields, append, remove } = useFieldArray({
         control,
         name: "config.databases",
     });
+    // An empty list has no row to carry its error, so the list shows it itself.
+    const listError = getFieldState("config.databases", formState).error;
+    const listMessage = listError?.message ?? listError?.root?.message;
 
     return (
         <div className="space-y-3">
-            <div className="space-y-1">
-                <Label>Database Aliases</Label>
-                <p className="text-sm text-muted-foreground">
-                    Firebird cannot list databases automatically - enter the alias and path (as seen by the Firebird server) for each database to back up.
-                </p>
-            </div>
+            {showIntro && (
+                <div className="space-y-1">
+                    <Label>Database Aliases</Label>
+                    <p className="text-sm text-muted-foreground">
+                        Firebird cannot list databases automatically - enter the alias and path (as seen by the Firebird server) for each database to back up.
+                    </p>
+                </div>
+            )}
 
             <div className="space-y-2">
                 {fields.map((field, index) => (
@@ -69,6 +77,8 @@ export function FirebirdAliasFields() {
                     </div>
                 ))}
             </div>
+
+            {listMessage && <p className="text-sm text-destructive">{listMessage}</p>}
 
             <Button
                 type="button"

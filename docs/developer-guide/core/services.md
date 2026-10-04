@@ -6,7 +6,8 @@ The Service Layer contains all business logic in DBackup. Server Actions and API
 
 ```
 src/services/
-├── audit-service.ts           # Audit log recording & queries (flat, no subdirectory)
+├── audit-service.ts           # Writes audit log entries (flat, no subdirectory)
+├── audit/                     # The Audit log tab: list, filters, details, timeline, CSV
 ├── dashboard-service.ts       # Dashboard aggregations (flat, no subdirectory)
 ├── auth/
 │   ├── api-key-service.ts     # API key CRUD and validation
@@ -18,9 +19,10 @@ src/services/
 │   ├── integrity-service.ts   # Periodic backup integrity checks
 │   └── retention-service.ts   # GFS retention algorithm
 ├── config/
-│   ├── config-service.ts      # System config read/write
-│   ├── export.ts              # Config backup export
-│   └── import.ts              # Config backup import
+│   ├── database-copy.ts       # The copy of the database the config backup uploads
+│   ├── restore-flow.ts        # Checks a config backup, then restores it
+│   ├── config-service.ts      # Facade of the JSON files of older versions
+│   └── import.ts              # Import of those JSON files
 ├── jobs/
 │   └── job-service.ts         # CRUD for backup jobs
 ├── notifications/
@@ -34,7 +36,9 @@ src/services/
 │   └── types.ts               # RestoreInput, RestoreResult interfaces
 ├── sso/
 │   ├── oidc-provider-service.ts # SSO provider CRUD
-│   └── oidc-registry.ts         # Runtime provider registration for better-auth
+│   ├── oidc-registry.ts         # The provider types the dialogs offer
+│   ├── oidc-discovery.ts        # Reads the endpoints of a provider from its fields
+│   └── sso-providers-model.ts   # The SSO tab, never the client secret
 ├── storage/
 │   ├── storage-alert-service.ts # Per-destination usage and missing-backup alerts
 │   ├── storage-service.ts       # Storage listing and deletion
@@ -43,8 +47,17 @@ src/services/
 │   ├── certificate-service.ts   # TLS certificate management
 │   ├── db-version-service.ts    # Tracks DB engine versions
 │   ├── healthcheck-service.ts   # Adapter connectivity monitoring
-│   ├── system-task-service.ts   # Built-in background task management
+│   ├── settings-model.ts        # The Settings page model, every part read at once
+│   ├── system-settings-service.ts # General, Sign-in and Privacy, read with defaults and saved whole
+│   ├── system-task-definitions.ts # Ids, defaults and words of the system tasks, what each follows
+│   ├── system-task-service.ts   # Task settings, runs and their last run
+│   ├── system-task-runs.ts      # What each task does, with a short result
+│   ├── system-task-settings.ts  # The System tasks part: rows, Edit, Run now
 │   └── update-service.ts        # New version detection
+├── trash/
+│   ├── trash-snapshot.ts      # keepInTrash: the snapshot a delete keeps, with what belongs to the record
+│   ├── trash-restore.ts       # Brings a snapshot back under its own id, dropping links to what is gone
+│   └── trash-service.ts       # Recently deleted: list, restore, purge and the cleanup by Data retention
 ├── templates/
 │   ├── naming-template-service.ts    # File naming pattern templates
 │   ├── retention-policy-service.ts   # Reusable retention policy CRUD
@@ -310,7 +323,7 @@ interface IntegrityCheckResult {
 }
 ```
 
-**Integration:** Registered as a system task (`system.integrity_check`) in `system-task-service.ts`. Runs weekly (Sunday 4 AM), disabled by default. Can be triggered manually via Settings → System Tasks.
+**Integration:** Registered as a system task (`system.integrity_check`) in `system-task-service.ts`. Runs weekly (Sunday 4 AM), disabled by default. Can be triggered manually via Settings → System tasks → Run now.
 
 ### NotificationLogService
 
@@ -433,6 +446,22 @@ Each service handles one domain:
 - `JobService` - Job CRUD only
 - `BackupService` - Backup execution only
 - Don't mix concerns
+
+### Recently Deleted
+
+A delete of an encryption key, a credential profile, a connection, a job or a user keeps a snapshot of the record in `DeletedRecord` before it deletes it, both in one transaction. The delete functions of those services take `DeleteOptions`: `permanently` skips the snapshot, `by` names who deleted.
+
+```typescript
+await prisma.$transaction(async (tx) => {
+    if (!options.permanently) await keepInTrash(tx, "job", id, options.by);
+    await tx.job.delete({ where: { id } });
+});
+```
+
+- The snapshot holds the rows as they were stored, secrets still encrypted with `ENCRYPTION_KEY`, and everything that belongs to the record: the destinations, folders, channels and run ids of a job, the accounts, second factor, passkeys, API keys, preferences and picture of a user, the picture in base64, the version history of a connection.
+- Each row keeps the permission of its kind, and `superAdminOnly` for the account of a SuperAdmin. `listTrash` only lists rows the viewer may handle. Restoring, purging and `permanently` need `TRASH_ADMIN_PERMISSION` (`settings:write`) on top, checked by the actions in `src/app/actions/settings/trash.ts` and by every delete action and route. Undo needs only the right of the kind, for the viewer's own delete of the last 5 minutes.
+- `restoreSnapshot` creates the rows again under their old ids in one transaction. A link to a record that is gone meanwhile is dropped with a note, a taken name throws `ConflictError` and the caller asks for another.
+- A new kind of record adds its kind to `TRASH_KINDS`, a snapshot in `trash-snapshot.ts` and a restore in `trash-restore.ts`. A new table that cascades from a kept record belongs in its snapshot, or the restore loses it.
 
 ### 2. Use Transactions
 

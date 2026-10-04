@@ -146,7 +146,7 @@ See [SSO Integration](./sso.md) for detailed OIDC implementation.
 
 ### Configurable Session Duration
 
-Session lifetime is configurable by administrators via Settings → Authentication & Security. The value is stored in the `SystemSetting` table under the key `auth.sessionDuration` (in seconds).
+Session lifetime is configurable by administrators as **Sessions last** under Settings → Sign-in. The value is stored in the `SystemSetting` table under the key `auth.sessionDuration` (in seconds).
 
 ```typescript
 // src/lib/auth.ts - Dynamic session expiry via database hook

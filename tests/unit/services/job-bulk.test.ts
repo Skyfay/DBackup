@@ -9,12 +9,16 @@ vi.mock('@/lib/server/scheduler', () => ({
     }
 }));
 
+const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => 'trash-1') }));
+vi.mock('@/services/trash/trash-snapshot', () => trash);
+
 describe('JobService bulk operations', () => {
     let service: JobService;
 
     beforeEach(() => {
         service = new JobService();
         vi.clearAllMocks();
+        prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
         prismaMock.job.findMany.mockResolvedValue([
             { id: 'a', name: 'Nightly Prod' },
             { id: 'b', name: 'Weekly Archive' },
@@ -31,6 +35,16 @@ describe('JobService bulk operations', () => {
             expect(result.succeeded).toEqual(['a', 'b', 'c']);
             expect(result.failed).toEqual([]);
             expect(prismaMock.job.delete).toHaveBeenCalledTimes(3);
+            expect(trash.keepInTrash).toHaveBeenCalledTimes(3);
+        });
+
+        it('skips Recently deleted for jobs deleted permanently', async () => {
+            prismaMock.job.delete.mockResolvedValue({} as any);
+
+            await service.deleteJobs(['a', 'b'], { permanently: true });
+
+            expect(prismaMock.job.delete).toHaveBeenCalledTimes(2);
+            expect(trash.keepInTrash).not.toHaveBeenCalled();
         });
 
         // The scheduler re-reads every job on each call, so one refresh reaches the same

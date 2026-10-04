@@ -39,3 +39,15 @@ export interface RestoreOptions {
     profiles: boolean;
     statistics?: boolean;
 }
+
+/** What a configuration backup holds, shown before it is restored. */
+export interface RestorePreview {
+    /** A copy of the whole database, or a file of an older version that restores in parts. */
+    kind: "database" | "json";
+    /** The version of DBackup that made it, when the file says. */
+    version: string | null;
+    createdAt: string | null;
+    counts: { connections: number; jobs: number; templates: number; users: number; runs: number };
+    /** Made by a DBackup with another ENCRYPTION_KEY or BETTER_AUTH_SECRET, whose secrets the restore encrypts again. */
+    otherKeys: boolean;
+}

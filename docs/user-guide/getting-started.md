@@ -21,7 +21,7 @@ DBackup is a self-hosted web application for automating database backups. It sup
 ## Prerequisites
 
 - **Docker & Docker Compose** (recommended)
-- Or: **Node.js 20+** for local development
+- Or: **Node.js 24** for local development
 
 ## Installation
 

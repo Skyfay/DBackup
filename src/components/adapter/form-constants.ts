@@ -18,10 +18,16 @@ export const STORAGE_CONNECTION_KEYS = [
 export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options', 'folderId', 'folderPath'];
 
 /**
+ * The config keys that say where inside the storage the files go, shown in the Location part
+ * of the connection form. The rest of `STORAGE_CONFIG_KEYS` goes to its Options part.
+ */
+export const STORAGE_LOCATION_KEYS = ['pathPrefix', 'storageClass', 'folderId', 'folderPath'];
+
+/**
  * Settings that are right out of the box and exist only for the case that is not.
  *
- * Rendered behind a disclosure rather than in the main body, so the common path is not asked
- * a question it has no way to answer. Anything here must have a working default.
+ * Kept out of the way, in the Options part of the connection form, so the common path is not
+ * asked a question it has no way to answer. Anything here must have a working default.
  */
 export const STORAGE_ADVANCED_KEYS = ['helperImage'];
 
@@ -78,7 +84,8 @@ export const PLACEHOLDERS: Record<string, string> = {
     "mssql.sshPort": "22",
     "mssql.sshPrivateKey": "-----BEGIN RSA PRIVATE KEY-----\n\n\n-----END RSA PRIVATE KEY-----",
     // Options Examples
-    "mysql.options": "--single-transaction --quick",
+    "mysql.options": "--ignore-table=shop.sessions",
+    "mariadb.options": "--ignore-table=shop.sessions",
     "postgres.options": "--clean --if-exists",
     "mongodb.options": "--gzip --oplog",
     "firebird.options": "-v -g",

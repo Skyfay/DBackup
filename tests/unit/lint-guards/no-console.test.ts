@@ -20,7 +20,7 @@ const ALLOWED_FILES = [
   "src/instrumentation.ts", // Next.js instrumentation hook
   // Emits copy-paste API client snippets as template literals. The console.* calls
   // inside those strings are part of the sample a user runs standalone, not our code.
-  "src/components/dashboard/jobs/api-trigger-dialog.tsx",
+  "src/components/dashboard/jobs/api-trigger-scripts.ts",
 ];
 
 // Patterns to detect direct console usage

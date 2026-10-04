@@ -183,13 +183,14 @@ export default defineConfig({
           items: [
             { text: 'File & Folder Backups', link: '/user-guide/features/file-backups' },
             { text: 'Backup Modes', link: '/user-guide/features/backup-modes' },
-            { text: 'Storage Explorer', link: '/user-guide/features/storage-explorer' },
+            { text: 'Backups', link: '/user-guide/features/backups' },
             { text: 'Database Explorer', link: '/user-guide/features/database-explorer' },
+            { text: 'History', link: '/user-guide/features/history' },
             { text: 'Backup Verification', link: '/user-guide/features/backup-verification' },
             { text: 'Restore', link: '/user-guide/features/restore' },
             { text: 'Notifications', link: '/user-guide/features/notifications' },
             { text: 'System Backup', link: '/user-guide/features/system-backup' },
-            { text: 'Profile & Settings', link: '/user-guide/features/profile-settings' },
+            { text: 'Profile', link: '/user-guide/features/profile-settings' },
             { text: 'Timezones', link: '/user-guide/features/timezones' },
             { text: 'Rate Limits', link: '/user-guide/features/rate-limits' },
             { text: 'API Keys', link: '/user-guide/features/api-keys' },
@@ -203,8 +204,11 @@ export default defineConfig({
           items: [
             { text: 'User Management', link: '/user-guide/admin/users' },
             { text: 'Groups & Permissions', link: '/user-guide/admin/permissions' },
+            { text: 'Audit Log', link: '/user-guide/admin/audit-log' },
             { text: 'SSO / OIDC', link: '/user-guide/admin/sso' },
+            { text: 'Settings & System Tasks', link: '/user-guide/admin/settings' },
             { text: 'Data Retention & Database', link: '/user-guide/admin/data-retention' },
+            { text: 'Recently Deleted', link: '/user-guide/admin/recently-deleted' },
             { text: 'Templates', link: '/user-guide/features/templates' }
           ]
         }
@@ -227,6 +231,7 @@ export default defineConfig({
             { text: 'Runner Pipeline', link: '/developer-guide/core/runner' },
             { text: 'Logging System', link: '/developer-guide/core/logging' },
             { text: 'Icon System', link: '/developer-guide/core/icons' },
+            { text: 'Task Colors', link: '/developer-guide/core/colors' },
             { text: 'Download Tokens', link: '/developer-guide/core/download-tokens' },
             { text: 'Rate Limiting', link: '/developer-guide/core/rate-limiting' },
             { text: 'Update Service', link: '/developer-guide/core/updates' },

@@ -15,6 +15,7 @@ import {
 import { TarFileEntry } from "../common/types";
 import { awaitDumpProcess } from "../common/dump-process";
 import { MYSQL_DUMP, withAuthArgs } from "./args";
+import { dumpClientOf, readableContent } from "./dump-content";
 import { compareVersions } from "@/lib/utils";
 
 /** Oldest MySQL version the adapter is documented and tested against. */
@@ -59,12 +60,7 @@ async function dumpSingleDatabase(
             'warning',
         );
     }
-    // Both transports now get the version-aware dialect flags. The SSH path used
-    // to hand-roll a smaller argument set and miss them entirely.
-    const args = dialect.getDumpArgs(config, [dbName], host);
-
-    const safeCmd = `${dumpBin} ${args.join(' ').replace(config.password || '___NONE___', '******')}`;
-    onLog(`Dumping database: ${dbName}`, 'info', 'command', safeCmd);
+    const client = await dumpClientOf(host, dumpBin);
 
     // mysqldump writes to stdout, and a host process delivers stdout to this
     // machine whatever the transport is. The bytes are already local, so they
@@ -73,6 +69,15 @@ async function dumpSingleDatabase(
     // fs, which happens to work in direct mode because the two are the same
     // path, and fails over SSH with "No such file" on the download.
     await withAuthArgs(host, config.password, async (authArgs) => {
+        // Events and routines the login may not read are left out with a warning, not a failed dump.
+        const readable = await readableContent(config, dbName, host, authArgs, onLog);
+        // Both transports get the version-aware dialect flags. The SSH path used
+        // to hand-roll a smaller argument set and miss them entirely.
+        const args = dialect.getDumpArgs({ ...config, ...readable }, [dbName], host, client);
+
+        const safeCmd = `${dumpBin} ${args.join(' ').replace(config.password || '___NONE___', '******')}`;
+        onLog(`Dumping database: ${dbName}`, 'info', 'command', safeCmd);
+
         const proc = await host.spawn([dumpBin, ...authArgs, ...args]);
         const writeStream = createWriteStream(destinationPath);
 

@@ -103,6 +103,9 @@ const ADAPTER_RULES: Rule[] = [
         allowed: {
             "database/mssql/transport.ts": "The TransportResolver itself. This is where the decision belongs.",
             "database/sqlite/transport.ts": "The TransportResolver itself. This is where the decision belongs.",
+            "connection-summary.ts":
+                "Not an adapter. It writes the address shown in the connection tables, which names the jump host of an "
+                + "SSH connection, and decides no transport.",
         },
         reason: "Transport decisions belong in a TransportResolver, not in adapter bodies.",
     },

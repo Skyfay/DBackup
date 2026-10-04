@@ -5,7 +5,7 @@
  *
  * - Log purge clears the `logs` column of old runs. The log is by far the largest part of a
  *   row, while everything else (status, size, timestamps, metadata, chain bookkeeping) stays
- *   available to History, the dashboard, the chain planner and the Storage Explorer.
+ *   available to History, the dashboard, the chain planner and the Backups page.
  * - History cleanup deletes old rows entirely, but never the ones something still depends on.
  *
  * Both work in small batches. Prisma talks to SQLite over a single connection, so one huge

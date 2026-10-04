@@ -79,12 +79,13 @@ export function createDockerodeEngine(options: DockerodeEngineOptions): DockerEn
     let closed = false;
 
     const toVolume = (raw: {
-        Name: string; Driver: string; Mountpoint?: string; Labels?: Record<string, string> | null;
+        Name: string; Driver: string; Mountpoint?: string; Labels?: Record<string, string> | null; CreatedAt?: string;
     }): VolumeInfo => ({
         name: raw.Name,
         driver: raw.Driver,
         ...(raw.Mountpoint ? { mountpoint: raw.Mountpoint } : {}),
         labels: raw.Labels ?? {},
+        ...(raw.CreatedAt ? { createdAt: raw.CreatedAt } : {}),
     });
 
     const toContainer = (raw: {
@@ -164,6 +165,39 @@ export function createDockerodeEngine(options: DockerodeEngineOptions): DockerEn
                 filters: { volume: [name] },
             });
             return list.map(toContainer);
+        },
+
+        async listContainers() {
+            const list = await docker.listContainers({ all: true });
+            return list.map((raw) => ({
+                ...toContainer(raw),
+                image: raw.Image,
+                mounts: (raw.Mounts ?? []).map((mount) => ({
+                    type: mount.Type,
+                    ...(mount.Type === "volume" && mount.Name ? { volume: mount.Name } : {}),
+                    destination: mount.Destination,
+                })),
+            }));
+        },
+
+        async volumeSizes() {
+            // Dialled by hand because dockerode's df() sends no query, and type=volume spares
+            // the daemon measuring images and build cache nobody asked about. A daemon older
+            // than API 1.42 ignores the filter and measures everything, which is slower and
+            // gives the same answer.
+            const data = await new Promise<{ Volumes?: Array<{ Name: string; UsageData?: { Size?: number } | null }> | null }>((resolve, reject) => {
+                docker.modem.dial(
+                    { path: "/system/df?", method: "GET", options: { type: "volume" }, statusCodes: { 200: true, 400: "bad parameter", 500: "server error" } },
+                    (err: unknown, result: unknown) => (err ? reject(err) : resolve(result as never)),
+                );
+            });
+            const sizes = new Map<string, number>();
+            for (const volume of data.Volumes ?? []) {
+                const size = volume.UsageData?.Size;
+                // -1 is Docker for "not measured", which is what a volume of another driver gets.
+                if (typeof size === "number" && size >= 0) sizes.set(volume.Name, size);
+            }
+            return sizes;
         },
 
         async stopContainer(id) {

@@ -12,6 +12,9 @@ import {
     parseCredentialData,
 } from "@/lib/core/credentials";
 import { generateSshKeyPair, readPublicKey, sshFingerprint } from "@/lib/transport/openssh-key";
+import { holdsOf } from "@/lib/core/credential-holds";
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
 
 const log = logger.child({ service: "CredentialService" });
 
@@ -181,26 +184,80 @@ export async function listCredentialProfiles(
 }
 
 /**
- * Lists credential profiles with pre-computed usage counts.
- * Avoids the N+1 pattern of fetching counts individually per profile.
+ * Lists credential profiles with their usage: how many `AdapterConfig` rows reference each one
+ * across both the primary and SSH slots, and which adapters those rows belong to. Loads it in
+ * one query instead of one per profile.
  */
 export async function listCredentialProfilesWithCounts(
     type?: CredentialType
-): Promise<Array<CredentialProfileShape & { usageCount: number }>> {
+): Promise<Array<CredentialProfileShape & { usageCount: number; usedBy: string[] }>> {
     const profiles = await prisma.credentialProfile.findMany({
         where: type ? { type } : undefined,
         orderBy: { createdAt: "desc" },
         include: {
-            _count: {
-                select: { primaryAdapters: true, sshAdapters: true },
-            },
+            primaryAdapters: { select: { adapterId: true } },
+            sshAdapters: { select: { adapterId: true } },
         },
     });
-    return profiles.map((p) => ({
-        ...sanitize(p),
-        ...describePayload(p.data),
-        usageCount: p._count.primaryAdapters + p._count.sshAdapters,
-    }));
+    return profiles.map(({ primaryAdapters, sshAdapters, ...profile }) => {
+        const users = [...primaryAdapters, ...sshAdapters];
+        return {
+            ...sanitize(profile),
+            ...describePayload(profile.data),
+            usageCount: users.length,
+            // Each adapter once, so a picker can suggest the logins that connections of the
+            // same kind already use.
+            usedBy: [...new Set(users.map((user) => user.adapterId))].sort(),
+        };
+    });
+}
+
+/** What the Vault shows of a connection that logs in with a profile. Never its config. */
+const vaultConnectionFields = {
+    id: true,
+    name: true,
+    adapterId: true,
+    type: true,
+    storageRole: true,
+    lastStatus: true,
+    lastHealthCheck: true,
+    // Only the switches, so an air-gapped destination that is away shows as such.
+    metadata: true,
+} as const;
+
+/**
+ * Lists credential profiles for the Vault page: each with what it holds in words that name no
+ * secret, and every connection that logs in with it in either slot. One decrypt per profile.
+ */
+export async function listCredentialProfilesForVault() {
+    const profiles = await prisma.credentialProfile.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+            primaryAdapters: { select: vaultConnectionFields, orderBy: { name: "asc" } },
+            sshAdapters: { select: vaultConnectionFields, orderBy: { name: "asc" } },
+        },
+    });
+    return profiles.map(({ primaryAdapters, sshAdapters, data, ...profile }) => {
+        let payload: unknown = null;
+        try {
+            payload = JSON.parse(decrypt(data));
+        } catch (error) {
+            log.warn("A credential payload could not be read for the Vault", { id: profile.id }, wrapError(error));
+        }
+        const described = payload ? describeParsedPayload(payload) : {};
+        const holds = payload
+            ? holdsOf(profile.type as CredentialType, payload, described.fingerprint)
+            : { holds: "cannot be read", attention: "Its secret does not open with the ENCRYPTION_KEY of this install." };
+        return {
+            ...sanitize(profile),
+            ...described,
+            ...holds,
+            uses: [
+                ...primaryAdapters.map((adapter) => ({ ...adapter, slot: "primary" as const })),
+                ...sshAdapters.map((adapter) => ({ ...adapter, slot: "ssh" as const })),
+            ],
+        };
+    });
 }
 
 /**
@@ -364,10 +421,10 @@ export async function getCredentialUsage(
 }
 
 /**
- * Deletes a credential profile.
+ * Deletes a credential profile, which waits in Recently deleted unless `permanently`.
  * Throws `ConflictError` if any adapter still references it (primary or SSH slot).
  */
-export async function deleteCredentialProfile(id: string): Promise<void> {
+export async function deleteCredentialProfile(id: string, options: DeleteOptions = {}): Promise<void> {
     const existing = await prisma.credentialProfile.findUnique({ where: { id } });
     if (!existing) {
         throw new NotFoundError("CredentialProfile", id);
@@ -381,8 +438,11 @@ export async function deleteCredentialProfile(id: string): Promise<void> {
         );
     }
 
-    await prisma.credentialProfile.delete({ where: { id } });
-    log.info("Credential profile deleted", { id });
+    await prisma.$transaction(async (tx) => {
+        if (!options.permanently) await keepInTrash(tx, "credential", id, options.by);
+        await tx.credentialProfile.delete({ where: { id } });
+    });
+    log.info("Credential profile deleted", { id, permanently: !!options.permanently });
 }
 
 /**
@@ -391,12 +451,12 @@ export async function deleteCredentialProfile(id: string): Promise<void> {
  * Each goes through the single-profile guard, so one still attached to an adapter is
  * refused with its reference count while the rest of the batch continues.
  */
-export async function deleteCredentialProfiles(ids: string[]): Promise<BulkResult> {
+export async function deleteCredentialProfiles(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
     const profiles = await prisma.credentialProfile.findMany({
         where: { id: { in: ids } },
         select: { id: true, name: true },
     });
     const names = new Map(profiles.map((profile) => [profile.id, profile.name]));
 
-    return runBulk(ids, (id) => deleteCredentialProfile(id), (id) => names.get(id));
+    return runBulk(ids, (id) => deleteCredentialProfile(id, options), (id) => names.get(id));
 }

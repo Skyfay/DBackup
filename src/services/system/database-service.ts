@@ -67,7 +67,8 @@ async function readPragma(name: string): Promise<string | number> {
     throw new ServiceError("DatabaseService", "readPragma", `PRAGMA ${name} returned no value`);
 }
 
-async function getDatabaseFilePath(): Promise<string> {
+/** Where the database file of DBackup lies, as SQLite resolved it. */
+export async function getDatabaseFilePath(): Promise<string> {
     // Asking SQLite avoids re-implementing how Prisma resolves a relative DATABASE_URL.
     const rows = await prisma.$queryRawUnsafe<{ name: string; file: string }[]>("PRAGMA database_list;");
     const main = rows.find((row) => row.name === "main");

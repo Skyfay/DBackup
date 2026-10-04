@@ -118,6 +118,39 @@ describe.each<HostKind>(["direct", "ssh"])("Redis browser over a %s host", (kind
             expect(result.rows[0]).toMatchObject({ key: "user:1", type: "unknown" });
         });
 
+        it("filters on the key with MATCH, escaping what MATCH reads as a pattern", async () => {
+            const host = browserHost(kind, { scan: "0\nses*ion:1\n", evalOut: '1) "hash\t60"\n' });
+
+            const result = await getTableData(baseConfig as never, { ...options, search: "ses*ion", searchColumn: "key", matchMode: "starts" } as never, host);
+
+            const scan = host.calls.exec.find(a => a.includes("SCAN"))!;
+            expect(scan.slice(scan.indexOf("MATCH"), scan.indexOf("MATCH") + 2)).toEqual(["MATCH", "ses\\*ion*"]);
+            expect(result.rows).toEqual([{ key: "ses*ion:1", type: "hash", ttl: "60s" }]);
+            expect(result.totalCount).toBe(1);
+            expect(host.calls.exec.some(a => a.includes("DBSIZE"))).toBe(false);
+        });
+
+        it("goes on scanning while a round finds no match, until the keyspace ends", async () => {
+            const answers = ["17\n", "0\nsession:9\n"];
+            const host = createFakeHost({
+                kind,
+                onExec: (argv) => {
+                    switch (commandOf(argv)) {
+                        case "SCAN": return { stdout: answers.shift() ?? "0\n" };
+                        case "EVAL": return { stdout: '1) "string\t-1"\n' };
+                        default: return { stdout: "" };
+                    }
+                },
+            });
+
+            const result = await getTableData(baseConfig as never, { ...options, search: "session", searchColumn: "key" } as never, host);
+
+            const scans = host.calls.exec.filter(a => a.includes("SCAN"));
+            expect(scans.map(a => a[a.indexOf("SCAN") + 1])).toEqual(["0", "17"]);
+            expect(scans[0]).toContain("*session*");
+            expect(result.rows.map(row => row.key)).toEqual(["session:9"]);
+        });
+
         it("passes each key as its own argument", async () => {
             // The SSH path used to paste keys into a shell string, so a key with
             // a quote or a space could break out of the command.

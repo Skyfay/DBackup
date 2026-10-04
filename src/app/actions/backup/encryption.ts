@@ -2,17 +2,24 @@
 
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { checkPermission, getUserPermissions, hasPermission } from "@/lib/auth/access-control";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import * as encryptionService from "@/services/backup/encryption-service";
 import { recoverEncryptionKey } from "@/services/backup/key-recovery";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { revalidatePath } from "next/cache";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { diffFields } from "@/lib/core/audit-diff";
 import { getErrorMessage } from "@/lib/logging/errors";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
+import { DeleteModeSchema, PERMANENT_DELETE_REFUSED, type DeleteMode } from "@/lib/core/delete-mode";
+import { isKeyHex, keyIdOf } from "@/services/vault/key-id";
+import { VAULT_AUDIT } from "@/services/vault/vault-audit";
 import { z } from "zod";
+
+/** What the edit dialog of a key can change besides its name, which an entry keeps as `renamedFrom`. */
+const KEY_FIELDS = { description: { label: "Description" } };
 
 const UpdateEncryptionProfileSchema = z.object({
     id: z.string().min(1),
@@ -58,8 +65,9 @@ export async function getEncryptionProfiles() {
 }
 
 /**
- * Revels the decrypted master key for a profile.
- * Requires VAULT:WRITE permission (highly sensitive).
+ * Reveals the decrypted master key for a profile.
+ * Requires VAULT:WRITE permission (highly sensitive), and is written to the audit log before the
+ * key leaves, like a revealed credential.
  */
 export async function revealMasterKey(id: string) {
     const headersList = await headers();
@@ -68,11 +76,36 @@ export async function revealMasterKey(id: string) {
 
     await checkPermission(PERMISSIONS.VAULT.WRITE);
 
+    const parsed = z.string().min(1).safeParse(id);
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+
     try {
-        const key = await encryptionService.getDecryptedMasterKey(id);
+        // The key without its secret, which names the entry. Nothing is revealed of a key that is gone.
+        const profile = await encryptionService.getEncryptionProfile(parsed.data);
+        if (!profile) return { success: false, error: `Encryption profile ${parsed.data} not found` };
+        await auditService.log(session.user.id, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.VAULT, { action: VAULT_AUDIT.REVEAL_KEY, name: profile.name }, parsed.data);
+        const key = await encryptionService.getDecryptedMasterKey(parsed.data);
         return { success: true, data: key };
     } catch (e: unknown) {
         return { success: false, error: getErrorMessage(e) };
+    }
+}
+
+/**
+ * Tells the import dialog the Key ID of a key typed into it, and whether the Vault holds that key
+ * already. Requires VAULT:WRITE, like the import it prepares.
+ */
+export async function inspectEncryptionKey(keyHex: string) {
+    await checkPermission(PERMISSIONS.VAULT.WRITE);
+
+    const parsed = z.string().trim().refine(isKeyHex).safeParse(keyHex);
+    if (!parsed.success) return { success: false as const, error: "A key is 64 hex characters." };
+
+    try {
+        const existing = await encryptionService.findProfileByKey(parsed.data);
+        return { success: true as const, data: { keyId: keyIdOf(parsed.data), existing } };
+    } catch (e: unknown) {
+        return { success: false as const, error: getErrorMessage(e) };
     }
 }
 
@@ -93,8 +126,8 @@ export async function createEncryptionProfile(name: string, description?: string
             await auditService.log(
                 session.user.id,
                 AUDIT_ACTIONS.CREATE,
-                AUDIT_RESOURCES.SYSTEM,
-                { type: "EncryptionProfile", name },
+                AUDIT_RESOURCES.VAULT,
+                { type: "EncryptionProfile", name: profile.name },
                 profile.id
             );
         }
@@ -111,21 +144,25 @@ export async function createEncryptionProfile(name: string, description?: string
  * Imports an existing encryption profile from a master key.
  * Requires VAULT:WRITE permission.
  */
-export async function importEncryptionProfile(name: string, keyHex: string, description?: string) {
+export async function importEncryptionProfile(name: string, keyHex: string, description?: string, standsFor: string[] = []) {
     const headersList = await headers();
     const session = await auth.api.getSession({ headers: headersList });
     if (!session) return { success: false, error: "Unauthorized" };
 
     await checkPermission(PERMISSIONS.VAULT.WRITE);
 
+    // The ids the key had in the install its recovery kit came from.
+    const formerIds = z.array(z.string().min(1).max(64)).max(20).safeParse(standsFor);
+    if (!formerIds.success) return { success: false, error: "Invalid request" };
+
     try {
-        const profile = await encryptionService.importEncryptionProfile(name, keyHex, description);
+        const profile = await encryptionService.importEncryptionProfile(name, keyHex, description, formerIds.data);
         if (session.user) {
             await auditService.log(
                 session.user.id,
                 AUDIT_ACTIONS.CREATE,
-                AUDIT_RESOURCES.SYSTEM,
-                { type: "EncryptionProfile", name, method: "Import" },
+                AUDIT_RESOURCES.VAULT,
+                { type: "EncryptionProfile", name: profile.name, method: "Import" },
                 profile.id
             );
         }
@@ -153,7 +190,7 @@ export async function updateEncryptionProfile(id: string, input: { name: string;
     if (!parsed.success) return { success: false, error: "Invalid request" };
 
     try {
-        const { profile, previousName } = await encryptionService.updateEncryptionProfile(parsed.data.id, {
+        const { profile, previousName, previousDescription } = await encryptionService.updateEncryptionProfile(parsed.data.id, {
             name: parsed.data.name,
             description: parsed.data.description,
         });
@@ -161,11 +198,12 @@ export async function updateEncryptionProfile(id: string, input: { name: string;
             await auditService.log(
                 session.user.id,
                 AUDIT_ACTIONS.UPDATE,
-                AUDIT_RESOURCES.SYSTEM,
+                AUDIT_RESOURCES.VAULT,
                 {
                     type: "EncryptionProfile",
                     name: profile.name,
-                    ...(previousName !== profile.name ? { previousName } : {}),
+                    ...(previousName !== profile.name ? { renamedFrom: previousName } : {}),
+                    changes: diffFields({ description: previousDescription }, { description: profile.description }, KEY_FIELDS),
                 },
                 profile.id
             );
@@ -180,20 +218,24 @@ export async function updateEncryptionProfile(id: string, input: { name: string;
 }
 
 /**
- * Deletes an encryption profile.
+ * Deletes an encryption profile, which waits in Recently deleted unless `permanently`.
  * Requires VAULT:WRITE permission.
  */
-export async function deleteEncryptionProfile(id: string) {
+export async function deleteEncryptionProfile(id: string, mode?: DeleteMode) {
     const headersList = await headers();
     const session = await auth.api.getSession({ headers: headersList });
     if (!session) return { success: false, error: "Unauthorized" };
 
     await checkPermission(PERMISSIONS.VAULT.WRITE);
 
+    const parsedMode = DeleteModeSchema.safeParse(mode);
+    if (!parsedMode.success) return { success: false, error: "Invalid request" };
+    const { permanently = false } = parsedMode.data;
+    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false, error: PERMANENT_DELETE_REFUSED };
+
     try {
-        // Warning: This action is destructive and might brick backups.
-        // The service does the deletion. Caller should warn user.
-        await encryptionService.deleteEncryptionProfile(id);
+        // Permanently, every backup it encrypted is unreadable for good. The dialog warns about it.
+        const deleted = await encryptionService.deleteEncryptionProfile(id, { permanently, by: session.user.id });
         // A parsed archive index outlives the key that opened it. Left cached, a backup
         // would keep listing its contents for another five minutes while every restore of
         // it failed - so the vault change drops them here rather than in the service, which
@@ -203,13 +245,12 @@ export async function deleteEncryptionProfile(id: string) {
             await auditService.log(
                 session.user.id,
                 AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.SYSTEM,
-                { type: "EncryptionProfile" },
+                AUDIT_RESOURCES.VAULT,
+                { type: "EncryptionProfile", name: deleted.name, ...(permanently ? { permanently: true } : {}) },
                 id
             );
         }
         revalidatePath("/dashboard/vault");
-        revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/jobs");
         return { success: true };
@@ -252,7 +293,7 @@ export async function recoverEncryptionKeyAction(
             await auditService.log(
                 session.user.id,
                 AUDIT_ACTIONS.CREATE,
-                AUDIT_RESOURCES.SYSTEM,
+                AUDIT_RESOURCES.VAULT,
                 { type: "EncryptionProfile", name: result.profileName, method: "Recovery" },
                 result.profileId
             );
@@ -272,7 +313,7 @@ export async function recoverEncryptionKeyAction(
  * parsed index outlives the key that opened it, so it has to go, but flushing it inside
  * the loop would discard work the remaining deletions still benefit from.
  */
-export async function bulkDeleteEncryptionProfiles(ids: string[]) {
+export async function bulkDeleteEncryptionProfiles(ids: string[], mode?: DeleteMode) {
     const headersList = await headers();
     const session = await auth.api.getSession({ headers: headersList });
     if (!session) return { success: false as const, error: "Unauthorized" };
@@ -280,10 +321,15 @@ export async function bulkDeleteEncryptionProfiles(ids: string[]) {
     await checkPermission(PERMISSIONS.VAULT.WRITE);
 
     const parsed = BulkIdsSchema.safeParse(ids);
-    if (!parsed.success) return { success: false as const, error: "Invalid request" };
+    const parsedMode = DeleteModeSchema.safeParse(mode);
+    if (!parsed.success || !parsedMode.success) return { success: false as const, error: "Invalid request" };
+    const { permanently = false } = parsedMode.data;
+    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false as const, error: PERMANENT_DELETE_REFUSED };
 
     try {
-        const result = await encryptionService.deleteEncryptionProfiles(parsed.data);
+        // Read first, the keys are gone afterwards. A Vault holds a handful, so the list is cheap.
+        const names = new Map((await encryptionService.getEncryptionProfiles()).map((profile) => [profile.id, profile.name]));
+        const result = await encryptionService.deleteEncryptionProfiles(parsed.data, { permanently, by: session.user.id });
 
         if (result.succeeded.length > 0) archiveIndexService.clear();
 
@@ -291,8 +337,16 @@ export async function bulkDeleteEncryptionProfiles(ids: string[]) {
             await auditService.log(
                 session.user.id,
                 AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.SYSTEM,
-                { type: "EncryptionProfile", bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length }
+                AUDIT_RESOURCES.VAULT,
+                {
+                    type: "EncryptionProfile",
+                    bulk: true,
+                    requested: parsed.data.length,
+                    succeeded: result.succeeded.length,
+                    failed: result.failed.length,
+                    names: result.succeeded.flatMap((id) => names.get(id) ?? []),
+                    ...(permanently ? { permanently: true } : {}),
+                }
             );
         }
 

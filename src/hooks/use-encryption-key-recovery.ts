@@ -3,6 +3,9 @@
 import { useCallback, useRef, useState } from "react";
 import type { KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
 
+/** What the key dialog says when a key that was tried does not open the backup and the server named no reason. */
+export const WRONG_KEY = "That key does not open this backup.";
+
 /** Request fields that tell the server which key to open a backup with. */
 export interface KeyOverrideBody {
     profileIdOverride?: string;
@@ -86,7 +89,7 @@ export function useEncryptionKeyRecovery() {
 
             if (promptCount.current > promptsBefore) {
                 // The retry ran into the same wall. Closing here would look like success.
-                setError(lastMessage.current || "That key does not open this backup.");
+                setError(lastMessage.current || WRONG_KEY);
                 return;
             }
 

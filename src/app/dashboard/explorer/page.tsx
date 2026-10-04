@@ -1,37 +1,37 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explorer";
-import prisma from "@/lib/prisma";
-import { checkPermission, hasPermission } from "@/lib/auth/access-control";
+import { DATABASES_PAGE_ID } from "@/components/dashboard/explorer/explorer-ids";
+import { checkPermission, getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getViewMode } from "@/services/user/preference-service";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Database Explorer" };
 
 export const dynamic = "force-dynamic";
 
-interface SourceOption {
-    id: string;
-    name: string;
-    adapterId: string;
-}
-
 export default async function ExplorerPage() {
     await checkPermission(PERMISSIONS.SOURCES.VIEW);
-    const canBrowse = await hasPermission(PERMISSIONS.SOURCES.READ);
-
-    // Fetch all database-type adapter configs
-    const sources = await prisma.adapterConfig.findMany({
-        where: { type: "database" },
-        select: { id: true, name: true, adapterId: true },
-        orderBy: { name: "asc" },
-    });
-
-    const sourceOptions: SourceOption[] = sources.map((s) => ({
-        id: s.id,
-        name: s.name,
-        adapterId: s.adapterId,
-    }));
+    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    const view = user ? await getViewMode(user.id, DATABASES_PAGE_ID) : null;
 
     return (
-        <Suspense>
-            <DatabaseExplorer sources={sourceOptions} canBrowse={canBrowse} />
-        </Suspense>
+        <>
+            {/* The header bar already names the page in its breadcrumb. */}
+            <h1 className="sr-only">Database Explorer</h1>
+            <Suspense>
+                <DatabaseExplorer
+                    canOpenBackups={permissions.includes(PERMISSIONS.STORAGE.READ)}
+                    canRestore={permissions.includes(PERMISSIONS.STORAGE.RESTORE)}
+                    canDownload={permissions.includes(PERMISSIONS.STORAGE.DOWNLOAD)}
+                    canDelete={permissions.includes(PERMISSIONS.STORAGE.DELETE)}
+                    canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)}
+                    canViewHistory={permissions.includes(PERMISSIONS.HISTORY.READ)}
+                    canExecute={permissions.includes(PERMISSIONS.JOBS.EXECUTE)}
+                    initialView={view ?? "table"}
+                />
+            </Suspense>
+        </>
     );
 }

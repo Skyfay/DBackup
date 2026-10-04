@@ -8,25 +8,44 @@ Contributions are welcome! Before submitting a pull request, please:
 
 Small fixes (language translations, typos, documentation improvements) can be submitted directly as PRs.
 
+## Branches
+
+| Branch | What it holds |
+| :--- | :--- |
+| `main` | The released code. Each release merges `dev` into `main` and is tagged `vX.Y.Z` |
+| `dev` | Everything that is finished, waiting for the next release |
+| Feature branches | One feature or fix each, branched off `dev` |
+
+**Pull requests go into `dev`, never into `main`.** Branch off `dev`, and open the pull request against `dev`. Only the maintainer merges `dev` into `main` for a release.
+
 ## Development Setup
 
 ### Prerequisites
 
-- Node.js 20 LTS or later
-- pnpm 9 or later
+- Node.js 24, the version CI and the Docker image use
+- pnpm 10
 - Docker (for integration tests)
 
 ### Getting Started
 
 ```bash
-git clone https://github.com/skyfay/dbackup.git
-cd dbackup
+git clone https://github.com/Skyfay/DBackup.git
+cd DBackup
+git checkout dev
 pnpm install
 cp .env.example .env  # Edit with your secrets
 pnpm dev              # Applies pending DB migrations automatically on startup
 ```
 
 This starts the Next.js development server at `http://localhost:3000`.
+
+Start your work on a branch of its own:
+
+```bash
+git checkout -b fix/short-description dev
+```
+
+Working from a fork, add this repository as `upstream` and branch off `upstream/dev`, so your branch starts from the newest state.
 
 ### Project Structure
 
@@ -47,11 +66,11 @@ docs/          # VitePress documentation
 ```bash
 pnpm dev                # Start development server
 pnpm build              # Production build
-pnpm validate           # Run all tests (unit, lint, typecheck)
+pnpm validate           # Lint, type check and unit tests
 pnpm test               # Run unit tests (vitest)
 pnpm test:integration   # Run integration tests against real DB containers
 pnpm lint               # Run linters
-pnpm typecheck          # Run TypeScript type checks
+pnpm type               # Run TypeScript type checks
 ```
 
 ## Guidelines
@@ -71,11 +90,12 @@ pnpm typecheck          # Run TypeScript type checks
 
 ### Pull Requests
 
+- Open it against `dev`. A pull request against `main` is retargeted or closed
 - One feature/fix per PR
 - Include tests for new functionality
 - Update documentation if relevant
-- Ensure all CI checks pass
+- Ensure all CI checks pass. Every pull request into `dev` or `main` runs lint, type check, unit tests and the docs build
 
 ## Security
 
-If you discover a security vulnerability, **do not** open a public issue. Instead, please report it responsibly by contacting the maintainer directly.
+If you discover a security vulnerability, **do not** open a public issue or pull request. See [SECURITY.md](SECURITY.md) for how to report it privately.

@@ -67,10 +67,14 @@ damaged archive never leaves something that looks like a recovered file.
 
 ## Downloading a Recovery Kit
 
-1. Go to **Settings** → **Vault**
-2. Click **Recovery Kit**
-3. Tick the encryption profiles the kit should carry - everything is ticked by default
+1. Open **Vault** in the sidebar and switch to the **Encryption** tab
+2. Click **Recovery kit**
+3. Tick the keys the kit should carry. Every key is ticked by default, and each row says whether it was ever in a kit.
 4. Click **Download** and save the zip securely
+
+**Recovery kit** in the menu of a key, in its side panel and in the bar of several selected keys opens the same dialog with only those keys ticked. Right after **New key** the dialog of the new key offers its kit as well.
+
+The Vault notes on every key when it was last in a downloaded kit, so the list can mark the keys that never were. The **Never in a kit** filter shows them.
 
 One kit can hold several keys. That is usually what you want: a backup records which
 profile encrypted it, so the tool picks the right key by itself and you never have to work

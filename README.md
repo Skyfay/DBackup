@@ -9,28 +9,10 @@
 </p>
 
 <p align="center">
-
-</p>
-<p align="center">
-  <img src="https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white" alt="MySQL">
-  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white" alt="MongoDB">
-  <img src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
-  <img src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white" alt="Redis">
-  <img src="https://img.shields.io/badge/Valkey-4B6BFB?logoColor=white" alt="Valkey">
-  <img src="https://custom-icon-badges.demolab.com/badge/Microsoft%20SQL%20Server-CC2927?logo=mssqlserver-white&logoColor=white" alt="MSSQL">
-  <img src="https://img.shields.io/badge/Azure%20SQL-0078D4?logo=microsoftazure&logoColor=white" alt="Azure SQL Database">
-  <img src="https://img.shields.io/badge/Firebird-F62817?logo=firebird&logoColor=white" alt="Firebird">
-  <br>
-  <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License">
-  <img src="https://img.shields.io/docker/pulls/skyfay/dbackup?logo=docker&logoColor=white" alt="Docker Pulls">
-  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey" alt="Platform">
-  <img src="https://img.shields.io/badge/self--hosted-yes-%239B59B6" alt="Self-hosted">
-  <img src="https://img.shields.io/badge/open_source-%E2%9D%A4%EF%B8%8F-red" alt="Open Source">
-  <br>
   <a href="https://github.com/Skyfay/DBackup/actions/workflows/release.yml"><img src="https://github.com/Skyfay/DBackup/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+  <a href="https://hub.docker.com/r/skyfay/dbackup"><img src="https://img.shields.io/docker/pulls/skyfay/dbackup?logo=docker&logoColor=white" alt="Docker Pulls"></a>
   <a href="https://codecov.io/gh/Skyfay/DBackup"><img src="https://img.shields.io/codecov/c/github/Skyfay/DBackup?label=coverage" alt="Coverage"></a>
-  <a href="https://github.com/Skyfay/DBackup/commits"><img src="https://img.shields.io/github/last-commit/Skyfay/DBackup?color=%234B8BBE" alt="Last Commit"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
   <a href="https://discord.com/invite/YvgPyky"><img src="https://img.shields.io/discord/580801656707350529?label=Discord&color=%235865f2" alt="Discord"></a>
 </p>
 
@@ -43,109 +25,58 @@
   <a href="https://dbackup.app/roadmap">Roadmap</a>
 </p>
 
+<!-- Premium Sponsors ($500 a month): their logo at the very top, linking to their site. Kept by hand,
+     uncomment and fill in, one link per sponsor:
+<p align="center">
+  <sub>🏆 Premium Sponsors · $500 a month</sub>
+  <br>
+  <a href="https://example.com"><img src="https://example.com/logo.svg" alt="Company" height="60"></a>
+</p>
+-->
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Skyfay/DBackup/main/docs/public/readme-banner.png" alt="The DBackup overview on a desktop and a phone, with the databases it backs up" width="800">
+</div>
 
 ### What is DBackup?
 
-DBackup is a comprehensive, self-hosted backup solution for **databases and the files that belong to them**. It provides AES-256-GCM encryption, flexible storage options, and intelligent retention policies to ensure your data is always protected and recoverable.
+DBackup backs up your databases and the files that belong to them on a schedule, encrypts them and sends them to the storage you choose. A restore takes a few clicks. It runs as one Docker container and needs no agent on your servers: it connects to a database directly, or runs the backup tools on the server over SSH.
 
-Whether you're running a single MySQL database or managing multiple PostgreSQL, MongoDB, and SQL Server instances, DBackup offers a unified interface with real-time monitoring, granular access control, and seamless restore capabilities. A job can also collect **directories and files** from any storage adapter - local paths, SFTP, SMB, FTP, WebDAV, S3, Google Drive, Dropbox, OneDrive, or rsync over SSH - so an application's dump and its data directory land in the same archive, at the same point in time, with one retention policy over both. There is no agent to install.
+Nothing locks you in. Every database backup is a standard dump and every file backup a plain TAR archive, encrypted with open AES-256-GCM. The format is documented byte by byte, and the Recovery Kit restores a backup with a single Node.js script and your key, without DBackup.
 
-**No vendor lock-in by design** - every database backup is a standard dump (SQL, BSON, RDB, etc.) and every file backup is a plain TAR archive, both encrypted with open AES-256-GCM. Unencrypted, `tar -xf` is all you need. Encrypted, the format is specified byte by byte and the Recovery Kit reads it with a single Node.js script and your key. No proprietary formats, no dependencies on DBackup itself.
+## ✨ Highlights
 
-That promise shapes the architecture: incremental backups store whole changed files rather than deduplicated chunks, which uses more storage than a chunk-based tool like restic or Borg but keeps every backup an archive you can open by hand. See [the reasoning behind that trade](https://dbackup.app/blog/no-global-deduplication).
+- **Databases and files in one job** - the dumps and the directories of an application land in one archive and share a restore point
+- **10 databases, direct or over SSH** - from MySQL and PostgreSQL to SQL Server, Redis and Firebird
+- **13 kinds of storage** - S3 and S3-compatible, cloud drives, SFTP, SMB, WebDAV and more, with several destinations per job
+- **Encrypted and open** - AES-256-GCM with managed keys and a Recovery Kit for offline decryption
+- **Incremental backups and smart retention** - store only what changed, and keep daily, weekly, monthly and yearly backups
+- **Restore what you need** - a whole database, a database under a new name, or a single file from a folder backup
+- **Know what happens** - live progress, a history of every run, storage alerts and nine notification channels
+- **Built for teams** - SSO through OIDC, groups with fine-grained permissions, 2FA and passkeys, an audit log and a REST API with scoped keys
 
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/1f6ba8c7-8b66-4b43-a0de-d4c4e0617205" width="800" autoplay muted loop playsinline></video>
-</div>
+## 🗄️ Supported
 
-## ✨ Features
+| Database | Versions | Connection | Restore |
+| :--- | :--- | :--- | :--- |
+| PostgreSQL | 12 to 18 | Direct, SSH | Yes |
+| MySQL | 5.7, 8.x, 9.x | Direct, SSH | Yes |
+| MariaDB | 10.x, 11.x | Direct, SSH | Yes |
+| MongoDB | 4.x to 8.x | Direct, SSH | Yes |
+| Redis | 2.8+ | Direct, SSH | Guided |
+| Valkey | 7.2+ | Direct, SSH | Guided |
+| SQLite | 3.x | Local, SSH | Yes |
+| Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct, SSH | Yes |
+| Azure SQL Database (beta) | Single database, elastic pool | Direct | Yes, drops the target first |
+| Firebird (beta) | 3.x, 4.x, 5.x | Direct, SSH | Yes, through configured aliases |
 
-### 🗄️ Database Backup
+**Destinations**: local filesystem, Amazon S3 and S3-compatible storage like Cloudflare R2, Hetzner, MinIO or Wasabi, Google Drive, Dropbox, OneDrive, SFTP, FTP/FTPS, WebDAV, SMB and rsync over SSH. Each of them can also be a source for file backups, and so can Docker volumes.
 
-- **10 Database Engines** - MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, Azure SQL Database (beta), and Firebird (beta)
-- **Selective Database Backup** - Choose exactly which databases to back up per job instead of creating separate sources for each database
-- **Multi-Database Jobs** - Back up multiple databases from a single source in one job with a unified TAR archive format
-- **AES-256-GCM Encryption** - Encrypt backups with managed Encryption Profiles, key rotation, and downloadable Recovery Kits for offline decryption
-- **GZIP & Brotli Compression** - Reduce backup size and storage costs with built-in compression
-- **SSH Remote Execution** - Run backup tools directly on the remote database host via SSH, eliminating the need to expose database ports to the DBackup server
+**Notifications**: Discord, Slack, Microsoft Teams, Telegram, Gotify, ntfy, webhooks, SMS through Twilio and email.
 
-### 📁 File & Folder Backup
-
-Meant for the files that belong to the applications you already back up databases for - config, uploads, certificates - collected in the same job, on the same schedule, under the same retention and key. DBackup is agentless, so a full run stages the tree on the DBackup host before packing it and needs roughly twice the source size in free space; for bulk media libraries or anything needing block-level deduplication, restic or Borg are the better tool.
-
-- **Directory Sources** - Any storage adapter can serve as a source: back up local paths, SFTP, SMB, FTP, WebDAV, S3, Google Drive, Dropbox, OneDrive, or rsync over SSH, with folders picked from a checkbox tree
-- **Databases and Files in One Job** - One run produces one archive holding the dumps and the directory trees side by side, so an app's database and its data directory share a restore point
-- **Incremental Backups** - Store only what changed since the last run, with a configurable full-backup interval and chains that are retained and deleted as a unit
-- **Single-File Restore** - Browse a backup's file tree without downloading it and restore a single file, transferring only that file's bytes on destinations that serve byte ranges
-- **Exclude Pattern Presets** - Reusable glob lists for caches, logs, and anything else you don't want stored - edit the preset, every source using it follows
-- **SMB Shadow Copies** - Read from a VSS snapshot instead of the live share, so open files are readable and the backup reflects a single point in time, with no agent on the file server
-
-### ☁️ Storage & Destinations
-
-- **13+ Storage Adapters** - S3, Cloudflare R2, Hetzner, Google Drive, Dropbox, OneDrive, SFTP, FTP, WebDAV, SMB, Rsync, and local filesystem
-- **Multi-Destination Jobs** - Upload each backup to multiple storage destinations simultaneously for redundancy or off-site copies
-- **Storage Explorer** - Browse backup files across all destinations, inspect metadata, download files, or generate secure direct download links
-- **Storage Monitoring & Alerts** - Per-destination alerts for usage spikes, storage limit warnings, and missing backups within a defined time window
-
-### 🔄 Restore & Recovery
-
-- **One-Click Restore** - Restore directly from the Storage Explorer to any configured database target
-- **Granular File Restore** - Pick whole directory sources, single folders, or individual files, each with its own target: back to the original location, into any destination, or as a `.tar.gz` download
-- **Database Remapping** - Restore databases under different names or map multiple databases to new targets
-- **Version Compatibility Check** - Pre-restore validation warns about version mismatches before execution
-- **Integrity Verification** - Post-upload SHA-256/MD5 checksum validation after every backup, plus scheduled full integrity scans across all stored backups (Jobs mode or full storage scan)
-- **No Vendor Lock-In** - Database backups are standard dumps, file backups are plain TAR archives, both encrypted with open AES-256-GCM. Decrypt and restore manually with just Node.js, no DBackup required
-- **Recovery Kit** - Downloadable ZIP with your encryption key and standalone scripts that decrypt dumps and list or extract single files from archives, offline
-
-### 📊 Monitoring & Visibility
-
-- **Live Backup Progress** - Real-time progress tracking shows exactly what's happening during backup and restore operations
-- **Interactive Dashboard** - Activity charts, job status overview, KPI cards, and auto-refreshing activity feeds
-- **Backup Calendar** - GitHub-style 12-month heatmap showing backup activity and success/failure patterns at a glance
-- **Database Explorer** - Browse databases, tables, and live data directly from DBackup with server-side pagination, full-text search, schema inspection, and deep-link URL support across all 8 database engines
-- **Database Version History** - Automatic tracking of database engine version changes over time with a timeline chart and change log
-- **Storage Usage History** - Track storage growth over time with area charts and trend indicators
-- **Execution History** - Full log of every backup and restore with duration, file size, status, and error details
-
-### 🔔 Notifications
-
-- **9 Notification Channels** - Discord, Slack, Teams, Telegram, Gotify, ntfy, Webhook, SMS (Twilio), and Email (SMTP)
-- **Per-Job Notification Settings** - Configure which notification channels fire for each backup job individually
-- **System Event Notifications** - Get notified about user logins, account creation, restore results, storage alerts, update availability, and system errors across all channels
-- **Repeat Intervals** - Configurable reminder intervals for recurring alerts (storage warnings, update notices)
-
-### ⏰ Scheduling & Retention
-
-- **Cron-based Scheduling** - Flexible job scheduling with a visual Schedule Picker (Simple Mode + Cron Mode)
-- **Retention Policy Templates** - Reusable named GFS (Grandfather-Father-Son) retention policies with per-destination assignment
-- **Naming Templates & Schedule Presets** - Reusable filename patterns with tokens (`{job_name}`, `{db_name}`, date/time) and named cron presets for consistent scheduling across jobs
-- **Automated Config Backups** - Self-backup of the entire DBackup configuration to any storage adapter
-
-### 👥 Access Control & Security
-
-- **SSO / OIDC** - OpenID Connect with pre-built adapters for Authelia, Authentik, PocketID, Keycloak, and a generic OIDC option
-- **RBAC** - User groups with granular permissions, protected SuperAdmin group, and audit logging
-- **2FA / Passkeys** - Two-factor authentication and WebAuthn passkey support
-- **Credential Vault** - Centralized encrypted storage for SSH keys, API tokens, OAuth credentials, SMTP accounts, and username/password pairs - reusable across all adapters without re-entering secrets per job
-- **HTTPS by Default** - Auto-generated self-signed certificates on first run with certificate upload UI for custom certificates and HSTS enforcement
-- **Configurable Rate Limits** - Per-category rate limiting (Auth, API Read, API Write) adjustable from the Settings UI
-
-### 🔗 API & Automation
-
-- **REST API** - Trigger backups, poll executions, manage adapters, and explore storage via API
-- **Fine-grained API Keys** - Scoped permissions and expiration dates for CI/CD pipelines and scripts
-- **Ready-made Examples** - cURL, Bash, and Ansible examples included in the API docs
-
-### 🎨 Designed for Simplicity
-
-- **Intuitive UI** - Clean, modern interface that makes complex backup workflows feel simple
-- **Quick Setup Wizard** - Guided first-run setup wizard to get your first backup running in minutes
-- **Highly Configurable** - Session lifetimes, rate limits, retention periods, notification preferences, system tasks, and more
-- **Docker Ready** - Multi-arch images (AMD64/ARM64), health checks, graceful shutdown, and configurable PUID/PGID
+Every one of them has a setup guide in the [documentation](https://docs.dbackup.app).
 
 ## 🚀 Quick Start
-
-**Supported Platforms**: AMD64 (x86_64) • ARM64 (aarch64)
 
 ```yaml
 # docker-compose.yml
@@ -160,125 +91,70 @@ services:
       - ENCRYPTION_KEY=       # openssl rand -hex 32
       - BETTER_AUTH_URL=https://localhost:3000
       - BETTER_AUTH_SECRET=   # openssl rand -base64 32
-      # All additional environment variables: https://docs.dbackup.app/user-guide/installation#environment-variables
     volumes:
-      - ./data:/data              # All persistent data (db, storage, certs)
-      - ./backups:/backups        # Optional: used for local backups
+      - ./data:/data          # All persistent data
+      - ./backups:/backups    # Optional, for local backups
 ```
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-Open [https://localhost:3000](https://localhost:3000) and create your admin account (accept the self-signed certificate warning on first visit).
+Open [https://localhost:3000](https://localhost:3000) and create the admin account. The first visit warns about the self-signed certificate. The [installation guide](https://docs.dbackup.app/user-guide/installation) covers every environment variable, reverse proxies and updates. Images are built for AMD64 and ARM64.
 
-📖 **Full installation guide**: [docs.dbackup.app/user-guide/getting-started](https://docs.dbackup.app/user-guide/getting-started)
+## 💖 Sponsors
 
-## 🗄️ Supported Databases
+DBackup is free and open source. [Sponsoring it](https://github.com/sponsors/Skyfay) keeps it that way, and from $15 a month or $100 once your name shows up here by itself.
 
-| Database | Versions | Connection Modes | Restore |
-| :--- | :--- | :--- | :--- |
-| PostgreSQL | 12, 13, 14, 15, 16, 17, 18 | Direct, SSH | Yes |
-| MySQL | 5.7, 8.x, 9.x | Direct, SSH | Yes |
-| MariaDB | 10.x, 11.x | Direct, SSH | Yes |
-| MongoDB | 4.x, 5.x, 6.x, 7.x, 8.x | Direct, SSH | Yes |
-| Redis | 2.8+ | Direct, SSH | Guided |
-| Valkey | 7.2+ | Direct, SSH | Guided |
-| SQLite | 3.x | Local, SSH | Yes |
-| Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct, SSH | Yes |
-| Azure SQL Database (beta) | Single database, elastic pool | Direct | Yes (drops the target first) |
-| Firebird (beta) | 3.x, 4.x, 5.x | Direct, SSH | Yes (pre-configured aliases) |
+<!-- Company Sponsors ($150 a month): their logo shown large, linking to their site. Kept by hand,
+     uncomment and fill in, one link per sponsor:
+<p align="center">
+  <strong>🏢 Company Sponsors</strong> · $150 a month
+  <br><br>
+  <a href="https://example.com"><img src="https://example.com/logo.svg" alt="Company" height="80"></a>
+</p>
+-->
 
-## 📁 Directory Sources
+<p align="center">
+  <a href="https://github.com/sponsors/Skyfay">
+    <img src="https://raw.githubusercontent.com/Skyfay/DBackup/sponsors/sponsors.svg" alt="The monthly sponsors of DBackup" width="800">
+  </a>
+</p>
 
-**Every storage adapter listed below can also be a directory source**, with a live folder tree for picking what to back up. An adapter holds one role at a time, source or destination, so a job can never back up its own archives. The same server can serve both roles as two adapters - the "Create as Directory Source" action copies one over, credentials included.
+### One-time Sponsors
 
-The role matters for restores: adapters that serve byte ranges fetch only the file you asked for, while SMB downloads the archive once and takes the file out of it afterwards. That applies to the adapter *holding the backup*, not the one the files came from.
+<!-- Patrons ($500 once): the image below draws them with their avatar. Kay sponsored while this
+     tier still came with a logo, so his stays here by hand and the image leaves him out. -->
+<p align="center">
+  <strong>🏆 Patrons</strong> · $500 once
+  <br><br>
+  <a href="https://www.ictwebsolution.nl"><img src="https://ictwebsolution.nl/wp-content/uploads/2021/05/Logo-ICTWebSolution.png" alt="ICT WebSolution" height="60"></a>
+  <br>
+  <a href="https://www.ictwebsolution.nl"><sub>Kay van Aarssen</sub></a>
+</p>
 
-📖 **Details**: [File & Folder Backups](https://docs.dbackup.app/user-guide/features/file-backups) • [Backup Modes](https://docs.dbackup.app/user-guide/features/backup-modes) • [Archive Format](https://docs.dbackup.app/developer-guide/reference/archive-format)
+<p align="center">
+  <a href="https://github.com/sponsors/Skyfay">
+    <img src="https://raw.githubusercontent.com/Skyfay/DBackup/sponsors/sponsors-onetime.svg" alt="The one-time sponsors of DBackup" width="800">
+  </a>
+</p>
 
-## ☁️ Supported Destinations
+## 🛠️ Contributing
 
-| Destination | Details |
-| :--- | :--- |
-| Local Filesystem | Store backups directly on the server |
-| Amazon S3 | Native AWS S3 with storage class support (Standard, IA, Glacier, Deep Archive) |
-| S3 Compatible | Any S3-compatible storage (MinIO, Wasabi, etc.) |
-| Cloudflare R2 | Cloudflare R2 Object Storage |
-| Hetzner Object Storage | Hetzner S3 storage (fsn1, nbg1, hel1, ash) |
-| Google Drive | Google Drive via OAuth2 |
-| Dropbox | Dropbox via OAuth2 with chunked upload support |
-| Microsoft OneDrive | OneDrive via Microsoft Graph API / OAuth2 |
-| SFTP | SSH/SFTP with password, private key, or SSH agent auth |
-| FTP / FTPS | Classic FTP with optional TLS |
-| WebDAV | WebDAV servers (Nextcloud, ownCloud, etc.) |
-| SMB (Samba) | Windows/Samba network shares (SMB2, SMB3) |
-| Rsync | File transfer via rsync over SSH |
-
-## 🔔 Supported Notifications
-
-| Channel | Details |
-| :--- | :--- |
-| Discord | Webhook-based notifications with rich embeds |
-| Slack | Incoming webhook notifications with Block Kit formatting |
-| Microsoft Teams | Adaptive Card notifications via Power Automate webhooks |
-| Gotify | Self-hosted push notifications with priority levels |
-| ntfy | Topic-based push notifications (self-hosted or ntfy.sh) |
-| Generic Webhook | JSON payloads to any HTTP endpoint (PagerDuty, etc.) |
-| Telegram | Bot API push notifications to chats, groups, and channels |
-| SMS (Twilio) | SMS text message alerts via Twilio API |
-| Email (SMTP) | SMTP with SSL/STARTTLS support, multiple recipients |
-
-## 📚 Documentation
-
-Full documentation is available at **[docs.dbackup.app](https://docs.dbackup.app)**:
-
-- [User Guide](https://docs.dbackup.app/user-guide/getting-started) - Installation, configuration, usage
-- [API Reference](https://api.dbackup.app) - Interactive REST API documentation
-- [Developer Guide](https://docs.dbackup.app/developer-guide/) - Architecture, adapters, contributing
-- [Changelog](https://docs.dbackup.app/changelog) - Release history
-- [Roadmap](https://dbackup.app/roadmap) - Planned features
-
-## 🛠️ Development
-
-```bash
-# Clone & install
-git clone https://github.com/Skyfay/DBackup.git && cd DBackup
-pnpm install
-
-# Configure environment
-cp .env.example .env  # Edit with your secrets
-
-# Start dev server (applies pending migrations automatically on startup)
-pnpm dev
-```
-
-For contribution guidelines, see the [CONTRIBUTING.md](CONTRIBUTING.md).
+Pull requests go into the `dev` branch, never into `main`. [CONTRIBUTING.md](CONTRIBUTING.md) explains the setup and the workflow, and the [Developer Guide](https://docs.dbackup.app/developer-guide/) the architecture, the adapters and the tests.
 
 ## 💬 Community & Support
 
-- 💬 **Discord**: Join our community at [https://dc.skyfay.ch](https://dc.skyfay.ch)
-- 📝 **Documentation**: Full guides and API reference at [docs.dbackup.app](https://docs.dbackup.app)
-- 🔗 **API Reference**: Interactive API docs at [api.dbackup.app](https://api.dbackup.app) or in-app at `/docs/api`
-- 🐛 **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/Skyfay/DBackup/issues)
-- 📧 **Support**: General questions and support via [support@dbackup.app](mailto:support@dbackup.app)
-- 🔒 **Security**: Report vulnerabilities responsibly via [security@dbackup.app](mailto:security@dbackup.app) (please do **not** open public issues for security reports)
+- 💬 **Discord**: [dc.skyfay.ch](https://dc.skyfay.ch)
+- 🐛 **Issues**: bugs and feature requests on [GitHub Issues](https://github.com/Skyfay/DBackup/issues)
+- 📧 **Support**: [support@dbackup.app](mailto:support@dbackup.app)
+- 🔒 **Security**: report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never in a public issue
 
 ## 🤖 AI Development Transparency
 
-### Architecture & Concept
+The architecture, the technology stack and the feature specifications of DBackup were designed and directed by a human system engineer. The code is written by AI coding agents that follow those specifications and the guidelines of the project. Every feature is tested by hand, backed by unit and integration tests and static security audits.
 
-The system architecture, infrastructure design, strict technology stack selection, and feature specifications for DBackup were entirely conceptualized and directed by a human System Engineer to solve real-world infrastructure challenges.
-
-### Implementation
-
-The application code was generated by AI coding agents following detailed architectural specifications and coding guidelines. All features were manually tested for correctness, stability, and real-world reliability. Automated unit tests (Vitest) and static security audits complement the manual QA process.
-
-### Open for Review
-
-DBackup is thoroughly tested and used in production, but a formal manual security audit by an external developer has not yet been completed. If you are a software developer or cybersecurity professional, your expertise is highly welcome! We invite the open-source community to review the code, submit PRs, and help us elevate DBackup to a fully verified, enterprise-ready standard.
-
-> **Security Disclosure**: If you discover a security vulnerability, please **do not** open a public GitHub issue. Instead, report it responsibly via email to **[security@dbackup.app](mailto:security@dbackup.app)**.
+A manual security audit by an external developer has not been done yet. If you review code or work in security, your findings are very welcome, see [SECURITY.md](SECURITY.md) for how to report them.
 
 ## 📝 License
 

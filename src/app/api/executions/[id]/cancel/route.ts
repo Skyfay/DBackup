@@ -1,9 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { abortExecution, isExecutionRunning } from "@/lib/execution/abort";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+
+interface CancelledRun {
+    id: string;
+    jobId: string | null;
+    job: { name: string } | null;
+}
+
+/**
+ * Notes a cancel that went through as a change of the job the run belongs to. A run without a job,
+ * like a restore, has no job to note it on.
+ */
+async function logCancel(ctx: AuthContext, run: CancelledRun) {
+    if (!run.jobId) return;
+    await auditService.logFor(
+        ctx,
+        AUDIT_ACTIONS.UPDATE,
+        AUDIT_RESOURCES.JOB,
+        { action: "cancel", ...(run.job ? { name: run.job.name } : {}), executionId: run.id },
+        run.jobId
+    );
+}
 
 /**
  * POST /api/executions/[id]/cancel
@@ -26,7 +49,7 @@ export async function POST(
 
     const execution = await prisma.execution.findUnique({
         where: { id },
-        select: { id: true, status: true },
+        select: { id: true, status: true, jobId: true, job: { select: { name: true } } },
     });
 
     if (!execution) {
@@ -50,6 +73,7 @@ export async function POST(
                 metadata: JSON.stringify({ progress: 0, stage: "Cancelled" }),
             },
         });
+        await logCancel(ctx, execution);
         return NextResponse.json({ success: true, message: "Pending execution cancelled" });
     }
 
@@ -59,6 +83,7 @@ export async function POST(
         if (isExecutionRunning(id)) {
             const aborted = abortExecution(id);
             if (aborted) {
+                await logCancel(ctx, execution);
                 return NextResponse.json({ success: true, message: "Cancellation signal sent" });
             }
         }
@@ -93,6 +118,7 @@ export async function POST(
             },
         });
 
+        await logCancel(ctx, execution);
         return NextResponse.json({ success: true, message: "Execution force-cancelled" });
     }
 

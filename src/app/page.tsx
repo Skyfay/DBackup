@@ -1,69 +1,41 @@
-import { auth } from "@/lib/auth";
-import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { FirstStart } from "@/components/auth/first-start";
 import { LoginForm } from "@/components/auth/login-form";
-import { getPublicSsoProviders } from "@/app/actions/auth/oidc";
-import { getOidcAutoRedirectProviderId, isEmailLoginDisabled } from "@/lib/auth/env-flags";
-import Image from "next/image";
+import { LoginLayout } from "@/components/auth/login-panel";
+import { getLoginPageModel } from "@/services/auth/login-page-service";
 
 interface HomeProps {
     searchParams: Promise<{ error?: string }>;
 }
 
+/** The login page, and the first start while nobody has an account. */
 export default async function Home({ searchParams }: HomeProps) {
-    const headersList = await headers();
     const params = await searchParams;
     let session = null;
     try {
-        session = await auth.api.getSession({
-            headers: headersList
-        });
-    } catch (_error) {
-        // Silently fail if session check fails on home, just show login
+        session = await auth.api.getSession({ headers: await headers() });
+    } catch {
+        // A failed session check shows the login page.
     }
+    if (session) redirect("/dashboard");
 
-    if (session) {
-        redirect("/dashboard");
-    }
-
-    const userCount = await prisma.user.count();
-    const ssoProviders = await getPublicSsoProviders();
-
-    // Check if passkey login is disabled
-    const disablePasskeySetting = await prisma.systemSetting.findUnique({ where: { key: "auth.disablePasskeyLogin" } });
-    const disablePasskeyLogin = disablePasskeySetting?.value === 'true';
-
-    const disableEmailLogin = isEmailLoginDisabled();
-
-    // Resolve OIDC_AUTO_REDIRECT against the providers we already loaded. A value that
-    // matches no enabled provider simply means no redirect - startup-checks.ts is what
-    // reports it, so a provider deleted after boot degrades instead of breaking.
-    const autoRedirectEnvValue = getOidcAutoRedirectProviderId();
-    const autoRedirectProvider = autoRedirectEnvValue
-        ? ssoProviders.find(p => p.providerId === autoRedirectEnvValue) ?? null
-        : null;
-
+    const model = await getLoginPageModel();
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-muted/50">
-             <div className="mb-8 flex items-center gap-3">
-                <Image
-                    src="/logo.svg"
-                    alt="DBackup Logo"
-                    width={40}
-                    height={40}
-                    priority
+        <LoginLayout instanceName={model.instanceName} picture={model.picture} adapters={model.adapters}>
+            {model.firstStart ? (
+                <FirstStart allowSignUp={model.emailLogin} passwordRules={model.passwordRules} />
+            ) : (
+                <LoginForm
+                    instance={model.instanceName ?? "DBackup"}
+                    providers={model.providers}
+                    emailLogin={model.emailLogin}
+                    passkeyLogin={model.passkeyLogin}
+                    autoRedirectProviderId={model.autoRedirectProviderId}
+                    errorCode={params.error}
                 />
-                <h1 className="font-bold text-2xl tracking-tight">DBackup</h1>
-             </div>
-            <LoginForm
-                allowSignUp={userCount === 0 && !disableEmailLogin}
-                ssoProviders={ssoProviders}
-                errorCode={params.error}
-                disablePasskeyLogin={disablePasskeyLogin}
-                disableEmailLogin={disableEmailLogin}
-                autoRedirectProviderId={autoRedirectProvider?.providerId}
-            />
-        </div>
+            )}
+        </LoginLayout>
     );
 }

@@ -32,8 +32,8 @@ src/
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm
+- Node.js 24
+- pnpm 10
 - Docker (for testing)
 
 ### Setup
@@ -43,6 +43,9 @@ src/
 git clone https://github.com/Skyfay/DBackup.git
 cd DBackup
 
+# Work from dev, which holds everything finished since the last release
+git checkout dev
+
 # Install dependencies
 pnpm install
 
@@ -50,11 +53,7 @@ pnpm install
 cp .env.example .env
 # Edit .env with your settings
 
-# Initialize database
-npx prisma db push
-npx prisma generate
-
-# Start development server
+# Start development server, which applies the database migrations first
 pnpm dev
 ```
 
@@ -95,19 +94,42 @@ pnpm test:ui
 
 ## Contributing
 
+### Branches and Pull Requests
+
+| Branch | What it holds |
+| :--- | :--- |
+| `main` | The released code. Each release merges `dev` into `main` and is tagged `vX.Y.Z` |
+| `dev` | Everything that is finished, waiting for the next release |
+| Feature branches | One feature or fix each, branched off `dev` |
+
+Pull requests go into `dev`, never into `main`. Only the maintainer merges `dev` into `main` for a release.
+
+```bash
+git checkout dev
+git pull
+git checkout -b feat/short-description
+# ... commit your work
+git push -u origin feat/short-description
+# then open the pull request with dev as its base
+```
+
+Every pull request into `dev` or `main` runs lint, type check, unit tests and the docs build.
+
 ### Code Style
 
 - TypeScript strict mode
 - ESLint configuration
-- Prettier formatting
 - kebab-case file names
 
 ### PR Guidelines
 
-1. Create feature branch
+1. Create a feature branch off `dev`
 2. Write tests for new features
 3. Update documentation
-4. Run `pnpm run build` before submitting
+4. Run `pnpm validate` and `pnpm run build` before submitting
+5. Open the pull request against `dev`
+
+Security vulnerabilities are never reported in a pull request or an issue. See [SECURITY.md](https://github.com/Skyfay/DBackup/blob/main/SECURITY.md).
 
 ### Commit Messages
 

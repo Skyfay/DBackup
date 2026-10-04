@@ -149,7 +149,7 @@ opposite and writes file by file, which is where its parallelism setting matters
 
 ### Parallel Transfers
 
-Each directory source sets its own value under **Connections → Directory Sources → Configuration**.
+Each directory source sets its own value as **Parallel transfers** in the **Speed** part of its form.
 The adapter decides the range, because the sensible limit is a property of the protocol:
 
 | Adapter | Default | Maximum | Why the ceiling is where it is |
@@ -189,8 +189,9 @@ The distinction that decides whether a folder is skipped is the pattern's shape:
 
 The third row is the one that catches people out. Write `node_modules/**`, not `node_modules`.
 
-Attach patterns per source under **Connections → Directory Sources**, or reuse a set across jobs
-with [Exclude Pattern Presets](/user-guide/features/templates).
+Attach patterns per source under **Connections → Directory sources**, or reuse a set across jobs
+with [Exclude Pattern Presets](/user-guide/features/templates). The groups of DBackup a preset
+follows write their folders as `**/node_modules/**`, so they skip them at any depth.
 
 ### While it runs
 
@@ -206,9 +207,9 @@ what is already there and sends only the differing blocks, so restoring over an 
 finish with almost no traffic. No other adapter does this. It is a comparison, not a skip: every
 file is checked, so a file that was damaged is still repaired.
 
-**Rsync as a *source* has no incremental advantage.** An incremental job with an Rsync source
-transfers and stores everything on every run. The backup is correct, but the incremental mode
-saves nothing there - use SFTP for the same server if that matters.
+**Rsync as a *source* lists the whole tree on every run.** The listing is one `find` over SSH and
+is fast, but an incremental run has to see every file to decide what changed. Only the changed
+files are then transferred, in a single native sync.
 
 **SMB cannot restore a single file cheaply.** It is the one adapter without ranged reads, so
 restoring one file out of a large archive fetches the archive once. See the table above.
@@ -281,11 +282,8 @@ Directory sources can be backed up incrementally, storing only what changed sinc
 run. See [Backup Modes](/user-guide/features/backup-modes) for how chains are stored, what
 forces a full backup, and how retention treats them.
 
-::: warning Not with an Rsync source
-An incremental job whose source is an Rsync connection transfers and stores everything on every
-run. The backups are correct and restore normally - the incremental mode simply saves nothing
-there. Use SFTP against the same server if you want real incrementals.
-:::
+Every source type takes part, Rsync included: an Rsync source transfers the changed files in one
+native sync and references the rest from the earlier backups of the chain.
 
 ## Shadow copies (SMB)
 

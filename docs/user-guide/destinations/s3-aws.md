@@ -5,7 +5,7 @@ Store backups in AWS S3 with support for storage classes, lifecycle policies, an
 ## Configuration
 
 ::: info Credential Profile required
-Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profiles) of type `ACCESS_KEY`. Create one in **Settings → Vault → Credentials** before saving the destination.
+Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profiles) of type `ACCESS_KEY`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -13,11 +13,11 @@ Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profil
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Region** | AWS region (e.g. `us-east-1`, `eu-central-1`) | `us-east-1` | ✅ |
 | **Bucket** | S3 bucket name | - | ✅ |
-| **Primary Credential** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
-| **Path Prefix** | Folder path within the bucket | - | ❌ |
+| **Login** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
+| **Folder** | Folder path within the bucket. The folder button beside it browses the bucket once the connection and its login are filled in | - | ❌ |
 | **Parts at once** | Upload parts sent simultaneously ([details](/user-guide/destinations/#upload-performance-s3)) | `8` | ❌ |
 | **Max part size (MB)** | Upper bound on the size of each upload part | `8` | ❌ |
-| **Storage Class** | S3 storage class for uploaded objects | `STANDARD` | ❌ |
+| **Storage class** | S3 storage class for uploaded objects | `STANDARD` | ❌ |
 
 ### Storage Classes
 
@@ -29,7 +29,7 @@ Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profil
 | `DEEP_ARCHIVE` | Cheapest storage, retrieval in 12+ hours |
 
 ::: warning Glacier and Deep Archive restrict direct access
-Objects stored in `GLACIER` or `DEEP_ARCHIVE` are archived and cannot be downloaded or restored directly. In the Storage Explorer, these objects show an orange **Glacier** or **Deep Archive** badge and the **Download** and **Restore** buttons are disabled. To access an archived object, you must first initiate a restore via the AWS Console or CLI - once the object is available (minutes to hours for Glacier, up to 12+ hours for Deep Archive), you can download or restore it from DBackup as normal.
+Objects stored in `GLACIER` or `DEEP_ARCHIVE` are archived and cannot be downloaded or restored directly. In the Backups page, these objects show an orange **Glacier** or **Deep Archive** badge and the **Download** and **Restore** buttons are disabled. To access an archived object, you must first initiate a restore via the AWS Console or CLI - once the object is available (minutes to hours for Glacier, up to 12+ hours for Deep Archive), you can download or restore it from DBackup as normal.
 :::
 
 ## Setup Guide
@@ -39,12 +39,12 @@ Objects stored in `GLACIER` or `DEEP_ARCHIVE` are archived and cannot be downloa
    - Go to [IAM Console](https://console.aws.amazon.com/iam/) → **Users** → **Create user**
    - Attach the `AmazonS3FullAccess` policy (or a scoped policy - see below)
    - Create an **Access Key** (use case: "Application outside AWS") and copy both keys
-3. **Create an `ACCESS_KEY` credential profile** in **Settings → Vault → Credentials** with the Access Key ID and Secret Access Key ([guide](/user-guide/security/credential-profiles))
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **Amazon S3**
-5. Enter your Region and Bucket, then select the credential profile in the **Primary Credential** picker
-6. (Optional) Set a **Path Prefix** to organize backups in a subfolder
-7. (Optional) Select a **Storage Class** for cost optimization
-8. Click **Test** to verify the connection
+3. **Create an `ACCESS_KEY` credential profile** in **Vault → Credentials** with the Access Key ID and Secret Access Key ([guide](/user-guide/security/credential-profiles))
+4. Go to **Connections** → **Destinations** → **New destination** → **Amazon S3**
+5. Enter your Region and Bucket, then pick the credential profile under **Login**
+6. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder, or pick it with the folder button (📂)
+7. (Optional) Select a **Storage class** for cost optimization
+8. Click **Test connection** to verify the connection
 
 <details>
 <summary>Minimal IAM Policy (recommended)</summary>
@@ -74,7 +74,7 @@ Instead of `AmazonS3FullAccess`, scope permissions to a single bucket:
 - Backups upload via the AWS SDK as 8 parallel parts by default ([details](/user-guide/destinations/#upload-performance-s3))
 - All credentials are stored AES-256-GCM encrypted in the database
 - Storage class is set per-object at upload time
-- The Path Prefix creates a virtual folder structure within your bucket
+- The folder creates a virtual folder structure within your bucket
 
 ## Troubleshooting
 
@@ -110,4 +110,4 @@ The AWS Access Key Id you provided does not exist in our records
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

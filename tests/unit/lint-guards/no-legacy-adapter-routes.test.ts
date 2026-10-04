@@ -3,8 +3,9 @@
  *
  * Databases, storage and notification channels are configured on one page,
  * `/dashboard/connections`, with a `?tab=` selecting the section. The old
- * `/dashboard/sources`, `/dashboard/destinations` and `/dashboard/notifications` routes
- * still exist, but only as redirects for bookmarks - nothing in the app should link there.
+ * `/dashboard/sources`, `/dashboard/destinations` and `/dashboard/notifications` addresses
+ * still work, but only as redirects in next.config.ts for bookmarks - nothing in the app
+ * should link there.
  *
  * The guard exists because these paths were easy to miss: the OAuth callbacks alone
  * hard-coded the destinations page twenty times, and a missed one only shows up after a
@@ -18,19 +19,14 @@ import * as fs from "fs";
 import * as path from "path";
 
 const SRC_DIR = path.resolve(__dirname, "../../../src");
+const NEXT_CONFIG = path.resolve(__dirname, "../../../next.config.ts");
 
-/** The redirect stubs themselves, which necessarily know their own old path. */
-const REDIRECT_STUBS = [
-    "app/dashboard/sources/page.tsx",
-    "app/dashboard/destinations/page.tsx",
-    "app/dashboard/notifications/page.tsx",
-];
-
-const LEGACY_ROUTES = [
-    "/dashboard/sources",
-    "/dashboard/destinations",
-    "/dashboard/notifications",
-];
+/** Each old address with the tab of the Connections page it leads to. */
+const LEGACY_ROUTES: Record<string, string> = {
+    "/dashboard/sources": "databases",
+    "/dashboard/destinations": "destinations",
+    "/dashboard/notifications": "notifications",
+};
 
 function collectFiles(dir: string, acc: string[] = []): string[] {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -47,10 +43,9 @@ describe("Lint Guard: retired adapter routes", () => {
 
         for (const file of collectFiles(SRC_DIR)) {
             const relative = path.relative(SRC_DIR, file).replace(/\\/g, "/");
-            if (REDIRECT_STUBS.includes(relative)) continue;
 
             fs.readFileSync(file, "utf-8").split("\n").forEach((line, index) => {
-                for (const route of LEGACY_ROUTES) {
+                for (const route of Object.keys(LEGACY_ROUTES)) {
                     // Bare path only - `/dashboard/sources` must not match a longer route
                     // that merely starts the same way.
                     if (new RegExp(`${route}(?![\\w-])`).test(line)) {
@@ -63,10 +58,16 @@ describe("Lint Guard: retired adapter routes", () => {
         expect(violations, violations.join("\n")).toEqual([]);
     });
 
-    it("the redirect stubs are still there for bookmarked links", () => {
-        for (const stub of REDIRECT_STUBS) {
-            const contents = fs.readFileSync(path.join(SRC_DIR, stub), "utf-8");
-            expect(contents, `${stub} should redirect to the connections page`).toContain("/dashboard/connections");
+    it("bookmarks of the old pages still lead to their tab, written out rather than read from a client module", () => {
+        const config = fs.readFileSync(NEXT_CONFIG, "utf-8");
+        for (const [route, tab] of Object.entries(LEGACY_ROUTES)) {
+            expect(config, `${route} should redirect to its tab`).toContain(`{ source: "${route}", destination: "/dashboard/connections?tab=${tab}"`);
+        }
+    });
+
+    it("no page stands in for an old address any more, a page there would win over the redirect", () => {
+        for (const route of Object.keys(LEGACY_ROUTES)) {
+            expect(fs.existsSync(path.join(SRC_DIR, "app", route, "page.tsx")), `${route}/page.tsx`).toBe(false);
         }
     });
 });

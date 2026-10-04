@@ -174,6 +174,23 @@ describe('IntegrityService', () => {
         expect(result.skipped).toBe(1);
     });
 
+    it('skips an air-gapped destination that cannot be listed, without the job fallback or a scan failure', async () => {
+        const adapter = makeStorageAdapter({ list: vi.fn().mockRejectedValue(new Error('No such directory')) });
+        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+            {
+                id: 'usb', adapterId: 'local', name: 'USB rotation', config: '{}', type: 'storage', storageRole: 'DESTINATION',
+                metadata: JSON.stringify({ airGapped: true }), primaryCredentialId: null, sshCredentialId: null,
+            },
+        ]);
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+
+        const result = await integrityService.runFullIntegrityCheck();
+
+        expect(prisma.job.findMany).not.toHaveBeenCalled();
+        expect(adapter.list).toHaveBeenCalledTimes(1);
+        expect(result.scanFailed).toBe(0);
+    });
+
     it('skips unknown storage adapter (not in registry)', async () => {
         (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
             { id: 's2', adapterId: 'unknown-adapter', name: 'Unknown', config: '{}', primaryCredentialId: null, sshCredentialId: null },
@@ -298,6 +315,20 @@ describe('IntegrityService', () => {
 
             expect(result.totalFiles).toBe(1);
             expect(result.passed).toBe(1);
+        });
+
+        it('skips an air-gapped destination that cannot be listed without counting a scan failure', async () => {
+            const adapter = makeStorageAdapter({ list: vi.fn().mockRejectedValue(new Error('No such directory')) });
+            const job = makeJobWithDest('ProdJob', 'usb');
+            job.destinations[0].config.metadata = JSON.stringify({ airGapped: true }) as never;
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([job]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+            const onLog = vi.fn();
+
+            const result = await integrityService.runFullIntegrityCheck({ onLog, onStage: vi.fn(), onFileProgress: vi.fn() } as never);
+
+            expect(result.scanFailed).toBe(0);
+            expect(onLog).toHaveBeenCalledWith('Storage for ProdJob: air-gapped and not connected - skipping', 'info');
         });
 
         it('skips jobs with skipVerification flag', async () => {
@@ -445,5 +476,37 @@ describe('IntegrityService', () => {
 
             expect(result.totalFiles).toBe(0);
         });
+    });
+
+    it('tells the page of the run its plan and every copy it checks, with the download of a copy that has to be hashed', async () => {
+        (prisma.systemSetting.findUnique as ReturnType<typeof vi.fn>).mockImplementation(({ where }: { where: { key: string } }) =>
+            Promise.resolve(where.key === 'integrity.scanMode' ? { value: 'destinations' } : null));
+        const adapter = makeStorageAdapter({
+            list: vi.fn().mockResolvedValue([
+                { name: 'a.tar', path: 'Shop/a.tar', size: 104 },
+                { name: 'b.tar', path: 'Shop/b.tar', size: 61 },
+            ]),
+        });
+        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+            { id: 's1', adapterId: 'sftp', name: 'NAS', config: '{}', primaryCredentialId: null, sshCredentialId: null },
+        ]);
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+        vi.mocked(verificationService.verifyFile)
+            .mockResolvedValueOnce({ status: 'passed', verifiedAt: 'now', method: 'native' })
+            .mockImplementationOnce(async (_id, _path, _trigger, options) => {
+                options?.onProgress?.(30, 61);
+                return { status: 'failed', verifiedAt: 'now', method: 'download', expectedChecksum: 'aa', actualChecksum: 'bb' };
+            });
+        const onPlan = vi.fn();
+        const onCopy = vi.fn();
+
+        await integrityService.runFullIntegrityCheck({ onLog: vi.fn(), onStage: vi.fn(), onFileProgress: vi.fn(), onPlan, onCopy });
+
+        expect(onPlan).toHaveBeenCalledWith({ total: 2, destinations: [{ id: 's1', name: 'NAS', adapterId: 'sftp', count: 2 }] });
+        expect(onCopy.mock.calls.map(([copy]) => `${copy.file}:${copy.state}`)).toEqual([
+            'Shop/a.tar:checking', 'Shop/a.tar:passed', 'Shop/b.tar:checking', 'Shop/b.tar:checking', 'Shop/b.tar:failed',
+        ]);
+        expect(onCopy).toHaveBeenCalledWith(expect.objectContaining({ index: 1, state: 'checking', method: 'download', processed: 30, total: 61 }));
+        expect(onCopy).toHaveBeenLastCalledWith({ index: 1, destinationId: 's1', file: 'Shop/b.tar', size: 61, state: 'failed', method: 'download', expected: 'aa', actual: 'bb' });
     });
 });

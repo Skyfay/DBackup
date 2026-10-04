@@ -25,16 +25,18 @@ export async function GET(
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.REVEAL);
 
-        // Audit BEFORE returning secrets so reveal is never silent
-        await auditService.log(
-            ctx.userId,
+        // The profile without its secret, which names the entry. An unknown id ends here as a 404.
+        const profile = await credentialService.getCredentialProfile(id);
+
+        // Audit BEFORE decrypting the secret so a reveal is never silent
+        await auditService.logFor(
+            ctx,
             AUDIT_ACTIONS.EXPORT,
             AUDIT_RESOURCES.CREDENTIAL,
-            { action: "reveal" },
+            { action: "reveal", name: profile.name },
             id
         );
 
-        const profile = await credentialService.getCredentialProfile(id);
         const data = await credentialService.getDecryptedCredentialData(id);
 
         return NextResponse.json({

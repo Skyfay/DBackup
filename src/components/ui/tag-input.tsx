@@ -12,11 +12,15 @@ interface TagInputProps {
     validate?: (input: string) => boolean;
     className?: string;
     disabled?: boolean;
+    /** Passed to the text input, so a label and a form message reach it through FormControl. */
+    id?: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean;
 }
 
 /**
  * A tag/chip input component that allows users to enter multiple values.
- * Type a value and press Enter, Space, Tab, or comma to add it as a tag.
+ * Type a value and press Enter, Space or a comma to add it as a tag, or leave the field with Tab.
  * Click the X button on a tag to remove it.
  */
 export function TagInput({
@@ -26,6 +30,9 @@ export function TagInput({
     validate,
     className,
     disabled = false,
+    id,
+    "aria-describedby": describedBy,
+    "aria-invalid": invalid,
 }: TagInputProps) {
     const [inputValue, setInputValue] = React.useState("");
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -51,7 +58,8 @@ export function TagInput({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         const val = inputValue.trim();
 
-        if (e.key === "Enter" || e.key === "Tab" || e.key === ",") {
+        // Tab moves on like in every field, and leaving the field turns its text into a tag.
+        if (e.key === "Enter" || e.key === ",") {
             e.preventDefault();
             if (val) addTag(val);
         } else if (e.key === " ") {
@@ -83,7 +91,8 @@ export function TagInput({
         <div
             className={cn(
                 "flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs transition-colors",
-                "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
+                "focus-within:border-tone-ring focus-within:ring-tone-ring/50 focus-within:ring-2",
+                invalid && "border-destructive",
                 disabled && "cursor-not-allowed opacity-50",
                 className,
             )}
@@ -113,6 +122,9 @@ export function TagInput({
             ))}
             <input
                 ref={inputRef}
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}

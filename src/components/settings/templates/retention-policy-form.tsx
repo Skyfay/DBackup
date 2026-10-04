@@ -1,171 +1,118 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DEFAULT_HOURLY_TIER,
-  RetentionConfiguration,
-  RetentionMode,
-} from "@/lib/core/retention";
-import { cn } from "@/lib/utils";
-
-interface Props {
-  value: RetentionConfiguration;
-  onChange: (config: RetentionConfiguration) => void;
-}
+import { useId } from "react";
+import { ChoiceCards, type ModeOption } from "@/components/adapter/connection-mode-choice";
+import { RETENTION_TIERS } from "@/components/templates/retention-words";
+import { NumberStepper } from "@/components/ui/number-stepper";
+import type { RetentionConfiguration, RetentionMode, SmartRetentionPolicy } from "@/lib/core/retention";
+import { mostKept } from "@/services/templates/retention-preview";
 
 const DEFAULT_SIMPLE = { keepCount: 10 };
-const DEFAULT_SMART = { hourly: 0, daily: 7, weekly: 4, monthly: 12, yearly: 2 };
+const DEFAULT_SMART: SmartRetentionPolicy = { hourly: 0, daily: 7, weekly: 4, monthly: 12, yearly: 2 };
+/** More than anyone keeps, and few enough that a typo cannot switch retention off. */
+const MOST = 1000;
 
-export function RetentionPolicyForm({ value, onChange }: Props) {
-  const mode = value.mode;
-  const simple = value.simple ?? DEFAULT_SIMPLE;
-  const smart = value.smart ?? DEFAULT_SMART;
+const MODES: ModeOption[] = [
+    { value: "NONE", title: "Everything", description: "Never removes a backup." },
+    { value: "SIMPLE", title: "The last few", description: "Keeps the newest ones, however old." },
+    { value: "SMART", title: "Smart rotation", description: "One a day, a week, a month and a year." },
+];
 
-  // Most setups never need an hourly tier, so the field stays out of the way until it is
-  // asked for. A policy that already carries one opens with it visible, which is why this
-  // is derived from the value rather than held in state alone.
-  const [manuallyShown, setManuallyShown] = useState(false);
-  const showHourly = manuallyShown || (smart.hourly ?? 0) > 0;
+interface TierRowProps {
+    label: string;
+    sub: string;
+    value: number;
+    min: number;
+    /** What it was before this change, said beside it while it differs. */
+    was?: number;
+    onChange: (value: number) => void;
+}
 
-  function setMode(newMode: RetentionMode) {
-    onChange({
-      mode: newMode,
-      simple: value.simple ?? DEFAULT_SIMPLE,
-      smart: value.smart ?? DEFAULT_SMART,
-    });
-  }
-
-  function setKeepCount(n: number) {
-    onChange({ ...value, simple: { keepCount: n } });
-  }
-
-  function setSmartField(field: keyof typeof DEFAULT_SMART, n: number) {
-    onChange({
-      ...value,
-      smart: { ...smart, [field]: n },
-    });
-  }
-
-  function toggleHourly() {
-    if (showHourly) {
-      setManuallyShown(false);
-      setSmartField("hourly", 0);
-      return;
-    }
-    setManuallyShown(true);
-    setSmartField("hourly", DEFAULT_HOURLY_TIER);
-  }
-
-  return (
-    <div className="space-y-3">
-      <Label>Retention Mode</Label>
-      <Tabs
-        value={mode}
-        onValueChange={(v) => setMode(v as RetentionMode)}
-        className="w-full"
-      >
-        <TabsList className="grid w-full grid-cols-3 h-8">
-          <TabsTrigger value="NONE" className="text-xs">
-            Keep All
-          </TabsTrigger>
-          <TabsTrigger value="SIMPLE" className="text-xs">
-            Simple
-          </TabsTrigger>
-          <TabsTrigger value="SMART" className="text-xs">
-            Smart (GFS)
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      {mode === "NONE" && (
-        <p className="text-xs text-muted-foreground">
-          All backups are kept indefinitely. No automatic deletion.
-        </p>
-      )}
-
-      {mode === "SIMPLE" && (
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            min={1}
-            value={simple.keepCount}
-            onChange={(e) => setKeepCount(parseInt(e.target.value) || 1)}
-            className="w-20 h-8"
-          />
-          <span className="text-xs text-muted-foreground">newest backups</span>
+function TierRow({ label, sub, value, min, was, onChange }: TierRowProps) {
+    const changed = was !== undefined && was !== value;
+    return (
+        <div className="flex items-center gap-3 px-3 py-2">
+            <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{label}</p>
+                {/* Wraps on a phone, where a cut would hide what the number was before. */}
+                <p className="text-xs text-muted-foreground">
+                    {sub}
+                    {changed && `, was ${was}`}
+                </p>
+            </div>
+            <NumberStepper
+                value={value}
+                onValueChange={onChange}
+                min={min}
+                max={MOST}
+                aria-label={label}
+                decrementLabel={`Fewer ${label.toLowerCase()}`}
+                incrementLabel={`More ${label.toLowerCase()}`}
+                className="shrink-0"
+            />
         </div>
-      )}
+    );
+}
 
-      {mode === "SMART" && (
-        <div className="space-y-2">
-          <div
-            className={cn(
-              "grid gap-2",
-              showHourly ? "grid-cols-5" : "grid-cols-4"
-            )}
-          >
-            {showHourly && (
-              <div className="space-y-1">
-                <Label className="text-xs">Hourly</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={smart.hourly ?? 0}
-                  onChange={(e) =>
-                    setSmartField("hourly", parseInt(e.target.value) || 0)
-                  }
-                  className="h-8"
-                />
-              </div>
-            )}
-            {(["daily", "weekly", "monthly", "yearly"] as const).map((period) => (
-              <div key={period} className="space-y-1">
-                <Label className="text-xs capitalize">{period}</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={smart[period]}
-                  onChange={(e) =>
-                    setSmartField(period, parseInt(e.target.value) || 0)
-                  }
-                  className="h-8"
-                />
-              </div>
-            ))}
-          </div>
+interface Props {
+    value: RetentionConfiguration;
+    onChange: (config: RetentionConfiguration) => void;
+    /** The policy as saved, so a changed number says what it was. */
+    saved?: RetentionConfiguration;
+}
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground"
-            onClick={toggleHourly}
-          >
-            {showHourly ? (
-              <>
-                <X className="size-3" />
-                Remove hourly tier
-              </>
-            ) : (
-              <>
-                <Plus className="size-3" />
-                Add hourly tier
-              </>
-            )}
-          </Button>
+/**
+ * What a retention policy keeps: everything, the newest few, or a smart rotation with a number per
+ * tier. The picked card and the steppers take the tone of the dialog around them.
+ */
+export function RetentionPolicyForm({ value, onChange, saved }: Props) {
+    const labelId = useId();
+    const simple = value.simple ?? DEFAULT_SIMPLE;
+    const smart = value.smart ?? DEFAULT_SMART;
+    const most = mostKept({ ...value, simple, smart });
 
-          <p className="text-xs text-muted-foreground">
-            The tiers add up rather than overlap. Each one keeps that many backups on top
-            of what the finer tiers already cover, so hourly 24 with daily 7 reaches back
-            about a day of hourly slots plus 7 further days.
-          </p>
+    const setMode = (mode: string) => onChange({ mode: mode as RetentionMode, simple, smart });
+    const setTier = (key: keyof SmartRetentionPolicy, count: number) => onChange({ ...value, simple, smart: { ...smart, [key]: count } });
+
+    return (
+        <div className="space-y-3">
+            <p id={labelId} className="text-sm font-medium">What it keeps</p>
+            <ChoiceCards value={value.mode} onValueChange={setMode} options={MODES} aria-labelledby={labelId} className="sm:grid-cols-3" />
+
+            {value.mode === "SIMPLE" && (
+                <div className="rounded-lg border">
+                    <TierRow
+                        label="Backups"
+                        sub="the newest ones a destination keeps"
+                        value={simple.keepCount}
+                        min={1}
+                        was={saved?.mode === "SIMPLE" ? saved.simple?.keepCount : undefined}
+                        onChange={(keepCount) => onChange({ ...value, smart, simple: { keepCount } })}
+                    />
+                </div>
+            )}
+
+            {value.mode === "SMART" && (
+                <div className="divide-y rounded-lg border">
+                    {RETENTION_TIERS.map((tier) => (
+                        <TierRow
+                            key={tier.key}
+                            label={tier.label}
+                            sub={`the newest of each ${tier.unit}`}
+                            value={smart[tier.key] ?? 0}
+                            min={0}
+                            was={saved?.mode === "SMART" ? (saved.smart?.[tier.key] ?? 0) : undefined}
+                            onChange={(count) => setTier(tier.key, count)}
+                        />
+                    ))}
+                </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+                {value.mode === "NONE" || most === null
+                    ? "Every backup stays, so the storage grows with every run."
+                    : `At most ${most.toLocaleString()} backups a destination. Locked backups always stay.`}
+            </p>
         </div>
-      )}
-    </div>
-  );
+    );
 }

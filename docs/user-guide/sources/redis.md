@@ -17,7 +17,7 @@ Redis is an in-memory data structure store used as a database, cache, message br
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup connects via TCP and runs `redis-cli` locally |
-| **SSH** | DBackup connects via SSH and runs `redis-cli` on the remote host |
+| **Over SSH** | DBackup connects via SSH and runs `redis-cli` on the remote host |
 
 ## Architecture
 
@@ -31,31 +31,31 @@ DBackup uses `redis-cli --rdb` to download RDB snapshots.
 ## Configuration
 
 ::: info Credential Profiles
-A [Credential Profile](/user-guide/security/credential-profiles) is **optional** for Redis — password-free instances can connect without one. If your Redis requires a password or ACL authentication, create a `USERNAME_PASSWORD` profile in **Settings → Vault → Credentials** first (username is optional for `requirepass`-only setups). SSH mode requires an `SSH_KEY` profile.
+A [Credential Profile](/user-guide/security/credential-profiles) is **optional** for Redis — password-free instances can connect without one. If your Redis requires a password or ACL authentication, create a `USERNAME_PASSWORD` profile in **Vault → Credentials** first (username is optional for `requirepass`-only setups). SSH mode requires an `SSH_KEY` profile.
 :::
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Connection Mode** | Direct (TCP) or SSH | `Direct` | ✅ |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Redis server hostname or IP | `localhost` | ✅ |
 | **Port** | Redis server port | `6379` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username optional, used for ACL auth; password for `requirepass`) | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username optional, used for ACL auth; password for `requirepass`) | - | ❌ |
 | **Database** | Database index (0-15) for display purposes | `0` | ❌ |
 | **TLS** | Enable TLS/SSL connection | `false` | ❌ |
-| **Mode** | Connection mode: `standalone` or `sentinel` | `standalone` | ❌ |
+| **Redis setup** | `standalone` or `sentinel`. The two Sentinel fields below appear for `sentinel` only. | `standalone` | ❌ |
 | **Sentinel Master Name** | Master name for Sentinel mode | - | ❌ |
 | **Sentinel Nodes** | Comma-separated Sentinel node addresses | - | ❌ |
-| **Additional Options** | Extra `redis-cli` flags | - | ❌ |
+| **Extra options** | Extra `redis-cli` flags | - | ❌ |
 
 ### SSH Mode Fields
 
-These fields appear when **Connection Mode** is set to **SSH**:
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
 
 ## Example Configuration
 
@@ -64,7 +64,7 @@ These fields appear when **Connection Mode** is set to **SSH**:
 ```
 Host: redis.example.com
 Port: 6379
-Primary Credential: my-redis-password  (USERNAME_PASSWORD profile, password field)
+Login: my-redis-password  (USERNAME_PASSWORD profile, password field)
 ```
 
 ### Redis with ACL (6.0+)
@@ -72,7 +72,7 @@ Primary Credential: my-redis-password  (USERNAME_PASSWORD profile, password fiel
 ```
 Host: redis.example.com
 Port: 6379
-Primary Credential: my-redis-user  (USERNAME_PASSWORD profile, username + password)
+Login: my-redis-user  (USERNAME_PASSWORD profile, username + password)
 ```
 
 ### Redis with TLS
@@ -80,7 +80,7 @@ Primary Credential: my-redis-user  (USERNAME_PASSWORD profile, username + passwo
 ```
 Host: redis.example.com
 Port: 6379
-Primary Credential: my-redis-password  (USERNAME_PASSWORD profile)
+Login: my-redis-password  (USERNAME_PASSWORD profile)
 TLS: Enabled
 ```
 
@@ -90,7 +90,7 @@ TLS: Enabled
 Mode: sentinel
 Sentinel Master Name: mymaster
 Sentinel Nodes: sentinel1:26379,sentinel2:26379,sentinel3:26379
-Primary Credential: my-redis-password  (USERNAME_PASSWORD profile)
+Login: my-redis-password  (USERNAME_PASSWORD profile)
 ```
 
 ## Backup File Format
@@ -98,36 +98,44 @@ Primary Credential: my-redis-password  (USERNAME_PASSWORD profile)
 A Redis backup is one RDB snapshot, the native Redis format, and it always contains every logical database of the server whichever ones the job selected. It is stored inside a seekable archive as a single entry named `dump`:
 
 - **Archive**: `backup_2026-02-02.tar`, compressed and encrypted per entry as the job configures
-- **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download Dump** in the Storage Explorer
+- **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download...** on the Backups page
 
-Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.rdb.gz` or `.rdb.gz.enc`) and restore through the same wizard.
+Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.rdb.gz` or `.rdb.gz.enc`) and restore through the same guide.
 
-## Restore Limitations
+## Restore
 
-::: warning Important
-Redis cannot restore RDB files remotely via network commands. Restoring a Redis backup requires:
-
-1. **Server access**: You need filesystem access to the Redis server
-2. **Service restart**: Redis must be stopped and restarted to load the new RDB file
-
-DBackup provides a **Restore Wizard** that guides you through the manual restore process with copy-paste commands.
+::: warning Redis reads a dump only while it starts
+Redis cannot load an RDB snapshot over the network. A restore stops Redis on its host, puts the dump into its data folder and starts it again, which replaces everything Redis holds.
 :::
 
-### Restore Process (Manual)
+**Restore** on a Redis backup on the Backups page opens a guide instead of the database step:
 
-1. **Download the backup** from Storage Explorer with **Download Dump**, or **Download Decrypted** for an older backup
-2. **Stop the Redis server**: `redis-cli SHUTDOWN NOSAVE`
-3. **Replace the RDB file**: Copy backup to Redis data directory (usually `/var/lib/redis/dump.rdb`)
-4. **Start Redis**: `systemctl start redis` or `redis-server`
-5. **Verify**: Connect and check your data
+1. **Where does Redis run?** Pick **Docker**, **Docker Compose**, **Linux service** or **Windows service**, then name the container, the compose service or the service and the data folder. Turn off **Redis asks for a password** for an instance without one.
+2. **Make the link.** The commands download the dump with a link that works once and for five minutes. Making it needs the Download permission, and it hands out the plain `dump.rdb`, decrypted and unpacked.
+3. **Run the restore.** **Script** shows one script for the whole restore, **Manual** the same commands one step at a time with the link and every value filled in.
 
-### Using the Restore Wizard
+The script runs on the Redis host, on the Docker host or in the folder of the compose file, pasted into a shell or saved with **Download the script**. It does this, in this order:
 
-When you click "Restore" on a Redis backup in Storage Explorer, DBackup opens a guided wizard that:
+- Asks for the password and passes it to `redis-cli` as `REDISCLI_AUTH`, so it lands in no command and no history.
+- Checks that Redis answers, writes no append only file, keeps its data in the folder you named and reads `dump.rdb`. Otherwise it stops before it downloads or changes anything.
+- Downloads the dump, stops Redis, keeps the old dump as `dump.rdb.before-restore`, puts the new one in place and starts Redis again.
+- Waits up to two minutes for Redis to answer and lists the keys of every database with `INFO keyspace`.
 
-- Provides download commands (wget/curl with authentication)
-- Shows the exact commands for your deployment type
-- Includes commands for both Systemd and Docker deployments
+A container is stopped with `docker stop -t 60` or `docker compose stop -t 60`, which keeps it off even with a restart policy and gives Redis time to save once more. A Linux service is stopped with `systemctl`, and `install` hands the new dump to the `redis` user. A pasted script is read in full before it asks for the password, and a failed check leaves the shell open.
+
+On Windows the commands are PowerShell for Windows PowerShell 5.1 and PowerShell 7, run as an administrator. They stop and start the service with `Stop-Service` and `Start-Service` and expect `redis-cli` 5 or newer on the PATH, which reads the password from `REDISCLI_AUTH`, like the one of Redis for Windows. For another path or CLI, change `$Cli` at the top of the script. A saved script runs with `powershell -ExecutionPolicy Bypass -File restore-<job>.ps1`.
+
+**Manual** pastes one block at a time, and the password gets a block of its own so its prompt never reads the next line. **Download here** in its first step takes the dump on this computer with a link of its own, for a Redis host that cannot reach DBackup. Copy it to the Redis host as `dump.rdb`.
+
+### If Redis writes an append only file
+
+With `appendonly yes` Redis loads its AOF when it starts and never reads `dump.rdb`, so the script stops before it changes anything. The guide lists what to do instead:
+
+1. Keep a copy of the AOF, the folder `appendonlydir` or `appendonly.aof` before Redis 7. It is the only full copy of what Redis holds now.
+2. Set `appendonly no` where Redis gets its settings, like `redis.conf`, the command of the container or the compose file, and restart Redis.
+3. Run the script or the manual steps.
+4. Run `redis-cli CONFIG SET appendonly yes`. Redis writes a new AOF from the restored data.
+5. Set `appendonly yes` again where you changed it, so the AOF stays on after the next restart.
 
 ## Database Selection
 
@@ -205,7 +213,7 @@ For Redis 6+ with ACL:
 
 ### TLS Certificate Errors
 
-If using self-signed certificates, you may need to add `--insecure` to the Additional Options field.
+If using self-signed certificates, you may need to add `--insecure` to the **Extra options** field.
 
 ### SSH: Binary Not Found
 
@@ -228,6 +236,6 @@ apt-get install redis-tools
 
 ## See Also
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and download backups
+- [Backups](/user-guide/features/backups) - Browse and download backups
 - [Restore Guide](/user-guide/features/restore) - General restore documentation
 - [Encryption](/user-guide/security/encryption) - Encrypting your backups

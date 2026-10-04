@@ -9,6 +9,10 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { jobReason } from "@/services/notifications/notification-reason";
+import { loadNotificationBrand } from "@/lib/notifications/brand";
+import { backupEventData } from "./notification-data";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -42,6 +46,13 @@ export async function stepCleanup(ctx: RunnerContext) {
     if (ctx.indexFile) {
         await fs.unlink(ctx.indexFile).catch(() => {
             // File doesn't exist or cleanup failed - ignore, same as the archive above
+        });
+    }
+
+    // The run's own directory, with anything a step left in it.
+    if (ctx.runDir) {
+        await fs.rm(ctx.runDir, { recursive: true, force: true }).catch(() => {
+            // Cleanup failed - ignore, same as the files above
         });
     }
 
@@ -90,8 +101,10 @@ export async function stepFinalize(ctx: RunnerContext) {
         name: d.configName,
         adapterId: d.adapterId,
         path: d.uploadResult?.path,
-        status: d.uploadResult?.success ? "success" : (d.uploadResult ? "failed" : "skipped"),
+        status: d.uploadResult?.success ? "success" : (d.uploadResult && !d.uploadResult.skipped ? "failed" : "skipped"),
         error: d.uploadResult?.error,
+        // Left out on purpose, so no page counts it as a copy that should be there.
+        ...(d.uploadResult?.skipped ? { airGapped: true } : {}),
     }));
 
     const executionMetadata = {
@@ -118,12 +131,15 @@ export async function stepFinalize(ctx: RunnerContext) {
                     baseArchive: ctx.chain.baseArchive ?? null,
                     chainIndex: ctx.chain.index,
                     // The complete snapshot size, as opposed to `size` which is what this
-                    // archive physically stores. The Storage Explorer shows this one.
+                    // archive physically stores. The Backups page shows this one.
                     logicalSize: typeof ctx.metadata?.logicalSize === "number" ? ctx.metadata.logicalSize : null,
                 }
                 : {}),
         }
     });
+
+    // The dashboard caches its charts and counts. This run changes them, whatever its outcome.
+    invalidateDashboardCache();
 
     // 2. Refresh storage statistics cache (non-blocking)
     if (ctx.status === "Success" || ctx.status === "Partial") {
@@ -186,52 +202,31 @@ export async function stepFinalize(ctx: RunnerContext) {
                 ? NOTIFICATION_EVENTS.BACKUP_PARTIAL
                 : NOTIFICATION_EVENTS.BACKUP_FAILURE;
 
-        const destSummary = ctx.destinations.map(d => {
-            const status = d.uploadResult?.success ? "✓" : "✗";
-            return `${status} ${d.configName}`;
-        }).join(", ");
+        // What the run did, read once for every channel.
+        const brand = await loadNotificationBrand();
+        const job = ctx.job;
+        const data = await backupEventData(ctx, !isSuccess && !isPartial, brand.timeZone).catch((e: unknown) => {
+            // The notification still goes out with what the run knows for sure.
+            log.warn("Could not gather the details of the run for its notification", { jobId: job.id }, wrapError(e));
+            return { jobName: job.name, jobId: job.id, executionId: ctx.execution?.id, timestamp: new Date().toISOString() };
+        });
+        const basePayload = renderTemplate({ eventType, data }, { timeZone: brand.timeZone });
 
-        for (const { channel } of channelsToNotify) {
+        for (const { channel, events } of channelsToNotify) {
             try {
                 const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
 
                 if (notifyAdapter) {
                     const channelConfig = await resolveAdapterConfig(channel) as any;
-
-                    const payload = renderTemplate({
-                        eventType,
-                        data: {
-                            jobName: ctx.job.name,
-                            sourceName: ctx.job.source?.name,
-                            duration: new Date().getTime() - ctx.startedAt.getTime(),
-                            size: ctx.dumpSize ? Number(ctx.dumpSize) : undefined,
-                            error: !isSuccess && !isPartial ? ctx.logs.find(l => l.level === 'error')?.message : undefined,
-                            executionId: ctx.execution?.id,
-                            timestamp: new Date().toISOString(),
-                            ...(isPartial ? { error: `Partial upload: ${destSummary}` } : {}),
-                        },
-                    });
+                    const payload = { ...basePayload, reason: jobReason(channel.name, ctx.job.name, events) };
 
                     let renderedPayload: string | undefined;
                     let renderedHtml: string | undefined;
 
                     if (channel.adapterId === "email") {
                         try {
-                            const { renderToStaticMarkup } = await import("react-dom/server");
-                            const { SystemNotificationEmail } = await import(
-                                "@/components/email/system-notification-template"
-                            );
-                            const React = await import("react");
-                            renderedHtml = renderToStaticMarkup(
-                                React.createElement(SystemNotificationEmail, {
-                                    title: payload.title,
-                                    message: payload.message,
-                                    fields: payload.fields,
-                                    color: payload.color,
-                                    success: payload.success,
-                                    badge: payload.badge,
-                                })
-                            );
+                            const { renderNotificationEmail } = await import("@/components/email/render-email");
+                            renderedHtml = (await renderNotificationEmail(payload, brand)).html;
                         } catch { /* non-critical */ }
                     } else if (channel.adapterId === "discord") {
                         const color = payload.color
@@ -269,14 +264,7 @@ export async function stepFinalize(ctx: RunnerContext) {
                         });
                     }
 
-                    const sent = await notifyWithTimeout(() => notifyAdapter.send(channelConfig, payload.message, {
-                        success: payload.success,
-                        eventType,
-                        title: payload.title,
-                        fields: payload.fields,
-                        color: payload.color,
-                        badge: payload.badge,
-                    }));
+                    const sent = await notifyWithTimeout(() => notifyAdapter.send(channelConfig, payload.message, { ...payload, eventType, brand }));
                     if (sent === false) {
                         throw new Error("Notification delivery failed (adapter returned false)");
                     }

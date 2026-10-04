@@ -1,13 +1,37 @@
+import type { EncryptionProfile, Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { runBulk, type BulkResult } from '@/lib/core/bulk';
 import { encrypt, decrypt } from '@/lib/crypto';
 import { ConflictError, NotFoundError } from '@/lib/logging/errors';
 import crypto from 'crypto';
+import { isKeyHex, keyIdOf } from '@/services/vault/key-id';
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
+
+/** A profile as it may leave this service: everything but its key and the ids it stands for. */
+export type EncryptionProfileSummary = Omit<EncryptionProfile, 'secretKey' | 'aliases'>;
+
+/**
+ * The fields of every profile this service returns. The results reach the browser through the
+ * Server Actions, so the key stays out even in its encrypted form. It only leaves through
+ * getDecryptedMasterKey and getProfileMasterKey, by id.
+ */
+const summaryFields = {
+  id: true,
+  name: true,
+  description: true,
+  kitDownloadedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.EncryptionProfileSelect;
+
+/** The setting that names the key of the config backup. */
+const CONFIG_BACKUP_KEY_SETTING = 'config.backup.profileId';
 
 /**
  * Creates a new encryption profile with a secure, auto-generated key.
  */
-export async function createEncryptionProfile(name: string, description?: string) {
+export async function createEncryptionProfile(name: string, description?: string): Promise<EncryptionProfileSummary & { keyId: string }> {
   // Check name uniqueness
   const existingByName = await prisma.encryptionProfile.findFirst({ where: { name } });
   if (existingByName) {
@@ -27,16 +51,24 @@ export async function createEncryptionProfile(name: string, description?: string
       description,
       secretKey: encryptedMasterKey,
     },
+    select: summaryFields,
   });
-
-  return profile;
+  // The Key ID, so the dialog that made the key can name it without ever seeing the key.
+  return { ...profile, keyId: keyIdOf(masterKeyHex) };
 }
 
 /**
  * Imports an existing encryption key.
  * Validates the hex format (32 bytes = 64 chars) before storing.
  */
-export async function importEncryptionProfile(name: string, keyHex: string, description?: string) {
+export async function importEncryptionProfile(
+  name: string,
+  keyHex: string,
+  description?: string,
+  // The profile ids the key had before, like in the index of a recovery kit, so the Vault
+  // counts the backups that name them under this key.
+  standsFor: string[] = []
+): Promise<EncryptionProfileSummary> {
   // Check name uniqueness
   const existingByName = await prisma.encryptionProfile.findFirst({ where: { name } });
   if (existingByName) {
@@ -45,40 +77,52 @@ export async function importEncryptionProfile(name: string, keyHex: string, desc
 
   // 1. Validate Format
   const cleanKey = keyHex.trim();
-  if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
+  if (!isKeyHex(cleanKey)) {
     throw new Error("Invalid key format. Must be a 32-byte Hex string (64 characters).");
+  }
+
+  // A second profile with the same key opens nothing the first does not, and makes it unclear
+  // which of the two a kit or a restore should use.
+  const twin = await findProfileByKey(cleanKey);
+  if (twin) {
+    throw new ConflictError(`This key is in the Vault already, as "${twin.name}".`);
   }
 
   // 2. Encrypt with system key
   const encryptedMasterKey = encrypt(cleanKey);
 
   // 3. Store
-  const profile = await prisma.encryptionProfile.create({
+  return await prisma.encryptionProfile.create({
     data: {
       name,
       description,
       secretKey: encryptedMasterKey,
+      ...(standsFor.length > 0 ? { aliases: JSON.stringify([...new Set(standsFor)]) } : {}),
     },
+    select: summaryFields,
   });
-
-  return profile;
 }
 
+/** A profile in the list, with how many jobs encrypt their backups with it. */
+export type ListedEncryptionProfile = EncryptionProfileSummary & { _count: { jobs: number } };
+
 /**
- * Returns all encryption profiles.
+ * Returns all encryption profiles, newest first, without their keys and with how many jobs use each.
  */
-export async function getEncryptionProfiles() {
+export async function getEncryptionProfiles(): Promise<ListedEncryptionProfile[]> {
   return await prisma.encryptionProfile.findMany({
+    select: { ...summaryFields, _count: { select: { jobs: true } } },
     orderBy: { createdAt: 'desc' },
   });
 }
 
 /**
- * Returns a single encryption profile by ID.
+ * Returns a single encryption profile by ID, without its key.
  */
-export async function getEncryptionProfile(id: string) {
+export async function getEncryptionProfile(id: string): Promise<EncryptionProfileSummary | null> {
     return await prisma.encryptionProfile.findUnique({
-        where: { id }
+        where: { id },
+        select: summaryFields,
     });
 }
 
@@ -86,7 +130,7 @@ export async function getEncryptionProfile(id: string) {
  * Updates the name and description of an encryption profile. The key itself never changes.
  *
  * Renaming is safe for existing backups because they record the profile id, not its name.
- * Returns the previous name so callers can record the rename.
+ * Returns the previous name and description so callers can record what changed.
  */
 export async function updateEncryptionProfile(
   id: string,
@@ -116,9 +160,10 @@ export async function updateEncryptionProfile(
   const profile = await prisma.encryptionProfile.update({
     where: { id },
     data: patch,
+    select: summaryFields,
   });
 
-  return { profile, previousName: existing.name };
+  return { profile, previousName: existing.name, previousDescription: existing.description };
 }
 
 /**
@@ -138,13 +183,69 @@ export async function getDecryptedMasterKey(id: string): Promise<string> {
 }
 
 /**
- * Deletes an encryption profile.
- * WARNING: This will render all backups using this profile permanently unreadable.
+ * Why a key cannot be deleted yet, or null.
+ *
+ * A job keeps its reference only loosely: the relation is `ON DELETE SET NULL`, so deleting its
+ * key would quietly turn off its encryption and store its next backups in the clear. The config
+ * backup names its key in a setting and would do the same without secrets, so both hold a key.
  */
-export async function deleteEncryptionProfile(id: string) {
-  return await prisma.encryptionProfile.delete({
-    where: { id },
+export async function deleteBlockerOf(id: string): Promise<string | null> {
+  const [jobs, configKey] = await Promise.all([
+    prisma.job.count({ where: { encryptionProfileId: id } }),
+    prisma.systemSetting.findUnique({ where: { key: CONFIG_BACKUP_KEY_SETTING }, select: { value: true } }),
+  ]);
+  const users = [
+    ...(jobs > 0 ? [`${jobs} job${jobs === 1 ? '' : 's'}`] : []),
+    ...(configKey?.value === id ? ['the config backup'] : []),
+  ];
+  if (users.length === 0) return null;
+  const verb = jobs > 1 || users.length > 1 ? 'encrypt' : 'encrypts';
+  return `${users.join(' and ')} ${verb} with this key. Pick another key there first.`;
+}
+
+/**
+ * Deletes an encryption profile. Refused while a job or the config backup encrypts with it. It waits in
+ * Recently deleted, unless `permanently`, which renders every backup it encrypted unreadable for good.
+ */
+export async function deleteEncryptionProfile(id: string, options: DeleteOptions = {}): Promise<EncryptionProfileSummary> {
+  const existing = await prisma.encryptionProfile.findUnique({ where: { id }, select: { id: true } });
+  if (!existing) {
+    throw new NotFoundError("EncryptionProfile", id);
+  }
+  const blocker = await deleteBlockerOf(id);
+  if (blocker) {
+    throw new ConflictError(blocker, { context: { id } });
+  }
+  return prisma.$transaction(async (tx) => {
+    if (!options.permanently) await keepInTrash(tx, "encryptionKey", id, options.by);
+    return tx.encryptionProfile.delete({ where: { id }, select: summaryFields });
   });
+}
+
+/** Notes on the keys that a recovery kit with them was just made, which the Vault warns about until then. */
+export async function markRecoveryKit(ids: string[]): Promise<void> {
+  await prisma.encryptionProfile.updateMany({
+    where: { id: { in: ids } },
+    data: { kitDownloadedAt: new Date() },
+  });
+}
+
+/**
+ * The profile that holds this key, or null. Decrypts every key once, which is cheap for the
+ * handful a Vault holds.
+ */
+export async function findProfileByKey(keyHex: string): Promise<{ id: string; name: string } | null> {
+  const wanted = Buffer.from(keyHex.trim(), 'hex');
+  const profiles = await prisma.encryptionProfile.findMany({ select: { id: true, name: true, secretKey: true } });
+  for (const profile of profiles) {
+    try {
+      const stored = Buffer.from(decrypt(profile.secretKey), 'hex');
+      if (stored.length === wanted.length && crypto.timingSafeEqual(stored, wanted)) return { id: profile.id, name: profile.name };
+    } catch {
+      // A key the system key no longer opens cannot be the same one.
+    }
+  }
+  return null;
 }
 
 /**
@@ -178,12 +279,12 @@ export async function getProfileMasterKey(profileId: string): Promise<Buffer> {
  * WARNING: as with the single delete, every backup encrypted with a removed profile
  * becomes permanently unreadable.
  */
-export async function deleteEncryptionProfiles(ids: string[]): Promise<BulkResult> {
+export async function deleteEncryptionProfiles(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
   const profiles = await prisma.encryptionProfile.findMany({
     where: { id: { in: ids } },
     select: { id: true, name: true },
   });
   const names = new Map(profiles.map((profile) => [profile.id, profile.name]));
 
-  return runBulk(ids, (id) => deleteEncryptionProfile(id).then(() => undefined), (id) => names.get(id));
+  return runBulk(ids, (id) => deleteEncryptionProfile(id, options).then(() => undefined), (id) => names.get(id));
 }

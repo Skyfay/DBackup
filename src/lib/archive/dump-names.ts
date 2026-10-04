@@ -7,7 +7,7 @@
  * `../../etc/x` can never become a path segment in an archive member, a local temp file, a
  * download or a Recovery Kit extraction.
  *
- * Client-safe: no Node imports, the restore page and the Storage Explorer use it too.
+ * Client-safe: no Node imports, the restore page and the Backups page use it too.
  */
 
 import { EXTENSION_BY_FORMAT } from "./format";

@@ -339,55 +339,39 @@ const MySQLSchema = z.object({
   password: z.string().optional(),
   database: z.union([z.string(), z.array(z.string())]).default(""),
   options: z.string().optional().describe("Additional mysqldump options"),
+  singleTransaction: z.boolean().default(true),
+  routines: z.boolean().default(true),
+  events: z.boolean().default(true),
   disableSsl: z.boolean().default(false).describe("Disable SSL"),
   ...sshFields,
 });
 ```
 
+`singleTransaction`, `routines` and `events` are the switches under **Options** in the form. A source saved before they existed lacks them, and every one that is not `false` counts as on.
+
 ### Dump Implementation
 
+`dumpOne()` dumps one database through `dumpSingleDatabase()` in `mysql/dump.ts`:
+
+1. `host.which("mariadb-dump", "mysqldump")` picks the tool, and `dumpClientOf()` in `mysql/dump-content.ts` asks it for `--version` once per host. Only MySQL's own mysqldump knows `--set-gtid-purged`, MariaDB's refuses it.
+2. `readableContent()` asks the server with the login of the source: `SHOW EVENTS` fails without the EVENT privilege, and routines in `information_schema.ROUTINES` without a definition are ones the login may not read. The dump tool would give up on either, so the part is left out for that database with a warning.
+3. `dialect.getDumpArgs(config, [dbName], host, client)` builds the argv.
+
 ```typescript
-async dump(config, destinationPath, streams = []) {
-  const validated = MySQLSchema.parse(config);
-
-  const args = [
-    `-h${validated.host}`,
-    `-P${validated.port}`,
-    `-u${validated.username}`,
-    `--password=${validated.password}`,
-    "--single-transaction",
-    "--routines",
-    "--triggers",
-  ];
-
-  // Single database or all
-  if (validated.database) {
-    args.push(validated.database);
-  } else if (validated.databases?.length) {
-    args.push("--databases", ...validated.databases);
-  } else {
-    args.push("--all-databases");
-  }
-
-  // Execute mysqldump
-  const { stdout, stderr } = await execAsync(
-    `mysqldump ${args.join(" ")}`
-  );
-
-  // Write through stream pipeline
-  await pipeline(
-    Readable.from(stdout),
-    ...streams,
-    createWriteStream(destinationPath)
-  );
-
-  return {
-    success: true,
-    size: (await stat(destinationPath)).size,
-    logs: stderr ? [stderr] : [],
-  };
-}
+[
+  "-h", "db.internal", "-P", "3306", "-u", "backup", "--protocol=tcp",
+  "--net-buffer-length=16384",
+  "--single-transaction", "--routines", "--events", // contentArgs()
+  "--set-gtid-purged=OFF",                            // MySQL's own mysqldump only
+  ...optionTokens(config.options),                    // the extra options, which win
+  "--databases", "shop",
+  "--default-character-set=utf8mb4",                  // MySQL 8 and later
+]
 ```
+
+The content flags go before the extra options, so a `--skip-routines` there still wins. `plannedContent()` leaves out a flag the extra options already set in any form, and the snapshot when they lock the tables with `--lock-tables` or `--lock-all-tables`, which the tools would silently drop or refuse next to it. Triggers need no flag, the tools include them on their own.
+
+The password reaches the tool through a `--defaults-file` that `withAuthArgs()` writes, never through argv, and stdout goes straight into the dump file.
 
 ### Restore Implementation
 
@@ -881,25 +865,24 @@ const mapping = [
 
 ## Custom Restore UI
 
-Some databases require special restore workflows. The restore dialog checks the `sourceType` and renders adapter-specific components:
+Some databases need a restore of their own. The restore page checks the `sourceType` of the backup and renders that instead of the database step:
 
 ```typescript
-// src/components/dashboard/storage/restore-dialog.tsx
-if (file.sourceType?.toLowerCase() === "redis") {
-  return <RedisRestoreWizard file={file} storageConfigId={id} onClose={onClose} />;
+// src/app/dashboard/backups/restore/restore-client.tsx
+if (isRedis) {
+    body = <RedisGuide file={file} destinationId={destinationId} engine={type === "valkey" ? "Valkey" : "Redis"} canDownload={canDownload} />;
 }
 ```
 
-### Redis Restore Wizard
+### Redis restore guide
 
-Redis cannot restore RDB files remotely - the file must be placed on the server's filesystem and the server restarted. The `RedisRestoreWizard` provides a guided 6-step process:
+Redis cannot load an RDB snapshot over the network. The file has to be placed in the data folder of the server and the server restarted, so `RedisGuide` in `src/components/dashboard/storage/restore/redis-guide.tsx` writes the commands for it:
 
-1. **Intro**: Explains why manual restore is required
-2. **Download**: Provides wget/curl commands with token-based authentication
-3. **Stop Server**: Shows `redis-cli SHUTDOWN NOSAVE` command
-4. **Replace File**: Instructions to replace `dump.rdb`
-5. **Start Server**: Commands to restart Redis
-6. **Verify**: How to check the restore succeeded
+- `redis-guide-script.ts` builds the script, the manual steps and the commands for an append only file from where Redis runs (`docker`, `compose`, `service` or `windows`), the target, the data folder, whether Redis asks for a password and the download link. The Bash commands live in `redis-guide-bash.ts` and the PowerShell ones in `redis-guide-powershell.ts`. All of it is pure, so the unit tests read the commands directly, and each block carries the marks the `CodeBlock` tints.
+- A script runs as one block, a subshell of a function in Bash and `& { }` in PowerShell, so a pasted script is read in full before its password prompt, and a failed check ends the block instead of the shell. PowerShell names its functions with a verb and a noun, since a short name like `Cli` is also the alias of `Clear-Item`, which wins over the function.
+- The script checks `PING`, `CONFIG GET appendonly`, `dir` and `dbfilename` before it downloads or stops anything. It compares the answers, since `redis-cli` exits with 0 even when Redis replies with an error.
+- The password reaches `redis-cli` as `REDISCLI_AUTH`, which `valkey-cli` reads as well, and `docker exec -e REDISCLI_AUTH` passes it on without writing it into the command.
+- `download/use-download-link.ts` makes the one-time link with `POST /api/storage/{id}/download-url`, counts down its five minutes and asks whether a server fetched it, shared with the download dialog.
 
 ### Token-Based Public Downloads
 
@@ -921,7 +904,7 @@ const data = consumeDownloadToken(token);
 
 The public download endpoint (`/api/storage/public-download`) validates the token and streams the file without requiring session authentication.
 
-For the reusable UI component (`DownloadLinkModal`), see [Download Tokens](/developer-guide/core/download-tokens).
+The download dialog of the Backups page (`DownloadDialog`) makes these links for any pick, see [Download Tokens](/developer-guide/core/download-tokens).
 
 ## Related Documentation
 

@@ -48,6 +48,7 @@ model AdapterConfig {
   healthLogs           HealthCheckLog[]
   versionHistory       DbVersionHistory[]
   storageListCache     StorageListCache?
+  databaseListCache    DatabaseListCache?
 }
 
 model CredentialProfile {
@@ -64,13 +65,18 @@ model CredentialProfile {
 }
 
 model EncryptionProfile {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  secretKey   String
-  jobs        Job[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  secretKey       String
+  jobs            Job[]
+  // The last recovery kit that held this key. Kept here, since the audit log is cleaned after a while.
+  kitDownloadedAt DateTime?
+  // JSON array of other profile ids whose backups this key opens, a deleted one or one of another
+  // install, noted whenever a restore or a recovery matched it.
+  aliases         String    @default("[]")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model RetentionPolicy {
@@ -274,9 +280,26 @@ model User {
   sessions         Session[]
   auditLogs        AuditLog[]
   apiKeys          ApiKey[]
+  preferences      UserPreference[]
+  avatar           Avatar?
 
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id])
+}
+
+/// Settings a user makes for themselves in the UI, such as the columns picked for a table.
+/// Kept in the account rather than the browser, so they follow the user to every device.
+model UserPreference {
+  userId    String
+  /// Namespaced, e.g. "table:connections.databases".
+  key       String
+  /// JSON. The service that owns the key validates it on the way in and out.
+  value     String
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, key])
 }
 
 model SystemSetting {
@@ -388,6 +411,7 @@ model SsoProvider {
   name           String   // Display Name e.g. "Corporate Login"
   enabled        Boolean  @default(true)
   allowProvisioning Boolean @default(true) // Whether to create new users automatically
+  defaultGroupId String? // The group a user the provider creates starts in, none leaves them without a group
 
   userId         String? // Optional: If linked to a specific user (Account Linking) logic, usually null for global SSO
 
@@ -431,8 +455,14 @@ model AuditLog {
   userId      String?  // Nullable because some actions might be system actions or deleted users
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  action      String   // ENUM-like string: "LOGIN", "CREATE", "UPDATE", "DELETE"
-  resource    String   // ENUM-like string: "USER", "JOB", "SOURCE", "DESTINATION", "SETTINGS"
+  // The name of the user when the entry was written, so it stays after the user is deleted
+  actorName   String?
+  // The API key the request came with, and its name at the time
+  apiKeyId    String?
+  apiKeyName  String?
+
+  action      String   // ENUM-like string: "LOGIN", "LOGIN_FAILED", "CREATE", "UPDATE", "DELETE", "RESTORE", ...
+  resource    String   // ENUM-like string: "USER", "JOB", "BACKUP", "SYSTEM", ...
   resourceId  String?  // The ID of the affected object
 
   details     String?  // JSON string storing changes (diff) or connection info
@@ -443,6 +473,7 @@ model AuditLog {
 
   @@index([userId])
   @@index([resource])
+  @@index([action])
   @@index([createdAt])
 }
 
@@ -505,4 +536,57 @@ model StorageListCache {
   filesJson       String
   cachedAt        DateTime      @default(now())
   adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
+}
+
+// The databases of a database connection as the Database Explorer lists them. Read every hour by
+// the version task and on Read now. A failed read keeps the last list and only records why.
+model DatabaseListCache {
+  adapterConfigId String        @id
+  databasesJson   String        @default("[]") // JSON array of { name, sizeInBytes?, tableCount? }
+  readAt          DateTime? // When the list was last read in full
+  error           String? // Why the latest read failed, cleared by the next good one
+  attemptedAt     DateTime      @default(now())
+  adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
+}
+
+// A record moved to Recently deleted, with everything that belonged to it, until it is restored or its
+// time under Data retention is up. The record itself is deleted for real, so no query anywhere has to
+// leave it out and its name is free again.
+model DeletedRecord {
+  id             String   @id @default(uuid())
+  kind           String // encryptionKey | credential | connection | job | user
+  recordId       String // The id it had, and gets back
+  name           String // Its name when it was deleted
+  detail         String? // One line under the name, like the key id or the email
+  data           String // JSON snapshot of the record and what belonged to it, secrets as they were stored
+  permission     String // The permission that restores or purges it, like destinations:write for a destination
+  superAdminOnly Boolean  @default(false) // A SuperAdmin's account, which only a SuperAdmin brings back
+  deletedAt      DateTime @default(now())
+  deletedById    String?
+  deletedByName  String?
+
+  @@index([kind])
+  @@index([deletedAt])
+}
+
+// The picture of the login page under Settings, Sign-in, one row at most. It shows to everyone who
+// opens the login page while Your own image is picked, so nothing in it is private.
+model LoginImage {
+  id        String   @id @default("login")
+  fileName  String
+  mimeType  String // image/png, image/jpeg or image/webp, read from the bytes
+  size      Int
+  data      Bytes
+  updatedAt DateTime @updatedAt
+}
+
+// The picture of a person, in the database like the one of the login page, so a configuration
+// backup brings it back. User.image holds its address with the time of the picture.
+model Avatar {
+  userId    String   @id
+  mimeType  String // image/png, image/jpeg, image/gif or image/webp, read from the bytes
+  size      Int
+  data      Bytes
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -170,7 +170,9 @@ function makeDirectorySource(overrides: Partial<DirectorySourceContext> = {}): D
 const createdTempFiles: string[] = [];
 afterEach(async () => {
     for (const f of createdTempFiles.splice(0)) {
-        await fs.rm(f, { recursive: true, force: true }).catch(() => {});
+        // The archive of a run sits in a directory of its own, which goes with it.
+        const target = path.basename(path.dirname(f)).startsWith('dbackup-run-') ? path.dirname(f) : f;
+        await fs.rm(target, { recursive: true, force: true }).catch(() => {});
     }
 });
 
@@ -200,6 +202,37 @@ describe('executeCombinedDump', () => {
         // Packing is its own phase: it compresses and encrypts every entry, which is not
         // instant, and reporting it as still "Collecting Files" made the run look stuck.
         expect(stagesSet(ctx)).toEqual(['Dumping Databases', 'Collecting Files', 'Processing']);
+    });
+
+    it('gives every run a directory of its own, so two runs with the same file name never share a file', async () => {
+        const prisma = (await import('@/lib/prisma')).default as unknown as { namingTemplate: { findFirst: ReturnType<typeof vi.fn> } };
+        // Only the date in the name: two runs of one day resolve the same file name.
+        prisma.namingTemplate.findFirst.mockResolvedValue({ pattern: '{job_name}_yyyy-MM-dd' });
+        const run = async (content: string) => {
+            const ctx = makeCtx({
+                sourceAdapter: undefined,
+                sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': content }) })],
+                job: makeJob({ source: null }),
+            });
+            await executeCombinedDump(ctx);
+            createdTempFiles.push(ctx.tempFile!);
+            return ctx;
+        };
+
+        try {
+            const first = await run('FIRST');
+            const second = await run('SECOND RUN');
+
+            expect(path.basename(second.tempFile!)).toBe(path.basename(first.tempFile!));
+            expect(second.tempFile).not.toBe(first.tempFile);
+            expect(path.dirname(first.tempFile!)).toBe(first.runDir);
+            expect(path.basename(first.runDir!)).toMatch(/^dbackup-run-/);
+            // The first archive is still whole beside the second.
+            const manifest = await readArchiveManifest(await localFileSource(first.tempFile!));
+            expect(manifest.version).toBe(2);
+        } finally {
+            prisma.namingTemplate.findFirst.mockResolvedValue(null);
+        }
     });
 
     it('shows only the file phase for a directory-only backup', async () => {
@@ -337,6 +370,40 @@ describe('executeCombinedDump', () => {
         expect(dbAdapter.dumpOne).toHaveBeenCalledTimes(2);
         expect(dbAdapter.dumpOne).toHaveBeenCalledWith(expect.anything(), 'auto1', expect.any(String), expect.anything(), expect.any(Function));
         expect(dbAdapter.dumpOne).toHaveBeenCalledWith(expect.anything(), 'auto2', expect.any(String), expect.anything(), expect.any(Function));
+    });
+
+    it('reports where each database stands, so the page of the run fills a row for each', async () => {
+        const setDumps = vi.fn();
+        const ctx = makeCtx({
+            sourceAdapter: makeFakeDbAdapter(),
+            job: makeJob({ databases: JSON.stringify(['db1', 'db2']) }),
+            setDumps,
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        const states = setDumps.mock.calls.map(([dumps]) => dumps.map((dump: { name: string; state: string }) => `${dump.name}:${dump.state}`).join(' '));
+        expect(states[0]).toBe('db1:waiting db2:waiting');
+        expect(states).toContain('db1:dumping db2:waiting');
+        expect(states).toContain('db1:done db2:dumping');
+        const last = setDumps.mock.calls.at(-1)![0];
+        expect(last).toEqual([
+            expect.objectContaining({ name: 'db1', state: 'done', bytes: Buffer.byteLength('-- dump of db1'), startedAt: expect.any(String), endedAt: expect.any(String) }),
+            expect.objectContaining({ name: 'db2', state: 'done', bytes: Buffer.byteLength('-- dump of db2') }),
+        ]);
+    });
+
+    it('marks the database a dump failed on, before the run fails', async () => {
+        const setDumps = vi.fn();
+        const ctx = makeCtx({
+            sourceAdapter: makeFakeDbAdapter({ dumpOne: vi.fn().mockRejectedValue(new Error('access denied')) }),
+            job: makeJob({ databases: JSON.stringify(['db1', 'db2']) }),
+            setDumps,
+        });
+
+        await expect(executeCombinedDump(ctx)).rejects.toThrow('access denied');
+        expect(setDumps.mock.calls.at(-1)![0].map((dump: { state: string }) => dump.state)).toEqual(['failed', 'waiting']);
     });
 
     it('throws when the database adapter does not support combined backups (no dumpOne)', async () => {

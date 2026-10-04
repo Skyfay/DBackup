@@ -9,8 +9,13 @@
 
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
-import { ConflictError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runBulk, emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "AdapterService" });
 
@@ -124,16 +129,23 @@ export async function getAdapterUsage(id: string): Promise<AdapterUsage> {
  * the caller can pass the message straight through rather than inventing its own. Same
  * shape as `credentialService.deleteCredentialProfile`, which refuses for the same reason.
  */
-export async function deleteAdapter(id: string): Promise<{ name: string }> {
+export async function deleteAdapter(id: string, options: DeleteOptions = {}): Promise<{ name: string }> {
     const blocked = describeAdapterUsage(await getAdapterUsage(id));
     if (blocked) throw new ConflictError(blocked);
 
+    const deleted = await removeAdapter(id, options);
+    log.info("Adapter deleted", { adapterId: id, permanently: !!options.permanently });
+    return { name: deleted.name };
+}
+
+/** The delete itself, into Recently deleted unless `permanently`. Its storage history goes either way. */
+async function removeAdapter(id: string, options: DeleteOptions) {
     // StorageSnapshot has no foreign key to AdapterConfig, so it needs clearing by hand.
     await prisma.storageSnapshot.deleteMany({ where: { adapterConfigId: id } });
-
-    const deleted = await prisma.adapterConfig.delete({ where: { id } });
-    log.info("Adapter deleted", { adapterId: id });
-    return { name: deleted.name };
+    return prisma.$transaction(async (tx) => {
+        if (!options.permanently) await keepInTrash(tx, "connection", id, options.by);
+        return tx.adapterConfig.delete({ where: { id } });
+    });
 }
 
 /**
@@ -142,7 +154,7 @@ export async function deleteAdapter(id: string): Promise<{ name: string }> {
  * Usage is resolved for the whole batch up front, so a connection that is still in use is
  * reported with the jobs that hold it instead of aborting the rest of the selection.
  */
-export async function deleteAdapters(ids: string[]): Promise<BulkResult> {
+export async function deleteAdapters(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
     if (ids.length === 0) return emptyBulkResult();
 
     const [usageMap, adapters] = await Promise.all([
@@ -157,10 +169,91 @@ export async function deleteAdapters(ids: string[]): Promise<BulkResult> {
             const blocked = describeAdapterUsage(usageMap.get(id) ?? { ...EMPTY_USAGE });
             if (blocked) throw new ConflictError(blocked);
 
-            await prisma.storageSnapshot.deleteMany({ where: { adapterConfigId: id } });
-            await prisma.adapterConfig.delete({ where: { id } });
+            await removeAdapter(id, options);
         },
         (id) => names.get(id)
+    );
+}
+
+/**
+ * Settings kept in an adapter's metadata that can be switched for several adapters at once.
+ * The edit form writes the same keys.
+ */
+export interface AdapterFlagChange {
+    /** Silences offline and recovery alerts. The health checks themselves keep running. */
+    healthNotificationsDisabled?: boolean;
+    /** Keeps a database connection out of the restore targets. */
+    isRestoreExcluded?: boolean;
+    /** Leaves a destination out of the scheduled integrity check. */
+    skipVerification?: boolean;
+    /** A destination connected only now and then, see `lib/core/air-gap.ts`. */
+    airGapped?: boolean;
+}
+
+/**
+ * Only these adapter types read each flag, and some only as a backup destination. Setting it
+ * anywhere else would do nothing.
+ */
+const FLAG_TYPES: Record<keyof AdapterFlagChange, { types: string[]; destinationOnly?: boolean; refusal: string }> = {
+    healthNotificationsDisabled: {
+        types: ["database", "storage"],
+        refusal: "Notification channels have no health checks.",
+    },
+    isRestoreExcluded: {
+        types: ["database"],
+        refusal: "Only database connections are restore targets.",
+    },
+    skipVerification: {
+        types: ["storage"],
+        destinationOnly: true,
+        refusal: "Only backup destinations hold backups to check.",
+    },
+    airGapped: {
+        types: ["storage"],
+        destinationOnly: true,
+        refusal: "Only a backup destination can be air-gapped.",
+    },
+};
+
+function parseMetadata(metadata: string | null): Record<string, unknown> {
+    if (!metadata) return {};
+    try {
+        const value = JSON.parse(metadata);
+        return value && typeof value === "object" ? value : {};
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * Switches metadata settings on several adapters, reporting per-adapter outcomes. An adapter
+ * whose type never reads a setting is refused with the reason instead of storing it silently.
+ */
+export async function updateAdapterFlags(ids: string[], change: AdapterFlagChange): Promise<BulkResult> {
+    if (ids.length === 0) return emptyBulkResult();
+
+    const adapters = await prisma.adapterConfig.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, type: true, storageRole: true, metadata: true },
+    });
+    const byId = new Map(adapters.map((adapter) => [adapter.id, adapter]));
+    const keys = Object.keys(change) as (keyof AdapterFlagChange)[];
+
+    return runBulk(
+        ids,
+        async (id) => {
+            const adapter = byId.get(id);
+            if (!adapter) throw new NotFoundError("Connection", id);
+            for (const key of keys) {
+                const rule = FLAG_TYPES[key];
+                const misplaced = rule.destinationOnly === true && adapter.storageRole !== STORAGE_ROLES.DESTINATION;
+                if (!rule.types.includes(adapter.type) || misplaced) throw new ValidationError(rule.refusal);
+            }
+            // The rest of the metadata, like the detected version, stays as it is.
+            const metadata = { ...parseMetadata(adapter.metadata), ...change };
+            await prisma.adapterConfig.update({ where: { id }, data: { metadata: JSON.stringify(metadata) } });
+        },
+        (id) => byId.get(id)?.name
     );
 }
 
@@ -172,4 +265,31 @@ export async function getAdapterTypes(ids: string[]): Promise<string[]> {
         distinct: ["type"],
     });
     return adapters.map((adapter) => adapter.type);
+}
+
+/** Which connections of each kind the health check finds failing, for the dots of the Connections tabs. */
+export async function getConnectionAttention(): Promise<Record<"databases" | "sources" | "destinations" | "notifications", TabAttention | undefined>> {
+    const rows = await prisma.adapterConfig.findMany({
+        where: { lastStatus: { in: ["OFFLINE", "DEGRADED"] } },
+        select: { name: true, type: true, storageRole: true, lastStatus: true, metadata: true },
+        orderBy: { name: "asc" },
+    });
+    // An air-gapped destination that is not connected is away on purpose.
+    const failing = rows.filter((adapter) => !isAirGapped(adapter));
+    // A connection that does not answer is red, one that failed a check or two amber.
+    const of = (type: string, role?: string) => {
+        const list = failing.filter((adapter) => adapter.type === type && (!role || adapter.storageRole === role));
+        const names = (status: string) => list.filter((adapter) => adapter.lastStatus === status).map((adapter) => adapter.name);
+        return combineAttention(
+            attentionOf("destructive", names("OFFLINE"), "does not answer", "do not answer"),
+            attentionOf("warning", names("DEGRADED"), "failed its last check", "failed their last check"),
+        );
+    };
+
+    return {
+        databases: of("database"),
+        sources: of("storage", STORAGE_ROLES.SOURCE),
+        destinations: of("storage", STORAGE_ROLES.DESTINATION),
+        notifications: of("notification"),
+    };
 }

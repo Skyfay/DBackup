@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { logger } from "@/lib/logging/logger";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { getNotificationLogById } from "@/services/notifications/notification-log-service";
+
+const log = logger.child({ route: "notification-logs/[id]" });
 
 export async function GET(
   _req: NextRequest,
@@ -27,7 +31,11 @@ export async function GET(
     }
 
     return NextResponse.json(entry);
-  } catch (_error) {
+  } catch (error: unknown) {
+    if (error instanceof PermissionError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    log.error("Failed to fetch notification log", {}, wrapError(error));
     return NextResponse.json(
       { error: "Failed to fetch notification log" },
       { status: 500 }

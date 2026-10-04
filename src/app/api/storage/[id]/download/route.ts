@@ -5,8 +5,11 @@ import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
 import fsPromises from "fs/promises";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { auditService } from "@/services/audit-service";
+import { backupAuditDetails } from "@/services/storage/backup-audit";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
@@ -29,6 +32,21 @@ function decryptedFileName(file: string, isZip: boolean, decrypt = true): string
     }
 
     return downloadFilename;
+}
+
+/**
+ * Notes a download in the audit log, with the dump of a seekable archive when one was picked. A
+ * prepared download is noted when it is prepared, collecting it with the token adds nothing.
+ */
+async function logDownload(ctx: AuthContext, storageId: string, file: string, database?: string) {
+    const backup = await backupAuditDetails(storageId, file);
+    await auditService.logFor(
+        ctx,
+        AUDIT_ACTIONS.EXPORT,
+        AUDIT_RESOURCES.BACKUP,
+        { action: "download", ...backup, ...(database ? { databases: [database] } : {}) },
+        storageId
+    );
 }
 
 /**
@@ -97,6 +115,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
              return NextResponse.json({ error: "Download failed" }, { status: 500 });
         }
 
+        await logDownload(ctx, params.id, file, database);
         return buildDownloadResponse(tempFile, file, decrypt, result.isZip ?? false, result.fileName);
 
     } catch (error: unknown) {
@@ -168,6 +187,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             await fsPromises.unlink(tempFile).catch(() => {});
             return NextResponse.json({ error: "Download failed" }, { status: 500 });
         }
+
+        await logDownload(ctx, params.id, file, database);
 
         if (prepare) {
             // The temp file now belongs to the token, so it must survive this request - the

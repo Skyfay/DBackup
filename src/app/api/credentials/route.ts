@@ -83,8 +83,8 @@ export async function POST(req: NextRequest) {
             description ?? undefined
         );
 
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             AUDIT_ACTIONS.CREATE,
             AUDIT_RESOURCES.CREDENTIAL,
             { name, type },

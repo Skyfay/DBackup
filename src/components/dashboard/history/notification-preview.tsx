@@ -198,7 +198,7 @@ function EmailPreview({ entry }: NotificationPreviewProps) {
         </div>
         <iframe
           srcDoc={previewHtml}
-          className="min-h-100 w-full border-0 bg-white"
+          className="h-160 w-full border-0 bg-white"
           sandbox="allow-same-origin"
           title="Email Preview"
         />

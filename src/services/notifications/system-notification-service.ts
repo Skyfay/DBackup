@@ -23,6 +23,8 @@ import {
   NOTIFICATION_EVENTS,
 } from "@/lib/notifications/types";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
+import { loadNotificationBrand, type NotificationBrand } from "@/lib/notifications/brand";
+import { eventReason, userReason } from "@/services/notifications/notification-reason";
 
 const log = logger.child({ service: "SystemNotificationService" });
 
@@ -116,7 +118,7 @@ async function sendThroughChannel(
   payload: ReturnType<typeof renderTemplate>,
   eventType: string,
   toOverride?: string,
-  opts?: { executionId?: string }
+  opts?: { executionId?: string; brand?: NotificationBrand }
 ): Promise<void> {
   const adapter = registry.get(channel.adapterId) as
     | NotificationAdapter
@@ -143,21 +145,8 @@ async function sendThroughChannel(
 
   if (channel.adapterId === "email") {
     try {
-      const { renderToStaticMarkup } = await import("react-dom/server");
-      const { SystemNotificationEmail } = await import(
-        "@/components/email/system-notification-template"
-      );
-      const React = await import("react");
-      renderedHtml = renderToStaticMarkup(
-        React.createElement(SystemNotificationEmail, {
-          title: payload.title,
-          message: payload.message,
-          fields: payload.fields,
-          color: payload.color,
-          success: payload.success,
-          badge: payload.badge,
-        })
-      );
+      const { renderNotificationEmail } = await import("@/components/email/render-email");
+      renderedHtml = (await renderNotificationEmail(payload, opts?.brand)).html;
     } catch { /* non-critical */ }
   } else if (channel.adapterId === "discord") {
     const color = payload.color
@@ -196,14 +185,7 @@ async function sendThroughChannel(
   }
 
   try {
-    const sent = await notifyWithTimeout(() => adapter.send(channelConfig, payload.message, {
-      success: payload.success,
-      eventType,
-      title: payload.title,
-      fields: payload.fields,
-      color: payload.color,
-      badge: payload.badge,
-    }));
+    const sent = await notifyWithTimeout(() => adapter.send(channelConfig, payload.message, { ...payload, eventType, brand: opts?.brand }));
     if (sent === false) {
       throw new Error("Notification delivery failed (adapter returned false)");
     }
@@ -297,8 +279,14 @@ export async function notify(
       return;
     }
 
-    // Render the template
-    const payload = renderTemplate(event);
+    // Render the template, in the time zone of the instance and with why the reader gets it
+    const brand = await loadNotificationBrand();
+    const reminderHours = eventConfig?.reminderIntervalHours ?? eventDef?.defaultReminderHours;
+    const payload = {
+      ...renderTemplate(event, { timeZone: brand.timeZone }),
+      reason: eventReason(eventDef, reminderHours, !!opts?.test),
+    };
+    const sendOpts = { ...opts, brand };
 
     // Make sure adapters are registered
     registerAdapters();
@@ -319,7 +307,7 @@ export async function notify(
     if (notifyUser !== "only") {
       for (const channel of channels) {
         try {
-          await sendThroughChannel(channel, payload, event.eventType, undefined, opts);
+          await sendThroughChannel(channel, payload, event.eventType, undefined, sendOpts);
           succeeded++;
         } catch (err) {
           log.error(
@@ -345,14 +333,20 @@ export async function notify(
         );
       }
 
+      // The person gets the words meant for them, and the reason they get it.
+      const userPayload = {
+        ...renderTemplate(event, { timeZone: brand.timeZone, audience: "user" }),
+        reason: userReason(event.eventType, brand.instanceName),
+      };
+
       for (const channel of emailChannels) {
         try {
           await sendThroughChannel(
             channel,
-            payload,
+            userPayload,
             event.eventType,
             userEmail,
-            opts
+            sendOpts
           );
           succeeded++;
         } catch (err) {

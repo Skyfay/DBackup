@@ -2,6 +2,8 @@ import { z } from "zod";
 import { LogLevel, LogType } from "./logs";
 import type { AdapterCredentialRequirements } from "./credentials";
 import type { ExecutionHost, TransportResolver } from "@/lib/transport/types";
+import type { NotificationPayload } from "@/lib/notifications/types";
+import type { NotificationBrand } from "@/lib/notifications/brand";
 
 /**
  * Base configuration type for adapters.
@@ -913,6 +915,23 @@ export interface NotificationContext {
     color?: string;
     /** Optional badge label override (e.g. "Alert") */
     badge?: string;
+
+    // ── What a mail shows beyond the fields, the rest of a NotificationPayload ──
+    message?: string;
+    tone?: NotificationPayload["tone"];
+    icon?: NotificationPayload["icon"];
+    stats?: NotificationPayload["stats"];
+    problem?: NotificationPayload["problem"];
+    destinations?: NotificationPayload["destinations"];
+    usage?: NotificationPayload["usage"];
+    details?: NotificationPayload["details"];
+    note?: string;
+    actions?: NotificationPayload["actions"];
+    preheader?: string;
+    reason?: string;
+    timestamp?: string;
+    /** The name, address and time zone of the instance, read once by the sender. */
+    brand?: NotificationBrand;
 }
 
 export interface NotificationAdapter extends BaseAdapter {

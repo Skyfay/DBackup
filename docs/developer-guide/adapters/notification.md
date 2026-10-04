@@ -23,7 +23,7 @@ DBackup has **two notification layers** that share the same adapters:
 | Per-Job | Runner pipeline step `04-completion.ts` | Job record (`notificationId`, `notifyCondition`) |
 | System | `notify()` in `system-notification-service.ts` | `SystemSetting` (key: `notifications.config`) |
 
-Both layers use `renderTemplate()` from `src/lib/notifications/templates.ts` to generate adapter-agnostic payloads.
+Both layers use `renderTemplate()` from `src/lib/notifications/templates/` to generate adapter-agnostic payloads.
 
 ## Available Adapters
 
@@ -126,33 +126,26 @@ const DiscordSchema = z.object({
 
 ## Email Adapter
 
-Sends HTML emails via SMTP using `nodemailer`. The HTML body is rendered server-side from a React component (`SystemNotificationEmail`):
+Sends HTML emails via SMTP using `nodemailer`. The adapter hands the whole payload to `renderNotificationEmail()`, which returns the subject, the HTML and a plain text part:
 
 ```typescript
 // Simplified core logic
 async send(config, message, context) {
-  const validated = EmailSchema.parse(config);
   const transporter = nodemailer.createTransport({ /* ... */ });
-
-  // Render React email template to static HTML
-  const html = renderToStaticMarkup(
-    <SystemNotificationEmail
-      title={context?.title ?? "Notification"}
-      message={message}
-      fields={context?.fields}
-      color={context?.color}
-    />
-  );
+  const brand = context?.brand ?? await loadNotificationBrand();
+  const mail = await renderNotificationEmail({ ...context, message }, brand);
 
   await transporter.sendMail({
-    from: validated.from,
-    to: validated.to,
-    subject: `[DBackup] ${context?.title ?? "Notification"}`,
-    text: message,
-    html,
+    from: senderWithName(config.from, brand), // "DBackup · <Name>" for a bare address
+    to: config.to,
+    subject: mail.subject,
+    text: mail.text,
+    html: mail.html,
   });
 }
 ```
+
+`test()` sends `smtpTestTemplate()` through the same renderer, so the test mail looks like every notification.
 
 ### Email Schema
 
@@ -170,14 +163,21 @@ const EmailSchema = z.object({
 
 ### Email Template
 
-The unified React template lives in `src/components/email/system-notification-template.tsx`. It renders:
-- A colored header bar (color matches the event type)
-- Title text
-- Message body
-- Structured fields in a table layout
-- Footer with timestamp
+The mail lives in `src/components/email/`:
 
-All notification types (backup, login, restore, etc.) share this single template.
+| File | What it holds |
+| :--- | :--- |
+| `render-email.tsx` | `renderNotificationEmail(payload, brand)`, the document with the preheader, the dark mode sheet and the plain text part |
+| `notification-email.tsx` | The layout: the brand line, the banner, the card and the buttons |
+| `email-parts.tsx` | The banner, the tiles, the problem, the destinations, the details and the buttons |
+| `email-theme.ts` | The tokens of `globals.css` as hex, light inline and dark as classes for `prefers-color-scheme` |
+| `email-icons.ts` | Every picture a mail shows, by its lucide icon or adapter logo |
+
+The mail is tables and inline styles only, since mail clients drop most of CSS. Light colors sit inline on every element, the dark ones come from classes like `m-card` in a `prefers-color-scheme` sheet, and every picture has a dark twin the sheet swaps in.
+
+A mail client draws no SVG and cannot load anything from an instance on a private network, so the icons are PNGs on the docs site under `docs/public/email/`. `pnpm email:icons` draws them from the lists in `email-icons.ts` with the lucide icons and adapter logos of the app. A new banner icon, button icon or destination adapter needs an entry there and one run of the script. `email-template.test.tsx` fails while one is missing.
+
+The buttons link to the address in `BETTER_AUTH_URL`. `loadNotificationBrand()` in `src/lib/notifications/brand.ts` reads it with the name and the time zone of the instance, once per notification.
 
 ## Slack Adapter
 
@@ -398,23 +398,37 @@ Currently registered system events:
 
 ### Template System
 
-Templates in `src/lib/notifications/templates.ts` convert typed event data into adapter-agnostic `NotificationPayload` objects:
+Templates in `src/lib/notifications/templates/` (one file per area: `backup.ts`, `restore.ts`, `storage.ts`, `system.ts`, `people.ts`) convert typed event data into adapter-agnostic `NotificationPayload` objects:
 
 ```typescript
 interface NotificationPayload {
-  title: string;           // Email subject, embed title
-  message: string;         // Plain text body
-  fields?: Array<{         // Structured data
+  title: string;           // Email subject, embed title. The thing first: "mysql-shop failed"
+  message: string;         // One sentence under the title
+  fields?: Array<{         // Structured data for the chat channels
     name: string;
     value: string;
     inline?: boolean;
   }>;
   color?: string;          // Hex color
   success: boolean;        // Success/failure flag
+
+  // What a mail shows beyond the fields. Chat channels leave these out.
+  tone?: "success" | "failure" | "warning" | "neutral";
+  icon?: NotificationIcon;                        // Banner icon, a lucide name
+  stats?: Array<{ label: string; value: string }>; // Up to four tiles
+  problem?: { title: string; help?: string; raw: string; where?: string };
+  destinations?: NotificationDestination[];        // One row per destination of a run
+  usage?: { percent: number; label: string; aside: string };
+  details?: Array<{ name: string; value: string }>; // The facts under the tiles
+  note?: string;
+  actions?: Array<{ label: string; href: string; icon: NotificationIcon }>; // App paths or full URLs
+  preheader?: string;      // The line a mail client shows after the subject
+  reason?: string;         // Set by the sender: why the reader gets it
+  timestamp?: string;
 }
 ```
 
-The `renderTemplate(event)` dispatcher calls the matching function based on `event.eventType`.
+The `renderTemplate(event, options)` dispatcher calls the matching function based on `event.eventType`. `options.timeZone` is the time zone of the instance, which every time in the text uses, and `options.audience: "user"` gives the words meant for the person a sign-in or a new account is about. A problem in plain words comes from `describeProblem()` in `src/services/history/known-problems.ts`, the same words the page of a run uses. The reason at the foot of a mail comes from `src/services/notifications/notification-reason.ts`.
 
 ### Configuration Storage
 
@@ -1015,27 +1029,35 @@ The name is a short sentence of what happened, like "A connection is offline", w
 ### 4. Create the Template
 
 ```typescript
-// src/lib/notifications/templates.ts
-function myNewEventTemplate(data: MyNewEventData): NotificationPayload {
+// src/lib/notifications/templates/system.ts
+export function myNewEventTemplate(data: MyNewEventData, options?: TemplateOptions): NotificationPayload {
+  const f = formatterFor(options);
   return {
-    title: "My New Event",
-    message: `Something happened: ${data.someField}`,
+    title: `${data.someField} changed`,
+    message: "One sentence that says what happened.",
     fields: [
       { name: "Field", value: data.someField, inline: true },
-      { name: "Time", value: data.timestamp, inline: true },
+      { name: "Time", value: f.date(data.timestamp) ?? data.timestamp, inline: true },
     ],
     color: "#3b82f6",
     success: true,
+    tone: "neutral",
+    icon: "circle-arrow-up",
+    stats: [{ label: "Field", value: data.someField }],
+    actions: action("Open settings", "/dashboard/settings", "settings"),
+    timestamp: data.timestamp,
   };
 }
 ```
 
-Add the case to `renderTemplate()`:
+Add the case to `renderTemplate()` in `templates/index.ts`:
 
 ```typescript
 case NOTIFICATION_EVENTS.MY_NEW_EVENT:
-  return myNewEventTemplate(event.data);
+  return myNewEventTemplate(event.data, options);
 ```
+
+A pair of `icon` and `tone` the mail has no picture for yet goes into `BANNER_ICONS` in `src/components/email/email-icons.ts`, followed by `pnpm email:icons`.
 
 ### 5. Fire the Event
 

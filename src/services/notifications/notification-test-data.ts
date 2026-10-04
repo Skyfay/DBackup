@@ -16,6 +16,7 @@ export function buildTestData(eventType: string): NotificationEventData | null {
         userName: "Test User",
         email: "test@example.com",
         ipAddress: "127.0.0.1",
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.6; rv:131.0) Gecko/20100101 Firefox/131.0",
         timestamp: now,
       },
     },

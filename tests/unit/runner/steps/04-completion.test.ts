@@ -61,10 +61,15 @@ vi.mock('@/services/notifications/notification-log-service', () => ({
     recordNotificationLog: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('@/lib/core/logs', () => ({
+vi.mock('@/lib/core/logs', async (importActual) => ({
+    ...(await importActual<typeof import('@/lib/core/logs')>()),
     PIPELINE_STAGES: {
         NOTIFICATIONS: 'Sending Notifications',
     },
+}));
+
+vi.mock('@/lib/notifications/brand', () => ({
+    loadNotificationBrand: vi.fn().mockResolvedValue({ instanceName: 'Production', baseUrl: null, timeZone: 'UTC' }),
 }));
 
 // Mock dynamic imports used inside stepFinalize
@@ -347,7 +352,25 @@ describe('stepFinalize', () => {
         await stepFinalize(ctx);
 
         const renderCall = (renderTemplate as ReturnType<typeof vi.fn>).mock.calls[0][0];
-        expect(renderCall.data.error).toBe('Connection timeout');
+        expect(renderCall.data.problem.raw).toBe('Connection timeout');
+    });
+
+    it('tells each channel why it gets the outcome of the run', async () => {
+        const { registry } = await import('@/lib/core/registry');
+        const mockNotifyAdapter = { send: vi.fn().mockResolvedValue(true) };
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(mockNotifyAdapter);
+
+        const ctx = makeCtx({ status: 'Failed' });
+        (ctx.job as any).notificationEvents = 'FAILURE_ONLY';
+        (ctx.job as any).notifications = [
+            { id: 'n1', adapterId: 'discord', name: 'Ops chat', config: '{}' },
+        ];
+
+        await stepFinalize(ctx);
+
+        const context = mockNotifyAdapter.send.mock.calls[0][2];
+        expect(context.reason).toBe(`You get this through Ops chat, which ${ctx.job!.name} tells when a run fails or is partial. Change it in the job under Notifications.`);
+        expect(context.brand).toEqual({ instanceName: 'Production', baseUrl: null, timeZone: 'UTC' });
     });
 
     it('renders Slack-specific payload with fields when channel is slack', async () => {

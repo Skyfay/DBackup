@@ -318,6 +318,8 @@ export const auth = betterAuth({
                                 data: {
                                     userName: user.name,
                                     email: user.email,
+                                    ipAddress: session.ipAddress ?? undefined,
+                                    userAgent: session.userAgent ?? undefined,
                                     timestamp: new Date().toISOString(),
                                 },
                             });

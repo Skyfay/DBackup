@@ -72,7 +72,9 @@ export async function reportSkippedAirGaps(ctx: RunnerContext, skipped: Destinat
                     eventType: NOTIFICATION_EVENTS.AIRGAP_SKIPPED,
                     data: {
                         storageName: dest.configName,
+                        storageId: dest.configId,
                         jobName: ctx.job?.name ?? "A job",
+                        jobId: ctx.job?.id,
                         lastConnectedAt: connected?.toISOString(),
                         timestamp: new Date().toISOString(),
                     },

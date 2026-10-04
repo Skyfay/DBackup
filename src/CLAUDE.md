@@ -281,7 +281,9 @@ Defined in `src/lib/notifications/` - `types.ts` holds the `NOTIFICATION_EVENTS`
 | Backup | `INTEGRITY_CHECK_FAILURE` |
 | Health | `CONNECTION_OFFLINE`, `CONNECTION_ONLINE`, `DB_VERSION_CHANGED` |
 
-**Per-job events** (`BACKUP_SUCCESS`, `BACKUP_PARTIAL`, `BACKUP_FAILURE`) are deliberately **not** in `EVENT_DEFINITIONS`. They are configured per job (Job > Notify tab), their templates live in `src/lib/notifications/templates.ts`, and the runner fires them from `04-completion.ts`.
+**Per-job events** (`BACKUP_SUCCESS`, `BACKUP_PARTIAL`, `BACKUP_FAILURE`) are deliberately **not** in `EVENT_DEFINITIONS`. They are configured per job (Job > Notify tab), their templates live in `src/lib/notifications/templates/backup.ts`, and the runner fires them from `04-completion.ts` with the data of `steps/notification-data.ts`.
+
+**The mail** of every notification is `renderNotificationEmail()` in `src/components/email/`, tables and inline styles with a dark mode sheet. Its icons are PNGs under `docs/public/email/`, drawn by `pnpm email:icons` from the lists in `email-icons.ts`, since mail clients draw no SVG.
 
 ## Config backup (`src/lib/runner/config-runner.ts`)
 

@@ -308,6 +308,7 @@ async function checkUsageSpike(
         eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
         data: {
           storageName: entry.name,
+          storageId: entry.configId ?? undefined,
           previousSize,
           currentSize,
           changePercent,
@@ -351,6 +352,7 @@ async function checkStorageLimit(
         eventType: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
         data: {
           storageName: entry.name,
+          storageId: entry.configId ?? undefined,
           currentSize: entry.size,
           limitSize: config.storageLimitBytes,
           usagePercent,
@@ -440,6 +442,7 @@ async function checkMissingBackup(
         eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
         data: {
           storageName: entry.name,
+          storageId: entry.configId ?? undefined,
           lastBackupAt: lastBackupAt.toISOString(),
           thresholdHours: config.missingBackupHours,
           hoursSinceLastBackup: Math.round(hoursSinceLastBackup),

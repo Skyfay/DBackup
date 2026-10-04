@@ -38,7 +38,8 @@
     "website:build": "cd website && pnpm build",
     "website:preview": "cd website && pnpm preview",
     "update:check": "./scripts/check-updates.sh",
-    "setup:worktree": "bash scripts/setup-worktree.sh"
+    "setup:worktree": "bash scripts/setup-worktree.sh",
+    "email:icons": "npx tsx scripts/build-email-icons.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1095.0",

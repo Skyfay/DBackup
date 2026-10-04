@@ -44,6 +44,7 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/jobs/{id}/runs` returns the latest runs of a job with its success rate, `GET /api/jobs/schedules` the schedules with the slots of the queue and `GET /api/jobs/timeline` the runs of every job a week back and ahead. `POST /api/adapters/bulk` also switches the health alerts, restores, integrity checks and air-gapped state of several connections.
 - **api**: New endpoints find anything with `GET /api/search`, list runs with `GET /api/history/runs`, databases and their servers with `GET /api/databases` and backups across every destination with `GET /api/storage/explorer`. `GET /api/notification-logs` filters by `channel` and adds the numbers of the last 30 days with `stats=true`.
 - **website**: The home page, the blog and the roadmap have a new design in a dark and a light theme, with a live backup run in the hero and the dialogs of the app to try out. The roadmap runs shipped work and plans along one timeline, and the blog has a table of contents in every post and an RSS feed.
+- **notifications**: Every mail has the look of the app, with a banner in the color of its status, the key numbers as tiles, errors in plain words and buttons that open the run, job or destination. It follows dark mode, names the instance as its sender, says why it was sent and is also what **Send test** sends.
 
 ### 🐛 Bug Fixes
 
@@ -119,6 +120,7 @@ All notable changes to DBackup are documented here.
 - **auth**: A new API key runs out after 90 days unless another end is picked, and two keys can no longer share a name.
 - **vault**: Importing a key the Vault already holds is refused with the name of the key that has it.
 - **SSO**: The provider ID of a sign-in provider stays once it is saved, since its callback URL and every link to it use it.
+- **notifications**: The title of every notification names the job, connection or destination first, like `postgres-nightly failed`, in every channel. Its times follow the time zone under **Settings → General** instead of UTC.
 
 ### 🗑️ Removed
 

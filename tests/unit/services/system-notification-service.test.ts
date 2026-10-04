@@ -242,9 +242,10 @@ describe("SystemNotificationService", () => {
         expect.objectContaining({ host: "smtp.test.com" }),
         expect.stringContaining("Alice"),
         expect.objectContaining({
-          title: "User Login",
+          title: "Alice signed in",
           success: true,
           eventType: "user_login",
+          reason: 'You get this because "Someone signs in" is on under Settings, Notifications.',
         })
       );
     });

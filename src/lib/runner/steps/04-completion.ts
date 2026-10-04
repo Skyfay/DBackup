@@ -10,6 +10,9 @@ import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { jobReason } from "@/services/notifications/notification-reason";
+import { loadNotificationBrand } from "@/lib/notifications/brand";
+import { backupEventData } from "./notification-data";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -199,52 +202,31 @@ export async function stepFinalize(ctx: RunnerContext) {
                 ? NOTIFICATION_EVENTS.BACKUP_PARTIAL
                 : NOTIFICATION_EVENTS.BACKUP_FAILURE;
 
-        const destSummary = ctx.destinations.map(d => {
-            const status = d.uploadResult?.success ? "✓" : "✗";
-            return `${status} ${d.configName}`;
-        }).join(", ");
+        // What the run did, read once for every channel.
+        const brand = await loadNotificationBrand();
+        const job = ctx.job;
+        const data = await backupEventData(ctx, !isSuccess && !isPartial, brand.timeZone).catch((e: unknown) => {
+            // The notification still goes out with what the run knows for sure.
+            log.warn("Could not gather the details of the run for its notification", { jobId: job.id }, wrapError(e));
+            return { jobName: job.name, jobId: job.id, executionId: ctx.execution?.id, timestamp: new Date().toISOString() };
+        });
+        const basePayload = renderTemplate({ eventType, data }, { timeZone: brand.timeZone });
 
-        for (const { channel } of channelsToNotify) {
+        for (const { channel, events } of channelsToNotify) {
             try {
                 const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
 
                 if (notifyAdapter) {
                     const channelConfig = await resolveAdapterConfig(channel) as any;
-
-                    const payload = renderTemplate({
-                        eventType,
-                        data: {
-                            jobName: ctx.job.name,
-                            sourceName: ctx.job.source?.name,
-                            duration: new Date().getTime() - ctx.startedAt.getTime(),
-                            size: ctx.dumpSize ? Number(ctx.dumpSize) : undefined,
-                            error: !isSuccess && !isPartial ? ctx.logs.find(l => l.level === 'error')?.message : undefined,
-                            executionId: ctx.execution?.id,
-                            timestamp: new Date().toISOString(),
-                            ...(isPartial ? { error: `Partial upload: ${destSummary}` } : {}),
-                        },
-                    });
+                    const payload = { ...basePayload, reason: jobReason(channel.name, ctx.job.name, events) };
 
                     let renderedPayload: string | undefined;
                     let renderedHtml: string | undefined;
 
                     if (channel.adapterId === "email") {
                         try {
-                            const { renderToStaticMarkup } = await import("react-dom/server");
-                            const { SystemNotificationEmail } = await import(
-                                "@/components/email/system-notification-template"
-                            );
-                            const React = await import("react");
-                            renderedHtml = renderToStaticMarkup(
-                                React.createElement(SystemNotificationEmail, {
-                                    title: payload.title,
-                                    message: payload.message,
-                                    fields: payload.fields,
-                                    color: payload.color,
-                                    success: payload.success,
-                                    badge: payload.badge,
-                                })
-                            );
+                            const { renderNotificationEmail } = await import("@/components/email/render-email");
+                            renderedHtml = (await renderNotificationEmail(payload, brand)).html;
                         } catch { /* non-critical */ }
                     } else if (channel.adapterId === "discord") {
                         const color = payload.color
@@ -282,14 +264,7 @@ export async function stepFinalize(ctx: RunnerContext) {
                         });
                     }
 
-                    const sent = await notifyWithTimeout(() => notifyAdapter.send(channelConfig, payload.message, {
-                        success: payload.success,
-                        eventType,
-                        title: payload.title,
-                        fields: payload.fields,
-                        color: payload.color,
-                        badge: payload.badge,
-                    }));
+                    const sent = await notifyWithTimeout(() => notifyAdapter.send(channelConfig, payload.message, { ...payload, eventType, brand }));
                     if (sent === false) {
                         throw new Error("Notification delivery failed (adapter returned false)");
                     }

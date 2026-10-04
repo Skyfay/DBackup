@@ -98,6 +98,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The health history of a connection needs the read permission of its kind, and the folder browsers of Google Drive, Dropbox and OneDrive need the right to change destinations. Reading any kind of connection was enough for both before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder like /proc, the Google Drive folder browser only takes real folder IDs, and the Dropbox and OneDrive browsers turn down a path with a `..` part.
 - **audit**: Changing, deleting and cloning a job, restores, downloads and deletes of a single backup, cancelled runs, settings, config imports, sign-in providers, revealed keys, sign-outs and failed sign-ins are written to the audit log. The browser can no longer write sign-ins of its own.
+- **deps**: Next.js is updated to 16.3.8 in the app and on the website, which closes a critical remote code execution in `next/og`, and nodemailer 10 closes five advisories in the email notifier. `adm-zip`, `basic-ftp`, `undici`, `nanoid`, `@xmldom/xmldom` and nine more packages move to patched releases.
 
 ### 🎨 Improvements
 
@@ -149,7 +150,7 @@ All notable changes to DBackup are documented here.
 
 - **ci**: Lint, type check, unit tests and the docs build also run on pull requests into dev, not only into main.
 - **github**: The repository shows a Sponsor button for GitHub Sponsors, and a daily workflow draws the sponsors into the Sponsors section of the README.
-
+- **deps**: The pending patch and minor releases are picked up across the app, the website and the docs, among them React 19.3, Better Auth 1.6.33, Zod 4.6, Vite 8.3, ESLint 10.12 and the AWS SDK. `tar-stream` stays on 3.2.0 and `webdav` on 5.10, since their next releases change their types.
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

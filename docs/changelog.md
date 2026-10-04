@@ -13,6 +13,8 @@ All notable changes to DBackup are documented here.
 
 > ⚠️ **Breaking:** The API no longer returns the configs of the connections a job uses, neither in `GET /api/jobs` nor in the answer to creating, changing or cloning a job, where a connection keeps its `id`, `name` and `adapterId`. `GET /api/jobs` also moved `lastRunAt` and `nextRunAt` to `overview.lastRun.startedAt` and `overview.nextRunAt`, lists the exclude presets of a folder as `excludePatternPresetIds` and leaves out `updatedAt` and the `id` of each destination entry.
 
+> 💙 **Thank you** to everyone who reported bugs and shared ideas for this release. DBackup stays free and open source, and if it saves you time, you can now support it through [GitHub Sponsors](https://github.com/sponsors/Skyfay).
+
 ### ✨ Features
 
 - **ui**: Every page is redesigned in a new color palette where dialogs, menus and buttons take the color of their task, with a sidebar that collapses to icons and a search in the header, Ctrl+K or ⌘K, that finds every job, connection, backup, run, person and setting you may open. Lists show their numbers as tiles and a dot on their tab for what needs a look, open a record in a side panel, offer its actions with a right click and turn into cards on a phone.

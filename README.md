@@ -123,11 +123,12 @@ DBackup is free and open source. [Sponsoring it](https://github.com/sponsors/Sky
 
 ### One-time Sponsors
 
-<!-- Patrons ($500 once): their logo with a link to their site. Kept by hand, one link per sponsor. -->
+<!-- Patrons ($500 once): the image below draws them with their avatar. Kay sponsored while this
+     tier still came with a logo, so his stays here by hand and the image leaves him out. -->
 <p align="center">
   <strong>🏆 Patrons</strong> · $500 once
   <br><br>
-  <a href="https://www.ictwebsolution.nl"><img src="https://github.com/kayvanaarssen.png?size=160" alt="Kay van Aarssen" height="80"></a>
+  <a href="https://www.ictwebsolution.nl"><img src="https://ictwebsolution.nl/wp-content/uploads/2021/05/Logo-ICTWebSolution.png" alt="ICT WebSolution" height="60"></a>
   <br>
   <a href="https://www.ictwebsolution.nl"><sub>Kay van Aarssen</sub></a>
 </p>

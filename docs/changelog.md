@@ -5,6 +5,8 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+> ⚠️ **Before updating:** Back up the database first. Stop the container and copy the folder mounted at `/data`, or at least `/data/db` with every `dbackup.db` file in it. The first start of this version runs all database migrations, which can take a while on an instance with a long history. Leave the container running until its log shows `All migrations have been successfully applied`, since a container stopped halfway leaves a migration marked as failed and the next start stops with an error.
+
 > ⚠️ **Breaking:** Retention now follows a renamed job into the folder of its old name, where its backups stayed untouched until now. The first run of such a job after updating removes the backups there that its policy no longer keeps, all at once. Locked backups stay, so lock anything in the old folder you want to keep before updating. The Backups page lists those backups under the job, and the retention step of that first run names every folder it looked at.
 
 > ⚠️ **Breaking:** The configuration backup is a copy of the whole database now, always encrypted, and restores only as a whole. One that was on without an encryption key fails until a key is picked under **Settings → Configuration backup**. A restore replaces the database, so what was added after the backup is gone and the history becomes the one of the backup, which is empty without **Include the history**. A single deleted key, login, connection, job or user comes back from **Settings → Recently deleted** instead, and the JSON files of older versions still restore in parts.

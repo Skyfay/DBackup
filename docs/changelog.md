@@ -2,8 +2,8 @@
 
 All notable changes to DBackup are documented here.
 
-## vNEXT
-*Release: In Progress*
+## v4.0.0 - Redesigned Interface, Global Search, Air-Gapped Destinations, and Recently Deleted
+*Released: Oct 4, 2026*
 
 > ⚠️ **Before updating:** Back up the database first. Stop the container and copy the folder mounted at `/data`, or at least `/data/db` with every `dbackup.db` file in it. The first start of this version runs all database migrations, which can take a while on an instance with a long history. Leave the container running until its log shows `All migrations have been successfully applied`, since a container stopped halfway leaves a migration marked as failed and the next start stops with an error.
 
@@ -173,8 +173,8 @@ All notable changes to DBackup are documented here.
 
 ### 🐳 Docker
 
-- **Image**: `skyfay/dbackup:vNEXT`
-- **Also tagged as**: `latest`, `vNEXT`
+- **Image**: `skyfay/dbackup:v4.0.0`
+- **Also tagged as**: `latest`, `v4`
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 

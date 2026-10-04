@@ -225,6 +225,7 @@ export const SHIPPED_ITEMS: ShippedItem[] = [
       "Every page is rebuilt in a new design that also works on phones and tablets, with a search across all jobs, connections, backups and runs. New pages for the backups, the databases and the history of each run, a Quick Setup that adds the first backup in one place, and notification emails in the same look.",
     version: "v4.0.0",
     releaseDate: "2026-10-04",
+    changelogAnchor: "v4-0-0-redesigned-interface-global-search-air-gapped-destinations-and-recently-deleted",
   },
   {
     slug: "single-database-restores-downloads",

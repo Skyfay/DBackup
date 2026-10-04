@@ -6,9 +6,12 @@ import { LiveRun } from "@/components/site/home/live-run";
 import { Counters } from "@/components/site/home/counters";
 import { AdapterMarquee } from "@/components/site/home/adapter-marquee";
 import { CONIC, DotGrid, Floor, Glow, Stars } from "@/components/site/fx";
-import { DOCKER_VOLUMES_URL } from "@/lib/content";
+import { SHIPPED_ITEMS, shippedHref } from "@/lib/roadmap";
 import { needsDarkModeBoost } from "@/lib/adapter-icons";
 import { cn } from "@/lib/utils";
+
+/** The release the New pill above the title links to, the latest one on the roadmap. */
+const LATEST_RELEASE = SHIPPED_ITEMS.find((item) => item.version) ?? SHIPPED_ITEMS[0];
 
 // The rolling name in the headline. The first entry comes again at the end,
 // so the loop back to the top cannot be seen.
@@ -74,7 +77,7 @@ export function Hero() {
 
       <div className="relative z-[2] mx-auto flex max-w-[1200px] flex-col items-center gap-[26px] px-6 pt-[140px] text-center sm:pt-[172px]">
         <a
-          href={DOCKER_VOLUMES_URL}
+          href={shippedHref(LATEST_RELEASE)}
           target="_blank"
           rel="noreferrer"
           className="relative inline-flex overflow-hidden rounded-full bg-foreground/10 p-px"
@@ -92,7 +95,7 @@ export function Hero() {
               </span>
               New
             </span>
-            Docker volume backups, now in beta
+            Version 4.0, with a redesigned interface
             <ChevronRight className="size-3.5 text-muted-foreground" />
           </span>
         </a>

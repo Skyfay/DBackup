@@ -157,13 +157,13 @@ describe('updateService.checkForUpdates()', () => {
     it('picks the highest stable version when multiple newer tags exist', async () => {
         globalFetch.mockResolvedValue({
             ok: true,
-            json: async () => makeTags('v2.1.0', 'v2.0.1', 'v2.0.0', 'v4.0.0', 'v3.5.2'),
+            json: async () => makeTags('v2.1.0', 'v2.0.1', 'v2.0.0', `v${bump('major')}`, `v${bump('minor', 2)}`),
         });
 
         const result = await updateService.checkForUpdates();
 
         expect(result.updateAvailable).toBe(true);
-        expect(result.latestVersion).toBe('v4.0.0');
+        expect(result.latestVersion).toBe(`v${bump('major')}`);
     });
 
     // ── Stability channel filtering ───────────────────────────

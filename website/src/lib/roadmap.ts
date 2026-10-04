@@ -183,13 +183,6 @@ export const ROADMAP_ITEMS: RoadmapItem[] = [
     category: "developer-experience",
   },
   {
-    slug: "mobile-responsive-ui",
-    title: "Mobile Responsive UI",
-    description: "Optimized layouts for tablet and mobile, so backup status can be checked on the go.",
-    status: "idea",
-    category: "developer-experience",
-  },
-  {
     slug: "dark-mode-refinement",
     title: "Dark Mode Refinement",
     description:
@@ -225,6 +218,14 @@ export interface ShippedItem {
 }
 
 export const SHIPPED_ITEMS: ShippedItem[] = [
+  {
+    slug: "redesigned-interface",
+    title: "Redesigned Interface",
+    description:
+      "Every page is rebuilt in a new design that also works on phones and tablets, with a search across all jobs, connections, backups and runs. New pages for the backups, the databases and the history of each run, a Quick Setup that adds the first backup in one place, and notification emails in the same look.",
+    version: "v4.0.0",
+    releaseDate: "2026-10-04",
+  },
   {
     slug: "single-database-restores-downloads",
     title: "Single Database Restores & Downloads",

@@ -63,8 +63,11 @@ All notable changes to DBackup are documented here.
 - **jobs**: A cloned job keeps the retention policy of each destination, its naming template, its integrity checks and its incremental settings, which fell back to the defaults before.
 - **jobs**: A finished backup no longer loses the list of its databases and destinations to the last write of its log.
 - **jobs**: A cron expression the scheduler cannot read can no longer be saved to a job, a schedule preset or a system task, and a deleted schedule preset hands its schedule to the jobs that followed it right away.
+- **jobs**: The schedule picker shows its times the way the scheduler runs them, instead of converting them through the time zone of the browser.
 - **templates**: The default retention policy and the default file name template can no longer be deleted or unset, and the built-in policies can no longer be deleted. Destinations that followed the default kept every backup without a word before, and jobs without a template could write files named `{name}_` and a date.
+- **templates**: The preview of a naming template ends in .tar like the backup files and shows the time of the scheduler's time zone, instead of .sql and the time of the browser.
 - **templates**: The exclude groups of DBackup skip folders like node_modules, .git or .Spotlight-V100 at any depth of a backed up folder, where they matched only at its top or not at all. An incremental job with such a preset starts a new full backup on its next run.
+- **storage**: The storage history chart shows a destination that shrank with a minus sign.
 - **storage**: A destination that cannot be listed keeps the size and count of its last successful scan instead of an estimate, and the dashboard shows how old they are. The scan of a local destination no longer fails when retention deletes a backup while it runs.
 - **restore**: Someone who may restore but not download can restore folders, which the count of the picked files turned down before.
 - **vault**: Deleting an encryption key that a job or the configuration backup still uses is refused, where the job went on without encryption before.
@@ -73,20 +76,25 @@ All notable changes to DBackup are documented here.
 - **users**: Deleting a user or a group and resetting a second factor ask first, and an account can no longer delete itself. The members of a deleted group move to a group picked for them instead of losing all access.
 - **users**: A user created by an admin gets a group right away and no longer starts with an open session nobody signed in with.
 - **audit**: The audit log records sign-ins through SSO and the reset of a second factor, keeps the name of a deleted user and finds the names in its entries.
+- **audit**: The filters of the audit log keep every picked value instead of only the first.
 - **notifications**: The reminder picked for a system notification is saved and can be turned off, also for storage alerts, and each event names its own default. Every save dropped it before, so reminders kept coming every 24 hours.
 - **notifications**: Send a test of a system notification reports a failure when nothing went out and also works while the event is off, and removing the last own channel of an event no longer sends it to the default channels without a word.
 - **notifications**: A system task that stops with an error sends **A system task failed**, once until it runs through again. The event was listed but never sent.
-- **config**: A configuration restore onto a new instance no longer stops on a foreign key error and names what it could not bring back. A job whose key does not come back is paused instead of backing up unencrypted, and users with a second factor are no longer locked out ([#171](https://github.com/Skyfay/DBackup/issues/171)).
+- **notifications**: Tab moves on from the recipients of an email channel instead of staying in the field.
+- **config**: A configuration restore onto a new instance no longer stops on a foreign key error and names what it could not bring back. A job whose key does not come back is paused instead of backing up unencrypted, and users with a second factor are no longer locked out. ([#171](https://github.com/Skyfay/DBackup/issues/171))
 - **config**: The configuration backup deletes its oldest files again as **Keeps** says, and a new one shows on the Backups page right away.
 - **config**: Restore from a file takes configuration backups up to 10 MB, where it failed on any file over 1 MB.
 - **settings**: A system task set to run at start no longer runs again whenever a job or a setting is saved, and Run now answers right away and never starts a task that runs already. A task started through the API names the API key in History, and the schedule of the configuration backup applies again on instances that came from an older version.
 - **settings**: A new self-signed certificate keeps the old one when openssl fails, and an uploaded EC or Ed25519 key is checked against its certificate like an RSA key.
+- **settings**: The certificate no longer shows HTTPS as off when it cannot be read, or as expired on its last day. A certificate upload that fails no longer leaves its dialog loading.
 - **settings**: Passkey sign-in can no longer be turned off while `DISABLE_EMAIL_LOGIN` and no sign-in provider leave it the only way in.
 - **SSO**: Deleting a sign-in provider no longer counts people with a passkey among those who cannot sign in afterwards, and its callback URL starts with `BETTER_AUTH_URL` instead of the address the admin opened DBackup at.
 - **profile**: The profile picture takes files up to 5 MB, as the page says, where it failed on any picture over 1 MB.
+- **profile**: The sessions of the profile name an iPhone or iPad as iOS instead of macOS.
+- **auth**: A rotated API key shows the same eight characters of its start in the list as a new one, where it showed four.
 - **ui**: Copy buttons work on an instance served over plain HTTP, like an address in the local network, and say so when a copy fails.
 - **ui**: An instance without internet access no longer waits up to 5 seconds on every page for the check for new versions.
-- **ui**: A page opened after the session ended leads to the login page instead of a page that does not exist, and the old addresses of destinations and notifications open their tab of the Connections page.
+- **ui**: A page opened after the session ended leads to the login page instead of a page that does not exist.
 
 ### 🔒 Security
 
@@ -102,7 +110,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The health history of a connection needs the read permission of its kind, and the folder browsers of Google Drive, Dropbox and OneDrive need the right to change destinations. Reading any kind of connection was enough for both before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder like /proc, the Google Drive folder browser only takes real folder IDs, and the Dropbox and OneDrive browsers turn down a path with a `..` part.
 - **audit**: Changing, deleting and cloning a job, restores, downloads and deletes of a single backup, cancelled runs, settings, config imports, sign-in providers, revealed keys, sign-outs and failed sign-ins are written to the audit log. The browser can no longer write sign-ins of its own.
-- **Rsync**: rsync starts without a shell, so a path or file name with characters like `;` or `|` can no longer run a command on the DBackup server. The unmaintained npm package `rsync` is gone.
+- **Rsync**: rsync starts without a shell, so a path or file name with a semicolon or a pipe can no longer run a command on the DBackup server. The unmaintained npm package `rsync` is gone.
 - **deps**: Next.js is updated to 16.3.8 in the app and on the website, which closes a critical remote code execution in `next/og`, and nodemailer 10 closes five advisories in the email notifier. `adm-zip`, `basic-ftp`, `undici`, `nanoid`, `@xmldom/xmldom` and nine more packages move to patched releases.
 
 ### 🎨 Improvements
@@ -123,10 +131,11 @@ All notable changes to DBackup are documented here.
 - **settings**: The configuration backup includes the history by default, and run logs are kept for a year instead of 90 days. An instance that saved either setting before keeps its choice.
 - **settings**: Check for updates and the stuck run watchdog follow their settings under General, so each has one switch. An update turns the setting off once where only the task was off.
 - **system**: The Database versions task also lists the databases of every server with their sizes, which the Database Explorer shows without asking the servers.
-- **profile**: A new password from **Change password** signs you out of every other browser, and profile pictures live in the database, so they come back with a configuration backup. Pictures under `/data/storage/avatars` move there on the first start.
+- **profile**: A new password from **Change password** signs you out of every other browser, and profile pictures live in the database, so they come back with a configuration backup. Pictures saved by earlier versions move there on the first start.
+- **api**: A profile picture loads from `GET /api/avatar/{userId}` instead of `/api/avatar/{filename}`.
 - **auth**: A new API key runs out after 90 days unless another end is picked, and two keys can no longer share a name.
 - **vault**: Importing a key the Vault already holds is refused with the name of the key that has it.
-- **SSO**: The provider ID of a sign-in provider stays once it is saved, since its callback URL and every link to it use it.
+- **SSO**: The provider ID of a sign-in provider can no longer change once it is saved.
 - **notifications**: The title of every notification names the job, connection or destination first, like `postgres-nightly failed`, in every channel. Its times follow the time zone under **Settings → General** instead of UTC.
 
 ### 🗑️ Removed
@@ -135,27 +144,30 @@ All notable changes to DBackup are documented here.
 - **explorer**: The General and Version History tabs of the Database Explorer are gone. The timeline marks each new version of a server and the page of a server lists every version it ran.
 - **history**: The System Tasks tab and the log dialog of the History page are gone. The system tasks are a group of the Type filter, and a run opens as a page of its own.
 - **connections**: The red banner about credential profiles from the update to 2.0.0 is gone. A connection without its login still says so in its row.
+- **config**: The Include secrets switch of the configuration backup is gone. Every configuration backup holds the secrets now and is always encrypted.
 
 ### 📝 Documentation
 
 - **docs**: Every guide follows the new pages, with new guides for the Backups page, History, the Database Explorer, the audit log, Settings and Recently deleted. The guides of connections, jobs, templates, the Vault, users, groups, API keys and SSO describe their new tabs, panels and dialogs.
 - **docs**: The guides no longer describe what DBackup does not do, like a `storage:write` permission, several email domains for one SSO provider or the `{name}` token of file names. The MySQL guide names the dump flags DBackup really passes and the rights a backup and a restore need.
-- **api**: The API reference documents the new endpoints, like the runs of a job, the folder browser of a connection and download links, and lists every bulk endpoint and bulk action again. The download of a recovery kit has its real address.
+- **api**: The API reference documents the new endpoints, like the search, the runs of a job and of the History page, the Database Explorer, the backups of every destination, the folder browser of a connection and download links, and lists every bulk endpoint and bulk action again. The download of a recovery kit has its real address.
 - **docs**: The developer guide explains the task colors, the adapter form, how audit entries and deletes are kept and how the configuration backup copies the database.
-- **docs**: A security policy explains how to report a vulnerability privately, the contributing guides base every pull request on the dev branch, and the README is shorter.
+- **docs**: A security policy explains how to report a vulnerability privately, and the contributing guides base every pull request on the dev branch.
 - **docs**: The `docker run` examples write both secrets to a `.env` file once and read it with `--env-file`, so a container made again for an update keeps its keys.
-- **docs**: The README opens with a banner of the new interface on a desktop and a phone instead of a video of the old one.
+- **docs**: The installation guide backs up the right database folder before an update and says to leave the container running until the migrations are done.
+- **docs**: The README is shorter and opens with a banner of the new interface on a desktop and a phone instead of a video of the old one.
 
 ### 🧪 Tests
 
-- **tests**: New tests cover the new pages and the server code behind them, from Settings, Recently deleted and the configuration backup to air-gapped destinations and the MySQL dump flags, partly against real SQLite files and database containers. A test that generates an SSH key no longer fails at random during a full run.
+- **tests**: New tests cover the new pages and the server code behind them, from Settings, Recently deleted and the configuration backup to air-gapped destinations and the MySQL dump flags, partly against real SQLite files and database containers.
 - **tests**: The design guard also catches boxes that scroll sideways and checks the primitives, and its baselines are at zero. New guards check that every dashboard page has a loading state and a title, that the retired connection pages redirect and that both copies of the API reference match.
 
 ### 🔧 CI/CD
 
 - **ci**: Lint, type check, unit tests and the docs build also run on pull requests into dev, not only into main.
 - **github**: The repository shows a Sponsor button for GitHub Sponsors, and a daily workflow draws the sponsors into the Sponsors section of the README.
-- **deps**: The pending patch and minor releases are picked up across the app, the website and the docs, among them React 19.3, Better Auth 1.6.33, Zod 4.6, Vite 8.3, ESLint 10.12 and the AWS SDK. `tar-stream` stays on 3.2.0 and `webdav` on 5.10, since their next releases change their types.
+- **deps**: The pending patch and minor releases are picked up across the app, the website and the docs, among them React 19.3, Better Auth 1.6.33, Zod 4.6, Vite 8.3, ESLint 10.12 and the AWS SDK. `tar-stream` stays on 3.2.0 and `webdav` on 5.10.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

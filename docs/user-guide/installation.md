@@ -372,27 +372,26 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Updating
 
+### Backup Before Updating
+
+Back up the database before every update. Stop the container first, so nothing writes while you copy, then copy the whole `db` folder, which holds `dbackup.db` together with its `-wal` and `-shm` files:
+
+```bash
+docker compose stop dbackup
+cp -a ./data/db ./data/db-backup-$(date +%Y%m%d)
+```
+
 ### Docker Compose
 
 ```bash
-# Pull latest image
-docker-compose pull
+# Pull the latest image
+docker compose pull
 
-# Restart with new image
-docker-compose up -d
+# Start the container with the new image
+docker compose up -d
 ```
 
-### Backup Before Updating
-
-Always backup your data before updating:
-
-```bash
-# Backup database
-cp ./db/prod.db ./db/prod.db.backup
-
-# Backup configuration (use System Backup feature)
-# Or manually backup the db folder
-```
+The first start of a new version runs its database migrations, which can take a while on an instance with a long history. Leave the container running until its log (`docker compose logs -f dbackup`) shows `All migrations have been successfully applied`. A container stopped halfway leaves a migration marked as failed, and the next start stops with an error.
 
 ## Troubleshooting
 

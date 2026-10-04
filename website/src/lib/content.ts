@@ -6,6 +6,7 @@ export const DOCS_URL = "https://docs.dbackup.app";
 export const API_DOCS_URL = "https://api.dbackup.app";
 export const DISCORD_URL = "https://discord.com/invite/YvgPyky";
 export const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
+export const SPONSOR_URL = "https://github.com/sponsors/Skyfay";
 export const CHANGELOG_URL = `${DOCS_URL}/changelog`;
 export const ARCHIVE_FORMAT_URL = `${DOCS_URL}/developer-guide/reference/archive-format`;
 export const DOCKER_VOLUMES_URL = `${DOCS_URL}/user-guide/sources/docker-volumes`;

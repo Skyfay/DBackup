@@ -183,10 +183,9 @@ export const ROADMAP_ITEMS: RoadmapItem[] = [
     category: "developer-experience",
   },
   {
-    slug: "dark-mode-refinement",
-    title: "Dark Mode Refinement",
-    description:
-      "A systematic pass over every component for dark mode consistency, plus a high-contrast accessibility mode.",
+    slug: "high-contrast-mode",
+    title: "High-Contrast Mode",
+    description: "A high-contrast theme next to light and dark, for better readability and accessibility.",
     status: "idea",
     category: "developer-experience",
   },

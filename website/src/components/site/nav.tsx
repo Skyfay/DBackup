@@ -4,6 +4,7 @@ import { GithubStarsWidget } from "@/components/site/github-stars-widget";
 import { ThemeToggle } from "@/components/site/theme-toggle";
 import { NavLinks } from "@/components/site/nav-links";
 import { MobileMenu } from "@/components/site/mobile-menu";
+import { SponsorButton } from "@/components/site/sponsor-button";
 
 // The header floats over the top of every page as a glass pill, so each
 // page starts its first section with room for it (pt-[172px] on the hero).
@@ -19,6 +20,7 @@ export function Nav() {
         <NavLinks className="hidden gap-0.5 lg:flex" />
 
         <div className="ml-auto flex items-center gap-2">
+          <SponsorButton />
           <ThemeToggle />
           <GithubStarsWidget className="hidden sm:flex" />
           <Link

@@ -6,6 +6,7 @@ import {
   CHANGELOG_URL,
   DISCORD_URL,
   GITHUB_URL,
+  SPONSOR_URL,
 } from "@/lib/content";
 
 const FOOTER_COLUMNS = [
@@ -31,6 +32,7 @@ const FOOTER_COLUMNS = [
       { href: GITHUB_URL, label: "GitHub", external: true },
       { href: DISCORD_URL, label: "Discord", external: true },
       { href: "/blog", label: "Blog" },
+      { href: SPONSOR_URL, label: "Sponsor", external: true },
     ],
   },
 ];

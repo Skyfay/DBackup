@@ -1345,6 +1345,35 @@ describe("RsyncAdapter", () => {
         });
     });
 
+    // ===== SSH host keys =====
+
+    describe("SSH host keys", () => {
+        /** The arguments of every ssh the adapter ran itself, outside of rsync. */
+        function sshRuns(): string[][] {
+            return mockExecFileCb.mock.calls
+                .filter(([binary]) => binary === "ssh" || binary === "sshpass")
+                .map(([, args]) => args as string[]);
+        }
+
+        it.each([
+            ["agent", agentConfig],
+            ["private key", keyConfig],
+            ["password", passwordConfig],
+        ])("never writes the host key to known_hosts (%s auth)", async (_auth, config) => {
+            // The Docker image's user has no home directory, so ssh warned on every run that it
+            // could not create ~/.ssh/known_hosts (#178). Where it can write the file, a server that
+            // gets a new host key later has password login turned off by ssh, and every backup fails.
+            await RsyncAdapter.upload(config, "/tmp/a", "Job/a");
+
+            expect(sshRuns().length).toBeGreaterThan(0);
+            for (const cmd of [...rsyncShells(), ...sshRuns().map((args) => args.join(" "))]) {
+                expect(cmd).toContain("StrictHostKeyChecking=no");
+                expect(cmd).toContain("UserKnownHostsFile=/dev/null");
+                expect(cmd).toContain("LogLevel=ERROR");
+            }
+        });
+    });
+
     // ===== starting rsync =====
 
     describe("starting rsync", () => {

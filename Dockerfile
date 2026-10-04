@@ -202,16 +202,26 @@ COPY --from=builder --link --chown=1001:1001 /app/.next/static ./.next/static
 COPY --from=builder --link --chown=1001:1001 /app/prisma ./prisma
 
 # Create runtime data directory + install Prisma CLI for migrations
-# Note: pnpm add -g runs as root, so we must chown /pnpm to the runtime user
-# to avoid "Can't write to @prisma/engines" errors at container startup
 # Prisma version is read from package.json to stay in sync automatically
+#
+# pnpm 10 skips the install scripts of dependencies, so the postinstall of @prisma/engines
+# never downloads the schema engine. Left like that, `prisma migrate deploy` fetches it from
+# binaries.prisma.sh on the first start of every new container, and a host without internet
+# or without working DNS at that moment never starts. `prisma version` downloads the engines
+# here instead, and the build fails when the schema engine is still missing.
+#
+# pnpm add -g runs as root, so /pnpm is handed to the runtime user afterwards
 COPY --from=builder --link /app/package.json /tmp/package.json
 RUN mkdir -p /data/db /data/certs && \
     chown -R 1001:1001 /data && \
     PRISMA_VERSION=$(node -e "console.log(require('/tmp/package.json').devDependencies.prisma.replace(/[\^~>=<]/g,''))") && \
     pnpm add -g prisma@${PRISMA_VERSION} && \
+    prisma version && \
     rm /tmp/package.json && \
     chown -R 1001:1001 /pnpm
+
+RUN test -n "$(find /pnpm -type f -name 'schema-engine-*' | head -1)" || \
+    (echo "ERROR: the Prisma schema engine is missing from the image, migrations would download it at startup" && exit 1)
 
 # Copy compiled custom HTTPS server (replaces default Next.js server entry point)
 COPY --from=builder --link --chown=1001:1001 /app/custom-server.js ./custom-server.js

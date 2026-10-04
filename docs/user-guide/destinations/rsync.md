@@ -83,6 +83,16 @@ rsync: mkstemp failed: Permission denied (13)
 
 **Solution:** Ensure the SSH user has write access to the folder on the remote server.
 
+### Listing a Very Large Folder
+
+```
+The server answered with more than 256 MB. Back up its subfolders as separate sources.
+```
+
+DBackup lists a folder with one `find` over SSH before it copies it, and that list may run for 10 minutes and hold up to 256 MB, enough for millions of files.
+
+**Solution:** Split the folder into several directory sources, one per subfolder. A message that the server did not finish within 600 seconds means the same, often on a server whose `find` lacks `-printf`, like macOS, where each file costs a `stat` of its own.
+
 ### Bandwidth Limiting
 
 To limit transfer speed, add `--bwlimit=1000` (KB/s) in the **Options** field. Useful for avoiding bandwidth saturation on shared connections.

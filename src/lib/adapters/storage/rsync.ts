@@ -217,12 +217,28 @@ async function checkSshpass(): Promise<boolean> {
     return _sshpassAvailable;
 }
 
+/** How long an SSH command may take and how much it may print, when the default does not fit. */
+interface SshExecOptions {
+    timeout?: number;
+    maxBuffer?: number;
+}
+
+const SSH_TIMEOUT_MS = 30_000;
+
+/**
+ * The limits of a `find` over a whole tree. Node keeps the output of execFile in memory and
+ * stops at 1 MB by default, which a tree of some 15,000 files already prints (#168), and a BSD
+ * `find` that runs `stat` once per file takes longer than the 30 seconds of a short command.
+ * Bounded all the same, so a runaway listing ends with a message instead of filling the memory.
+ */
+const LISTING_LIMITS: Required<SshExecOptions> = { timeout: 10 * 60_000, maxBuffer: 256 * 1024 * 1024 };
+
 /**
  * Executes an SSH command on the remote host.
  * Uses execFile (no shell) to prevent command injection via config values.
  * Uses SSHPASS env var for password auth (never passes password on command line).
  */
-async function execSSH(config: RsyncConfig, command: string, keyFile?: string, controlPath?: string): Promise<string> {
+async function execSSH(config: RsyncConfig, command: string, keyFile?: string, controlPath?: string, options: SshExecOptions = {}): Promise<string> {
     const sshArgs = buildSshArgArray(config, keyFile, controlPath);
     const target = `${config.username}@${config.host}`;
     const env = getPasswordEnv(config) ?? process.env;
@@ -242,10 +258,17 @@ async function execSSH(config: RsyncConfig, command: string, keyFile?: string, c
         args = [...sshArgs, target, command];
     }
 
+    const timeout = options.timeout ?? SSH_TIMEOUT_MS;
     try {
-        const { stdout } = await execFileAsync(binary, args, { timeout: 30000, env });
+        const { stdout } = await execFileAsync(binary, args, { timeout, env, ...(options.maxBuffer ? { maxBuffer: options.maxBuffer } : {}) });
         return stdout.trim();
     } catch (error: unknown) {
+        const failure = error as { code?: unknown; killed?: boolean };
+        if (failure?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+            const limit = Math.round((options.maxBuffer ?? 1024 * 1024) / (1024 * 1024));
+            throw new Error(`The server answered with more than ${limit} MB. Back up its subfolders as separate sources.`);
+        }
+        if (failure?.killed) throw new Error(`The server did not finish within ${Math.round(timeout / 1000)} seconds.`);
         // Re-throw with sanitized message (strips raw command from exec errors)
         throw new Error(sanitizeError(error));
     }
@@ -390,7 +413,9 @@ async function findRemoteEntries(
         const output = await execSSH(
             config,
             `find '${safeStartDir}' ${selector} -printf '%p\\t%s\\t%T@\\t%y\\t%l\\n' 2>/dev/null || find '${safeStartDir}' -type f -exec stat -f '%N\\t%z\\t%m' {} \\; 2>/dev/null`,
-            keyFile
+            keyFile,
+            undefined,
+            LISTING_LIMITS
         );
 
         if (!output) return { files: [], unsupportedSymlinks: [] };
@@ -948,7 +973,9 @@ export const RsyncAdapter: StorageAdapter = {
             const output = await execSSH(
                 config,
                 `find '${safeStartDir}' -mindepth 1 -maxdepth 1 -type d 2>/dev/null`,
-                keyFile
+                keyFile,
+                undefined,
+                LISTING_LIMITS
             );
 
             if (!output) return [];

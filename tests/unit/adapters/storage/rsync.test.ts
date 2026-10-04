@@ -981,6 +981,67 @@ describe("RsyncAdapter", () => {
         });
     });
 
+    // ===== Large trees (#168) =====
+
+    describe("listing a large tree", () => {
+        /** The options execFile got for the last command, its timeout and output limit. */
+        const lastExecOptions = () => mockExecFileCb.mock.calls.at(-1)![2] as { timeout?: number; maxBuffer?: number };
+
+        it("lets a listing print far more than the 1 MB Node allows by default, and take minutes", async () => {
+            sshSucceeds("");
+
+            await RsyncAdapter.list(agentConfig, "data");
+
+            expect(lastExecOptions().maxBuffer).toBeGreaterThanOrEqual(64 * 1024 * 1024);
+            expect(lastExecOptions().timeout).toBe(10 * 60_000);
+        });
+
+        it("gives the folder browser the same room", async () => {
+            sshSucceeds("");
+
+            await RsyncAdapter.browseDirectories!(agentConfig, "");
+
+            expect(lastExecOptions().maxBuffer).toBeGreaterThanOrEqual(64 * 1024 * 1024);
+        });
+
+        it("keeps the short limits for a single command", async () => {
+            sshSucceeds("");
+
+            await RsyncAdapter.delete(agentConfig, "old.tar.gz");
+
+            expect(lastExecOptions().maxBuffer).toBeUndefined();
+            expect(lastExecOptions().timeout).toBe(30_000);
+        });
+
+        it("reads the 20,342 files of the tree from the report", async () => {
+            const lines = Array.from({ length: 20_342 }, (_, i) => `/backups/data/dir${i % 50}/file-${i}.bin\t${i}\t1727000000.0\tf\t`);
+            sshSucceeds(lines.join("\n"));
+
+            const files = await RsyncAdapter.list(agentConfig, "data");
+
+            expect(files).toHaveLength(20_342);
+            expect(files[0]).toMatchObject({ path: "data/dir0/file-0.bin", size: 0 });
+        });
+
+        it("says in plain words when even that is not enough", async () => {
+            mockExecFileCb.mockImplementation((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: Error) => void;
+                cb(Object.assign(new Error("stdout maxBuffer length exceeded"), { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }));
+            });
+
+            await expect(RsyncAdapter.list(agentConfig, "data")).rejects.toThrow("The server answered with more than 256 MB. Back up its subfolders as separate sources.");
+        });
+
+        it("names the time limit when a listing runs out of it", async () => {
+            mockExecFileCb.mockImplementation((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: Error) => void;
+                cb(Object.assign(new Error("Command failed: ssh ..."), { killed: true, signal: "SIGTERM" }));
+            });
+
+            await expect(RsyncAdapter.list(agentConfig, "data")).rejects.toThrow("The server did not finish within 600 seconds.");
+        });
+    });
+
     // ===== openSession() =====
 
     describe("openSession() connection reuse", () => {

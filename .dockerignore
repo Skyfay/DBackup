@@ -51,6 +51,7 @@ docs
 tests
 scripts
 !scripts/dbackup-recover.js
+!scripts/apply-pending-restore.js
 coverage
 wiki
 api-docs

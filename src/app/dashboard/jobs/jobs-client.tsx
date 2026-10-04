@@ -31,6 +31,7 @@ import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
 import { DataTable } from "@/components/ui/data-table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ListEmpty } from "@/components/ui/list-empty";
 import { JOIN_END, PageHead } from "@/components/ui/page-head";
 import { PageTabs } from "@/components/ui/page-tabs";
 import { Tabs } from "@/components/ui/tabs";
@@ -74,26 +75,6 @@ function LoadingList() {
             {Array.from({ length: 4 }, (_, index) => (
                 <Skeleton key={index} className="h-12 w-full" />
             ))}
-        </div>
-    );
-}
-
-function NoJobs({ onCreate }: { onCreate?: () => void }) {
-    return (
-        <div className={cn("flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-14 text-center md:border-solid md:bg-card", JOIN_END)}>
-            <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
-                <CalendarClock className="size-5 text-muted-foreground" />
-            </span>
-            <div className="space-y-1">
-                <p className="font-medium">No backup jobs yet</p>
-                <p className="text-sm text-muted-foreground">A job backs up a database or folders on a schedule and keeps the backups where you say.</p>
-            </div>
-            {onCreate && (
-                <Button tone="create" onClick={onCreate}>
-                    <Plus />
-                    New job
-                </Button>
-            )}
         </div>
     );
 }
@@ -233,7 +214,12 @@ export function JobsClient({
             {!hasLoaded || !shownView ? (
                 <LoadingList />
             ) : jobs.length === 0 ? (
-                <NoJobs onCreate={canManage ? () => openForm(null) : undefined} />
+                <ListEmpty
+                    icon={CalendarClock}
+                    title="No backup jobs yet"
+                    description="A job backs up a database or folders on a schedule and keeps the backups where you say."
+                    action={canManage ? { label: "New job", onClick: () => openForm(null) } : undefined}
+                />
             ) : (
                 <>
                     <JobsStrip jobs={jobs} />

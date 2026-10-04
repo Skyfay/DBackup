@@ -15,6 +15,7 @@ import type { LoginProvider } from "@/services/auth/login-page-service"
 import { needsSecondFactor, providerOfEmail, signInError, ssoProblem, type LoginProblem } from "./login-problems"
 import { SecondFactorStep } from "./second-factor-step"
 import { SignInStep, type LoginValues } from "./sign-in-step"
+import { AFTER_SIGN_IN } from "@/lib/auth/sign-in-target"
 
 const log = logger.child({ component: "LoginForm" })
 
@@ -102,7 +103,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
         const failed = (text?: string) => setProblem({ title: `${provider.name} did not answer`, text: text || "Try again, or sign in another way." })
         try {
             // sso-guard.ts checks the wish to create an account against the saved provider.
-            const result = await signIn.sso({ providerId: provider.providerId, callbackURL: "/dashboard", requestSignUp: provider.allowProvisioning })
+            const result = await signIn.sso({ providerId: provider.providerId, callbackURL: AFTER_SIGN_IN, requestSignUp: provider.allowProvisioning })
             if (result.error) {
                 failed(result.error.message)
                 return false
@@ -145,7 +146,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
             if (!message || !CANCELLED.test(message)) setProblem({ title: "The passkey did not sign you in", text: message || "Try again, or use your password." })
         }
         try {
-            const result = await signIn.passkey({ fetchOptions: { onSuccess: () => router.push("/dashboard") } })
+            const result = await signIn.passkey({ fetchOptions: { onSuccess: () => router.push(AFTER_SIGN_IN) } })
             if (result?.error) failed(String(result.error.message ?? ""))
         } catch (error: unknown) {
             failed(error instanceof Error ? error.message : undefined)
@@ -172,7 +173,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
             await signIn.email({
                 email,
                 password,
-                callbackURL: "/dashboard",
+                callbackURL: AFTER_SIGN_IN,
                 fetchOptions: {
                     onSuccess: (context) => {
                         if (context.data?.twoFactorRedirect) {
@@ -182,7 +183,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
                             setLoading(false)
                             return
                         }
-                        router.push("/dashboard")
+                        router.push(AFTER_SIGN_IN)
                     },
                     onError: (context) => {
                         setLoading(false)

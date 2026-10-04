@@ -73,7 +73,7 @@ describe("the sign-in of the login page", () => {
         await user.click(screen.getByRole("button", { name: "Sign in" }));
 
         await waitFor(() => expect(mocks.email).toHaveBeenCalledWith(expect.objectContaining({ email: "manu@example.ch", password: "correct horse" })));
-        expect(mocks.push).toHaveBeenCalledWith("/dashboard");
+        expect(mocks.push).toHaveBeenCalledWith("/dashboard?from=sign-in");
     });
 
     it("says a wrong password at the field instead of in a message that disappears", async () => {

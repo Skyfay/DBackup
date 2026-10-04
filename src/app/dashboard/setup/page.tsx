@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { canUseQuickSetup } from "@/lib/auth/sign-in-target";
 import { SetupWizard } from "@/components/dashboard/setup/setup-wizard";
 import { getEncryptionProfiles } from "@/services/backup/encryption-service";
 
@@ -12,12 +13,7 @@ export default async function SetupPage() {
     const permissions = await getUserPermissions();
 
     // Require at minimum source + destination + job write permissions
-    const canSetup =
-        permissions.includes(PERMISSIONS.SOURCES.WRITE) &&
-        permissions.includes(PERMISSIONS.DESTINATIONS.WRITE) &&
-        permissions.includes(PERMISSIONS.JOBS.WRITE);
-
-    if (!canSetup) {
+    if (!canUseQuickSetup(permissions)) {
         redirect("/dashboard");
     }
 

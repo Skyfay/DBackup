@@ -12,6 +12,7 @@ import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitio
 import { Skeleton } from "@/components/ui/skeleton";
 import { JOIN_END } from "@/components/ui/page-head";
 import { DataTable } from "@/components/ui/data-table";
+import { ListEmpty } from "@/components/ui/list-empty";
 import { useRouter } from "next/navigation";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
@@ -24,6 +25,7 @@ import { useTableLayout } from "@/hooks/use-table-layout";
 import { useVisibleInterval } from "@/hooks/use-visible-interval";
 import { connectionColumns, type ConnectionKind } from "./connection-columns";
 import { ConnectionStrip } from "./connection-strip";
+import { EMPTY_TABS as EMPTY } from "./connection-empty";
 import { ConnectionRowActions } from "./connection-row-actions";
 import { ConnectionContextMenu } from "./connection-context-menu";
 import type { ConnectionActionHandlers } from "./connection-actions";
@@ -142,13 +144,13 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     // Sources page invited you to add a destination and then filed it under sources.
     const storageNoun = pickerRole ? storageRoleLabel(pickerRole) : "Storage connection";
 
-    useImperativeHandle(ref, () => ({
-        openCreate: () => {
-            setEditingId(null);
-            setSelectedAdapterForNew(null);
-            setIsPickerOpen(true);
-        },
-    }), []);
+    const openCreate = useCallback(() => {
+        setEditingId(null);
+        setSelectedAdapterForNew(null);
+        setIsPickerOpen(true);
+    }, []);
+
+    useImperativeHandle(ref, () => ({ openCreate }), [openCreate]);
 
     useEffect(() => {
         // Filtered by type, and for storage also by the role this page creates. An adapter
@@ -294,9 +296,16 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                         <Skeleton key={index} className="h-11 w-full" />
                     ))}
                 </div>
+            ) : configs.length === 0 ? (
+                <ListEmpty
+                    icon={EMPTY[kind].icon}
+                    title={EMPTY[kind].title}
+                    description={EMPTY[kind].description}
+                    action={canManage ? { label: EMPTY[kind].action, onClick: openCreate } : undefined}
+                />
             ) : (
                 <>
-                    {configs.length > 0 && <ConnectionStrip kind={kind} configs={configs} />}
+                    <ConnectionStrip kind={kind} configs={configs} />
                     <DataTable
                         joined
                         columns={columns}

@@ -12,6 +12,7 @@ import { logger } from "@/lib/logging/logger";
 import { formatTwoFactorCode } from "@/lib/utils";
 import { LoginHeading, LoginNote, OrDivider, PasskeyButton } from "./login-parts";
 import { codeError, type AuthError, type LoginProblem } from "./login-problems";
+import { AFTER_SIGN_IN } from "@/lib/auth/sign-in-target";
 
 const log = logger.child({ component: "second-factor-step" });
 
@@ -87,7 +88,7 @@ function CodeFactor({ email, onBack, onPasskey, passkeyBusy, problem }: SecondFa
         setBusy(true);
         setError(null);
         const fetchOptions = {
-            onSuccess: () => router.push("/dashboard"),
+            onSuccess: () => router.push(AFTER_SIGN_IN),
             onError: (context: { error: AuthError }) => {
                 setError(codeError(context.error, backup));
                 setBusy(false);

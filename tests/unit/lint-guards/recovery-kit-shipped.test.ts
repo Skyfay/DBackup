@@ -62,4 +62,15 @@ describe("lint guard: recovery kit ships its tool", () => {
         expect(lines).toContain("scripts");
         expect(lines).toContain(`!scripts/${script}`);
     });
+
+    // The same holds for every other script the image needs. apply-pending-restore.js, which
+    // swaps in a configuration restore at start, was copied by the Dockerfile but never
+    // re-included, and `docker build` failed on the missing file.
+    it("re-includes every script the Dockerfile copies from scripts/", () => {
+        const dockerfile = fs.readFileSync(path.join(ROOT, "Dockerfile"), "utf-8");
+        const lines = fs.readFileSync(path.join(ROOT, ".dockerignore"), "utf-8").split("\n").map((l) => l.trim());
+        const copied = [...dockerfile.matchAll(/\/app\/scripts\/([\w.-]+)/g)].map((m) => m[1]);
+        expect(copied.length).toBeGreaterThan(0);
+        expect(copied.filter((script) => !lines.includes(`!scripts/${script}`))).toEqual([]);
+    });
 });

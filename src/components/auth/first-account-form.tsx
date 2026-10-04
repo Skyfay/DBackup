@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { BackHeading, PasswordInput } from "./login-parts";
+import { AFTER_SIGN_IN } from "@/lib/auth/sign-in-target";
 
 const log = logger.child({ component: "first-account-form" });
 
@@ -49,9 +50,9 @@ export function FirstAccountForm({ rules, onBack }: { rules: PasswordRules | nul
                 password,
                 // An empty name takes the part of the email before the @, as the profile can change later.
                 name: name || email.split("@")[0],
-                callbackURL: "/dashboard",
+                callbackURL: AFTER_SIGN_IN,
                 fetchOptions: {
-                    onSuccess: () => router.push("/dashboard"),
+                    onSuccess: () => router.push(AFTER_SIGN_IN),
                     onError: (context) => {
                         setBusy(false);
                         const field = /PASSWORD/.test(context.error.code ?? "") ? "password" : "email";

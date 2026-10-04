@@ -2,7 +2,7 @@
 
 import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
-import { Trash } from "lucide-react";
+import { LockKeyhole, Trash } from "lucide-react";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { CredentialProfileDialog, type CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
@@ -10,6 +10,7 @@ import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ListEmpty } from "@/components/ui/list-empty";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { requestBulk } from "@/lib/bulk-request";
 import type { TablePreferences } from "@/lib/core/table-preferences";
@@ -137,7 +138,7 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
 
     return (
         <div className="space-y-4 md:space-y-0">
-            <CredentialsStrip model={model} />
+            {(!model || profiles.length > 0) && <CredentialsStrip model={model} />}
 
             {!model ? (
                 <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
@@ -148,6 +149,13 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
                     </div>
                     {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-11 w-full" />)}
                 </div>
+            ) : profiles.length === 0 ? (
+                <ListEmpty
+                    icon={LockKeyhole}
+                    title="No credential profiles yet"
+                    description="A profile keeps a login, an SSH key or a token in one place, and every connection that needs it signs in with it."
+                    action={access.canWrite ? { label: "New profile", onClick: () => setForm({ open: true, profile: null }) } : undefined}
+                />
             ) : (
                 <DataTable
                     joined

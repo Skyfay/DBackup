@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { ActivityPanel } from "@/components/dashboard/widgets/activity-panel";
 import { BackupCalendar } from "@/components/dashboard/widgets/backup-calendar";
 import { DashboardRefresh } from "@/components/dashboard/widgets/dashboard-refresh";
@@ -9,14 +10,23 @@ import { StorageDestinations } from "@/components/dashboard/widgets/storage-dest
 import { UpcomingRuns } from "@/components/dashboard/widgets/upcoming-runs";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { canUseQuickSetup } from "@/lib/auth/sign-in-target";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";
+import { hasNothingToBackUp } from "@/services/dashboard/start-page";
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
 export const metadata: Metadata = { title: "Overview" };
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+    // Right after signing in, someone who may set DBackup up and has nothing to back up yet
+    // starts on the Quick Setup. Only then: the Overview stays reachable from the sidebar.
+    if ((await searchParams).from === "sign-in") {
+        const permissions = await getUserPermissions();
+        redirect(canUseQuickSetup(permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
+    }
+
     const [overview, permissions] = await Promise.all([getDashboardOverview(), getUserPermissions()]);
 
     const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);

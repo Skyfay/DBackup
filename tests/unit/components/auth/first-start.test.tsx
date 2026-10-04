@@ -54,7 +54,7 @@ describe("the first start of a new DBackup", () => {
         await user.click(screen.getByRole("button", { name: "Create account" }));
 
         await waitFor(() => expect(mocks.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "manu@example.ch", name: "manu", password: "Short1 and longer" })));
-        expect(mocks.push).toHaveBeenCalledWith("/dashboard");
+        expect(mocks.push).toHaveBeenCalledWith("/dashboard?from=sign-in");
     });
 
     it("keeps the name and the email out of the first password", async () => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Trash } from "lucide-react";
+import { Download, Import, KeyRound, Trash } from "lucide-react";
 import { bulkDeleteEncryptionProfiles } from "@/app/actions/backup/encryption";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { EncryptionKeyDialog } from "@/components/settings/encryption-key-dialog";
@@ -10,6 +10,7 @@ import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ListEmpty } from "@/components/ui/list-empty";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { unwrapBulkAction } from "@/lib/bulk-request";
 import type { TablePreferences } from "@/lib/core/table-preferences";
@@ -156,7 +157,7 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
 
     return (
         <div className="flex flex-col gap-4 md:gap-0">
-            <KeysStrip model={model} />
+            {(!model || keys.length > 0) && <KeysStrip model={model} />}
             {/* From md up the numbers and the list join the tabs above them into one card, so the banner moves under it. */}
             {model && <MissingKeyBanner model={model} onImport={canManage ? () => setImporting(true) : undefined} className="md:order-last md:mt-6" />}
 
@@ -169,6 +170,14 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
                     </div>
                     {Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-12 w-full" />)}
                 </div>
+            ) : keys.length === 0 ? (
+                <ListEmpty
+                    icon={KeyRound}
+                    title="No encryption keys yet"
+                    description="A key encrypts backups, so only someone with the key or its recovery kit can read them."
+                    action={canManage ? { label: "New key", onClick: () => setCreating(true) } : undefined}
+                    secondary={canManage ? { label: "Import key", icon: Import, onClick: () => setImporting(true) } : undefined}
+                />
             ) : (
                 <DataTable
                     joined

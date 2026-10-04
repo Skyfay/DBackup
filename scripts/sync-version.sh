@@ -4,6 +4,9 @@
 #   pnpm version:sync                    — sync current version everywhere
 #   pnpm version:bump                    — interactive version picker
 #   pnpm version:bump patch|minor|major  — bump directly, then sync
+#
+# A bump also writes the version block of docs/changelog.md from the fragments in
+# changelog/unreleased/ and deletes them, see scripts/changelog.mjs.
 
 set -euo pipefail
 
@@ -46,47 +49,10 @@ sync_files() {
   echo "  ✓ api-docs/openapi.yaml"
 }
 
-# ── Insert vNEXT placeholder block ────────────────────────────────
-insert_changelog_next() {
-  local CHANGELOG="$ROOT_DIR/docs/changelog.md"
-
-  if grep -q "## vNEXT" "$CHANGELOG"; then
-    echo "  ✓ docs/changelog.md (vNEXT block already exists, skipped)"
-    return
-  fi
-
-  node -e "
-    const fs = require('fs');
-    const path = '$CHANGELOG';
-    let content = fs.readFileSync(path, 'utf8');
-    const marker = 'All notable changes to DBackup are documented here.';
-    const idx = content.indexOf(marker);
-    if (idx === -1) { console.error('Changelog marker not found'); process.exit(1); }
-    const insertAt = idx + marker.length;
-    const block = [
-      '',
-      '',
-      '## vNEXT',
-      '*Release: In Progress*',
-      '',
-      '### 🐳 Docker',
-      '',
-      '- **Image**: \\\`skyfay/dbackup:vNEXT\\\`',
-      '- **Also tagged as**: \\\`latest\\\`, \\\`vNEXT\\\`',
-      '- **CI Image**: \\\`skyfay/dbackup:ci\\\`',
-      '- **Platforms**: linux/amd64, linux/arm64',
-      '',
-    ].join('\n');
-    content = content.slice(0, insertAt) + block + content.slice(insertAt);
-    fs.writeFileSync(path, content);
-  "
-  echo "  ✓ docs/changelog.md (vNEXT placeholder created)"
-}
-
-# ── Insert changelog block for new version ────────────────────────
+# ── Write the changelog block of the new version ──────────────────
+# Collected from the fragments in changelog/unreleased/, which are deleted afterwards.
 insert_changelog() {
   local VERSION="$1"
-  local CHANGELOG="$ROOT_DIR/docs/changelog.md"
 
   # Determine tag aliases based on version suffix
   local TAG_ALIASES
@@ -99,56 +65,7 @@ insert_changelog() {
     TAG_ALIASES="\`latest\`, \`v${MAJOR}\`"
   fi
 
-  # If a vNEXT placeholder exists, replace it with the actual version
-  if grep -q "## vNEXT" "$CHANGELOG"; then
-    node -e "
-      const fs = require('fs');
-      const filePath = process.argv[1];
-      const version = process.argv[2];
-      const tagAliases = process.argv[3];
-      let content = fs.readFileSync(filePath, 'utf8');
-      content = content.replace(/^(## )vNEXT(.*)$/m, (_, p, s) => p + 'v' + version + s);
-      content = content.replace('skyfay/dbackup:vNEXT', 'skyfay/dbackup:v' + version);
-      content = content.replace(\`- **Also tagged as**: \\\`latest\\\`, \\\`vNEXT\\\`\`, '- **Also tagged as**: ' + tagAliases);
-      fs.writeFileSync(filePath, content);
-    " "$CHANGELOG" "$VERSION" "$TAG_ALIASES"
-    echo "  ✓ docs/changelog.md (vNEXT replaced with v${VERSION})"
-    return
-  fi
-
-  # Skip if block already exists
-  if grep -q "## v${VERSION}" "$CHANGELOG"; then
-    return
-  fi
-
-  node -e "
-    const fs = require('fs');
-    const path = '$CHANGELOG';
-    const version = '$VERSION';
-    const tagAliases = process.argv[1];
-    let content = fs.readFileSync(path, 'utf8');
-    const marker = 'All notable changes to DBackup are documented here.';
-    const idx = content.indexOf(marker);
-    if (idx === -1) { console.error('Changelog marker not found'); process.exit(1); }
-    const insertAt = idx + marker.length;
-    const block = [
-      '',
-      '',
-      '## v' + version,
-      '*Release: In Progress*',
-      '',
-      '### 🐳 Docker',
-      '',
-      '- **Image**: \\\`skyfay/dbackup:v' + version + '\\\`',
-      '- **Also tagged as**: ' + tagAliases,
-      '- **CI Image**: \\\`skyfay/dbackup:ci\\\`',
-      '- **Platforms**: linux/amd64, linux/arm64',
-      '',
-    ].join('\n');
-    content = content.slice(0, insertAt) + block + content.slice(insertAt);
-    fs.writeFileSync(path, content);
-  " "$TAG_ALIASES"
-  echo "  ✓ docs/changelog.md (new v${VERSION} block)"
+  node "$ROOT_DIR/scripts/changelog.mjs" release "$VERSION" "$TAG_ALIASES"
 }
 
 # ══════════════════════════════════════════════════════════════════
@@ -161,19 +78,13 @@ if [[ "$MODE" == "--sync-only" ]]; then
 fi
 
 # ══════════════════════════════════════════════════════════════════
-#  Changelog-init mode: insert vNEXT placeholder, no version bump
-# ══════════════════════════════════════════════════════════════════
-if [[ "$MODE" == "--changelog-init" ]]; then
-  insert_changelog_next
-  echo "Done — vNEXT placeholder ready in docs/changelog.md"
-  exit 0
-fi
-
-# ══════════════════════════════════════════════════════════════════
 #  Bump mode: interactive or direct
 # ══════════════════════════════════════════════════════════════════
 
 BUMP_TYPE="$MODE"
+
+# ── Changelog fragments first, so a broken one stops the bump before anything changed ──
+node "$ROOT_DIR/scripts/changelog.mjs" check
 
 # ── Interactive picker (no argument given) ────────────────────────
 if [[ -z "$BUMP_TYPE" ]]; then

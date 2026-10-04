@@ -94,6 +94,7 @@ pnpm type               # Run TypeScript type checks
 - One feature/fix per PR
 - Include tests for new functionality
 - Update documentation if relevant
+- Write the changelog entry into a file of its own under `changelog/unreleased/`, named after your branch, never into `docs/changelog.md`. The release collects those files, see [changelog/unreleased/README.md](changelog/unreleased/README.md)
 - Ensure all CI checks pass. Every pull request into `dev` or `main` runs lint, type check, unit tests and the docs build
 
 ## Security

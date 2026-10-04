@@ -682,7 +682,8 @@ brew install your-package
 | 9 | `src/app/api/adapters/access-check/route.ts` | Add ID to storage permission regex |
 | 10 | `Dockerfile` | System CLI tools (if needed) |
 | 11 | `scripts/setup-dev-macos.sh` | Local dev CLI setup (if needed) |
-| 12 | `docs/` | User guide + developer guide + changelog |
+| 12 | `docs/` | User guide + developer guide |
+| 13 | `changelog/unreleased/<branch>.md` | Changelog entry, which the release moves into `docs/changelog.md` |
 
 ### OAuth-Specific Additional Steps
 

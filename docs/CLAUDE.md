@@ -90,7 +90,13 @@ Each category (sources, destinations, notifications) has an index page with a ta
 
 ---
 
-# Part 2 - Changelog format (`docs/changelog.md`)
+# Part 2 - Changelog (`changelog/unreleased/` and `docs/changelog.md`)
+
+## Where entries go
+
+Never into `docs/changelog.md`. Every branch writes its entries into a fragment of its own, `changelog/unreleased/<branch>.md` with the `/` of the branch name replaced by `-`, so pull requests that run side by side never touch the same file. A change made without a branch of its own names its fragment after the change.
+
+A fragment is a version block without the version header and without the Docker section: notes like breaking changes above the first section, then sections with entries. The release (`pnpm version:bump`) collects all fragments into one version block of `docs/changelog.md`, sorts the sections into the order below and deletes the fragments. `tests/unit/lint-guards/changelog-fragments.test.ts` checks every fragment against the rules of this part, and `pnpm changelog:preview` prints the block the next release writes. Format and example: [changelog/unreleased/README.md](../changelog/unreleased/README.md).
 
 ## What never gets an entry
 
@@ -160,11 +166,11 @@ Do not invent new sections.
 *Released: Month Day, Year*
 ```
 
-Unreleased versions use `*Release: In Progress*`. `pnpm changelog:next` creates a `## vNEXT` placeholder.
+The release writes the header with `*Release: In Progress*`, which becomes the date once the version ships. A fragment has no header.
 
 ## Breaking changes
 
-A blockquote directly below the release date, before any section:
+A blockquote directly below the release date, before any section. In a fragment it goes above the first section, and the release moves it below the date:
 
 ```markdown
 > ⚠️ **Breaking:** What breaks and how to migrate.
@@ -172,7 +178,7 @@ A blockquote directly below the release date, before any section:
 
 ## Docker section
 
-Last section of every version with a published image:
+Last section of every version with a published image. The release writes it, a fragment never has one:
 
 ```markdown
 ### 🐳 Docker

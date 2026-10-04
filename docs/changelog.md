@@ -168,7 +168,8 @@ All notable changes to DBackup are documented here.
 ### 🔧 CI/CD
 
 - **ci**: Lint, type check, unit tests and the docs build also run on pull requests into dev, not only into main.
-- **ci**: A pull request into main also builds the Docker image for amd64 and arm64 without publishing it and checks that it starts.
+- **ci**: Every pull request also lints and builds the website.
+- **ci**: A pull request into main can also build the Docker image for amd64 and arm64 without publishing it and check that it starts, once a maintainer approves the run.
 - **github**: The repository shows a Sponsor button for GitHub Sponsors, and a daily workflow draws the sponsors into the Sponsors section of the README.
 - **deps**: The pending patch and minor releases are picked up across the app, the website and the docs, among them React 19.3, Better Auth 1.6.33, Zod 4.6, Vite 8.3, ESLint 10.12 and the AWS SDK. `tar-stream` stays on 3.2.0 and `webdav` on 5.10.
 

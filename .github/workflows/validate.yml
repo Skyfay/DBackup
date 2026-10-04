@@ -1,9 +1,10 @@
 # ─── Validate ────────────────────────────────────────────────
-# Lint, type checking, and unit tests run in parallel.
+# Lint, type checking, unit tests and the builds of the docs and the website
+# run in parallel.
 # A quality gate on every pull request into main or dev, and called by the
 # release workflow on tags. A pull request into main also builds the Docker
-# image for both platforms and starts it, so a broken image shows up before
-# the merge instead of after the tag.
+# image for both platforms and starts it once approved, so a broken image
+# shows up before the merge instead of after the tag.
 
 name: Validate
 
@@ -110,13 +111,40 @@ jobs:
       - run: cd docs && pnpm install --frozen-lockfile
       - run: pnpm docs:build
 
+  website-build:
+    name: Website Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: website/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+
   # ── Docker build ────────────────────────────────────────────
   # Only on a pull request into main. Builds the image like the release does,
   # on a native runner per platform, without pushing it, then starts it once
   # and waits for the health check, like the Build Test of the release.
+  # Waits for an approval through the environment docker-build, whose required
+  # reviewers are set in the settings of the repository, so a push that only
+  # changes a workflow or the docs does not cost two image builds.
   docker-build:
     name: Docker Build (${{ matrix.suffix }})
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    environment: docker-build
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

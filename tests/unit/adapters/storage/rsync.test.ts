@@ -1,44 +1,51 @@
+import { EventEmitter } from "events";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // --- Hoisted mocks ---
 // child_process functions use callbacks, so promisify works when the mock calls its callback
-const { mockExecCb, mockExecFileCb, mockRsyncExecute, mockFsWriteFile, mockFsUnlink, mockFsMkdir, mockFsReadFile, mockRsyncShell, mockRsyncSet, mockRsyncFlags, mockRsyncExclude } = vi.hoisted(() => ({
+const { mockExecCb, mockExecFileCb, mockSpawn, mockRsyncExecute, mockFsWriteFile, mockFsUnlink, mockFsMkdir, mockFsReadFile } = vi.hoisted(() => ({
     mockExecCb: vi.fn(),
     mockExecFileCb: vi.fn(),
+    mockSpawn: vi.fn(),
+    // What a started rsync does, called as (done, onStdout, onStderr) and returning an optional
+    // { kill }. Kept in the shape of the old npm wrapper, so each test says only what rsync did.
     mockRsyncExecute: vi.fn(),
     mockFsWriteFile: vi.fn().mockResolvedValue(undefined),
     mockFsUnlink: vi.fn().mockResolvedValue(undefined),
     mockFsMkdir: vi.fn().mockResolvedValue(undefined),
     mockFsReadFile: vi.fn().mockResolvedValue("file content"),
-    // The `--rsh` command rsync is told to use. This is where the bulk of the SSH logins happen,
-    // so a test that only inspects execFile calls would miss the transfers entirely.
-    mockRsyncShell: vi.fn(),
-    mockRsyncSet: vi.fn(),
-    mockRsyncFlags: vi.fn(),
-    mockRsyncExclude: vi.fn(),
 }));
 
 // child_process mock - exec/execFile call their last-arg callback so promisify works
 vi.mock("child_process", () => ({
     exec: mockExecCb,
     execFile: mockExecFileCb,
-    default: { exec: mockExecCb, execFile: mockExecFileCb },
+    spawn: mockSpawn,
+    default: { exec: mockExecCb, execFile: mockExecFileCb, spawn: mockSpawn },
 }));
 
-// rsync npm package mock - fluent API that chains, execute calls its first callback
-vi.mock("rsync", () => {
-    class MockRsync {
-        flags(...args: unknown[]) { mockRsyncFlags(...args); return this; }
-        set(...args: unknown[]) { mockRsyncSet(...args); return this; }
-        shell(cmd: string) { mockRsyncShell(cmd); return this; }
-        env() { return this; }
-        source() { return this; }
-        destination() { return this; }
-        exclude(...args: unknown[]) { mockRsyncExclude(...args); return this; }
-        execute = mockRsyncExecute;
-    }
-    return { default: MockRsync };
-});
+/**
+ * The rsync process the adapter spawns. What it prints and how it ends comes from
+ * mockRsyncExecute, called once the adapter listens, like a real process that starts a moment
+ * after spawn() returns.
+ */
+function fakeRsyncProcess() {
+    const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn() });
+    let handle: { kill?: (signal: string) => void } | undefined;
+    proc.kill.mockImplementation((signal: string) => handle?.kill?.(signal));
+    queueMicrotask(() => {
+        const done = (error: Error | null, code?: number) => {
+            if (error) proc.stderr.emit("data", Buffer.from(`${error.message}\n`));
+            proc.emit("close", error ? (code || 1) : 0, null);
+        };
+        handle = mockRsyncExecute(
+            done,
+            (data: Buffer) => proc.stdout.emit("data", data),
+            (data: Buffer) => proc.stderr.emit("data", data),
+        ) ?? undefined;
+    });
+    return proc;
+}
 
 vi.mock("fs/promises", () => ({
     default: {
@@ -115,6 +122,26 @@ function rsyncFails(message = "rsync error") {
     });
 }
 
+/** The arguments of every rsync the adapter started, one list each. */
+function rsyncRuns(): string[][] {
+    return mockSpawn.mock.calls.filter(([binary]) => binary === "rsync").map(([, args]) => args as string[]);
+}
+
+/** The arguments of the last rsync. */
+function rsyncArgs(): string[] {
+    return rsyncRuns().at(-1) ?? [];
+}
+
+/** The value of an option written as `--name=value`, from the last rsync. */
+function rsyncOption(name: string): string | undefined {
+    return rsyncArgs().find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
+}
+
+/** The SSH command each rsync was handed with -e. */
+function rsyncShells(): string[] {
+    return rsyncRuns().map((args) => args[args.indexOf("-e") + 1]);
+}
+
 // --- Configs ---
 const agentConfig = {
     host: "backup.example.com",
@@ -151,6 +178,7 @@ describe("RsyncAdapter", () => {
         sshpassFound(); // default: sshpass is available
         sshSucceeds();  // default: SSH commands succeed
         rsyncSucceeds(); // default: rsync succeeds
+        mockSpawn.mockImplementation(() => fakeRsyncProcess());
         mockFsWriteFile.mockResolvedValue(undefined);
         mockFsUnlink.mockResolvedValue(undefined);
         mockFsMkdir.mockResolvedValue(undefined);
@@ -647,12 +675,12 @@ describe("RsyncAdapter", () => {
 
         /** What rsync copies for the options the adapter set: the list it was handed, or everything its excludes leave. */
         function copiedBy(listed: string[]): string[] {
-            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1] as string | undefined;
+            const fromList = rsyncOption("files-from");
             if (fromList) {
                 const written = mockFsWriteFile.mock.calls.find(([file]) => file === fromList)?.[1] as string;
                 return written.split("\0").filter(Boolean);
             }
-            const patterns = mockRsyncExclude.mock.calls.flatMap(([value]) => (Array.isArray(value) ? value : [value])) as string[];
+            const patterns = rsyncArgs().filter((arg) => arg.startsWith("--exclude=")).map((arg) => arg.slice("--exclude=".length));
             return listed.filter((relativePath) => !patterns.some((pattern) => rsyncExcludes(relativePath, pattern)));
         }
 
@@ -676,12 +704,12 @@ describe("RsyncAdapter", () => {
 
             await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job", ["*.tmp"]);
 
-            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1];
+            const fromList = rsyncOption("files-from");
             expect(fromList).toMatch(/^\/tmp\/rsync-files-/);
-            expect(mockRsyncSet).toHaveBeenCalledWith("from0");
+            expect(rsyncArgs()).toContain("--from0");
             expect(mockFsWriteFile).toHaveBeenCalledWith(fromList, "a.txt\0odd dir/[weird]*.txt\0", { mode: 0o600 });
             // rsync's own excludes would read the patterns by other rules, so none are passed.
-            expect(mockRsyncExclude).not.toHaveBeenCalled();
+            expect(rsyncArgs().some((arg) => arg.startsWith("--exclude"))).toBe(false);
         });
 
         it("removes the list after the transfer", async () => {
@@ -689,7 +717,7 @@ describe("RsyncAdapter", () => {
 
             await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
 
-            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1];
+            const fromList = rsyncOption("files-from");
             expect(mockFsUnlink).toHaveBeenCalledWith(fromList);
         });
 
@@ -699,7 +727,7 @@ describe("RsyncAdapter", () => {
 
             await expect(RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job")).rejects.toThrow();
 
-            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1];
+            const fromList = rsyncOption("files-from");
             expect(mockFsUnlink).toHaveBeenCalledWith(fromList);
         });
 
@@ -726,7 +754,7 @@ describe("RsyncAdapter", () => {
 
         /** The relative paths rsync was handed through --files-from. */
         function handedToRsync(): string[] {
-            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1] as string | undefined;
+            const fromList = rsyncOption("files-from");
             if (!fromList) return [];
             const written = mockFsWriteFile.mock.calls.find(([file]) => file === fromList)?.[1] as string;
             return written.split("\0").filter(Boolean);
@@ -1066,7 +1094,7 @@ describe("RsyncAdapter", () => {
 
             // The transfers themselves, not just the remote mkdir: rsync is told to reuse the
             // socket via its --rsh command, which is where the per-file logins would otherwise be.
-            const shellCommands = mockRsyncShell.mock.calls.map((c) => String(c[0]));
+            const shellCommands = rsyncShells();
             expect(shellCommands.length).toBe(2);
             for (const cmd of shellCommands) {
                 expect(cmd).toContain("ControlMaster=auto");
@@ -1143,7 +1171,7 @@ describe("RsyncAdapter", () => {
         }
 
         function infoFlagUsed(): boolean {
-            return mockRsyncSet.mock.calls.some((c) => c[0] === "info" && c[1] === "progress2");
+            return rsyncArgs().includes("--info=progress2");
         }
 
         it("asks for aggregate progress where rsync understands it", async () => {
@@ -1300,9 +1328,9 @@ describe("RsyncAdapter", () => {
 
             await RsyncAdapter.upload!(agentConfig, "/tmp/a", "Job/a");
 
-            const flags = mockRsyncFlags.mock.calls.map((c) => String(c[0]));
-            expect(flags).toContain("a");
-            expect(flags.some((f) => f.includes("z"))).toBe(false);
+            const args = rsyncArgs();
+            expect(args).toContain("-a");
+            expect(args.some((arg) => /^-[a-yA-Z]*z/.test(arg) || arg === "--compress")).toBe(false);
         });
 
         it("still lets a connection ask for compression explicitly", async () => {
@@ -1313,7 +1341,60 @@ describe("RsyncAdapter", () => {
 
             await RsyncAdapter.upload!({ ...agentConfig, options: "-z" }, "/tmp/a", "Job/a");
 
-            expect(mockRsyncFlags.mock.calls.map((c) => String(c[0]))).toContain("z");
+            expect(rsyncArgs()).toContain("-z");
+        });
+    });
+
+    // ===== starting rsync =====
+
+    describe("starting rsync", () => {
+        it("hands every path over as one argument, without a shell between", async () => {
+            // The npm wrapper this replaces ran `sh -c` and escaped spaces and quotes, but not
+            // `;` or `|`, so a name like these could end one command and start another.
+            await RsyncAdapter.upload(agentConfig, "/tmp/a;b|c d.sql", "Job;x/a b.sql");
+
+            const [binary, args, options] = mockSpawn.mock.calls.at(-1)!;
+            expect(binary).toBe("rsync");
+            expect((options as { shell?: unknown }).shell).toBeUndefined();
+            expect((args as string[]).slice(-3)).toEqual(["--", "/tmp/a;b|c d.sql", "admin@backup.example.com:/backups/Job;x/a b.sql"]);
+        });
+
+        it("passes additional options as they were written", async () => {
+            // Taken apart, a combined -avz became the option --avz, which rsync refuses.
+            await RsyncAdapter.upload({ ...agentConfig, options: "-avz --bwlimit=1000" }, "/tmp/a", "Job/a");
+
+            expect(rsyncArgs()).toEqual(expect.arrayContaining(["-avz", "--bwlimit=1000"]));
+            expect(rsyncArgs()).not.toContain("--avz");
+        });
+
+        it("carries the password for sshpass in the environment, never in the arguments", async () => {
+            await RsyncAdapter.upload({ ...agentConfig, authType: "password" as const, password: "s3cret" }, "/tmp/a", "Job/a");
+
+            const [, args, options] = mockSpawn.mock.calls.at(-1)!;
+            expect((options as { env: NodeJS.ProcessEnv }).env.SSHPASS).toBe("s3cret");
+            expect((args as string[]).join(" ")).not.toContain("s3cret");
+            expect(rsyncShells()[0]).toMatch(/^sshpass -e ssh /);
+        });
+
+        it("says so when rsync is not installed", async () => {
+            mockSpawn.mockImplementation(() => {
+                const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn() });
+                queueMicrotask(() => proc.emit("error", Object.assign(new Error("spawn rsync ENOENT"), { code: "ENOENT" })));
+                return proc;
+            });
+
+            const result = await RsyncAdapter.test!(agentConfig);
+
+            expect(result.success).toBe(false);
+            expect(result.message).toContain("rsync is not installed on this server.");
+        });
+
+        it("names the exit code with the last line rsync wrote to stderr", async () => {
+            rsyncFails("rsync: change_dir \"/backups/.dbackup\" failed: No such file or directory (2)");
+
+            const result = await RsyncAdapter.test!(agentConfig);
+
+            expect(result.message).toContain("rsync exited with code 1: rsync: change_dir");
         });
     });
 

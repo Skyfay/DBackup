@@ -101,7 +101,6 @@
     "react-dom": "19.3.0",
     "react-hook-form": "^7.89.0",
     "recharts": "3.10.1",
-    "rsync": "^0.6.1",
     "samba-client": "^7.2.0",
     "sonner": "^2.0.8",
     "ssh2": "^1.17.0",

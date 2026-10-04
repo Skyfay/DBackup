@@ -53,6 +53,7 @@ All notable changes to DBackup are documented here.
 - **Rsync**: An incremental backup of a directory source over rsync transfers only the files that changed. It pulled the whole source again on every run. ([#166](https://github.com/Skyfay/DBackup/issues/166))
 - **Rsync**: Cancelling a run stops a running rsync directory transfer. It waited for the whole folder to arrive first.
 - **Rsync**: A directory source over rsync with a large tree, like 20,000 files, no longer fails while listing them with `stdout maxBuffer length exceeded`. ([#168](https://github.com/Skyfay/DBackup/issues/168))
+- **Rsync**: Additional rsync options like `-avz` reach rsync as they were written. They turned into `--avz` before, which rsync refuses.
 - **ssh**: An ed25519 key generated in DBackup always works now. About one in 256 came out a byte short and never connected, so a key like that needs to be generated again.
 - **retention**: A job named like a deleted one no longer deletes the backups the deleted job left in its folder.
 - **jobs**: A run of a job waits while another run of the same job is still going, and every run keeps its temporary files in a directory of its own. With more than one queue slot, two runs could plan the same step of an incremental chain or write into the same file before.
@@ -98,6 +99,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The health history of a connection needs the read permission of its kind, and the folder browsers of Google Drive, Dropbox and OneDrive need the right to change destinations. Reading any kind of connection was enough for both before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder like /proc, the Google Drive folder browser only takes real folder IDs, and the Dropbox and OneDrive browsers turn down a path with a `..` part.
 - **audit**: Changing, deleting and cloning a job, restores, downloads and deletes of a single backup, cancelled runs, settings, config imports, sign-in providers, revealed keys, sign-outs and failed sign-ins are written to the audit log. The browser can no longer write sign-ins of its own.
+- **Rsync**: rsync starts without a shell, so a path or file name with characters like `;` or `|` can no longer run a command on the DBackup server. The unmaintained npm package `rsync` is gone.
 - **deps**: Next.js is updated to 16.3.8 in the app and on the website, which closes a critical remote code execution in `next/og`, and nodemailer 10 closes five advisories in the email notifier. `adm-zip`, `basic-ftp`, `undici`, `nanoid`, `@xmldom/xmldom` and nine more packages move to patched releases.
 
 ### 🎨 Improvements

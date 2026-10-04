@@ -2,8 +2,7 @@ import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadOptions, Dir
 import { RsyncSchema, type SFTPConfig } from "@/lib/adapters/definitions";
 import { connectSFTP, endSftpClient } from "./sftp";
 import { Readable } from "stream";
-import Rsync from "rsync";
-import { exec, execFile, type ChildProcess } from "child_process";
+import { exec, execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
@@ -14,6 +13,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { toRelativePath } from "./common/download-directory";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import { formatExcludeSummary, summariseExcluded } from "@/lib/exclude-summary";
+import { runRsync, sanitizeCommand, type RsyncCommand } from "./rsync-process";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -30,20 +30,6 @@ interface RsyncConfig {
     passphrase?: string;
     pathPrefix: string;
     options?: string;
-}
-
-/**
- * Strips sensitive data (passwords, keys, key paths) from command strings for safe logging.
- * IMPORTANT: Never log raw commands - always sanitize first.
- */
-function sanitizeCommand(cmd: string): string {
-    return cmd
-        .replace(/sshpass\s+-e\s+/g, "sshpass -e ")
-        .replace(/sshpass\s+-p\s+'[^']*'/g, "sshpass -p '***'")
-        .replace(/sshpass\s+-p\s+"[^"]*"/g, 'sshpass -p "***"')
-        .replace(/sshpass\s+-p\s+\S+/g, "sshpass -p ***")
-        .replace(/-i\s+\/[^\s]+/g, "-i ***")
-        .replace(/SSHPASS=[^\s]+/g, "SSHPASS=***");
 }
 
 /**
@@ -287,99 +273,6 @@ async function closeSshMaster(config: RsyncConfig, keyFile: string | undefined, 
 }
 
 /**
- * How long a cancelled transfer is given to end itself before it is killed outright.
- *
- * SIGTERM lets rsync finish the file it is writing and close the SSH session, which is what
- * keeps `--partial` data usable and the remote socket from being left half-open. A transfer
- * blocked on a socket whose other end is gone never gets to handle the signal at all, so
- * without the escalation a cancel would wait out the TCP timeout instead of the grace period.
- */
-const ABORT_GRACE_MS = 5000;
-
-/**
- * Wraps rsync.execute in a Promise.
- * All error messages are sanitized to prevent password/key leaks.
- *
- * With a signal, the transfer is killable: rsync has no way to be asked to stop, so the
- * process is ended. Without one, nothing changes - a transfer runs to completion.
- */
-function executeRsync(
-    rsync: Rsync,
-    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
-    signal?: AbortSignal
-): Promise<void> {
-    return new Promise((resolve, reject) => {
-        if (signal?.aborted) return reject(signal.reason);
-
-        let killTimer: NodeJS.Timeout | undefined;
-        // Initialized here rather than only assigned below, so the handler can be installed
-        // before the process starts. `undefined` is also what a wrapper that returns nothing
-        // leaves behind, and the kill path is the one place that must not throw on that.
-        let child: ChildProcess | undefined = undefined;
-
-        /** Drops the handler and the escalation timer the cancel path installs. */
-        const release = () => {
-            signal?.removeEventListener("abort", onAbort);
-            // The process ended on its own, so there is nothing left to escalate against.
-            // A SIGKILL past this point would land on whatever reused the process id.
-            if (killTimer) clearTimeout(killTimer);
-        };
-
-        const onAbort = () => {
-            // SIGTERM first, so rsync closes the file it is writing and ends its SSH session.
-            child?.kill("SIGTERM");
-            killTimer = setTimeout(() => child?.kill("SIGKILL"), ABORT_GRACE_MS);
-            // Unreferenced so a run already on its way out is not held open by a timer that
-            // only exists for a process which has most likely already gone.
-            killTimer.unref?.();
-
-            // Rejected right here rather than waiting for the process to report its own
-            // death. A cancel has to take effect now, and a child that cannot be reached at
-            // all would otherwise leave the run waiting on a transfer nobody will hear from
-            // again - which is the whole failure this exists to end.
-            reject(signal!.reason);
-        };
-
-        // Installed before the transfer starts, so a cancel arriving while rsync is being
-        // spawned is not lost. The handler tolerates a child that does not exist yet.
-        signal?.addEventListener("abort", onAbort, { once: true });
-
-        child = rsync.execute(
-            (error: Error | null, code: number, cmd: string) => {
-                release();
-
-                // A transfer killed by the abort above exits non-zero and reports the signal
-                // that ended it. The promise already carries the cancellation, so this only
-                // has to stay quiet instead of reporting a source that refused its files.
-                if (signal?.aborted) return;
-
-                if (error) {
-                    reject(new Error(`rsync exited with code ${code}: ${sanitizeCommand(error.message)} (cmd: ${sanitizeCommand(cmd)})`));
-                } else {
-                    resolve();
-                }
-            },
-            (data: Buffer) => {
-                if (!onLog) return;
-                // A chunk regularly carries several lines - a filename followed by its progress,
-                // for instance. Reported one by one so each can be judged on its own.
-                for (const line of data.toString().split("\n")) {
-                    const trimmed = line.trim();
-                    if (trimmed) onLog(trimmed, "info", "storage");
-                }
-            },
-            (data: Buffer) => {
-                if (!onLog) return;
-                for (const line of data.toString().split("\n")) {
-                    const trimmed = line.trim();
-                    if (trimmed) onLog(sanitizeCommand(`stderr: ${trimmed}`), "warning", "storage");
-                }
-            }
-        );
-    });
-}
-
-/**
  * Lists a remote tree over SSH with `find`, optionally including symbolic links.
  *
  * Two dialects, because the GNU `-printf` this relies on does not exist on BSD `find` (macOS,
@@ -471,50 +364,38 @@ async function findRemoteEntries(
 }
 
 /**
- * Creates a configured Rsync instance with shell and auth settings.
- * For password auth, uses SSHPASS env var via sshpass -e.
- * Must be called after checkSshpass() for password auth.
+ * The options every rsync of a connection runs with: archive mode, the SSH command of the
+ * connection and its additional options. For password auth, sshpass reads the password from
+ * the SSHPASS variable of the environment, never from the command line.
+ * Must be called after checkSshpass() for password auth, which it does itself.
  */
-async function createRsyncInstance(config: RsyncConfig, keyFile?: string, controlPath?: string): Promise<Rsync> {
+async function buildRsyncArgs(config: RsyncConfig, keyFile?: string, controlPath?: string): Promise<RsyncCommand> {
     // Archive mode, but deliberately without `-z`. Compressing in transit costs CPU on both ends
     // and changes nothing about what gets stored: DBackup compresses each archive entry itself in
     // the packing stage afterwards, so `-z` is the same work done twice. It also only pays off at
     // all on data that compresses, and a backup source is mostly the opposite - archives, images,
     // video, installers. On a slow link with genuinely compressible data it can still be worth it,
     // which is what the connection's "Additional rsync options" field is for.
-    const rsync = new Rsync()
-        .flags("a")
-        .set("partial")
-        .set("progress");
+    const args = ["-a", "--partial", "--progress"];
 
+    // rsync splits the -e command into its words itself, the same as it always did.
     const sshCmd = buildSshCommand(config, keyFile, controlPath);
-
-    // For password auth, prepend sshpass -e (reads password from SSHPASS env var)
+    let env: NodeJS.ProcessEnv | undefined;
     if (config.authType === "password" && config.password) {
         if (!await checkSshpass()) {
             throw new Error("Password authentication requires 'sshpass' to be installed. Install it or use SSH key / agent authentication instead.");
         }
-        rsync.shell(`sshpass -e ${sshCmd}`);
-        rsync.env({ ...process.env, SSHPASS: config.password } as Record<string, string>);
+        args.push("-e", `sshpass -e ${sshCmd}`);
+        env = getPasswordEnv(config);
     } else {
-        rsync.shell(sshCmd);
+        args.push("-e", sshCmd);
     }
 
-    // Apply additional user-defined options
-    if (config.options) {
-        const extraArgs = config.options.split(/\s+/).filter(Boolean);
-        for (const arg of extraArgs) {
-            const cleaned = arg.replace(/^-+/, "");
-            if (cleaned.length === 1) {
-                rsync.flags(cleaned);
-            } else {
-                const [key, ...rest] = cleaned.split("=");
-                rsync.set(key, rest.length > 0 ? rest.join("=") : undefined as any);
-            }
-        }
-    }
+    // The additional options go to rsync as they were written. Taking them apart turned a
+    // combined `-avz` into the option `--avz`, which rsync refuses.
+    if (config.options) args.push(...config.options.split(/\s+/).filter(Boolean));
 
-    return rsync;
+    return { args, ...(env ? { env } : {}) };
 }
 
 /**
@@ -553,12 +434,10 @@ async function performRsyncUpload(
 
         if (onLog) onLog(`Starting rsync upload to: ${config.host}:${remotePath}`, "info", "storage");
 
-        const rsync = await createRsyncInstance(config, keyFile, controlPath);
-        rsync.source(localPath);
-        rsync.destination(destination);
+        const command = await buildRsyncArgs(config, keyFile, controlPath);
 
         let lastPercent = 0;
-        await executeRsync(rsync, (msg, level, type, details) => {
+        await runRsync(command, { source: localPath, destination }, (msg, level, type, details) => {
             const progressMatch = msg.match(/(\d+)%/);
             if (progressMatch && onProgress) {
                 const percent = parseInt(progressMatch[1], 10);
@@ -669,13 +548,10 @@ export const RsyncAdapter: StorageAdapter = {
             const localDir = path.dirname(localPath);
             await fs.mkdir(localDir, { recursive: true });
 
-            const rsync = await createRsyncInstance(config, keyFile);
+            const command = await buildRsyncArgs(config, keyFile);
             const source = buildRemotePath(config, remotePath);
 
-            rsync.source(source);
-            rsync.destination(localPath);
-
-            await executeRsync(rsync, (msg, level, type, details) => {
+            await runRsync(command, { source, destination: localPath }, (msg, level, type, details) => {
                 // Parse transferred bytes from rsync output
                 const bytesMatch = msg.match(/^\s*([\d,]+)\s+\d+%/);
                 if (bytesMatch && onProgress) {
@@ -812,10 +688,10 @@ export const RsyncAdapter: StorageAdapter = {
 
             if (onLog) onLog(`Starting rsync directory download from: ${config.host}:${remotePath} (${transferFiles} file(s))`, "info", "storage");
 
-            const rsync = await createRsyncInstance(config, keyFile);
+            const command = await buildRsyncArgs(config, keyFile);
             // Without it the transfer still reports progress, just per file rather than as one
             // figure for the whole directory - `--progress` is set either way.
-            if (await supportsInfoProgress()) rsync.set("info", "progress2");
+            const extra = (await supportsInfoProgress()) ? ["--info=progress2"] : [];
 
             // The transfer takes exactly the files of the index. rsync's own --exclude reads the
             // same patterns by other rules: an unanchored pattern with a slash matches at any
@@ -824,15 +700,12 @@ export const RsyncAdapter: StorageAdapter = {
             // --files-from, -a copies links as links and does not recurse, and rsync 2.6.9,
             // rsync 3 and Apple's openrsync all read the list, NUL-separated with --from0.
             listFile = await writeFileList(toTransfer.map((e) => e.relativePath));
-            rsync.set("files-from", listFile);
-            rsync.set("from0");
+            extra.push(`--files-from=${listFile}`, "--from0");
 
             // Trailing slash: sync the directory's CONTENTS into localPath, not the directory itself
             const source = `${buildRemotePath(config, remotePath)}/`;
-            rsync.source(source);
-            rsync.destination(localPath);
 
-            await executeRsync(rsync, (msg, level, type, details) => {
+            await runRsync(command, { source, destination: localPath, extra }, (msg, level, type, details) => {
                 // Progress lines come in two dialects, and the remaining-files counter is spelled
                 // differently in each: `to-chk` from rsync 3's --info=progress2, `to-check` from
                 // the 2.6.9 format that openrsync also speaks.
@@ -893,12 +766,7 @@ export const RsyncAdapter: StorageAdapter = {
             } catch {
                 // Fallback: download via rsync
                 const source = buildRemotePath(config, remotePath);
-                const rsync = await createRsyncInstance(config, keyFile);
-
-                rsync.source(source);
-                rsync.destination(tmpPath);
-
-                await executeRsync(rsync);
+                await runRsync(await buildRsyncArgs(config, keyFile), { source, destination: tmpPath });
                 return await fs.readFile(tmpPath, "utf-8");
             }
         } catch {
@@ -1059,12 +927,7 @@ export const RsyncAdapter: StorageAdapter = {
             await fs.writeFile(tmpPath, "Connection Test");
 
             const destination = buildRemotePath(config, `.dbackup/test/${testFileName}`);
-            const rsync = await createRsyncInstance(config, keyFile);
-
-            rsync.source(tmpPath);
-            rsync.destination(destination);
-
-            await executeRsync(rsync);
+            await runRsync(await buildRsyncArgs(config, keyFile), { source: tmpPath, destination });
             remoteFileCreated = true;
 
             // 2. Delete Test

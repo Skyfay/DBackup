@@ -211,9 +211,6 @@ importers:
       recharts:
         specifier: 3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@18.3.1)(react@19.3.0)(redux@5.0.1)
-      rsync:
-        specifier: ^0.6.1
-        version: 0.6.1
       samba-client:
         specifier: ^7.2.0
         version: 7.2.0
@@ -6561,9 +6558,6 @@ packages:
   router@2.2.0:
     resolution: {integrity: sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==}
     engines: {node: '>= 18'}
-
-  rsync@0.6.1:
-    resolution: {integrity: sha512-39HcwWuM67CQ9tHloazShXWUOWa2m3SGqX6XQhQMSj0VCQMkSI9PodoxM7/+hKf2p4v2umbhfoarYqd1gwII/w==}
 
   run-applescript@7.1.0:
     resolution: {integrity: sha512-DPe5pVFaAsinSaV6QjQ6gdiedWDcRCbUuiQfQa2wmWV7+xC9bGulGI8+TdRmoFkAPaBXk8CrAbnlY2ISniJ47Q==}
@@ -14689,8 +14683,6 @@ snapshots:
       path-to-regexp: 8.4.2
     transitivePeerDependencies:
       - supports-color
-
-  rsync@0.6.1: {}
 
   run-applescript@7.1.0: {}
 

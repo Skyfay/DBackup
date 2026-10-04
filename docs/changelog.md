@@ -72,6 +72,7 @@ All notable changes to DBackup are documented here.
 - **restore**: Someone who may restore but not download can restore folders, which the count of the picked files turned down before.
 - **vault**: Deleting an encryption key that a job or the configuration backup still uses is refused, where the job went on without encryption before.
 - **api**: The examples of the API trigger and the `skyfay/dbackup:ci` image end on a Partial or Cancelled run, where they waited forever, stopped with an unknown status or timed out. The CI image exits with 2 for a Partial run and waits up to an hour, set with `DBACKUP_TIMEOUT`.
+- **api**: `GET /api/notification-logs` and `GET /api/notification-logs/{id}` answer 403 instead of 500 to a caller without `history:read`.
 - **connections**: Authorizing a cloud drive again checks the new token instead of still reporting the old one as expired, and the file browser of a path field answers a missing login or permission with 401 or 403 instead of a server error.
 - **users**: Deleting a user or a group and resetting a second factor ask first, and an account can no longer delete itself. The members of a deleted group move to a group picked for them instead of losing all access.
 - **users**: A user created by an admin gets a group right away and no longer starts with an open session nobody signed in with.

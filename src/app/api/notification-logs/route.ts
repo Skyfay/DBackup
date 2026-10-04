@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { logger } from "@/lib/logging/logger";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
 import {
   getNotificationFilterOptions, getNotificationLogFacets, getNotificationLogs, getNotificationStats,
 } from "@/services/notifications/notification-log-service";
+
+const log = logger.child({ route: "notification-logs" });
 
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext(await headers());
@@ -47,7 +51,11 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json({ ...result, ...(facets ? { facets } : {}), ...(stats ? { stats, options } : {}) });
-  } catch (_error) {
+  } catch (error: unknown) {
+    if (error instanceof PermissionError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    log.error("Failed to fetch notification logs", {}, wrapError(error));
     return NextResponse.json(
       { error: "Failed to fetch notification logs" },
       { status: 500 }

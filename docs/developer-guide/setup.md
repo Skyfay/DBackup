@@ -6,7 +6,7 @@ Complete guide to setting up DBackup for development.
 
 ### Required
 
-- **Node.js** 24, the version CI and the Docker image use
+- **Node.js** 24, the version CI and the Docker image use, pinned in `.node-version`
 - **pnpm** 10
 - **Git**
 
@@ -25,16 +25,21 @@ Use the setup script for your platform rather than installing these by hand. Sev
 ### macOS Installation
 
 ```bash
-brew install node
+# Node 24 through fnm, the version in .node-version
+brew install fnm
+eval "$(fnm env --use-on-cd)"
+fnm install 24
+fnm default 24
 npm install -g pnpm
 
 # Installs every CLI tool the adapters need, and prints the PATH lines to add
 ./scripts/setup-dev-macos.sh
 ```
 
-Then add this to `~/.zshrc`. The script prints it too, but it is easy to skip past:
+A plain `brew install node` would give you the newest Node instead, which is not the one CI and the image use. Add these lines to `~/.zshrc`. The first one lets fnm switch to the version in `.node-version` whenever you enter the project. The script prints the second one too, but it is easy to skip past:
 
 ```bash
+eval "$(fnm env --use-on-cd)"
 export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"
 ```
 

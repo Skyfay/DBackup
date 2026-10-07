@@ -41,6 +41,21 @@ CODENAME=$(lsb_release -cs)
 info "Detected Debian/Ubuntu codename: $CODENAME"
 
 # -------------------------------------------------------------------
+# 1b. Node.js in the version of .node-version, and pnpm 10
+#     NodeSource installs it system wide, since this script runs as root.
+# -------------------------------------------------------------------
+NODE_VERSION="$(tr -d '[:space:]' < "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.node-version")"
+if command -v node &>/dev/null && [[ "$(node -v)" == "v${NODE_VERSION}."* ]]; then
+    info "Node.js $(node -v) is already installed."
+else
+    info "Installing Node.js ${NODE_VERSION} from NodeSource..."
+    curl -fsSL "https://deb.nodesource.com/setup_${NODE_VERSION}.x" | bash - > /dev/null
+    apt-get install -y -qq nodejs > /dev/null
+fi
+info "Installing pnpm 10..."
+npm install -g --loglevel=error pnpm@10 > /dev/null
+
+# -------------------------------------------------------------------
 # 2. MySQL / MariaDB client (mysqldump, mysql)
 # -------------------------------------------------------------------
 info "Installing MySQL client tools..."
@@ -202,7 +217,7 @@ info "========================================="
 info "  DBackup Dev Dependencies — Summary"
 info "========================================="
 echo ""
-for cmd in mysql mysqldump mongodump mongorestore mongosh sqlite3 redis-cli pg_dump psql rsync smbclient sshpass sqlpackage; do
+for cmd in node pnpm mysql mysqldump mongodump mongorestore mongosh sqlite3 redis-cli pg_dump psql rsync smbclient sshpass sqlpackage; do
     if command -v "$cmd" &>/dev/null; then
         echo -e "  ${GREEN}✓${NC}  $cmd  ($(command -v "$cmd"))"
     else

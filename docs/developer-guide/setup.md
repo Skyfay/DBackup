@@ -25,18 +25,12 @@ Use the setup script for your platform rather than installing these by hand. Sev
 ### macOS Installation
 
 ```bash
-# Node 24 through fnm, the version in .node-version
-brew install fnm
-eval "$(fnm env --use-on-cd)"
-fnm install 24
-fnm default 24
-npm install -g pnpm
-
-# Installs every CLI tool the adapters need, and prints the PATH lines to add
+# Installs fnm with the Node of .node-version, pnpm 10 and every CLI tool the adapters need,
+# then prints the lines to add to ~/.zshrc
 ./scripts/setup-dev-macos.sh
 ```
 
-A plain `brew install node` would give you the newest Node instead, which is not the one CI and the image use. Add these lines to `~/.zshrc`. The first one lets fnm switch to the version in `.node-version` whenever you enter the project. The script prints the second one too, but it is easy to skip past:
+Then add the two lines the script prints to `~/.zshrc`. They are easy to skip past. The first one lets fnm switch to the Node in `.node-version` whenever you enter the project, which a plain `brew install node` would not do, since it follows the newest release.
 
 ```bash
 eval "$(fnm env --use-on-cd)"
@@ -56,11 +50,8 @@ A running `pnpm dev` inherited its environment at launch, and an editor-launched
 ### Ubuntu/Debian Installation
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-sudo apt-get install -y nodejs
-npm install -g pnpm
-
-# Installs every CLI tool, including SqlPackage, and prints a summary of what resolved
+# Installs the Node of .node-version from NodeSource, pnpm 10 and every CLI tool,
+# including SqlPackage, and prints a summary of what resolved
 sudo ./scripts/setup-dev-debian.sh
 ```
 

@@ -6,7 +6,8 @@ import { Nav } from "@/components/site/nav";
 import { Footer } from "@/components/site/footer";
 import { JsonLd } from "@/components/site/json-ld";
 import { SITE_URL } from "@/lib/site";
-import { GITHUB_REPO, DISCORD_URL, TAGLINE } from "@/lib/content";
+import { GITHUB_REPO, DISCORD_URL, META_DESCRIPTION, SITE_TITLE } from "@/lib/content";
+import { pageMetadata } from "@/lib/seo";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,7 +20,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const SITE_TITLE = "DBackup - Database & File Backup Automation";
+// The canonical stays with each page, so a page without its own never claims to be the home page.
+const { alternates: _alternates, ...sharedMetadata } = pageMetadata("/");
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -27,23 +29,13 @@ export const metadata: Metadata = {
     default: SITE_TITLE,
     template: "%s | DBackup",
   },
-  description: TAGLINE,
+  description: META_DESCRIPTION,
   icons: {
     icon: "/favicon/favicon-32x32.png",
     apple: "/favicon/favicon-256x256.png",
   },
-  openGraph: {
-    title: SITE_TITLE,
-    description: TAGLINE,
-    url: SITE_URL,
-    siteName: "DBackup",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: SITE_TITLE,
-    description: TAGLINE,
-  },
+  openGraph: sharedMetadata.openGraph,
+  twitter: sharedMetadata.twitter,
 };
 
 const ORGANIZATION_JSON_LD = {

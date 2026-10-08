@@ -5,16 +5,31 @@ import { QuickStart } from "@/components/site/home/quick-start";
 import { Faq } from "@/components/site/home/faq";
 import { JsonLd } from "@/components/site/json-ld";
 import { SITE_URL } from "@/lib/site";
-import { FAQS, TAGLINE } from "@/lib/content";
+import { DATABASES, DOCS_URL, FAQS, GITHUB_URL, META_DESCRIPTION } from "@/lib/content";
+import { pageMetadata } from "@/lib/seo";
 
 const SOFTWARE_APPLICATION_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   name: "DBackup",
-  description: TAGLINE,
+  description: META_DESCRIPTION,
   url: SITE_URL,
-  applicationCategory: "DeveloperApplication",
+  applicationCategory: "UtilitiesApplication",
+  applicationSubCategory: "Backup software",
   operatingSystem: "Linux, Docker",
+  softwareRequirements: "Docker",
+  license: "https://www.gnu.org/licenses/gpl-3.0.html",
+  isAccessibleForFree: true,
+  image: `${SITE_URL}/og.png`,
+  screenshot: `${SITE_URL}/screenshots/dashboard.png`,
+  featureList: [
+    ...DATABASES.map((db) => `${db.label} backups`),
+    "File and folder backups",
+    "AES-256-GCM encryption",
+    "Compression and smart retention",
+    "Restore without DBackup through the Recovery Kit",
+  ],
+  sameAs: [GITHUB_URL, DOCS_URL],
   offers: {
     "@type": "Offer",
     price: "0",
@@ -35,11 +50,7 @@ const FAQ_JSON_LD = {
   })),
 };
 
-export const metadata = {
-  alternates: {
-    canonical: "/",
-  },
-};
+export const metadata = pageMetadata("/");
 
 export default function Home() {
   return (

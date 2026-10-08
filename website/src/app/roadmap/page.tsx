@@ -1,16 +1,14 @@
 import { PageBackdrop } from "@/components/site/blog/page-backdrop";
+import { pageMetadata } from "@/lib/seo";
 import { Eyebrow, Glow } from "@/components/site/fx";
 import { NowSection } from "@/components/site/roadmap/now-section";
 import { RoadmapTimeline } from "@/components/site/roadmap/timeline";
 
-export const metadata = {
+export const metadata = pageMetadata("/roadmap/", {
   title: "Roadmap",
   description:
     "What shipped, what is being built and what is on the wishlist for DBackup. No promised dates, just an honest status.",
-  alternates: {
-    canonical: "/roadmap",
-  },
-};
+});
 
 export default function RoadmapPage() {
   return (

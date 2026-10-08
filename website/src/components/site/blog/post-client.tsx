@@ -29,7 +29,7 @@ export function ReadingProgress({ targetId }: { targetId: string }) {
   return (
     <div
       aria-hidden="true"
-      className="fixed top-0 left-0 z-50 h-[3px] bg-gradient-to-r from-tone-blue to-tone-violet shadow-[0_0_12px_rgb(96_165_250/0.8)]"
+      className="fixed top-0 left-0 z-50 h-[3px] bg-gradient-to-r from-post to-post-2 shadow-[0_0_12px_color-mix(in_srgb,var(--post-tone)_80%,transparent)]"
       style={{ width: `${progress * 100}%` }}
     />
   );
@@ -61,7 +61,7 @@ export function CopyLinkButton() {
       aria-label={copied ? "Link copied" : "Copy link"}
       className={cn(
         "flex size-10 items-center justify-center gap-1.5 rounded-full border font-medium transition-all duration-200 sm:h-[34px] sm:w-auto sm:rounded-lg sm:px-3",
-        copied ? "border-tone-green/35 bg-tone-green/10 text-tone-green" : "border-input bg-secondary"
+        copied ? "border-post/35 bg-post/10 text-post" : "border-input bg-secondary"
       )}
     >
       {copied ? <Check className="size-4 sm:size-3.5" strokeWidth={2.4} /> : <Link2 className="size-4 sm:size-3.5" />}
@@ -109,13 +109,13 @@ export function TableOfContents({ headings }: { headings: Heading[] }) {
               aria-current={on ? "location" : undefined}
               className={cn(
                 "relative flex items-center rounded-lg py-[7px] pr-2.5 pl-4 text-[13px] font-medium transition-all duration-200",
-                on ? "bg-tone-blue/8 text-foreground" : past ? "text-muted-foreground" : "text-faint hover:text-foreground"
+                on ? "bg-post/8 text-foreground" : past ? "text-muted-foreground" : "text-faint hover:text-foreground"
               )}
             >
               <span
                 className={cn(
                   "absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-sm transition-colors duration-200",
-                  on && "bg-tone-blue shadow-[0_0_8px_var(--tone-blue)]",
+                  on && "bg-post shadow-[0_0_8px_var(--post-tone)]",
                   past && "bg-input"
                 )}
               />

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Rss } from "lucide-react";
-import { CONIC, SpinBorder } from "@/components/site/fx";
+import { POST_CONIC, SpinBorder } from "@/components/site/fx";
 import { SpotlightCard } from "@/components/site/spotlight-card";
 import { PostCoverArt, PostFiles, TONE_RGB } from "@/components/site/blog/post-cover";
 import { AuthorAvatar } from "@/components/site/blog/author-avatar";
@@ -86,12 +86,16 @@ export function BlogIndex({ posts, dates }: { posts: PostSummary[]; dates: Recor
       </div>
 
       {featured && (
-        <Link href={`/blog/${featured.slug}`} className="group fx-lift mt-10 block rounded-3xl">
-          <SpinBorder conic={CONIC.blue} size={1800} speed="normal" radius={24} innerClassName="bg-card">
+        <Link
+          href={`/blog/${featured.slug}`}
+          data-post-tone={featured.cover?.tone ?? "blue"}
+          className="group fx-lift mt-10 block rounded-3xl"
+        >
+          <SpinBorder conic={POST_CONIC} size={1800} speed="normal" radius={24} innerClassName="bg-card">
             <span className="grid items-center gap-10 p-6 sm:p-10 lg:grid-cols-[1fr_480px]">
               <span className="flex flex-col gap-4">
                 <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                  <span className="rounded-full bg-tone-blue/14 px-2 py-0.5 text-xs font-medium text-tone-blue-soft">
+                  <span className="rounded-full bg-post/14 px-2 py-0.5 text-xs font-medium text-post">
                     Latest
                   </span>
                   {meta(featured)}
@@ -108,13 +112,17 @@ export function BlogIndex({ posts, dates }: { posts: PostSummary[]; dates: Recor
                       <Tag key={t}>{t}</Tag>
                     ))}
                   </span>
-                  <span className="ml-auto flex items-center gap-1.5 font-medium text-tone-blue-soft">
+                  <span className="ml-auto flex items-center gap-1.5 font-medium text-post">
                     Read
                     <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-1" />
                   </span>
                 </span>
               </span>
-              {featured.cover?.files ? (
+              {featured.image ? (
+                <span className="hidden lg:block">
+                  <PostCoverArt image={featured.image} className="aspect-[40/21] h-auto rounded-2xl border" />
+                </span>
+              ) : featured.cover?.files ? (
                 <PostFiles cover={featured.cover} />
               ) : (
                 <span className="hidden lg:block">
@@ -145,7 +153,7 @@ export function BlogIndex({ posts, dates }: { posts: PostSummary[]; dates: Recor
               reach={360}
               className="group flex flex-col rounded-[20px]"
             >
-              <PostCoverArt cover={p.cover} />
+              <PostCoverArt cover={p.cover} image={p.image} />
               <span className="relative flex grow flex-col gap-2.5 p-5">
                 <span className="text-xs text-muted-foreground">{meta(p)}</span>
                 <span className="text-[19px] leading-tight font-semibold tracking-[-0.02em]">{p.title}</span>

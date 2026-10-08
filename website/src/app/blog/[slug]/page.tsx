@@ -8,7 +8,7 @@ import { PageBackdrop } from "@/components/site/blog/page-backdrop";
 import { AuthorAvatar } from "@/components/site/blog/author-avatar";
 import { MDX_COMPONENTS } from "@/components/site/blog/mdx-components";
 import { CopyLinkButton, ReadingProgress, TableOfContents } from "@/components/site/blog/post-client";
-import { CONIC, Glow, SpinBorder } from "@/components/site/fx";
+import { Glow, POST_CONIC, SpinBorder } from "@/components/site/fx";
 import { JsonLd } from "@/components/site/json-ld";
 import {
   getAllPosts,
@@ -18,6 +18,7 @@ import {
   splitTitle,
 } from "@/lib/blog";
 import { ARCHIVE_FORMAT_URL, DISCORD_URL } from "@/lib/content";
+import { pageMetadata } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
 import { formatDate } from "@/lib/utils";
 
@@ -39,13 +40,13 @@ export async function generateMetadata({
   const { slug } = await params;
   if (!getAllSlugs().includes(slug)) return {};
   const post = getPostBySlug(slug);
-  return {
+  // Its card is the JPEG beside its illustration, or the one drawn at og.png.
+  return pageMetadata(`/blog/${slug}/`, {
     title: post.title,
     description: post.excerpt,
-    alternates: {
-      canonical: `/blog/${slug}`,
-    },
-  };
+    article: { publishedTime: post.date },
+    image: post.socialImage ?? `/blog/${slug}/og.png`,
+  });
 }
 
 function Tag({ children }: { children: string }) {
@@ -65,7 +66,9 @@ export default async function BlogPostPage({
   const headings = getHeadings(post.content);
   const [titleHead, titleTail] = splitTitle(post.title);
   const meta = `${formatDate(post.date)} · ${post.readingMinutes} min read`;
-  const tone = `var(--tone-${post.cover?.tone ?? "blue"})`;
+  // The page takes the color of the post: the glows, the reading bar, the
+  // table of contents, the accents of the text and the band at the end.
+  const tone = "var(--post-tone)";
   const tint = (pct: number) => `color-mix(in srgb, ${tone} ${pct}%, transparent)`;
 
   const posts = getAllPosts();
@@ -79,13 +82,28 @@ export default async function BlogPostPage({
     headline: post.title,
     description: post.excerpt,
     datePublished: post.date,
-    author: { "@type": "Person", name: post.author },
-    url: `${SITE_URL}/blog/${slug}`,
+    dateModified: post.date,
+    image: `${SITE_URL}${post.socialImage ?? `/blog/${slug}/og.png`}`,
+    author: { "@type": "Person", name: post.author, url: `https://github.com/${post.author}` },
+    publisher: { "@type": "Organization", name: "DBackup", logo: { "@type": "ImageObject", url: `${SITE_URL}/logo.png` } },
+    mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}/blog/${slug}/` },
+    url: `${SITE_URL}/blog/${slug}/`,
+    keywords: post.tags.join(", "),
+  };
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "DBackup", item: `${SITE_URL}/` },
+      { "@type": "ListItem", position: 2, name: "Blog", item: `${SITE_URL}/blog/` },
+      { "@type": "ListItem", position: 3, name: post.title, item: `${SITE_URL}/blog/${slug}/` },
+    ],
   };
 
   return (
-    <div className="relative">
+    <div data-post-tone={post.cover?.tone ?? "blue"} className="relative">
       <JsonLd data={blogPostingJsonLd} />
+      <JsonLd data={breadcrumbJsonLd} />
       <ReadingProgress targetId="post-body" />
       <PageBackdrop />
 
@@ -138,6 +156,21 @@ export default async function BlogPostPage({
         </div>
       </header>
 
+      {post.image && (
+        <div className="relative mx-auto mt-10 max-w-[1088px] px-6">
+          <Image
+            src={post.image}
+            alt=""
+            width={2400}
+            height={1260}
+            loading="eager"
+            fetchPriority="high"
+            sizes="(min-width: 1088px) 1040px, 100vw"
+            className="h-auto w-full rounded-[22px] border border-border shadow-[0_40px_100px_-40px_color-mix(in_srgb,var(--post-glow)_60%,transparent)]"
+          />
+        </div>
+      )}
+
       <div className="relative mx-auto mt-12 grid max-w-[1088px] items-start gap-16 px-6 lg:grid-cols-[minmax(0,720px)_1fr]">
         <article id="post-body" className="post-prose min-w-0">
           <MDXRemote
@@ -154,7 +187,7 @@ export default async function BlogPostPage({
         <aside className="sticky top-24 hidden flex-col gap-5 lg:flex">
           <TableOfContents headings={headings} />
           <div className="panel relative flex flex-col gap-3 overflow-hidden rounded-2xl p-[18px]">
-            <Glow color="#2563eb" opacity={0.25} blur={50} className="-top-[60px] -right-[60px] size-[180px]" />
+            <Glow color="var(--post-glow)" opacity={0.25} blur={50} className="-top-[60px] -right-[60px] size-[180px]" />
             <Image src="/logo.svg" alt="" width={36} height={36} className="relative" />
             <div className="relative font-semibold">Try DBackup</div>
             <p className="relative text-[13px] leading-[1.55] text-muted-foreground">
@@ -220,8 +253,8 @@ export default async function BlogPostPage({
       </section>
 
       <section className="mx-auto mt-[72px] max-w-[1248px] px-6">
-        <SpinBorder conic={CONIC.blue} size={2000} speed="normal" radius={28} innerClassName="dark overflow-hidden bg-[#0d0d0f] text-foreground">
-          <Glow color="#2563eb" opacity={0.25} blur={90} drift={1} className="-top-[60px] left-[30%] h-[260px] w-[500px]" />
+        <SpinBorder conic={POST_CONIC} size={2000} speed="normal" radius={28} innerClassName="dark overflow-hidden bg-[#0d0d0f] text-foreground">
+          <Glow color="var(--post-glow)" opacity={0.25} blur={90} drift={1} className="-top-[60px] left-[30%] h-[260px] w-[500px]" />
           <div className="relative flex flex-wrap items-center gap-8 p-8 sm:p-14">
             <div className="min-w-[260px] grow">
               <div className="text-[28px] font-semibold tracking-[-0.035em] sm:text-4xl">Backups you can open by hand.</div>

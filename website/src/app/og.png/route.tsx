@@ -1,12 +1,13 @@
 import { ImageResponse } from "next/og";
 import { TAGLINE } from "@/lib/content";
 
+// The social card of the site at a fixed .png path, so the host sends it as an
+// image. Rendered once during the static export.
 export const dynamic = "force-static";
-export const alt = "DBackup - Database & File Backup Automation";
-export const size = { width: 1200, height: 630 };
-export const contentType = "image/png";
 
-export default async function Image() {
+const size = { width: 1200, height: 630 };
+
+export function GET() {
   return new ImageResponse(
     (
       <div

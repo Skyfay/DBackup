@@ -1,20 +1,18 @@
 import { ImageResponse } from "next/og";
 import { getAllSlugs, getPostBySlug } from "@/lib/blog";
 
+// The card of a post without an illustration, at a fixed .png path, so the
+// host sends it as an image. Rendered once per post during the static export.
 export const dynamic = "force-static";
-export const alt = "DBackup Blog";
-export const size = { width: 1200, height: 630 };
-export const contentType = "image/png";
+export const dynamicParams = false;
+
+const size = { width: 1200, height: 630 };
 
 export function generateStaticParams() {
   return getAllSlugs().map((slug) => ({ slug }));
 }
 
-export default async function Image({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const post = getPostBySlug(slug);
 

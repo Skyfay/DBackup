@@ -1,3 +1,10 @@
+/** The title of the site in search results, with the words people search for. */
+export const SITE_TITLE = "DBackup - Self-Hosted Database & File Backup Automation";
+
+/** The description of the site in search results, at most about 160 characters. */
+export const META_DESCRIPTION =
+  "Self-hosted backup automation for MySQL, PostgreSQL, MongoDB, Redis, SQL Server and files, with AES-256-GCM encryption, compression and smart retention.";
+
 export const TAGLINE =
   "Self-hosted backup automation for databases and files, with encryption, compression, and smart retention.";
 

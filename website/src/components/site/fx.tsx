@@ -139,6 +139,10 @@ export function Stars({
   );
 }
 
+/** The spinning border in the color of a post, from the variables `data-post-tone` sets. */
+export const POST_CONIC =
+  "conic-gradient(from 0deg, transparent 0deg 270deg, var(--post-tone) 320deg, var(--post-tone-2) 350deg, transparent 360deg)";
+
 export const CONIC = {
   blue: "conic-gradient(from 0deg, transparent 0deg 270deg, #60a5fa 320deg, #a78bfa 350deg, transparent 360deg)",
   green: "conic-gradient(from 0deg, transparent 0deg 280deg, #34d399 330deg, #60a5fa 355deg, transparent 360deg)",

@@ -5,23 +5,42 @@ import { Eyebrow, Glow } from "@/components/site/fx";
 import { getAllPosts } from "@/lib/blog";
 import { formatDate } from "@/lib/utils";
 import { CHANGELOG_URL, GITHUB_URL } from "@/lib/content";
+import { JsonLd } from "@/components/site/json-ld";
+import { pageMetadata } from "@/lib/seo";
+import { SITE_URL } from "@/lib/site";
+
+const DESCRIPTION = "Design decisions, trade-offs and guides from the people who build DBackup.";
+
+const pageMeta = pageMetadata("/blog/", { title: "Blog", description: DESCRIPTION });
 
 export const metadata = {
-  title: "Blog",
-  description:
-    "Design decisions, trade-offs and guides from the people who build DBackup.",
-  alternates: {
-    canonical: "/blog",
-    types: { "application/rss+xml": "/blog/rss.xml" },
-  },
+  ...pageMeta,
+  alternates: { ...pageMeta.alternates, types: { "application/rss+xml": "/blog/rss.xml" } },
 };
 
 export default function BlogIndexPage() {
   const posts = getAllPosts();
   const dates = Object.fromEntries(posts.map((p) => [p.slug, formatDate(p.date)]));
+  const blogJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    name: "DBackup Blog",
+    description: DESCRIPTION,
+    url: `${SITE_URL}/blog/`,
+    blogPost: posts.map((p) => ({
+      "@type": "BlogPosting",
+      headline: p.title,
+      description: p.excerpt,
+      datePublished: p.date,
+      url: `${SITE_URL}/blog/${p.slug}/`,
+      image: `${SITE_URL}${p.socialImage ?? `/blog/${p.slug}/og.png`}`,
+      author: { "@type": "Person", name: p.author, url: `https://github.com/${p.author}` },
+    })),
+  };
 
   return (
     <div className="relative">
+      <JsonLd data={blogJsonLd} />
       <PageBackdrop />
 
       <div className="relative mx-auto max-w-[1148px] px-6 pt-[140px] sm:pt-[172px]">

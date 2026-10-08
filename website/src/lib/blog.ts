@@ -3,6 +3,8 @@ import path from "node:path";
 import matter from "gray-matter";
 
 const BLOG_DIR = path.join(process.cwd(), "src/content/blog");
+/** The illustration of a post, public/blog/<slug>.webp, and its social card, public/blog/<slug>.jpg. */
+const IMAGE_DIR = path.join(process.cwd(), "public/blog");
 const WORDS_PER_MINUTE = 220;
 
 export type PostTone = "blue" | "green" | "violet" | "cyan" | "amber";
@@ -32,6 +34,10 @@ export interface PostFrontmatter {
 export interface PostSummary extends PostFrontmatter {
   slug: string;
   readingMinutes: number;
+  /** The path of its illustration, shown on its card and above it, or null without one. */
+  image: string | null;
+  /** The path of its social card, 1200 by 630, or null to draw one. */
+  socialImage: string | null;
 }
 
 export interface Post extends PostSummary {
@@ -54,10 +60,13 @@ export function getPostBySlug(slug: string): Post {
   const raw = fs.readFileSync(path.join(BLOG_DIR, `${slug}.mdx`), "utf8");
   const { data, content } = matter(raw);
   const words = content.replace(/```[\s\S]*?```/g, "").split(/\s+/).filter(Boolean).length;
+  const has = (file: string) => fs.existsSync(path.join(IMAGE_DIR, file));
   return {
     slug,
     content,
     readingMinutes: Math.max(1, Math.round(words / WORDS_PER_MINUTE)),
+    image: has(`${slug}.webp`) ? `/blog/${slug}.webp` : null,
+    socialImage: has(`${slug}.jpg`) ? `/blog/${slug}.jpg` : null,
     ...(data as PostFrontmatter),
   };
 }

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowRight, ArrowUpRight, ChevronRight, Menu, Monitor, Moon, Sun, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useTheme } from "next-themes";
-import { CONIC } from "@/components/site/fx";
+import { CONIC, Glow } from "@/components/site/fx";
 import { GithubStarsWidget } from "@/components/site/github-stars-widget";
 import { INTEGRATION_COUNTS, NAV_LINKS, useActiveHref, useNavHref } from "@/components/site/nav-links";
 import { LocaleFlag, useLanguageChoice } from "@/components/site/language-switcher";
@@ -70,11 +70,7 @@ export function MobileMenu() {
               style={{ background: CONIC.blue }}
             />
             <div className="relative overflow-hidden rounded-[21px] bg-card/97">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -top-20 -right-16 h-[220px] w-[260px] rounded-full bg-[#2563eb]"
-                style={{ filter: "blur(60px)", opacity: "calc(0.22 * var(--glow-strength))" }}
-              />
+              <Glow color="#2563eb" opacity={0.22} blur={60} className="-top-20 -right-16 h-[220px] w-[260px]" />
 
               <div className="relative flex h-14 items-center gap-2.5 border-b border-border pr-2 pl-3.5">
                 <Image src="/logo.svg" alt="" width={26} height={26} />

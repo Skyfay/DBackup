@@ -95,8 +95,10 @@ export function ToneDialogCard({ className }: { className?: string }) {
     >
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-[120px] -bottom-[160px] h-[460px] w-[560px] rounded-full transition-[background] duration-500"
-        style={{ background: "var(--t)", filter: "blur(90px)", opacity: "calc(0.22 * var(--glow-strength))" }}
+        className="fx-glow pointer-events-none absolute -right-[120px] -bottom-[160px] h-[460px] w-[560px] rounded-full transition-[background] duration-500"
+        style={
+          { "--glow": "var(--t)", "--glow-blur": "90px", opacity: "calc(0.22 * var(--glow-strength))" } as CSSProperties
+        }
       />
       <div
         aria-hidden="true"

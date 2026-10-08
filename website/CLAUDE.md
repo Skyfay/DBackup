@@ -22,6 +22,14 @@ src/content/blog/          Posts as <slug>.mdx, translations as <slug>.de.mdx
 src/lib/                   blog, content, integrations, highlight, roadmap, seo, site, utils
 ```
 
+## Effects on touch screens
+
+The effects live in `components/site/fx.tsx` and `globals.css`, and two `@media (hover: none)` blocks there keep iOS Safari from freezing:
+
+- Every endless animation of a big element carries a class the first block stops, like `fx-floor` or `fx-drift`. A new effect joins that list. `fx-border` on a spinning conic layer is left out there instead, since a border standing still at a random angle looks broken. The marquees keep moving, a shifted layer costs the main thread nothing.
+- `html` carries `touch-action: manipulation`, so iOS does not hold taps back while it waits for a double tap.
+- No `filter: blur()` goes on a big element without a stand-in from the second block. iOS Safari draws a blur on the main thread, again whenever anything near it repaints, and the large blurred layers held the page for seconds on an iPhone. `will-change` does not save a layer wider than about 1280px with its blur. A soft light is a `Glow` or carries `fx-glow` with `--glow` and `--glow-blur` (touch screens draw a radial gradient instead), a gradient that only gets softer carries `fx-haze` (touch screens drop the blur), and anything else carries `fx-halo` (touch screens leave it out).
+
 ## Languages
 
 English lives at `/`, German under `/de/`, with no middleware since the export is static. Each language is a route group with its own root layout, both rendering `RootShell`, so `<html lang>` is right in the HTML. A new page gets a component in `components/pages/` and a route file in both groups. A new language gets its route group, its message file and its entry in `LOCALES`.

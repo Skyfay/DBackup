@@ -32,9 +32,7 @@ recovery-kit/
 └── ...
 ```
 
-One tool handles every backup format DBackup writes - database dumps, file backups and
-incremental chains, encrypted or not. It works out which one it is looking at, so you do
-not have to, and everything it restores lands in a `restored` folder ready to use.
+One tool handles every backup format DBackup writes - database dumps, file backups and incremental chains, encrypted or not. It works out which one it is looking at, so you do not have to, and everything it restores comes out ready to use.
 
 It streams every entry it extracts, so a backup containing a 50 GB VM image needs no more
 memory than one containing text files - which matters precisely when you are recovering
@@ -166,7 +164,7 @@ node dbackup-recover.js --extract <archive or folder> <output_dir> [pattern...]
 node dbackup-recover.js --decrypt <backup.enc> [output_dir] [database...]
 ```
 
-Everything lands in `./restored` unless another folder is named.
+`--extract` needs the output folder named. `--decrypt` and the wizard write into `./restored` unless another folder is named.
 
 `--list` prints the databases, the directory sources, and every file with its size and
 modification time. For an incremental snapshot it also names every archive the snapshot
@@ -181,10 +179,7 @@ node dbackup-recover.js --extract backup.tar ./restored docs
 
 Every extracted file and database dump is verified against the checksum recorded when the backup was made. A mismatch is reported, the file is not written, and the command exits non-zero. Dump checksums exist in backups written since every job became a seekable archive, and only a recently downloaded kit checks them, so download the kit again after updating DBackup.
 
-`--decrypt` handles a database backup written by an earlier version, encrypted as a single file. It decompresses in the
-same pass, and a backup holding several databases is unpacked into one dump per database -
-the output is always ready to feed to `mysql`, `psql` or `mongorestore`, never a `.gz` or a
-`.tar` to take apart first.
+`--decrypt` handles a database backup written by an earlier version, encrypted as a single file. It decompresses in the same pass, and a backup holding several databases is unpacked into one dump per database, never a `.gz` or a `.tar` to take apart first.
 
 ### Restoring a single database
 
@@ -199,7 +194,9 @@ node dbackup-recover.js --extract backup.tar ./restored databases/shop
 node dbackup-recover.js --decrypt AllDbs.tar.enc ./restored shop
 ```
 
-Naming a database in the first form also keeps the archive's directory sources and every other database out of the restore, so you get the dump on its own. A database whose name contains `/` or `\` is written with those characters replaced by `_`.
+Naming a database in the first form also keeps the archive's directory sources and every other database out of the restore, so you get the dump on its own. It lands at `databases/shop.<ext>` in the output folder, decrypted, decompressed and checked against its SHA-256. A database whose name contains `/` or `\` is written with those characters replaced by `_`.
+
+Either form gives a dump that is ready for its own tool: `mysql` for MySQL and MariaDB, `pg_restore` for PostgreSQL (not `psql`), and `mongorestore --gzip --archive=<file>` for MongoDB.
 
 The key is read from `master.key` next to the tool. Pass it as an extra argument to override,
 or leave it out entirely for unencrypted backups.
@@ -227,16 +224,16 @@ node dbackup-recover.js --extract ./chain-2026-07-24T03-00-00-000 ./restored
 To recover an older state, choose "Pick an older state" in the wizard, or name that archive
 directly - each one rebuilds the snapshot as it was at its own point in time.
 
-Keep the archives of a chain together in one folder; that is how they find each other. A
-missing archive aborts the extract by name instead of writing an incomplete restore.
+Keep the archives of a chain together in one folder. That is how they find each other. A missing archive aborts the extract by name instead of writing an incomplete restore.
 
 ::: tip Unencrypted archives need no kit at all
 If the job had no encryption profile, the archive is a plain TAR:
 
 ```bash
 tar -xf backup.tar
-# If the job used compression, the extracted files are gzip streams:
+# If the job used compression, members ending in .gz or .br are compressed streams:
 find . -name '*.gz' -exec gunzip {} +
+find . -name '*.br' -exec brotli -d --rm {} +
 ```
 
 Encrypted archives always require this kit, because each file inside is individually
@@ -336,11 +333,7 @@ whole thing.
 
 ### "Decryption failed. Either the key is wrong or the backup is damaged."
 
-The key in this folder does not open this backup. Each encryption profile has its own key,
-so check you have the kit for the profile the job used - the backup's `.meta.json` names it
-under `encryption.profileId`. Downloading a kit that covers every profile avoids the
-question entirely. If the key is right, the backup file itself is damaged and needs
-downloading again.
+The key in this folder does not open this backup. Each encryption profile has its own key, so check you have the kit for the profile the job used - the backup's `.meta.json` names it under `archive.profileId`, or under `encryption.profileId` for a backup written by an earlier version. Downloading a kit that covers every profile avoids the question entirely. If the key is right, the backup file itself is damaged and needs downloading again.
 
 A kit with several keys reports this as *"None of the N keys in this kit open ..."* and
 lists what it tried.

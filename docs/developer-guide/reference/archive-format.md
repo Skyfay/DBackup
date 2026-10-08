@@ -18,7 +18,7 @@ Backups written by earlier versions for jobs that backed up **only databases** u
 | :--- | :--- |
 | Restore one file or one database without downloading the backup | The archive is never compressed or encrypted as a whole, and the index records each entry's exact byte offset |
 | Browse contents without downloading the backup | A small index sidecar sits next to the archive |
-| Encrypted backups leak nothing | Member names are opaque, and the index (paths, sizes, checksums) is encrypted |
+| Encrypted archives reveal no paths | Member names are opaque, and the index (paths, sizes, checksums) is encrypted. The `.meta.json` beside the archive still names the databases |
 | Recoverable without DBackup | Documented format plus a standalone script, no server or database |
 | Unencrypted backups need no tooling at all | Real paths as member names, so `tar -xf` works |
 
@@ -375,6 +375,7 @@ node dbackup-recover.js --list ./chain-2026-07-15
 tar -xf backup.tar
 # Members carrying .gz or .br are compressed streams, the rest are already the real file:
 find . -name '*.gz' -exec gunzip {} +
+find . -name '*.br' -exec brotli -d --rm {} +
 ```
 
 ## What an encrypted archive still reveals
@@ -388,12 +389,9 @@ Full disclosure of the residual leak:
   compressed, and for those a compressed entry gives the same figure to within a fraction of
   a percent anyway.
 - The **archive's own size and timestamp**.
-- Everything in `.meta.json`, which is cleartext by design - job name, source name and type,
-  engine version, timestamps, and the crypto parameters. It contains no file paths or
-  database names.
+- Everything in `.meta.json`, which is cleartext by design - job name, source name and type, the names of the databases, engine version, timestamps, and the crypto parameters. It contains no file paths.
 
-Not revealed: file paths, directory structure, database names, file checksums, mtimes, or
-any content.
+Not revealed: file paths, directory structure, file checksums, mtimes, or any content.
 
 ## Next Steps
 

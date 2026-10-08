@@ -914,7 +914,7 @@
         "featureNote": "Rather do it by hand? The Manual tab lists the same steps as commands.",
         "archiveTitle": "One snapshot, every database",
         "archiveText": "An RDB file holds all logical databases of the server, so a backup is always one snapshot, whatever the job picked.",
-        "archive1": "Without an ACL user, the password is all DBackup needs. With one, allow it <code>SYNC</code>, <code>PSYNC</code>, <code>PING</code> and <code>INFO</code>.",
+        "archive1": "A login is a Vault profile with a user and a password. For a server with only requirepass the user is <code>default</code>, from Redis 6 on. An ACL user needs <code>SYNC</code>, <code>PSYNC</code>, <code>PING</code> and <code>INFO</code>.",
         "archive2": "Turn on TLS for a server that asks for it.",
         "archive3": "Sentinel and Cluster are not supported yet. DBackup takes the snapshot of the one server you name.",
         "restoreLead": "The snapshot is the RDB file Redis writes itself. The Recovery Kit decrypts and unpacks it, and Redis loads it on the next start.",

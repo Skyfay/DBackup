@@ -1,6 +1,6 @@
 # MySQL / MariaDB
 
-Configure MySQL or MariaDB databases for backup using `mysqldump` / `mariadb-dump`.
+Back up MySQL or MariaDB databases with `mariadb-dump` or `mysqldump`, one database at a time.
 
 ## Supported Versions
 
@@ -17,100 +17,66 @@ MySQL below 5.7 is not supported, but dumps are not blocked either. When the det
 
 | Mode | Description |
 | :--- | :--- |
-| **Direct** | DBackup connects via TCP and runs `mysqldump` locally |
-| **Over SSH** | DBackup connects via SSH and runs `mysqldump` on the remote host |
+| **Direct** | DBackup connects to the database port and runs the dump tool of its image |
+| **Over SSH** (beta) | DBackup logs into a server over SSH and runs the dump tool installed there |
+
+## Prerequisites
+
+DBackup needs three client tools, on its own server in direct mode and on the SSH server over SSH. For each it takes the MariaDB name and falls back to the MySQL one:
+
+| Tool | Used for |
+| :--- | :--- |
+| `mariadb-dump` or `mysqldump` | Backups |
+| `mariadb` or `mysql` | Restores, listing the databases (also for **All databases** in a job) and the check of events and routines before each dump |
+| `mariadb-admin` or `mysqladmin` | Test connection, health checks and detecting the server version |
+
+**Docker**: The image ships Debian's `mariadb-client`, so it runs the MariaDB tools against MySQL servers as well.
+
+### SSH Mode
+
+Install a client package on the SSH server:
+
+```bash
+apt-get install mariadb-client         # Debian/Ubuntu
+apt-get install default-mysql-client   # Debian/Ubuntu, the MariaDB client on Debian
+dnf install mysql                      # RHEL/CentOS/Fedora
+apk add mysql-client                   # Alpine
+```
+
+On Debian, the `mysql-client` package no longer exists. The MariaDB tools work with MySQL servers as well. The SSH user needs no `sudo`, only the right to run the tools and to write to `/tmp`.
+
+::: info SFTP required
+DBackup writes the password file, and on a restore the dump, to the SSH server over SFTP. SFTP is on by default in OpenSSH. If it was turned off, add `Subsystem sftp /usr/lib/openssh/sftp-server` back to `/etc/ssh/sshd_config` and restart SSH.
+:::
 
 ## Configuration
 
 ::: info Credential Profiles required
-MySQL / MariaDB requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
+MySQL / MariaDB requires a [Credential Profile](/user-guide/security/credential-profiles). Create a `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
 :::
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
-| **Host** | Database server hostname | `localhost` | ✅ |
+| **Host** | Database server hostname, over SSH as seen from the SSH server | `localhost` | ✅ |
 | **Port** | MySQL port | `3306` | ✅ |
-| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
-| **Database** | Database name(s) to backup | All databases | ❌ |
-| **Extra options** | Extra `mysqldump` flags. They come after the three switches below and win over them | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile | - | ✅ |
+| **SSH host** | SSH server hostname or IP, over SSH only | - | ✅ |
+| **Port** | SSH server port, over SSH only | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile, over SSH only | - | ✅ |
+| **Extra options** | Extra flags for the dump tool only. They come after the three switches below and win over them | - | ❌ |
 | **Consistent snapshot** | Reads each database at one point in time (`--single-transaction`) instead of locking its tables while it is dumped | On | ❌ |
 | **Stored procedures and functions** | Backs up the routines of each database (`--routines`) | On | ❌ |
 | **Events** | Backs up the scheduled events of each database (`--events`) | On | ❌ |
-| **Disable SSL** | Disable SSL for self-signed certificates | `false` | ❌ |
+| **Disable SSL** | Connects without SSL, for a server with a self-signed certificate. Applies to every connection, restores included | Off | ❌ |
 
-### SSH Mode Fields
-
-These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
-
-| Field | Description | Default | Required |
-| :--- | :--- | :--- | :--- |
-| **SSH host** | SSH server hostname or IP | - | ✅ |
-| **Port** | SSH server port | `22` | ❌ |
-| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-
-## Prerequisites
-
-### Direct Mode
-
-The DBackup server (or Docker container) needs `mysql` and `mysqldump` CLI tools installed.
-
-**Docker**: Already included in the DBackup image.
-
-### SSH Mode
-
-The **remote SSH server** must have the following tools installed:
+The source has no database field. Which databases to back up is picked in the **Source** part of the job. **All databases** runs `SHOW DATABASES` on every run and leaves out `information_schema`, `mysql`, `performance_schema` and `sys`, so a database added later is backed up too.
 
 ```bash
-# Required for backup
-mysqldump    # or mariadb-dump (MariaDB)
-
-# Required for restore
-mysql        # or mariadb (MariaDB)
+# Extra options examples
+--ignore-table=mydb.logs --ignore-table=mydb.sessions   # leave out tables
+--max-allowed-packet=1G                                 # bigger maximum packet size
 ```
-
-DBackup auto-detects which binary is available (`mysqldump` vs `mariadb-dump`, `mysql` vs `mariadb`).
-
-::: info SFTP required
-DBackup uses SFTP to securely transfer the database password to the remote server. SFTP is part of OpenSSH and is **enabled by default** on all standard Linux distributions. No extra configuration is needed unless SFTP was explicitly disabled in `/etc/ssh/sshd_config`.
-
-To verify SFTP is available on the remote server:
-```bash
-grep -i sftp /etc/ssh/sshd_config
-# Should show: Subsystem sftp /usr/lib/openssh/sftp-server
-```
-:::
-
-**The SSH user needs:**
-- Permission to write to `/tmp` on the remote server (standard on all Linux systems - `/tmp` is world-writable by default)
-- Execute permission for `mysql`/`mariadb` and `mysqldump`/`mariadb-dump` (standard - binaries in `/usr/bin/` are world-executable)
-- No elevated privileges or `sudo` required
-
-**Install on the remote host:**
-```bash
-# Debian/Ubuntu (MySQL client)
-apt-get install default-mysql-client
-
-# Debian/Ubuntu (MariaDB client - also provides mysqldump)
-apt-get install mariadb-client
-
-# RHEL/CentOS/Fedora
-dnf install mysql
-
-# Alpine
-apk add mysql-client
-
-# macOS
-brew install mysql-client
-```
-
-::: tip Debian ships MariaDB by default
-On Debian, the `mysql-client` package no longer exists. Use `default-mysql-client` (which installs `mariadb-client-compat`) or install `mariadb-client` directly. Both provide `mysqldump` and `mysql` commands that work with MySQL and MariaDB servers.
-:::
-
-::: danger Important
-In SSH mode, DBackup does **not** use local CLI tools. The database tools must be installed on the remote server where SSH connects to. DBackup executes them remotely and streams the output back.
-:::
 
 ## Setup Guide
 
@@ -138,77 +104,44 @@ A restore runs as the login of the source and creates tables, views, triggers, r
 - **Objects of another user**: a trigger, view, routine or event that names another user as its definer needs `SUPER`, `SET_ANY_DEFINER` (MySQL 8.2 and later), `SET_USER_ID` (MySQL 8.0) or `SET USER` (MariaDB).
 - **Binary logging**: with it on, the default on MySQL 8.0 and later, MySQL lets only a login with `SUPER` create triggers and stored functions. Restore with such a login, or set `log_bin_trust_function_creators = 1` on the server.
 
-The restore stops at the first statement it may not run, after the tables and their data are in. Restored events start running on the target if the event scheduler is on there, so restoring production into a staging server runs its events there too.
+The restore stops at the first statement that fails, and what ran before it stays in the target. Restored events start running on the target if the event scheduler is on there, so restoring production into a staging server runs its events there too.
+
+A backup only restores into a source of the same type, MySQL into MySQL and MariaDB into MariaDB. A backup of a newer server version than the target is refused, see [Version Guard](/user-guide/features/restore#version-guard).
 
 ### 2. Configure in DBackup
 
-#### Direct Mode
-
-1. Go to **Connections** → **Databases** → **New database**
-2. Select **MySQL** or **MariaDB**
-3. Pick **Direct** under **How DBackup connects**
-4. Enter host and port, and pick or create the **Login**
-5. Click **Test connection**
-6. Click **Create database**, then pick the databases in the job that uses the source
-
-#### SSH Mode
-
-1. Go to **Connections** → **Databases** → **New database**
-2. Select **MySQL** or **MariaDB**
-3. Pick **Over SSH** under **How DBackup connects**
-4. In the **SSH server** part: enter the SSH host and pick or create the **SSH login**
-5. Click **Test SSH** to verify SSH connectivity
-6. In the **Database** part: enter the MySQL host (usually `127.0.0.1` or `localhost` - relative to the SSH server) and port, and pick the **Login**
-7. Click **Test connection** to verify database connectivity via SSH
-8. Click **Create database**, then pick the databases in the job that uses the source
+1. Go to **Connections** → **Databases** → **New database** and select **MySQL** or **MariaDB**
+2. Under **How DBackup connects**, pick **Direct** or **Over SSH**
+3. Direct: enter **Host** and **Port** and pick or create the **Login**
+4. Over SSH: fill in the **SSH server** part and click **Test SSH**, then enter host, port and **Login** in the **Database** part
+5. Click **Test connection**, then **Create database**, and pick the databases in the job that uses the source
 
 ::: tip Host in SSH Mode
-The **Host** field in SSH mode refers to the database hostname **as seen from the SSH server**, not from DBackup. If MySQL runs on the same machine as the SSH server, use `127.0.0.1` or `localhost`.
+The **Host** is the database as seen from the SSH server. If MySQL runs on that machine, use `localhost` or `127.0.0.1`. Over SSH the client is not forced onto TCP, so `localhost` uses the server's socket and matches a `'dbackup'@'localhost'` account.
 :::
 
 ### 3. Docker Network
 
-<details>
-<summary>Database on host machine</summary>
-
-```yaml
-environment:
-  - DB_HOST=host.docker.internal
-```
-
-</details>
-
-<details>
-<summary>Database in same Docker network</summary>
+A database container in the same Docker network as DBackup is reached by its service name, like `mysql`. For a database on the host machine, enter `host.docker.internal` as **Host**. Docker Desktop knows that name. Docker Engine on Linux needs it added to the DBackup service:
 
 ```yaml
 services:
   dbackup:
-    networks: [backend]
-  mysql:
-    image: mysql:8
-    networks: [backend]
-networks:
-  backend:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
-
-Use `mysql` as the hostname in DBackup.
-
-</details>
 
 ## How It Works
 
-### Direct Mode
+### Backup
 
-DBackup runs `mariadb-dump` from its image against MySQL and MariaDB alike, with these flags for the switches under **Options**:
+DBackup dumps each database of the job on its own, with these flags for the switches under **Options**:
 
-- `--single-transaction` - **Consistent snapshot**, reads InnoDB tables at one point in time without blocking writes
-- `--routines` - **Stored procedures and functions**
-- `--events` - **Events**
+- `--single-transaction` for **Consistent snapshot**, reads InnoDB tables at one point in time without blocking writes
+- `--routines` for **Stored procedures and functions**
+- `--events` for **Events**
 
-Triggers and views are always included, the dump tools add them on their own.
-
-**Extra options** come after these flags, so `--skip-routines` there turns the routines off as well. DBackup adds no flag the extra options already set, and leaves out the snapshot when they contain `--lock-tables` or `--lock-all-tables`, which cannot be combined with it.
+Triggers and views are always included, the dump tools add them on their own. **Extra options** come after these flags, so `--skip-routines` there turns the routines off as well. DBackup adds no flag the extra options already set, and leaves out the snapshot when they contain `--lock-tables` or `--lock-all-tables`, which cannot be combined with it. When the tool is MySQL's own `mysqldump` 5.6.9 or later, DBackup also adds `--set-gtid-purged=OFF`, so a server with GTIDs needs no `RELOAD` and the dump carries no GTID set that a restore onto another server refuses.
 
 ::: warning MyISAM and Aria tables
 The snapshot only covers transactional tables. MyISAM and Aria tables are read without a lock, so writes to them during the dump can leave them inconsistent. Turn off **Consistent snapshot** for a source whose MyISAM tables change while it is backed up, which locks the tables of each database during its dump instead.
@@ -216,63 +149,15 @@ The snapshot only covers transactional tables. MyISAM and Aria tables are read w
 
 Before it dumps a database, DBackup checks whether the login may read its events and the code of its routines. The dump tools give up on either instead of skipping it, even for a database without any events. So DBackup leaves the part out for that database and writes a warning to the run with the right to grant, and the backup of everything else goes ahead.
 
-Output: `.sql` file with `CREATE` and `INSERT` statements.
+Over SSH, DBackup first checks that `mariadb-dump` or `mysqldump` exists on the SSH server, runs it there with the same flags and streams the output back over the connection.
 
-### SSH Mode
+### Password Handling
 
-In SSH mode, DBackup:
+The password never appears on a command line. DBackup writes it to a `[client]` file with mode `0600` and passes it to each tool with `--defaults-file`. In direct mode the file is a local temp file. Over SSH it is written straight to `/tmp/dbackup_<uuid>.cnf` on the SSH server over SFTP, with no copy on the DBackup server. The file is deleted right after use, also when the command fails.
 
-1. Connects to the remote server via SSH
-2. Checks that `mysqldump` (or `mariadb-dump`) is available on the remote host
-3. Executes the dump command remotely with the same flags as direct mode. When the remote tool is MySQL's own `mysqldump`, DBackup adds `--set-gtid-purged=OFF`, so a server with GTIDs needs no `RELOAD` for the snapshot and the dump carries no GTID set that a restore onto another server refuses
-4. Streams the SQL output back over the SSH connection
-5. Applies compression and encryption locally on the DBackup server
-6. Uploads the processed backup to the configured storage destination
+### Output
 
-The database password is delivered securely via a temporary `.my.cnf` file:
-
-1. DBackup writes the password to a temp file (`/tmp/dbackup_<uuid>.cnf`) on the **local** DBackup server (mode `0600`)
-2. The file is uploaded to `/tmp/dbackup_<uuid>.cnf` on the **remote** SSH server via SFTP binary transfer - it never appears in process arguments or shell history
-3. MySQL/MariaDB is invoked with `--defaults-file=<path>` pointing to that file
-4. Both files are deleted in a `finally` block regardless of success or failure
-
-This approach is compatible with all MariaDB versions including 11.4+, which removed `MYSQL_PWD` support.
-
-### Multi-Database Backups
-
-When backing up multiple databases, DBackup creates a **TAR archive**:
-
-```
-backup.tar
-├── manifest.json
-├── database1.sql
-├── database2.sql
-└── ...
-```
-
-From a multi-DB backup you can restore individual databases and rename them during restore.
-
-::: warning Breaking Change (v0.9.1)
-Multi-DB backups before v0.9.1 use a different format and cannot be restored with newer versions.
-:::
-
-### Extra Options Examples
-
-<details>
-<summary>Common mysqldump flags</summary>
-
-```bash
-# Skip specific tables
---ignore-table=mydb.logs --ignore-table=mydb.sessions
-
-# Extended insert for faster restore
---extended-insert
-
-# Set maximum packet size
---max-allowed-packet=1G
-```
-
-</details>
+Every run writes one `.tar` archive, with a `.tar.index` and a `.tar.meta.json` file next to it on each destination. Each database is its own entry, `databases/<name>.sql`, ending in `.gz` or `.br` when the job compresses the backup. In an encrypted backup the entries are named `d/000001` and onward instead. A single database can be restored or renamed without the others. The layout is described in [Archive Format](/developer-guide/reference/archive-format).
 
 ## Troubleshooting
 
@@ -282,7 +167,7 @@ Multi-DB backups before v0.9.1 use a different format and cannot be restored wit
 ERROR 1045 (28000): Access denied for user 'backup'@'172.17.0.1'
 ```
 
-**Solution:** Grant access from Docker network:
+**Solution:** Grant access from the Docker network:
 ```sql
 CREATE USER 'dbackup'@'172.17.%' IDENTIFIED BY 'password';
 GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON *.* TO 'dbackup'@'172.17.%';
@@ -290,7 +175,7 @@ GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON *.* TO 'dbackup'@'172.17
 
 ### Connection Timeout
 
-**Solution:** Ensure MySQL listens on all interfaces:
+**Solution:** Ensure MySQL listens on an address DBackup reaches:
 ```ini
 # my.cnf
 [mysqld]
@@ -299,10 +184,7 @@ bind-address = 0.0.0.0
 
 ### SSL Certificate Error
 
-**Solution:** Enable **Disable SSL** in the source config, or pass custom SSL flags:
-```bash
---ssl-mode=REQUIRED --ssl-ca=/path/to/ca.pem
-```
+**Solution:** Turn on **Disable SSL** under **Options**. It applies to the connection test, the database list, the dump and the restore. SSL flags in **Extra options** reach only the dump tool, so they do not help here.
 
 ### SSH: HestiaCP / unix_socket Authentication
 
@@ -310,66 +192,23 @@ bind-address = 0.0.0.0
 ERROR 1698 (28000): Access denied for user 'dbackup'@'localhost'
 ```
 
-HestiaCP installs MariaDB with the `unix_socket` auth plugin. The database user must be created with `IDENTIFIED BY` explicitly:
+HestiaCP installs MariaDB with the `unix_socket` auth plugin. Create the database user with a password explicitly:
 
 ```sql
 CREATE USER 'dbackup'@'localhost' IDENTIFIED BY 'your_password';
-GRANT SELECT, LOCK TABLES, SHOW VIEW, TRIGGER, EVENT, RELOAD, PROCESS ON *.* TO 'dbackup'@'localhost';
+GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON *.* TO 'dbackup'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-Note: Use `'dbackup'@'localhost'` (not `'dbackup'@'%'`) since DBackup connects via the local SSH session.
-
-### SSH: SFTP Subsystem Disabled
-
-```
-SFTP session failed: ...
-```
-
-If SFTP was explicitly disabled on the remote server, re-enable it in `/etc/ssh/sshd_config`:
-
-```ini
-Subsystem sftp /usr/lib/openssh/sftp-server
-```
-
-Then restart SSH: `systemctl restart sshd`
+Use `'dbackup'@'localhost'` rather than `'dbackup'@'%'`, since the tools run on the server itself.
 
 ### SSH: Binary Not Found
 
 ```
-Required binary not found on remote server. Tried: mysqldump, mariadb-dump
+None of the following binaries were found on ssh://user@host:22: mariadb-dump, mysqldump
 ```
 
-**Solution:** Install the MySQL/MariaDB client package on the remote server:
-```bash
-# Ubuntu/Debian
-apt-get install mysql-client
-# or
-apt-get install mariadb-client
-```
-
-### SSH: Connection Refused
-
-```
-SSH connection failed: connect ECONNREFUSED
-```
-
-**Solution:**
-1. Verify SSH is running on the remote server: `systemctl status sshd`
-2. Check the SSH port (default: 22)
-3. Check firewall rules allow SSH from the DBackup server
-4. Test manually: `ssh user@host`
-
-### SSH: Permission Denied
-
-```
-SSH connection failed: All configured authentication methods failed
-```
-
-**Solution:**
-1. Verify SSH credentials (username, password, or key)
-2. For private key auth, ensure the key is in PEM or OpenSSH format
-3. Check the remote server allows the chosen auth method in `sshd_config`
+**Solution:** Install a client package on the SSH server, see [SSH Mode](#ssh-mode).
 
 ## Next Steps
 

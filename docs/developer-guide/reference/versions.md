@@ -7,8 +7,8 @@ This document lists the database engines and versions supported by DBackup.
 | Database | Supported Versions | Client Tool | Notes |
 | :--- | :--- | :--- | :--- |
 | **PostgreSQL** | 12, 13, 14, 15, 16, 17, 18 | `pg_dump` | Backward compatible |
-| **MySQL** | 5.7, 8.0, 9.1 | `mysqldump` | Via mariadb-client |
-| **MariaDB** | 10.x, 11.x | `mysqldump` | Native support |
+| **MySQL** | 5.7, 8.0, 9.1 | `mariadb-dump` | Via mariadb-client |
+| **MariaDB** | 10.x, 11.x | `mariadb-dump` | Native support |
 | **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x | `mongodump` | Standard operations |
 | **SQLite** | 3.x | `sqlite3` | File-based |
 | **Microsoft SQL Server** | 2017, 2019, 2022 | `mssql` npm | T-SQL commands |
@@ -17,14 +17,19 @@ This document lists the database engines and versions supported by DBackup.
 
 ## Docker Container Tools
 
-DBackup's Docker image (Alpine Linux) includes:
+DBackup's Docker image is built on `node:24-slim` (Debian 12 bookworm) and includes:
 
-| Tool | Version | Supported Databases |
+| Package | Version | Supported Databases |
 | :--- | :--- | :--- |
-| `mysql-client` | MariaDB 11.4+ | MySQL 5.7+, MariaDB 10+ |
-| `postgresql18-client` | 18.1+ | PostgreSQL 12-18 |
-| `mongodb-tools` | 100.13+ | MongoDB 4-8 |
-| `sqlite` | 3.x | SQLite 3.x |
+| `mariadb-client` | Debian 12 package, MariaDB 10.11 | MySQL 5.7+, MariaDB 10+ |
+| `postgresql-client-18` | 18.x from the PGDG repository | PostgreSQL 12-18 |
+| `mongodb-database-tools` | 100.16.1 | MongoDB 4-8 |
+| `sqlite3` | Debian 12 package | SQLite 3.x |
+| `redis-tools` | Debian 12 package | Redis, Valkey |
+| Firebird `gbak` and `isql` | 5.0.3 | Firebird 3-5 |
+| `sqlpackage` | Current release at build time, on the .NET 10 runtime | Azure SQL Database |
+
+The image has no MySQL client of its own. DBackup calls `mariadb-dump`, `mariadb` and `mariadb-admin` first, so MySQL servers are backed up with the MariaDB tools too.
 
 ## PostgreSQL
 

@@ -16,16 +16,17 @@ DBackup uses a **two-layer encryption architecture**:
 ## How It Works
 
 ```
-Database → Dump → Compress → Encrypt → Upload
-                              ↑
-                    Encryption Profile Key
+Database → Dump to a temp file → Compress → Encrypt → Into the .tar → Upload
+                                               ↑
+                          Keys derived from the Encryption Profile Key
 ```
 
-Each backup is encrypted with:
-- **Algorithm**: AES-256-GCM
-- **Key**: 256-bit from Encryption Profile
-- **IV**: Unique random value per backup
-- **Auth Tag**: Integrity verification
+Each database dump, and the files of a directory source, become entries of their own inside the backup's `.tar`, each compressed if the job says so and then encrypted, so one database can be restored without decrypting the rest:
+- **Algorithm**: AES-256-GCM, with an auth tag per entry
+- **Keys**: derived per archive with HKDF-SHA256 from the 256-bit profile key and a fresh random salt
+- **Index**: the table of contents with names, sizes and checksums is encrypted too, and the entries carry opaque names like `d/000001`
+
+The `.meta.json` beside the archive stays readable and still names the databases, see [What an encrypted archive still reveals](/developer-guide/reference/archive-format#what-an-encrypted-archive-still-reveals).
 
 ## Encryption Profiles
 
@@ -173,25 +174,26 @@ If you lose `ENCRYPTION_KEY`, you cannot decrypt stored credentials or backup ke
 
 ```
 ┌─────────────────────────────────────────┐
-│           Backup File (.enc)            │
+│          Backup archive (.tar)          │
 │  ┌─────────────────────────────────┐    │
-│  │    Encrypted with Profile Key    │    │
+│  │  Entries encrypted with keys    │    │
+│  │  derived from the Profile Key   │    │
 │  └─────────────────────────────────┘    │
 └─────────────────────────────────────────┘
                     ↑
                     │
 ┌─────────────────────────────────────────┐
-│        Encryption Profile (DB)          │
+│         Encryption Profile (DB)         │
 │  ┌─────────────────────────────────┐    │
-│  │   Profile Key (256-bit)          │    │
-│  │   Encrypted with ENCRYPTION_KEY  │    │
+│  │  Profile Key (256-bit)          │    │
+│  │  Encrypted with ENCRYPTION_KEY  │    │
 │  └─────────────────────────────────┘    │
 └─────────────────────────────────────────┘
                     ↑
                     │
 ┌─────────────────────────────────────────┐
-│        ENCRYPTION_KEY (env var)         │
-│         32-byte hex string              │
+│         ENCRYPTION_KEY (env var)        │
+│            32-byte hex string           │
 └─────────────────────────────────────────┘
 ```
 
@@ -203,47 +205,19 @@ When restoring through DBackup:
 1. System reads `.meta.json`
 2. Looks up profile by ID
 3. Decrypts profile key
-4. Decrypts backup stream
+4. Derives the keys of the archive and decrypts the entries the restore needs
 5. Restores to database
 
 ### Smart Key Discovery
 
 If profile ID doesn't match (e.g., after key import):
-1. System tries imported keys
-2. Validates by checking decrypted content
+1. System tries every key in the Vault
+2. Validates each by opening the index of the archive, which only the right key can do
 3. Uses matching key automatically
 
 ### Manual (Recovery Kit)
 
-If DBackup is unavailable:
-1. Download Recovery Kit from profile
-2. Use included script with backup file
-3. Decrypt without DBackup
-
-## Recovery Kit
-
-Each profile can generate a Recovery Kit:
-
-1. Go to **Vault**
-2. Click profile
-3. Click **Download Recovery Kit**
-
-The kit contains:
-- Your encryption key
-- Decryption script (Node.js)
-- Instructions
-
-### Using the Recovery Kit
-
-```bash
-# Extract the kit
-unzip recovery-kit.zip
-
-# Decrypt a backup
-node decrypt.js backup.sql.gz.enc
-
-# Output: backup.sql.gz
-```
+If DBackup is unavailable, a recovery kit opens the backups. Download it under **Vault** > **Encryption** > **Recovery kit**. It holds the key and the tool `dbackup-recover.js`, which needs nothing but Node.js 18 or newer. See [Recovery Kit](/user-guide/security/recovery-kit) for how to use it.
 
 ## Best Practices
 
@@ -328,12 +302,11 @@ Prepare for worst case:
 - No padding oracle attacks
 - Industry standard
 
-### IV (Initialization Vector)
+### Nonces
 
-- 12 bytes (96 bits)
-- Randomly generated per backup
-- Stored in metadata file
-- Never reused with same key
+- 12 bytes, a random 4-byte prefix per archive plus the number of the entry
+- Stored in clear in the archive's manifest, together with the salt
+- Never reused with same key, since every archive derives keys of its own
 
 ## Compliance
 

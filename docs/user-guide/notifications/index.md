@@ -30,7 +30,7 @@ DBackup has two independent notification systems that share the same configured 
 
 | Layer | Configured In | Purpose |
 | :--- | :--- | :--- |
-| **Per-Job Notifications** | Job → Notifications tab | Alerts for individual backup jobs (success, failure, warning) |
+| **Per-Job Notifications** | Job → Notifications part | Alerts for individual backup jobs (success, partial, failure) |
 | **System Notifications** | Settings → Notifications | System-wide events (login, restore, errors) |
 
 See [Notifications Feature Guide](/user-guide/features/notifications) for details on per-job and system notification configuration.

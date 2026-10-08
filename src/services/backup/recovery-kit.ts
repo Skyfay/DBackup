@@ -191,8 +191,8 @@ incomplete restore.
 
 ## COMMAND LINE
 
-The same tool, for scripting or over SSH. Everything lands in ./restored unless another
-folder is named.
+The same tool, for scripting or over SSH. --extract writes into the folder it is given,
+--decrypt into ./restored unless another folder is named.
 
     node ${RECOVERY_TOOL} --list    <archive or folder>
     node ${RECOVERY_TOOL} --extract <archive or folder> <output_dir> [pattern...]

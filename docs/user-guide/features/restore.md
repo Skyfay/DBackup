@@ -79,7 +79,7 @@ Snapshots from an [incremental chain](/user-guide/features/backup-modes) restore
 
 **Restore** asks first, in amber, and lists each database with the name it gets and whether it overwrites one, and each folder with where it goes. The restore then runs in the background, and the page moves on to its run in History, or back to the Backups page when **Auto-redirect on job start** is off in your preferences.
 
-A start the server turns down keeps the page and says why, so the choices can be changed and started again. When the login of the server may not create databases, the page offers an admin login for this one run. It is used for `CREATE DATABASE` only and not saved.
+A start the server turns down keeps the page and says why, so the choices can be changed and started again. When the login of the server may not create databases, the page offers an admin login for this one run, which is not saved. PostgreSQL also restores with it, MySQL and MariaDB create the database with it and give the login of the server access to it, and MongoDB only checks the permissions with it.
 
 ## Restore Process
 
@@ -138,17 +138,17 @@ mysql -h host -u user -p database < backup.sql
 ### PostgreSQL
 
 ```bash
-psql -h host -U user -d database -f backup.sql
+pg_restore -h host -U user -d database --clean --if-exists --no-owner --no-acl backup.dump
 ```
 
-- Can create database if privileged
-- Restores schema and data
-- Handles sequences, indexes
+- Creates the database first when it is missing
+- Restores schema and data, without owners and grants
+- Needs a `pg_restore` at least as new as the `pg_dump` that wrote the dump
 
 ### MongoDB
 
 ```bash
-mongorestore --uri "mongodb://..." --archive=backup.archive
+mongorestore --uri "mongodb://..." --archive=backup.archive --gzip --drop
 ```
 
 - Restores all collections

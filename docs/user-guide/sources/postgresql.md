@@ -1,6 +1,6 @@
 # PostgreSQL
 
-Configure PostgreSQL databases for backup.
+Back up PostgreSQL databases with `pg_dump`, one database at a time.
 
 ## Supported Versions
 
@@ -8,288 +8,169 @@ Configure PostgreSQL databases for backup.
 | :--- |
 | 12, 13, 14, 15, 16, 17, 18 |
 
-DBackup uses `pg_dump` from PostgreSQL 18 client, which is backward compatible with older server versions.
+The DBackup image ships `pg_dump` 18, which can dump older servers. Over SSH the `pg_dump` installed on the SSH server is used instead.
 
 ## Connection Modes
 
 | Mode | Description |
 | :--- | :--- |
-| **Direct** | DBackup connects via TCP and runs `pg_dump` locally |
-| **Over SSH** | DBackup connects via SSH and runs `pg_dump` on the remote host |
-
-## Configuration
-
-::: info Credential Profiles required
-PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
-:::
-
-| Field | Description | Default | Required |
-| :--- | :--- | :--- | :--- |
-| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
-| **Host** | Database server hostname | `localhost` | ✅ |
-| **Port** | PostgreSQL port | `5432` | ✅ |
-| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
-| **Database** | Database name(s) to backup | All databases | ❌ |
-| **Extra options** | Extra `pg_dump` flags | - | ❌ |
-
-### SSH Mode Fields
-
-These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
-
-| Field | Description | Default | Required |
-| :--- | :--- | :--- | :--- |
-| **SSH host** | SSH server hostname or IP | - | ✅ |
-| **Port** | SSH server port | `22` | ❌ |
-| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Direct** | DBackup connects to the database port and runs `pg_dump` itself |
+| **Over SSH** (beta) | DBackup logs into a server over SSH and runs `pg_dump` there |
 
 ## Prerequisites
 
 ### Direct Mode
 
-The DBackup server needs `psql`, `pg_dump`, and `pg_restore` CLI tools installed.
-
-**Docker**: Already included in the DBackup image.
+The DBackup server needs `pg_dump`, `pg_restore` and `psql`. The Docker image includes them.
 
 ### SSH Mode
 
-The **remote SSH server** must have the following tools installed:
+DBackup runs the client tools on the SSH server, so they have to be installed there:
+
+| Tool | Used for |
+| :--- | :--- |
+| `pg_dump` | Backups |
+| `psql` | Test connection, health checks, listing the databases (also for **All databases** in a job) and creating a missing database on restore |
+| `pg_restore` | Restores |
 
 ```bash
-# Required for backup
-pg_dump
-
-# Required for restore
-pg_restore
-psql          # Used for connection testing and database listing
-
-# Required for database listing
-psql
+apt-get install postgresql-client   # Ubuntu/Debian
+dnf install postgresql              # RHEL/CentOS/Fedora
+apk add postgresql-client           # Alpine
 ```
 
-**Install on the remote host:**
-```bash
-# Ubuntu/Debian
-apt-get install postgresql-client
-
-# RHEL/CentOS/Fedora
-dnf install postgresql
-
-# Alpine
-apk add postgresql-client
-
-# macOS
-brew install libpq
-```
-
-::: danger Important
-In SSH mode, the database tools must be installed on the remote server. DBackup executes them remotely via SSH and streams the output back. The version on the remote server determines compatibility.
+::: warning Client version over SSH
+`pg_dump` refuses a server newer than itself. The client on the SSH server has to be at least the version of the PostgreSQL server it backs up.
 :::
 
-## Setting Up a Backup User
+## Configuration
 
-Create a dedicated user with minimal permissions:
+::: info Credential Profiles required
+PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profiles). Create a `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
+:::
+
+| Field | Description | Default | Required |
+| :--- | :--- | :--- | :--- |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
+| **Host** | Database server hostname, over SSH as seen from the SSH server | `localhost` | ✅ |
+| **Port** | PostgreSQL port | `5432` | ✅ |
+| **Login** | `USERNAME_PASSWORD` credential profile | - | ✅ |
+| **SSH host** | SSH server hostname or IP, over SSH only | - | ✅ |
+| **Port** | SSH server port, over SSH only | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile, over SSH only | - | ✅ |
+| **Extra options** | Extra `pg_dump` flags, added after the ones DBackup sets | - | ❌ |
+
+The source has no database field. Which databases to back up is picked in the **Source** part of the job. **All databases** lists them again on every run with `SELECT datname FROM pg_database WHERE datistemplate = false`, so a database added later is backed up too, the `postgres` database included.
+
+```bash
+# Extra options examples
+--exclude-table=logs --exclude-table=sessions   # leave out tables
+--exclude-table-data=audit_log                  # keep the table, leave out its rows
+--schema=public --schema=app                    # only some schemas
+```
+
+## Setup Guide
+
+### 1. Create a Backup User
 
 ```sql
--- Create backup user
 CREATE USER dbackup WITH PASSWORD 'secure_password_here';
-
--- Grant connect permission
 GRANT CONNECT ON DATABASE mydb TO dbackup;
-
--- Grant read access to all tables
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO dbackup;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO dbackup;
 
--- Grant access to future tables
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT SELECT ON TABLES TO dbackup;
+-- Tables created later
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO dbackup;
 ```
 
-For backing up **all databases**, the user needs:
+To back up every database, grant `pg_read_all_data` (PostgreSQL 14 and later) or make the user a superuser:
 
 ```sql
--- Superuser or these permissions:
-ALTER USER dbackup WITH SUPERUSER;
--- Or grant pg_read_all_data role (PostgreSQL 14+)
 GRANT pg_read_all_data TO dbackup;
 ```
 
-## Backup Process
+### 2. Configure in DBackup
 
-### Direct Mode
-
-DBackup runs `pg_dump` locally using PostgreSQL custom format (`-Fc`), which produces a compressed binary dump. Default flags:
-
-- `-Fc`: PostgreSQL custom format (compressed binary)
-- `--no-owner`: Don't output ownership commands
-- `--no-acl`: Don't output access privilege commands
-
-### SSH Mode
-
-In SSH mode, DBackup:
-
-1. Connects to the remote server via SSH
-2. Checks that `pg_dump` and `psql` are available on the remote host
-3. Executes `pg_dump` remotely (custom format: `-Fc`)
-4. Streams the dump output back over the SSH connection
-5. Applies additional compression/encryption locally
-6. Uploads to the configured storage destination
-
-The password is passed securely via the `PGPASSWORD` environment variable in the remote session.
+1. Go to **Connections** → **Databases** → **New database** and select **PostgreSQL**
+2. Under **How DBackup connects**, pick **Direct** or **Over SSH**
+3. Direct: enter **Host** and **Port** and pick or create the **Login**
+4. Over SSH: fill in the **SSH server** part and click **Test SSH**, then enter host, port and **Login** in the **Database** part
+5. Click **Test connection**, then **Create database**, and pick the databases in the job that uses the source
 
 ::: tip Host in SSH Mode
-The **Host** field refers to the database hostname **as seen from the SSH server**. If PostgreSQL runs on the same machine as the SSH server, use `127.0.0.1` or `localhost`.
+The **Host** is the database as seen from the SSH server. If PostgreSQL runs on that machine, use `127.0.0.1`. `pg_dump` connects over TCP, so `pg_hba.conf` needs a `host` line for that address.
 :::
 
-### Output Format
+### 3. Docker Network
 
-Each backup produces a `.dump` file in PostgreSQL custom format — a compressed binary that can only be restored with `pg_restore` (not psql). For multi-database backups, individual `.dump` files are bundled into a TAR archive (see [Multi-Database Backups](#multi-database-backups)).
-
-### Native Dump Compression
-
-PostgreSQL's native dump compression is set in the **Compression** part of the job (separate from DBackup's pipeline compression). See the [PostgreSQL Compression](#postgresql-compression) section below.
-
-## Extra Options Examples
-
-```bash
-# Custom output format (compressed)
---format=custom
-
-# Include large objects (BLOBs)
---blobs
-
-# Exclude specific tables
---exclude-table=logs --exclude-table=sessions
-
-# Only schema (no data)
---schema-only
-
-# Only data (no schema)
---data-only
-
-# Specific schemas
---schema=public --schema=app
-```
-
-## PostgreSQL Compression
-
-PostgreSQL native dump compression is a **job-level** setting in the **Compression** part of a backup job (not the source). It controls the `-Z` flag passed to `pg_dump` and is separate from DBackup's own pipeline compression. Each option is a card, and the level is a slider between faster and smaller with the default marked.
-
-| Option | Description | Levels | PG Version |
-| :--- | :--- | :--- | :--- |
-| **Gzip** | The usual pick, works everywhere | 0 to 9, default 6 | All |
-| **LZ4** | Fastest, a little larger | 0 to 9, default 1 | 14+ |
-| **Zstd** | Small and fast. Levels above 19 need a lot of memory | 1 to 22, default 3 | 16+ |
-| **None** | No native compression, DBackup compresses the backup instead | | All |
-
-Jobs from before this setting have the old default, which is Gzip at level 6 and shows as that. It stays as it is until the setting is changed.
-
-::: tip Combining Compression
-With **None** for the dump, the part offers DBackup's own compression for the whole backup, which happens in the pipeline after the dump. That is useful when you want a single compression method for all database types.
-:::
-
-::: warning LZ4 / ZSTD Version Requirements
-LZ4 requires PostgreSQL 14+ and ZSTD requires PostgreSQL 16+, **on the PostgreSQL server**, not the DBackup host. The job form reads the server's version and keeps these options out of reach, with the version they need, for an older server.
-:::
-
-## Multi-Database Backups
-
-When backing up multiple databases, DBackup creates a **TAR archive** containing individual `pg_dump -Fc` (custom format) dumps:
-
-```
-backup.tar
-├── manifest.json    # Metadata about contained databases
-├── database1.dump   # PostgreSQL custom format (compressed)
-├── database2.dump
-└── ...
-```
-
-### Benefits
-
-- **Custom Format**: Each database uses PostgreSQL's efficient custom format with built-in compression
-- **Selective Restore**: Choose which databases to restore
-- **Database Renaming**: Restore to different names
-- **Parallel-Ready**: Individual dumps enable future parallel restore support
-
-::: warning Breaking Change (v0.9.1)
-Multi-DB backups created before v0.9.1 used `pg_dumpall` and cannot be restored with newer versions.
-:::
-
-## Connection Security
-
-### SSL Connection
-
-PostgreSQL connections can use SSL:
-
-```bash
-# Extra options for SSL
-sslmode=require
-```
-
-Or configure in `pg_hba.conf`:
-```
-hostssl all all 0.0.0.0/0 scram-sha-256
-```
-
-### pg_hba.conf Configuration
-
-Ensure DBackup can connect:
-
-```
-# Allow backup user from Docker network
-host    all    dbackup    172.17.0.0/16    scram-sha-256
-```
-
-## Docker Network Configuration
-
-### Database on Host Machine
-
-```yaml
-environment:
-  - DB_HOST=host.docker.internal
-```
-
-### Database in Same Docker Network
+A database container in the same Docker network as DBackup is reached by its service name, like `postgres`. For a database on the host machine, enter `host.docker.internal` as **Host**. Docker Desktop knows that name. Docker Engine on Linux needs it added to the DBackup service:
 
 ```yaml
 services:
   dbackup:
-    networks:
-      - backend
-
-  postgres:
-    image: postgres:16
-    networks:
-      - backend
-
-networks:
-  backend:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
 
-## Multi-Database Backup
+PostgreSQL then has to listen on an address the container reaches, see [Connection Refused](#connection-refused).
 
-PostgreSQL supports backing up multiple databases in a single job:
+## How It Works
 
-1. In the source configuration, select multiple databases
-2. Each database is dumped separately
-3. All dumps are combined into a single backup archive
+### Backup
+
+For each database of the job, DBackup runs:
+
+```bash
+pg_dump -h <host> -p <port> -U <user> -F c -Z <compression> -d <database> [extra options]
+```
+
+The password is passed in `PGPASSWORD`, never on the command line. Over SSH the same command runs on the SSH server and its output streams back over the connection. DBackup checks first that `pg_dump` exists on the machine that runs it.
+
+`pg_dumpall` is never used, so roles, tablespaces and other objects of the whole server are not part of the backup.
+
+### PostgreSQL Compression
+
+PostgreSQL's own dump compression is set in the **Compression** part of the job and controls the `-Z` flag. Each option is a card, and the level is a slider between faster and smaller with the default marked.
+
+| Option | Description | Levels |
+| :--- | :--- | :--- |
+| **Gzip** | The usual pick, works everywhere | 0 to 9, default 6 |
+| **LZ4** | Fastest, a little larger | 0 to 9, default 1 |
+| **Zstd** | Small and fast. Levels above 19 need a lot of memory | 1 to 22, default 3 |
+| **None** | Runs `pg_dump -Z 0`, so the dump is uncompressed | |
+
+With **Gzip**, **LZ4** or **Zstd**, DBackup stores the dump as it is and does not compress it a second time. With **None**, the part offers DBackup's own [compression](/user-guide/security/compression) instead, which compresses each dump as an entry of its own. Jobs from before this setting use Gzip at level 6 and show as that.
+
+The job form offers **LZ4** for PostgreSQL 14 and later and **Zstd** for 16 and later, going by the version DBackup last detected for the source. For an older version the card is disabled and names the version it needs, and a job set to it falls back to Gzip at level 6. While no version is known, every option is offered. Over SSH, the `pg_dump` on the SSH server has to support the method as well.
+
+### Output
+
+Every run writes one `.tar` archive, with a `.tar.index` and a `.tar.meta.json` file next to it on each destination. Each database is its own entry, `databases/<name>.dump` in PostgreSQL custom format. It ends in `.gz` or `.br` only when the dump compression is **None** and DBackup compresses the backup. In an encrypted backup the entries are named `d/000001` and onward instead. A single database can be restored or renamed without the others. The layout is described in [Archive Format](/developer-guide/reference/archive-format).
+
+Multi-database backups from before v0.9.1 were made with `pg_dumpall` and cannot be restored.
+
+## Restore
+
+A restore is started from **Backups**, see [Restore](/user-guide/features/restore). For PostgreSQL:
+
+- A target database that does not exist yet is created with `CREATE DATABASE` first, and a database can be restored under another name.
+- Each database is restored with `pg_restore --clean --if-exists --no-owner --no-acl`, plus `--no-comments --no-tablespaces --no-security-labels`. Objects in the dump are dropped and created again, objects that exist only in the target stay.
+- Owners and grants are not restored. Restored objects belong to the login that ran the restore, and roles and their grants have to be set up on a new server by hand.
+- When a start fails with access or permission denied, the page offers an admin login for that one run. For PostgreSQL it creates the databases and runs `pg_restore` as well.
+- A backup of a newer PostgreSQL version than the target server is refused, see [Version Guard](/user-guide/features/restore#version-guard).
 
 ## Troubleshooting
 
 ### Connection Refused
 
 ```
-could not connect to server: Connection refused
+connection to server at "db" (172.18.0.2), port 5432 failed: Connection refused
 ```
 
-**Solutions**:
-1. Check PostgreSQL is listening on correct interface:
-   ```ini
-   # postgresql.conf
-   listen_addresses = '*'
-   ```
-2. Check `pg_hba.conf` allows connections from Docker
-3. Verify firewall rules
+**Solution:**
+1. Let PostgreSQL listen on an address DBackup reaches, `listen_addresses = '*'` in `postgresql.conf`
+2. Check the firewall between DBackup and the server
+3. When the error says `no pg_hba.conf entry` instead, allow the DBackup host in `pg_hba.conf`, for example `host all dbackup 172.17.0.0/16 scram-sha-256`
 
 ### Permission Denied
 
@@ -297,7 +178,7 @@ could not connect to server: Connection refused
 permission denied for table users
 ```
 
-**Solution**: Grant SELECT permission:
+**Solution:** Grant read access to the schema's tables:
 ```sql
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO dbackup;
 ```
@@ -305,54 +186,25 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO dbackup;
 ### Large Object Permission
 
 ```
-permission denied for large object
+permission denied for large object 16409
 ```
 
-**Solution**: Grant large object access:
-```sql
-GRANT SELECT ON LARGE OBJECTS TO dbackup;
--- Or use superuser for backup
-```
+**Solution:** Large objects are readable by their owner and superusers. Back up as one of them, or grant each object with `GRANT SELECT ON LARGE OBJECT 16409 TO dbackup`.
 
 ### SSH: Binary Not Found
 
 ```
-Required binary not found on remote server. Tried: pg_dump
+None of the following binaries were found on ssh://user@host:22: pg_dump
 ```
 
-**Solution:** Install the PostgreSQL client package on the remote server:
-```bash
-# Ubuntu/Debian
-apt-get install postgresql-client
-
-# RHEL/CentOS
-dnf install postgresql
-```
+**Solution:** Install the PostgreSQL client package on the SSH server, see [SSH Mode](#ssh-mode).
 
 ### SSH: Connection Refused
 
 **Solution:**
 1. Verify SSH is running: `systemctl status sshd`
-2. Check SSH port and firewall rules
+2. Check the SSH port and firewall rules
 3. Test manually: `ssh user@host`
-
-## Restore
-
-To restore a PostgreSQL backup:
-
-1. Go to **Backups**
-2. Find your backup file
-3. Click **Restore**
-4. Select target database
-5. Optionally provide privileged credentials for `CREATE DATABASE`
-6. Confirm and monitor progress
-
-### Restore to New Database
-
-The restore process can:
-- Create a new database (requires `CREATE DATABASE` permission)
-- Restore to an existing database
-- Map database names (restore `prod` to `staging`)
 
 ## Next Steps
 

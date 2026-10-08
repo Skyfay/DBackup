@@ -77,7 +77,7 @@ Reduce backup size significantly in the **Compression** part. Every option is a 
 | **Gzip** | Fast | 60-70% | General use |
 | **Brotli** | Slower | 70-80% | Maximum compression |
 
-A PostgreSQL job lets `pg_dump` compress the dump while it writes it, with Gzip, LZ4 or Zstd, and a slider for the level between faster and smaller that marks the default. DBackup then does not compress the dump a second time, only the folders of a job that has them. With **None** for the dump, DBackup compresses the whole backup instead. An option the PostgreSQL server cannot do stays visible and says which version it needs. See [PostgreSQL → PostgreSQL Compression](/user-guide/sources/postgresql#postgresql-compression).
+A PostgreSQL job lets `pg_dump` compress the dump while it writes it, with Gzip, LZ4 or Zstd, and a slider for the level between faster and smaller that marks the default. DBackup then does not compress the dump a second time, only the folders of a job that has them. With **None** for the dump, DBackup compresses each dump itself, as an entry of its own and never the backup as a whole. An option the PostgreSQL server cannot do stays visible and says which version it needs. See [PostgreSQL → PostgreSQL Compression](/user-guide/sources/postgresql#postgresql-compression).
 
 ### Encryption
 

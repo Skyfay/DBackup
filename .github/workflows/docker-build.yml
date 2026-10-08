@@ -7,8 +7,11 @@
 # Its own workflow rather than a job of Validate, since the release calls
 # Validate and would list this job as skipped.
 #
-# Waits for an approval through the environment docker-build, whose required
-# reviewers are set in the settings of the repository.
+# One job, Approve, waits for an approval through the environment docker-build,
+# whose required reviewers are set in the settings of the repository, and the
+# builds wait for Approve. GitHub asks for a review once per job that names the
+# environment, so only Approve names it: a run sends one request, not one per
+# platform.
 
 name: Docker Build
 
@@ -25,9 +28,17 @@ permissions:
   contents: read
 
 jobs:
+  approve:
+    name: Approve
+    environment: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approved
+        run: echo "The builds start now."
+
   build:
     name: Build (${{ matrix.suffix }})
-    environment: docker-build
+    needs: approve
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

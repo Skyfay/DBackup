@@ -6,19 +6,23 @@ import { CONIC, SpinBorder } from "@/components/site/fx";
 import { RunDiagram } from "@/components/site/home/run-diagram";
 import { useReducedMotion, useTick } from "@/components/site/home/use-tick";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
+import type { MessageKey } from "@/i18n/translate";
 
 // A backup run played on a loop: six steps of 14 ticks each, then 22 ticks
 // finished, then it starts over. One tick is 120 ms.
 const STEP = 14;
 const CYCLE = STEP * 6 + 22;
 
-const STEPS = [
-  { text: "Dump the database nextcloud", meta: "412 MB" },
-  { text: "Collect config and data over SFTP", meta: "2,318 files" },
-  { text: "Compress with Brotli", meta: "188 MB" },
-  { text: "Encrypt with AES-256-GCM", meta: "key 7f3a" },
-  { text: "Upload to Hetzner", meta: "fsn1" },
-  { text: "Upload to Cloudflare R2", meta: "auto" },
+// The steps are words of the app and follow the language, the log lines stay
+// as the tools print them.
+const STEPS: { text: MessageKey; meta: string | { key: MessageKey; vars: Record<string, string | number> } }[] = [
+  { text: "liveRun.stepDump", meta: "412 MB" },
+  { text: "liveRun.stepCollect", meta: { key: "liveRun.files", vars: { count: 2318 } } },
+  { text: "liveRun.stepCompress", meta: "188 MB" },
+  { text: "liveRun.stepEncrypt", meta: { key: "liveRun.key", vars: { id: "7f3a" } } },
+  { text: "liveRun.stepUploadHetzner", meta: "fsn1" },
+  { text: "liveRun.stepUploadR2", meta: "auto" },
 ];
 
 const LOGS: [string, string][] = [
@@ -48,6 +52,7 @@ const TAG_TONE: Record<string, string> = {
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export function LiveRun() {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const tick = useTick(120, ref, 400);
   const reduced = useReducedMotion();
@@ -100,12 +105,10 @@ export function LiveRun() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold">Nextcloud nightly</span>
                   <span className="rounded-full border border-input px-2 py-0.5 text-xs font-medium text-subtle">
-                    Incremental
+                    {t("liveRun.incremental")}
                   </span>
                 </div>
-                <div className="text-[13px] text-muted-foreground">
-                  MariaDB and /srv/nextcloud to Hetzner and R2
-                </div>
+                <div className="text-[13px] text-muted-foreground">{t("liveRun.jobDetail")}</div>
               </div>
               <span
                 className={cn(
@@ -117,13 +120,13 @@ export function LiveRun() {
                   {!finished && <span className="fx-ping absolute inset-0 rounded-full bg-current" />}
                   <span className="absolute inset-0 rounded-full bg-current" />
                 </span>
-                {finished ? "Completed" : "Running"}
+                {finished ? t("liveRun.completed") : t("liveRun.running")}
               </span>
             </div>
 
             <div className="flex flex-col gap-1.5">
               <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
-                <span>{finished ? "Finished, next run tomorrow at 02:00" : STEPS[cur].text}</span>
+                <span>{finished ? t("liveRun.finished") : t(STEPS[cur].text)}</span>
                 <span>{pct} %</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -170,10 +173,10 @@ export function LiveRun() {
                         done ? "text-subtle" : now ? "text-tone-blue-soft" : "text-fainter"
                       )}
                     >
-                      {s.text}
+                      {t(s.text)}
                     </span>
                     <span className="ml-auto text-xs text-faint tabular-nums">
-                      {done ? s.meta : now ? `${Math.round(within * 100)} %` : ""}
+                      {done ? (typeof s.meta === "string" ? s.meta : t(s.meta.key, s.meta.vars)) : now ? `${Math.round(within * 100)} %` : ""}
                     </span>
                   </li>
                 );

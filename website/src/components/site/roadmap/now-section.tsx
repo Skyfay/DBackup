@@ -5,6 +5,8 @@ import { CategoryPill } from "@/components/site/roadmap/category";
 import { StarMilestone } from "@/components/site/roadmap/star-milestone";
 import { MILESTONES, ROADMAP_ITEMS, SHIPPED_ITEMS, shippedHref } from "@/lib/roadmap";
 import { formatDate } from "@/lib/utils";
+import { INTL_LOCALE, type Locale } from "@/i18n/config";
+import { createTranslator } from "@/i18n/translate";
 
 const CONIC_NOW =
   "conic-gradient(from 0deg, transparent 0deg 250deg, #34d399 290deg, #60a5fa 320deg, #a78bfa 345deg, transparent 360deg)";
@@ -19,18 +21,18 @@ function Label({ dot, children }: { dot: React.ReactNode; children: React.ReactN
 }
 
 /** The top of the spine: the last release, what is being built and the next goal. */
-export function NowSection() {
-  const latest = SHIPPED_ITEMS.find((s) => !s.star) ?? SHIPPED_ITEMS[0];
+export function NowSection({ locale }: { locale: Locale }) {
+  const t = createTranslator(locale);
+  const dayOf = new Intl.DateTimeFormat(INTL_LOCALE[locale], { month: "short", day: "numeric", timeZone: "UTC" });
+  const latest = SHIPPED_ITEMS.find((s) => s.stars === undefined) ?? SHIPPED_ITEMS[0];
   const inProgress = ROADMAP_ITEMS.filter((i) => i.status === "in-progress");
   const milestone = MILESTONES[0];
-  const reached = SHIPPED_ITEMS.filter((s) => s.star)
-    .map((s) => ({ value: parseInt(s.title, 10), date: s.releaseDate }))
-    .filter((s) => !Number.isNaN(s.value))
+  const reached = SHIPPED_ITEMS.flatMap((s) => (s.stars === undefined ? [] : [{ value: s.stars, date: s.releaseDate }]))
     .sort((a, b) => a.value - b.value)
-    .map((s) => ({ value: s.value, label: `${s.value} · ${formatDate(s.date).replace(/, \d{4}$/, "")}` }));
+    .map((s) => ({ value: s.value, label: `${s.value} · ${dayOf.format(new Date(s.date))}` }));
 
   return (
-    <section aria-label="Now" className="relative z-[2] mx-auto mt-16 flex max-w-[1248px] flex-col items-center px-6">
+    <section aria-label={t("roadmap.now")} className="relative z-[2] mx-auto mt-16 flex max-w-[1248px] flex-col items-center px-6">
       <div
         aria-hidden="true"
         className="fx-drift pointer-events-none absolute -top-[90px] left-1/2 -ml-[430px] h-[440px] w-[860px] rounded-full"
@@ -44,7 +46,7 @@ export function NowSection() {
         <Image src="/logo.svg" alt="" width={30} height={30} />
       </span>
       <span className="relative mt-2.5 rounded-full bg-tone-blue/14 px-2.5 py-0.5 text-xs font-semibold tracking-[0.08em] text-tone-blue-soft uppercase">
-        Now
+        {t("roadmap.now")}
       </span>
       <span
         aria-hidden="true"
@@ -61,7 +63,7 @@ export function NowSection() {
       >
         <div className="flex flex-col gap-3 border-b border-border p-6 md:border-r md:border-b-0">
           <Label dot={<span className="size-2 rounded-full bg-tone-green shadow-[0_0_10px_rgb(52_211_153/0.8)]" />}>
-            Last shipped
+            {t("roadmap.lastShipped")}
           </Label>
           <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
             {latest.version && (
@@ -69,16 +71,18 @@ export function NowSection() {
                 {latest.version}
               </span>
             )}
-            {formatDate(latest.releaseDate)}
+            {formatDate(latest.releaseDate, locale)}
           </span>
-          <span className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">{latest.title}</span>
+          <span className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">
+            {t(`roadmap.shipped.${latest.slug}.title`)}
+          </span>
           <a
             href={shippedHref(latest)}
             target="_blank"
             rel="noreferrer"
             className="mt-auto inline-flex w-fit items-center gap-1 text-[13px] font-medium text-tone-green"
           >
-            View in changelog
+            {t("roadmap.viewInChangelog")}
             <ArrowUpRight className="size-3.5" />
           </a>
         </div>
@@ -92,7 +96,7 @@ export function NowSection() {
               </span>
             }
           >
-            In progress
+            {t("roadmap.inProgress")}
             <span className="rounded-full border border-border-strong px-[7px] text-[11px] tracking-normal text-muted-foreground tabular-nums">
               {inProgress.length}
             </span>
@@ -103,7 +107,7 @@ export function NowSection() {
               className="flex flex-col gap-2 rounded-xl border border-tone-blue/32 bg-tone-blue/6 px-3.5 py-3"
             >
               <span className="flex flex-wrap items-center gap-2">
-                <span className="grow text-base font-semibold">{item.title}</span>
+                <span className="grow text-base font-semibold">{t(`roadmap.items.${item.slug}.title`)}</span>
                 <CategoryPill category={item.category} />
               </span>
               <span aria-hidden="true" className="relative h-1 overflow-hidden rounded-full bg-muted">
@@ -113,17 +117,15 @@ export function NowSection() {
           ))}
           {inProgress.length === 0 && (
             <>
-              <span className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">Nothing marked in progress</span>
-              <span className="leading-[1.55] text-muted-foreground">
-                No item is marked in progress right now. Planned work moves here once it starts.
-              </span>
+              <span className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">{t("roadmap.nothingInProgress")}</span>
+              <span className="leading-[1.55] text-muted-foreground">{t("roadmap.nothingInProgressText")}</span>
             </>
           )}
         </div>
 
         <div className="flex flex-col gap-3 p-6">
           <Label dot={<span className="size-2 rounded-full bg-tone-amber shadow-[0_0_10px_rgb(251_191_36/0.8)]" />}>
-            Next milestone
+            {t("roadmap.nextMilestone")}
           </Label>
           {milestone && <StarMilestone milestone={milestone} reached={reached} />}
         </div>

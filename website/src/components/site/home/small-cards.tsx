@@ -6,6 +6,8 @@ import { SpotlightCard } from "@/components/site/spotlight-card";
 import { Glow } from "@/components/site/fx";
 import { useTick } from "@/components/site/home/use-tick";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
+import type { MessageKey } from "@/i18n/translate";
 
 const HEX = "0123456789abcdef";
 
@@ -21,6 +23,7 @@ function cipherAt(tick: number) {
 }
 
 export function CipherCard({ className }: { className?: string }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const tick = useTick(120, ref, 0);
 
@@ -32,9 +35,7 @@ export function CipherCard({ className }: { className?: string }) {
       </span>
       <div className="relative">
         <h3 className="text-lg font-semibold">AES-256-GCM</h3>
-        <p className="mt-1.5 leading-[1.55] text-muted-foreground">
-          Encrypted before it leaves the host. Restorable with the Recovery Kit alone.
-        </p>
+        <p className="mt-1.5 leading-[1.55] text-muted-foreground">{t("features.cipherText")}</p>
       </div>
       <div
         aria-hidden="true"
@@ -46,16 +47,17 @@ export function CipherCard({ className }: { className?: string }) {
   );
 }
 
-const SWITCHES = ["Sign in with OIDC", "Require passkey or 2FA"];
+const SWITCHES: MessageKey[] = ["features.oidc", "features.passkey"];
 
 export function TeamCard({ className }: { className?: string }) {
+  const { t } = useI18n();
   const [on, setOn] = useState([true, true]);
 
   return (
     <SpotlightCard className={cn("flex flex-col gap-3.5 rounded-[22px] p-6", className)}>
       <div className="relative">
-        <h3 className="text-lg font-semibold tracking-[-0.02em]">Built for teams</h3>
-        <p className="mt-1.5 text-muted-foreground">SSO, roles, passkeys and a REST API.</p>
+        <h3 className="text-lg font-semibold tracking-[-0.02em]">{t("features.teamTitle")}</h3>
+        <p className="mt-1.5 text-muted-foreground">{t("features.teamText")}</p>
       </div>
       <div className="relative mt-auto flex flex-col rounded-xl border border-border text-[13px]">
         {SWITCHES.map((label, i) => (
@@ -67,7 +69,7 @@ export function TeamCard({ className }: { className?: string }) {
             onClick={() => setOn((prev) => prev.map((v, j) => (j === i ? !v : v)))}
             className="flex w-full items-center justify-between p-3 text-left [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
           >
-            <span>{label}</span>
+            <span>{t(label)}</span>
             <span
               className={cn(
                 "relative h-5 w-[34px] shrink-0 rounded-full transition-colors duration-200",

@@ -7,6 +7,8 @@ import { useReducedMotion, useTick } from "@/components/site/home/use-tick";
 import { codeText, composeLines, generateKeys, runLines, type Keys } from "@/components/site/home/code-tokens";
 import { DockTerminal, EditorPane, RunTerminal, SetupBrowser } from "@/components/site/home/quick-start-panes";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
+import type { MessageKey } from "@/i18n/translate";
 
 // Each step plays for 50 ticks of 120 ms, then the next one starts, until a
 // step is picked. Switching the tab starts over at step 1.
@@ -18,6 +20,8 @@ const TONES = [
   { color: "#34d399", rgb: "52 211 153" },
 ];
 
+type Step = { title: MessageKey; text: MessageKey; status: MessageKey };
+
 const TABS = {
   compose: {
     file: "docker-compose.yml",
@@ -26,10 +30,10 @@ const TABS = {
     lang: "YAML · zsh",
     lines: composeLines,
     steps: [
-      { title: "Save the compose file", text: "Generate both secrets here or with openssl.", status: "Fill in both secrets" },
-      { title: "Start the container", text: "Run docker compose up -d, then open port 3000.", status: "Starting the container" },
-      { title: "Follow Quick Setup", text: "Source, destination and schedule in one flow.", status: "Quick Setup on localhost:3000" },
-    ],
+      { title: "start.saveCompose", text: "start.saveComposeText", status: "start.saveComposeStatus" },
+      { title: "start.startContainer", text: "start.startComposeText", status: "start.startComposeStatus" },
+      { title: "start.followSetup", text: "start.followSetupText", status: "start.followSetupStatus" },
+    ] as Step[],
   },
   run: {
     file: "docker run",
@@ -38,15 +42,16 @@ const TABS = {
     lang: "Shell",
     lines: runLines,
     steps: [
-      { title: "Copy the commands", text: "They write both secrets to .env once, keep that file.", status: "Paste the commands" },
-      { title: "Start the container", text: "Docker pulls the image and starts it on port 3000.", status: "Pulling the image and starting it" },
-      { title: "Follow Quick Setup", text: "Source, destination and schedule in one flow.", status: "Quick Setup on localhost:3000" },
-    ],
+      { title: "start.copyCommands", text: "start.copyCommandsText", status: "start.copyCommandsStatus" },
+      { title: "start.startContainer", text: "start.startRunText", status: "start.startRunStatus" },
+      { title: "start.followSetup", text: "start.followSetupText", status: "start.followSetupStatus" },
+    ] as Step[],
   },
 };
 type TabId = keyof typeof TABS;
 
 export function QuickStart() {
+  const { t } = useI18n();
   const ref = useRef<HTMLElement>(null);
   const tick = useTick(120, ref, 0);
   const reduced = useReducedMotion();
@@ -105,9 +110,9 @@ export function QuickStart() {
       />
 
       <div className="relative flex flex-col gap-6">
-        <Eyebrow>Quick start</Eyebrow>
-        <h2 className="text-[34px] leading-[1.06] font-semibold tracking-[-0.04em] sm:text-[48px]">Running in two minutes.</h2>
-        <div role="group" aria-label="Steps" className="relative flex flex-col gap-1.5">
+        <Eyebrow>{t("start.eyebrow")}</Eyebrow>
+        <h2 className="text-[34px] leading-[1.06] font-semibold tracking-[-0.04em] sm:text-[48px]">{t("start.title")}</h2>
+        <div role="group" aria-label={t("start.steps")} className="relative flex flex-col gap-1.5">
           <span aria-hidden="true" className="absolute top-[34px] bottom-[34px] left-[25px] w-0.5 bg-border" />
           {current.steps.map((s, i) => {
             const on = i === stage;
@@ -143,8 +148,8 @@ export function QuickStart() {
                   {i + 1}
                 </span>
                 <span className="flex min-w-0 grow flex-col gap-0.5">
-                  <span className="font-semibold">{s.title}</span>
-                  <span className="text-muted-foreground">{s.text}</span>
+                  <span className="font-semibold">{t(s.title)}</span>
+                  <span className="text-muted-foreground">{t(s.text)}</span>
                   <span aria-hidden="true" className="mt-2 h-0.5 overflow-hidden rounded-full bg-border">
                     <span
                       className="block h-full rounded-full transition-[width] duration-150 ease-linear"
@@ -180,7 +185,7 @@ export function QuickStart() {
               <span className="size-[11px] rounded-full bg-[#fbbf24]" />
               <span className="size-[11px] rounded-full bg-[#34d399]" />
             </span>
-            <div role="tablist" aria-label="Install" className="flex self-stretch">
+            <div role="tablist" aria-label={t("start.install")} className="flex self-stretch">
               {(Object.keys(TABS) as TabId[]).map((id) => {
                 const t = TABS[id];
                 const on = id === tab;
@@ -229,7 +234,7 @@ export function QuickStart() {
               )}
             >
               {copied ? <Check className="size-3.5" strokeWidth={2.4} /> : <Copy className="size-3.5" />}
-              {copied ? "Copied" : "Copy"}
+              {copied ? t("start.copied") : t("start.copy")}
             </button>
           </div>
 
@@ -252,7 +257,7 @@ export function QuickStart() {
                 className="size-[7px] shrink-0 rounded-full"
                 style={{ background: TONES[stage].color, boxShadow: `0 0 8px ${TONES[stage].color}` }}
               />
-              Step {stage + 1} of 3 · {current.steps[stage].status}
+              {t("start.stepOf", { step: stage + 1, status: t(current.steps[stage].status) })}
             </span>
             <span aria-hidden="true" className="ml-auto hidden gap-1 sm:flex">
               {TONES.map((tone, i) => (

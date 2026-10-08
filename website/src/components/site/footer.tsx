@@ -8,59 +8,62 @@ import {
   GITHUB_URL,
   SPONSOR_URL,
 } from "@/lib/content";
+import { localePath, type Locale } from "@/i18n/config";
+import { createTranslator, type MessageKey } from "@/i18n/translate";
 
-const FOOTER_COLUMNS = [
+const FOOTER_COLUMNS: { title: MessageKey; links: { href: string; label: MessageKey; external?: boolean }[] }[] = [
   {
-    title: "Product",
+    title: "footer.product",
     links: [
-      { href: "/#features", label: "Features" },
-      { href: "/#integrations", label: "Integrations" },
-      { href: "/roadmap", label: "Roadmap" },
+      { href: "/#features", label: "footer.features" },
+      { href: "/#integrations", label: "footer.integrations" },
+      { href: "/roadmap", label: "footer.roadmap" },
     ],
   },
   {
-    title: "Resources",
+    title: "footer.resources",
     links: [
-      { href: DOCS_URL, label: "Documentation", external: true },
-      { href: API_DOCS_URL, label: "API reference", external: true },
-      { href: CHANGELOG_URL, label: "Changelog", external: true },
+      { href: DOCS_URL, label: "footer.documentation", external: true },
+      { href: API_DOCS_URL, label: "footer.api", external: true },
+      { href: CHANGELOG_URL, label: "footer.changelog", external: true },
     ],
   },
   {
-    title: "Community",
+    title: "footer.community",
     links: [
-      { href: GITHUB_URL, label: "GitHub", external: true },
-      { href: DISCORD_URL, label: "Discord", external: true },
-      { href: "/blog", label: "Blog" },
-      { href: SPONSOR_URL, label: "Sponsor", external: true },
+      { href: GITHUB_URL, label: "footer.github", external: true },
+      { href: DISCORD_URL, label: "footer.discord", external: true },
+      { href: "/blog", label: "footer.blog" },
+      { href: SPONSOR_URL, label: "footer.sponsor", external: true },
     ],
   },
 ];
 
-export function Footer() {
+export function Footer({ locale }: { locale: Locale }) {
+  const t = createTranslator(locale);
   return (
     <footer className="relative mt-28 border-t border-border/70 text-[13px] sm:mt-36">
       <div className="mx-auto grid max-w-[1200px] gap-8 px-6 py-10 sm:grid-cols-3 lg:grid-cols-[2fr_1fr_1fr_1fr]">
         <div className="flex flex-col gap-2.5 sm:col-span-3 lg:col-span-1">
-          <Link href="/" className="flex items-center gap-2.5 text-sm font-semibold">
+          <Link href={localePath(locale, "/")} className="flex items-center gap-2.5 text-sm font-semibold">
             <Image src="/logo.svg" alt="" width={24} height={24} />
             DBackup
           </Link>
-          <span className="text-faint">Self-hosted backups · GPL-3.0</span>
+          <span className="text-faint">{t("footer.tagline")}</span>
         </div>
 
         {FOOTER_COLUMNS.map((column) => (
           <div key={column.title} className="flex flex-col gap-2">
-            <h2 className="font-medium">{column.title}</h2>
+            <h2 className="font-medium">{t(column.title)}</h2>
             {column.links.map((link) => (
               <Link
                 key={link.href}
-                href={link.href}
+                href={link.external ? link.href : localePath(locale, link.href)}
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noreferrer" : undefined}
                 className="w-fit text-muted-foreground transition-colors hover:text-foreground"
               >
-                {link.label}
+                {t(link.label)}
               </Link>
             ))}
           </div>

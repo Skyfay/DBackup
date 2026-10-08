@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { SpotlightCard } from "@/components/site/spotlight-card";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
+import type { MessageKey } from "@/i18n/translate";
 
 const TONE: Record<string, string> = {
   create: "bg-tone-blue/14 text-tone-blue",
@@ -24,28 +26,30 @@ const TONE: Record<string, string> = {
   neutral: "bg-faint/14 text-subtle",
 };
 
-const COMMANDS: { label: string; tone: string; icon: LucideIcon; hint: string }[] = [
-  { label: "New job", tone: "create", icon: Plus, hint: "C" },
-  { label: "Restore a backup", tone: "warning", icon: RotateCcw, hint: "R" },
-  { label: "Edit retention template", tone: "edit", icon: Pencil, hint: "E" },
-  { label: "Pick a destination", tone: "pick", icon: Check, hint: "P" },
-  { label: "Run Postgres nightly now", tone: "neutral", icon: Play, hint: "Enter" },
-  { label: "Open Database Explorer", tone: "neutral", icon: Database, hint: "G D" },
-  { label: "Show failed runs", tone: "neutral", icon: Activity, hint: "G H" },
-  { label: "Download Recovery Kit", tone: "neutral", icon: Download, hint: "" },
+const COMMANDS: { label: MessageKey; tone: string; icon: LucideIcon; hint: string }[] = [
+  { label: "features.cmdNewJob", tone: "create", icon: Plus, hint: "C" },
+  { label: "features.cmdRestore", tone: "warning", icon: RotateCcw, hint: "R" },
+  { label: "features.cmdEditRetention", tone: "edit", icon: Pencil, hint: "E" },
+  { label: "features.cmdPickDestination", tone: "pick", icon: Check, hint: "P" },
+  { label: "features.cmdRunNow", tone: "neutral", icon: Play, hint: "Enter" },
+  { label: "features.cmdExplorer", tone: "neutral", icon: Database, hint: "G D" },
+  { label: "features.cmdFailed", tone: "neutral", icon: Activity, hint: "G H" },
+  { label: "features.cmdRecoveryKit", tone: "neutral", icon: Download, hint: "" },
 ];
 
 /** The Cmd K search of the app, filtering as you type. */
 export function CommandCard({ className }: { className?: string }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const matched = COMMANDS.filter((c) => !q || c.label.toLowerCase().includes(q)).slice(0, 7);
+  // The search runs over the labels in the language of the page, as in the app.
+  const matched = COMMANDS.filter((c) => !q || t(c.label).toLowerCase().includes(q)).slice(0, 7);
 
   return (
     <SpotlightCard className={cn("flex flex-col gap-4 rounded-[22px] p-6", className)}>
       <div className="relative">
-        <h3 className="text-lg font-semibold tracking-[-0.02em]">Everything is one keystroke away</h3>
-        <p className="mt-1.5 leading-[1.55] text-muted-foreground">Try it. Type to filter.</p>
+        <h3 className="text-lg font-semibold tracking-[-0.02em]">{t("features.commandTitle")}</h3>
+        <p className="mt-1.5 leading-[1.55] text-muted-foreground">{t("features.commandText")}</p>
       </div>
       <div className="relative flex grow flex-col overflow-hidden rounded-[14px] border border-border-strong bg-surface-2 shadow-[var(--deep-shadow)]">
         <label className="flex h-12 items-center gap-2.5 border-b border-border-strong px-3.5 text-faint">
@@ -54,8 +58,8 @@ export function CommandCard({ className }: { className?: string }) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search jobs, backups, pages"
-            aria-label="Search commands"
+            placeholder={t("features.searchPlaceholder")}
+            aria-label={t("features.searchLabel")}
             className="min-w-0 grow bg-transparent text-sm text-foreground outline-none placeholder:text-faint"
           />
           <kbd className="rounded-[5px] border border-input px-1.5 py-px font-sans text-[11px]">⌘K</kbd>
@@ -72,12 +76,12 @@ export function CommandCard({ className }: { className?: string }) {
               <span className={cn("flex size-[26px] shrink-0 items-center justify-center rounded-[7px]", TONE[c.tone])}>
                 <c.icon className="size-3.5" />
               </span>
-              <span className="grow">{c.label}</span>
+              <span className="grow">{t(c.label)}</span>
               <span className="text-xs text-faint">{c.hint}</span>
             </li>
           ))}
           {matched.length === 0 && (
-            <li className="px-3 py-6 text-center text-muted-foreground">Nothing matches that</li>
+            <li className="px-3 py-6 text-center text-muted-foreground">{t("features.nothingMatches")}</li>
           )}
         </ul>
       </div>

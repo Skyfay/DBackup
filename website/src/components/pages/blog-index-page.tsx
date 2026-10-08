@@ -6,34 +6,39 @@ import { getAllPosts } from "@/lib/blog";
 import { formatDate } from "@/lib/utils";
 import { CHANGELOG_URL, GITHUB_URL } from "@/lib/content";
 import { JsonLd } from "@/components/site/json-ld";
+import { localePath, type Locale } from "@/i18n/config";
+import { createTranslator } from "@/i18n/translate";
 import { pageMetadata } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
 
-const DESCRIPTION = "Design decisions, trade-offs and guides from the people who build DBackup.";
+export function blogIndexMetadata(locale: Locale) {
+  const t = createTranslator(locale);
+  const base = pageMetadata(locale, "/blog/", { title: t("meta.blogTitle"), description: t("meta.blogDescription") });
+  return {
+    ...base,
+    alternates: { ...base.alternates, types: { "application/rss+xml": localePath(locale, "/blog/rss.xml") } },
+  };
+}
 
-const pageMeta = pageMetadata("/blog/", { title: "Blog", description: DESCRIPTION });
-
-export const metadata = {
-  ...pageMeta,
-  alternates: { ...pageMeta.alternates, types: { "application/rss+xml": "/blog/rss.xml" } },
-};
-
-export default function BlogIndexPage() {
-  const posts = getAllPosts();
-  const dates = Object.fromEntries(posts.map((p) => [p.slug, formatDate(p.date)]));
+export function BlogIndexPage({ locale }: { locale: Locale }) {
+  const t = createTranslator(locale);
+  const posts = getAllPosts(locale);
+  const dates = Object.fromEntries(posts.map((p) => [p.slug, formatDate(p.date, locale)]));
   const blogJsonLd = {
     "@context": "https://schema.org",
     "@type": "Blog",
-    name: "DBackup Blog",
-    description: DESCRIPTION,
-    url: `${SITE_URL}/blog/`,
+    name: t("meta.blogOgLabel"),
+    description: t("meta.blogDescription"),
+    url: `${SITE_URL}${localePath(locale, "/blog/")}`,
+    inLanguage: locale,
     blogPost: posts.map((p) => ({
       "@type": "BlogPosting",
       headline: p.title,
       description: p.excerpt,
       datePublished: p.date,
-      url: `${SITE_URL}/blog/${p.slug}/`,
-      image: `${SITE_URL}${p.socialImage ?? `/blog/${p.slug}/og.png`}`,
+      inLanguage: p.lang,
+      url: `${SITE_URL}${localePath(p.lang, `/blog/${p.slug}/`)}`,
+      image: `${SITE_URL}${p.socialImage ?? localePath(locale, `/blog/${p.slug}/og.png`)}`,
       author: { "@type": "Person", name: p.author, url: `https://github.com/${p.author}` },
     })),
   };
@@ -45,13 +50,11 @@ export default function BlogIndexPage() {
 
       <div className="relative mx-auto max-w-[1148px] px-6 pt-[140px] sm:pt-[172px]">
         <div className="flex flex-col gap-5">
-          <Eyebrow>Blog</Eyebrow>
+          <Eyebrow>{t("blog.eyebrow")}</Eyebrow>
           <h1 className="text-[40px] leading-[1.04] font-semibold tracking-[-0.045em] sm:text-[64px]">
-            Notes from <span className="fx-shine">building DBackup.</span>
+            {t.rich("blog.title", { shine: (c) => <span className="fx-shine">{c}</span> })}
           </h1>
-          <p className="max-w-[560px] text-lg leading-relaxed text-muted-foreground">
-            Design decisions, trade-offs and guides, written by the people who make it.
-          </p>
+          <p className="max-w-[560px] text-lg leading-relaxed text-muted-foreground">{t("blog.lead")}</p>
         </div>
 
         <BlogIndex posts={posts} dates={dates} />
@@ -62,10 +65,8 @@ export default function BlogIndexPage() {
             <Bell className="size-5" />
           </span>
           <div className="relative min-w-[240px] grow">
-            <h2 className="text-base font-semibold">Never miss a release</h2>
-            <p className="text-muted-foreground">
-              Watch the repository on GitHub or follow the changelog. New posts land in the RSS feed.
-            </p>
+            <h2 className="text-base font-semibold">{t("blog.neverMiss")}</h2>
+            <p className="text-muted-foreground">{t("blog.neverMissText")}</p>
           </div>
           <div className="relative flex gap-2">
             <a
@@ -74,7 +75,7 @@ export default function BlogIndexPage() {
               rel="noreferrer"
               className="flex h-[38px] items-center rounded-lg border border-input bg-secondary px-3.5 font-medium"
             >
-              Changelog
+              {t("blog.changelog")}
             </a>
             <a
               href={GITHUB_URL}
@@ -82,7 +83,7 @@ export default function BlogIndexPage() {
               rel="noreferrer"
               className="fx-btn flex h-[38px] items-center rounded-lg bg-primary px-3.5 font-medium text-primary-foreground"
             >
-              Watch on GitHub
+              {t("blog.watch")}
             </a>
           </div>
         </section>

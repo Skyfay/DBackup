@@ -9,6 +9,8 @@ import { CONIC, DotGrid, Floor, Glow, Stars } from "@/components/site/fx";
 import { SHIPPED_ITEMS, shippedHref } from "@/lib/roadmap";
 import { needsDarkModeBoost } from "@/lib/adapter-icons";
 import { cn } from "@/lib/utils";
+import { localePath, type Locale } from "@/i18n/config";
+import { createTranslator } from "@/i18n/translate";
 
 /** The release the New pill above the title links to, the latest one on the roadmap. */
 const LATEST_RELEASE = SHIPPED_ITEMS.find((item) => item.version) ?? SHIPPED_ITEMS[0];
@@ -55,9 +57,10 @@ function Ticker() {
   );
 }
 
-export function Hero() {
+export function Hero({ locale }: { locale: Locale }) {
+  const t = createTranslator(locale);
   return (
-    <section aria-label="Intro" className="relative overflow-hidden pb-24">
+    <section aria-label={t("hero.intro")} className="relative overflow-hidden pb-24">
       <Glow color="#2563eb" opacity={0.28} drift={1} className="top-[120px] left-[6%] size-[560px]" />
       <Glow color="#7c3aed" opacity={0.24} drift={2} className="top-[60px] right-[4%] size-[520px]" />
       <Glow color="#0891b2" opacity={0.2} drift={1} className="top-[700px] left-[38%] h-[420px] w-[480px]" />
@@ -93,31 +96,30 @@ export function Hero() {
                 <span className="fx-ping absolute inset-0 rounded-full bg-tone-green" />
                 <span className="absolute inset-0 rounded-full bg-tone-green" />
               </span>
-              New
+              {t("hero.new")}
             </span>
-            Version 4.0, with a redesigned interface
+            {t("hero.news")}
             <ChevronRight className="size-3.5 text-muted-foreground" />
           </span>
         </a>
 
         <h1 className="text-[40px] leading-[1.08] font-semibold tracking-[-0.045em] sm:text-[56px] lg:text-[76px]">
           <span className="flex flex-wrap items-center justify-center gap-x-[0.26em] gap-y-2">
-            Backups for <Ticker />
+            {t("hero.backupsFor")} <Ticker />
           </span>
-          <span className="fx-shine block">and the files that belong to them.</span>
+          <span className="fx-shine block">{t("hero.line2")}</span>
         </h1>
 
         <p className="max-w-[620px] text-base leading-relaxed text-muted-foreground sm:text-lg">
-          Self-hosted backup automation with encryption, compression and smart retention. One
-          Docker image, no agent, no lock-in.
+          {t("hero.lead")}
         </p>
 
         <div className="flex flex-wrap justify-center gap-2.5">
           <Link
-            href="#start"
+            href={localePath(locale, "/#start")}
             className="fx-btn flex h-[46px] items-center gap-2 rounded-[10px] bg-primary px-[22px] text-[15px] font-medium text-primary-foreground"
           >
-            Get started
+            {t("hero.getStarted")}
             <ArrowRight className="size-4" />
           </Link>
           <ContributorsPill />
@@ -125,8 +127,8 @@ export function Hero() {
       </div>
 
       <LiveRun />
-      <Counters />
-      <AdapterMarquee />
+      <Counters locale={locale} />
+      <AdapterMarquee locale={locale} />
     </section>
   );
 }

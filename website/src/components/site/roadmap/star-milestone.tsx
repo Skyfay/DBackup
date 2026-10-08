@@ -5,6 +5,8 @@ import { Check } from "lucide-react";
 import { fetchWithCache } from "@/lib/github";
 import { GITHUB_REPO, GITHUB_URL } from "@/lib/content";
 import type { Milestone } from "@/lib/roadmap";
+import { INTL_LOCALE } from "@/i18n/config";
+import { useI18n } from "@/i18n/provider";
 
 // Shared with the stars button in the header, so both read one request.
 const CACHE_KEY = "dbackup-gh-stars";
@@ -14,6 +16,7 @@ export type ReachedStep = { value: number; label: string };
 
 /** The next community goal with the live star count and the goals reached before it. */
 export function StarMilestone({ milestone, reached }: { milestone: Milestone; reached: ReachedStep[] }) {
+  const { t, locale } = useI18n();
   const [stars, setStars] = useState<number | null>(null);
 
   useEffect(() => {
@@ -40,23 +43,23 @@ export function StarMilestone({ milestone, reached }: { milestone: Milestone; re
   return (
     <>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">{milestone.title}</span>
+        <span className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">
+          {t(`roadmap.milestones.${milestone.slug}.title`)}
+        </span>
         <a
           href={GITHUB_URL}
           target="_blank"
           rel="noreferrer"
           className="flex h-[30px] shrink-0 items-center rounded-lg border border-input bg-secondary px-2.5 text-xs font-medium"
         >
-          Star on GitHub
+          {t("roadmap.starOnGithub")}
         </a>
       </div>
       <div className="flex items-baseline gap-1.5">
         <span className="text-[26px] leading-none font-semibold tracking-[-0.02em] tabular-nums">
-          {stars === null ? "…" : new Intl.NumberFormat("en").format(stars)}
+          {stars === null ? "…" : new Intl.NumberFormat(INTL_LOCALE[locale]).format(stars)}
         </span>
-        <span className="text-faint">
-          of {milestone.target} {milestone.unit}
-        </span>
+        <span className="text-faint">{t("roadmap.ofTarget", { target: milestone.target })}</span>
       </div>
 
       <div aria-hidden="true" className="mt-1 flex items-center">
@@ -81,7 +84,7 @@ export function StarMilestone({ milestone, reached }: { milestone: Milestone; re
         {reached.map((step) => (
           <span key={step.value}>{step.label}</span>
         ))}
-        <span className="text-tone-amber">{milestone.target} · next</span>
+        <span className="text-tone-amber">{t("roadmap.nextStep", { target: milestone.target })}</span>
       </div>
     </>
   );

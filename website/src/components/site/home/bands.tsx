@@ -3,11 +3,14 @@ import Link from "next/link";
 import { CONIC, DotGrid, Floor, Glow, SpinBorder, Stars } from "@/components/site/fx";
 import { RestoreTerminal } from "@/components/site/home/restore-terminal";
 import { ARCHIVE_FORMAT_URL, DISCORD_URL } from "@/lib/content";
+import { localePath, type Locale } from "@/i18n/config";
+import { createTranslator } from "@/i18n/translate";
 
 // The two full-width bands of the home page. Both stay dark in light mode
 // too: the `dark` class on the band switches every token inside it.
 
-export function LockInBand() {
+export function LockInBand({ locale }: { locale: Locale }) {
+  const t = createTranslator(locale);
   return (
     <section className="mx-auto mt-28 max-w-[1248px] px-6 sm:mt-[140px]">
       <SpinBorder conic={CONIC.green} radius={30} innerClassName="dark overflow-hidden bg-[#0d0d0f] text-foreground">
@@ -16,15 +19,12 @@ export function LockInBand() {
         <div className="relative grid items-center gap-14 p-8 sm:p-[72px] lg:grid-cols-[5fr_6fr]">
           <div className="flex flex-col gap-[18px]">
             <span className="w-fit rounded-full border border-border-strong px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-              No vendor lock-in
+              {t("lockin.badge")}
             </span>
             <h2 className="text-[34px] leading-[1.06] font-semibold tracking-[-0.04em] sm:text-[48px]">
-              Your backup is a file. <span className="fx-shine">Open it without us.</span>
+              {t.rich("lockin.title", { shine: (c) => <span className="fx-shine">{c}</span> })}
             </h2>
-            <p className="text-base leading-relaxed text-muted-foreground">
-              Standard dumps and plain TAR archives, sealed with open AES-256-GCM. The format is
-              specified byte by byte.
-            </p>
+            <p className="text-base leading-relaxed text-muted-foreground">{t("lockin.lead")}</p>
             <div className="flex flex-wrap gap-2">
               <a
                 href={ARCHIVE_FORMAT_URL}
@@ -32,13 +32,13 @@ export function LockInBand() {
                 rel="noreferrer"
                 className="fx-btn flex h-[42px] items-center rounded-[9px] bg-primary px-[18px] font-medium text-primary-foreground"
               >
-                Read the format spec
+                {t("lockin.formatSpec")}
               </a>
               <Link
-                href="/blog/no-global-deduplication"
+                href={localePath(locale, "/blog/no-global-deduplication/")}
                 className="flex h-[42px] items-center rounded-[9px] border border-input bg-secondary px-[18px] font-medium"
               >
-                Why no deduplication
+                {t("lockin.whyNoDedup")}
               </Link>
             </div>
           </div>
@@ -49,7 +49,8 @@ export function LockInBand() {
   );
 }
 
-export function CtaBand() {
+export function CtaBand({ locale }: { locale: Locale }) {
+  const t = createTranslator(locale);
   return (
     <section className="mx-auto mt-28 max-w-[1248px] px-6 sm:mt-[140px]">
       <SpinBorder conic={CONIC.cta} speed="normal" radius={30} innerClassName="dark overflow-hidden bg-[#0d0d0f] text-foreground">
@@ -65,17 +66,15 @@ export function CtaBand() {
             className="drop-shadow-[0_10px_30px_rgb(96_165_250/0.5)]"
           />
           <h2 className="text-[36px] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[52px]">
-            Stop hoping last night&apos;s
-            <br />
-            backup worked.
+            {t.rich("cta.title")}
           </h2>
-          <p className="text-[17px] text-muted-foreground">Free and open source under GPL-3.0. Yours to run.</p>
+          <p className="text-[17px] text-muted-foreground">{t("cta.lead")}</p>
           <div className="flex flex-wrap justify-center gap-2.5">
             <Link
-              href="/#start"
+              href={localePath(locale, "/#start")}
               className="fx-btn flex h-12 items-center rounded-[10px] bg-primary px-6 text-[15px] font-medium text-primary-foreground"
             >
-              Get started
+              {t("cta.getStarted")}
             </Link>
             <a
               href={DISCORD_URL}
@@ -83,7 +82,7 @@ export function CtaBand() {
               rel="noreferrer"
               className="flex h-12 items-center rounded-[10px] border border-input bg-secondary px-6 text-[15px] font-medium"
             >
-              Join the Discord
+              {t("cta.discord")}
             </a>
           </div>
         </div>

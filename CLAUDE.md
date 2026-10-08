@@ -15,6 +15,7 @@ Claude Code loads the nearest `CLAUDE.md` when you touch files in a directory. R
 | Dashboard pages and the look of the UI redesign | [src/app/dashboard/CLAUDE.md](src/app/dashboard/CLAUDE.md) |
 | Database, storage, or notification adapters | [src/lib/adapters/CLAUDE.md](src/lib/adapters/CLAUDE.md) |
 | Wiki pages and the changelog | [docs/CLAUDE.md](docs/CLAUDE.md) |
+| Marketing website (dbackup.app) | [website/CLAUDE.md](website/CLAUDE.md) |
 | Unit and integration tests | [tests/CLAUDE.md](tests/CLAUDE.md) |
 
 ## Non-negotiable rules

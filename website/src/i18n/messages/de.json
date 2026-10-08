@@ -1,0 +1,547 @@
+{
+  "meta": {
+    "siteTitle": "DBackup - Backups für Datenbanken und Dateien, selbst gehostet",
+    "description": "Selbst gehostete Backups für MySQL, PostgreSQL, MongoDB, Redis, SQL Server und Dateien, mit AES-256-GCM-Verschlüsselung, Kompression und Aufbewahrungsregeln.",
+    "tagline": "Selbst gehostete Backup-Automatisierung für Datenbanken und Dateien, mit Verschlüsselung, Kompression und Aufbewahrungsregeln.",
+    "blogTitle": "Blog",
+    "blogDescription": "Designentscheidungen, Abwägungen und Anleitungen von den Leuten, die DBackup bauen.",
+    "blogOgLabel": "DBackup Blog",
+    "roadmapTitle": "Roadmap",
+    "roadmapDescription": "Was erschienen ist, woran gearbeitet wird und was auf der Wunschliste von DBackup steht. Keine versprochenen Termine, nur ein ehrlicher Stand.",
+    "ogHeadline": "Selbst gehostete Backups für Ihre Datenbanken und Dateien, ohne Lock-in."
+  },
+  "lang": {
+    "label": "Sprache",
+    "auto": "Auto",
+    "en": "English",
+    "de": "Deutsch"
+  },
+  "nav": {
+    "main": "Hauptnavigation",
+    "features": "Funktionen",
+    "featuresCaption": "Alles, was ein Backup braucht",
+    "integrations": "Integrationen",
+    "integrationsCaption": "{databases} Datenbanken, {storage} Ziele, {alerts} Benachrichtigungen",
+    "docs": "Doku",
+    "docsCaption": "Anleitungen und API-Referenz",
+    "roadmap": "Roadmap",
+    "roadmapCaption": "Erschienen und als Nächstes",
+    "blog": "Blog",
+    "blogCaption": "Notizen aus der Entwicklung von DBackup",
+    "getStarted": "Loslegen",
+    "openMenu": "Menü öffnen",
+    "closeMenu": "Menü schließen",
+    "here": "Hier",
+    "theme": "Farbschema",
+    "themeLight": "Hell",
+    "themeDark": "Dunkel",
+    "themeSystem": "System",
+    "discord": "Dem Discord beitreten",
+    "switchToLight": "Zum hellen Modus wechseln",
+    "switchToDark": "Zum dunklen Modus wechseln",
+    "sponsor": "DBackup unterstützen",
+    "sponsorLabel": "DBackup auf GitHub unterstützen",
+    "star": "Stern",
+    "starLabel": "DBackup auf GitHub einen Stern geben"
+  },
+  "footer": {
+    "tagline": "Selbst gehostete Backups · GPL-3.0",
+    "product": "Produkt",
+    "resources": "Ressourcen",
+    "community": "Community",
+    "features": "Funktionen",
+    "integrations": "Integrationen",
+    "roadmap": "Roadmap",
+    "documentation": "Dokumentation",
+    "api": "API-Referenz",
+    "changelog": "Changelog",
+    "github": "GitHub",
+    "discord": "Discord",
+    "blog": "Blog",
+    "sponsor": "Unterstützen"
+  },
+  "notFound": {
+    "title": "Diese Seite gibt es nicht.",
+    "text": "Der Link ist vielleicht veraltet, oder die Seite ist umgezogen.",
+    "home": "Zurück zur Startseite"
+  },
+  "faq": {
+    "title": "Fragen",
+    "ask": "Fehlt etwas? Fragen Sie auf <link>Discord</link>.",
+    "q1": "Was passiert, wenn DBackup nicht mehr verfügbar ist? Kann ich trotzdem wiederherstellen?",
+    "a1": "Ja. Jedes Backup ist ein normaler Datenbank-Dump, verschlüsselt mit dem offenen AES-256-GCM. Mit dem Schlüssel aus Ihrem Recovery Kit und einem eigenständigen Node.js-Skript entschlüsseln Sie es und stellen es wieder her, ganz ohne laufendes DBackup.",
+    "q2": "Welche Datenbanken werden unterstützt?",
+    "a2": "MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, Azure SQL Database (Beta) und Firebird (Beta), und regelmäßig kommen weitere hinzu.",
+    "q3": "Kann DBackup auch Dateien und Ordner sichern, nicht nur Datenbanken?",
+    "a3": "Ja. Jeder Speicher-Adapter kann als Verzeichnisquelle dienen: lokale Pfade, SFTP, SMB, FTP, WebDAV, S3, Google Drive, Dropbox, OneDrive, rsync über SSH oder Docker-Volumes, gelesen über den Daemon. Dateien und Datenbanken können sich einen Job teilen, sodass der Dump und das zugehörige Datenverzeichnis im selben Archiv und im selben Wiederherstellungspunkt landen. Einen Agenten müssen Sie nicht installieren, DBackup liest, was diese Protokolle erreichen. Dieses agentenlose Design ist zugleich seine Grenze. Ein vollständiger Lauf holt den Verzeichnisbaum auf den DBackup-Host und legt ihn dort vor dem Packen ab. Er braucht also etwa die doppelte Quellgröße an freiem Speicher, und jedes Byte geht zweimal über das Netzwerk. Gebaut ist es für die Dateien der Anwendungen, deren Datenbanken Sie ohnehin sichern, nicht für große Medienbibliotheken. Dafür laufen restic oder Borg direkt auf dem Rechner und sind das bessere Werkzeug.",
+    "q4": "Kann DBackup Docker-Volumes sichern?",
+    "a4": "Ja, derzeit als Beta. Wählen Sie die Volumes aus einer Liste dessen, was der Docker-Daemon sieht, lokal über seinen Socket oder auf einem anderen Host über SSH. DBackup bindet sie zum Lesen in einen kurzlebigen Hilfscontainer ein. Container, die ein ausgewähltes Volume nutzen, werden für das Lesen angehalten und direkt danach wieder gestartet, pro Volume statt für den ganzen Job. Für Daten, die sich gefahrlos im laufenden Betrieb kopieren lassen, können Sie das abschalten. Die Wiederherstellung geht in dasselbe oder in ein neues Volume, wobei Verzeichnisrechte und leere Verzeichnisse noch nicht mitkommen. Deshalb ist es noch Beta.",
+    "q5": "Dedupliziert DBackup wie restic oder Borg?",
+    "a5": "Nicht global, und das ist eine bewusste Abwägung. Inkrementelle Backups speichern ganze geänderte Dateien und verweisen für unveränderte auf frühere Archive derselben Kette. So bleibt jedes Archiv ein normales TAR, das Sie mit tar -xf öffnen, oder ein dokumentiertes Format, das ein einziges Node.js-Skript liest. Ein Chunk-Store würde mehr Platz sparen, machte das Backup aber zu einem Repository, das nur sein eigenes Werkzeug öffnen kann. Genau diesen Lock-in will DBackup vermeiden.",
+    "q6": "Gibt es eine gehostete oder Cloud-Version?",
+    "a6": "Nein. DBackup gibt es nur zum Selbsthosten, als ein einziges Docker-Image, das Sie auf Ihrer eigenen Infrastruktur betreiben.",
+    "q7": "Unter welcher Lizenz steht DBackup?",
+    "a7": "GPL-3.0. Der Quellcode ist vollständig offen und auf GitHub verfügbar.",
+    "q8": "Kann ich ein Backup an mehrere Speicherziele senden?",
+    "a8": "Ja. Jobs mit mehreren Zielen laden jedes Backup gleichzeitig zu mehreren Speicher-Adaptern hoch, für Redundanz oder Kopien außer Haus."
+  },
+  "home": {
+    "featureDatabase": "Backups von {name}",
+    "featureFiles": "Backups von Dateien und Ordnern",
+    "featureEncryption": "AES-256-GCM-Verschlüsselung",
+    "featureRetention": "Kompression und Aufbewahrungsregeln",
+    "featureRecovery": "Wiederherstellung ohne DBackup über das Recovery Kit"
+  },
+  "blog": {
+    "eyebrow": "Blog",
+    "title": "Notizen aus der <shine>Entwicklung von DBackup.</shine>",
+    "lead": "Designentscheidungen, Abwägungen und Anleitungen, geschrieben von den Leuten, die es bauen.",
+    "filter": "Nach Schlagwort filtern",
+    "allPosts": "Alle Beiträge",
+    "tagged": "Schlagwort {tag}",
+    "posts_one": "{count} Beitrag",
+    "posts_other": "{count} Beiträge",
+    "rss": "RSS",
+    "latest": "Neuester",
+    "read": "Lesen",
+    "readingTime": "{date} · {minutes} Min. Lesezeit",
+    "neverMiss": "Kein Release verpassen",
+    "neverMissText": "Beobachten Sie das Repository auf GitHub oder folgen Sie dem Changelog. Neue Beiträge landen im RSS-Feed.",
+    "changelog": "Changelog",
+    "watch": "Auf GitHub beobachten",
+    "breadcrumb": "Navigationspfad",
+    "back": "Blog",
+    "onThisPage": "Auf dieser Seite",
+    "copyLink": "Link kopieren",
+    "linkCopied": "Link kopiert",
+    "tryTitle": "DBackup ausprobieren",
+    "tryText": "Ein Container, Datenbanken und Dateien in einem Job, Archive, die Sie von Hand öffnen können.",
+    "getStarted": "Loslegen",
+    "writtenBy": "Geschrieben von {name}",
+    "maintainer": "Maintainer von DBackup.",
+    "discuss": "Auf Discord diskutieren",
+    "previous": "Älterer",
+    "newer": "Neuerer",
+    "allPostsLink": "Alle Beiträge",
+    "backToBlog": "Zurück zum Blog",
+    "ctaTitle": "Backups, die Sie von Hand öffnen können.",
+    "ctaLead": "Kostenlos und Open Source unter GPL-3.0.",
+    "formatSpec": "Die Formatspezifikation lesen",
+    "onlyEnglish": "Diesen Beitrag gibt es bisher nur auf Englisch.",
+    "inEnglish": "Auf Englisch",
+    "compared": "Im Vergleich",
+    "copy": "Kopieren",
+    "copied": "Kopiert"
+  },
+  "roadmap": {
+    "items": {
+      "dbackup-agent": {
+        "title": "DBackup Agent",
+        "description": "Ein kleiner Container auf dem Zielhost, mit dem DBackup spricht, statt eine SSH-Sitzung zu öffnen, für Hosts, auf denen SSH-Zugang nicht infrage kommt. Dumps strömen weiterhin zu DBackup zurück und werden dort komprimiert und verschlüsselt. So verlassen der Schlüssel und die Zugangsdaten zum Speicher DBackup nie."
+      },
+      "sync-jobs": {
+        "title": "Sync-Jobs",
+        "description": "Eine zweite Art von Job neben Backups: Ein Ziel bleibt nach eigenem Zeitplan auf dem Stand einer Quelle. Kopieren Sie ein Datei- oder Datenbank-Backup auf einen anderen Host oder spiegeln Sie eine Datenbank in eine andere, ohne jedes Mal von Hand ein Backup zu erstellen und wiederherzustellen."
+      },
+      "stream-based-backup-pipeline": {
+        "title": "Streaming-Backup-Pipeline",
+        "description": "Ein optionaler „Large DB Mode“, der Dumps direkt in den Speicher leitet, ohne sie vorher auf der Festplatte abzulegen, mit parallelem Upload an mehrere Ziele und Prüfsummen unterwegs, für Datenbanken, die für das lokale /tmp zu groß sind."
+      },
+      "runner-resilience": {
+        "title": "Robusterer Runner",
+        "description": "Wiederholungen mit exponentiellem Backoff bei vorübergehenden Fehlern, dazu eine Dead-Letter-Queue für Jobs, die wiederholt scheitern und untersucht werden müssen."
+      },
+      "restic-storage-backend": {
+        "title": "Restic als Speicher-Backend",
+        "description": "Restic als Speicherziel mit Deduplizierung auf Blockebene und rsync-freundlicher Kompression, mit eigenem Repository, eigener Ansicht und eigenem Aufbewahrungsmodell statt dateibasiertem Speicher."
+      },
+      "encryption-key-rotation": {
+        "title": "Rotation des Verschlüsselungsschlüssels",
+        "description": "Den System-ENCRYPTION_KEY ohne Ausfallzeit wechseln und dabei alle gespeicherten Geheimnisse mit dem neuen Schlüssel neu verschlüsseln."
+      },
+      "user-invite-flow": {
+        "title": "Benutzer einladen",
+        "description": "Einladungen per E-Mail mit erzwungener Passwortänderung beim ersten Login, aufgebaut auf dem bestehenden SMTP-Benachrichtigungsadapter."
+      },
+      "backup-tags-annotations": {
+        "title": "Tags und Notizen für Backups",
+        "description": "Backups von Hand markieren (etwa „pre-migration“), sie vor dem Löschen durch Aufbewahrungsregeln schützen und im Storage Explorer nach Tag filtern."
+      },
+      "backup-anomaly-detection": {
+        "title": "Erkennung von Auffälligkeiten",
+        "description": "Eine Warnung, wenn die Größe eines Backups deutlich von früheren Läufen abweicht, dazu eine geplante Aufgabe für Test-Wiederherstellungen."
+      },
+      "prometheus-metrics-endpoint": {
+        "title": "Prometheus-Metrik-Endpunkt",
+        "description": "Ein /metrics-Endpunkt mit Anzahl, Dauer, Größe und Erfolgsquote der Backups sowie der Länge der Warteschlange, dazu ein fertiges Grafana-Dashboard."
+      },
+      "backup-size-limits-alerts": {
+        "title": "Größengrenzen und Warnungen",
+        "description": "Schwellenwerte pro Job, die warnen, wenn ein Backup unerwartet größer oder kleiner ausfällt."
+      },
+      "backup-drift-detection": {
+        "title": "Drift-Erkennung",
+        "description": "Den aktuellen Stand einer Datenbank mit ihrem letzten Backup vergleichen und warnen, wenn er sich deutlich verändert hat (neue Tabellen, Größenzuwachs, entfernte Objekte)."
+      },
+      "server-health-dashboard": {
+        "title": "Server-Zustand im Dashboard",
+        "description": "Kennzahlen zum Zustand jedes Servers (Laufzeit, aktive Verbindungen, laufende Abfragen, Replikationsstatus) als Anzeige vor dem Backup."
+      },
+      "direct-sql-execution": {
+        "title": "SQL direkt ausführen",
+        "description": "Eigene SQL-Abfragen gegen eingerichtete Quellen aus der Weboberfläche ausführen, standardmäßig nur lesend, mit Schreibzugriff hinter einer eigenen Berechtigung."
+      },
+      "query-library": {
+        "title": "Abfrage-Bibliothek",
+        "description": "Fertige Abfrage-Vorlagen für häufige Aufgaben wie Benutzerverwaltung und Tabellenpflege, als Schnellaktionen in der Oberfläche."
+      },
+      "user-privileges-viewer": {
+        "title": "Benutzer und Rechte ansehen",
+        "description": "Eine lesende Ansicht der Datenbankbenutzer und ihrer Rechte, mit der Sie als Hilfe für Sicherheitsprüfungen sehen, ob der Backup-Benutzer genug Rechte hat."
+      },
+      "storage-trend-graph": {
+        "title": "Verlauf der Speichergröße",
+        "description": "Die Größe einer Datenbank über die Zeit, aus den Metadaten der Backups, mit der Wachstumsrate als Grafik für die Kapazitätsplanung."
+      },
+      "e2e-test-suite": {
+        "title": "End-to-End-Tests",
+        "description": "Playwright- oder Cypress-Tests für die wichtigen Abläufe, also Login, Job anlegen, Backup ausführen, wiederherstellen und prüfen, die in der CI laufen."
+      },
+      "internationalization": {
+        "title": "Mehrsprachigkeit (i18n)",
+        "description": "Eine mehrsprachige Oberfläche mit Platz für Übersetzungen aus der Community."
+      },
+      "high-contrast-mode": {
+        "title": "Hoher Kontrast",
+        "description": "Ein kontrastreiches Theme neben Hell und Dunkel, für bessere Lesbarkeit und Barrierefreiheit."
+      },
+      "oracle-support": {
+        "title": "Oracle-Unterstützung",
+        "description": "Oracle Database als neue Quelle, über Exporte mit RMAN oder Data Pump."
+      },
+      "influxdb-support": {
+        "title": "InfluxDB-Unterstützung",
+        "description": "InfluxDB als neue Quelle für Backups von Zeitreihendaten."
+      }
+    },
+    "shipped": {
+      "redesigned-interface": {
+        "title": "Neu gestaltete Oberfläche",
+        "description": "Jede Seite ist in einem neuen Design neu gebaut, das auch auf Handys und Tablets funktioniert, mit einer Suche über alle Jobs, Verbindungen, Backups und Läufe. Neue Seiten für die Backups, die Datenbanken und den Verlauf jedes Laufs, ein Quick Setup, das das erste Backup an einem Ort einrichtet, und Benachrichtigungs-E-Mails im selben Look."
+      },
+      "single-database-restores-downloads": {
+        "title": "Einzelne Datenbanken wiederherstellen und herunterladen",
+        "description": "Eine Datenbank aus einem Backup mit mehreren Datenbanken wiederherstellen oder herunterladen, wobei nur diese Datenbank vom Ziel gelesen wird. Alte Ausführungsprotokolle und Verlaufseinträge lassen sich automatisch aufräumen, und die Einstellungen zeigen und optimieren die Größe der DBackup-Datenbank."
+      },
+      "300-github-stars": {
+        "title": "300 GitHub-Sterne",
+        "description": "DBackup hat 300 Sterne auf GitHub überschritten, danke an alle in der Community."
+      },
+      "azure-sql-database-support": {
+        "title": "Unterstützung für Azure SQL Database",
+        "description": "Azure SQL Database als neue Quelle in der Beta, gesichert über einen BACPAC-Export, dazu eine stündliche Stufe für Smart-Aufbewahrungsregeln (GFS)."
+      },
+      "docker-volume-backups": {
+        "title": "Backups von Docker-Volumes",
+        "description": "Docker-Volumes als Backup-Quelle (Beta), aufgelistet vom Zielhost wie bereits die Datenbanken, sodass Sie sie auswählen, statt Pfade einzutippen. Container, die ein ausgewähltes Volume nutzen, werden für den Export angehalten und danach wieder gestartet. Das lässt sich pro Quelle abschalten, wenn die Daten gefahrlos im laufenden Betrieb kopiert werden können."
+      },
+      "file-folder-backups": {
+        "title": "Backups von Dateien und Ordnern",
+        "description": "Verzeichnisse und Dateien als Quellen, mit einem Archivformat mit wahlfreiem Zugriff, das jeden Eintrag einzeln verschlüsselt, inkrementellen Backup-Ketten, Wiederherstellung einzelner Byte-Bereiche und einem komplett neu gebauten Recovery Kit."
+      },
+      "200-github-stars": {
+        "title": "200 GitHub-Sterne",
+        "description": "DBackup hat 200 Sterne auf GitHub überschritten, danke an alle in der Community."
+      },
+      "firebird-support": {
+        "title": "Firebird-Unterstützung",
+        "description": "Firebird (3.x/4.x/5.x) als Datenbankquelle, mit direkter Verbindung oder über SSH."
+      },
+      "valkey-support": {
+        "title": "Valkey als Datenbank",
+        "description": "Valkey als Datenbankquelle, mit demselben RDB-Backup wie bei Redis."
+      },
+      "notification-templates": {
+        "title": "Vorlagen für Benachrichtigungen",
+        "description": "Wiederverwendbare Vorlagen für Benachrichtigungen, pro Kanal und nach Ereignis gefiltert, statt einer flachen Einstellung pro Job."
+      },
+      "backup-integrity-verification": {
+        "title": "Prüfung der Backup-Integrität",
+        "description": "SHA-256- und MD5-Prüfsummen, Prüfen auf Knopfdruck, native Prüfsummenkontrolle über alle Adapter und geplante Integritätsprüfungen."
+      },
+      "vault-credential-profiles-extended": {
+        "title": "Vault-Profile für Webhooks und OAuth",
+        "description": "Profile im Zugangsdaten-Tresor, erweitert um die Typen WEBHOOK, OAUTH und TOKEN."
+      },
+      "database-explorer-version-history": {
+        "title": "Versionsverlauf im Database Explorer",
+        "description": "Eine Zeitleiste der Engine-Versionen und ein Änderungsprotokoll pro Datenbankquelle."
+      },
+      "database-explorer-drill-down": {
+        "title": "Database Explorer",
+        "description": "Eine Ansicht für Tabellen und Daten mit Seitenaufteilung, Suche und Schemaansicht über alle Adapter."
+      },
+      "templates-system": {
+        "title": "Vorlagen",
+        "description": "Eine eigene Seite für Vorlagen mit wiederverwendbaren Aufbewahrungsregeln, Namensvorlagen und Zeitplänen, die sich mehreren Jobs zuweisen lassen."
+      },
+      "100-github-stars": {
+        "title": "100 GitHub-Sterne",
+        "description": "DBackup hat 100 Sterne auf GitHub überschritten."
+      },
+      "credential-profile-system": {
+        "title": "Zugangsdaten-Profile",
+        "description": "Zentrale, verschlüsselte Profile für Zugangsdaten, auf die Adapter verweisen, statt Geheimnisse direkt zu speichern, dazu Klonen mit einem Klick für Quellen, Ziele und Jobs."
+      },
+      "live-history-redesign": {
+        "title": "Neuer Live-Verlauf",
+        "description": "Die einzelnen Schritte der Pipeline mit Geschwindigkeit und Fortschritt in Echtzeit für jedes Backup und jede Wiederherstellung."
+      },
+      "ssh-remote-execution": {
+        "title": "Ausführung über SSH",
+        "description": "Backups direkt auf dem entfernten Datenbankhost über SSH ausführen, ohne lokalen Datenbank-Client."
+      },
+      "https-by-default": {
+        "title": "HTTPS als Standard und Zertifikatsverwaltung",
+        "description": "Eingebautes HTTPS mit standardmäßig selbst erzeugten Zertifikaten, dazu eine Oberfläche zur Verwaltung der Zertifikate."
+      },
+      "first-stable-release": {
+        "title": "Erstes stabiles Release",
+        "description": "Das erste stabile Release, das die Plattform nach der Beta-Phase stabilisiert."
+      }
+    },
+    "milestones": {
+      "500-github-stars": {
+        "title": "500 GitHub-Sterne",
+        "description": "Helfen Sie DBackup, den nächsten Meilenstein der Community zu erreichen."
+      }
+    },
+    "category": {
+      "backup-engine": "Backup-Engine",
+      "storage": "Speicher",
+      "monitoring-dashboard": "Monitoring und Dashboard",
+      "database-tools": "Datenbank-Werkzeuge",
+      "security-access": "Sicherheit und Zugriff",
+      "developer-experience": "Entwicklung"
+    },
+    "viewOnGithub": "Auf GitHub ansehen",
+    "eyebrow": "Roadmap",
+    "title": "Was erschienen ist <br><shine>und was als Nächstes kommt.</shine>",
+    "lead": "Eine Linie durch die Releases und Pläne von DBackup. Links der Blick zurück, rechts nach vorn. Keine versprochenen Termine, nur ein ehrlicher Stand.",
+    "now": "Jetzt",
+    "lastShipped": "Zuletzt erschienen",
+    "viewInChangelog": "Im Changelog ansehen",
+    "inProgress": "In Arbeit",
+    "nothingInProgress": "Nichts als in Arbeit markiert",
+    "nothingInProgressText": "Gerade ist kein Eintrag als in Arbeit markiert. Geplante Arbeit rückt hierher, sobald sie beginnt.",
+    "nextMilestone": "Nächster Meilenstein",
+    "starOnGithub": "Stern geben",
+    "ofTarget": "von {target} Sternen",
+    "nextStep": "{target} · als Nächstes",
+    "timeline": "Zeitleiste",
+    "lookingBack": "Rückblick",
+    "shippedLead": "Größere Funktionen und Meilensteine der Community, das Neueste zuerst. Jedes Release steht im Changelog.",
+    "filterShipped": "Erschienene Einträge filtern",
+    "all": "Alle",
+    "releases": "Releases",
+    "community": "Community",
+    "lookingAhead": "Ausblick",
+    "upNext": "Als Nächstes",
+    "upNextLead": "Zuerst geplante Arbeit, dann Ideen, die noch niemand zugesagt hat. Filtern Sie nach Bereich.",
+    "filterCategory": "Nach Kategorie filtern",
+    "nothingMatches": "Nichts passt zu diesem Filter.",
+    "next": "Als Nächstes",
+    "planned": "Geplant",
+    "later": "Später",
+    "ideas": "Ideen",
+    "clickForNote": "Für den ganzen Text anklicken",
+    "noPlanned": "Kein geplanter Eintrag.",
+    "noPlannedIn": "Kein geplanter Eintrag in {category}.",
+    "noIdeas": "Noch keine Idee.",
+    "noIdeasIn": "Noch keine Idee in {category}.",
+    "suggest": "Eine Idee auf GitHub vorschlagen",
+    "issueOnGithub": "Issue #{number} auf GitHub",
+    "shippedTitle": "Erschienen"
+  },
+  "hero": {
+    "intro": "Einleitung",
+    "new": "Neu",
+    "news": "Version 4.0, mit neu gestalteter Oberfläche",
+    "backupsFor": "Backups für",
+    "line2": "und die Dateien, die dazugehören.",
+    "lead": "Selbst gehostete Backup-Automatisierung mit Verschlüsselung, Kompression und Aufbewahrungsregeln. Ein Docker-Image, kein Agent, kein Lock-in.",
+    "getStarted": "Loslegen",
+    "contributors_one": "{count} Mitwirkender",
+    "contributors_other": "{count} Mitwirkende",
+    "openSource": "Open Source",
+    "builtInTheOpen": "Offen entwickelt auf GitHub"
+  },
+  "counters": {
+    "databases": "Datenbank-Engines",
+    "storage": "Speicher-Adapter",
+    "alerts": "Benachrichtigungskanäle",
+    "aes": "AES-GCM-Verschlüsselung"
+  },
+  "adapters": {
+    "localFilesystem": "Lokales Dateisystem",
+    "s3Compatible": "S3-kompatibel",
+    "dockerVolumes": "Docker-Volumes (Beta)",
+    "email": "E-Mail (SMTP)"
+  },
+  "lockin": {
+    "badge": "Kein Vendor-Lock-in",
+    "title": "Ihr Backup ist eine Datei. <shine>Öffnen Sie es ohne uns.</shine>",
+    "lead": "Standard-Dumps und normale TAR-Archive, versiegelt mit dem offenen AES-256-GCM. Das Format ist Byte für Byte spezifiziert.",
+    "formatSpec": "Die Formatspezifikation lesen",
+    "whyNoDedup": "Warum keine Deduplizierung"
+  },
+  "cta": {
+    "title": "Nie wieder hoffen, dass das Backup<br>von letzter Nacht geklappt hat.",
+    "lead": "Kostenlos und Open Source unter GPL-3.0. Betreiben Sie es selbst.",
+    "getStarted": "Loslegen",
+    "discord": "Dem Discord beitreten"
+  },
+  "features": {
+    "dialog": {
+      "title": "Eine Farbe pro Aufgabe",
+      "text": "Blau legt an, Violett bearbeitet, Türkis wählt aus, Gelb warnt. Jeder Dialog zeigt, was er gleich tut.",
+      "tasks": "Aufgaben",
+      "tabCreate": "Neu",
+      "tabEdit": "Ändern",
+      "tabPick": "Wählen",
+      "tabWarn": "Warnen",
+      "back": "Zurück",
+      "next": "Weiter",
+      "cancel": "Abbrechen",
+      "save": "Speichern",
+      "done": "Fertig",
+      "restore": "Wiederherstellen",
+      "newJob": "Neuer Job",
+      "newJobNote": "Schritt 2 von 4 · Datenbanken",
+      "picked": "{count} von {total} ausgewählt",
+      "editRetention": "Aufbewahrung bearbeiten",
+      "usedBy": "Von {count} Jobs genutzt",
+      "keepsUpTo": "GFS · behält bis zu {count} Backups",
+      "everyDayAt": "Täglich um {time}",
+      "keepDaily": "Täglich behalten",
+      "keepDailyDetail": "Das neueste Backup jedes Tages",
+      "keepWeekly": "Wöchentlich behalten",
+      "keepWeeklyDetail": "Das neueste jeder Woche",
+      "keepMonthly": "Monatlich behalten",
+      "keepMonthlyDetail": "Das neueste jedes Monats",
+      "keepYearly": "Jährlich behalten",
+      "off": "Aus",
+      "pickDestinations": "Ziele auswählen",
+      "destinationsPicked": "{count} Ziele ausgewählt",
+      "allAnswering": "Alle erreichbar",
+      "office": "SMB · Büro",
+      "local": "Lokal",
+      "restoreTitle": "{name} wiederherstellen",
+      "overwritesOne": "Überschreibt 1 Datenbank auf prod",
+      "databasesTo": "{count} Datenbanken nach prod",
+      "toDb": "nach {name}",
+      "leftOut": "ausgelassen",
+      "overwrites": "Überschreibt",
+      "new": "Neu"
+    },
+    "eyebrow": "Funktionen",
+    "title": "Alles, was ein Backup braucht, <shine>in einer Oberfläche, die Sie wirklich nutzen.</shine>",
+    "hint": "Bewegen Sie die Maus über die Karten.",
+    "alertsTitle": "Benachrichtigungen dort, wo Sie sind",
+    "alertsText": "{count} Kanäle, pro Job oder systemweit.",
+    "alertWeekly": "E-Mail · Wöchentliche Zusammenfassung",
+    "alertMissing": "Backup fehlt seit 26 Stunden",
+    "alertFinished": "Postgres nightly in 4 Min. 12 s fertig",
+    "retentionTitle": "Aufbewahrung, wiederverwendet",
+    "retentionText": "GFS-Vorlagen, die alle Jobs teilen.",
+    "daily": "Täglich",
+    "weekly": "Wöchentlich",
+    "monthly": "Monatlich",
+    "cipherText": "Verschlüsselt, bevor es den Host verlässt. Wiederherstellbar allein mit dem Recovery Kit.",
+    "teamTitle": "Für Teams gebaut",
+    "teamText": "SSO, Rollen, Passkeys und eine REST-API.",
+    "oidc": "Anmeldung mit OIDC",
+    "passkey": "Passkey oder 2FA verlangen",
+    "calendarTitle": "Jeder Tag im Blick",
+    "calendarText": "Ein Backup-Kalender, der Lücken zeigt, bevor Sie sie brauchen.",
+    "completed": "Abgeschlossen",
+    "partial": "Teilweise",
+    "failed": "Fehlgeschlagen",
+    "commandTitle": "Alles ist einen Tastendruck entfernt",
+    "commandText": "Probieren Sie es aus. Tippen Sie, um zu filtern.",
+    "searchPlaceholder": "Jobs, Backups, Seiten suchen",
+    "searchLabel": "Befehle suchen",
+    "nothingMatches": "Nichts passt dazu",
+    "cmdNewJob": "Neuer Job",
+    "cmdRestore": "Ein Backup wiederherstellen",
+    "cmdEditRetention": "Aufbewahrungsvorlage bearbeiten",
+    "cmdPickDestination": "Ein Ziel auswählen",
+    "cmdRunNow": "Postgres nightly jetzt ausführen",
+    "cmdExplorer": "Database Explorer öffnen",
+    "cmdFailed": "Fehlgeschlagene Läufe zeigen",
+    "cmdRecoveryKit": "Recovery Kit herunterladen"
+  },
+  "liveRun": {
+    "stepDump": "Datenbank nextcloud sichern",
+    "stepCollect": "Konfiguration und Daten über SFTP sammeln",
+    "stepCompress": "Mit Brotli komprimieren",
+    "stepEncrypt": "Mit AES-256-GCM verschlüsseln",
+    "stepUploadHetzner": "Zu Hetzner hochladen",
+    "stepUploadR2": "Zu Cloudflare R2 hochladen",
+    "files": "{count} Dateien",
+    "key": "Schlüssel {id}",
+    "incremental": "Inkrementell",
+    "jobDetail": "MariaDB und /srv/nextcloud zu Hetzner und R2",
+    "completed": "Abgeschlossen",
+    "running": "Läuft",
+    "finished": "Fertig, nächster Lauf morgen um 02:00",
+    "sources": "Quellen",
+    "destinations": "Ziele",
+    "filesSource": "Dateien",
+    "stageDump": "Dump",
+    "stageCompress": "Packen",
+    "stageEncrypt": "Verschlüsseln",
+    "stageUpload": "Upload",
+    "stageDone": "Fertig",
+    "pipeline": "AES-256-GCM vor dem Upload · Brotli · danach Aufbewahrung und eine Discord-Nachricht"
+  },
+  "start": {
+    "eyebrow": "Schnellstart",
+    "title": "In zwei Minuten am Laufen.",
+    "steps": "Schritte",
+    "install": "Installation",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "stepOf": "Schritt {step} von 3 · {status}",
+    "saveCompose": "Die Compose-Datei speichern",
+    "saveComposeText": "Erzeugen Sie beide Geheimnisse hier oder mit openssl.",
+    "saveComposeStatus": "Beide Geheimnisse eintragen",
+    "startContainer": "Den Container starten",
+    "startComposeText": "Führen Sie docker compose up -d aus und öffnen Sie dann Port 3000.",
+    "startComposeStatus": "Der Container startet",
+    "followSetup": "Dem Quick Setup folgen",
+    "followSetupText": "Quelle, Ziel und Zeitplan in einem Ablauf.",
+    "followSetupStatus": "Quick Setup auf localhost:3000",
+    "copyCommands": "Die Befehle kopieren",
+    "copyCommandsText": "Die Befehle schreiben beide Geheimnisse einmalig in .env. Bewahren Sie die Datei auf.",
+    "copyCommandsStatus": "Die Befehle einfügen",
+    "startRunText": "Docker lädt das Image und startet es auf Port 3000.",
+    "startRunStatus": "Das Image wird geladen und gestartet",
+    "keysMade": "Schlüssel in Ihrem Browser erzeugt",
+    "keysNeeded": "Zwei Geheimnisse fehlen noch",
+    "keysMadeText": "Kopieren übernimmt sie vollständig. Nichts wurde irgendwohin gesendet.",
+    "keysNeededText": "Erzeugen Sie sie hier oder mit openssl, wie es in den Kommentaren steht.",
+    "newKeys": "Neue Schlüssel",
+    "generateKeys": "Schlüssel erzeugen",
+    "terminal": "Terminal",
+    "output": "Ausgabe",
+    "source": "Quelle",
+    "destination": "Ziel",
+    "schedule": "Zeitplan",
+    "answering": "Erreichbar",
+    "free": "{size} frei",
+    "partsOf": "{count} von 3 Teilen",
+    "pickOne": "Auswählen",
+    "createJob": "Job anlegen"
+  }
+}

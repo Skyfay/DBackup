@@ -1,0 +1,56 @@
+---
+title: "DBackup in 5 Minuten einrichten"
+excerpt: "Starten Sie DBackup mit einer einzigen docker-compose-Datei und legen Sie Ihren ersten verschlüsselten Backup-Job an."
+tags: ["Anleitung", "Docker", "Schnellstart"]
+---
+
+DBackup erscheint als ein einziges Docker-Image für mehrere Architekturen (amd64/arm64) und braucht keine externe Datenbank, um die App selbst zu betreiben - es verwaltet intern seine eigene SQLite-Datenbank. Hier ist die ganze Einrichtung.
+
+## 1. Eine docker-compose.yml anlegen
+
+```yaml
+# docker-compose.yml
+services:
+  dbackup:
+    image: skyfay/dbackup:latest
+    container_name: dbackup
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - ENCRYPTION_KEY=       # openssl rand -hex 32
+      - BETTER_AUTH_URL=https://localhost:3000
+      - BETTER_AUTH_SECRET=   # openssl rand -base64 32
+    volumes:
+      - ./data:/data              # Alle dauerhaften Daten (Datenbank, Speicher, Zertifikate)
+      - ./backups:/backups        # Optional: für lokale Backups
+```
+
+Zwei Umgebungsvariablen brauchen echte Werte, bevor Sie den Container starten:
+
+- `ENCRYPTION_KEY` - erzeugen Sie ihn mit `openssl rand -hex 32`. Dieser Schlüssel schützt jedes verschlüsselte Backup und alle Zugangsdaten, die DBackup speichert. Sichern Sie ihn an einem sicheren Ort, getrennt vom Volume `./data`.
+- `BETTER_AUTH_SECRET` - erzeugen Sie es mit `openssl rand -base64 32`. Es signiert die Sitzungstoken der eingebauten Anmeldung.
+
+## 2. Den Container starten
+
+```bash
+docker-compose up -d
+```
+
+DBackup lauscht auf Port 3000, mit einem selbst signierten HTTPS-Zertifikat, das beim ersten Start automatisch erzeugt wird.
+
+## 3. Das Admin-Konto anlegen
+
+Öffnen Sie `https://localhost:3000`, bestätigen Sie die Warnung zum selbst signierten Zertifikat und schließen Sie den Einrichtungsassistenten ab, um Ihr Admin-Konto anzulegen.
+
+## 4. Eine Datenbankquelle und ein Speicherziel hinzufügen
+
+Fügen Sie im Dashboard die Datenbank hinzu, die Sie sichern möchten (unterstützt werden MySQL, PostgreSQL, MongoDB und fünf weitere Engines), und ein Speicherziel - für den Anfang genügt auch das lokale Dateisystem. Beide Verbindungen lassen sich vor dem Speichern testen.
+
+## 5. Den ersten Job anlegen
+
+Ein Job verbindet eine oder mehrere Quellen mit einem oder mehreren Zielen, einem Zeitplan, Verschlüsselung, Kompression und einer Aufbewahrungsregel. Speichern Sie ihn, führen Sie ihn einmal von Hand aus, um zu prüfen, dass alles funktioniert, und überlassen Sie den Rest dann dem Cron-Zeitplan.
+
+Das ist der ganze Kreislauf: Quelle, Ziel, Job, Zeitplan. Alles andere - Benachrichtigungen, SSO, der Storage Explorer, Wiederherstellungen - baut auf derselben Grundlage auf, sobald Sie es brauchen.
+
+Vollständige Referenz der Umgebungsvariablen, Einrichtung eines Reverse Proxys und Hinweise zum Härten für den Produktivbetrieb: [docs.dbackup.app/user-guide/getting-started](https://docs.dbackup.app/user-guide/getting-started)

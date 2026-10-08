@@ -17,7 +17,7 @@ function AlertsCard({ t }: { t: Translator }) {
       </div>
       <div aria-hidden="true" className="relative h-[150px]">
         <div className="absolute inset-x-4 top-0 rounded-xl border border-border bg-surface px-3 py-2.5 text-xs text-muted-foreground opacity-60">
-          {t("features.alertWeekly")}
+          {t("features.alertStorage")}
         </div>
         <div className="absolute inset-x-2 top-6 rounded-xl border border-border-strong bg-surface-2 px-3 py-2.5 text-xs text-muted-foreground shadow-[0_6px_16px_-8px_rgb(0_0_0/0.15)] dark:shadow-[0_6px_16px_-8px_rgb(0_0_0/0.8)]">
           <span className="text-tone-amber">ntfy</span> · {t("features.alertMissing")}

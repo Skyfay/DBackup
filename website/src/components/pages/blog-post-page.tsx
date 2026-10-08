@@ -1,11 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ChevronLeft, ChevronRight, Languages } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Languages } from "lucide-react";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import rehypePrettyCode from "rehype-pretty-code";
 import { PageBackdrop } from "@/components/site/blog/page-backdrop";
 import { AuthorAvatar } from "@/components/site/blog/author-avatar";
+import { AdapterIcon } from "@/components/site/adapter-icon";
 import { mdxComponents } from "@/components/site/blog/mdx-components";
 import { CopyLinkButton, ReadingProgress, TableOfContents } from "@/components/site/blog/post-client";
 import { Glow, POST_CONIC, SpinBorder } from "@/components/site/fx";
@@ -21,9 +22,11 @@ import {
   splitTitle,
 } from "@/lib/blog";
 import { ARCHIVE_FORMAT_URL, DISCORD_URL } from "@/lib/content";
+import { DATABASE_NAMES, DATABASE_PAGES } from "@/lib/integrations";
+import { needsDarkModeBoost } from "@/lib/adapter-icons";
 import { pageMetadata } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 // CodeBlock renders its own theme-aware box, so a light/dark theme pair here
 // tracks the site's toggle.
@@ -209,6 +212,45 @@ export function BlogPostPage({ locale, slug }: { locale: Locale; slug: string })
           </div>
         </aside>
       </div>
+
+      {post.databases && post.databases.length > 0 && (
+        <aside aria-labelledby="post-databases" className="relative mx-auto mt-12 max-w-[1088px] px-6">
+          <div className="panel flex max-w-[720px] flex-col gap-3.5 rounded-[18px] p-[22px]">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 id="post-databases" className="text-base font-semibold">
+                {t("blog.databasesTitle")}
+              </h2>
+              <Link href={localePath(locale, "/integrations/")} className="text-[13px] font-medium text-muted-foreground hover:text-foreground">
+                {t("integrations.page.allIntegrations")}
+              </Link>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {post.databases.map((db) => {
+                const adapter = DATABASE_PAGES[db].adapter;
+                return (
+                  <Link
+                    key={db}
+                    href={localePath(locale, `/integrations/${db}/`)}
+                    className="group flex items-center gap-3 rounded-xl border border-border bg-surface p-3 transition-colors hover:border-input"
+                  >
+                    <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-muted">
+                      <AdapterIcon
+                        adapterId={adapter}
+                        className={cn("size-[18px]", needsDarkModeBoost(adapter) && "dark:brightness-200 dark:contrast-125")}
+                      />
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-semibold">{t("integrations.page.metaTitle", { name: DATABASE_NAMES[db] })}</span>
+                      <span className="truncate text-xs text-faint">{t(`integrations.cards.${adapter}.versions`)}</span>
+                    </span>
+                    <ArrowRight className="ml-auto size-4 shrink-0 text-faint transition-[transform,color] duration-200 group-hover:translate-x-0.5 group-hover:text-foreground" />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+      )}
 
       <section className="relative mx-auto mt-[72px] flex max-w-[1088px] flex-col gap-5 px-6">
         <div className="panel flex flex-wrap items-center gap-4 rounded-[18px] p-5">

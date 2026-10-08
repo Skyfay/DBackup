@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, LayoutGrid, Map as MapIcon, PenLine, Plug, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { DATABASES, DOCS_URL, NOTIFICATION_CHANNELS, STORAGE_ADAPTERS } from "@/lib/content";
+import { DATABASES, DESTINATION_COUNT, DOCS_URL, NOTIFICATION_CHANNELS } from "@/lib/content";
 import { useI18n } from "@/i18n/provider";
 import type { MessageKey } from "@/i18n/translate";
 
@@ -21,7 +21,7 @@ export interface NavLink {
 
 export const NAV_LINKS: NavLink[] = [
   { href: "/#features", label: "nav.features", caption: "nav.featuresCaption", icon: LayoutGrid, tone: "blue" },
-  { href: "/#integrations", label: "nav.integrations", caption: "nav.integrationsCaption", icon: Plug, tone: "cyan" },
+  { href: "/integrations", label: "nav.integrations", caption: "nav.integrationsCaption", icon: Plug, tone: "cyan" },
   { href: DOCS_URL, label: "nav.docs", caption: "nav.docsCaption", icon: BookOpen, tone: "violet", external: true },
   { href: "/roadmap", label: "nav.roadmap", caption: "nav.roadmapCaption", icon: MapIcon, tone: "green" },
   { href: "/blog", label: "nav.blog", caption: "nav.blogCaption", icon: PenLine, tone: "amber" },
@@ -30,7 +30,7 @@ export const NAV_LINKS: NavLink[] = [
 /** The counts in the caption of the integrations link. */
 export const INTEGRATION_COUNTS = {
   databases: DATABASES.length,
-  storage: STORAGE_ADAPTERS.length,
+  storage: DESTINATION_COUNT,
   alerts: NOTIFICATION_CHANNELS.length,
 };
 

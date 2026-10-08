@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { DEFAULT_LOCALE, LOCALES, type Locale } from "@/i18n/config";
+import { isDatabaseSlug, type DatabaseSlug } from "@/lib/integrations";
 
 const BLOG_DIR = path.join(process.cwd(), "src/content/blog");
 /** The illustration of a post, public/blog/<slug>.webp, and its social card, public/blog/<slug>.jpg. */
@@ -30,6 +31,8 @@ export interface PostFrontmatter {
   tags: string[];
   author: string;
   cover?: PostCover;
+  /** The databases the post talks about, each linked to its page at the end of the post. */
+  databases?: DatabaseSlug[];
 }
 
 export interface PostSummary extends PostFrontmatter {
@@ -105,6 +108,7 @@ export function getPostBySlug(slug: string, locale: Locale = DEFAULT_LOCALE): Po
     image: has(`${slug}.webp`) ? `/blog/${slug}.webp` : null,
     socialImage: has(`${slug}.jpg`) ? `/blog/${slug}.jpg` : null,
     ...data,
+    databases: Array.isArray(data.databases) ? data.databases.filter((slug) => isDatabaseSlug(slug)) : [],
     ...(translated && {
       title: translated.title,
       excerpt: translated.excerpt,

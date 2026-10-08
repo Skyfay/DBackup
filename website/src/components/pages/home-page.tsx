@@ -5,8 +5,8 @@ import { QuickStart } from "@/components/site/home/quick-start";
 import { Faq } from "@/components/site/home/faq";
 import { JsonLd } from "@/components/site/json-ld";
 import { localePath, type Locale } from "@/i18n/config";
-import { createTranslator } from "@/i18n/translate";
-import { DATABASES, DOCS_URL, FAQ_KEYS, GITHUB_URL } from "@/lib/content";
+import { createTranslator, stripTags } from "@/i18n/translate";
+import { DATABASES, DOCS_URL, FAQ_KEYS, GITHUB_URL, adapterLabel } from "@/lib/content";
 import { pageMetadata } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
 
@@ -33,7 +33,7 @@ export function HomePage({ locale }: { locale: Locale }) {
     image: `${SITE_URL}${localePath(locale, "/og.png")}`,
     screenshot: `${SITE_URL}/screenshots/dashboard.png`,
     featureList: [
-      ...DATABASES.map((db) => t("home.featureDatabase", { name: db.label })),
+      ...DATABASES.map((db) => t("home.featureDatabase", { name: adapterLabel(db, t) })),
       t("home.featureFiles"),
       t("home.featureEncryption"),
       t("home.featureRetention"),
@@ -50,7 +50,7 @@ export function HomePage({ locale }: { locale: Locale }) {
     mainEntity: FAQ_KEYS.map((faq) => ({
       "@type": "Question",
       name: t(faq.q),
-      acceptedAnswer: { "@type": "Answer", text: t(faq.a) },
+      acceptedAnswer: { "@type": "Answer", text: stripTags(t(faq.a)) },
     })),
   };
 

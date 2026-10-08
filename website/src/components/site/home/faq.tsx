@@ -1,14 +1,32 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { FaqList } from "@/components/site/faq-list";
 import { DISCORD_URL, FAQ_KEYS } from "@/lib/content";
-import { cn } from "@/lib/utils";
+import { DATABASE_SLUGS } from "@/lib/integrations";
 import { useI18n } from "@/i18n/provider";
 
 export function Faq() {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(0);
+  const { t, path } = useI18n();
+  // The answer on the supported databases links every engine with a page of
+  // its own, and the page of all integrations.
+  const link = (href: string) =>
+    function FaqLink(chunks: ReactNode) {
+      return (
+        <Link
+          href={path(href)}
+          className="text-foreground underline decoration-foreground/30 underline-offset-4 transition-colors hover:decoration-foreground"
+        >
+          {chunks}
+        </Link>
+      );
+    };
+  const tags = Object.fromEntries([
+    ...DATABASE_SLUGS.map((slug) => [slug, link(`/integrations/${slug}/`)]),
+    ["all", link("/integrations/")],
+  ]);
+  const items = FAQ_KEYS.map((faq) => ({ q: t(faq.q), a: t.rich(faq.a, tags) }));
 
   return (
     <section id="faq" className="mx-auto grid max-w-[1248px] gap-10 px-6 pt-28 sm:pt-[140px] lg:grid-cols-[4fr_7fr] lg:gap-16">
@@ -24,46 +42,7 @@ export function Faq() {
           })}
         </p>
       </div>
-      <div className="panel rounded-[18px] px-5">
-        {FAQ_KEYS.map((faq, i) => {
-          const isOpen = open === i;
-          return (
-            <div key={faq.q} className="border-b border-border last:border-b-0">
-              <h3>
-                <button
-                  type="button"
-                  id={`faq-q-${i}`}
-                  aria-expanded={isOpen}
-                  aria-controls={`faq-a-${i}`}
-                  onClick={() => setOpen(isOpen ? -1 : i)}
-                  className="flex w-full items-center justify-between gap-4 py-4 text-left font-medium"
-                >
-                  {t(faq.q)}
-                  <ChevronDown
-                    className={cn(
-                      "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
-                      isOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-              </h3>
-              <div
-                id={`faq-a-${i}`}
-                role="region"
-                aria-labelledby={`faq-q-${i}`}
-                className={cn(
-                  "grid transition-[grid-template-rows] duration-200",
-                  isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                )}
-              >
-                <div className="overflow-hidden" inert={!isOpen}>
-                  <p className="pb-4 leading-relaxed text-muted-foreground">{t(faq.a)}</p>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <FaqList items={items} idPrefix="faq" />
     </section>
   );
 }

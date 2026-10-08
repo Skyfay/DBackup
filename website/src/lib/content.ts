@@ -15,11 +15,19 @@ export interface AdapterItem {
   label: string;
   /** A name that is not a product and reads differently in every language. */
   labelKey?: MessageKey;
+  beta?: true;
+  /** A storage adapter that files are read from but backups are never written to. */
+  sourceOnly?: true;
 }
 
 /** The name of an adapter in the language of the page. */
-export function adapterLabel(item: AdapterItem, t: (key: MessageKey) => string): string {
+export function adapterName(item: AdapterItem, t: (key: MessageKey) => string): string {
   return item.labelKey ? t(item.labelKey) : item.label;
+}
+
+/** The name of an adapter with "(Beta)" behind it while it is in beta. */
+export function adapterLabel(item: AdapterItem, t: (key: MessageKey) => string): string {
+  return item.beta ? `${adapterName(item, t)} (${t("adapters.beta")})` : adapterName(item, t);
 }
 
 export const DATABASES: AdapterItem[] = [
@@ -31,8 +39,8 @@ export const DATABASES: AdapterItem[] = [
   { id: "redis", label: "Redis" },
   { id: "valkey", label: "Valkey" },
   { id: "mssql", label: "Microsoft SQL Server" },
-  { id: "azure-sql", label: "Azure SQL Database (Beta)" },
-  { id: "firebird", label: "Firebird (Beta)" },
+  { id: "azure-sql", label: "Azure SQL Database", beta: true },
+  { id: "firebird", label: "Firebird", beta: true },
 ];
 
 export const STORAGE_ADAPTERS: AdapterItem[] = [
@@ -49,8 +57,11 @@ export const STORAGE_ADAPTERS: AdapterItem[] = [
   { id: "webdav", label: "WebDAV" },
   { id: "smb", label: "SMB/Samba" },
   { id: "rsync", label: "Rsync" },
-  { id: "docker-volume", label: "Docker Volumes (Beta)", labelKey: "adapters.dockerVolumes" },
+  { id: "docker-volume", label: "Docker Volumes", labelKey: "adapters.dockerVolumes", beta: true, sourceOnly: true },
 ];
+
+/** The storage adapters a backup can be written to. */
+export const DESTINATION_COUNT = STORAGE_ADAPTERS.filter((item) => !item.sourceOnly).length;
 
 export const NOTIFICATION_CHANNELS: AdapterItem[] = [
   { id: "discord", label: "Discord" },

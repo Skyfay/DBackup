@@ -41,6 +41,11 @@ function fill(text: string, vars: Vars | undefined, numbers: Intl.NumberFormat):
   });
 }
 
+/** A rich message as plain text, for structured data and other places without elements. */
+export function stripTags(text: string): string {
+  return text.replace(/<br\s*\/?>/g, " ").replace(/<\/?\w+>/g, "");
+}
+
 export interface Translator {
   locale: Locale;
   /** A message, with `{name}` filled in. A `count` picks the plural form. */

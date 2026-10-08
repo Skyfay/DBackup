@@ -6,7 +6,7 @@ tags: ["Philosophie", "Verschlüsselung", "Wiederherstellung"]
 
 Die meisten Backup-Werkzeuge verlangen zweimal Vertrauen: einmal, um das Backup zu erstellen, und ein zweites Mal, um es wiederherzustellen. Verschwindet das Werkzeug, ändert es seine Preise oder funktioniert es schlicht nicht mehr, wird das Backup-Format oft zur Last statt zum Sicherheitsnetz.
 
-DBackup sieht das anders: **Jedes Backup ist ein normaler Datenbank-Dump**, genau das, was `pg_dump`, `mysqldump`, `mongodump` oder `redis-cli --rdb` selbst erzeugt hätten. DBackup fügt nur Verschlüsselung und Kompression als eigene Schritte hinzu und ersetzt den Dump nicht. Öffnen Sie das Archiv ohne DBackup, finden Sie dieselbe SQL-, BSON- oder RDB-Ausgabe, mit der jeder Datenbankadministrator ohnehin umgehen kann.
+DBackup sieht das anders: **Jedes Backup ist ein normaler Datenbank-Dump**, genau das, was [`pg_dump`](/de/integrations/postgresql/), [`mysqldump`](/de/integrations/mysql/), [`mongodump`](/de/integrations/mongodb/) oder [`redis-cli --rdb`](/de/integrations/redis/) selbst erzeugt hätten. DBackup fügt nur Verschlüsselung und Kompression als eigene Schritte hinzu und ersetzt den Dump nicht. Öffnen Sie das Archiv ohne DBackup, finden Sie dieselbe SQL-, BSON- oder RDB-Ausgabe, mit der jeder Datenbankadministrator ohnehin umgehen kann.
 
 ## Was „offene Verschlüsselung“ wirklich bedeutet
 
@@ -24,10 +24,9 @@ Bewahren Sie dieses Kit dort auf, wo DBackup selbst nicht hinkommt, in einem Pas
 
 ## Der tatsächliche Weg zurück
 
-Ist DBackup einmal nicht verfügbar, braucht die Wiederherstellung von Hand drei Schritte:
+Ist DBackup einmal nicht verfügbar, braucht die Wiederherstellung von Hand zwei Schritte:
 
-1. **Entschlüsseln** - führen Sie das eigenständige Skript aus dem Recovery Kit mit der verschlüsselten Datei und Ihrem Schlüssel aus, um den komprimierten Dump zurückzubekommen.
-2. **Entpacken** - mit `gunzip` oder `brotli -d`, je nachdem, welche Kompression der Job genutzt hat (steht in der Metadaten-Datei des Backups).
-3. **Importieren** - geben Sie den Dump an das native Wiederherstellungswerkzeug der Datenbank-Engine (`mysql`, `psql`, `mongorestore`, `redis-cli --pipe` und so weiter), genau so, als hätten Sie den Dump selbst erstellt.
+1. **Entschlüsseln und entpacken** - führen Sie das eigenständige Skript aus dem Recovery Kit mit dem Backup aus. Es entschlüsselt jeden Dump mit Ihrem Schlüssel, macht die Gzip- oder Brotli-Kompression des Jobs rückgängig und prüft die für den Dump hinterlegte SHA-256-Summe, bevor es die Datei schreibt.
+2. **Importieren** - geben Sie den Dump an das native Wiederherstellungswerkzeug der Datenbank-Engine ([`mysql`](/de/integrations/mysql/), [`pg_restore`](/de/integrations/postgresql/), [`mongorestore`](/de/integrations/mongodb/) und so weiter, bei [Redis](/de/integrations/redis/) die RDB-Datei an die Stelle der alten), genau so, als hätten Sie den Dump selbst erstellt.
 
 Keiner dieser Schritte braucht DBackup. Das ist Absicht. Die Aufgabe eines Backup-Werkzeugs ist es, Backups leicht zu erstellen und im Alltag leicht zu verwalten, nicht, sich für den einen Moment unentbehrlich zu machen, auf den es wirklich ankommt.

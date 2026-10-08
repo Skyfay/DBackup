@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { DEFAULT_LOCALE, LOCALES, localePath, type Locale } from "@/i18n/config";
 import { getAllPosts, getPostLocales } from "@/lib/blog";
+import { DATABASE_SLUGS } from "@/lib/integrations";
 import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -27,6 +28,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...entries("/", LOCALES, { changeFrequency: "weekly", priority: 1.0 }),
     ...entries("/blog/", LOCALES, { lastModified: newestPost, changeFrequency: "weekly", priority: 0.8 }),
     ...entries("/roadmap/", LOCALES, { changeFrequency: "weekly", priority: 0.8 }),
+    ...entries("/integrations/", LOCALES, { changeFrequency: "monthly", priority: 0.8 }),
+    ...DATABASE_SLUGS.flatMap((slug) =>
+      entries(`/integrations/${slug}/`, LOCALES, { changeFrequency: "monthly", priority: 0.8 })
+    ),
     ...posts.flatMap((post) =>
       entries(`/blog/${post.slug}/`, getPostLocales(post.slug), {
         lastModified: new Date(post.date),

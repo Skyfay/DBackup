@@ -4,6 +4,7 @@ date: "2026-07-24"
 excerpt: "File backups forced a choice between a chunk store and archives you can still open by hand. Here is what we picked, what it costs you in storage, and when you should use a different tool."
 tags: ["philosophy", "file-backups", "architecture"]
 author: "Skyfay"
+databases: ["postgresql", "mysql"]
 cover:
   badge: "TAR"
   tone: "blue"
@@ -45,7 +46,7 @@ In a chunk-based repository, no single file is your backup. Your data lives spre
 
 That is a lot of machinery to depend on at the exact moment you need it most. These tools are excellent and widely trusted, and a well-maintained open format with several independent implementations is a real answer to that concern. But it is a different answer from the one DBackup makes: that you can get your data back with tools you already have, without trusting anything of ours.
 
-We had already committed to that promise for databases. Every dump DBackup writes is what `pg_dump` or `mysqldump` would have produced on its own, encrypted with AES-256-GCM as a separate step. Building the file side on a chunk store would have meant running two philosophies in one product, and quietly retiring the promise for everything that is not a database.
+We had already committed to that promise for databases. Every dump DBackup writes is what [`pg_dump`](/integrations/postgresql/) or [`mysqldump`](/integrations/mysql/) would have produced on its own, encrypted with AES-256-GCM as a separate step. Building the file side on a chunk store would have meant running two philosophies in one product, and quietly retiring the promise for everything that is not a database.
 
 ## What DBackup does instead
 

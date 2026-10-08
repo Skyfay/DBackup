@@ -176,7 +176,7 @@ export function SpinBorder({
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute top-1/2 left-1/2",
+          "fx-border pointer-events-none absolute top-1/2 left-1/2",
           speed === "slow" ? "fx-spin-slow" : "fx-spin"
         )}
         style={{

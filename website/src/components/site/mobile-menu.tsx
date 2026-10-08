@@ -60,7 +60,7 @@ export function MobileMenu() {
           <div className="relative overflow-hidden rounded-[22px] bg-foreground/10 p-px shadow-[0_40px_80px_-20px_rgb(0_0_0/0.6),0_30px_80px_-30px_rgb(37_99_235/0.45)]">
             <span
               aria-hidden="true"
-              className="fx-spin absolute top-1/2 left-1/2 -mt-[600px] -ml-[600px] size-[1200px]"
+              className="fx-border fx-spin absolute top-1/2 left-1/2 -mt-[600px] -ml-[600px] size-[1200px]"
               style={{ background: CONIC.blue }}
             />
             <div className="relative overflow-hidden rounded-[21px] bg-card/97">

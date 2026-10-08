@@ -615,6 +615,23 @@
   }
 }
 
+/* Touch screens keep the heavy decoration still. iOS Safari tiles every layer
+   wider than 1280px, and a tiled layer under a running animation makes it redo
+   its rendering on the main thread every frame, which can freeze the page on
+   an iPhone. The large spinning layers (fx-border), the floor grid, the shine,
+   the stars, the drifting glows and the calendar sweep stop here. */
+@media (hover: none) {
+  .fx-border,
+  .fx-floor,
+  .fx-shine,
+  .fx-twinkle,
+  .fx-drift,
+  .fx-drift-2,
+  .fx-sweep {
+    animation: none;
+  }
+}
+
 /* Blog articles. Rules reach only the direct children of the article, so the
    MDX components keep their own look. */
 .post-prose > p,

@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { insertBlock, parseFragment, release, renderBlock } from "../../../scripts/changelog.mjs";
+import {
+    creditAll,
+    creditFragment,
+    findContribution,
+    insertBlock,
+    parseFragment,
+    release,
+    renderBlock,
+} from "../../../scripts/changelog.mjs";
 
 const DIR = "/repo/changelog/unreleased";
 const CHANGELOG = "/repo/docs/changelog.md";
@@ -142,8 +150,9 @@ describe("the version block of a release", () => {
             "",
             "### 🐛 Bug Fixes",
             "",
-            "- **ui**: First fix.",
+            // Grouped by component, so api comes before ui.
             "- **api**: Second fix.",
+            "- **ui**: First fix.",
             "",
             "### 🔧 CI/CD",
             "",
@@ -187,6 +196,30 @@ describe("the version block of a release", () => {
     });
 });
 
+describe("the entries of a section", () => {
+    it("are grouped by component in the order of the alphabet, each keeping the order of its fragments", () => {
+        const first = parseFragment(
+            "### ✨ Features\n\n- **storage**: Storage one.\n- **MSSQL**: MSSQL one.\n- **auth**: Auth one.",
+            "a.md",
+        );
+        const second = parseFragment(
+            "### ✨ Features\n\n- **Auth**: Auth two.\n- **storage**: Storage two.\n- **backup**: Backup one.",
+            "b.md",
+        );
+
+        const block = renderBlock("4.1.0", "`latest`, `v4`", [first, second]);
+        const features = block.split("\n").filter((line) => line.startsWith("- **") && !line.startsWith("- **Image"));
+        expect(features.slice(0, 6)).toEqual([
+            "- **auth**: Auth one.",
+            "- **Auth**: Auth two.",
+            "- **backup**: Backup one.",
+            "- **MSSQL**: MSSQL one.",
+            "- **storage**: Storage one.",
+            "- **storage**: Storage two.",
+        ]);
+    });
+});
+
 describe("a release", () => {
     it("writes the block into the changelog and deletes the fragments, but keeps the README", () => {
         const files = memoryFiles({
@@ -223,5 +256,97 @@ describe("a release", () => {
 
         expect(() => release({ version: "4.0.0", tags: "`latest`, `v4`", dir: DIR, changelog: CHANGELOG })).toThrow(/already lists v4\.0\.0/);
         expect(files.has(`${DIR}/Skyfay-fix.md`)).toBe(true);
+    });
+});
+
+describe("the thanks of an outside contribution", () => {
+    const PR_127 = "Thanks @Shlok-Zanwar ([#127](https://github.com/Skyfay/DBackup/pull/127))";
+    const contribution = { author: "Shlok-Zanwar", number: 127 };
+
+    it("goes at the end of every entry of the fragment", () => {
+        const fragment = parseFragment(
+            "### 🐛 Bug Fixes\n\n- **webhooks**: Fixed the method.\n\n### ✨ Features\n\n- **explorer**: Navigates back.",
+            "fix-webhook-method.md",
+        );
+        const credited = creditFragment(fragment, contribution);
+        expect(credited.sections.get("### 🐛 Bug Fixes")).toEqual([`- **webhooks**: Fixed the method. ${PR_127}`]);
+        expect(credited.sections.get("### ✨ Features")).toEqual([`- **explorer**: Navigates back. ${PR_127}`]);
+        // The fragment read from disk stays as it was.
+        expect(fragment.sections.get("### 🐛 Bug Fixes")).toEqual(["- **webhooks**: Fixed the method."]);
+    });
+
+    it("leaves an entry that thanks someone already, and a fragment without a contribution", () => {
+        const advisory =
+            "- **adapters**: Secrets stay hidden. Thanks @YHalo-wyh ([GHSA-cj5h-46h6-72wc](https://github.com/Skyfay/DBackup/security/advisories/GHSA-cj5h-46h6-72wc))";
+        const fragment = parseFragment(`### 🔒 Security\n\n${advisory}`, "fix.md");
+        expect(creditFragment(fragment, contribution).sections.get("### 🔒 Security")).toEqual([advisory]);
+        expect(creditFragment(fragment, null)).toBe(fragment);
+    });
+
+    it("ends up in the version block of the release", () => {
+        const files = memoryFiles({
+            [CHANGELOG]: RELEASED,
+            [`${DIR}/fix-webhook-method.md`]: "### 🐛 Bug Fixes\n\n- **webhooks**: Fixed the method.",
+        });
+
+        release({
+            version: "4.1.0",
+            tags: "`latest`, `v4`",
+            dir: DIR,
+            changelog: CHANGELOG,
+            credit: (fragments) => creditAll(fragments, () => contribution).fragments,
+        });
+
+        expect(files.get(CHANGELOG)).toContain(`- **webhooks**: Fixed the method. ${PR_127}`);
+    });
+
+    it("is left out for a fragment whose lookup fails, which the release names", () => {
+        const fragments = [
+            parseFragment("### 🐛 Bug Fixes\n\n- **ui**: One.", "a.md"),
+            parseFragment("### 🐛 Bug Fixes\n\n- **api**: Two.", "b.md"),
+        ];
+        const { fragments: credited, missing } = creditAll(fragments, (name) => {
+            if (name === "a.md") throw new Error("gh: not logged in");
+            return contribution;
+        });
+        expect(missing).toEqual(["a.md"]);
+        expect(credited[0]).toBe(fragments[0]);
+        expect(credited[1]?.sections.get("### 🐛 Bug Fixes")).toEqual([`- **api**: Two. ${PR_127}`]);
+    });
+});
+
+describe("the pull request behind a fragment", () => {
+    const SHA = "b67382c20c9cfe746c3913cf889c4285e400c497";
+
+    /** Answers git with the commit that added the fragment and gh with the pull request. */
+    function answers(git: string, gh: string) {
+        const calls: Array<[string, string[]]> = [];
+        const run = (command: string, args: string[]) => {
+            calls.push([command, args]);
+            return command === "git" ? git : gh;
+        };
+        return { run, calls };
+    }
+
+    it("is the pull request of the commit that added the file, with its author", () => {
+        const { run, calls } = answers(`${SHA}\n`, "127\tShlok-Zanwar\tUser\n");
+        expect(findContribution("fix.md", { dir: DIR, run })).toEqual({ author: "Shlok-Zanwar", number: 127 });
+        expect(calls[0]).toEqual(["git", ["log", "-1", "--diff-filter=A", "--format=%H", "--", `${DIR}/fix.md`]]);
+        expect(calls[1]?.[1]).toContain(`repos/Skyfay/DBackup/commits/${SHA}/pulls`);
+    });
+
+    it("thanks nobody for a maintainer's pull request, a bot's, or a fragment without one", () => {
+        expect(findContribution("a.md", { dir: DIR, ...answers(SHA, "130\tSkyfay\tUser") })).toBeNull();
+        expect(findContribution("a.md", { dir: DIR, ...answers(SHA, "90\tdependabot[bot]\tBot") })).toBeNull();
+        expect(findContribution("a.md", { dir: DIR, ...answers(SHA, "") })).toBeNull();
+        // A fragment that is not committed yet.
+        expect(findContribution("a.md", { dir: DIR, ...answers("", "unused") })).toBeNull();
+    });
+
+    it("turns down an answer that does not look like what GitHub hands out", () => {
+        for (const gh of ["127\tevil)](https://x.example)\tUser", "0\tsomeone\tUser", "127\t-dash\tUser"]) {
+            expect(() => findContribution("a.md", { dir: DIR, ...answers(SHA, gh) })).toThrow(/no pull request/);
+        }
+        expect(() => findContribution("a.md", { dir: DIR, ...answers("not-a-sha", "") })).toThrow(/no commit/);
     });
 });

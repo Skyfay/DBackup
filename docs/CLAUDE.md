@@ -96,7 +96,7 @@ Each category (sources, destinations, notifications) has an index page with a ta
 
 Never into `docs/changelog.md`. Every branch writes its entries into a fragment of its own, `changelog/unreleased/<branch>.md` with the `/` of the branch name replaced by `-`, so pull requests that run side by side never touch the same file. A change made without a branch of its own names its fragment after the change.
 
-A fragment is a version block without the version header and without the Docker section: notes like breaking changes above the first section, then sections with entries. The release (`pnpm version:bump`) collects all fragments into one version block of `docs/changelog.md`, sorts the sections into the order below and deletes the fragments. `tests/unit/lint-guards/changelog-fragments.test.ts` checks every fragment against the rules of this part, and `pnpm changelog:preview` prints the block the next release writes. Format and example: [changelog/unreleased/README.md](../changelog/unreleased/README.md).
+A fragment is a version block without the version header and without the Docker section: notes like breaking changes above the first section, then sections with entries. The release (`pnpm version:bump`) collects all fragments into one version block of `docs/changelog.md`, sorts the sections into the order below, groups the entries of each section by component in the order of the alphabet and deletes the fragments. `tests/unit/lint-guards/changelog-fragments.test.ts` checks every fragment against the rules of this part, and `pnpm changelog:preview` prints the block the next release writes. Format and example: [changelog/unreleased/README.md](../changelog/unreleased/README.md).
 
 ## What never gets an entry
 
@@ -124,6 +124,8 @@ Code that ships in the repository still counts even when its purpose is to keep 
 **Punctuation** - no `;`, no ` - ` and no `- ` inside a description. Stricter than the general typography rule, which allows a hyphen as a dash. A sentence reaching for one of them is doing too much work, so split it or cut it. The `- ` that opens the line is the list marker and stays.
 
 **Issue links** - always at the end as `([#N](url))`. Never inside the component name.
+
+**Thanks** - a contribution from outside the project is credited at the end of each of its entries as `Thanks @author ([#N](url))`, which the release adds by itself: `scripts/changelog.mjs` looks up the pull request that added a fragment with git and `gh`. Contributors write no thanks, and a reviewer does not ask for one. A vulnerability reported privately thanks its reporter by hand, with the advisory link instead of the pull request.
 
 **One entry per user-visible change.** A PR touching 20 files to deliver one behavior change is one line. Two unrelated changes in one PR are two lines.
 

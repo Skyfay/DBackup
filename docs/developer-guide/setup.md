@@ -113,6 +113,10 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+::: tip Dev server on another machine
+When the dev server runs on a remote box, set `BETTER_AUTH_URL` to the address you open in the browser, like `http://devbox:3000`. Sign-in accepts it and the dev server allows its host for hot reload. Further addresses go into `TRUSTED_ORIGINS`, separated by commas.
+:::
+
 ::: danger Never use `prisma db push`
 `prisma db push` applies schema changes without creating a migration file. This causes the local `_prisma_migrations` table to diverge from the actual schema, breaking `database:deploy` in production and for every other developer. Always use `prisma migrate dev` to create a proper migration instead.
 :::

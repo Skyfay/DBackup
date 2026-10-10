@@ -2,6 +2,62 @@
 
 All notable changes to DBackup are documented here.
 
+## v4.0.1 - Offline First Start, Docker Socket and Rsync Fixes, and Updated Guides
+*Released: Oct 10, 2026*
+
+### ✨ Features
+
+- **website**: A new integrations page lists every database, storage and notification adapter with a search. PostgreSQL, MySQL, MariaDB, MongoDB and Redis each have a page of their own in English and German.
+- **website**: The website is in German as well as English, follows the language of the browser and offers Auto, English and Deutsch to choose from. The blog posts are translated as well.
+
+### 🐛 Bug Fixes
+
+- **docker**: A new container starts without internet access. The image ships the Prisma schema engine, which every first start downloaded from `binaries.prisma.sh` before.
+- **jobs**: The None option of the PostgreSQL dump compression says that DBackup compresses the dump, not the whole backup.
+- **Recovery Kit**: The instructions in the kit and the help of the tool say that `--extract` writes into the folder it is given.
+- **Rsync**: A run over rsync no longer warns that it could not create `/home/nextjs/.ssh/known_hosts`. ([#178](https://github.com/Skyfay/DBackup/issues/178))
+- **website**: The preview pictures of the site and of every blog post are sent as images again, so link previews can show them.
+- **website**: The post on vendor lock-in names the right restore tools for PostgreSQL and Redis and describes the Recovery Kit as it works today.
+- **website**: The home page no longer shows a weekly summary that DBackup does not send.
+- **website**: The website no longer hangs on an iPhone or iPad, and taps there respond right away. Phones and tablets keep its large effects still, show plain frames instead of the spinning borders and draw the glows without a blur.
+
+### 🎨 Improvements
+
+- **docker**: An unreadable Docker socket now names the fix in the error, which is running DBackup with `PGID` set to the group that owns the socket ([#167](https://github.com/Skyfay/DBackup/issues/167)).
+- **website**: Every blog post has an illustration and a color of its own that its page takes on, and it shows the GitHub avatar of its author.
+- **website**: Search engines and link previews get a title, a description and a picture for every page, a sitemap without redirects and richer structured data for the app and the blog.
+
+### 📝 Documentation
+
+- **docs**: The Docker Volumes guide names the group ID to run DBackup with when the socket is not readable, says why `group_add` and `user:` do not work and what to do on a host whose socket belongs to no `docker` group ([#167](https://github.com/Skyfay/DBackup/issues/167)).
+- **docs**: The contributing guide asks that issues and pull requests made with AI are tested on a real setup before they are opened.
+- **docs**: The README says how independent researchers have reviewed DBackup so far, with a link to the published security advisories and to the documented backup format.
+- **wiki**: The guides for PostgreSQL, MySQL, MongoDB, Redis and Valkey describe the tools, the archive and the restore of the current version, and no longer promise Sentinel, the oplog or restore options that do not exist.
+- **wiki**: The pages on encryption, compression, verification, destinations and the Recovery Kit describe the archive and `dbackup-recover.js` as they work today.
+- **wiki**: The development setup lets the setup scripts install Node and pnpm, instead of the newest Node from Homebrew on macOS.
+
+### 🔧 CI/CD
+
+- **ci**: The release groups the entries of each changelog section by component, in the order of the alphabet, so the lines about one part of DBackup stand together.
+- **ci**: Every pull request writes its changelog entries into a file of its own, which the release collects into the changelog, so pull requests no longer conflict over it.
+- **ci**: The release thanks the author of a pull request from outside the project at the end of each of its changelog entries, with a link to the pull request.
+- **ci**: The dev server allows the hosts of `BETTER_AUTH_URL` and `TRUSTED_ORIGINS`, so hot reload also works when it is opened from another machine.
+- **ci**: The Docker build of a pull request into main runs as its own workflow, so a release no longer lists it as a skipped job.
+- **ci**: The Docker build of a pull request into main waits for one approval instead of one per platform, so a run sends a single review request.
+- **ci**: A `.node-version` file pins Node 24 for local development, the version CI and the Docker image use.
+- **ci**: The setup scripts for macOS and Debian install Node in the version of `.node-version` and pnpm 10, through fnm on macOS and NodeSource on Debian.
+- **ci**: The Debian setup script installs the Firebird 5 client tools `gbak` and `isql` as well as `lz4` and `zstd`, like the Docker image.
+- **ci**: The Debian setup script now installs the MongoDB Database Tools on Ubuntu, where its apt source named the wrong component.
+- **ci**: The Debian setup script runs through a second time instead of stopping at the PostgreSQL signing key it already wrote.
+- **ci**: The version bump runs through on Linux as well, where it stopped at the OpenAPI files.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v4.0.1`
+- **Also tagged as**: `latest`, `v4`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
 ## v4.0.0 - Redesigned Interface, Global Search, Air-Gapped Destinations, and Recently Deleted
 *Released: Oct 4, 2026*
 

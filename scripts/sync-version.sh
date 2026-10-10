@@ -40,13 +40,16 @@ sync_files() {
   "
   echo "  ✓ docs/package.json"
 
-  # public/openapi.yaml
-  sed -i '' "s/^  version: .*/  version: $VERSION/" "$ROOT_DIR/public/openapi.yaml"
-  echo "  ✓ public/openapi.yaml"
-
-  # api-docs/openapi.yaml
-  sed -i '' "s/^  version: .*/  version: $VERSION/" "$ROOT_DIR/api-docs/openapi.yaml"
-  echo "  ✓ api-docs/openapi.yaml"
+  # The version line of both OpenAPI files. Rewritten with node rather than `sed -i`, which takes
+  # its argument differently in GNU sed on Linux and in the BSD sed of macOS.
+  for file in public/openapi.yaml api-docs/openapi.yaml; do
+    node -e "
+      const fs = require('fs');
+      const path = '$ROOT_DIR/$file';
+      fs.writeFileSync(path, fs.readFileSync(path, 'utf8').replace(/^  version: .*/gm, '  version: $VERSION'));
+    "
+    echo "  ✓ $file"
+  done
 }
 
 # ── Write the changelog block of the new version ──────────────────

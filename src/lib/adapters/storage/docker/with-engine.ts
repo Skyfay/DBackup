@@ -39,7 +39,7 @@ function describeFailure(e: unknown): string {
         return `${message}. The Docker socket was not found. Running DBackup in a container means mounting it, for example -v /var/run/docker.sock:/var/run/docker.sock.`;
     }
     if (code === "EACCES" || message.includes("EACCES")) {
-        return `${message}. The Docker socket exists but is not readable by the user DBackup runs as.`;
+        return `${message}. The Docker socket exists but is not readable by the user DBackup runs as. In a container, set PGID to the group that owns the socket, usually docker.`;
     }
     if (code === "ECONNREFUSED") {
         return `${message}. Nothing is listening on the Docker socket - the daemon is most likely not running.`;

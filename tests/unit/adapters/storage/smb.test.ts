@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SMBAdapter } from "@/lib/adapters/storage/smb";
 
 // --- Hoisted mocks ---
-const { mockSendFile, mockGetFile, mockList, mockMkdir, mockDeleteFile, mockFsReadFile, mockFsWriteFile, mockFsUnlink, mockSambaCtorShouldThrow } = vi.hoisted(() => ({
+const { mockSendFile, mockGetFile, mockList, mockMkdir, mockDeleteFile, mockFsReadFile, mockFsWriteFile, mockFsUnlink, mockSambaCtorShouldThrow, mockDir, mockCtorOptions } = vi.hoisted(() => ({
     mockSendFile: vi.fn().mockResolvedValue(undefined),
     mockGetFile: vi.fn().mockResolvedValue(undefined),
     mockList: vi.fn(),
+    mockDir: vi.fn().mockResolvedValue(""),
+    mockCtorOptions: vi.fn(),
     mockMkdir: vi.fn().mockResolvedValue(undefined),
     mockDeleteFile: vi.fn().mockResolvedValue(undefined),
     mockFsReadFile: vi.fn().mockResolvedValue("smb file content"),
@@ -16,7 +18,8 @@ const { mockSendFile, mockGetFile, mockList, mockMkdir, mockDeleteFile, mockFsRe
 
 vi.mock("samba-client", () => {
     class MockSambaClient {
-        constructor() {
+        constructor(options?: unknown) {
+            mockCtorOptions(options);
             if (mockSambaCtorShouldThrow.value) {
                 throw new Error("SambaClient constructor failed");
             }
@@ -24,6 +27,7 @@ vi.mock("samba-client", () => {
         sendFile = mockSendFile;
         getFile = mockGetFile;
         list = mockList;
+        dir = mockDir;
         mkdir = mockMkdir;
         deleteFile = mockDeleteFile;
     }
@@ -71,6 +75,7 @@ describe("SMBAdapter", () => {
         mockGetFile.mockResolvedValue(undefined);
         mockMkdir.mockResolvedValue(undefined);
         mockDeleteFile.mockResolvedValue(undefined);
+        mockDir.mockResolvedValue("");
         mockFsReadFile.mockResolvedValue("smb file content");
         mockFsWriteFile.mockResolvedValue(undefined);
         mockFsUnlink.mockResolvedValue(undefined);
@@ -211,6 +216,59 @@ describe("SMBAdapter", () => {
             const result = await SMBAdapter.list(config, "Job");
 
             expect(result[0].path).not.toContain("backups/");
+        });
+
+        it("recovers a long SMB archive filename missing from samba-client list()", async () => {
+            mockList.mockResolvedValue([]);
+            mockDir.mockResolvedValue(
+                "  Critical_Backups_2026-10-10_01-20-00_full-000.tar A 2580549120  Sat Oct 10 01:20:00 2026\n"
+            );
+
+            const files = await SMBAdapter.list(config, "Job");
+            expect(files).toHaveLength(1);
+            expect(files[0]).toMatchObject({
+                name: "Critical_Backups_2026-10-10_01-20-00_full-000.tar",
+                size: 2580549120,
+            });
+        });
+
+        it("merges long SMB archive names missing from a partially parsed listing", async () => {
+            mockList.mockResolvedValue([
+                { name: "short.index", type: "A", size: 100, modifyTime: new Date("2026-10-10T01:20:00Z") },
+            ]);
+            mockDir.mockResolvedValue(
+                "  short.index A 100  Sat Oct 10 01:20:00 2026\n" +
+                "  Critical_Backups_2026-10-10_01-20-00_full-000.tar A 2580549120  Sat Oct 10 01:20:00 2026\n"
+            );
+
+            const files = await SMBAdapter.list(config, "Job");
+            expect(files.map((file) => file.name)).toEqual([
+                "short.index",
+                "Critical_Backups_2026-10-10_01-20-00_full-000.tar",
+            ]);
+        });
+
+        it("scopes SMB listing to a directory with spaces rather than embedding paths in globs", async () => {
+            mockList.mockResolvedValue([]);
+            mockDir.mockResolvedValue("");
+            await SMBAdapter.list(config, "Team Archives/run 2026");
+
+            expect(mockCtorOptions).toHaveBeenCalledWith(expect.objectContaining({
+                directory: "backups/Team Archives/run 2026",
+            }));
+            expect(mockList).toHaveBeenCalledWith("*");
+            expect(mockDir).toHaveBeenCalledWith("*");
+        });
+
+        it("follows raw SMB directory entries with lowercase DOS attributes", async () => {
+            mockList.mockResolvedValue([]);
+            mockDir
+                .mockResolvedValueOnce("  snapshot-run dn 0  Sat Oct 10 01:20:00 2026\n")
+                .mockResolvedValueOnce("  archive.tar a 8192  Sat Oct 10 01:20:00 2026\n");
+
+            const files = await SMBAdapter.list(config, "Job");
+            expect(files).toHaveLength(1);
+            expect(files[0].path).toContain("snapshot-run/archive.tar");
         });
 
         it("throws when root directory listing fails", async () => {

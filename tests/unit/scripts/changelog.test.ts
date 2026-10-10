@@ -257,6 +257,16 @@ describe("a release", () => {
         expect(() => release({ version: "4.0.0", tags: "`latest`, `v4`", dir: DIR, changelog: CHANGELOG })).toThrow(/already lists v4\.0\.0/);
         expect(files.has(`${DIR}/Skyfay-fix.md`)).toBe(true);
     });
+
+    it("releases a version whose beta the changelog lists already", () => {
+        const files = memoryFiles({
+            [CHANGELOG]: RELEASED.replace("## v4.0.0 - Redesigned Interface", "## v4.1.0-beta - Preview"),
+            [`${DIR}/Skyfay-fix.md`]: "### 🐛 Bug Fixes\n\n- **ui**: Fixed.",
+        });
+
+        release({ version: "4.1.0", tags: "`latest`, `v4`", dir: DIR, changelog: CHANGELOG });
+        expect(files.get(CHANGELOG)).toMatch(/^## v4\.1\.0$/m);
+    });
 });
 
 describe("the thanks of an outside contribution", () => {

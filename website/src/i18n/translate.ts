@@ -41,9 +41,12 @@ function fill(text: string, vars: Vars | undefined, numbers: Intl.NumberFormat):
   });
 }
 
-/** A rich message as plain text, for structured data and other places without elements. */
+/**
+ * A rich message as plain text, for structured data and other places without elements. A bracket
+ * left over from a tag that was not one of ours goes as well, so nothing tag-like survives.
+ */
 export function stripTags(text: string): string {
-  return text.replace(/<br\s*\/?>/g, " ").replace(/<\/?\w+>/g, "");
+  return text.replace(/<br\s*\/?>/g, " ").replace(/<\/?\w+>/g, "").replace(/[<>]/g, "");
 }
 
 export interface Translator {

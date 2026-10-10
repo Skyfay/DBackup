@@ -196,6 +196,49 @@ describe("SFTPAdapter.listTree", () => {
         expect(mockSftpList).not.toHaveBeenCalled();
     });
 
+    it("bounds a concurrent source-tree walk to one reusable SSH connection", async () => {
+        mockSftpExists.mockResolvedValue("d");
+        mockSftpList.mockImplementation(async (remotePath: string) => {
+            if (remotePath === ".") return [dir("one"), dir("two"), dir("three")];
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            return [file(remotePath + ".txt")];
+        });
+
+        const result = await SFTPAdapter.listTree!(config, "", { concurrency: 8 });
+
+        expect(result.files).toHaveLength(3);
+        expect(mockSftpConnect).toHaveBeenCalledTimes(1);
+        expect(mockSftpEnd).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries a transient SSH handshake error just once for a source walk", async () => {
+        serveTree({ ".": [file("a.txt")] });
+        mockSftpConnect
+            .mockRejectedValueOnce(new Error("Timed out while waiting for handshake"))
+            .mockResolvedValueOnce(undefined);
+
+        const result = await SFTPAdapter.listTree!(config, "", { concurrency: 8 });
+        expect(result.files).toHaveLength(1);
+        expect(mockSftpConnect).toHaveBeenCalledTimes(2);
+    });
+
+    it("disposes a failed handshake client before retrying a source scan", async () => {
+        serveTree({ ".": [file("ok.txt")] });
+        mockSftpConnect.mockRejectedValueOnce(new Error("ETIMEDOUT")).mockResolvedValueOnce(undefined);
+
+        await SFTPAdapter.listTree!(config, "", { concurrency: 8 });
+
+        expect(mockSftpConnect).toHaveBeenCalledTimes(2);
+        expect(mockSftpEnd).toHaveBeenCalledTimes(2);
+        expect(mockDestroy).toHaveBeenCalledTimes(2);
+    });
+
+    it("never retries a non-transient authentication failure", async () => {
+        mockSftpConnect.mockRejectedValue(new Error("All configured authentication methods failed"));
+        await expect(SFTPAdapter.listTree!(config, "")).rejects.toThrow("authentication methods");
+        expect(mockSftpConnect).toHaveBeenCalledTimes(1);
+    });
+
     it("opens one connection for a serial walk and closes it afterwards", async () => {
         serveTree({ ".": [file("a.txt")] });
 

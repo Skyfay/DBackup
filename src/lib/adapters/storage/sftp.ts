@@ -87,17 +87,24 @@ export const connectSFTP = async (config: SFTPConfig, onDisconnect?: (reason: st
         end: () => onDisconnect?.('the connection ended'),
         close: () => onDisconnect?.('the connection closed'),
     });
-    await sftp.connect({
-        host: config.host,
-        port: config.port,
-        username: config.username,
-        password: config.password,
-        privateKey,
-        // passphrase only needed for non-PKCS#8-encrypted keys
-        passphrase: privateKey !== config.privateKey ? undefined : config.passphrase,
-        ...CONNECTION_TUNING,
-    });
-    return sftp;
+    try {
+        await sftp.connect({
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: config.password,
+            privateKey,
+            // passphrase only needed for non-PKCS#8-encrypted keys
+            passphrase: privateKey !== config.privateKey ? undefined : config.passphrase,
+            ...CONNECTION_TUNING,
+        });
+        return sftp;
+    } catch (error) {
+        // Do not leave an orphaned SSH socket when a handshake fails before the
+        // client becomes usable; this is especially important before a retry.
+        await endSftpClient(sftp);
+        throw error;
+    }
 };
 
 /**
@@ -139,6 +146,23 @@ export async function endSftpClient(sftp: Client): Promise<void> {
 interface PooledClient {
     client: Client;
     alive: boolean;
+}
+
+/** One retry for handshake reset/timeout; never retry authentication or permission failures. */
+async function connectSFTPForSource(config: SFTPConfig): Promise<Client> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            return await connectSFTP(config);
+        } catch (error) {
+            lastError = error;
+            const message = error instanceof Error ? error.message : String(error);
+            if (attempt === 2 || !/handshake|timed? out|ETIMEDOUT|ECONNRESET|connection reset/i.test(message)) {
+                throw error;
+            }
+        }
+    }
+    throw lastError;
 }
 
 /** How many sibling names to name in a diagnostic - enough to recognise the place, short enough to read. */
@@ -490,21 +514,12 @@ async function walkSftpTree(
     const unsupportedSymlinks: string[] = [];
     let directoriesRead = 0;
 
-    const pool = createConnectionPool<PooledClient>({
-        limit,
-        connect: async () => {
-            const entry: PooledClient = { client: null as unknown as Client, alive: true };
-            entry.client = await connectSFTP(config, () => { entry.alive = false; });
-            return entry;
-        },
-        disconnect: async (entry) => { await endSftpClient(entry.client); },
-        isAlive: (entry) => entry.alive,
-    });
+    let client: Client | null = null;
 
     try {
         options?.signal?.throwIfAborted();
-
-        const exists = await pool.withConnection(({ client }) => client.exists(startDir));
+        client = await connectSFTPForSource(config);
+        const exists = await client.exists(startDir);
         if (exists !== 'd') return { files, pruned };
 
         /** Path relative to the adapter's configured root, the convention `list()` also uses. */
@@ -523,7 +538,7 @@ async function walkSftpTree(
                 options?.signal?.throwIfAborted();
 
                 const currentDir = relDir ? path.posix.join(startDir, relDir) : startDir;
-                const items = await pool.withConnection(({ client }) => client.list(currentDir));
+                const items = await client!.list(currentDir);
                 const children: string[] = [];
 
                 for (const item of items) {
@@ -543,8 +558,10 @@ async function walkSftpTree(
                         // Stored as a link and not followed, whether it points at a file or a
                         // directory. Descending would copy the target's bytes under the link's
                         // path, which is a different tree than the one being backed up.
-                        const target = await pool.withConnection(({ client }) =>
-                            readSftpLinkTarget(client, fullPath, (item as { longname?: string }).longname)
+                        const target = await readSftpLinkTarget(
+                            client!,
+                            fullPath,
+                            (item as { longname?: string }).longname
                         );
                         if (target === undefined) {
                             unsupportedSymlinks.push(childRel);
@@ -587,7 +604,7 @@ async function walkSftpTree(
         log.error("SFTP tree walk failed", { host: config.host, dir }, wrapError(error));
         throw error;
     } finally {
-        await pool.close();
+        if (client) await endSftpClient(client);
     }
 }
 

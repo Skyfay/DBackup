@@ -92,6 +92,33 @@ describe("SMBAdapter", () => {
             expect(mockMkdir).toHaveBeenCalled();
         });
 
+        it("creates every missing nested SMB upload parent below the configured share root", async () => {
+            const uploaded = await SMBAdapter.upload(config, "/tmp/backup.sql", "Job/2026/10/backup.sql");
+
+            expect(uploaded).toBe(true);
+            expect(mockMkdir.mock.calls.map((args) => args[0])).toEqual([
+                "backups/Job",
+                "backups/Job/2026",
+                "backups/Job/2026/10",
+            ]);
+        });
+
+        it("fails before upload when creating an SMB parent is denied", async () => {
+            mockMkdir.mockRejectedValue(new Error("NT_STATUS_ACCESS_DENIED"));
+
+            const uploaded = await SMBAdapter.upload(config, "/tmp/backup.sql", "Job/2026/backup.sql");
+            expect(uploaded).toBe(false);
+            expect(mockSendFile).not.toHaveBeenCalled();
+        });
+
+        it("rejects destination traversal outside the configured SMB root", async () => {
+            const uploaded = await SMBAdapter.upload(config, "/tmp/backup.sql", "Job/../../outside.sql");
+
+            expect(uploaded).toBe(false);
+            expect(mockMkdir).not.toHaveBeenCalled();
+            expect(mockSendFile).not.toHaveBeenCalled();
+        });
+
         it("returns false when sendFile throws", async () => {
             mockSendFile.mockRejectedValue(new Error("Access denied"));
 

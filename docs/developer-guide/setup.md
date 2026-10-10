@@ -6,7 +6,7 @@ Complete guide to setting up DBackup for development.
 
 ### Required
 
-- **Node.js** 24, the version CI and the Docker image use
+- **Node.js** 24, the version CI and the Docker image use, pinned in `.node-version`
 - **pnpm** 10
 - **Git**
 
@@ -25,16 +25,15 @@ Use the setup script for your platform rather than installing these by hand. Sev
 ### macOS Installation
 
 ```bash
-brew install node
-npm install -g pnpm
-
-# Installs every CLI tool the adapters need, and prints the PATH lines to add
+# Installs fnm with the Node of .node-version, pnpm 10 and every CLI tool the adapters need,
+# then prints the lines to add to ~/.zshrc
 ./scripts/setup-dev-macos.sh
 ```
 
-Then add this to `~/.zshrc`. The script prints it too, but it is easy to skip past:
+Then add the two lines the script prints to `~/.zshrc`. They are easy to skip past. The first one lets fnm switch to the Node in `.node-version` whenever you enter the project, which a plain `brew install node` would not do, since it follows the newest release.
 
 ```bash
+eval "$(fnm env --use-on-cd)"
 export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"
 ```
 
@@ -51,11 +50,8 @@ A running `pnpm dev` inherited its environment at launch, and an editor-launched
 ### Ubuntu/Debian Installation
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-sudo apt-get install -y nodejs
-npm install -g pnpm
-
-# Installs every CLI tool, including SqlPackage, and prints a summary of what resolved
+# Installs the Node of .node-version from NodeSource, pnpm 10 and every CLI tool,
+# including SqlPackage, and prints a summary of what resolved
 sudo ./scripts/setup-dev-debian.sh
 ```
 
@@ -116,6 +112,10 @@ pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+::: tip Dev server on another machine
+When the dev server runs on a remote box, set `BETTER_AUTH_URL` to the address you open in the browser, like `http://devbox:3000`. Sign-in accepts it and the dev server allows its host for hot reload. Further addresses go into `TRUSTED_ORIGINS`, separated by commas.
+:::
 
 ::: danger Never use `prisma db push`
 `prisma db push` applies schema changes without creating a migration file. This causes the local `_prisma_migrations` table to diverge from the actual schema, breaking `database:deploy` in production and for every other developer. Always use `prisma migrate dev` to create a proper migration instead.

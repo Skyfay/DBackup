@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+import Image from "next/image";
 import type { PostCover, PostTone } from "@/lib/blog";
 import { cn } from "@/lib/utils";
 
@@ -19,15 +21,35 @@ const TONE_VAR: Record<PostTone, string> = {
 
 const FALLBACK: PostCover = { badge: "DB", tone: "blue", snippet: "" };
 
-/** The artwork on top of a post card: a glow, the badge tile and a terminal line. */
-export function PostCoverArt({ cover = FALLBACK }: { cover?: PostCover }) {
+/**
+ * The artwork on top of a post card: its illustration when it has one, else a
+ * glow, the badge tile and a terminal line.
+ */
+export function PostCoverArt({
+  cover = FALLBACK,
+  image,
+  className,
+}: {
+  cover?: PostCover;
+  image?: string | null;
+  className?: string;
+}) {
   const color = TONE_VAR[cover.tone];
+  if (image) {
+    return (
+      <span aria-hidden="true" className={cn("relative block h-[180px] overflow-hidden border-b border-border bg-[#0a0a0b]", className)}>
+        <Image src={image} alt="" fill sizes="(min-width: 1024px) 480px, (min-width: 768px) 50vw, 100vw" className="object-cover" />
+      </span>
+    );
+  }
   return (
     <span aria-hidden="true" className="relative block h-[180px] overflow-hidden border-b border-border bg-background dark:bg-[#0d0d0f]">
       <span className="bg-dot-grid absolute inset-0 [background-size:16px_16px]" />
       <span
-        className="absolute -top-[60px] left-1/2 -ml-[130px] h-[180px] w-[260px] rounded-full"
-        style={{ background: color, filter: "blur(50px)", opacity: "calc(0.35 * var(--glow-strength))" }}
+        className="fx-glow absolute -top-[60px] left-1/2 -ml-[130px] h-[180px] w-[260px] rounded-full"
+        style={
+          { "--glow": color, "--glow-blur": "50px", opacity: "calc(0.35 * var(--glow-strength))" } as CSSProperties
+        }
       />
       {cover.snippet && (
         <span className="absolute inset-x-[18px] bottom-[18px] rounded-[10px] border border-border-strong bg-surface/85 px-3 py-2.5 font-mono text-xs leading-[1.7] whitespace-pre text-subtle">

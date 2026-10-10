@@ -1,6 +1,7 @@
 import { isValidElement, type ReactNode } from "react";
 import { Info, TriangleAlert } from "lucide-react";
 import { CodeBlock } from "@/components/site/code-block";
+import type { Translator } from "@/i18n/translate";
 import { slugify } from "@/lib/blog";
 import { cn } from "@/lib/utils";
 
@@ -19,18 +20,18 @@ function H2({ children }: { children?: ReactNode }) {
 }
 
 /** A side by side table of a chunk store and DBackup. */
-function Compare({ left, right, children }: { left: string; right: string; children?: ReactNode }) {
+function Compare({ label, left, right, children }: { label: string; left: string; right: string; children?: ReactNode }) {
   return (
     <div className="not-prose my-8 overflow-x-auto rounded-[18px] border border-border bg-card">
       <div className="min-w-[520px]">
         <div className="grid grid-cols-[minmax(140px,200px)_1fr_1fr] border-b border-border text-[13px] font-semibold">
-          <span className="px-4 py-3.5 font-medium text-faint">Compared</span>
+          <span className="px-4 py-3.5 font-medium text-faint">{label}</span>
           <span className="flex items-center gap-2 px-4 py-3.5">
             <span className="size-2 rounded-full bg-muted-foreground" />
             {left}
           </span>
-          <span className="flex items-center gap-2 bg-tone-blue/6 px-4 py-3.5">
-            <span className="size-2 rounded-full bg-tone-blue shadow-[0_0_8px_var(--tone-blue)]" />
+          <span className="flex items-center gap-2 bg-post/6 px-4 py-3.5">
+            <span className="size-2 rounded-full bg-post shadow-[0_0_8px_var(--post-tone)]" />
             {right}
           </span>
         </div>
@@ -45,7 +46,7 @@ function Row({ label, left, right }: { label: string; left: string; right: strin
     <div className="grid grid-cols-[minmax(140px,200px)_1fr_1fr] border-b border-border text-sm last:border-b-0">
       <span className="px-4 py-3 text-muted-foreground">{label}</span>
       <span className="px-4 py-3 text-subtle">{left}</span>
-      <span className="bg-tone-blue/6 px-4 py-3">{right}</span>
+      <span className="bg-post/6 px-4 py-3">{right}</span>
     </div>
   );
 }
@@ -102,9 +103,9 @@ function Costs({ title, note, children }: { title: string; note?: string; childr
 
 function Callout({ title, children }: { title?: string; children?: ReactNode }) {
   return (
-    <div className="post-callout not-prose relative my-8 flex gap-3.5 overflow-hidden rounded-[14px] border border-tone-blue/25 bg-tone-blue/6 py-4 pr-[18px] pl-[22px]">
-      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-tone-blue shadow-[0_0_12px_var(--tone-blue)]" />
-      <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-tone-blue/14 text-tone-blue">
+    <div className="post-callout not-prose relative my-8 flex gap-3.5 overflow-hidden rounded-[14px] border border-post/25 bg-post/6 py-4 pr-[18px] pl-[22px]">
+      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-post shadow-[0_0_12px_var(--post-tone)]" />
+      <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-post/14 text-post">
         <Info className="size-4" />
       </span>
       <div className="text-[15px] leading-relaxed text-subtle">
@@ -115,13 +116,18 @@ function Callout({ title, children }: { title?: string; children?: ReactNode }) 
   );
 }
 
-export const MDX_COMPONENTS = {
-  h2: H2,
-  pre: CodeBlock,
-  Compare,
-  Row,
-  Chain,
-  ChainFile,
-  Costs,
-  Callout,
-};
+/** The components for a post, with their own labels in the language of the page. */
+export function mdxComponents(t: Translator) {
+  return {
+    h2: H2,
+    pre: CodeBlock,
+    Compare: (props: { left: string; right: string; children?: ReactNode }) => (
+      <Compare label={t("blog.compared")} {...props} />
+    ),
+    Row,
+    Chain,
+    ChainFile,
+    Costs,
+    Callout,
+  };
+}

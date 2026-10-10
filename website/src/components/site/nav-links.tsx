@@ -4,12 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, LayoutGrid, Map as MapIcon, PenLine, Plug, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { DATABASES, DOCS_URL, NOTIFICATION_CHANNELS, STORAGE_ADAPTERS } from "@/lib/content";
+import { DATABASES, DESTINATION_COUNT, DOCS_URL, NOTIFICATION_CHANNELS } from "@/lib/content";
+import { useI18n } from "@/i18n/provider";
+import type { MessageKey } from "@/i18n/translate";
 
 export interface NavLink {
+  /** A path of the site without the language, or an external URL. */
   href: string;
-  label: string;
-  caption: string;
+  label: MessageKey;
+  caption: MessageKey;
   icon: LucideIcon;
   /** The task color the link takes in the mobile menu. */
   tone: "blue" | "cyan" | "violet" | "green" | "amber";
@@ -17,34 +20,44 @@ export interface NavLink {
 }
 
 export const NAV_LINKS: NavLink[] = [
-  { href: "/#features", label: "Features", caption: "Everything a backup needs", icon: LayoutGrid, tone: "blue" },
-  {
-    href: "/#integrations",
-    label: "Integrations",
-    caption: `${DATABASES.length} databases, ${STORAGE_ADAPTERS.length} destinations, ${NOTIFICATION_CHANNELS.length} alerts`,
-    icon: Plug,
-    tone: "cyan",
-  },
-  { href: DOCS_URL, label: "Docs", caption: "Guides and API reference", icon: BookOpen, tone: "violet", external: true },
-  { href: "/roadmap", label: "Roadmap", caption: "Shipped and up next", icon: MapIcon, tone: "green" },
-  { href: "/blog", label: "Blog", caption: "Notes from building DBackup", icon: PenLine, tone: "amber" },
+  { href: "/#features", label: "nav.features", caption: "nav.featuresCaption", icon: LayoutGrid, tone: "blue" },
+  { href: "/integrations", label: "nav.integrations", caption: "nav.integrationsCaption", icon: Plug, tone: "cyan" },
+  { href: DOCS_URL, label: "nav.docs", caption: "nav.docsCaption", icon: BookOpen, tone: "violet", external: true },
+  { href: "/roadmap", label: "nav.roadmap", caption: "nav.roadmapCaption", icon: MapIcon, tone: "green" },
+  { href: "/blog", label: "nav.blog", caption: "nav.blogCaption", icon: PenLine, tone: "amber" },
 ];
+
+/** The counts in the caption of the integrations link. */
+export const INTEGRATION_COUNTS = {
+  databases: DATABASES.length,
+  storage: DESTINATION_COUNT,
+  alerts: NOTIFICATION_CHANNELS.length,
+};
 
 /** The link of the page being shown, or none on the home page. */
 export function useActiveHref() {
+  const { path } = useI18n();
   const pathname = usePathname().replace(/\/$/, "") || "/";
-  return NAV_LINKS.find((l) => !l.external && !l.href.includes("#") && pathname.startsWith(l.href))?.href;
+  return NAV_LINKS.find((l) => !l.external && !l.href.includes("#") && pathname.startsWith(path(l.href)))?.href;
+}
+
+/** The href of a link in the language of the page. */
+export function useNavHref() {
+  const { path } = useI18n();
+  return (link: NavLink) => (link.external ? link.href : path(link.href));
 }
 
 export function NavLinks({ className }: { className?: string }) {
+  const { t } = useI18n();
   const active = useActiveHref();
+  const hrefOf = useNavHref();
 
   return (
-    <nav aria-label="Main" className={className}>
+    <nav aria-label={t("nav.main")} className={className}>
       {NAV_LINKS.map((link) => (
         <Link
           key={link.href}
-          href={link.href}
+          href={hrefOf(link)}
           target={link.external ? "_blank" : undefined}
           rel={link.external ? "noreferrer" : undefined}
           aria-current={link.href === active ? "page" : undefined}
@@ -53,7 +66,7 @@ export function NavLinks({ className }: { className?: string }) {
             link.href === active && "bg-foreground/10 text-foreground"
           )}
         >
-          {link.label}
+          {t(link.label)}
         </Link>
       ))}
     </nav>

@@ -4,7 +4,8 @@ import { ArrowUpRight, ChevronDown, Star } from "lucide-react";
 import { SpotlightCard } from "@/components/site/spotlight-card";
 import { CategoryPill } from "@/components/site/roadmap/category";
 import { issueHref, shippedHref, type RoadmapItem, type ShippedItem } from "@/lib/roadmap";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
 
 // The entries hang off the spine in the middle of the timeline: a line from
 // the card to a node on the spine, 60 px beside the card. Both only show from
@@ -49,8 +50,9 @@ export function MonthHeader({ label }: { label: string }) {
   );
 }
 
-export function ShippedEntry({ item, latest }: { item: ShippedItem; latest: boolean }) {
-  const star = !!item.star;
+export function ShippedEntry({ item, dateLabel, latest }: { item: ShippedItem; dateLabel: string; latest: boolean }) {
+  const { t } = useI18n();
+  const star = item.stars !== undefined;
   const rgb = star ? AMBER : GREEN;
 
   return (
@@ -80,7 +82,9 @@ export function ShippedEntry({ item, latest }: { item: ShippedItem; latest: bool
 
       <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
         {star ? (
-          <span className="rounded-full bg-tone-amber/14 px-2 py-px text-xs font-medium text-tone-amber">Community</span>
+          <span className="rounded-full bg-tone-amber/14 px-2 py-px text-xs font-medium text-tone-amber">
+            {t("roadmap.community")}
+          </span>
         ) : (
           item.version && (
             <span className="rounded-md bg-tone-green/12 px-2 py-px font-mono text-xs font-medium text-tone-green">
@@ -88,7 +92,7 @@ export function ShippedEntry({ item, latest }: { item: ShippedItem; latest: bool
             </span>
           )
         )}
-        {formatDate(item.releaseDate)}
+        {dateLabel}
         <a
           href={shippedHref(item)}
           target="_blank"
@@ -98,12 +102,14 @@ export function ShippedEntry({ item, latest }: { item: ShippedItem; latest: bool
             star ? "group-hover:text-tone-amber" : "group-hover:text-tone-green"
           )}
         >
-          {item.link ? item.link.label : "View in changelog"}
+          {item.link ? t("roadmap.viewOnGithub") : t("roadmap.viewInChangelog")}
           <ArrowUpRight className="size-3" />
         </a>
       </div>
-      <h3 className="mt-1.5 mb-0.5 text-base leading-snug font-semibold tracking-[-0.01em]">{item.title}</h3>
-      <p className="text-[13.5px] leading-normal text-muted-foreground">{item.description}</p>
+      <h3 className="mt-1.5 mb-0.5 text-base leading-snug font-semibold tracking-[-0.01em]">
+        {t(`roadmap.shipped.${item.slug}.title`)}
+      </h3>
+      <p className="text-[13.5px] leading-normal text-muted-foreground">{t(`roadmap.shipped.${item.slug}.description`)}</p>
     </SpotlightCard>
   );
 }
@@ -163,6 +169,7 @@ export function GroupHeader({
 }
 
 export function PlannedCard({ item }: { item: RoadmapItem }) {
+  const { t } = useI18n();
   return (
     <SpotlightCard
       as="article"
@@ -179,8 +186,10 @@ export function PlannedCard({ item }: { item: RoadmapItem }) {
       <span className="self-start">
         <CategoryPill category={item.category} />
       </span>
-      <h3 className="mt-3 mb-1.5 text-lg leading-snug font-semibold tracking-[-0.015em]">{item.title}</h3>
-      <p className="leading-relaxed text-muted-foreground">{item.description}</p>
+      <h3 className="mt-3 mb-1.5 text-lg leading-snug font-semibold tracking-[-0.015em]">
+        {t(`roadmap.items.${item.slug}.title`)}
+      </h3>
+      <p className="leading-relaxed text-muted-foreground">{t(`roadmap.items.${item.slug}.description`)}</p>
     </SpotlightCard>
   );
 }
@@ -194,6 +203,7 @@ export function IdeaRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <SpotlightCard
       as="article"
@@ -221,7 +231,9 @@ export function IdeaRow({
         className="flex w-full flex-col gap-1 px-3.5 py-3 text-left"
       >
         <span className="flex w-full items-center gap-2.5">
-          <span className="min-w-0 grow text-[15px] font-semibold tracking-[-0.01em]">{item.title}</span>
+          <span className="min-w-0 grow text-[15px] font-semibold tracking-[-0.01em]">
+            {t(`roadmap.items.${item.slug}.title`)}
+          </span>
           {item.issueNumber && <span className="font-mono text-xs text-faint">#{item.issueNumber}</span>}
           <span className="hidden sm:inline-flex">
             <CategoryPill category={item.category} />
@@ -236,7 +248,7 @@ export function IdeaRow({
             expanded ? "pt-1 leading-relaxed text-muted-foreground" : "truncate text-[13px] text-faint"
           )}
         >
-          {item.description}
+          {t(`roadmap.items.${item.slug}.description`)}
         </span>
       </button>
       {expanded && item.issueNumber && (
@@ -246,7 +258,7 @@ export function IdeaRow({
           rel="noreferrer"
           className="fx-in mx-3.5 -mt-1 mb-3 inline-flex w-fit items-center gap-1 text-xs font-medium text-tone-amber"
         >
-          Issue #{item.issueNumber} on GitHub
+          {t("roadmap.issueOnGithub", { number: String(item.issueNumber) })}
           <ArrowUpRight className="size-3" />
         </a>
       )}

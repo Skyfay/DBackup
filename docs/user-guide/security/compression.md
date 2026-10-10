@@ -63,8 +63,8 @@ Brotli's lead over Gzip grows the more repetition there is:
 ### On Job Creation
 
 1. Create or edit a backup job
-2. In **Processing** section, enable **Compression**
-3. Select algorithm: **Gzip** or **Brotli**
+2. Open its **Compression** part
+3. Pick **Gzip** or **Brotli**. A PostgreSQL job lets `pg_dump` compress the dump under **The dump**, and DBackup only compresses that dump when it is set to **None**.
 4. Save
 
 ### File Extensions
@@ -136,34 +136,15 @@ real name and is immediately usable, while a compressed one ends in `.gz` or `.b
 
 ## Pipeline Order
 
-Compression happens **before** encryption:
+Each database is dumped to a temporary file first. The archive writer then takes one entry at a time, compresses it into a temporary file of its own, and encrypts it while it writes it into the `.tar`. The finished `.tar` is uploaded last:
 
 ```
-Database → Dump → Compress → Encrypt → Upload
-                     ↑          ↑
-                   Gzip/Brotli  AES-256
+Database → Dump (temp file) → Compress (temp file) → Encrypt → Into the .tar → Upload
+                                   ↑                    ↑
+                              Gzip/Brotli          AES-256-GCM
 ```
 
-This order is optimal because:
-1. Encrypted data doesn't compress well
-2. Compression works best on text data
-3. Smaller encrypted file to upload
-
-## Streaming Architecture
-
-DBackup uses **streaming compression**:
-
-```javascript
-dumpStream
-  .pipe(compressionStream)
-  .pipe(encryptionStream)
-  .pipe(uploadStream)
-```
-
-Benefits:
-- **Low memory**: Doesn't load entire file
-- **Fast**: Parallel processing
-- **Scalable**: Works with any size database
+Compression comes before encryption because encrypted data does not compress. Each entry is compressed on its own, never the `.tar` as a whole, so one database can be read out of the archive without the others. Every step streams, so memory use does not grow with the size of the database.
 
 ## When to Use
 
@@ -243,25 +224,11 @@ Streaming keeps memory low, but:
 
 ### Disk I/O
 
-Compression reduces disk writes:
-- Smaller temp files
-- Faster uploads
-- Less disk wear
+Compression adds disk work, since each entry is compressed into a temporary file before it goes into the archive. In return the archive and its upload are smaller.
 
 ## Metadata Storage
 
-Compression info stored in `.meta.json`:
-
-```json
-{
-  "compression": "GZIP",
-  "encryption": {
-    "enabled": false
-  },
-  "originalSize": 104857600,
-  "compressedSize": 26214400
-}
-```
+The `.meta.json` beside the archive names the algorithm under `archive.compression`, left out when the job compresses nothing. What restore reads is the `comp` field of each entry in the archive's index, absent for an entry stored as is. Backups written by earlier versions for database-only jobs, compressed as a whole, keep a top-level `compression` field instead. See [Archive Format](/developer-guide/reference/archive-format) for the layout.
 
 ## Troubleshooting
 

@@ -71,10 +71,23 @@ async function writeFileList(relativePaths: string[]): Promise<string> {
 }
 
 /**
+ * How every SSH call of this adapter treats the server's host key: accepted without a check,
+ * like the SFTP adapter does, and never remembered.
+ *
+ * Remembering it in ~/.ssh/known_hosts gains nothing while the check is off, and costs twice.
+ * The Docker image's user has no home directory, so ssh warned on every run that it could not
+ * write the file (#178). Where it can write it, a server that gets a new host key afterwards,
+ * say after a reinstall, makes ssh turn password login off "to avoid man-in-the-middle
+ * attacks", and every backup to it fails. LogLevel=ERROR hides the "Permanently added" notice
+ * the /dev/null file prints instead, while a refused login or an unreachable host still shows.
+ */
+const SSH_HOST_KEY_OPTIONS = ["StrictHostKeyChecking=no", "UserKnownHostsFile=/dev/null", "LogLevel=ERROR"];
+
+/**
  * Builds the SSH command string for rsync's -e flag (never contains passwords).
  */
 function buildSshCommand(config: RsyncConfig, keyFile?: string, controlPath?: string): string {
-    const parts = ["ssh", `-p ${config.port}`, "-o StrictHostKeyChecking=no"];
+    const parts = ["ssh", `-p ${config.port}`, ...SSH_HOST_KEY_OPTIONS.map((option) => `-o ${option}`)];
 
     // Every rsync invocation is its own SSH login. Multiplexing over one shared connection turns
     // a 129-file restore from 129 logins into one - see openSession() for why that matters.
@@ -108,7 +121,7 @@ function buildSshCommand(config: RsyncConfig, keyFile?: string, controlPath?: st
  * This is the safe equivalent of buildSshCommand for non-shell execution.
  */
 function buildSshArgArray(config: RsyncConfig, keyFile?: string, controlPath?: string): string[] {
-    const args = ["-p", String(config.port), "-o", "StrictHostKeyChecking=no"];
+    const args = ["-p", String(config.port), ...SSH_HOST_KEY_OPTIONS.flatMap((option) => ["-o", option])];
 
     // See buildSshCommand() - the remote `mkdir` shares the session's connection too.
     if (controlPath) {

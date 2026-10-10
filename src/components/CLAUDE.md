@@ -167,6 +167,7 @@ Prefer a `Badge` variant or the status tokens (`success`, `warning`, `destructiv
 - Mobile-first. Unprefixed classes are the small-screen case, `sm:` / `md:` / `lg:` widen from there.
 - Page sections use `space-y-6`, groups within a section `space-y-4`, tight pairs `space-y-2`.
 - Compose conditional classes with `cn()` from `@/lib/utils`, not template strings.
+- No `blur-*` or `filter: blur()` on a large element, like a glow behind a card. iOS Safari draws a blur on the main thread whenever anything near it repaints or the layers around it change, and on the SkySend app and both websites that held taps on an iPhone for half a second up to several seconds. `will-change` does not reliably save it. A soft light is a radial gradient without a filter, at least on `(hover: none)`. A `backdrop-blur` on a small bar or a dialog overlay is fine.
 
 ---
 

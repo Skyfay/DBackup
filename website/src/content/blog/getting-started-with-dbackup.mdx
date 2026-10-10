@@ -4,6 +4,7 @@ date: "2026-07-01"
 excerpt: "Spin up DBackup with a single docker-compose file and create your first encrypted backup job."
 tags: ["tutorial", "docker", "quickstart"]
 author: "Skyfay"
+databases: ["mysql", "postgresql", "mongodb"]
 cover:
   badge: "DKR"
   tone: "violet"
@@ -51,7 +52,7 @@ Open `https://localhost:3000`, accept the self-signed certificate warning, and c
 
 ## 4. Add a database source and a storage destination
 
-From the dashboard, add the database you want to back up (MySQL, PostgreSQL, MongoDB, and five other engines are supported) and a storage destination - even the local filesystem works to start with. Both connections can be tested before saving.
+From the dashboard, add the database you want to back up ([MySQL](/integrations/mysql/), [PostgreSQL](/integrations/postgresql/), [MongoDB](/integrations/mongodb/), and [seven other engines](/integrations/) are supported) and a storage destination - even the local filesystem works to start with. Both connections can be tested before saving.
 
 ## 5. Create your first job
 

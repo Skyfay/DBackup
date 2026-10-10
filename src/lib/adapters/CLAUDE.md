@@ -29,7 +29,7 @@ A complete adapter touches 8 to 11 files. Missing one produces a "half-registere
 8. **`src/lib/runner/steps/dump-databases.ts`** - database adapters only: an entry in `DB_FORMAT_BY_ADAPTER`, and `hasNativeCompression` if the dump is already compressed. The adapter itself implements `dumpOne()` and `restoreOne()`, plus `listDumpEntries()` when its snapshot cannot be split per database. `archive-capabilities.test.ts` fails without them.
 9. **Tests**, if the adapter is testable in CI: a service in `docker-compose.test.yml` and entries in `tests/integration/test-configs.ts` (`testDatabases`, `CLI_REQUIREMENTS`).
 10. **Docs**: a page under `docs/user-guide/{sources|destinations|notifications}/<name>.md` following the template in [docs/CLAUDE.md](../../../docs/CLAUDE.md), plus a row in the matching `docs/developer-guide/adapters/*.md` table.
-11. **Changelog**: one `### ✨ Features` entry, component prefix is the adapter name.
+11. **Changelog**: one `### ✨ Features` entry in the fragment of the branch under `changelog/unreleased/`, component prefix is the adapter name.
 
 ## Transport (execution host)
 

@@ -102,7 +102,35 @@ connect EACCES /var/run/docker.sock. The Docker socket exists but is not readabl
 by the user DBackup runs as.
 ```
 
-**Solution:** The socket is owned by the `docker` group. Either run the DBackup container with that group, or adjust the socket's permissions on the host.
+**Solution:** On most hosts the socket belongs to the `docker` group while DBackup runs as `1001:1001`. Read that group's ID on the Docker host and start DBackup with it as `PGID`:
+
+```bash
+getent group docker | cut -d: -f3
+# 988
+```
+
+```yaml
+services:
+  dbackup:
+    environment:
+      - PGID=988
+```
+
+`group_add` has no effect here, and `user:` breaks the container. DBackup starts as root and drops to `PUID:PGID` itself, which clears every supplementary group, and with `user:` set it cannot drop privileges at all.
+
+A socket owned by `root:root` means the host has no `docker` group. Create one and restart the daemon, or put a bridge in front of the socket that DBackup is allowed to read:
+
+```yaml
+services:
+  docker-socket:
+    image: alpine/socat
+    command: UNIX-LISTEN:/shared/docker.sock,fork,mode=666 UNIX-CONNECT:/var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - socket-bridge:/shared
+```
+
+DBackup mounts `socket-bridge:/shared` as well and takes `/shared/docker.sock` as its **Docker socket**. The bridge forwards the whole API, so every container sharing that volume gains the same reach as one holding the socket itself.
 
 ### The helper image cannot be created
 

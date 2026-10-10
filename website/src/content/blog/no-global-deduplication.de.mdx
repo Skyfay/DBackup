@@ -1,0 +1,81 @@
+---
+title: "Keine globale Deduplizierung - und warum genau das der Punkt ist"
+excerpt: "Datei-Backups erzwangen eine Wahl zwischen einem Chunk-Store und Archiven, die man noch von Hand öffnen kann. Hier steht, wofür wir uns entschieden haben, was es Sie an Speicher kostet und wann Sie ein anderes Werkzeug nehmen sollten."
+tags: ["Philosophie", "Datei-Backups", "Architektur"]
+---
+
+Datei- und Ordner-Backups in DBackup aufzunehmen hieß, eine Frage zu beantworten, die sich bei Datenbank-Dumps nie wirklich gestellt hat: Wie sieht ein *inkrementelles* Backup aus? Ein Dump entsteht bei jedem Lauf vollständig. Ein Verzeichnisbaum mit 48.000 Dateien, von denen sich seit gestern drei geändert haben, ist ein anderes Problem, und die Antwort darauf entscheidet, was ein Backup im Kern *ist*.
+
+Es gibt zwei bewährte Ansätze, und sie sind keine Geschmackssache. Sie ziehen in entgegengesetzte Richtungen.
+
+## Die effiziente Antwort: ein Chunk-Store
+
+restic, Borg und Kopia arbeiten im Grunde gleich. Dateien werden über einen Rolling Hash in Stücke unterschiedlicher Länge zerlegt, jedes Stück wird über seinen eigenen Inhalts-Hash erkannt, und das Repository behält von jedem Stück genau eine Kopie. Ein Snapshot ist dann gar keine Datei mehr, sondern eine Liste von Verweisen in diesen gemeinsamen Speicher.
+
+Die Ergebnisse sind wirklich hervorragend. Ändern Sie ein Byte mitten in einem 10-GB-Disk-Image, wird nur das betroffene Stück neu gespeichert. Verschieben Sie ein Verzeichnis, wird gar nichts gespeichert, weil die Stücke unter denselben Hashes schon da sind. Sichern Sie zwanzig Server mit derselben Distribution, zahlen Sie für eine einzige Kopie von `/usr/lib`.
+
+Steht Speichereffizienz bei Ihnen an erster Stelle, ist das der richtige Ansatz, und DBackup schlägt ihn nicht. Nicht einmal annähernd.
+
+## Was der Chunk-Store kostet
+
+Der Preis wird nicht in Funktionen bezahlt. Er wird darin bezahlt, was ein Backup *ist*.
+
+In einem Repository aus Stücken ist keine einzelne Datei Ihr Backup. Ihre Daten liegen verteilt über Pack-Dateien, adressiert über einen Index, und lassen sich nur von etwas auflösen, das das ganze Format umsetzt: die Parameter der Zerlegung, den Aufbau der Pack-Dateien, die Struktur des Index, die Verschlüsselung darum herum und das Sperrprotokoll, das gleichzeitige Vorgänge davon abhält, alles zu beschädigen. Alte Snapshots zu löschen heißt nicht, Dateien zu löschen, sondern Garbage Collection, denn ein Stück kann noch von einem Snapshot gebraucht werden, den Sie behalten.
+
+<Compare left="Chunk-Store" right="DBackup">
+  <Row label="Was ein Backup ist" left="Verweise in Pack-Dateien" right="Ein normales TAR pro Lauf" />
+  <Row label="Ohne das Werkzeug öffnen" left="Braucht das ganze Format" right="tar -xf oder ein Node.js-Skript" />
+  <Row label="Alte Snapshots löschen" left="Garbage Collection" right="Einen Ordner löschen" />
+  <Row label="Umbenannte Datei" left="Speichert nichts" right="Speichert sie erneut" />
+  <Row label="Ein Byte in 10 GB" left="Ein Stück" right="Die ganzen 10 GB" />
+</Compare>
+
+Das ist viel Maschinerie, von der man genau in dem Moment abhängt, in dem man sie am dringendsten braucht. Diese Werkzeuge sind hervorragend und genießen breites Vertrauen, und ein gut gepflegtes offenes Format mit mehreren unabhängigen Umsetzungen ist eine echte Antwort auf diese Sorge. Aber es ist eine andere Antwort als die von DBackup: dass Sie Ihre Daten mit Werkzeugen zurückbekommen, die Sie schon haben, ohne irgendetwas von uns vertrauen zu müssen.
+
+Dieses Versprechen hatten wir für Datenbanken schon gegeben. Jeder Dump, den DBackup schreibt, ist das, was [`pg_dump`](/de/integrations/postgresql/) oder [`mysqldump`](/de/integrations/mysql/) selbst erzeugt hätten, verschlüsselt mit AES-256-GCM als eigener Schritt. Die Dateiseite auf einen Chunk-Store zu bauen hätte bedeutet, zwei Philosophien in einem Produkt zu betreiben und das Versprechen für alles, was keine Datenbank ist, stillschweigend aufzugeben.
+
+## Was DBackup stattdessen tut
+
+Ein inkrementeller Lauf speichert **ganze geänderte Dateien**. Unveränderte Dateien werden nicht kopiert, aber auch nicht vergessen: Der Index des neuen Archivs verweist auf das Archiv der Kette, das diese Bytes schon enthält.
+
+<Chain path="/backups/nextcloud/chain-2026-09" note="Eine Kette, ein Ordner">
+  <ChainFile kind="Full" name="full-01.tar" note="jede Datei, einzeln komprimiert" size="2,4 GB" />
+  <ChainFile kind="Incr" name="incr-02.tar" note="3 geänderte Dateien, der Rest per Verweis" size="38 MB" />
+  <ChainFile kind="Incr" name="incr-03.tar" note="1 geänderte Datei" size="12 MB" />
+  <ChainFile kind="Incr" name="incr-04.tar" note="5 geänderte Dateien" size="41 MB" />
+</Chain>
+
+Die Folgen sind der Sinn des Ansatzes:
+
+- Jedes Archiv ist ein **normales TAR**. Unverschlüsselt holt `tar -xf backup.tar` Ihre Dateien heraus, und DBackup spielt dabei keine Rolle.
+- Verschlüsselte Archive versiegeln jeden Eintrag einzeln, mit einem frischen Schlüssel pro Archiv, und der Aufbau ist Byte für Byte in der [Referenz zum Archivformat](https://docs.dbackup.app/developer-guide/reference/archive-format) beschrieben. `restore_archive.js` aus dem Recovery Kit ist eine unabhängige Umsetzung dieses Dokuments und braucht nichts außer Node.js.
+- Eine Kette liegt in **einem Ordner**, mit einem vollen Backup und den inkrementellen, die darauf aufbauen. „Ein Backup“ zu kopieren heißt, einen Ordner zu kopieren, in jedem Dateibrowser, ohne irgendetwas über das Format zu wissen.
+- Löschen ist Löschen. Eine Kette wird entfernt, sobald alle ihre Snapshots abgelaufen sind, und das Protokoll der Aufbewahrung nennt alles, was nur deshalb bleibt, weil seine Kette noch gebraucht wird. Es gibt keine Garbage Collection, keine Repository-Sperre und keinen Vorgang, der das Ziel in einem Zustand hinterlassen kann, den nur DBackup reparieren kann.
+- Weil nichts als Ganzes komprimiert oder verschlüsselt wird, holt die Wiederherstellung einer Datei aus einem 200-GB-Backup genau diese Datei. Auf S3 sind das eine Handvoll Range-Requests, kein Download von 200 GB.
+
+## Die Rechnung in Zahlen
+
+Die Kosten zu benennen ist nützlicher als die Begründung des Designs, also hier sind sie.
+
+<Costs title="Was es kostet" note="Vier Fälle, in denen DBackup mehr speichert">
+
+- **Eine umbenannte oder verschobene Datei wird erneut gespeichert.** Ihr Pfad hat sich geändert, und an Pfaden erkennt DBackup Dateien. Ein Chunk-Store würde den Inhalt wiedererkennen und nichts speichern.
+- **Ein geändertes Byte in einer 10-GB-Datei speichert 10 GB neu.** Es gibt kein Delta innerhalb einer Datei. Das ist der schlimmste Fall für DBackup, und er kommt häufig vor, bei Disk-Images, großen VM-Disks und Datenbankdateien, an die nur angehängt wird und die trotzdem neu geschrieben werden.
+- **Keine Deduplizierung über Jobs, Quellen oder Ketten hinweg.** Dieselbe Datei in zwei Verzeichnisquellen wird zweimal gespeichert. Eine neue Kette speichert alles neu.
+- **GFS-Aufbewahrung hält ganze Ketten fest.** Fällt ein monatlicher Platz mitten in eine Kette, bleiben deren volles Backup und ihre inkrementellen Backups so lange, wie dieser eine Snapshot behalten wird.
+
+</Costs>
+
+Zwei Dinge halten den gewöhnlichen Fall im Rahmen. Jeder Eintrag wird für sich komprimiert, textlastige Verzeichnisbäume schrumpfen also ganz normal. Und Dateien bis 64 KB werden vor dem Komprimieren und Versiegeln in gemeinsame Bündel von etwa 4 MB gepackt. So zahlt nicht jede von einer Million kleiner Dateien einen eigenen TAR-Header, ein frisches Kompressionswörterbuch und ein eigenes Auth-Tag.
+
+<Callout title="Nur bei verschlüsselten Archiven.">Gebündelt wird nur bei verschlüsselten Archiven, denn ein Bündel hat keinen einzelnen echten Pfad, und überall gebündelt würde das Versprechen von `tar -xf` brechen.</Callout>
+
+## Wann Sie etwas anderes nehmen sollten
+
+Uns ist lieber, Sie haben funktionierende Backups, als dass Sie unsere nutzen.
+
+Nehmen Sie restic, Borg oder Kopia, wenn Sie VM-Images oder große Binärdateien mit kleinen inneren Änderungen sichern, wenn Sie Deduplizierung über viele Rechner brauchen oder wenn Sie Datensätze lange aufbewahren, bei denen der Unterschied im Speicher darüber entscheidet, ob Sie sich das Backup überhaupt leisten können. Das sind die Fälle, in denen der Chunk-Store seine Komplexität wert ist, und keine noch so elegante Formatwahl gleicht ein Backup aus, dessen Aufbewahrung Sie nicht bezahlen können.
+
+Nehmen Sie DBackup, wenn Ihre Datenbanken und die zugehörigen Dateien in einen Job, einen Zeitplan, eine Aufbewahrungsregel und einen Wiederherstellungspunkt gehören sollen, und wenn es Ihnen wichtig ist, dass am Ende ein Archiv steht, das Sie auch in fünf Jahren noch öffnen können, mit einem Laptop, einer Kopie der Formatspezifikation und ohne ein laufendes DBackup weit und breit.
+
+Das war die Abwägung. Wir halten ihn für den richtigen für das Werkzeug, das DBackup sein will, und es schien uns besser, das aufzuschreiben, als Sie die Speicherrechnung selbst entdecken zu lassen.

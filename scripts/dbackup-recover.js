@@ -16,11 +16,12 @@
  *
  *   node dbackup-recover.js --list    <archive|folder> [<hex_key>]
  *   node dbackup-recover.js --extract <archive|folder> <output_dir> [<hex_key>] [glob...]
- *   node dbackup-recover.js --decrypt <backup.enc> [<hex_key>] [<output_dir>]
+ *   node dbackup-recover.js --decrypt <backup.enc> [<hex_key>] [<output_dir>] [database...]
  *
- * Every mode writes into ./restored unless another folder is named, and every mode leaves
- * files that are ready to use - a multi-database backup comes out as one dump per database
- * rather than as a TAR to unpack afterwards.
+ * --extract writes into the output folder it is given, --decrypt and the wizard into
+ * ./restored unless another folder is named. Every mode leaves files that are ready to use -
+ * a multi-database backup comes out as one dump per database rather than as a TAR to unpack
+ * afterwards.
  *
  * The key is read from master.key next to this file when it is there. Pass it explicitly to
  * override, or leave it out entirely for unencrypted backups.
@@ -1731,9 +1732,9 @@ Or drive it directly:
   node dbackup-recover.js --extract <archive|folder> <output_dir> [<hex_key>] [pattern...]
   node dbackup-recover.js --decrypt <backup.enc> [<hex_key>] [<output_dir>] [database...]
 
-Everything is restored into ./restored unless another folder is named. A database backup
-holding several databases is unpacked into one dump per database, not left as a .tar - name
-the ones you want to restore just those:
+--extract writes into the output folder it is given, --decrypt into ./restored unless another
+folder is named. A database backup holding several databases is unpacked into one dump per
+database, not left as a .tar - name the ones you want to restore just those:
 
   node dbackup-recover.js --decrypt AllDbs.tar.enc ./restored shop
   node dbackup-recover.js --extract backup.tar ./restored databases/shop

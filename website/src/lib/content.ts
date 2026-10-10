@@ -1,5 +1,4 @@
-export const TAGLINE =
-  "Self-hosted backup automation for databases and files, with encryption, compression, and smart retention.";
+import type { MessageKey } from "@/i18n/translate";
 
 export const GITHUB_REPO = "Skyfay/DBackup";
 export const DOCS_URL = "https://docs.dbackup.app";
@@ -12,7 +11,23 @@ export const ARCHIVE_FORMAT_URL = `${DOCS_URL}/developer-guide/reference/archive
 
 export interface AdapterItem {
   id: string;
+  /** The name of the product, the same in every language. */
   label: string;
+  /** A name that is not a product and reads differently in every language. */
+  labelKey?: MessageKey;
+  beta?: true;
+  /** A storage adapter that files are read from but backups are never written to. */
+  sourceOnly?: true;
+}
+
+/** The name of an adapter in the language of the page. */
+export function adapterName(item: AdapterItem, t: (key: MessageKey) => string): string {
+  return item.labelKey ? t(item.labelKey) : item.label;
+}
+
+/** The name of an adapter with "(Beta)" behind it while it is in beta. */
+export function adapterLabel(item: AdapterItem, t: (key: MessageKey) => string): string {
+  return item.beta ? `${adapterName(item, t)} (${t("adapters.beta")})` : adapterName(item, t);
 }
 
 export const DATABASES: AdapterItem[] = [
@@ -24,14 +39,14 @@ export const DATABASES: AdapterItem[] = [
   { id: "redis", label: "Redis" },
   { id: "valkey", label: "Valkey" },
   { id: "mssql", label: "Microsoft SQL Server" },
-  { id: "azure-sql", label: "Azure SQL Database (Beta)" },
-  { id: "firebird", label: "Firebird (Beta)" },
+  { id: "azure-sql", label: "Azure SQL Database", beta: true },
+  { id: "firebird", label: "Firebird", beta: true },
 ];
 
 export const STORAGE_ADAPTERS: AdapterItem[] = [
-  { id: "local-filesystem", label: "Local Filesystem" },
+  { id: "local-filesystem", label: "Local Filesystem", labelKey: "adapters.localFilesystem" },
   { id: "s3-aws", label: "Amazon S3" },
-  { id: "s3-generic", label: "S3 Compatible" },
+  { id: "s3-generic", label: "S3 Compatible", labelKey: "adapters.s3Compatible" },
   { id: "s3-r2", label: "Cloudflare R2" },
   { id: "s3-hetzner", label: "Hetzner Object Storage" },
   { id: "google-drive", label: "Google Drive" },
@@ -42,8 +57,11 @@ export const STORAGE_ADAPTERS: AdapterItem[] = [
   { id: "webdav", label: "WebDAV" },
   { id: "smb", label: "SMB/Samba" },
   { id: "rsync", label: "Rsync" },
-  { id: "docker-volume", label: "Docker Volumes (Beta)" },
+  { id: "docker-volume", label: "Docker Volumes", labelKey: "adapters.dockerVolumes", beta: true, sourceOnly: true },
 ];
+
+/** The storage adapters a backup can be written to. */
+export const DESTINATION_COUNT = STORAGE_ADAPTERS.filter((item) => !item.sourceOnly).length;
 
 export const NOTIFICATION_CHANNELS: AdapterItem[] = [
   { id: "discord", label: "Discord" },
@@ -54,47 +72,17 @@ export const NOTIFICATION_CHANNELS: AdapterItem[] = [
   { id: "ntfy", label: "ntfy" },
   { id: "generic-webhook", label: "Webhook" },
   { id: "twilio-sms", label: "SMS (Twilio)" },
-  { id: "email", label: "Email (SMTP)" },
+  { id: "email", label: "Email (SMTP)", labelKey: "adapters.email" },
 ];
 
-export const FAQS = [
-  {
-    question: "What happens if DBackup becomes unavailable - can I still restore?",
-    answer:
-      "Yes. Every backup is a standard database dump encrypted with open AES-256-GCM. With the key from your Recovery Kit and a standalone Node.js script, you can decrypt and restore without DBackup running at all.",
-  },
-  {
-    question: "Which databases are supported?",
-    answer:
-      "MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, Azure SQL Database (beta), and Firebird (beta), with more engines added regularly.",
-  },
-  {
-    question: "Can DBackup back up files and folders, not just databases?",
-    answer:
-      "Yes. Any storage adapter can serve as a directory source - local paths, SFTP, SMB, FTP, WebDAV, S3, Google Drive, Dropbox, OneDrive, rsync over SSH, or Docker volumes read through the daemon. Files and databases can share one job, so the dump and the data directory that belongs to it land in the same archive and the same restore point. There is no agent to install: DBackup reads whatever those protocols reach. That agentless design is also its limit - a full run pulls the tree to the DBackup host and stages it there before packing, so it wants roughly twice the source size in free space and every byte crosses the network twice. It is built for the files that belong to the applications you already back up databases for, not for bulk media libraries; for those, restic or Borg run on the machine itself and are the better tool.",
-  },
-  {
-    question: "Can DBackup back up Docker volumes?",
-    answer:
-      "Yes, currently in beta. Pick the volumes from a list of what the Docker daemon can see, locally through its socket or on another host over SSH, and DBackup mounts them into a short-lived helper container to read them. Containers holding a selected volume are stopped for the read and started again right afterwards, per volume rather than for the whole job, and you can switch that off for data that is safe to copy live. Restoring goes back into the same volume or into a new one, though directory permissions and empty directories are not carried back yet, which is what keeps it in beta.",
-  },
-  {
-    question: "Does DBackup deduplicate like restic or Borg?",
-    answer:
-      "Not globally, and that is a deliberate trade. Incremental backups store whole changed files and reference unchanged ones in earlier archives of the same chain, so every archive stays a plain TAR you can open with tar -xf or a documented format one Node.js script reads. A chunk store would save more space but would make the backup a repository only its own tool can open - which is the lock-in DBackup exists to avoid.",
-  },
-  {
-    question: "Is there a hosted or cloud version?",
-    answer:
-      "No. DBackup is self-hosted only, distributed as a single Docker image you run on your own infrastructure.",
-  },
-  {
-    question: "What license is DBackup released under?",
-    answer: "GPL-3.0. The source code is fully open and available on GitHub.",
-  },
-  {
-    question: "Can I send one backup to multiple storage destinations?",
-    answer:
-      "Yes. Multi-destination jobs upload each backup to several storage adapters at once for redundancy or off-site copies.",
-  },
+/** The questions of the FAQ in order, shared by the section and the structured data of the home page. */
+export const FAQ_KEYS: { q: MessageKey; a: MessageKey }[] = [
+  { q: "faq.q1", a: "faq.a1" },
+  { q: "faq.q2", a: "faq.a2" },
+  { q: "faq.q3", a: "faq.a3" },
+  { q: "faq.q4", a: "faq.a4" },
+  { q: "faq.q5", a: "faq.a5" },
+  { q: "faq.q6", a: "faq.a6" },
+  { q: "faq.q7", a: "faq.a7" },
+  { q: "faq.q8", a: "faq.a8" },
 ];

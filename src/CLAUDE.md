@@ -166,11 +166,13 @@ Store UTC (ISO 8601). Manipulate with `date-fns` / `date-fns-tz`. Never rely on 
 
 ```
 01-initialize.ts  Fetch job, resolve adapters
-02-dump.ts        Database dump + compression/encryption
-03-upload.ts      Upload to destinations (sets Partial on partial failure)
+02-dump.ts        Dump every source to temp files and pack them into the archive of the run (combined-dump.ts)
+03-upload.ts      Upload the .tar with its .index and .meta.json to every destination (sets Partial on partial failure)
 04-completion.ts  Cleanup temp files, finalize, fire notifications
 05-retention.ts   Apply retention policy
 ```
+
+Every job writes one `.tar` per run, one database or many, with or without directory sources. The archive writer in `src/lib/archive/` compresses and encrypts each entry on its own, so the archive stays seekable. The layout is in `docs/developer-guide/reference/archive-format.md`. Older formats (a bare dump, a TAR with a version 1 manifest) are still restored but never written.
 
 Context flows through `RunnerContext` in `src/lib/runner/types.ts`. Add a step by adding a file here, not by growing an existing one.
 
@@ -201,15 +203,15 @@ encrypt(plaintext) / decrypt(ciphertext)   // AES-256-GCM, src/lib/crypto/index.
 decryptConfig(obj)                          // recursively decrypts config objects
 ```
 
-**Backup encryption** (encryption profiles) protects backup files with user-managed keys. `createEncryptionProfile(name)` generates a 32-byte key and stores it encrypted with the system key. Streaming lives in `src/lib/crypto/stream.ts`.
+**Backup encryption** (encryption profiles) protects backup files with user-managed keys. `createEncryptionProfile(name)` generates a 32-byte key and stores it encrypted with the system key.
 
 ```
-Dump -> Compression stream (optional) -> Encryption stream -> Storage
-                                              |
-                          .meta.json: { iv, authTag, compression, profileId }
+Dump to temp file -> per entry: compression (optional) -> AES-256-GCM -> into the .tar -> upload
+                                                   |
+                     keys derived per archive by HKDF from the profile key and a fresh salt
 ```
 
-`BackupMetadata` is defined in `src/lib/core/interfaces.ts`. Restore reverses the same streams.
+Entry encryption lives in `src/lib/crypto/entry-cipher.ts`, the key derivation in `kdf.ts`, compression (Gzip or Brotli, no level) in `compression.ts`. An encrypted archive names its entries `d/000001` and encrypts its index too, but `.meta.json` carries the database names in clear. The whole-file streams of `src/lib/crypto/stream.ts`, with `iv` and `authTag` in `.meta.json`, are only written by config backups now and read for older database backups. `BackupMetadata` is defined in `src/lib/core/interfaces.ts`.
 
 ## Restore pipeline (`src/services/restore/`)
 
@@ -258,7 +260,8 @@ Runs every minute. Pings all configured adapters and writes `HealthCheckLog` rec
 
 ## Integrity and verification
 
-- **Post-upload** (`src/services/storage/verification-service.ts`): SHA-256 and MD5 checksums stored in `.meta.json`. S3, Google Drive, and OneDrive use native verification. Others fall back to a full download.
+- **Post-upload** (`src/services/storage/verification-service.ts`): SHA-256 and MD5 of every `.tar` are stored in `.meta.json`. `03-upload.ts` checks the copy right after the upload on Local Filesystem always, on other destinations only while the setting `backup.postUploadVerify` is `true`, which no page writes yet. S3, Google Drive, OneDrive and Local compare stored checksums, the others download the file.
+- **Per dump**: the index of the archive holds the SHA-256 of every dump, checked on restore and by the Recovery Kit.
 - **Periodic** (`src/services/backup/integrity-service.ts`): weekly `INTEGRITY_CHECK` task, disabled by default. Jobs mode checks only files linked to enabled jobs, destinations mode scans all storage. Filters for already-passed files, max age, and max size.
 
 ## Storage alerts (`src/services/storage/storage-alert-service.ts`)

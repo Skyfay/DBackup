@@ -8,6 +8,7 @@
 #   MongoDB          → mongodump, mongorestore, mongosh
 #   SQLite           → sqlite3
 #   Redis            → redis-cli
+#   Firebird         → gbak, isql (5.x, like Docker image)
 #   MSSQL            → (no binary needed, uses Node.js mssql driver)
 #
 # Usage:  sudo ./scripts/setup-dev-debian.sh
@@ -41,6 +42,21 @@ CODENAME=$(lsb_release -cs)
 info "Detected Debian/Ubuntu codename: $CODENAME"
 
 # -------------------------------------------------------------------
+# 1b. Node.js in the version of .node-version, and pnpm 10
+#     NodeSource installs it system wide, since this script runs as root.
+# -------------------------------------------------------------------
+NODE_VERSION="$(tr -d '[:space:]' < "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.node-version")"
+if command -v node &>/dev/null && [[ "$(node -v)" == "v${NODE_VERSION}."* ]]; then
+    info "Node.js $(node -v) is already installed."
+else
+    info "Installing Node.js ${NODE_VERSION} from NodeSource..."
+    curl -fsSL "https://deb.nodesource.com/setup_${NODE_VERSION}.x" | bash - > /dev/null
+    apt-get install -y -qq nodejs > /dev/null
+fi
+info "Installing pnpm 10..."
+npm install -g --loglevel=error pnpm@10 > /dev/null
+
+# -------------------------------------------------------------------
 # 2. MySQL / MariaDB client (mysqldump, mysql)
 # -------------------------------------------------------------------
 info "Installing MySQL client tools..."
@@ -52,7 +68,7 @@ mysql --version && info "MySQL client installed ✓" || warn "MySQL client check
 #    Mirrors the Docker image strategy with /opt/pgXX/bin symlinks
 # -------------------------------------------------------------------
 info "Adding PostgreSQL APT repository..."
-curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --yes -o /usr/share/keyrings/postgresql-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] https://apt.postgresql.org/pub/repos/apt ${CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 apt-get update -qq
 
@@ -86,6 +102,8 @@ if [[ "$ARCH" == "amd64" || "$ARCH" == "arm64" ]]; then
         # Ubuntu: use codename directly, fallback to noble
         MONGO_CODENAME="$CODENAME"
         MONGO_REPO_BASE="https://repo.mongodb.org/apt/ubuntu"
+        # MongoDB publishes its Ubuntu packages under multiverse. With main, apt finds nothing.
+        MONGO_COMPONENT="multiverse"
     else
         # Debian: MongoDB only supports specific versions — map to nearest supported
         case "$CODENAME" in
@@ -93,11 +111,12 @@ if [[ "$ARCH" == "amd64" || "$ARCH" == "arm64" ]]; then
             trixie|sid|*) MONGO_CODENAME="bookworm" ;; # Fallback to latest supported
         esac
         MONGO_REPO_BASE="https://repo.mongodb.org/apt/debian"
+        MONGO_COMPONENT="main"
     fi
 
     info "Using MongoDB repo for $DISTRO_ID/$MONGO_CODENAME..."
     curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg --dearmor --yes -o /usr/share/keyrings/mongodb-server-8.0.gpg
-    echo "deb [signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] ${MONGO_REPO_BASE} ${MONGO_CODENAME}/mongodb-org/8.0 main" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+    echo "deb [signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] ${MONGO_REPO_BASE} ${MONGO_CODENAME}/mongodb-org/8.0 ${MONGO_COMPONENT}" > /etc/apt/sources.list.d/mongodb-org-8.0.list
     apt-get update -qq
     apt-get install -y -qq mongodb-database-tools > /dev/null 2>&1 && MONGO_INSTALLED=true
 
@@ -144,10 +163,58 @@ apt-get install -y -qq redis-tools > /dev/null
 redis-cli --version && info "Redis CLI installed ✓" || warn "Redis CLI check failed"
 
 # -------------------------------------------------------------------
-# 7. Additional tools used by DBackup (SSH, rsync, smbclient)
+# 7. Additional tools used by DBackup (SSH, rsync, smbclient, lz4, zstd)
 # -------------------------------------------------------------------
-info "Installing additional tools (SSH, rsync, smbclient)..."
-apt-get install -y -qq openssh-client sshpass rsync smbclient openssl zip > /dev/null
+info "Installing additional tools (SSH, rsync, smbclient, lz4, zstd)..."
+apt-get install -y -qq openssh-client sshpass rsync smbclient openssl zip lz4 zstd > /dev/null
+
+# -------------------------------------------------------------------
+# 8. Firebird 5.x client tools (gbak, isql)
+#
+# The distro repos only carry an older client, so this takes the official
+# release tarball, the same one and the same /opt/firebird layout as the
+# Dockerfile. Bump both versions there and here together.
+# -------------------------------------------------------------------
+info "Installing Firebird client tools (gbak, isql)..."
+FIREBIRD_TAG="5.0.3"
+FIREBIRD_ASSET_VERSION="5.0.3.1683-0"
+case "$ARCH" in
+    amd64) FB_ARCH="x64" ;;
+    arm64) FB_ARCH="arm64" ;;
+    *) FB_ARCH="" ;;
+esac
+
+# gbak -z prints its version and then exits 1, which pipefail would turn into a failure
+FB_PRESENT="$(/opt/firebird/bin/gbak -z 2>&1 || true)"
+if [[ -z "$FB_ARCH" ]]; then
+    warn "Firebird client tools: unsupported architecture $ARCH - skipping"
+elif [[ "$FB_PRESENT" == *"V${FIREBIRD_ASSET_VERSION%-*}"* ]]; then
+    info "Firebird client tools ${FIREBIRD_TAG} are already installed."
+else
+    # gbak and isql link against libtommath and zlib, which the tarball does not ship
+    apt-get install -y -qq libtommath1 zlib1g > /dev/null
+    FB_TMP_DIR="$(mktemp -d)"
+    FB_URL="https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-linux-${FB_ARCH}.tar.gz"
+    if curl -fsSL "$FB_URL" -o "$FB_TMP_DIR/firebird.tar.gz"; then
+        # The release tarball holds an installer and a nested buildroot.tar.gz,
+        # and the binaries sit in that inner archive under ./opt/firebird.
+        tar -xzf "$FB_TMP_DIR/firebird.tar.gz" -C "$FB_TMP_DIR" --strip-components=1
+        tar -xzf "$FB_TMP_DIR/buildroot.tar.gz" -C "$FB_TMP_DIR"
+        mkdir -p /opt/firebird/bin /opt/firebird/lib
+        cp "$FB_TMP_DIR/opt/firebird/bin/gbak" "$FB_TMP_DIR/opt/firebird/bin/isql" /opt/firebird/bin/
+        cp -a "$FB_TMP_DIR/opt/firebird/lib/." /opt/firebird/lib/
+        cp "$FB_TMP_DIR/opt/firebird/firebird.msg" /opt/firebird/
+        ln -sf /opt/firebird/bin/gbak /usr/local/bin/gbak
+        ln -sf /opt/firebird/bin/isql /usr/local/bin/isql
+        echo "/opt/firebird/lib" > /etc/ld.so.conf.d/firebird.conf
+        ldconfig
+        FB_PRESENT="$(/opt/firebird/bin/gbak -z 2>&1 || true)"
+        [[ "$FB_PRESENT" == *"Firebird"* ]] && info "Firebird client tools installed ✓" || warn "Firebird client check failed"
+    else
+        warn "Failed to download the Firebird client - skipping. Install manually from https://github.com/FirebirdSQL/firebird/releases if needed."
+    fi
+    rm -rf "$FB_TMP_DIR"
+fi
 
 # -------------------------------------------------------------------
 # SqlPackage - BACPAC export/import for the Azure SQL Database adapter
@@ -202,7 +269,7 @@ info "========================================="
 info "  DBackup Dev Dependencies — Summary"
 info "========================================="
 echo ""
-for cmd in mysql mysqldump mongodump mongorestore mongosh sqlite3 redis-cli pg_dump psql rsync smbclient sshpass sqlpackage; do
+for cmd in node pnpm mysql mysqldump mongodump mongorestore mongosh sqlite3 redis-cli pg_dump psql gbak isql rsync smbclient sshpass lz4 zstd sqlpackage; do
     if command -v "$cmd" &>/dev/null; then
         echo -e "  ${GREEN}✓${NC}  $cmd  ($(command -v "$cmd"))"
     else

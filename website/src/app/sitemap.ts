@@ -1,36 +1,43 @@
 import type { MetadataRoute } from "next";
-import { getAllPosts } from "@/lib/blog";
+import { DEFAULT_LOCALE, LOCALES, localePath, type Locale } from "@/i18n/config";
+import { getAllPosts, getPostLocales } from "@/lib/blog";
+import { DATABASE_SLUGS } from "@/lib/integrations";
 import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-static";
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const posts = getAllPosts().map((post) => ({
-    url: `${SITE_URL}/blog/${post.slug}`,
-    lastModified: new Date(post.date),
-    changeFrequency: "monthly" as const,
-    priority: 0.6,
-  }));
+type Entry = MetadataRoute.Sitemap[number];
 
+/**
+ * One entry per language a page exists in, each naming the others and the
+ * English page as x-default. A post only counts as existing in the languages
+ * it is written in, since its other pages point their canonical at the
+ * English one. Every URL has the trailing slash of its canonical.
+ */
+function entries(path: string, locales: readonly Locale[], rest: Omit<Entry, "url" | "alternates">): Entry[] {
+  const urls = Object.fromEntries(locales.map((l) => [l, `${SITE_URL}${localePath(l, path)}`]));
+  const languages = { ...urls, "x-default": `${SITE_URL}${localePath(DEFAULT_LOCALE, path)}` };
+  return locales.map((locale) => ({ url: urls[locale], alternates: { languages }, ...rest }));
+}
+
+/** A page only carries a lastmod where a real date exists, since Google ignores one that changes with every build. */
+export default function sitemap(): MetadataRoute.Sitemap {
+  const posts = getAllPosts();
+  const newestPost = posts[0] ? new Date(posts[0].date) : undefined;
   return [
-    {
-      url: SITE_URL,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 1.0,
-    },
-    {
-      url: `${SITE_URL}/blog`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.8,
-    },
-    {
-      url: `${SITE_URL}/roadmap`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.8,
-    },
-    ...posts,
+    ...entries("/", LOCALES, { changeFrequency: "weekly", priority: 1.0 }),
+    ...entries("/blog/", LOCALES, { lastModified: newestPost, changeFrequency: "weekly", priority: 0.8 }),
+    ...entries("/roadmap/", LOCALES, { changeFrequency: "weekly", priority: 0.8 }),
+    ...entries("/integrations/", LOCALES, { changeFrequency: "monthly", priority: 0.8 }),
+    ...DATABASE_SLUGS.flatMap((slug) =>
+      entries(`/integrations/${slug}/`, LOCALES, { changeFrequency: "monthly", priority: 0.8 })
+    ),
+    ...posts.flatMap((post) =>
+      entries(`/blog/${post.slug}/`, getPostLocales(post.slug), {
+        lastModified: new Date(post.date),
+        changeFrequency: "monthly",
+        priority: 0.6,
+      })
+    ),
   ];
 }

@@ -48,6 +48,7 @@ pnpm-debug.log*
 
 # Docs & Tests
 docs
+changelog
 tests
 scripts
 !scripts/dbackup-recover.js

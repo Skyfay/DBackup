@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 // Background effects of the dark design: drifting color glows, masked dot
 // grids, a receding floor grid, twinkling stars and spinning gradient borders.
 // All of them are decorative, hidden from assistive tech and stopped by
-// prefers-reduced-motion in globals.css.
+// prefers-reduced-motion in globals.css. Touch screens keep them still and
+// draw the glows without a CSS blur, see fx-glow there.
 
 /** A seeded random sequence, so stars land on the same spot on the server and the client. */
 function seeded(seed: number) {
@@ -34,17 +35,19 @@ export function Glow({
     <div
       aria-hidden="true"
       className={cn(
-        "pointer-events-none absolute rounded-full",
+        "fx-glow pointer-events-none absolute rounded-full",
         drift === 1 && "fx-drift",
         drift === 2 && "fx-drift-2",
         className
       )}
-      style={{
-        background: color,
-        opacity: `calc(${opacity} * var(--glow-strength))`,
-        filter: `blur(${blur}px)`,
-        ...style,
-      }}
+      style={
+        {
+          "--glow": color,
+          "--glow-blur": `${blur}px`,
+          opacity: `calc(${opacity} * var(--glow-strength))`,
+          ...style,
+        } as CSSProperties
+      }
     />
   );
 }
@@ -139,6 +142,10 @@ export function Stars({
   );
 }
 
+/** The spinning border in the color of a post, from the variables `data-post-tone` sets. */
+export const POST_CONIC =
+  "conic-gradient(from 0deg, transparent 0deg 270deg, var(--post-tone) 320deg, var(--post-tone-2) 350deg, transparent 360deg)";
+
 export const CONIC = {
   blue: "conic-gradient(from 0deg, transparent 0deg 270deg, #60a5fa 320deg, #a78bfa 350deg, transparent 360deg)",
   green: "conic-gradient(from 0deg, transparent 0deg 280deg, #34d399 330deg, #60a5fa 355deg, transparent 360deg)",
@@ -176,7 +183,7 @@ export function SpinBorder({
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute top-1/2 left-1/2",
+          "fx-border pointer-events-none absolute top-1/2 left-1/2",
           speed === "slow" ? "fx-spin-slow" : "fx-spin"
         )}
         style={{

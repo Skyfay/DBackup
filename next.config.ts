@@ -1,8 +1,28 @@
 import type { NextConfig } from "next";
 
+/**
+ * The hosts `next dev` hands its hot reload and other dev resources to, besides localhost. A dev
+ * server opened from another machine, like a dev box reached over a VPN, refuses them otherwise.
+ * Taken from the addresses the app is opened at anyway, so `.env` stays the one place to set
+ * them. Production never reads it.
+ */
+function devOrigins(): string[] {
+  const urls = [process.env.BETTER_AUTH_URL, ...(process.env.TRUSTED_ORIGINS?.split(",") ?? [])];
+  const hosts = new Set<string>();
+  for (const url of urls) {
+    if (!url?.trim()) continue;
+    try {
+      hosts.add(new URL(url.trim()).hostname);
+    } catch {
+      // Not a URL, so there is no host to allow.
+    }
+  }
+  return [...hosts];
+}
+
 const nextConfig: NextConfig = {
-  /* config options here */
   output: "standalone",
+  allowedDevOrigins: devOrigins(),
   async redirects() {
     return [
       // The Storage Explorer became the Backups page. Links, bookmarks and notifications that

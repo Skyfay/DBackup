@@ -581,7 +581,7 @@ Every new notification adapter touches these files:
 | 12 | `docs/user-guide/features/notifications.md` | Add to channels table and best practices |
 | 13 | `README.md` | Update notification feature line and channels table |
 | 14 | `docs/index.md` | Update feature card and supported notifications table |
-| 15 | `docs/changelog.md` | Add changelog entry |
+| 15 | `changelog/unreleased/<branch>.md` | Add the changelog entry, which the release moves into `docs/changelog.md` |
 | 16 | `docs/developer-guide/adapters/notification.md` | Update "Available Adapters" table (this file) |
 | 17 | `tests/unit/adapters/notification/<id>.test.ts` | Write unit tests for `test()` and `send()` |
 
@@ -935,7 +935,7 @@ Add the entry under the "Notification Channels" section:
 | `docs/user-guide/features/notifications.md` | Supported Channels table, Best Practices |
 | `README.md` | Feature bullet point, Supported Notifications table |
 | `docs/index.md` | Feature card description, Supported Notifications table |
-| `docs/changelog.md` | Release entry |
+| `changelog/unreleased/<branch>.md` | Release entry, collected into `docs/changelog.md` at the release |
 | `docs/developer-guide/adapters/notification.md` | Available Adapters table (this file) |
 
 ### Summary: File Touch Map
@@ -961,7 +961,7 @@ docs/
 │   └── features/
 │       └── notifications.md ← Update table + best practices
 ├── .vitepress/config.mts   ← Sidebar entry
-├── changelog.md            ← Release notes
+├── changelog.md            ← Release notes, written by the release from changelog/unreleased/
 ├── index.md                ← Feature card + table
 └── developer-guide/
     └── adapters/

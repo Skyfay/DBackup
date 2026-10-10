@@ -15,7 +15,7 @@ const DUMP: { value: DumpAlgo; title: string; description: string; since?: numbe
     { value: "GZIP", title: "Gzip", description: "The usual pick, works everywhere" },
     { value: "LZ4", title: "LZ4", description: "Fastest, a little larger", since: 14 },
     { value: "ZSTD", title: "Zstd", description: "Small and fast", since: 16 },
-    { value: "NONE", title: "None", description: "DBackup compresses the backup instead" },
+    { value: "NONE", title: "None", description: "DBackup compresses the dump instead" },
 ];
 
 /** What DBackup itself compresses a backup with. */

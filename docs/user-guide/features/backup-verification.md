@@ -10,7 +10,7 @@ A backup that silently corrupts mid-upload is worse than no backup at all - you 
 
 ### Checksum Generation (at upload time)
 
-Every backup file gets a SHA-256 checksum computed from the final processed file - after compression and encryption if enabled. For adapters that natively support MD5 (Google Drive), an MD5 checksum is computed in the same pass at no extra cost.
+After every backup DBackup computes a SHA-256 and an MD5 checksum of the final `.tar` in one pass, the file exactly as it is uploaded. Google Drive is checked against the MD5, every other destination against the SHA-256.
 
 Both values are stored in the `.meta.json` sidecar file alongside the backup:
 
@@ -67,25 +67,23 @@ You can verify a backup again at any time, one copy or all of them.
 
 ### Post-Upload Verification (automatic)
 
-DBackup can verify each backup immediately after it finishes uploading. This is controlled by the `backup.postUploadVerify` system setting.
+Right after the upload, DBackup checks every copy on a **Local Filesystem** destination. The check is a direct file read with near-zero overhead.
 
-**Local filesystem destinations always verify**, regardless of this setting - the check is a direct file read with near-zero overhead.
-
-For remote destinations (S3, Google Drive, SFTP, etc.), post-upload verification is **opt-in** and off by default. Enable it in **Settings - System** if you want automatic verification for all destinations.
+Copies on remote destinations are not checked after the upload. The runner only checks them while the system setting `backup.postUploadVerify` is `true`, and no page in DBackup sets it. Verify them by hand or with the scheduled integrity check below.
 
 ::: warning Bandwidth for download-based adapters
-For SFTP, FTP, SMB, WebDAV, Dropbox, and Rsync, automatic post-upload verification downloads the full backup file a second time to recompute the hash. For large backups on slow or metered connections this adds significant time and transfer costs. For S3, Google Drive, OneDrive, and local storage, verification has near-zero overhead and is safe to enable freely.
+For SFTP, FTP, SMB, WebDAV, Dropbox, and Rsync, every check downloads the full backup file again to recompute the hash. For large backups on slow or metered connections this adds significant time and transfer costs. For S3, Google Drive, OneDrive, and local storage, a check has near-zero overhead.
 :::
 
 ### Scheduled Integrity Check
 
-DBackup includes a **Scheduled Integrity Check** job that periodically verifies all backups across all storage destinations. It runs through each destination, reads the `.meta.json` sidecar for each backup file, and runs the same native-first verification logic as the manual check.
+The **Integrity check** system task periodically verifies all backups across all storage destinations. It runs through each destination, reads the `.meta.json` sidecar for each backup file, and runs the same native-first verification logic as the manual check.
 
 Results are written back to the sidecars as they complete, so the Backups page badges stay up to date without any manual action.
 
 A destination whose **Integrity checks** are off in the **Behavior** part of its form is left out, and an [air-gapped destination](/user-guide/destinations/#air-gapped-destinations) is checked whenever it is connected. Several destinations are switched at once: tick them on the **Destinations** tab of **Connections** and pick **Turn off integrity checks** or **Turn on integrity checks** under **More**.
 
-The scheduler can be configured under **Settings - Scheduler** (cron expression). A weekly or monthly check on your full archive is a reasonable default for most setups.
+It is off by default and its default schedule is every Sunday at 4 AM. Its switch and schedule are under **Settings > System tasks**.
 
 ::: info What counts as "scheduled"
 The `trigger` field in `.meta.json` records how each check was triggered: `manual`, `post-upload`, or `scheduled`. This lets you distinguish between a fresh post-upload check and an older scheduled check in the metadata.

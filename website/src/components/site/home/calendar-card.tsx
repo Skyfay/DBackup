@@ -1,5 +1,6 @@
 import { SpotlightCard } from "@/components/site/spotlight-card";
 import { cn } from "@/lib/utils";
+import type { MessageKey, Translator } from "@/i18n/translate";
 
 const WEEKS = 36;
 const TODAY = 246;
@@ -30,25 +31,25 @@ function buildWeeks() {
 
 const WEEK_DATA = buildWeeks();
 
-const LEGEND = [
-  { label: "Completed", className: "bg-tone-green" },
-  { label: "Partial", className: "bg-tone-amber" },
-  { label: "Failed", className: "bg-tone-red" },
+const LEGEND: { label: MessageKey; className: string }[] = [
+  { label: "features.completed", className: "bg-tone-green" },
+  { label: "features.partial", className: "bg-tone-amber" },
+  { label: "features.failed", className: "bg-tone-red" },
 ];
 
-export function CalendarCard({ className }: { className?: string }) {
+export function CalendarCard({ className, t }: { className?: string; t: Translator }) {
   return (
     <SpotlightCard className={cn("flex flex-col gap-4 rounded-[22px] p-6", className)}>
       <div className="relative flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold tracking-[-0.02em]">Every day, accounted for</h3>
-          <p className="mt-1.5 text-muted-foreground">A backup calendar that shows gaps before you need them.</p>
+          <h3 className="text-lg font-semibold tracking-[-0.02em]">{t("features.calendarTitle")}</h3>
+          <p className="mt-1.5 text-muted-foreground">{t("features.calendarText")}</p>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           {LEGEND.map((l) => (
             <span key={l.label} className="flex items-center gap-1.5">
               <span className={cn("size-2.5 rounded-[3px]", l.className)} />
-              {l.label}
+              {t(l.label)}
             </span>
           ))}
         </div>

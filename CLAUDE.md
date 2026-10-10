@@ -15,13 +15,14 @@ Claude Code loads the nearest `CLAUDE.md` when you touch files in a directory. R
 | Dashboard pages and the look of the UI redesign | [src/app/dashboard/CLAUDE.md](src/app/dashboard/CLAUDE.md) |
 | Database, storage, or notification adapters | [src/lib/adapters/CLAUDE.md](src/lib/adapters/CLAUDE.md) |
 | Wiki pages and the changelog | [docs/CLAUDE.md](docs/CLAUDE.md) |
+| Marketing website (dbackup.app) | [website/CLAUDE.md](website/CLAUDE.md) |
 | Unit and integration tests | [tests/CLAUDE.md](tests/CLAUDE.md) |
 
 ## Non-negotiable rules
 
 1. **Package manager is `pnpm`.** Never `npm install` or `yarn`. Prisma CLI calls go through `npx prisma ...`.
 2. **Never use `console.log` / `console.error` / `console.warn`.** Use the logger from `@/lib/logging/logger`. This holds in Client Components too.
-3. **Every change updates `docs/changelog.md`** in the same response, except AI tooling changes. See [Changelog workflow](#changelog-workflow).
+3. **Every change gets a changelog entry** in the same response, written into the fragment of its branch under `changelog/unreleased/`, never into `docs/changelog.md`. AI tooling changes get none. See [Changelog workflow](#changelog-workflow).
 4. **Typography**: no em dashes, no semicolons. Use a hyphen where a dash is needed, and end sentences with a period. Applies to code comments, docs, and commit messages.
 5. **Language**: all code, comments, and documentation in English.
 6. **Never run `prisma migrate dev` while `pnpm dev` is running**, and never use `prisma db push`. See [Prisma migrations](#prisma-migrations).
@@ -53,7 +54,11 @@ pnpm test                 # Unit tests (vitest)
 pnpm test:integration     # Integration tests against real DB containers
 pnpm test:ui              # Spin up test DBs + seed local DB for manual testing
 pnpm run database:reset   # Reset dev DB from scratch via all migrations
-pnpm changelog:next       # Create a `## vNEXT` changelog placeholder
+pnpm toolbox              # Menu of the release and maintenance commands below, see scripts/toolbox/README.md
+pnpm changelog:preview    # Show the changelog block the next release writes from the fragments
+pnpm version:bump         # Next version, changelog block and version everywhere, after a CodeQL check of dev
+pnpm codeql:check         # CodeQL alerts open on dev that main does not have
+pnpm release:tag          # Tag the release on main and push it (release:untag deletes a tag)
 ```
 
 Docs site and marketing site are separate workspaces: `pnpm docs:dev` (VitePress) and `pnpm website:dev`.
@@ -71,7 +76,7 @@ Running `migrate dev` against a live dev server can trigger an interactive DB re
 
 ## Changelog workflow
 
-Every change - feature, bug fix, refactor, docs, CI - gets an entry in `docs/changelog.md` in the same response. Do not defer it.
+Every change - feature, bug fix, refactor, docs, CI - gets an entry in the same response. Do not defer it.
 
 **Exception: AI tooling changes never get a changelog entry.** The changelog is published on the docs site for people who run DBackup. Anything that only configures the assistant is invisible to them:
 
@@ -87,7 +92,7 @@ The test is who the line is for. A reader upgrading their instance never needs t
 
 **Inside an entry there is no `;`, no ` - ` and no `- `.** Stricter than the typography rule above, which allows a hyphen as a dash. A sentence reaching for one of them is doing too much work, so split it or cut it. The `- ` opening the line is the list marker and stays.
 
-**Find the active version**: either a `## vNEXT` block at the top, or the topmost `## vX.Y.Z` block marked `*Release: In Progress*`. If neither exists, run `pnpm changelog:next` first.
+**Where the entry goes**: into `changelog/unreleased/<branch>.md`, named after the branch with `/` replaced by `-`, never into `docs/changelog.md`. One file per branch, in the Markdown of a version block without the version header and the Docker section, so pull requests that run side by side never touch the same file. A branch that changes its mind edits its own file. `pnpm version:bump` collects the fragments into `docs/changelog.md` at the release and deletes them, a lint guard checks every fragment, and `pnpm changelog:preview` shows the block the next release writes. Format and example: [changelog/unreleased/README.md](changelog/unreleased/README.md).
 
 **Section order** (skip sections with no entries, never reorder):
 
@@ -102,7 +107,7 @@ The test is who the line is for. A reader upgrading their instance never needs t
 | 7 | New or updated docs article | `### 📝 Documentation` |
 | 8 | Test changes | `### 🧪 Tests` |
 | 9 | GitHub Actions, Dockerfile, scripts | `### 🔧 CI/CD` |
-| 10 | Docker image info (always last) | `### 🐳 Docker` |
+| 10 | Docker image info (always last, written by the release) | `### 🐳 Docker` |
 
 Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 

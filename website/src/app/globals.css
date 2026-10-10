@@ -152,6 +152,8 @@
   --color-tone-amber: var(--tone-amber);
   --color-tone-red: var(--tone-red);
   --color-tone-ink: var(--tone-ink);
+  --color-post: var(--post-tone);
+  --color-post-2: var(--post-tone-2);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -166,8 +168,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* No double tap to zoom, so iOS does not hold every tap back while it waits
+     for a second one. Pinch to zoom stays. */
   html {
     scroll-padding-top: 96px;
+    touch-action: manipulation;
   }
   body {
     @apply bg-background text-foreground;
@@ -274,6 +279,12 @@
   }
   .fx-marquee-rev {
     animation: fx-marquee-rev 45s linear infinite;
+  }
+  /* A soft light behind the content. --glow is its color, --glow-blur the
+     reach of the blur. Touch screens draw it without the blur, see below. */
+  .fx-glow {
+    background: var(--glow);
+    filter: blur(var(--glow-blur));
   }
   .fx-drift {
     animation: fx-drift 16s ease-in-out infinite;
@@ -615,6 +626,57 @@
   }
 }
 
+/* Touch screens keep the heavy decoration still. iOS Safari tiles every layer
+   wider than 1280px, and a tiled layer under a running animation makes it redo
+   its rendering on the main thread every frame, which can freeze the page on
+   an iPhone. The floor grid, the shine, the stars, the drifting glows and the
+   calendar sweep stop here. A spinning border would stand still at a random
+   angle, so it goes and the plain frame below it stays. The marquees keep
+   moving, they only shift a finished layer and cost the main thread nothing. */
+@media (hover: none) {
+  .fx-border {
+    display: none;
+  }
+  .fx-floor,
+  .fx-shine,
+  .fx-twinkle,
+  .fx-drift,
+  .fx-drift-2,
+  .fx-sweep {
+    animation: none;
+  }
+}
+
+/* Touch screens draw no CSS blur. iOS Safari renders a blur on the main thread
+   and again whenever anything near it repaints, which froze the page for
+   seconds on an iPhone. A glow becomes a radial gradient that fades out as far
+   as the blur reached, a hazy gradient loses only its blur, and the blurred
+   cone behind the hero, which has no such stand-in, is left out. */
+@media (hover: none) {
+  .fx-glow {
+    background: none;
+    filter: none;
+  }
+  .fx-glow::before {
+    content: "";
+    position: absolute;
+    inset: calc(var(--glow-blur) * -2);
+    background: radial-gradient(
+      closest-side,
+      var(--glow),
+      color-mix(in srgb, var(--glow) 50%, transparent) 55%,
+      color-mix(in srgb, var(--glow) 15%, transparent) 78%,
+      transparent
+    );
+  }
+  .fx-haze {
+    filter: none !important;
+  }
+  .fx-halo {
+    display: none;
+  }
+}
+
 /* Blog articles. Rules reach only the direct children of the article, so the
    MDX components keep their own look. */
 .post-prose > p,
@@ -660,11 +722,59 @@
   font-size: 0.82em;
   color: var(--foreground);
 }
+/*
+ * The color of a post page, from the tone of its cover, with the blue and
+ * violet of DBackup everywhere else. A band with its own .dark class declares
+ * it again, so it takes the dark value of the tone in light mode too.
+ */
+:root,
+.dark,
+[data-post-tone="blue"],
+[data-post-tone="blue"] .dark {
+  --post-tone: var(--tone-blue);
+  --post-tone-2: var(--tone-violet);
+  --post-link: var(--tone-blue-soft);
+  --post-glow: #2563eb;
+  --post-glow-2: #7c3aed;
+}
+[data-post-tone="violet"],
+[data-post-tone="violet"] .dark {
+  --post-tone: var(--tone-violet);
+  --post-tone-2: var(--tone-blue);
+  --post-link: var(--tone-violet);
+  --post-glow: #7c3aed;
+  --post-glow-2: #4f46e5;
+}
+[data-post-tone="green"],
+[data-post-tone="green"] .dark {
+  --post-tone: var(--tone-green);
+  --post-tone-2: var(--tone-cyan);
+  --post-link: var(--tone-green);
+  --post-glow: #059669;
+  --post-glow-2: #0e7490;
+}
+[data-post-tone="cyan"],
+[data-post-tone="cyan"] .dark {
+  --post-tone: var(--tone-cyan);
+  --post-tone-2: var(--tone-blue);
+  --post-link: var(--tone-cyan);
+  --post-glow: #0e7490;
+  --post-glow-2: #2563eb;
+}
+[data-post-tone="amber"],
+[data-post-tone="amber"] .dark {
+  --post-tone: var(--tone-amber);
+  --post-tone-2: var(--tone-red);
+  --post-link: var(--tone-amber);
+  --post-glow: #b45309;
+  --post-glow-2: #c2410c;
+}
+
 .post-prose a {
-  color: var(--tone-blue-soft);
+  color: var(--post-link);
   text-decoration: underline;
   text-underline-offset: 4px;
-  text-decoration-color: color-mix(in srgb, var(--tone-blue-soft) 40%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--post-link) 40%, transparent);
 }
 .post-prose > ul {
   margin: 0 0 22px;
@@ -684,8 +794,8 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--tone-blue);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--tone-blue) 80%, transparent);
+  background: var(--post-tone);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--post-tone) 80%, transparent);
 }
 .post-prose > ol {
   margin: 0 0 22px;

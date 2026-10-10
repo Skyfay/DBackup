@@ -19,6 +19,7 @@ import {
   type ShippedItem,
 } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
 
 type Kind = "all" | "release" | "community";
 
@@ -54,17 +55,13 @@ function Chip({
   );
 }
 
-function monthsOf(items: ShippedItem[]) {
+function monthsOf(items: ShippedItem[], monthLabels: Record<string, string>) {
   const months: { key: string; label: string; items: ShippedItem[] }[] = [];
   for (const item of items) {
     const key = item.releaseDate.slice(0, 7);
     let month = months[months.length - 1];
     if (!month || month.key !== key) {
-      const label = new Date(item.releaseDate).toLocaleDateString("en-US", {
-        month: "long",
-        year: "numeric",
-        timeZone: "UTC",
-      });
+      const label = monthLabels[key];
       month = { key, label, items: [] };
       months.push(month);
     }
@@ -78,23 +75,32 @@ function monthsOf(items: ShippedItem[]) {
  * and planned work then ideas run down the right. On a phone the two sides
  * stack, the plans first.
  */
-export function RoadmapTimeline() {
+/** The dates come written from the server, see RoadmapPage. */
+export function RoadmapTimeline({
+  dateLabels,
+  monthLabels,
+}: {
+  dateLabels: Record<string, string>;
+  monthLabels: Record<string, string>;
+}) {
+  const { t } = useI18n();
   const [kind, setKind] = useState<Kind>("all");
   const [cat, setCat] = useState<RoadmapCategory | "all">("all");
   const [open, setOpen] = useState<string | null>(null);
 
-  const latestRelease = SHIPPED_ITEMS.find((s) => !s.star)?.slug;
-  const releases = SHIPPED_ITEMS.filter((s) => !s.star).length;
-  const shipped = SHIPPED_ITEMS.filter((s) => kind === "all" || (kind === "community" ? s.star : !s.star));
-  const months = monthsOf(shipped);
+  const isStar = (s: ShippedItem) => s.stars !== undefined;
+  const latestRelease = SHIPPED_ITEMS.find((s) => !isStar(s))?.slug;
+  const releases = SHIPPED_ITEMS.filter((s) => !isStar(s)).length;
+  const shipped = SHIPPED_ITEMS.filter((s) => kind === "all" || (kind === "community" ? isStar(s) : !isStar(s)));
+  const months = monthsOf(shipped, monthLabels);
 
   const visible = ROADMAP_ITEMS.filter((i) => cat === "all" || i.category === cat);
   const planned = visible.filter((i) => i.status === "planned");
   const ideas = visible.filter((i) => i.status === "idea");
-  const where = cat === "all" ? "" : ` in ${ROADMAP_CATEGORIES.find((c) => c.value === cat)?.label}`;
+  const category = cat === "all" ? null : t(`roadmap.category.${cat}`);
 
   return (
-    <section aria-label="Timeline" className="relative z-[2] mx-auto max-w-[1248px] px-6">
+    <section aria-label={t("roadmap.timeline")} className="relative z-[2] mx-auto max-w-[1248px] px-6">
       <div className="relative grid lg:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">
         <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 -ml-px hidden w-0.5 overflow-hidden lg:block">
           <span
@@ -114,19 +120,17 @@ export function RoadmapTimeline() {
         </div>
 
         <div className="order-3 flex flex-col gap-2.5 pt-14 pb-7 lg:order-none lg:items-end lg:justify-end lg:pt-[52px] lg:text-right">
-          <span className="text-xs font-semibold tracking-[0.08em] text-tone-green uppercase">Looking back</span>
-          <h2 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em]">Shipped</h2>
-          <p className="max-w-[400px] leading-[1.55] text-muted-foreground">
-            Bigger features and community milestones, newest first. Every release is in the changelog.
-          </p>
-          <div role="group" aria-label="Filter shipped entries" className="mt-1 flex flex-wrap gap-1.5 lg:justify-end">
-            <Chip active={kind === "all"} onClick={() => setKind("all")} label="All" count={SHIPPED_ITEMS.length} />
-            <Chip active={kind === "release"} onClick={() => setKind("release")} icon={Tag} label="Releases" count={releases} />
+          <span className="text-xs font-semibold tracking-[0.08em] text-tone-green uppercase">{t("roadmap.lookingBack")}</span>
+          <h2 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em]">{t("roadmap.shippedTitle")}</h2>
+          <p className="max-w-[400px] leading-[1.55] text-muted-foreground">{t("roadmap.shippedLead")}</p>
+          <div role="group" aria-label={t("roadmap.filterShipped")} className="mt-1 flex flex-wrap gap-1.5 lg:justify-end">
+            <Chip active={kind === "all"} onClick={() => setKind("all")} label={t("roadmap.all")} count={SHIPPED_ITEMS.length} />
+            <Chip active={kind === "release"} onClick={() => setKind("release")} icon={Tag} label={t("roadmap.releases")} count={releases} />
             <Chip
               active={kind === "community"}
               onClick={() => setKind("community")}
               icon={Star}
-              label="Community"
+              label={t("roadmap.community")}
               count={SHIPPED_ITEMS.length - releases}
             />
           </div>
@@ -135,24 +139,22 @@ export function RoadmapTimeline() {
         <div aria-hidden="true" className="hidden lg:block" />
 
         <div className="order-1 flex flex-col gap-2.5 pt-14 pb-7 lg:order-none lg:justify-end lg:pt-[52px]">
-          <span className="text-xs font-semibold tracking-[0.08em] text-tone-violet uppercase">Looking ahead</span>
-          <h2 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em]">Up next</h2>
-          <p className="max-w-[440px] leading-[1.55] text-muted-foreground">
-            Planned work first, then ideas nobody has committed to yet. Filter by area.
-          </p>
-          <div role="group" aria-label="Filter by category" className="mt-1 flex flex-wrap gap-1.5">
-            <Chip active={cat === "all"} onClick={() => setCat("all")} label="All" count={ROADMAP_ITEMS.length} />
+          <span className="text-xs font-semibold tracking-[0.08em] text-tone-violet uppercase">{t("roadmap.lookingAhead")}</span>
+          <h2 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em]">{t("roadmap.upNext")}</h2>
+          <p className="max-w-[440px] leading-[1.55] text-muted-foreground">{t("roadmap.upNextLead")}</p>
+          <div role="group" aria-label={t("roadmap.filterCategory")} className="mt-1 flex flex-wrap gap-1.5">
+            <Chip active={cat === "all"} onClick={() => setCat("all")} label={t("roadmap.all")} count={ROADMAP_ITEMS.length} />
             {ROADMAP_CATEGORIES.map((c) => (
               <Chip
-                key={c.value}
-                active={cat === c.value}
+                key={c}
+                active={cat === c}
                 onClick={() => {
-                  setCat(c.value);
+                  setCat(c);
                   setOpen(null);
                 }}
-                icon={CATEGORY_ICON[c.value]}
-                label={c.label}
-                count={ROADMAP_ITEMS.filter((i) => i.category === c.value).length}
+                icon={CATEGORY_ICON[c]}
+                label={t(`roadmap.category.${c}`)}
+                count={ROADMAP_ITEMS.filter((i) => i.category === c).length}
               />
             ))}
           </div>
@@ -163,28 +165,34 @@ export function RoadmapTimeline() {
             <div key={m.key} className="flex flex-col gap-1.5">
               <MonthHeader label={m.label} />
               {m.items.map((item) => (
-                <ShippedEntry key={item.slug} item={item} latest={item.slug === latestRelease} />
+                <ShippedEntry key={item.slug} item={item} dateLabel={dateLabels[item.slug]} latest={item.slug === latestRelease} />
               ))}
             </div>
           ))}
-          {months.length === 0 && <p className="px-4 py-[18px] text-faint lg:text-right">Nothing matches that filter.</p>}
+          {months.length === 0 && <p className="px-4 py-[18px] text-faint lg:text-right">{t("roadmap.nothingMatches")}</p>}
         </div>
 
         <div aria-hidden="true" className="hidden lg:block" />
 
         <div className="order-2 flex flex-col gap-2.5 pb-6 lg:order-none">
-          <GroupHeader label="Next" sub="Planned" count={planned.length} tone="violet" />
+          <GroupHeader label={t("roadmap.next")} sub={t("roadmap.planned")} count={planned.length} tone="violet" />
           {planned.map((item) => (
             <PlannedCard key={item.slug} item={item} />
           ))}
           {planned.length === 0 && (
             <p className="rounded-[14px] border border-dashed border-border-strong px-4 py-3.5 text-faint">
-              No planned item{where}.
+              {category ? t("roadmap.noPlannedIn", { category }) : t("roadmap.noPlanned")}
             </p>
           )}
 
           <div className="pt-2">
-            <GroupHeader label="Later" sub="Ideas" count={ideas.length} tone="amber" note="Click one for the full note" />
+            <GroupHeader
+              label={t("roadmap.later")}
+              sub={t("roadmap.ideas")}
+              count={ideas.length}
+              tone="amber"
+              note={t("roadmap.clickForNote")}
+            />
           </div>
           {ideas.map((item) => (
             <IdeaRow
@@ -196,7 +204,7 @@ export function RoadmapTimeline() {
           ))}
           {ideas.length === 0 && (
             <p className="rounded-[14px] border border-dashed border-border-strong px-4 py-3.5 text-faint">
-              No idea{where} yet.
+              {category ? t("roadmap.noIdeasIn", { category }) : t("roadmap.noIdeas")}
             </p>
           )}
           <a
@@ -206,7 +214,7 @@ export function RoadmapTimeline() {
             className="mt-1.5 flex h-[34px] w-fit items-center gap-1.5 rounded-lg border border-input bg-secondary px-3 text-[13px] font-medium"
           >
             <Plus className="size-[13px]" strokeWidth={2.4} />
-            Suggest an idea on GitHub
+            {t("roadmap.suggest")}
           </a>
         </div>
       </div>

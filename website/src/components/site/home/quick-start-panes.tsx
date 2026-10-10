@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import { Check, ChevronLeft, ChevronRight, KeyRound, Lock, RefreshCw } from "lucide-react";
 import {
@@ -8,6 +10,8 @@ import {
   type CodeLine,
 } from "@/components/site/home/code-tokens";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
+import type { MessageKey } from "@/i18n/translate";
 
 // The panes inside the editor window of the quick start. Each one draws a
 // moment of the install from `stage` (0 to 2) and `local`, the ticks spent in
@@ -60,6 +64,7 @@ export function EditorPane({
   generated: boolean;
   onGenerate: () => void;
 }) {
+  const { t } = useI18n();
   const marked = stage === 0;
   return (
     <div
@@ -120,10 +125,10 @@ export function EditorPane({
           </span>
           <span className="flex grow flex-col leading-tight">
             <span className="text-[13px] font-medium text-[#fafafa]">
-              {generated ? "Keys made in your browser" : "Two secrets to fill in"}
+              {generated ? t("start.keysMade") : t("start.keysNeeded")}
             </span>
             <span className="text-xs text-[#a1a1aa]">
-              {generated ? "Copy takes them in full. Nothing was sent anywhere." : "Make them here, or with openssl as the comments say."}
+              {generated ? t("start.keysMadeText") : t("start.keysNeededText")}
             </span>
           </span>
           <button
@@ -137,7 +142,7 @@ export function EditorPane({
             )}
           >
             {generated ? <RefreshCw className="size-3.5" /> : <KeyRound className="size-3.5" />}
-            {generated ? "New keys" : "Generate keys"}
+            {generated ? t("start.newKeys") : t("start.generateKeys")}
           </button>
         </div>
       )}
@@ -154,6 +159,7 @@ const COMPOSE_OUTPUT: CodeLine[] = [
 
 /** A terminal that slides up under the file and starts the container. */
 export function DockTerminal({ stage, local }: { stage: number; local: number }) {
+  const { t } = useI18n();
   const typed = stage === 1 ? Math.min(COMPOSE_COMMAND.length, Math.max(0, local - 3)) : stage > 1 ? COMPOSE_COMMAND.length : 0;
   const done = typed === COMPOSE_COMMAND.length;
   const shown =
@@ -168,8 +174,8 @@ export function DockTerminal({ stage, local }: { stage: number; local: number })
       )}
     >
       <div className="flex h-[34px] items-center gap-4 border-b border-[#1a1a1c] px-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
-        <span className="flex h-full items-center text-[#fafafa] shadow-[inset_0_-2px_0_#a78bfa]">Terminal</span>
-        <span className="text-[#52525b]">Output</span>
+        <span className="flex h-full items-center text-[#fafafa] shadow-[inset_0_-2px_0_#a78bfa]">{t("start.terminal")}</span>
+        <span className="text-[#52525b]">{t("start.output")}</span>
         <span className="ml-auto font-mono text-[11px] font-normal tracking-normal text-[#52525b] normal-case">
           zsh · ~/dbackup
         </span>
@@ -239,14 +245,19 @@ export function RunTerminal({ stage, local, lines: source }: { stage: number; lo
   );
 }
 
-const PARTS = [
-  { label: "Source", value: "PostgreSQL · prod-db", tag: "Answering" },
-  { label: "Destination", value: "Hetzner Object Storage", tag: "2 TB free" },
-  { label: "Schedule", value: "Every day at 02:00", tag: "GFS 7 · 4 · 12" },
+// Product names and numbers stay as they are, the words of the app are keys.
+type Text = string | { key: MessageKey; vars?: Record<string, string | number> };
+
+const PARTS: { label: MessageKey; value: Text; tag: Text }[] = [
+  { label: "start.source", value: "PostgreSQL · prod-db", tag: { key: "start.answering" } },
+  { label: "start.destination", value: "Hetzner Object Storage", tag: { key: "start.free", vars: { size: "2 TB" } } },
+  { label: "start.schedule", value: { key: "features.dialog.everyDayAt", vars: { time: "02:00" } }, tag: "GFS 7 · 4 · 12" },
 ];
 
 /** A browser on localhost:3000 where Quick Setup fills in, the last step of both tabs. */
 export function SetupBrowser({ stage, local }: { stage: number; local: number }) {
+  const { t } = useI18n();
+  const tx = (v: Text) => (typeof v === "string" ? v : t(v.key, v.vars));
   const visible = stage === 2;
   const filled = visible ? Math.min(PARTS.length, Math.floor(Math.max(0, local - 6) / 9)) : 0;
   const ready = filled === PARTS.length;
@@ -273,7 +284,7 @@ export function SetupBrowser({ stage, local }: { stage: number; local: number })
       <div className="flex flex-col gap-2.5 px-[22px] py-5">
         <div className="mb-0.5 flex items-center justify-between">
           <span className="text-base font-semibold">Quick Setup</span>
-          <span className="text-xs text-[#a1a1aa]">{filled} of 3 parts</span>
+          <span className="text-xs text-[#a1a1aa]">{t("start.partsOf", { count: filled })}</span>
         </div>
         {PARTS.map((p, i) => {
           const done = i < filled;
@@ -296,11 +307,11 @@ export function SetupBrowser({ stage, local }: { stage: number; local: number })
                 {done && <Check className="size-[11px] text-[#0a0a0b]" strokeWidth={3.2} />}
               </span>
               <div className="grow">
-                <div className="text-xs text-[#71717a]">{p.label}</div>
-                <div className="font-medium">{done ? p.value : "Pick one"}</div>
+                <div className="text-xs text-[#71717a]">{t(p.label)}</div>
+                <div className="font-medium">{done ? tx(p.value) : t("start.pickOne")}</div>
               </div>
               {done && (
-                <span className="rounded-full bg-[#34d399]/12 px-2 py-0.5 text-xs font-medium text-[#34d399]">{p.tag}</span>
+                <span className="rounded-full bg-[#34d399]/12 px-2 py-0.5 text-xs font-medium text-[#34d399]">{tx(p.tag)}</span>
               )}
             </div>
           );
@@ -312,7 +323,7 @@ export function SetupBrowser({ stage, local }: { stage: number; local: number })
               ready ? "bg-[#60a5fa] text-[#0a0a0b] shadow-[0_0_20px_rgb(96_165_250/0.45)]" : "bg-[#252528] text-[#71717a]"
             )}
           >
-            Create job
+            {t("start.createJob")}
           </span>
         </div>
       </div>

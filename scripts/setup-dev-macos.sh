@@ -17,6 +17,20 @@ fi
 echo -e "${GREEN}Updating Homebrew...${NC}"
 brew update
 
+# Node comes from fnm in the version of .node-version, the one CI and the Docker image use.
+# A plain `brew install node` would follow the newest release instead.
+NODE_VERSION="$(tr -d '[:space:]' < "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.node-version")"
+echo -e "${GREEN}Installing fnm and Node ${NODE_VERSION}...${NC}"
+brew install fnm
+eval "$(fnm env --shell bash)"
+fnm install "$NODE_VERSION"
+fnm use "$NODE_VERSION"
+# The first Node of a fresh fnm becomes the default for terminals outside the project.
+fnm list | grep -q "default" || fnm default "$NODE_VERSION"
+
+echo -e "${GREEN}Installing pnpm 10...${NC}"
+npm install -g pnpm@10
+
 echo -e "${GREEN}Installing MySQL Client (mysqldump, mysqladmin)...${NC}"
 brew install mysql-client
 
@@ -167,7 +181,8 @@ echo 'export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgres
 echo ""
 echo -e "${GREEN}SqlPackage needs no PATH entry - it was installed into $(brew --prefix)/bin, which is already there.${NC}"
 echo ""
-echo -e "${YELLOW}Add to ~/.zshrc permanently:${NC}"
+echo -e "${YELLOW}Add to ~/.zshrc permanently. The first line lets fnm switch to the Node of .node-version:${NC}"
+echo 'echo '\''eval "$(fnm env --use-on-cd)"'\'' >> ~/.zshrc'
 echo 'echo '\''export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"'\'' >> ~/.zshrc'
 echo 'source ~/.zshrc'
 echo ""

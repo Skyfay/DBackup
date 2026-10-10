@@ -6,16 +6,16 @@ DBackup supports a wide variety of database engines.
 
 | Database | Supported Versions | Backup Method | Restore |
 | :--- | :--- | :--- | :--- |
-| [MySQL](/user-guide/sources/mysql) | 5.7, 8.x, 9.x | `mysqldump` | ✅ |
-| [MariaDB](/user-guide/sources/mysql) | 10.x, 11.x | `mariadb-dump` | ✅ |
-| [PostgreSQL](/user-guide/sources/postgresql) | 12 – 18 | `pg_dump` | ✅ |
-| [MongoDB](/user-guide/sources/mongodb) | 4.x – 8.x | `mongodump` | ✅ |
+| [MySQL](/user-guide/sources/mysql) | 5.7, 8.0, 8.4, 9.0 | `mariadb-dump` or `mysqldump` | ✅ |
+| [MariaDB](/user-guide/sources/mysql) | 10.x, 11.x | `mariadb-dump` or `mysqldump` | ✅ |
+| [PostgreSQL](/user-guide/sources/postgresql) | 12 to 18 | `pg_dump` | ✅ |
+| [MongoDB](/user-guide/sources/mongodb) | 4.x to 8.x | `mongodump` | ✅ |
 | [Redis](/user-guide/sources/redis) | 2.8+ | `redis-cli --rdb` | Manual |
 | [Valkey](/user-guide/sources/valkey) | 7.2+ | `redis-cli --rdb` | Manual |
-| [SQLite](/user-guide/sources/sqlite) | 3.x | `.dump` command | ✅ |
-| [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022 | `BACKUP DATABASE` | ✅ |
-| [Azure SQL Database](/user-guide/sources/azure-sql) | Single database, elastic pool | `SqlPackage` BACPAC export | ✅ (drops the target first) |
-| [Firebird](/user-guide/sources/firebird) | 3.x, 4.x, 5.x | `gbak` | ✅ (pre-configured aliases) |
+| [SQLite](/user-guide/sources/sqlite) | 3.x | `sqlite3 .backup`, stores the database file | ✅ |
+| [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022, Azure SQL Edge | `BACKUP DATABASE` | ✅ |
+| [Azure SQL Database](/user-guide/sources/azure-sql) (beta) | Single database, elastic pool | `SqlPackage` BACPAC export | ✅ (drops the target first) |
+| [Firebird](/user-guide/sources/firebird) (beta) | 3.x, 4.x, 5.x | `gbak` | ✅ (pre-configured aliases) |
 
 ## Directory Sources
 
@@ -57,7 +57,7 @@ DBackup supports two connection modes for most database types:
 
 ### SSH Mode
 
-In SSH mode, DBackup connects to the remote server via SSH and executes database CLI tools (e.g., `mysqldump`, `pg_dump`) **directly on that server**. The backup output is streamed back to DBackup over the SSH connection. This is **not** an SSH tunnel - the database tools run remotely.
+In SSH mode, DBackup connects to the remote server via SSH and executes database CLI tools (e.g., `mariadb-dump`, `pg_dump`) **directly on that server**. The output comes back over the same connection, streamed or as a temporary file DBackup fetches and deletes, depending on the tool. This is **not** an SSH tunnel - the database tools run remotely. The form marks **Over SSH** as beta.
 
 **Supported adapters:** MySQL, MariaDB, PostgreSQL, MongoDB, Redis, Valkey, SQLite, Firebird, MSSQL
 
@@ -73,11 +73,7 @@ When using SSH mode, the required database client tools **must be installed on t
 | :--- | :--- | :--- | :--- |
 | **SSH host** | SSH server hostname or IP | - | ✅ |
 | **Port** | SSH server port | `22` | ❌ |
-| **SSH Username** | SSH login username | - | ✅ |
-| **SSH Auth Type** | Authentication method: Password, Private Key, or Agent | `Password` | ✅ |
-| **SSH Password** | SSH password (for password auth) | - | ❌ |
-| **SSH Private Key** | PEM-formatted private key (for key auth) | - | ❌ |
-| **SSH Passphrase** | Passphrase for encrypted private key | - | ❌ |
+| **SSH login** | An `SSH_KEY` [credential profile](/user-guide/security/credential-profiles) with the username and a password, a private key or the SSH agent | - | ✅ |
 
 ::: tip SSH Agent
 To use SSH agent forwarding in Docker, mount the agent socket:
@@ -97,6 +93,7 @@ When DBackup runs in Docker and your database is on the host:
 
 | Platform | Host Address |
 | :--- | :--- |
-| Linux / macOS / Windows | `host.docker.internal` |
+| macOS / Windows (Docker Desktop) | `host.docker.internal` |
+| Linux (Docker Engine) | `host.docker.internal` with `extra_hosts: ["host.docker.internal:host-gateway"]` on the DBackup service |
 
 For Docker Compose networks, use the service name as hostname.

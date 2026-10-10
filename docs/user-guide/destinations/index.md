@@ -89,16 +89,17 @@ The configuration backup is no run of a job, so a configuration backup to an air
 
 ## Storage Structure
 
-Backups are organized by job name with sidecar metadata files:
+Every run writes one `.tar` with two sidecars into a folder named after the job:
 
 ```
 /your-prefix/
 └── job-name/
-    ├── backup_2024-01-15T12-00-00.sql.gz.enc
-    └── backup_2024-01-15T12-00-00.sql.gz.enc.meta.json
+    ├── job-name_2026-10-08_12-00-00.tar
+    ├── job-name_2026-10-08_12-00-00.tar.index
+    └── job-name_2026-10-08_12-00-00.tar.meta.json
 ```
 
-The `.meta.json` file stores compression, encryption metadata (IV, auth tag, profile ID), database version, and timestamp.
+The `.tar` holds one entry per database and the files of any directory sources, each compressed and encrypted on its own when the job asks for it. The `.index` is a copy of its table of contents, so browsing a backup never downloads the archive. The `.meta.json` is cleartext and stores the job, the source and its version, the names of the databases, the checksums and the encryption profile, never a key. Incremental jobs keep each chain in a folder of its own inside the job folder. The layout is described in [Archive Format](/developer-guide/reference/archive-format).
 
 ## Upload Performance (S3)
 

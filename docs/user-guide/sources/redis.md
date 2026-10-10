@@ -1,6 +1,6 @@
 # Redis
 
-Redis is an in-memory data structure store used as a database, cache, message broker, and streaming engine. DBackup supports Redis backups using the native RDB snapshot format.
+Redis is an in-memory data store used as a database, cache, message broker, and streaming engine. DBackup backs it up as an RDB snapshot, the native Redis format.
 
 ## Supported Versions
 
@@ -9,29 +9,29 @@ Redis is an in-memory data structure store used as a database, cache, message br
 | 2.8+ |
 
 ::: info Valkey
-[Valkey](https://valkey.io) is a Redis-compatible fork supported from version 7.2+. Use the dedicated **Valkey** source type for correct version display in DBackup. Existing Redis sources also connect to Valkey servers without changes.
+[Valkey](https://valkey.io) is a Redis-compatible fork supported from version 7.2+. Use the dedicated **Valkey** source type so the source is labelled Valkey and its restore guide uses `valkey-cli`. A Redis source connects to a Valkey server as well.
 :::
 
 ## Connection Modes
 
 | Mode | Description |
 | :--- | :--- |
-| **Direct** | DBackup connects via TCP and runs `redis-cli` locally |
-| **Over SSH** | DBackup connects via SSH and runs `redis-cli` on the remote host |
+| **Direct** | DBackup connects to the Redis port and runs `redis-cli` itself |
+| **Over SSH** | DBackup logs into a server over SSH and runs `redis-cli` there. Marked **Beta** in the form |
 
 ## Architecture
 
-DBackup uses `redis-cli --rdb` to download RDB snapshots.
+DBackup runs `redis-cli --rdb`, which asks the server for a snapshot the way a replica does.
 
-- Creates a consistent snapshot of all data
-- Works with any Redis deployment (standalone, Sentinel)
-- Doesn't require filesystem access to the Redis server
-- Includes all 16 databases (0-15) in a single backup
+- The snapshot is consistent and holds every logical database the server has, whichever ones the job selected
+- No filesystem access to the Redis server is needed
+- DBackup connects to the one server in **Host** and **Port**. Sentinel and Cluster are not supported yet
+- Over SSH, `redis-cli` writes the snapshot to a temporary file on the SSH server. DBackup fetches it over SFTP, or with `cat` where SFTP is not available, and deletes it afterwards
 
 ## Configuration
 
 ::: info Credential Profiles
-A [Credential Profile](/user-guide/security/credential-profiles) is **optional** for Redis — password-free instances can connect without one. If your Redis requires a password or ACL authentication, create a `USERNAME_PASSWORD` profile in **Vault → Credentials** first (username is optional for `requirepass`-only setups). SSH mode requires an `SSH_KEY` profile.
+A [Credential Profile](/user-guide/security/credential-profiles) is **optional** for Redis, so a password-free instance connects without one. If your Redis requires a password or an ACL user, create a `USERNAME_PASSWORD` profile in **Vault → Credentials** first. The profile needs a username, so use `default` for a server that only sets `requirepass` (Redis 6 and later). SSH mode requires an `SSH_KEY` profile.
 :::
 
 | Field | Description | Default | Required |
@@ -39,13 +39,11 @@ A [Credential Profile](/user-guide/security/credential-profiles) is **optional**
 | **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Redis server hostname or IP | `localhost` | ✅ |
 | **Port** | Redis server port | `6379` | ✅ |
-| **Login** | `USERNAME_PASSWORD` credential profile (username optional, used for ACL auth; password for `requirepass`) | - | ❌ |
-| **Database** | Database index (0-15) for display purposes | `0` | ❌ |
-| **TLS** | Enable TLS/SSL connection | `false` | ❌ |
-| **Redis setup** | `standalone` or `sentinel`. The two Sentinel fields below appear for `sentinel` only. | `standalone` | ❌ |
-| **Sentinel Master Name** | Master name for Sentinel mode | - | ❌ |
-| **Sentinel Nodes** | Comma-separated Sentinel node addresses | - | ❌ |
-| **Extra options** | Extra `redis-cli` flags | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile, the username for ACL auth and the password | - | ❌ |
+| **Redis setup** | Leave it at **Standalone**. **Sentinel** is offered in the form but not supported yet, and DBackup always connects to **Host** and **Port** | Standalone | ❌ |
+| **Database** | Database index `redis-cli` selects with `-n` when it is not 0. The backup holds every database either way | `0` | ❌ |
+| **Extra options** | Shown in the form but ignored. Nothing typed here reaches `redis-cli` | - | ❌ |
+| **TLS** | Connect with `redis-cli --tls` | Off | ❌ |
 
 ### SSH Mode Fields
 
@@ -56,42 +54,6 @@ These fields appear in the **SSH server** part when **How DBackup connects** is 
 | **SSH host** | SSH server hostname or IP | - | ✅ |
 | **Port** | SSH server port | `22` | ❌ |
 | **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-
-## Example Configuration
-
-### Standalone Redis
-
-```
-Host: redis.example.com
-Port: 6379
-Login: my-redis-password  (USERNAME_PASSWORD profile, password field)
-```
-
-### Redis with ACL (6.0+)
-
-```
-Host: redis.example.com
-Port: 6379
-Login: my-redis-user  (USERNAME_PASSWORD profile, username + password)
-```
-
-### Redis with TLS
-
-```
-Host: redis.example.com
-Port: 6379
-Login: my-redis-password  (USERNAME_PASSWORD profile)
-TLS: Enabled
-```
-
-### Redis Sentinel
-
-```
-Mode: sentinel
-Sentinel Master Name: mymaster
-Sentinel Nodes: sentinel1:26379,sentinel2:26379,sentinel3:26379
-Login: my-redis-password  (USERNAME_PASSWORD profile)
-```
 
 ## Backup File Format
 
@@ -139,11 +101,7 @@ With `appendonly yes` Redis loads its AOF when it starts and never reads `dump.r
 
 ## Database Selection
 
-Unlike relational databases, Redis uses numbered databases (0-15). When configuring a Redis source:
-
-- **All databases** are always backed up together in the RDB snapshot
-- The "Database" field is for display and connection testing only
-- You cannot selectively backup individual Redis databases
+Redis numbers its databases instead of naming them, 16 unless the server's `databases` setting says otherwise. A job may pick some of them, but the RDB snapshot always holds all of them, so a single Redis database cannot be backed up on its own.
 
 ## Required CLI Tools
 
@@ -185,10 +143,6 @@ apk add redis
 brew install redis
 ```
 
-::: danger Important
-In SSH mode, the `redis-cli` tool must be installed on the remote server. DBackup executes it remotely via SSH and streams the RDB output back.
-:::
-
 ::: tip Host in SSH Mode
 The **Host** field refers to the Redis hostname **as seen from the SSH server**. If Redis runs on the same machine as the SSH server, use `127.0.0.1` or `localhost`.
 :::
@@ -207,18 +161,22 @@ protected-mode no  # Or use password authentication
 
 ### Authentication Failed
 
-For Redis 6+ with ACL:
-- Ensure the user has the `+sync` and `+psync` permissions for RDB downloads
-- Or use the default user with the `requirepass` password
+For an ACL user (Redis 6+), the health check that runs every minute sends `PING` and `INFO server`, and the backup sends `SYNC`. A user with these rights covers both:
 
-### TLS Certificate Errors
+```
+ACL SETUSER dbackup on >secure_password_here +ping +info +sync +psync
+```
 
-If using self-signed certificates, you may need to add `--insecure` to the **Extra options** field.
+Add `+select` when **Database** is not 0. Alternatively, use the `default` user with the `requirepass` password.
+
+### TLS Connection Fails
+
+**Solution:** With **TLS** on, `redis-cli` checks the server certificate against the CA certificates trusted on the machine it runs on, and presents no client certificate. **Extra options** are ignored, so `--cacert`, `--insecure` or `--cert` cannot be added. Use a certificate from a CA that machine trusts, and set `tls-auth-clients` to `optional` or `no` on the server.
 
 ### SSH: Binary Not Found
 
 ```
-Required binary not found on remote server. Tried: redis-cli
+None of the following binaries were found on ssh://user@host:22: redis-cli
 ```
 
 **Solution:** Install Redis tools on the remote server:

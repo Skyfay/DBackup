@@ -8,65 +8,30 @@ Configure MongoDB databases for backup.
 | :--- |
 | 4.x, 5.x, 6.x, 7.x, 8.x |
 
-DBackup uses `mongodump` from MongoDB Database Tools.
+DBackup uses `mongodump` and `mongorestore` from MongoDB Database Tools.
 
 ## Connection Modes
 
 | Mode | Description |
 | :--- | :--- |
-| **Direct** | DBackup connects via TCP and runs `mongodump` locally |
-| **Over SSH** | DBackup connects via SSH and runs `mongodump` on the remote host |
-
-## Configuration
-
-::: info Credential Profiles
-A [Credential Profile](/user-guide/security/credential-profiles) is **optional** for MongoDB — instances without authentication can connect without one. If your MongoDB requires login credentials, create a `USERNAME_PASSWORD` profile in **Vault → Credentials** first. SSH mode requires an `SSH_KEY` profile.
-:::
-
-| Field | Description | Default | Required |
-| :--- | :--- | :--- | :--- |
-| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
-| **Host** | Database server hostname, or a comma-separated seed list | `localhost` | ✅ |
-| **Port** | MongoDB port | `27017` | ✅ |
-| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
-| **Authentication database** | Authentication database | `admin` | ❌ |
-| **Database** | Database name(s) to backup | All databases | ❌ |
-| **Extra options** | Extra `mongodump` flags | - | ❌ |
-
-### SSH Mode Fields
-
-These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
-
-| Field | Description | Default | Required |
-| :--- | :--- | :--- | :--- |
-| **SSH host** | SSH server hostname or IP | - | ✅ |
-| **Port** | SSH server port | `22` | ❌ |
-| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Direct** | DBackup connects to the database port and runs `mongodump` itself |
+| **Over SSH** | DBackup logs into a server over SSH and runs `mongodump` there. Marked **Beta** in the form |
 
 ## Prerequisites
 
 ### Direct Mode
 
-The DBackup server needs `mongodump`, `mongorestore`, and `mongosh` CLI tools installed.
-
-**Docker**: Already included in the DBackup image.
+The DBackup server needs `mongodump` and `mongorestore`. The Docker image ships both. The connection test, the database list and the [Database Explorer](/user-guide/features/database-explorer) use the MongoDB driver built into DBackup, so `mongosh` is not needed.
 
 ### SSH Mode
 
-The **remote SSH server** must have the following tools installed:
+DBackup runs every step on the SSH server, so the tools have to be installed there:
 
-```bash
-# Required for backup
-mongodump
-
-# Required for restore
-mongorestore
-
-# Required for connection testing and database listing
-mongosh
-```
-
-**Install on the remote host:**
+| Tool | Used for |
+| :--- | :--- |
+| `mongodump` | Backups |
+| `mongorestore` | Restores |
+| `mongosh`, or the legacy `mongo` shell | Connection test, database list, Database Explorer |
 
 <details>
 <summary>Debian/Ubuntu - MongoDB Database Tools + mongosh</summary>
@@ -86,52 +51,52 @@ apt-get update
 apt-get install mongodb-database-tools mongodb-mongosh
 ```
 
-See the official docs for other distro versions:
-- [MongoDB Database Tools](https://www.mongodb.com/docs/database-tools/installation/installation-linux/)
-- [mongosh](https://www.mongodb.com/docs/mongodb-shell/install/)
+See the official docs for other platforms: [MongoDB Database Tools](https://www.mongodb.com/docs/database-tools/installation/installation-linux/) and [mongosh](https://www.mongodb.com/docs/mongodb-shell/install/).
 
 </details>
 
-```bash
-# macOS
-brew install mongodb-database-tools
-brew install mongosh
-```
+## Configuration
 
-::: danger Important
-In SSH mode, the MongoDB tools must be installed on the remote server. DBackup executes them remotely via SSH and streams the output back.
+::: info Credential Profile required
+MongoDB needs a [Credential Profile](/user-guide/security/credential-profiles). Create a `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. Without one the source cannot connect, even to a server that runs without authentication, so create a user there as well. Over SSH also needs an `SSH_KEY` profile.
+:::
+
+| Field | Description | Default | Required |
+| :--- | :--- | :--- | :--- |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
+| **Host** | Hostname, a `mongodb+srv://` host or a comma-separated seed list. See [Connection Methods](#connection-methods) | `localhost` | ✅ |
+| **Port** | MongoDB port, unused with SRV | `27017` | ✅ |
+| **Login** | `USERNAME_PASSWORD` credential profile | - | ✅ |
+| **Authentication database** | Database the login is defined in, under **Options** | `admin` | ❌ |
+| **Extra options** | Extra `mongodump` flags, under **Options** | - | ❌ |
+
+The databases are picked in the job, not on the source. **All databases** asks the server with `listDatabases` and leaves out `admin`, `config` and `local`, and **Some databases** never offers them either. Users and roles stored in `admin` are therefore not part of a backup.
+
+### SSH Mode Fields
+
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
+
+| Field | Description | Default | Required |
+| :--- | :--- | :--- | :--- |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+
+::: tip Host in SSH Mode
+The **Host** field in the **Database** part is the MongoDB hostname **as seen from the SSH server**. If MongoDB runs on the same machine, use `127.0.0.1`.
 :::
 
 ## Connection Methods
 
-DBackup builds the connection string from the **Host** and **Port** fields plus the credential profile. There is no separate URI field.
-
-### Single Server
-
-- **Host**: `mongodb.example.com`
-- **Port**: `27017`
-- **Login**: a `USERNAME_PASSWORD` profile
-- **Authentication database**: `admin`
+DBackup builds the connection string from **Host**, **Port** and the Login. There is no separate URI field. A connection string pasted into **Host** is reduced to its hosts: its credentials and its query parameters such as `?tls=true` or `replicaSet=` are dropped.
 
 ### MongoDB Atlas and Other SRV Clusters
 
-Put the cluster hostname in **Host** and nothing else:
+Put the cluster hostname in **Host** and nothing else, for example `cluster0.ab12c.mongodb.net`. Any host under `mongodb.net` is connected with `mongodb+srv://`, which brings TLS with it. For a self-hosted cluster that publishes its own SRV record, write the scheme out: `mongodb+srv://mongo.example.com`.
 
-```
-cluster0.ab12c.mongodb.net
-```
+With SRV the **Port** field is ignored, because the SRV record names a port for every host and a connection string that also carries one is rejected. Outside SRV, DBackup connects without TLS.
 
-DBackup recognises it, connects with `mongodb+srv://` and leaves the **Port** field unused. TLS comes with that scheme, so it needs no separate setting. Any host under `mongodb.net` is recognised automatically. For a self-hosted cluster that publishes its own SRV record, write the scheme out to ask for the same treatment:
-
-```
-mongodb+srv://mongo.example.com
-```
-
-::: info Why the port is ignored here
-An SRV record names a port for every host it points at, so a connection string that also carries one is rejected. This is also why the plain hostname of an Atlas cluster resolves to nothing.
-:::
-
-### Replica Sets
+### Replica Sets and Sharded Clusters
 
 List the members in **Host**, separated by commas. Members without their own port use the **Port** field:
 
@@ -139,182 +104,80 @@ List the members in **Host**, separated by commas. Members without their own por
 rs1.example.com:27017,rs2.example.com:27017,rs3.example.com:27017
 ```
 
+For a sharded cluster, list the `mongos` routers the same way. For production sharded clusters, MongoDB's own backup tools give consistent snapshots across shards.
+
 ## Setting Up a Backup User
 
-Create a dedicated user with the `backup` role:
+Create a dedicated user with the `backup` role, and add `restore` if DBackup should restore into this server:
 
 ```javascript
-// Connect to admin database
 use admin
 
-// Create backup user
 db.createUser({
   user: "dbackup",
   pwd: "secure_password_here",
   roles: [
-    { role: "backup", db: "admin" }
+    { role: "backup", db: "admin" },
+    { role: "restore", db: "admin" }
   ]
 })
-
-// For restore operations, also add:
-db.grantRolesToUser("dbackup", [
-  { role: "restore", db: "admin" }
-])
 ```
+
+The Login authenticates with SCRAM against the **Authentication database**. x.509, LDAP and Kerberos are not supported, since **Extra options** reach `mongodump` only and not the connection test or `mongorestore`.
 
 ::: tip MongoDB Atlas
-For Atlas clusters, create a user with "Backup Admin" role in the Atlas UI.
+For Atlas clusters, create the database user in the Atlas UI and give it read access to every database DBackup should back up.
 :::
 
-## Backup Process
+## How It Works
 
-### Direct Mode
-
-DBackup uses `mongodump` which creates a binary BSON dump:
-
-- Consistent point-in-time backup
-- Includes indexes and collection options
-- Supports oplog for replica set backups
-
-### SSH Mode
-
-In SSH mode, DBackup:
-
-1. Connects to the remote server via SSH
-2. Checks that `mongodump` is available on the remote host
-3. Executes `mongodump --archive --gzip` remotely
-4. Streams the archive output back over the SSH connection
-5. Applies additional encryption locally
-6. Uploads to the configured storage destination
-
-::: tip Host in SSH Mode
-The **Host** field refers to the MongoDB hostname **as seen from the SSH server**. If MongoDB runs on the same machine as the SSH server, use `127.0.0.1` or `localhost`.
-:::
-
-### Output Format
-
-The backup creates a directory structure:
-```
-dump/
-├── admin/
-│   └── system.version.bson
-├── mydb/
-│   ├── users.bson
-│   ├── users.metadata.json
-│   └── orders.bson
-```
-
-This is archived and optionally compressed.
-
-## Multi-Database Backups
-
-When backing up multiple databases, DBackup creates a **TAR archive** containing individual `mongodump --archive` files:
-
-```
-backup.tar
-├── manifest.json      # Metadata about contained databases
-├── database1.archive  # Individual mongodump archive per database
-├── database2.archive
-└── ...
-```
-
-### Features
-
-- **Selective Restore**: Choose which databases to restore from a multi-DB backup
-- **Database Renaming**: Uses `--nsFrom/--nsTo` to restore to different database names
-- **True Multi-DB**: Unlike previous versions, you can now backup any combination of databases (not just "all or one")
-
-::: warning Breaking Change (v0.9.1)
-Multi-DB backups created before v0.9.1 cannot be restored with newer versions.
-:::
-
-## Extra Options Examples
+For every database of the job, DBackup runs:
 
 ```bash
-# Backup specific collection
---collection=users
+mongodump <connection> --db <name> --archive=<file> --gzip [Extra options]
+```
 
-# Exclude collections
+- Each database becomes one gzip-compressed mongodump archive, stored in the job's backup as `databases/<name>.archive`, under an opaque name when the backup is encrypted. DBackup does not compress it a second time. See [Archive Format](/developer-guide/reference/archive-format) for the layout.
+- Collections are dumped one after another, and `--oplog` cannot be combined with `--db`. Writes made while the dump runs can therefore be caught in part.
+- Over SSH, `mongodump` writes the archive to a temporary file on the SSH server. DBackup fetches it over SFTP, or with `cat` where SFTP is not available, and deletes it afterwards.
+
+**Extra options** apply to every database of the job. Useful flags:
+
+```bash
 --excludeCollection=logs --excludeCollection=sessions
-
-# Include oplog (for point-in-time recovery)
---oplog
-
-# Query filter (backup subset of data)
---query='{"createdAt":{"$gte":{"$date":"2024-01-01T00:00:00Z"}}}'
-
-# Read preference for replica sets
---readPreference=secondary
-
-# Parallel collections
+--readPreference=secondaryPreferred
 --numParallelCollections=4
 ```
 
-## Replica Set Configuration
+## Restore
 
-Put the members in the **Host** field as a comma-separated list, as shown under [Connection Methods](#replica-sets). To read from a secondary instead of the primary:
-
-```bash
-# Extra options
---readPreference=secondaryPreferred
-```
-
-## Sharded Cluster Configuration
-
-For sharded clusters, point **Host** at the `mongos` routers:
-
-```
-mongos1.example.com:27017,mongos2.example.com:27017
-```
-
-::: warning Sharded Cluster Backup
-For production sharded clusters, consider using MongoDB's native backup solutions (Cloud Backup, Ops Manager) for consistent snapshots.
-:::
-
-## Authentication
-
-### SCRAM Authentication (Default)
-
-Works automatically when you provide user/password.
-
-### x.509 Certificate
+Restore a backup from the **Backups** page, see [Restore](/user-guide/features/restore). For every database DBackup runs:
 
 ```bash
-# Extra options
---ssl --sslCAFile=/path/to/ca.pem --sslPEMKeyFile=/path/to/client.pem
+mongorestore <connection> --archive=<file> --gzip --drop --nsInclude '<name>.*'
 ```
 
-### LDAP Authentication
+A database restored under a new name gets `--nsFrom '<old>.*' --nsTo '<new>.*'` instead of `--nsInclude`. `--drop` replaces every collection the backup holds, and collections that exist only on the server stay. In direct mode DBackup first checks that the Login may create a collection in each target database.
 
-```bash
-# Extra options
---authenticationMechanism=PLAIN --authenticationDatabase='$external'
-```
+A database downloaded from the Backups page is the same archive and restores by hand with `mongorestore --archive=<file> --gzip`.
 
 ## Troubleshooting
 
 ### Authentication Failed
 
 ```
-authentication failed
+Connection failed: Authentication failed.
 ```
 
-**Solutions**:
-1. Verify username/password
-2. Check `authSource` is correct (usually `admin`)
-3. Ensure user has required roles
+**Solution:** Check the username and password of the Login, that the **Authentication database** is the one the user was created in (usually `admin`), and that the user has the `backup` role.
 
 ### Connection Timeout
 
 ```
-no reachable servers
+Connection failed: Server selection timed out after 10000 ms
 ```
 
-**Solutions**:
-1. Check network connectivity
-2. Verify hostname/port
-3. Check firewall rules
-4. For a cloud cluster, add the DBackup server's IP to the provider's access list
+**Solution:** Check the hostname, port and firewall rules. For a cloud cluster, add the DBackup server's IP to the provider's access list.
 
 ### Host Not Found or Refused
 
@@ -325,47 +188,27 @@ Connection failed: connect ECONNREFUSED 144.2.71.216:27017
 
 DBackup did not recognise the cluster as an SRV one and tried to reach it directly.
 
-**Solutions**:
-1. Put the cluster **hostname** in **Host**, never an IP address. An IP cannot carry an SRV record, so the cluster can only be found by name
-2. Put nothing else in the field, so no `https://`, no trailing slash and no database name
-3. For a self-hosted SRV cluster outside `mongodb.net`, write the host as `mongodb+srv://your.host`
-4. Otherwise check that DBackup's own DNS can resolve the name, which in Docker means the container's DNS rather than the host's
+**Solution:**
+1. Put the cluster **hostname** in **Host**, never an IP address. An IP cannot carry an SRV record.
+2. Put nothing else in the field, so no `https://`, no trailing slash and no database name.
+3. For a self-hosted SRV cluster outside `mongodb.net`, write the host as `mongodb+srv://your.host`.
+4. Otherwise check that DBackup's own DNS can resolve the name, which in Docker means the container's DNS rather than the host's.
 
-### Insufficient Permissions
+### Databases Cannot Be Listed
 
 ```
-not authorized on admin to execute command
+Could not list the databases on this server (...). Select the databases to back up in the job, or grant the backup user the right to list databases.
 ```
 
-**Solution**: Grant backup role:
-```javascript
-db.grantRolesToUser("dbackup", [{ role: "backup", db: "admin" }])
-```
+**Solution:** Give the Login the `backup` role, which includes the right to list databases.
 
 ### SSH: Binary Not Found
 
 ```
-Required binary not found on remote server. Tried: mongodump
+None of the following binaries were found on ssh://user@host:22: mongodump
 ```
 
-**Solution:** Install MongoDB Database Tools on the remote server. See [MongoDB Database Tools Installation](https://www.mongodb.com/docs/database-tools/installation/).
-
-## Restore
-
-To restore a MongoDB backup:
-
-1. Go to **Backups**
-2. Find your backup file
-3. Click **Restore**
-4. Select target database configuration
-5. Optionally map database names
-6. Confirm and monitor progress
-
-### Restore Options
-
-- **Drop existing data**: Clean restore
-- **Preserve existing data**: Merge/upsert mode
-- **Specific collections**: Restore selected collections only
+**Solution:** Install MongoDB Database Tools on the SSH server, see [Prerequisites](#ssh-mode).
 
 ## Next Steps
 

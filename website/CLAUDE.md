@@ -28,6 +28,7 @@ The effects live in `components/site/fx.tsx` and `globals.css`, and two `@media 
 
 - Every endless animation of a big element carries a class the first block stops, like `fx-floor` or `fx-drift`. A new effect joins that list. `fx-border` on a spinning conic layer is left out there instead, since a border standing still at a random angle looks broken. The marquees keep moving, a shifted layer costs the main thread nothing.
 - `html` carries `touch-action: manipulation`, so iOS does not hold taps back while it waits for a double tap.
+- Decorative layers may reach past the screen, and on touch screens the stand-in of a glow reaches twice its blur further. `<main>` in `RootShell` clips them sideways with `overflow-x: clip`, since on `body` alone mobile browsers let the page scroll sideways anyway. A grid that only sets its columns from `lg` gets `grid-cols-1` below it, or a `truncate` inside sizes the column to the full length of its text.
 - No `filter: blur()` goes on a big element without a stand-in from the second block. iOS Safari draws a blur on the main thread, again whenever anything near it repaints, and the large blurred layers held the page for seconds on an iPhone. `will-change` does not save a layer wider than about 1280px with its blur. A soft light is a `Glow` or carries `fx-glow` with `--glow` and `--glow-blur` (touch screens draw a radial gradient instead), a gradient that only gets softer carries `fx-haze` (touch screens drop the blur), and anything else carries `fx-halo` (touch screens leave it out).
 
 ## Languages

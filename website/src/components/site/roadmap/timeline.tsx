@@ -101,7 +101,9 @@ export function RoadmapTimeline({
 
   return (
     <section aria-label={t("roadmap.timeline")} className="relative z-[2] mx-auto max-w-[1248px] px-6">
-      <div className="relative grid lg:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">
+      {/* One column of minmax(0, 1fr) on small screens. An automatic column grows to the full
+          length of a truncated description, which pushed the cards past the screen. */}
+      <div className="relative grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">
         <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 -ml-px hidden w-0.5 overflow-hidden lg:block">
           <span
             className="absolute inset-0"

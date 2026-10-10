@@ -125,7 +125,7 @@ Code that ships in the repository still counts even when its purpose is to keep 
 
 **Issue links** - always at the end as `([#N](url))`. Never inside the component name.
 
-**Thanks** - a contribution from outside the project is credited at the end of each of its entries as `Thanks @author ([#N](url))`, which the release adds by itself: `scripts/changelog.mjs` looks up the pull request that added a fragment with git and `gh`. Contributors write no thanks, and a reviewer does not ask for one. A vulnerability reported privately thanks its reporter by hand, with the advisory link instead of the pull request.
+**Thanks** - a contribution from outside the project is credited at the end of each of its entries as `Thanks @author ([#N](url))`, which the release adds by itself: `scripts/toolbox/changelog.mjs` looks up the pull request that added a fragment with git and `gh`. Contributors write no thanks, and a reviewer does not ask for one. A vulnerability reported privately thanks its reporter by hand, with the advisory link instead of the pull request.
 
 **One entry per user-visible change.** A PR touching 20 files to deliver one behavior change is one line. Two unrelated changes in one PR are two lines.
 

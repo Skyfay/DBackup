@@ -26,12 +26,14 @@ All notable changes to DBackup are documented here.
 - **docker**: An unreadable Docker socket now names the fix in the error, which is running DBackup with `PGID` set to the group that owns the socket ([#167](https://github.com/Skyfay/DBackup/issues/167)).
 - **website**: Every blog post has an illustration and a color of its own that its page takes on, and it shows the GitHub avatar of its author.
 - **website**: Search engines and link previews get a title, a description and a picture for every page, a sitemap without redirects and richer structured data for the app and the blog.
+- **website**: The plain text of a message for structured data and social cards keeps no stray angle bracket.
 
 ### 📝 Documentation
 
 - **docs**: The Docker Volumes guide names the group ID to run DBackup with when the socket is not readable, says why `group_add` and `user:` do not work and what to do on a host whose socket belongs to no `docker` group ([#167](https://github.com/Skyfay/DBackup/issues/167)).
 - **docs**: The contributing guide asks that issues and pull requests made with AI are tested on a real setup before they are opened.
 - **docs**: The README says how independent researchers have reviewed DBackup so far, with a link to the published security advisories and to the documented backup format.
+- **docs**: The developer guide describes the steps of a release.
 - **wiki**: The guides for PostgreSQL, MySQL, MongoDB, Redis and Valkey describe the tools, the archive and the restore of the current version, and no longer promise Sentinel, the oplog or restore options that do not exist.
 - **wiki**: The pages on encryption, compression, verification, destinations and the Recovery Kit describe the archive and `dbackup-recover.js` as they work today.
 - **wiki**: The development setup lets the setup scripts install Node and pnpm, instead of the newest Node from Homebrew on macOS.
@@ -50,6 +52,12 @@ All notable changes to DBackup are documented here.
 - **ci**: The Debian setup script now installs the MongoDB Database Tools on Ubuntu, where its apt source named the wrong component.
 - **ci**: The Debian setup script runs through a second time instead of stopping at the PostgreSQL signing key it already wrote.
 - **ci**: The version bump runs through on Linux as well, where it stopped at the OpenAPI files.
+- **ci**: The release no longer refuses a version whose beta the changelog lists already.
+- **ci**: `pnpm toolbox` shows the release and maintenance commands in one menu, and each still runs on its own.
+- **ci**: The version bump stops at CodeQL alerts open on dev until you confirm, and `pnpm codeql:check` lists them on its own.
+- **ci**: `pnpm release:tag` tags the release on main with the title from the changelog and pushes the tag, and `pnpm release:untag` deletes a tag here and on GitHub.
+- **ci**: `pnpm changelog:amend` adds the fragments to a version block the version bump wrote already.
+- **ci**: `pnpm audit:check` runs `pnpm audit` for the app, the docs and the website.
 
 ### 🐳 Docker
 

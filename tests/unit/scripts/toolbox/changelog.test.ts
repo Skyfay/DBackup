@@ -2,14 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+    amend,
     creditAll,
     creditFragment,
     findContribution,
     insertBlock,
+    listedVersions,
     parseFragment,
     release,
     renderBlock,
-} from "../../../scripts/changelog.mjs";
+} from "../../../../scripts/toolbox/changelog.mjs";
 
 const DIR = "/repo/changelog/unreleased";
 const CHANGELOG = "/repo/docs/changelog.md";
@@ -358,5 +360,75 @@ describe("the pull request behind a fragment", () => {
             expect(() => findContribution("a.md", { dir: DIR, ...answers(SHA, gh) })).toThrow(/no pull request/);
         }
         expect(() => findContribution("a.md", { dir: DIR, ...answers("not-a-sha", "") })).toThrow(/no commit/);
+    });
+});
+
+describe("adding fragments to a version block written already", () => {
+    const BUMPED = [
+        "# Changelog",
+        "",
+        "All notable changes to DBackup are documented here.",
+        "",
+        "## v4.0.1 - Offline First Start",
+        "*Released: Oct 10, 2026*",
+        "",
+        "### 🐛 Bug Fixes",
+        "",
+        "- **docker**: A new container starts without internet access.",
+        "- **Rsync**: A run no longer warns about known_hosts. ([#178](https://github.com/Skyfay/DBackup/issues/178))",
+        "",
+        "### 🐳 Docker",
+        "",
+        "- **Image**: `skyfay/dbackup:v4.0.1`",
+        "- **Also tagged as**: `latest`, `v4`",
+        "- **CI Image**: `skyfay/dbackup:ci`",
+        "- **Platforms**: linux/amd64, linux/arm64",
+        "",
+        "## v4.0.0 - Redesigned Interface",
+        "*Released: Oct 4, 2026*",
+        "",
+    ].join("\n");
+
+    it("sorts the new entries in among the old ones and keeps the title, the date and the Docker section", () => {
+        const files = memoryFiles({
+            [CHANGELOG]: BUMPED,
+            [`${DIR}/codeql-findings.md`]: "### 🐛 Bug Fixes\n\n- **jobs**: Fixed.\n\n### 🔧 CI/CD\n\n- **ci**: Faster.",
+            [`${DIR}/README.md`]: "Explains the fragments.",
+        });
+
+        amend({ version: "4.0.1", dir: DIR, changelog: CHANGELOG });
+        expect(files.get(CHANGELOG)).toBe(
+            BUMPED.replace(
+                "- **docker**: A new container starts without internet access.\n",
+                "- **docker**: A new container starts without internet access.\n- **jobs**: Fixed.\n",
+            ).replace("\n### 🐳 Docker", "\n### 🔧 CI/CD\n\n- **ci**: Faster.\n\n### 🐳 Docker"),
+        );
+        expect(files.has(`${DIR}/codeql-findings.md`)).toBe(false);
+        expect(files.has(`${DIR}/README.md`)).toBe(true);
+    });
+
+    it("refuses a block with a line it cannot read, and changes nothing", () => {
+        const handWritten = BUMPED.replace("*Released: Oct 10, 2026*\n", "*Released: Oct 10, 2026*\n\nA paragraph written by hand.\n");
+        const files = memoryFiles({
+            [CHANGELOG]: handWritten,
+            [`${DIR}/Skyfay-fix.md`]: "### 🐛 Bug Fixes\n\n- **ui**: Fixed.",
+        });
+
+        expect(() => amend({ version: "4.0.1", dir: DIR, changelog: CHANGELOG })).toThrow(/by hand/);
+        expect(files.get(CHANGELOG)).toBe(handWritten);
+        expect(files.has(`${DIR}/Skyfay-fix.md`)).toBe(true);
+    });
+
+    it("refuses a version the changelog has no block for, and an empty fragment folder", () => {
+        memoryFiles({ [CHANGELOG]: BUMPED, [`${DIR}/Skyfay-fix.md`]: "### 🐛 Bug Fixes\n\n- **ui**: Fixed." });
+        expect(() => amend({ version: "9.9.9", dir: DIR, changelog: CHANGELOG })).toThrow(/no block for v9\.9\.9/);
+
+        vi.restoreAllMocks();
+        memoryFiles({ [CHANGELOG]: BUMPED });
+        expect(() => amend({ version: "4.0.1", dir: DIR, changelog: CHANGELOG })).toThrow(/no fragments/);
+    });
+
+    it("lists the versions of the changelog, newest first", () => {
+        expect(listedVersions(BUMPED)).toEqual(["4.0.1", "4.0.0"]);
     });
 });

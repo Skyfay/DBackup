@@ -42,11 +42,18 @@ function fill(text: string, vars: Vars | undefined, numbers: Intl.NumberFormat):
 }
 
 /**
- * A rich message as plain text, for structured data and other places without elements. A bracket
- * left over from a tag that was not one of ours goes as well, so nothing tag-like survives.
+ * A rich message as plain text, for structured data and other places without elements. The tags
+ * are removed until none is left, so the parts of one around another cannot join into a new tag,
+ * and a bracket left over goes at the end.
  */
 export function stripTags(text: string): string {
-  return text.replace(/<br\s*\/?>/g, " ").replace(/<\/?\w+>/g, "").replace(/[<>]/g, "");
+  let plain = text.replace(/<br\s*\/?>/g, " ");
+  let previous;
+  do {
+    previous = plain;
+    plain = plain.replace(/<\/?\w+>/g, "");
+  } while (plain !== previous);
+  return plain.replace(/[<>]/g, "");
 }
 
 export interface Translator {

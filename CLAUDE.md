@@ -54,7 +54,11 @@ pnpm test                 # Unit tests (vitest)
 pnpm test:integration     # Integration tests against real DB containers
 pnpm test:ui              # Spin up test DBs + seed local DB for manual testing
 pnpm run database:reset   # Reset dev DB from scratch via all migrations
+pnpm toolbox              # Menu of the release and maintenance commands below, see scripts/toolbox/README.md
 pnpm changelog:preview    # Show the changelog block the next release writes from the fragments
+pnpm version:bump         # Next version, changelog block and version everywhere, after a CodeQL check of dev
+pnpm codeql:check         # CodeQL alerts open on dev that main does not have
+pnpm release:tag          # Tag the release on main and push it (release:untag deletes a tag)
 ```
 
 Docs site and marketing site are separate workspaces: `pnpm docs:dev` (VitePress) and `pnpm website:dev`.

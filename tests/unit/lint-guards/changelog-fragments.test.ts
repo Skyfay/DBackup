@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import * as fs from "fs";
-import { CHANGELOG, FRAGMENT_DIR, SECTIONS, readFragments } from "../../../scripts/changelog.mjs";
+import { CHANGELOG, FRAGMENT_DIR, SECTIONS, readFragments } from "../../../scripts/toolbox/changelog.mjs";
 
 describe("Lint Guard: changelog fragments", () => {
     it("follow the format of the changelog", () => {
@@ -33,6 +33,6 @@ describe("Lint Guard: changelog fragments", () => {
     it("use the section headings the changelog already shows", () => {
         const changelog = fs.readFileSync(CHANGELOG, "utf-8");
         const missing = SECTIONS.filter((heading) => !changelog.includes(`\n${heading}\n`));
-        expect(missing, "scripts/changelog.mjs names a section the changelog spells differently").toEqual([]);
+        expect(missing, "scripts/toolbox/changelog.mjs names a section the changelog spells differently").toEqual([]);
     });
 });

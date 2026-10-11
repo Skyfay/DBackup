@@ -68,6 +68,30 @@ export function dailyStorageTotals(
     return { size, count };
 }
 
+/** The key of the day after `day`, both yyyy-MM-dd. */
+function nextDayKey(day: string): string {
+    const [year, month, date] = day.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, date + 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * The span of time whose snapshots `dailyStorageTotals` takes up at each day key, as `[from, to)`
+ * in epoch milliseconds. The first starts at `windowStart`, every other one where the one before
+ * ends, and each ends where the day after its key starts. Only the newest snapshot of a destination
+ * in a span counts, an earlier one of the same span is replaced before the day is summed.
+ *
+ * @param startOfDay When a yyyy-MM-dd day starts in the scheduler timezone, in epoch milliseconds.
+ */
+export function dayBuckets(dayKeys: string[], windowStart: number, startOfDay: (day: string) => number): [number, number][] {
+    let from = windowStart;
+    return dayKeys.map((day) => {
+        const to = Math.max(from, startOfDay(nextDayKey(day)));
+        const bucket: [number, number] = [from, to];
+        from = to;
+        return bucket;
+    });
+}
+
 /** The value `days` points before the end of a daily series, or null when the series is shorter. */
 export function valueDaysAgo(series: (number | null)[], days: number): number | null {
     const index = series.length - 1 - days;

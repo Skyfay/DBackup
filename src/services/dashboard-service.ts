@@ -296,20 +296,10 @@ const STORAGE_CACHE_UPDATED_KEY = "cache.storageVolume.updatedAt";
  * and automatically after backups, retention, and manual file deletions.
  */
 export async function getStorageVolume(): Promise<StorageVolumeEntry[]> {
-  // Try to read cached data first
-  const cached = await prisma.systemSetting.findUnique({
-    where: { key: STORAGE_CACHE_KEY },
-  });
+  const cached = await readStorageCache();
+  if (cached) return cached;
 
-  if (cached) {
-    try {
-      return JSON.parse(cached.value) as StorageVolumeEntry[];
-    } catch {
-      // Cache corrupted, fall through to live refresh
-    }
-  }
-
-  // No cache yet - do a live refresh to populate it (first load only)
+  // No cache yet or a corrupted one - do a live refresh to populate it (first load only)
   try {
     return await refreshStorageStatsCache();
   } catch {
@@ -328,14 +318,47 @@ export async function getStorageVolumeCacheAge(): Promise<string | null> {
   return setting?.value ?? null;
 }
 
+/** The entries of the storage cache, null while there is none or it cannot be read. */
+async function readStorageCache(): Promise<StorageVolumeEntry[] | null> {
+  const cached = await prisma.systemSetting.findUnique({
+    where: { key: STORAGE_CACHE_KEY },
+  });
+  if (!cached) return null;
+  try {
+    return JSON.parse(cached.value) as StorageVolumeEntry[];
+  } catch {
+    return null;
+  }
+}
+
+// A refresh of some destinations reads the cache and writes it back with the others in it. One
+// write at a time, so two backups that end together do not lose each other's values. Kept on
+// globalThis like the dashboard cache, so the runner and the routes share it.
+const globalForStorageCache = globalThis as unknown as { __dbackupStorageCacheWrite?: Promise<unknown> };
+
+function oneWriteAtATime<T>(write: () => Promise<T>): Promise<T> {
+  const turn = (globalForStorageCache.__dbackupStorageCacheWrite ?? Promise.resolve()).then(write);
+  globalForStorageCache.__dbackupStorageCacheWrite = turn.catch(() => undefined);
+  return turn;
+}
+
+/** Which destinations a refresh lists. Without `configIds` it lists every destination. */
+export interface StorageRefreshScope {
+  /**
+   * Only these destinations, like the ones a backup just wrote to. The others keep their cached
+   * values, and a destination the cache does not hold yet is listed as well.
+   */
+  configIds?: string[];
+}
+
 /**
- * Refreshes the storage volume cache by querying all storage adapters live.
- * Called by the "Refresh Storage Statistics" system task (default: every hour)
- * and after each backup completion.
+ * Refreshes the storage volume cache by querying storage adapters live.
+ * Called by the "Refresh Storage Statistics" system task (default: every hour) for every
+ * destination, and after backups, retention and deleted files for the destinations they touched.
  */
-export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> {
+export async function refreshStorageStatsCache(scope: StorageRefreshScope = {}): Promise<StorageVolumeEntry[]> {
   const log = logger.child({ service: "StorageStatsCache" });
-  log.info("Refreshing storage statistics cache");
+  log.info("Refreshing storage statistics cache", { destinations: scope.configIds?.length ?? "all" });
 
   registerAdapters();
 
@@ -348,10 +371,16 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
     return [];
   }
 
-  const results: StorageVolumeEntry[] = [];
+  // Listing every destination after every backup made a busy instance write a snapshot of each
+  // destination a few times an hour, and the dashboard read hundreds of thousands of them.
+  const partial = scope.configIds ? new Set(scope.configIds) : null;
+  const known = partial ? new Set((await readStorageCache() ?? []).map((entry) => entry.configId)) : null;
+  const listed = partial && known
+    ? storageAdapters.filter((adapterConfig) => partial.has(adapterConfig.id) || !known.has(adapterConfig.id))
+    : storageAdapters;
 
-  // Query all adapters in parallel for maximum speed
-  const promises = storageAdapters.map(async (adapterConfig) => {
+  // Query the adapters in parallel for maximum speed
+  const promises = listed.map(async (adapterConfig) => {
     // An air-gapped destination that is not connected keeps the values of its last scan, without a warning.
     if (isNotConnected(adapterConfig)) return lastScannedEntry(adapterConfig);
     try {
@@ -384,26 +413,48 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
     }
   });
 
-  const settled = await Promise.all(promises);
-  for (const entry of settled) {
-    if (entry) results.push(entry);
-  }
+  const scanned = (await Promise.all(promises)).filter((entry): entry is StorageVolumeEntry => !!entry);
 
-  await saveStorageCache(results);
+  const results = await oneWriteAtATime(async () => {
+    // Read again right before the write, another refresh may have saved in the meantime.
+    const entries = partial ? keepUnlisted(storageAdapters, listed, scanned, await readStorageCache() ?? []) : scanned;
+    await saveStorageCache(entries);
+    return entries;
+  });
 
-  // Save historical snapshots for storage usage over time charts
-  await saveStorageSnapshots(results);
+  // Save historical snapshots for storage usage over time charts, of the destinations just listed
+  await saveStorageSnapshots(scanned);
 
   // The dashboard overview caches its storage cards and trends, which this refresh just changed.
   invalidateDashboardCache();
 
   log.info("Storage statistics cache refreshed", {
     destinations: results.length,
+    listed: listed.length,
     totalSize: results.reduce((sum, r) => sum + r.size, 0),
     totalFiles: results.reduce((sum, r) => sum + r.count, 0),
   });
 
   return results;
+}
+
+/**
+ * The cache after a refresh of some destinations: the fresh values of the listed ones and the
+ * cached values of the others, in the order of the destinations. A deleted destination drops out.
+ */
+function keepUnlisted(
+  destinations: { id: string }[],
+  listed: { id: string }[],
+  scanned: StorageVolumeEntry[],
+  cached: StorageVolumeEntry[],
+): StorageVolumeEntry[] {
+  const listedIds = new Set(listed.map((destination) => destination.id));
+  const fresh = new Map(scanned.map((entry) => [entry.configId, entry]));
+  const kept = new Map(cached.map((entry) => [entry.configId, entry]));
+  return destinations.flatMap((destination) => {
+    const entry = listedIds.has(destination.id) ? fresh.get(destination.id) : kept.get(destination.id);
+    return entry ? [entry] : [];
+  });
 }
 
 /**

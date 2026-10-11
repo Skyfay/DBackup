@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Cron } from "croner";
 import { findConflicts } from "@/lib/core/schedule-conflicts";
 import { buildUpcomingSchedule, estimateDuration } from "@/services/dashboard/schedule";
 import type { RunSummary } from "@/services/dashboard/types";
@@ -134,6 +135,30 @@ describe("buildUpcomingSchedule", () => {
 
         expect(schedule.runs).toHaveLength(576);
         expect(schedule.truncated).toBe(true);
+    });
+
+    it("lists the same runs as counting the whole cap ahead, also across a change to winter time", () => {
+        // Europe/Amsterdam turns its clocks back on the night of 25 October 2026.
+        const beforeDstEnd = new Date("2026-10-24T09:17:00.000Z");
+        const patterns = ["50 * * * *", "*/5 * * * *", "*/7 * * * *", "0 2 * * *", "30 1-3 * * *", "0 0 * * 0", "15 9 1 * *"];
+
+        for (const pattern of patterns) {
+            const schedule = buildUpcomingSchedule(
+                [{ id: "job", name: "job", schedule: pattern }],
+                new Map(),
+                new Set(),
+                1,
+                "Europe/Amsterdam",
+                beforeDstEnd,
+            );
+
+            const windowEnd = beforeDstEnd.getTime() + 48 * 60 * MINUTE;
+            const expected = new Cron(pattern, { timezone: "Europe/Amsterdam" })
+                .nextRuns(577, beforeDstEnd)
+                .filter((time) => time.getTime() <= windowEnd);
+            expect(schedule.runs.map((entry) => entry.at), pattern).toEqual(expected.slice(0, 576).map((time) => time.toISOString()));
+            expect(schedule.truncated, pattern).toBe(expected.length > 576);
+        }
     });
 
     it("skips a job with an invalid schedule", () => {

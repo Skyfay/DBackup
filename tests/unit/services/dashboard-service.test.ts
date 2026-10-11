@@ -369,6 +369,77 @@ describe("refreshStorageStatsCache", () => {
     expect(vi.mocked(checkStorageAlerts)).toHaveBeenCalledWith(result);
   });
 
+  describe("of the destinations a backup wrote to", () => {
+    const destinations = [
+      { id: "s3", name: "S3", adapterId: "s3", type: "storage", config: "{}" },
+      { id: "nas", name: "NAS", adapterId: "local", type: "storage", config: "{}" },
+      { id: "ftp", name: "FTP", adapterId: "ftp", type: "storage", config: "{}" },
+    ];
+    let stored: string | null;
+
+    beforeEach(() => {
+      stored = JSON.stringify([
+        { configId: "s3", name: "S3", adapterId: "s3", size: 100, count: 1 },
+        { configId: "nas", name: "NAS", adapterId: "local", size: 200, count: 2 },
+        { configId: "ftp", name: "FTP", adapterId: "ftp", size: 300, count: 3 },
+      ]);
+      prismaMock.adapterConfig.findMany.mockResolvedValue(destinations as any);
+      prismaMock.systemSetting.findUnique.mockImplementation((async (args: { where: { key: string } }) =>
+        args.where.key === "cache.storageVolume" && stored !== null ? { key: args.where.key, value: stored } : null) as any);
+      prismaMock.systemSetting.upsert.mockImplementation(((args: { where: { key: string }; update: { value: string } }) => {
+        if (args.where.key === "cache.storageVolume") stored = args.update.value;
+        return {} as any;
+      }) as any);
+    });
+
+    const cachedSizes = () => Object.fromEntries((JSON.parse(stored!) as { configId: string; size: number }[]).map((entry) => [entry.configId, entry.size]));
+
+    it("lists only those and keeps the cached values of every other destination", async () => {
+      const list = vi.fn().mockResolvedValue([{ name: "backup.tar", path: "backup.tar", size: 150, lastModified: new Date() }]);
+      vi.mocked(registry.get).mockReturnValue({ list } as any);
+      const { checkStorageAlerts } = await import("@/services/storage/storage-alert-service");
+
+      const result = await refreshStorageStatsCache({ configIds: ["nas"] });
+
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(result.map((entry) => [entry.configId, entry.size])).toEqual([["s3", 100], ["nas", 150], ["ftp", 300]]);
+      expect(cachedSizes()).toEqual({ s3: 100, nas: 150, ftp: 300 });
+      // Snapshots and alerts only for what was measured now.
+      expect(prismaMock.storageSnapshot.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ adapterConfigId: "nas", size: BigInt(150) })],
+      });
+      expect(vi.mocked(checkStorageAlerts)).toHaveBeenCalledWith([expect.objectContaining({ configId: "nas" })]);
+    });
+
+    it("also lists a destination the cache does not hold yet", async () => {
+      stored = JSON.stringify([{ configId: "s3", name: "S3", adapterId: "s3", size: 100, count: 1 }]);
+      const list = vi.fn().mockResolvedValue([]);
+      vi.mocked(registry.get).mockReturnValue({ list } as any);
+
+      const result = await refreshStorageStatsCache({ configIds: ["nas"] });
+
+      expect(list).toHaveBeenCalledTimes(2); // nas and the new ftp, not s3
+      expect(result.map((entry) => entry.configId)).toEqual(["s3", "nas", "ftp"]);
+    });
+
+    it("keeps the values of both when two backups end at the same time", async () => {
+      // The listing of s3 is slow, the one of the NAS answers right away.
+      vi.mocked(registry.get).mockImplementation(((adapterId: string) => ({
+        list: () => new Promise((resolve) => setTimeout(
+          () => resolve([{ name: "backup.tar", path: "backup.tar", size: adapterId === "s3" ? 111 : 222, lastModified: new Date() }]),
+          adapterId === "s3" ? 30 : 0,
+        )),
+      })) as any);
+
+      await Promise.all([
+        refreshStorageStatsCache({ configIds: ["s3"] }),
+        refreshStorageStatsCache({ configIds: ["nas"] }),
+      ]);
+
+      expect(cachedSizes()).toEqual({ s3: 111, nas: 222, ftp: 300 });
+    });
+  });
+
   it("returns null entry (skipped) when registry.get returns undefined", async () => {
     vi.mocked(registry.get).mockReturnValue(undefined as any);
 

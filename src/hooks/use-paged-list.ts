@@ -46,6 +46,9 @@ export function usePagedList<T>({
     const [rows, setRows] = useState<T[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
+    // False until the first page arrived or failed, so the table shows its rows loading, not an empty list.
+    const [loaded, setLoaded] = useState(false);
+    const firstLoad = useRef(true);
     // Starts with the rows per page of the profile.
     const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: defaults.pageSize });
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -78,6 +81,7 @@ export function usePagedList<T>({
             if (mine === ticket.current) {
                 inFlight.current = false;
                 setIsLoading(false);
+                setLoaded(true);
             }
         }
     }, [load, pagination, columnFilters]);
@@ -89,11 +93,15 @@ export function usePagedList<T>({
     }, []);
 
     // Typing in the search box changes filters on every keystroke, so the first fetch after a
-    // change waits briefly. Polling and page changes go through the same path, which keeps the
-    // in-flight guard the single place that serialises requests.
+    // change waits briefly. The very first one has nothing to wait for. Polling and page changes
+    // go through the same path, which keeps the in-flight guard the single place that serialises
+    // requests.
     useEffect(() => {
         if (!enabled) return;
-        const timer = setTimeout(() => refresh(true), 250);
+        const timer = setTimeout(() => {
+            firstLoad.current = false;
+            refresh(true);
+        }, firstLoad.current ? 0 : 250);
         return () => clearTimeout(timer);
     }, [enabled, refresh]);
 
@@ -120,6 +128,7 @@ export function usePagedList<T>({
         rows,
         total,
         isLoading,
+        loaded,
         pagination,
         setPagination,
         columnFilters,

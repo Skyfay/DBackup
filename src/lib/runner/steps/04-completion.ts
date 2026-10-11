@@ -141,10 +141,11 @@ export async function stepFinalize(ctx: RunnerContext) {
     // The dashboard caches its charts and counts. This run changes them, whatever its outcome.
     invalidateDashboardCache();
 
-    // 2. Refresh storage statistics cache (non-blocking)
+    // 2. Refresh storage statistics cache of the destinations of this run (non-blocking)
     if (ctx.status === "Success" || ctx.status === "Partial") {
+        const configIds = ctx.destinations.map((destination) => destination.configId);
         import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
-            refreshStorageStatsCache().catch((e) => {
+            refreshStorageStatsCache({ configIds }).catch((e) => {
                 log.warn("Failed to refresh storage stats cache after backup", {}, e instanceof Error ? e : undefined);
             });
         });

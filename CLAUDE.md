@@ -17,6 +17,7 @@ Claude Code loads the nearest `CLAUDE.md` when you touch files in a directory. R
 | Wiki pages and the changelog | [docs/CLAUDE.md](docs/CLAUDE.md) |
 | Marketing website (dbackup.app) | [website/CLAUDE.md](website/CLAUDE.md) |
 | Unit and audit tests | [tests/CLAUDE.md](tests/CLAUDE.md) |
+| End-to-end tests (Playwright) | [e2e/CLAUDE.md](e2e/CLAUDE.md) |
 
 ## Non-negotiable rules
 
@@ -51,7 +52,8 @@ pnpm run build            # Production build - run before committing
 pnpm validate             # Lint + typecheck + unit tests (scripts/validate.sh), no build
 pnpm type                 # tsc --noEmit only
 pnpm test                 # Unit tests (vitest)
-pnpm test:lab             # Tests against the running dev lab (pnpm lab:up first)
+pnpm test:e2e             # End-to-end tests: the image of this checkout beside the dev lab (Playwright)
+pnpm lab                  # Menu of the dev lab commands, lab:status shows what runs and what is missing
 pnpm lab:up               # Start the dev lab: test DBs, storage servers, notification receivers
 pnpm lab:seed             # Fill the dev DB with the first user and every lab connection and job
 pnpm lab:check --run      # Test every lab connection and run every lab job once

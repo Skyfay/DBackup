@@ -1,6 +1,8 @@
 # The database servers of the dev lab. Profile "core" holds the oldest and the newest version of
 # every engine, "full" adds the ones between. Started by `pnpm lab:up`, never by hand: the lab
-# loads the datasets of lab/datasets afterwards and knows every port from lab/src/catalog.ts.
+# loads the datasets of lab/datasets afterwards and knows every port from the engine files under
+# lab/src/engines. With storage.yml and notify.yml it forms one Compose project, dbackup-lab,
+# whose services reach each other by name.
 #
 # No bind mounts except the MSSQL backup folder, so the file runs unchanged on a remote Docker
 # host through a docker context. Credentials are test values and live in the catalog as well.
@@ -343,9 +345,3 @@ volumes:
   firebird-3:
   firebird-4:
   firebird-5:
-
-# Every part of the lab joins one network, created by `pnpm lab:up`.
-networks:
-  default:
-    name: dbackup-lab
-    external: true

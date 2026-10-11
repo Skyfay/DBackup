@@ -28,7 +28,7 @@ export async function seed(config: LabConfig, workspace: string, options: { hist
 
     const connections = await seedConnections(config, workspace);
     log.push(...connections.log);
-    log.push(...await seedJobs(connections, Object.values(config.hosts).filter((host) => host.native).map((host) => host.name)));
+    log.push(...await seedJobs(connections, config.natives.map((host) => host.name)));
     if (options.history) log.push(await seedHistory());
     return log;
 }

@@ -1,117 +1,87 @@
 /**
- * Starts, stops and shows the containers of the lab on the hosts the config places them on, and
- * removes the backups of a workspace again.
+ * Starts and stops the lab on its Docker host, and removes the backups of a workspace again.
  */
 
 import { chmodSync, mkdirSync, rmSync } from "fs";
 import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
-import { GROUPS, type Group, type Host, type LabConfig } from "./config";
-import { DATABASES, MSSQL_BACKUP_DIR_REMOTE, NOTIFY, STORAGE, databasesOf } from "./catalog";
+import { GROUPS, isThisMachine, type LabConfig } from "./config";
+import { STORAGE, databasesOf } from "./catalog";
+import { describeDown, expectedServices, isUp, serviceStates } from "./containers";
 import { loadDataset } from "./datasets";
-import { composeArgs, dockerArgs, ensureNetwork, run, runOrThrow, type RunResult } from "./docker";
-import { localBackupDir, localMssqlBackupDir } from "./folders";
+import { compose, dockerArgs, execIn, mssqlBackupGroup, runOrThrow } from "./docker";
+import { mssqlBackupDir } from "./engines/mssql";
+import { localBackupDir } from "./folders";
 
 type Write = (line: string) => void;
 
-const isThisMachine = (host: Host) => host.docker === "default";
-
-/** Where SQL Server writes its backups on the host of the databases. */
-function mssqlBackupDir(config: LabConfig): string {
-    return isThisMachine(config.place.databases) ? localMssqlBackupDir(config) : MSSQL_BACKUP_DIR_REMOTE;
-}
-
 /**
  * The folder SQL Server writes to must exist and be writable for its user, uid 10001. It writes
- * its .bak files readable for its group only, so on this machine the folder hands its own group,
- * the one of the user running DBackup, down to every file (setgid).
+ * its .bak files readable for its group only, so the folder hands the group DBackup reads with
+ * down to every file (setgid), see mssqlBackupGroup.
  */
-async function prepareMssqlFolder(config: LabConfig): Promise<void> {
-    const host = config.place.databases;
+export async function prepareMssqlFolder(config: LabConfig): Promise<void> {
     const folder = mssqlBackupDir(config);
-    if (isThisMachine(host)) {
+    if (isThisMachine(config.docker)) {
         mkdirSync(folder, { recursive: true });
         chmodSync(folder, 0o2777);
         return;
     }
-    await runOrThrow("docker", dockerArgs(host, ["run", "--rm", "-v", `${folder}:${folder}`, "alpine:3.20", "sh", "-c", `mkdir -p ${folder} && chmod 777 ${folder}`]));
+    const group = mssqlBackupGroup(config);
+    await runOrThrow("docker", dockerArgs(config.docker, ["run", "--rm", "-v", `${folder}:${folder}`, "alpine:3.20", "sh", "-c", `mkdir -p ${folder} && chgrp ${group} ${folder} && chmod 2777 ${folder}`]));
 }
 
-function composeEnv(config: LabConfig, group: Group): Record<string, string> {
-    if (group === "databases") return { LAB_MSSQL_BACKUP_DIR: mssqlBackupDir(config) };
-    if (group === "storage") return { LAB_FTP_ADDRESS: config.place.storage.address };
-    return {};
-}
-
-/** Runs a shell command in a service of the lab, on the host its part runs on. */
-export function execIn(config: LabConfig, group: Group, service: string, command: string, input?: string): Promise<RunResult> {
-    // The full profile names every service, whichever profile started them.
-    return run("docker", composeArgs(config.place[group], group, "full", ["exec", "-T", service, "sh", "-c", command]), { env: composeEnv(config, group), input });
-}
+/** The last lines of a command that failed, which is where Compose says why. */
+const tail = (text: string) => text.trim().split("\n").slice(-3).map((line) => `    ${line}`).join("\n");
 
 /**
- * Starts every part and loads the datasets. A service that does not come up is reported and the
- * rest goes on, so one broken container does not keep the lab from the others. Returns whether
- * everything came up.
+ * Starts the lab and loads the datasets. A service that does not come up is reported and the rest
+ * goes on, so one broken container does not keep the lab from the others. Prints a line per part
+ * and one per problem, Compose itself stays quiet. Returns whether everything came up.
  */
 export async function up(config: LabConfig, write: Write, full = false): Promise<boolean> {
     const profile = full ? "full" : config.profile;
-    let complete = true;
-    for (const group of GROUPS) {
-        const host = config.place[group];
-        write(`Starting ${group} on ${host.name} (${host.address}), profile ${profile}`);
-        await ensureNetwork(host);
-        if (group === "databases") await prepareMssqlFolder(config);
-        const started = await run("docker", composeArgs(host, group, profile, ["up", "-d", "--build", "--wait"]), { env: composeEnv(config, group), inherit: true });
-        if (started.code !== 0) {
-            complete = false;
-            write(`Not every service of ${group} came up, see above and pnpm lab:status`);
-        }
-    }
+    const before = await serviceStates(config).catch(() => new Map());
+    write(`Starting the lab on ${config.docker.name} (${config.docker.address}), profile ${profile}${before.size === 0 ? ". The first start pulls the images, which takes a few minutes" : ""}`);
+    await prepareMssqlFolder(config);
+    const started = await compose(config, ["--progress", "quiet", "up", "-d", "--build", "--wait"], { profile });
 
+    let complete = started.code === 0;
+    const states = await serviceStates(config);
+    const running = new Set<string>();
+    let reasons = false;
+    for (const group of GROUPS) {
+        const expected = expectedServices(group, profile);
+        const down = expected.filter((entry) => !isUp(states.get(entry.service)));
+        for (const entry of expected) if (isUp(states.get(entry.service))) running.add(entry.service);
+        write(`  ${group}: ${expected.length - down.length} of ${expected.length} up`);
+        for (const entry of down) write(`  ✗ ${entry.service}: ${await describeDown(config, entry, states.get(entry.service))}`);
+        if (down.length > 0) complete = false;
+        reasons ||= down.length > 0;
+    }
+    if (started.code !== 0 && !reasons) write(`  Compose failed:\n${tail(started.stderr || started.stdout)}`);
+
+    const loaded: string[] = [];
+    const present: string[] = [];
     for (const database of databasesOf(profile)) {
+        if (!running.has(database.service)) continue;
         try {
-            const loaded = await loadDataset(config.place.databases, profile, database);
-            write(`${loaded ? "Loaded the dataset into" : "Dataset already in"} ${database.service}`);
+            (await loadDataset(config, database) ? loaded : present).push(database.service);
         } catch (error) {
             complete = false;
             const reason = error instanceof Error ? error.message.split("\n").filter(Boolean).pop() : String(error);
-            write(`Could not load the dataset into ${database.service}: ${reason}`);
+            write(`  ✗ test data of ${database.service}: ${reason}`);
         }
     }
+    write(`Test data: ${loaded.length ? `loaded into ${loaded.join(", ")}, ` : ""}${present.length} already had it`);
+    write(complete ? "The lab is up. pnpm lab:status shows the details." : "Not everything came up, see above. pnpm lab:status shows the details.");
     return complete;
 }
 
 export async function down(config: LabConfig, write: Write, removeData = false): Promise<void> {
-    for (const group of GROUPS) {
-        const host = config.place[group];
-        write(`Stopping ${group} on ${host.name}${removeData ? " and removing its data" : ""}`);
-        await runOrThrow("docker", composeArgs(host, group, "full", ["down", ...(removeData ? ["-v"] : [])]), { env: composeEnv(config, group), inherit: true });
-    }
-}
-
-const ADDRESSES: Record<string, number> = {
-    ...Object.fromEntries(DATABASES.map((database) => [database.service, database.port])),
-    ...Object.fromEntries(Object.values(STORAGE).map((entry) => [entry.service, entry.port])),
-    [NOTIFY.mailpit.service]: NOTIFY.mailpit.uiPort,
-    [NOTIFY.ntfy.service]: NOTIFY.ntfy.port,
-    [NOTIFY.gotify.service]: NOTIFY.gotify.port,
-    [NOTIFY.webhook.service]: NOTIFY.webhook.port,
-};
-
-export async function status(config: LabConfig, write: Write): Promise<void> {
-    for (const group of GROUPS) {
-        const host = config.place[group];
-        const result = await run("docker", composeArgs(host, group, "full", ["ps", "--all", "--format", "json"]), { env: composeEnv(config, group) });
-        const lines = result.stdout.split("\n").filter((line) => line.trim().startsWith("{"));
-        write(`${group} on ${host.name}:`);
-        if (lines.length === 0) write("  nothing running");
-        for (const line of lines) {
-            const entry = JSON.parse(line) as { Service: string; State: string; Health?: string };
-            const port = ADDRESSES[entry.Service];
-            const state = entry.Health ? `${entry.State}, ${entry.Health}` : entry.State;
-            write(`  ${entry.Service.padEnd(14)} ${state.padEnd(20)} ${port ? `${host.address}:${port}` : ""}`);
-        }
-    }
+    write(`Stopping the lab on ${config.docker.name}${removeData ? " and removing its data" : ""}`);
+    // The e2e profile takes along what an end-to-end run with E2E_KEEP=1 left running.
+    const result = await compose(config, ["--profile", "e2e", "--progress", "quiet", "down", ...(removeData ? ["-v"] : [])]);
+    if (result.code !== 0) throw new Error(`docker compose down failed:\n${result.stderr || result.stdout}`);
 }
 
 /** Removes the backups of a workspace from the Local folder and from every storage server. */
@@ -121,8 +91,6 @@ export async function clean(config: LabConfig, write: Write, workspace: string):
     rmSync(local, { recursive: true, force: true });
     write(`Removed ${local}`);
 
-    const host = config.place.storage;
-    const inStorage = (service: string, command: string) => execIn(config, "storage", service, command);
     const removals: [string, string][] = [
         [STORAGE.ssh.service, `rm -rf ${STORAGE.ssh.home}/backups/${workspace} ${STORAGE.ssh.home}/backups/${workspace}-rsync`],
         [STORAGE.webdav.service, `rm -rf /data/${workspace}`],
@@ -130,11 +98,11 @@ export async function clean(config: LabConfig, write: Write, workspace: string):
         [STORAGE.ftp.service, `rm -rf ${STORAGE.ftp.home}/${workspace}`],
     ];
     for (const [service, command] of removals) {
-        const result = await inStorage(service, command);
+        const result = await execIn(config, service, command);
         write(`${result.code === 0 ? "Removed" : "Could not remove"} the folder of ${workspace} on ${service}`);
     }
 
-    const removed = await removeS3Prefix(host.address, `${workspace}/`).catch(() => null);
+    const removed = await removeS3Prefix(config.docker.address, `${workspace}/`).catch(() => null);
     write(removed === null ? `Could not remove the folder of ${workspace} on ${STORAGE.s3.service}` : `Removed ${removed} objects of ${workspace} on ${STORAGE.s3.service}`);
 }
 

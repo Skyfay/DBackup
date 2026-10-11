@@ -74,3 +74,8 @@ security/*
 
 # Local backups and files of the dev lab (pnpm lab:seed)
 /.lab-storage/
+
+# Output and the saved session of the end-to-end tests (pnpm test:e2e)
+/e2e/.auth/
+/e2e/test-results/
+/e2e/playwright-report/

@@ -13,9 +13,11 @@
 ### 🧪 Tests
 
 - **tests**: The tests of the configuration backup, Recently deleted and the restore at startup now run with the unit tests in CI.
-- **lab**: The integration tests against single containers are replaced by `pnpm test:lab`, which checks every connection and destination of the dev lab and restores every source with its content compared.
+- **e2e**: End-to-end tests with Playwright replace the integration tests against single containers and run the Docker image beside the servers of the dev lab. They back up and restore every database engine, a folder and to every destination with the content compared, and go through the first start and a backup in the browser.
 
 ### 🔧 CI/CD
 
-- **lab**: A dev lab starts every database engine, storage server and notification receiver in Docker, also on remote hosts, and fills the dev database with the first user, all connections and sample jobs. It also sets up a plain Ubuntu server with its databases from the packages.
+- **lab**: A dev lab starts every database engine, storage server and notification receiver in Docker and fills the dev database with the first user, all connections and sample jobs. `pnpm lab` shows its commands in a menu, with a status that says what runs, what is missing and what to run next.
+- **ci**: A new workflow runs the end-to-end tests on pull requests into dev and main after an approval.
+- **docker**: An image built from a checkout no longer contains the development database of that checkout.
 - **scripts**: The Multipass test VM, the old test containers with their seed scripts and four unused one-off scripts are removed.

@@ -67,9 +67,3 @@ volumes:
   webdav:
   samba:
   ftp:
-
-# Every part of the lab joins one network, created by `pnpm lab:up`.
-networks:
-  default:
-    name: dbackup-lab
-    external: true

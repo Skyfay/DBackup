@@ -357,14 +357,14 @@ describe("transport lint guards", () => {
         ).toEqual([]);
     }, 30_000);
 
-    it("passes a host to every adapter call in the dev lab and its tests", () => {
+    it("passes a host to every adapter call in the dev lab and the end-to-end tests", () => {
         // `test` and `ping` keep an optional host on BaseAdapter, because
         // requiring one there would have forced a host through 180 storage and
         // notification call sites that have no transport. The cost is that
         // forgetting one here compiles: the adapter then answers "requires an
         // execution host" and the test reads it as a failed connection.
         const root = path.resolve(__dirname, "../../..");
-        const files = [...findFiles(path.join(root, "lab", "src")), ...findFiles(path.join(root, "tests", "lab"))];
+        const files = [...findFiles(path.join(root, "lab", "src")), ...findFiles(path.join(root, "e2e"))];
         const call = /\badapter\.(test|ping|getDatabases|getDatabasesWithStats|dump|dumpOne|restore|restoreOne)!?\s*\(/;
 
         const violations: Violation[] = [];
@@ -387,7 +387,7 @@ describe("transport lint guards", () => {
             pattern: call,
             reason: "Use runAdapterTest, or wrap the call in withHost(adapter, config, (host) => ...) so it uses the configured transport.",
         }];
-        expect(files.length, "the dev lab and its tests were not found").toBeGreaterThan(0);
+        expect(files.length, "the dev lab and the end-to-end tests were not found").toBeGreaterThan(0);
         expect(violations, formatViolationReport(violations, rule)).toEqual([]);
     });
 

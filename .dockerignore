@@ -12,6 +12,18 @@ storage
 db/*.db
 db/*.db-journal
 
+# The dev database of a checkout, which the image would otherwise carry in /app/prisma
+prisma/*.db
+prisma/*.db-*
+
+# The dev lab and the end-to-end tests, never part of the image
+lab
+.lab-storage
+e2e
+playwright-report
+test-results
+.claude
+
 # Environment variables
 .env*.local
 .env

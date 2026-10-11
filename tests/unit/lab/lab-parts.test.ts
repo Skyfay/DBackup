@@ -56,13 +56,19 @@ describe("the services of the dev lab", () => {
     });
 });
 
+/** The TypeScript files below a folder of the repository, as paths relative to it. */
+const typescriptIn = (folder: string): string[] =>
+    (readdirSync(path.join(REPO_ROOT, folder), { recursive: true }) as string[])
+        .filter((file) => file.endsWith(".ts"))
+        .map((file) => path.join(folder, file));
+
 describe("the modules that run before the database is chosen", () => {
     // Prisma opens DATABASE_URL when its module loads. A static import of the app from one of
-    // these runs before the CLI read .env or the lab tests pointed it at their own database,
-    // so the seed of a test run once landed in the dev database.
+    // these runs before the CLI read .env, so the seed of a test run once landed in the dev
+    // database. The end-to-end tests run outside of the app and must never open one.
     const files = [
-        ...readdirSync(path.join(REPO_ROOT, "lab", "src")).filter((file) => file.endsWith(".ts") && file !== "check.ts").map((file) => path.join("lab", "src", file)),
-        ...["environment.ts", "setup.ts", "global-setup.ts"].map((file) => path.join("tests", "lab", "support", file)),
+        ...typescriptIn(path.join("lab", "src")).filter((file) => !file.includes(`${path.sep}seed${path.sep}`) && !file.endsWith("check.ts")),
+        ...typescriptIn("e2e"),
     ];
 
     it.each(files)("%s imports neither the app nor the seed before it runs", (file) => {

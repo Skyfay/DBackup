@@ -9,13 +9,16 @@ pnpm lab:seed
 pnpm dev
 ```
 
+`pnpm lab` shows every command in a menu, `pnpm lab:status` what runs and what is missing.
+
 The whole guide, with every command and the config: [docs/developer-guide/reference/dev-lab.md](../docs/developer-guide/reference/dev-lab.md).
 
 | Folder | Holds |
 | :--- | :--- |
-| `compose/` | One Compose file per part: databases, storage, notify, and the image of the SSH host |
+| `compose/` | One Compose file per part, all of them one project: databases, storage, notify, what only the end-to-end tests start, and the images of the SSH host and the customer server |
 | `datasets/` | The test data of each engine, loaded once by `lab:up` |
-| `provision/` | The setup of a native server, run by `lab:provision <host>` |
-| `src/` | The commands, the catalog of every service with its port and credentials, and the seed |
+| `provision/` | The setup of a native server, run by `lab:provision <name>` |
+| `src/` | The commands, the status, the catalog of the storage servers and receivers, and the seed |
+| `src/engines/` | One file per database engine: versions, ports, login, dataset, source config and fingerprint |
 
-The tests against the lab live in `tests/lab/` and run with `pnpm test:lab`.
+The end-to-end tests in `e2e/` run DBackup itself against the lab, `pnpm test:e2e`.

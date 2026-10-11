@@ -219,11 +219,11 @@ kill -9 <PID>
 ### Database Connection Issues
 
 ```bash
-# State and address of every lab service
+# State and address of every lab service, and why one stopped
 pnpm lab:status
 
-# Logs of one service, like mysql-9
-docker compose -p dbackup-lab-databases -f lab/compose/databases.yml logs mysql-9
+# Logs of one service, like mysql-9, with --context when the lab runs on another host
+docker compose -p dbackup-lab logs mysql-9
 ```
 
 ### CLI Tools Not Found

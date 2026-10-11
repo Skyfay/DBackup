@@ -1,0 +1,53 @@
+# What only the end-to-end tests in e2e/ start, under the profile "e2e": DBackup itself, built from
+# this checkout, a customer server without Docker and a second FTP server. They join the Compose
+# project of the lab, so DBackup reaches every server by its name, like a user's container reaches
+# the servers it backs up. `pnpm lab:up` never starts them.
+#
+# DBackup declares no volume, so a test run that recreates its container starts from an empty
+# instance. The keys are test values, never used anywhere else.
+
+services:
+  app:
+    profiles: ["e2e"]
+    image: dbackup-e2e:local
+    build:
+      # Relative to lab/compose, the folder of the first Compose file of the project.
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      ENCRYPTION_KEY: "e2e0000000000000000000000000000000000000000000000000000000000e2e"
+      BETTER_AUTH_SECRET: "dbackup-e2e-tests-only-not-a-secret"
+      BETTER_AUTH_URL: ${E2E_BASE_URL:-http://127.0.0.1:3300}
+      DISABLE_HTTPS: "true"
+      LOG_LEVEL: "info"
+      # SQL Server writes its .bak files readable for the group of their folder only, see
+      # prepareMssqlFolder in lab/src/environment.ts.
+      PGID: ${LAB_MSSQL_GID:-1001}
+    ports: ["${E2E_PORT:-3300}:3000"]
+    # SQL Server writes its .bak files here, and DBackup reads them under the same path.
+    volumes:
+      - ${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}:${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:3000/api/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  # A server the way most customers run one: databases from the packages of Ubuntu, reached over
+  # OpenSSH with a login without root. Stands in for lab/provision/ubuntu-native.sh in the tests.
+  customer:
+    profiles: ["e2e"]
+    image: dbackup-lab-customer:local
+    build:
+      context: ..
+      dockerfile: compose/customer/Dockerfile
+
+  # The FTP server of the lab tells its clients the address of the Docker host for the passive
+  # mode, which a container does not reach everywhere. This one names itself, for DBackup in the
+  # network of the lab.
+  ftp-e2e:
+    profiles: ["e2e"]
+    image: delfer/alpine-ftp-server:latest
+    environment:
+      USERS: "lab|lab-password|/ftp/lab"
+      ADDRESS: ftp-e2e

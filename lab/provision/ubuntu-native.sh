@@ -1,7 +1,7 @@
 #!/bin/bash
 # Turns a plain Ubuntu 24.04 into the customer server of the dev lab: the databases installed from
 # packages the way most servers DBackup backs up run them, each with the dataset of the lab, and
-# an OpenSSH login without root on its own port. Run by `pnpm lab:provision <host>`, which copies
+# an OpenSSH login without root on its own port. Run by `pnpm lab:provision <name>`, which copies
 # lab/ to /opt/dbackup-lab first. Safe to run again.
 #
 #   LAB_USER         the login of OpenSSH and of every database (default dbackup)

@@ -6,18 +6,18 @@
 
 import { spawn } from "child_process";
 import path from "path";
-import { REPO_ROOT, type Host } from "./config";
+import { REPO_ROOT, type NativeHost } from "./config";
 
 const REMOTE_DIR = "/opt/dbackup-lab";
 
-/** The arguments of the ssh client of this machine for a command on a host, with the `ssh` login of its config. */
-export function sshArgs(host: Host, command: string): string[] {
+/** The arguments of the ssh client of this machine for a command on a host, with the root login of its config. */
+export function sshArgs(host: NativeHost, command: string): string[] {
     const ssh = host.ssh!;
     return ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-p", String(ssh.port), `${ssh.user}@${host.address}`, command];
 }
 
 /** Runs ssh with the output of `source` as its standard input, or with `input`. */
-function ssh(host: Host, command: string, stdin: { pipeFrom?: ReturnType<typeof spawn>; input?: string }): Promise<void> {
+function ssh(host: NativeHost, command: string, stdin: { pipeFrom?: ReturnType<typeof spawn>; input?: string }): Promise<void> {
     return new Promise((resolve, reject) => {
         const child = spawn("ssh", sshArgs(host, command), { stdio: ["pipe", "inherit", "inherit"] });
         if (stdin.pipeFrom) stdin.pipeFrom.stdout!.pipe(child.stdin!);
@@ -27,16 +27,15 @@ function ssh(host: Host, command: string, stdin: { pipeFrom?: ReturnType<typeof 
     });
 }
 
-export async function provision(host: Host, write: (line: string) => void): Promise<void> {
-    if (!host.native) throw new Error(`The host ${host.name} has no "native" part in the lab config.`);
-    if (!host.ssh) throw new Error(`The host ${host.name} needs "ssh" with a login that may run the setup as root.`);
+export async function provision(host: NativeHost, write: (line: string) => void): Promise<void> {
+    if (!host.ssh) throw new Error(`The native server ${host.name} needs "ssh" with a login that may run the setup as root.`);
 
     write(`Copying the datasets and the setup to ${host.name}:${REMOTE_DIR}`);
     const tar = spawn("tar", ["-czf", "-", "-C", path.join(REPO_ROOT, "lab"), "datasets", "provision"], { stdio: ["ignore", "pipe", "inherit"] });
     await ssh(host, `rm -rf ${REMOTE_DIR} && mkdir -p ${REMOTE_DIR} && tar -xzf - -C ${REMOTE_DIR}`, { pipeFrom: tar });
 
     write(`Running the setup on ${host.name}`);
-    const login = host.native.ssh;
+    const login = host.login;
     const script = [
         `export LAB_USER='${login.user}'`,
         `export LAB_PASSWORD='${login.password.replace(/'/g, "'\\''")}'`,

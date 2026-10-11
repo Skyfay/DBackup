@@ -12,15 +12,16 @@ import os from "os";
 import fs from "fs";
 import fsPromises from "fs/promises";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
+import { clientAddress } from "@/lib/core/client-address";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ route: "storage/public-download" });
 registerAdapters();
 
-/** The host a link was fetched from, as the proxy in front of DBackup reports it. */
+/** The host a link was fetched from. */
 function requesterOf(req: NextRequest): string | undefined {
-    return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || undefined;
+    return clientAddress(req.headers) ?? undefined;
 }
 
 /**

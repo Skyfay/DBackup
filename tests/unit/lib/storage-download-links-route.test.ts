@@ -35,7 +35,7 @@ const makeLink = (body: unknown) => POST(
     { params: Promise.resolve({ id: "nas" }) }
 );
 const statusOf = (token: string) => GET(new NextRequest(`http://dbackup.test/api/storage/nas/download-url?token=${token}`), { params: Promise.resolve({ id: "nas" }) });
-const fetchLink = (url: string) => FETCH(new NextRequest(url, { headers: { "x-forwarded-for": "10.0.0.5, 172.17.0.1", "user-agent": "curl/8.7.1" } }));
+const fetchLink = (url: string) => FETCH(new NextRequest(url, { headers: { "x-dbackup-client-address": "10.0.0.5", "user-agent": "curl/8.7.1" } }));
 
 describe("download links for a pick", () => {
     beforeEach(() => {

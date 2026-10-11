@@ -16,7 +16,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const { recordSignIn, recordSignOut, signInMethod } = await import("@/lib/auth/sign-in-audit");
 
-const headers = new Headers({ "x-forwarded-for": "198.51.100.23", "user-agent": "Mozilla/5.0 Firefox/131.0" });
+const headers = new Headers({ "x-dbackup-client-address": "198.51.100.23", "user-agent": "Mozilla/5.0 Firefox/131.0" });
 const session = (twoFactorEnabled = false) => ({
     user: { id: "tom", twoFactorEnabled },
     session: { ipAddress: "198.51.100.23", userAgent: "Mozilla/5.0 Firefox/131.0" },

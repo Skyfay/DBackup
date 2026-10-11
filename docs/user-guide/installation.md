@@ -102,6 +102,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | `TMPDIR` | ❌ | Temp directory for large backups, see [Volume Mounts](#volume-mounts). Default: `/tmp` |
 | `LOG_LEVEL` | ❌ | Logging verbosity: `debug`, `info`, `warn`, `error`. Default: `info` |
 | `DISABLE_HTTPS` | ❌ | Set to `true` to use plain HTTP. Default: `false` (HTTPS). **Set this when running behind a reverse proxy** - see [Reverse Proxy Setup](#reverse-proxy-setup) |
+| `TRUSTED_PROXIES` | ❌ | The reverse proxies whose `X-Forwarded-For` counts: addresses or CIDR ranges, comma-separated, or `none`. Default: loopback and private networks, see [The Address of a Client](#the-address-of-a-client) |
 | `PUID` | ❌ | User ID the container runs as. Default: `1001` |
 | `PGID` | ❌ | Group ID the container runs as. Set it to the host's `docker` group to reach the [Docker socket](/user-guide/sources/docker-volumes). Default: `1001` |
 | `DISABLE_EMAIL_LOGIN` | ❌ | Set to `true` to switch off password sign-in, leaving SSO and passkeys. Default: `false` |
@@ -309,6 +310,30 @@ Leave it unset only if you point the browser straight at the container, or if yo
 configured to talk HTTPS upstream and to accept a self-signed certificate (`proxy_pass
 https://...` plus `proxy_ssl_verify off` in nginx, `serversTransport.insecureSkipVerify` in
 Traefik).
+:::
+
+### The Address of a Client
+
+DBackup counts its [rate limits](/user-guide/features/rate-limits) per client address and writes it into the audit log and the sessions. It reads `X-Forwarded-For` only on a connection from a trusted proxy, and walks it from the right, the end each proxy appends to, up to the first address that is no trusted proxy. A client can put any address at the left end, so that one never counts on its own.
+
+By default every proxy in a loopback, private or link-local network is trusted: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7` and `fe80::/10`. That covers a proxy in the same Docker network or on the same host. `TRUSTED_PROXIES` replaces the list:
+
+| Setup | `TRUSTED_PROXIES` |
+| :--- | :--- |
+| A proxy in a Docker network or on the same host | Leave it unset |
+| DBackup reached directly, without a proxy | `none` |
+| A proxy at a known address | That address, like `10.0.0.5` |
+| A CDN like Cloudflare in front of the proxy | The address of the proxy and the ranges of the CDN, otherwise every request counts as one of its edge servers |
+
+```yaml
+environment:
+  - TRUSTED_PROXIES=10.0.0.5,2001:db8::/32
+```
+
+An entry that is no address or range stops DBackup at the start, with a message that names it.
+
+::: tip Devices in the same network
+With the default, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out.
 :::
 
 ### Nginx

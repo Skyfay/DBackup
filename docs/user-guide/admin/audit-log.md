@@ -60,7 +60,7 @@ The view switch shows the timeline above the list: a row per person and API key,
 A change keeps what it changed from and to. An entry keeps the name of the person who wrote it, so it still names them after the person is deleted. A request made with an API key names the key and its owner.
 
 ::: tip
-The address comes from the `X-Forwarded-For` or `X-Real-IP` header of the reverse proxy in front of DBackup. Without one, every entry shows the address of the proxy.
+The address comes from the `X-Forwarded-For` or `X-Real-IP` header of a trusted reverse proxy in front of DBackup, see [The Address of a Client](/user-guide/installation#the-address-of-a-client). A header a client sends itself is not written.
 :::
 
 ## How Long Entries Stay

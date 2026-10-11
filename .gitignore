@@ -12,7 +12,6 @@
 
 # testing
 /coverage
-.test
 
 # next.js
 /.next/
@@ -68,9 +67,10 @@ db-data/
 
 # Security Audits
 security/*
-# SSH key pair generated for the integration tests
-.ssh-test/
 
 # The sponsors workflow installs sponsorkit and writes its images here, never committed
 .github/sponsors/node_modules/
 .github/sponsors/sponsorkit/
+
+# Local backups and files of the dev lab (pnpm lab:seed)
+/.lab-storage/

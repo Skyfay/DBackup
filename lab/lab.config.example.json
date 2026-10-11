@@ -1,0 +1,16 @@
+{
+    "admin": {
+        "name": "Lab Admin",
+        "email": "admin@dbackup.lab",
+        "password": "Harbor-Lamp-2026"
+    },
+    "profile": "core",
+    "hosts": {
+        "local": { "docker": "default", "address": "127.0.0.1" }
+    },
+    "place": {
+        "databases": "local",
+        "storage": "local",
+        "notify": "local"
+    }
+}

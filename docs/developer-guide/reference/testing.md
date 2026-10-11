@@ -1,520 +1,99 @@
 # Testing Guide
 
-Comprehensive guide to testing DBackup, including unit tests, integration tests, and manual testing procedures.
+DBackup is tested with [Vitest](https://vitest.dev). The unit tests run without external services, so they run on any machine and in CI. The lab tests run against the servers of the [Dev Lab](/developer-guide/reference/dev-lab).
 
-## Test Infrastructure
-
-### Test Stack
-
-```yaml
-# docker-compose.test.yml (simplified example)
-services:
-  mysql-57:
-    image: mysql:5.7
-    ports:
-      - "33357:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-
-  mysql-8:
-    image: mysql:8.0
-    ports:
-      - "33380:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-
-  postgres-15:
-    image: postgres:15-alpine
-    ports:
-      - "54415:5432"
-    environment:
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpassword
-
-  mongodb:
-    image: mongo:6.0
-    ports:
-      - "27017:27017"
-```
-
-### Start Test Databases
+## Running Tests
 
 ```bash
-docker-compose -f docker-compose.test.yml up -d
+pnpm test              # Watch mode
+pnpm test:coverage     # One run with a coverage report
+pnpm validate          # Lint, type check and the tests, like CI
 ```
 
-### Test Credentials
+CI runs `pnpm test:coverage` on every pull request (`.github/workflows/validate.yml`) and uploads the report to Codecov. Coverage counts `src/lib/` and `src/services/`. There are no thresholds.
 
-| Database | Host | Port | User | Password |
-| :--- | :--- | :--- | :--- | :--- |
-| MySQL 5.7 | localhost | 33357 | root | rootpassword |
-| MySQL 8.0 | localhost | 33380 | root | rootpassword |
-| MySQL 9.1 | localhost | 33390 | root | rootpassword |
-| MariaDB 10 | localhost | 33310 | root | rootpassword |
-| MariaDB 11 | localhost | 33311 | root | rootpassword |
-| PostgreSQL 12-17 | localhost | 54412-54417 | testuser | testpassword |
-| MongoDB | localhost | 27017 | - | - |
+## Where Tests Live
 
-## Test Categories
+| Folder | Holds |
+| :--- | :--- |
+| `tests/unit/` | Tests of services, adapters, the runner, routes, components and hooks, sorted like `src/` |
+| `tests/unit/lint-guards/` | Rules the code must follow, like no `console.*`, the design system and the changelog fragments |
+| `tests/audit/` | Static scans: every Server Action checks a permission, no route sends a decrypted config |
+| `tests/lab/` | Tests against the running dev lab, `pnpm test:lab`, see [Against Real Servers](#against-real-servers) |
 
-### Unit Tests
+Test files sit next to their category in `tests/`, never beside the source file.
 
-Test pure functions and isolated logic.
+## Writing a Test
 
-**Location**: `tests/unit/` or co-located with source files
+Mock every call that leaves the process: network, filesystem, child processes and Prisma. The helpers in `src/lib/testing/` cover the common cases.
 
-**Run**:
-```bash
-pnpm test
-```
+| Helper | For |
+| :--- | :--- |
+| `prisma-mock.ts` | `prismaMock`, a deep mock of the Prisma client that replaces `@/lib/prisma` |
+| `fake-host.ts` | An in-memory execution host, for adapters that run commands locally or over SSH |
+| `fake-docker-engine.ts` | An in-memory Docker engine, for the Docker volume source |
+| `setup.ts` | Loaded before every test file: jest-dom matchers and browser polyfills |
 
-**Example** (Retention):
 ```typescript
-// tests/unit/retention-service.test.ts
 import { describe, it, expect } from "vitest";
-import { RetentionService } from "@/services/backup/retention-service";
+import { prismaMock } from "@/lib/testing/prisma-mock";
+import { hasRunningJobs } from "@/services/dashboard-service";
 
-describe("RetentionService", () => {
-  describe("calculateRetention", () => {
-    it("keeps correct number of daily backups", () => {
-      const files = generateTestFiles(30);
-      const config = {
-        mode: "SMART",
-        smart: { daily: 7, weekly: 0, monthly: 0, yearly: 0 },
-      };
+describe("the dashboard while a backup runs", () => {
+    it("polls while a run is still going", async () => {
+        prismaMock.execution.count.mockResolvedValue(1);
 
-      const result = RetentionService.calculateRetention(files, config);
-
-      expect(result.keep.length).toBe(7);
-      expect(result.delete.length).toBe(23);
+        expect(await hasRunningJobs()).toBe(true);
     });
-
-    it("never deletes locked files", () => {
-      const files = [
-        { name: "backup-1", locked: true, modifiedAt: new Date() },
-        { name: "backup-2", locked: false, modifiedAt: new Date() },
-      ];
-      const config = { mode: "SIMPLE", simple: { keepCount: 1 } };
-
-      const result = RetentionService.calculateRetention(files, config);
-
-      expect(result.keep.map(f => f.name)).toContain("backup-1");
-    });
-  });
 });
 ```
 
-**Example** (Checksum):
-```typescript
-// tests/unit/lib/checksum.test.ts
-import { describe, it, expect } from "vitest";
-import { calculateChecksum, calculateFileChecksum, verifyFileChecksum } from "@/lib/crypto/checksum";
-import fs from "fs/promises";
+- Name the business case in `describe` and `it`, not the function.
+- A mocked `fetch` answers in the API format, `{ success: true, data: ... }`. A bare object passes the test and hides what production does.
+- Assert on returned values and stored state, never on log output.
 
-describe("calculateChecksum", () => {
-  it("returns consistent SHA-256 hash", () => {
-    const hash1 = calculateChecksum("hello world");
-    const hash2 = calculateChecksum("hello world");
-    expect(hash1).toBe(hash2);
-    expect(hash1).toHaveLength(64); // SHA-256 = 64 hex chars
-  });
+### Against a Real SQLite Database
 
-  it("produces different hashes for different inputs", () => {
-    expect(calculateChecksum("hello")).not.toBe(calculateChecksum("world"));
-  });
-});
-
-describe("verifyFileChecksum", () => {
-  it("detects file modification", async () => {
-    const tmpPath = "/tmp/test-checksum-verify.txt";
-    await fs.writeFile(tmpPath, "original content");
-    const hash = await calculateFileChecksum(tmpPath);
-
-    // Modify file
-    await fs.writeFile(tmpPath, "modified content");
-    const result = await verifyFileChecksum(tmpPath, hash);
-
-    expect(result.valid).toBe(false);
-    await fs.unlink(tmpPath);
-  });
-});
-```
-
-Test adapters against real database instances.
-
-**Location**: `tests/integration/`
-
-**Prerequisites**:
-1. Docker containers running
-2. CLI tools installed (`mysqldump`, `pg_dump`, etc.)
-
-**Run**:
-```bash
-pnpm test:integration
-```
-
-#### SSH mode
-
-`ssh-mode.test.ts` runs the same operations through the `ssh-host` container, a Debian image with sshd and the database client tools. Each source addresses its database by **compose service name**, which resolves only from inside that container - so a passing test proves the command really ran on the remote host. Those tests need no local CLI tools at all, since the tools live on the target.
-
-The key pair is generated into `.ssh-test/` by `scripts/ensure-ssh-test-key.sh`, which both `pnpm test:integration` and `pnpm test:env:up` call. It is gitignored, so no private key enters the repository. The file skips cleanly when the container is not reachable.
-
-Two engines are covered by an older version than the direct tests use, because a client cannot read a server newer than itself: MySQL 5.7 (MySQL 9 dropped `mysql_native_password`) and PostgreSQL 12 (Debian ships `pg_dump` 15). MongoDB and Firebird are not covered, their tools are not in Debian's repositories.
-
-For those, and for testing against a real distribution's package set, use the Multipass VM (`pnpm test:vm:up`). The container proves the transport mechanics; the VM proves it works on a real system.
-
-**Example**:
-```typescript
-// tests/integration/adapters/mysql.test.ts
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { MySQLAdapter } from "@/lib/adapters/database/mysql";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-
-const execAsync = promisify(exec);
-
-describe("MySQLAdapter Integration", () => {
-  const config = {
-    host: "localhost",
-    port: 3306,
-    username: "root",
-    password: "rootpassword",
-    database: "test_db",
-  };
-
-  beforeAll(async () => {
-    // Create test database
-    await execAsync(
-      `mysql -h${config.host} -P${config.port} ` +
-      `-u${config.username} -p${config.password} ` +
-      `-e "CREATE DATABASE IF NOT EXISTS test_db"`
-    );
-
-    // Insert test data
-    await execAsync(
-      `mysql -h${config.host} -P${config.port} ` +
-      `-u${config.username} -p${config.password} test_db ` +
-      `-e "CREATE TABLE IF NOT EXISTS users (id INT, name VARCHAR(100))"`
-    );
-  });
-
-  afterAll(async () => {
-    // Cleanup
-    await execAsync(
-      `mysql -h${config.host} -P${config.port} ` +
-      `-u${config.username} -p${config.password} ` +
-      `-e "DROP DATABASE IF EXISTS test_db"`
-    );
-  });
-
-  it("should test connection", async () => {
-    const result = await MySQLAdapter.test(config);
-    expect(result.success).toBe(true);
-  });
-
-  it("should dump database", async () => {
-    const backupPath = "/tmp/test-mysql-backup.sql";
-
-    const result = await MySQLAdapter.dump(config, backupPath);
-
-    expect(result.success).toBe(true);
-    expect(result.size).toBeGreaterThan(0);
-
-    const content = await fs.readFile(backupPath, "utf-8");
-    expect(content).toContain("CREATE TABLE");
-
-    await fs.unlink(backupPath);
-  });
-
-  it("should list databases", async () => {
-    const databases = await MySQLAdapter.getDatabases(config);
-
-    expect(databases).toContain("test_db");
-    expect(databases).not.toContain("information_schema");
-  });
-});
-```
-
-### E2E Tests
-
-End-to-end tests through the UI.
-
-**Manual Process**:
-1. Start dev server: `pnpm dev`
-2. Create test source/destination
-3. Create and run test job
-4. Verify backup in Backups page
-5. Test restore functionality
-
-**Automated** (future):
-```bash
-pnpm test:e2e  # Playwright tests
-```
-
-## Test Utilities
-
-### Generate Test Data
-
-```bash
-# Seed test databases with data
-pnpm test:ui
-```
-
-This script:
-1. Creates test databases in MySQL/PostgreSQL/MongoDB
-2. Inserts sample data
-3. Seeds the local DBackup database with pre-configured sources
-
-### Stress Testing
-
-Generate large datasets:
-
-```bash
-# Generate 1GB of test data
-./scripts/generate-stress-data.sh mysql 1000000
-
-# Test backup performance
-time pnpm test:integration -- --grep "large database"
-```
-
-## Testing Adapters
-
-### Database Adapter Tests
+Some code only proves itself against real tables, like the configuration backup or Recently deleted. Such a test migrates a temporary database once with `prisma migrate deploy`, copies it for every test and opens the copy with `openCopy` from `@/services/config/database-copy`. It runs in the Node environment:
 
 ```typescript
-// Template for database adapter tests
-describe("DatabaseAdapter", () => {
-  const testCases = [
-    { name: "MySQL 8.0", config: mysqlConfig },
-    { name: "PostgreSQL 15", config: postgresConfig },
-    { name: "MongoDB 6.0", config: mongoConfig },
-  ];
-
-  testCases.forEach(({ name, config }) => {
-    describe(name, () => {
-      it("tests connection", async () => {
-        const result = await adapter.test(config);
-        expect(result.success).toBe(true);
-      });
-
-      it("dumps database", async () => {
-        const result = await adapter.dump(config, "/tmp/backup");
-        expect(result.success).toBe(true);
-      });
-
-      it("restores database", async () => {
-        // Dump first
-        await adapter.dump(config, "/tmp/backup");
-
-        // Restore to different database
-        const result = await adapter.restore(
-          { ...config, database: "test_restore" },
-          "/tmp/backup"
-        );
-        expect(result.success).toBe(true);
-      });
-    });
-  });
-});
+// @vitest-environment node
 ```
 
-### Storage Adapter Tests
+`tests/unit/services/trash-round-trip.test.ts` and `config-database-copy.test.ts` show the whole pattern.
 
-```typescript
-describe("StorageAdapter", () => {
-  const testFile = "/tmp/test-file.txt";
-  const remotePath = "test/file.txt";
+## Against Real Servers
 
-  beforeAll(async () => {
-    await fs.writeFile(testFile, "test content");
-  });
-
-  it("uploads file", async () => {
-    await adapter.upload(config, testFile, remotePath);
-
-    const files = await adapter.list(config, "test");
-    expect(files.map(f => f.name)).toContain("file.txt");
-  });
-
-  it("downloads file", async () => {
-    const downloadPath = "/tmp/downloaded.txt";
-    await adapter.download(config, remotePath, downloadPath);
-
-    const content = await fs.readFile(downloadPath, "utf-8");
-    expect(content).toBe("test content");
-  });
-
-  it("deletes file", async () => {
-    await adapter.delete(config, remotePath);
-
-    const files = await adapter.list(config, "test");
-    expect(files.map(f => f.name)).not.toContain("file.txt");
-  });
-});
-```
-
-## Debugging Tests
-
-### Vitest UI
+The [Dev Lab](/developer-guide/reference/dev-lab) runs every engine and every self-hostable destination in Docker. Two commands use it:
 
 ```bash
-pnpm test --ui
+pnpm lab:check --run   # Test connection on every lab connection of dev.db, then every lab job once
+pnpm test:lab          # The tests in tests/lab/ against the running lab
 ```
 
-Opens interactive test runner at `http://localhost:51204`.
+`pnpm test:lab` brings a database of its own, migrated like a fresh install, and writes under the workspace `test-<workspace>` on every destination. It never touches `dev.db` or the backups of a checkout. When the lab does not answer, it stops before the first test and says so.
 
-### Debug Mode
+| File | Proves |
+| :--- | :--- |
+| `connections.test.ts` | Test connection passes for every source, destination and channel of the lab |
+| `storage.test.ts` | Every destination takes an upload under a name with spaces and Unicode, lists it with its size, hands back the same bytes, reads a sidecar and deletes it |
+| `round-trip.test.ts` | Every source goes through the real runner, encrypted and compressed, and restores under a new name with the same content. One backup goes to every destination and restores from each, and a folder restores file by file |
+
+The content is compared with the tools of each engine, outside of DBackup: the output of `mysqldump` and `pg_dump`, `dbHash` of MongoDB, row counts and checksums of SQL Server, `isql` for Firebird and `.dump` of SQLite. Redis and Valkey restore by hand, so only their backups are checked.
+
+A bug the tests found that is not fixed yet goes into `KNOWN_BUGS` of `round-trip.test.ts`. Its case passes while it still fails, and fails once the bug is gone, which is when its line goes. `LAB_KEEP=1` leaves the restored databases and the uploaded files in place to look at, and `LAB_LOG_LEVEL=info` shows the log of every run.
+
+The lab tests do not run in CI.
+
+## Debugging
 
 ```bash
-# Run specific test with debugging
-DEBUG=* pnpm test -- --grep "MySQL"
+pnpm test tests/unit/services/retention-service.test.ts   # One file
+pnpm test -t "keeps the newest backup"                    # Tests whose name matches
+npx prisma studio                                          # Look into the dev database
 ```
 
-### Prisma Studio
-
-Inspect database during tests:
-
-```bash
-npx prisma studio
-```
-
-### Runner Debugging
-
-1. Set breakpoints in VS Code
-2. Create manual trigger job in UI
-3. Trigger job execution
-4. Step through runner code
-
-**Tip**: Temp files are in `/tmp`. Check there if backup fails before cleanup.
-
-## Common Issues
-
-### CLI Tools Not Found
-
-```
-Error: Command not found: mysqldump
-```
-
-**Fix** (macOS):
-```bash
-brew install mysql-client
-export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"
-```
-
-**Fix** (Ubuntu):
-```bash
-sudo apt install mysql-client
-```
-
-### Connection Refused
-
-```
-Error: connect ECONNREFUSED 127.0.0.1:3306
-```
-
-**Fix**: Ensure Docker containers are running:
-```bash
-docker ps
-docker-compose -f docker-compose.test.yml up -d
-```
-
-### Permission Denied
-
-```
-Error: Access denied for user 'root'@'172.17.0.1'
-```
-
-**Fix**: Check container logs and credentials:
-```bash
-docker logs dbackup-mysql-test
-```
-
-## CI/CD Integration
-
-### GitHub Actions
-
-```yaml
-# .github/workflows/test.yml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: rootpassword
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping"
-          --health-interval=10s
-
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpassword
-        ports:
-          - 5432:5432
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "pnpm"
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Install CLI tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mysql-client postgresql-client
-
-      - name: Run unit tests
-        run: pnpm test
-
-      - name: Run integration tests
-        run: pnpm test:integration
-```
-
-## Test Coverage
-
-Generate coverage report:
-
-```bash
-pnpm test -- --coverage
-```
-
-Coverage thresholds in `vitest.config.ts`:
-
-```typescript
-export default defineConfig({
-  test: {
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "html"],
-      thresholds: {
-        lines: 70,
-        functions: 70,
-        branches: 60,
-      },
-    },
-  },
-});
-```
+Every run works in a `dbackup-run-*` folder of its own in the temp directory, `TMPDIR` or the system default, and removes it when it ends.
 
 ## Related Documentation
 

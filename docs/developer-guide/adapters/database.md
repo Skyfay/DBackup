@@ -784,8 +784,8 @@ async getDatabases(config): Promise<string[]> {
 2. **Create adapter** in `src/lib/adapters/database/`, including `dumpOne()` and `restoreOne()`. Every backup needs both, and `tests/unit/adapters/database/archive-capabilities.test.ts` fails without them.
 3. **Declare the dump format** in `DB_FORMAT_BY_ADAPTER` (`src/lib/runner/steps/dump-databases.ts`), and mark it natively compressed there if it is
 4. **Register** in `src/lib/adapters/index.ts`
-5. **Add tests** in `tests/integration/adapters/`
-6. **Add container** to `docker-compose.test.yml` if needed
+5. **Add tests** in `tests/unit/adapters/database/`, against a mocked transport
+6. **Add the engine to the [Dev Lab](/developer-guide/reference/dev-lab#adding-an-engine-or-version)** and run `pnpm lab:check --run`
 
 ## Multi-Database TAR Format (older backups)
 

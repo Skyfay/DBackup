@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isStorageRole, STORAGE_ROLES } from "@/lib/core/storage-roles";
-import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
-import { validateStorageRole } from "@/lib/adapters/role-validation";
+import { isStorageRole } from "@/lib/core/storage-roles";
 import prisma from "@/lib/prisma";
-import { encryptConfig } from "@/lib/crypto";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
@@ -11,10 +8,10 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, ValidationError, NotFoundError } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
-import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { getConnectionOverview } from "@/services/adapters/connection-overview";
+import { createAdapter } from "@/services/adapters/adapter-create";
 
 registerAdapters();
 
@@ -97,85 +94,15 @@ export async function POST(req: NextRequest) {
             checkPermissionWithContext(ctx, PERMISSIONS.NOTIFICATIONS.WRITE);
         }
 
-        // Basic validation
-        if (!name || !type || !adapterId || !config) {
-            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-        }
-
-        // Validate credential profile assignments (if provided)
+        let newAdapter;
         try {
-            await validateCredentialAssignments(adapterId, primaryCredentialId ?? null, sshCredentialId ?? null);
+            newAdapter = await createAdapter({ name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, storageRole });
         } catch (e) {
-            if (e instanceof ValidationError) {
-                return NextResponse.json({ error: e.message }, { status: 400 });
-            }
-            if (e instanceof NotFoundError) {
-                return NextResponse.json({ error: e.message }, { status: 404 });
-            }
+            if (e instanceof ValidationError) return NextResponse.json({ error: e.message }, { status: 400 });
+            if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
+            if (e instanceof ConflictError) return NextResponse.json({ error: e.message }, { status: 409 });
             throw e;
         }
-
-        // An adapter that only works one way round never gets a config pointing the other
-        // way, whatever the request asked for.
-        try {
-            if (type === 'storage') {
-                validateStorageRole(adapterId, isStorageRole(storageRole) ? storageRole : STORAGE_ROLES.DESTINATION);
-            }
-        } catch (e) {
-            if (e instanceof ValidationError) {
-                return NextResponse.json({ error: e.message }, { status: 400 });
-            }
-            throw e;
-        }
-
-        // A snapshot-enabled config is only accepted when the server can actually deliver
-        // one - the form's gate alone would be bypassable through this endpoint.
-        try {
-            const configForCheck = typeof config === 'string' ? JSON.parse(config) : config;
-            await validateSnapshotConfig(
-                adapterId,
-                configForCheck,
-                isStorageRole(storageRole) ? storageRole : STORAGE_ROLES.DESTINATION,
-                primaryCredentialId ?? null,
-                sshCredentialId ?? null
-            );
-        } catch (e) {
-            if (e instanceof ValidationError) {
-                return NextResponse.json({ error: e.message }, { status: 400 });
-            }
-            throw e;
-        }
-
-        // Check name uniqueness within the same type
-        const existingByName = await prisma.adapterConfig.findFirst({
-            where: { name, type },
-        });
-        if (existingByName) {
-            return NextResponse.json({ error: `A ${type === 'database' ? 'source' : type === 'storage' ? 'destination' : 'notification'} with the name "${name}" already exists.` }, { status: 409 });
-        }
-
-        // Ensure config is object for encryption
-        const configObj = typeof config === 'string' ? JSON.parse(config) : config;
-
-        // Encrypt sensitive fields
-        const encryptedConfig = encryptConfig(configObj);
-
-        // Stringify for storage
-        const configString = JSON.stringify(encryptedConfig);
-
-        const newAdapter = await prisma.adapterConfig.create({
-            data: {
-                name,
-                type,
-                adapterId,
-                config: configString,
-                primaryCredentialId: primaryCredentialId ?? null,
-                sshCredentialId: sshCredentialId ?? null,
-                ...(metadata ? { metadata: JSON.stringify(metadata) } : {}),
-                // The role only makes sense for storage adapters - other types keep the default.
-                ...(type === 'storage' && isStorageRole(storageRole) ? { storageRole } : {}),
-            },
-        });
 
         await auditService.logFor(
             ctx,

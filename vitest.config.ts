@@ -11,7 +11,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/lib/testing/setup.ts'],
     include: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/cypress/**', '**/.{idea,git,cache,output,temp}/**', '**/.next/**', '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*', 'tests/integration/**'],
+    // The tests against the dev lab run on their own, `pnpm test:lab`.
+    exclude: ['tests/lab/**', '**/node_modules/**', '**/dist/**', '**/cypress/**', '**/.{idea,git,cache,output,temp}/**', '**/.next/**', '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*'],
     coverage: {
       provider: 'v8',
       reporter: ['lcov', 'text'],

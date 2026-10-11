@@ -1,0 +1,42 @@
+# The notification receivers of the dev lab. Mailpit shows every mail at port 8025, ntfy and
+# Gotify have a web UI each, and the webhook echo logs every request it gets
+# (`docker compose logs webhook`). Discord, Slack and Teams can point at the echo as well.
+
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["core"]
+    # Email channels need a credential profile, so Mailpit takes any login, also without TLS.
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports: ["1025:1025", "8025:8025"]
+
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    profiles: ["core"]
+    command: serve
+    ports: ["18081:80"]
+
+  gotify:
+    image: gotify/server:latest
+    profiles: ["core"]
+    environment:
+      GOTIFY_DEFAULTUSER_NAME: lab
+      GOTIFY_DEFAULTUSER_PASS: lab-password
+    ports: ["18082:80"]
+    volumes: [gotify:/app/data]
+
+  webhook:
+    image: mendhak/http-https-echo:latest
+    profiles: ["core"]
+    ports: ["18083:8080"]
+
+volumes:
+  gotify:
+
+# Every part of the lab joins one network, created by `pnpm lab:up`.
+networks:
+  default:
+    name: dbackup-lab
+    external: true

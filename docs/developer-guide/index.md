@@ -62,17 +62,11 @@ Open [http://localhost:3000](http://localhost:3000).
 ### Testing
 
 ```bash
-# Start test databases
-docker-compose -f docker-compose.test.yml up -d
-
 # Run unit tests
 pnpm test
 
-# Run integration tests
-pnpm test:integration
-
-# Seed test data for UI testing
-pnpm test:ui
+# Start the dev lab and fill the dev database with it, see Dev Lab
+pnpm lab:up && pnpm lab:seed
 ```
 
 ## Architecture Principles

@@ -274,7 +274,8 @@ export default defineConfig({
             { text: 'Older Backup Formats', link: '/developer-guide/reference/legacy-backup-formats' },
             { text: 'Database Schema', link: '/developer-guide/reference/schema' },
             { text: 'Supported Versions', link: '/developer-guide/reference/versions' },
-            { text: 'Testing Guide', link: '/developer-guide/reference/testing' }
+            { text: 'Testing Guide', link: '/developer-guide/reference/testing' },
+            { text: 'Dev Lab', link: '/developer-guide/reference/dev-lab' }
           ]
         }
       ]

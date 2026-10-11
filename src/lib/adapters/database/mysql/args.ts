@@ -1,5 +1,6 @@
 import type { ExecutionHost } from "@/lib/transport";
 import type { MySQLConfig, MariaDBConfig } from "@/lib/adapters/definitions";
+import type { DumpClient } from "./dump-content";
 
 /**
  * Argument builders for the MySQL and MariaDB client tools.
@@ -32,14 +33,14 @@ function forcesTcp(host: ExecutionHost): boolean {
 /**
  * Connection flags shared by mysql, mysqladmin and mysqldump.
  *
- * `includeSsl` is off for the dump and restore paths, where the dialect appends
- * the version-appropriate flag itself: MySQL 5.7 wants `--ssl-mode=DISABLED`
- * while MariaDB wants `--skip-ssl`.
+ * `client` is the tool that runs, from `dumpClientOf`, which decides how TLS is turned off.
+ * Without it the flag is MariaDB's, the client of the Docker image. `includeSsl` is off for the
+ * dump and restore paths, where the dialect appends the flag itself.
  */
 export function buildConnectionArgs(
     config: AnyMySQLConfig,
     host: ExecutionHost | undefined,
-    options: { user?: string; includeSsl?: boolean } = {},
+    options: { user?: string; includeSsl?: boolean; client?: DumpClient } = {},
 ): string[] {
     const args = [
         "-h", config.host || "127.0.0.1",
@@ -50,7 +51,7 @@ export function buildConnectionArgs(
         args.push("--protocol=tcp");
     }
     if ((options.includeSsl ?? true) && config.disableSsl) {
-        args.push("--skip-ssl");
+        args.push(options.client?.sslOff ?? "--skip-ssl");
     }
     return args;
 }

@@ -101,7 +101,7 @@ export const connectSFTP = async (config: SFTPConfig, onDisconnect?: (reason: st
         return sftp;
     } catch (error) {
         // Do not leave an orphaned SSH socket when a handshake fails before the
-        // client becomes usable; this is especially important before a retry.
+        // client becomes usable.
         await endSftpClient(sftp);
         throw error;
     }
@@ -146,23 +146,6 @@ export async function endSftpClient(sftp: Client): Promise<void> {
 interface PooledClient {
     client: Client;
     alive: boolean;
-}
-
-/** One retry for handshake reset/timeout; never retry authentication or permission failures. */
-async function connectSFTPForSource(config: SFTPConfig): Promise<Client> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-            return await connectSFTP(config);
-        } catch (error) {
-            lastError = error;
-            const message = error instanceof Error ? error.message : String(error);
-            if (attempt === 2 || !/handshake|timed? out|ETIMEDOUT|ECONNRESET|connection reset/i.test(message)) {
-                throw error;
-            }
-        }
-    }
-    throw lastError;
 }
 
 /** How many sibling names to name in a diagnostic - enough to recognise the place, short enough to read. */
@@ -507,7 +490,9 @@ async function walkSftpTree(
     const normalize = (p: string) => p.replace(/\\/g, '/');
     const prefix = config.pathPrefix ? normalize(config.pathPrefix) : "";
     const startDir = prefix ? path.posix.join(prefix, dir) : (dir || ".");
-    const limit = Math.max(1, options?.concurrency ?? 1);
+    // Each pending request adds listeners to the shared client. Stay below the
+    // library's listener threshold of twelve while allowing parallel reads.
+    const limit = Math.min(8, Math.max(1, options?.concurrency ?? 1));
 
     const files: FileInfo[] = [];
     const pruned: PrunedDirectory[] = [];
@@ -518,7 +503,7 @@ async function walkSftpTree(
 
     try {
         options?.signal?.throwIfAborted();
-        client = await connectSFTPForSource(config);
+        client = await connectSFTP(config);
         const exists = await client.exists(startDir);
         if (exists !== 'd') return { files, pruned };
 

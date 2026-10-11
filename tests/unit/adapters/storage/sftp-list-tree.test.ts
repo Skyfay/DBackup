@@ -211,26 +211,38 @@ describe("SFTPAdapter.listTree", () => {
         expect(mockSftpEnd).toHaveBeenCalledTimes(1);
     });
 
-    it("retries a transient SSH handshake error just once for a source walk", async () => {
+    it("propagates a transient source handshake failure without retrying", async () => {
         serveTree({ ".": [file("a.txt")] });
-        mockSftpConnect
-            .mockRejectedValueOnce(new Error("Timed out while waiting for handshake"))
-            .mockResolvedValueOnce(undefined);
-
-        const result = await SFTPAdapter.listTree!(config, "", { concurrency: 8 });
-        expect(result.files).toHaveLength(1);
-        expect(mockSftpConnect).toHaveBeenCalledTimes(2);
+        mockSftpConnect.mockRejectedValueOnce(new Error("Timed out while waiting for handshake"));
+        await expect(SFTPAdapter.listTree!(config, "", { concurrency: 8 })).rejects.toThrow("handshake");
+        expect(mockSftpConnect).toHaveBeenCalledTimes(1);
     });
 
-    it("disposes a failed handshake client before retrying a source scan", async () => {
+    it("disposes the failed handshake client before propagating the error", async () => {
         serveTree({ ".": [file("ok.txt")] });
-        mockSftpConnect.mockRejectedValueOnce(new Error("ETIMEDOUT")).mockResolvedValueOnce(undefined);
+        mockSftpConnect.mockRejectedValueOnce(new Error("ETIMEDOUT"));
+        await expect(SFTPAdapter.listTree!(config, "", { concurrency: 8 })).rejects.toThrow("ETIMEDOUT");
+        expect(mockSftpConnect).toHaveBeenCalledTimes(1);
+        expect(mockSftpEnd).toHaveBeenCalledTimes(1);
+        expect(mockDestroy).toHaveBeenCalledTimes(1);
+    });
 
-        await SFTPAdapter.listTree!(config, "", { concurrency: 8 });
-
-        expect(mockSftpConnect).toHaveBeenCalledTimes(2);
-        expect(mockSftpEnd).toHaveBeenCalledTimes(2);
-        expect(mockDestroy).toHaveBeenCalledTimes(2);
+    it("caps concurrent directory requests at eight on the shared client", async () => {
+        mockSftpExists.mockResolvedValue("d");
+        let active = 0;
+        let peak = 0;
+        mockSftpList.mockImplementation(async (remotePath: string) => {
+            if (remotePath === ".") return Array.from({ length: 20 }, (_, index) => dir("dir" + index));
+            active++;
+            peak = Math.max(peak, active);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            active--;
+            return [file("entry")];
+        });
+        const result = await SFTPAdapter.listTree!(config, "", { concurrency: 20 });
+        expect(result.files).toHaveLength(20);
+        expect(peak).toBe(8);
+        expect(mockSftpConnect).toHaveBeenCalledTimes(1);
     });
 
     it("never retries a non-transient authentication failure", async () => {

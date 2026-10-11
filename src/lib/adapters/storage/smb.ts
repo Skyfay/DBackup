@@ -46,9 +46,6 @@ function createClient(config: SMBConfig): SambaClient {
 /** Keep every SMB object path relative to the configured share root. */
 function normalizeRelativeSmbPath(value: string, label: string): string {
     const normalized = value.replace(/\\/g, "/");
-    if (normalized.startsWith("/")) {
-        throw new Error(`${label} must be relative to the SMB share root`);
-    }
     const parts = normalized.split("/").filter((part) => part !== "" && part !== ".");
     if (parts.some((part) => part === "..")) {
         throw new Error(`${label} must not traverse outside the SMB share root`);
@@ -65,7 +62,8 @@ function resolvePath(config: SMBConfig, relativePath: string): string {
 
 function isDirectoryAlreadyExistsError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
-    return /NT_STATUS_OBJECT_NAME_COLLISION|already exists|File exists/i.test(message);
+    const statuses = message.match(/\bNT_STATUS_[A-Z0-9_]+\b/g) ?? [];
+    return statuses.length > 0 && statuses.every((status) => status === "NT_STATUS_OBJECT_NAME_COLLISION");
 }
 
 /**
@@ -87,7 +85,11 @@ async function ensureDir(
         current = current ? `${current}/${segment}` : segment;
         if (dirCache.has(current)) continue;
         try {
-            await client.mkdir(current, "/");
+            const output = await client.mkdir(current, "/");
+            // smbclient can exit successfully while reporting a protocol failure.
+            const statuses = String(output ?? "").match(/\bNT_STATUS_[A-Z0-9_]+\b/g) ?? [];
+            const failure = statuses.find((status) => status !== "NT_STATUS_OBJECT_NAME_COLLISION");
+            if (failure) throw new Error(failure);
         } catch (error: unknown) {
             if (!isDirectoryAlreadyExistsError(error)) {
                 const reason = error instanceof Error ? error.message : String(error);
@@ -328,9 +330,7 @@ export const SMBAdapter: StorageAdapter = {
         const destination = resolvePath(config, testFileName);
 
         try {
-            // Ensure test subfolder exists (two-step: samba-client does not handle nested mkdir)
-            await client.mkdir(resolvePath(config, '.dbackup'), '/').catch(() => {});
-            await client.mkdir(resolvePath(config, '.dbackup/test'), '/').catch(() => {});
+            await ensureDir(client, config, destination, new Set());
 
             // Create a temp file to upload
             await fs.writeFile(tmpPath, "Connection Test");

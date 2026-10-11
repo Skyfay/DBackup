@@ -79,6 +79,37 @@ describe("SMBAdapter", () => {
     // ===== upload() =====
 
     describe("upload()", () => {
+
+        it("treats leading slashes as share-relative paths", async () => {
+            expect(await SMBAdapter.upload({ ...config, pathPrefix: "/backups" }, "/tmp/fixture", "/restore/nested/file.sql")).toBe(true);
+            expect(mockMkdir.mock.calls.map((call) => call[0])).toEqual(["backups/restore", "backups/restore/nested"]);
+            expect(mockSendFile).toHaveBeenCalledWith("/tmp/fixture", "backups/restore/nested/file.sql");
+        });
+
+        it.each(["NT_STATUS_ACCESS_DENIED", "NT_STATUS_OBJECT_PATH_NOT_FOUND"])("rejects a resolved mkdir status %s before upload", async (status) => {
+            mockMkdir.mockResolvedValue(status + " making remote directory");
+            expect(await SMBAdapter.upload(config, "/tmp/fixture", "restore/file.sql")).toBe(false);
+            expect(mockSendFile).not.toHaveBeenCalled();
+        });
+
+        it("accepts only the existing-directory status and caches successful parents", async () => {
+            mockMkdir.mockResolvedValue("NT_STATUS_OBJECT_NAME_COLLISION making remote directory");
+            const session = await SMBAdapter.openSession!(config);
+            expect(await session.upload("/tmp/fixture", "restore/nested/one.sql")).toBe(true);
+            expect(await session.upload("/tmp/fixture", "restore/nested/two.sql")).toBe(true);
+            expect(mockMkdir).toHaveBeenCalledTimes(2);
+            await session.close();
+        });
+
+        it("does not cache a failed parent across session uploads", async () => {
+            mockMkdir.mockResolvedValueOnce("NT_STATUS_ACCESS_DENIED making remote directory");
+            const session = await SMBAdapter.openSession!(config);
+            expect(await session.upload("/tmp/fixture", "restore/file.sql")).toBe(false);
+            expect(await session.upload("/tmp/fixture", "restore/file.sql")).toBe(true);
+            expect(mockMkdir).toHaveBeenCalledTimes(2);
+            expect(mockSendFile).toHaveBeenCalledTimes(1);
+            await session.close();
+        });
         it("returns true on successful upload", async () => {
             const result = await SMBAdapter.upload(config, "/tmp/backup.sql", "Job/backup.sql");
 
@@ -283,6 +314,14 @@ describe("SMBAdapter", () => {
     // ===== test() =====
 
     describe("test()", () => {
+
+        it("reports a resolved parent-creation failure before the write probe", async () => {
+            mockMkdir.mockResolvedValue("NT_STATUS_ACCESS_DENIED making remote directory");
+            const result = await SMBAdapter.test!(config);
+            expect(result.success).toBe(false);
+            expect(result.message).toContain("NT_STATUS_ACCESS_DENIED");
+            expect(mockSendFile).not.toHaveBeenCalled();
+        });
         it("returns success when write+delete succeed", async () => {
             const result = await SMBAdapter.test!(config);
 

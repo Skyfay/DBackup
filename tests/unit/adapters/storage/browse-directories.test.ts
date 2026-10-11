@@ -11,10 +11,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── SMB ──────────────────────────────────────────────────────────────────
-const smbList = vi.fn();
+const smbDir = vi.fn();
 vi.mock("samba-client", () => ({
     default: class {
-        list = (...args: unknown[]) => smbList(...args);
+        dir = (...args: unknown[]) => smbDir(...args);
     },
 }));
 
@@ -64,12 +64,7 @@ describe("SMB browseDirectories", () => {
     const config = { address: "//nas/share", username: "u", password: "p", maxProtocol: "SMB3" } as never;
 
     it("returns only directories, dropping . and ..", async () => {
-        smbList.mockResolvedValue([
-            { name: ".", type: "D", size: 0, modifyTime: new Date() },
-            { name: "..", type: "D", size: 0, modifyTime: new Date() },
-            { name: "data", type: "D", size: 0, modifyTime: new Date() },
-            { name: "notes.txt", type: "A", size: 12, modifyTime: new Date() },
-        ]);
+        smbDir.mockResolvedValue("  . D 0  Sun Oct  4 12:34:56 2026\n  .. D 0  Sun Oct  4 12:34:56 2026\n  data D 0  Sun Oct  4 12:34:56 2026\n  notes.txt A 12  Sun Oct  4 12:34:56 2026");
 
         expect(await SMBAdapter.browseDirectories!(config, "")).toEqual([
             { name: "data", path: "data" },
@@ -78,24 +73,20 @@ describe("SMB browseDirectories", () => {
 
     it("recognises a directory whose attributes carry more than D", async () => {
         // smbclient reports a flag string: "DH" is a hidden directory, "DA" an archived one.
-        smbList.mockResolvedValue([
-            { name: "hidden", type: "DH", size: 0, modifyTime: new Date() },
-            { name: "archived", type: "DA", size: 0, modifyTime: new Date() },
-            { name: "plain.txt", type: "A", size: 1, modifyTime: new Date() },
-        ]);
+        smbDir.mockResolvedValue("  hidden DH 0  Sun Oct  4 12:34:56 2026\n  archived DA 0  Sun Oct  4 12:34:56 2026\n  plain.txt A 1  Sun Oct  4 12:34:56 2026");
 
         const names = (await SMBAdapter.browseDirectories!(config, "")).map((e) => e.name);
         expect(names).toEqual(["hidden", "archived"]);
     });
 
     it("asks for the folder's contents, not the folder itself", async () => {
-        smbList.mockResolvedValue([]);
+        smbDir.mockResolvedValue("");
         await SMBAdapter.browseDirectories!(config, "projects");
-        expect(smbList).toHaveBeenCalledWith("projects/*");
+        expect(smbDir).toHaveBeenCalledWith("projects/*");
     });
 
     it("builds nested paths relative to the adapter root", async () => {
-        smbList.mockResolvedValue([{ name: "inner", type: "D", size: 0, modifyTime: new Date() }]);
+        smbDir.mockResolvedValue("  inner D 0  Sun Oct  4 12:34:56 2026");
         expect(await SMBAdapter.browseDirectories!(config, "outer")).toEqual([
             { name: "inner", path: "outer/inner" },
         ]);

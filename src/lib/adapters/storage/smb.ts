@@ -31,16 +31,14 @@ interface SMBConfig {
 
 /**
  * Creates a SambaClient instance with the given config.
- * Optionally scopes smbclient commands to a remote directory.
  */
-function createClient(config: SMBConfig, directory?: string): SambaClient {
+function createClient(config: SMBConfig): SambaClient {
     return new SambaClient({
         address: config.address,
         username: config.username || "guest",
         password: config.password,
         domain: config.domain,
         maxProtocol: config.maxProtocol || "SMB3",
-        ...(directory ? { directory } : {}),
     });
 }
 
@@ -56,10 +54,10 @@ function resolvePath(config: SMBConfig, relativePath: string): string {
 
 type SambaListEntry = { name: string; type: string; size: number; modifyTime: Date };
 
-/** Recover long SMB directory rows omitted by samba-client's fixed-width parser. */
+/** Parse the right-hand metadata without confusing filename words with attributes. */
 function parseRawSmbDirectory(raw: string): SambaListEntry[] {
     const entries: SambaListEntry[] = [];
-    const row = /^\s*(.+?)\s+([A-Za-z0-9]+)\s+(\d+)\s{2,}(.+?)\s*$/;
+    const row = /^\s*(.+?)\s+([A-Za-z]+)\s+(\d+)\s+(\w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4})\s*$/;
     for (const line of raw.split(/\r?\n/)) {
         const match = line.match(row);
         if (!match) continue;
@@ -71,6 +69,13 @@ function parseRawSmbDirectory(raw: string): SambaListEntry[] {
         });
     }
     return entries;
+}
+
+
+/** Read each directory once for both recursive inventory and directory browsing. */
+async function listDirectory(client: SambaClient, directory: string): Promise<SambaListEntry[]> {
+    const raw = await client.dir(directory ? directory + "/*" : "*");
+    return parseRawSmbDirectory(typeof raw === "string" ? raw : raw.toString("utf8"));
 }
 
 /**
@@ -200,13 +205,13 @@ export const SMBAdapter: StorageAdapter = {
 
             // smbclient's "dir" needs a glob: "folder/*" lists the folder's contents,
             // while "folder" alone would only match the entry itself.
-            const items = await client.list(base ? base + "/*" : "*");
+            const items = await listDirectory(client, base);
 
             return items
                 // The attribute string carries "D" for a directory, alongside flags like
                 // "A" (archive) or "H" (hidden), so it is tested rather than compared.
                 .filter((item: { name: string; type: string }) =>
-                    item.type.toUpperCase().includes("D") && item.name !== "." && item.name !== "..")
+                    item.type.includes("D") && item.name !== "." && item.name !== "..")
                 .map((item: { name: string }) => ({
                     name: item.name,
                     path: subPath ? `${subPath}/${item.name}` : item.name,
@@ -232,21 +237,8 @@ export const SMBAdapter: StorageAdapter = {
             const walk = async (currentDir: string) => {
                 let items: Array<{ name: string; type: string; size: number; modifyTime: Date }>;
                 try {
-                    // Keep the directory in smbclient's -D option instead of embedding
-                    // paths (possibly containing spaces) in the glob expression.
-                    const client = createClient(config, currentDir);
-                    const listPath = "*";
-                    items = await client.list(listPath);
-                    // samba-client can omit long names even from a non-empty listing.
-                    // Merge right-hand parsed raw rows without duplicating library entries.
-                    const raw = await client.dir(listPath);
-                    const text = typeof raw === "string" ? raw : raw.toString("utf8");
-                    const recovered = parseRawSmbDirectory(text);
-                    const merged = new Map(items.map((item) => [item.name, item]));
-                    for (const item of recovered) {
-                        if (!merged.has(item.name)) merged.set(item.name, item);
-                    }
-                    items = [...merged.values()];
+                    const client = createClient(config);
+                    items = await listDirectory(client, currentDir);
                 } catch (error: unknown) {
                     // Root directory listing failure means the share is unreachable or inaccessible.
                     // Propagate to trigger the DB fallback in the stats cache.
@@ -263,7 +255,7 @@ export const SMBAdapter: StorageAdapter = {
                         ? normalize(currentDir) + "/" + item.name
                         : item.name;
 
-                    if (item.type.toUpperCase().includes("D")) {
+                    if (item.type.includes("D")) {
                         await walk(fullPath);
                     } else {
                         // Calculate relative path (strip prefix)

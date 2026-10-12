@@ -29,6 +29,9 @@ function queryOf(argv: string[]): string | undefined {
     return i === -1 ? undefined : argv[i + 1];
 }
 
+/** The calls that talk to the server, without the --version question that tells the client apart. */
+const queries = (host: FakeHost) => host.calls.exec.filter((argv) => !argv.includes("--version"));
+
 describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (kind) => {
     describe("test()", () => {
         it("reports success with a parsed version", async () => {
@@ -118,7 +121,14 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (k
         it("adds --skip-ssl when SSL is disabled", async () => {
             const host = createFakeHost({ kind });
             await testConnection({ ...baseConfig, disableSsl: true } as never, host);
-            expect(host.calls.exec[0]).toContain("--skip-ssl");
+            expect(queries(host)[0]).toContain("--skip-ssl");
+        });
+
+        it("turns TLS off with --ssl-mode when the client is MySQL's own, which refuses --skip-ssl", async () => {
+            const host = createFakeHost({ kind, onExec: (argv) => (argv.includes("--version") ? { stdout: "mysql  Ver 8.0.46 for Linux on x86_64" } : undefined) });
+            await testConnection({ ...baseConfig, disableSsl: true } as never, host);
+            expect(queries(host)[0]).toContain("--ssl-mode=DISABLED");
+            expect(queries(host)[0]).not.toContain("--skip-ssl");
         });
     });
 
@@ -149,7 +159,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (k
         it("adds --skip-ssl when SSL is disabled", async () => {
             const host = listing("");
             await getDatabases({ ...baseConfig, disableSsl: true } as never, host);
-            expect(host.calls.exec[0]).toContain("--skip-ssl");
+            expect(queries(host)[0]).toContain("--skip-ssl");
         });
     });
 

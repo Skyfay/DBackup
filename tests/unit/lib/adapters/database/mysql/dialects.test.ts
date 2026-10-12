@@ -33,6 +33,10 @@ const baseMariaDBConfig: MariaDBConfig = {
 
 // --- getDialect ---
 
+/** The client tools as dumpClientOf tells them apart. */
+const MYSQL_TOOL = { setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" } as const;
+const MARIADB_TOOL = { setsGtidPurged: false, sslOff: "--skip-ssl" } as const;
+
 describe("getDialect", () => {
     it("returns MariaDBDialect for adapterId 'mariadb' without version", () => {
         expect(getDialect("mariadb")).toBeInstanceOf(MariaDBDialect);
@@ -191,11 +195,11 @@ describe("what a dump holds besides the tables", () => {
     });
 
     it("turns off the GTID set only for MySQL's own mysqldump, and leaves it to the extra options when they set it", () => {
-        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: true })).toContain("--set-gtid-purged=OFF");
-        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: false })).not.toContain("--set-gtid-purged=OFF");
+        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"], undefined, MYSQL_TOOL)).toContain("--set-gtid-purged=OFF");
+        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"], undefined, MARIADB_TOOL)).not.toContain("--set-gtid-purged=OFF");
         expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"])).not.toContain("--set-gtid-purged=OFF");
 
-        const own = dialect.getDumpArgs({ ...baseMySQLConfig, options: "--set-gtid-purged=AUTO" }, ["shop"], undefined, { setsGtidPurged: true });
+        const own = dialect.getDumpArgs({ ...baseMySQLConfig, options: "--set-gtid-purged=AUTO" }, ["shop"], undefined, MYSQL_TOOL);
         expect(own).not.toContain("--set-gtid-purged=OFF");
         expect(own).toContain("--set-gtid-purged=AUTO");
     });
@@ -204,11 +208,11 @@ describe("what a dump holds besides the tables", () => {
         for (const args of [
             new MariaDBDialect().getDumpArgs(baseMariaDBConfig, ["shop"]),
             new MySQL57Dialect().getDumpArgs(baseMySQLConfig, ["shop"]),
-            new MySQL80Dialect().getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: true }),
+            new MySQL80Dialect().getDumpArgs(baseMySQLConfig, ["shop"], undefined, MYSQL_TOOL),
         ]) {
             expect(args).toEqual(expect.arrayContaining(["--single-transaction", "--routines", "--events"]));
         }
-        expect(new MySQL80Dialect().getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: true })).toContain("--set-gtid-purged=OFF");
+        expect(new MySQL80Dialect().getDumpArgs(baseMySQLConfig, ["shop"], undefined, MYSQL_TOOL)).toContain("--set-gtid-purged=OFF");
     });
 });
 
@@ -240,6 +244,13 @@ describe("MySQLBaseDialect.getRestoreArgs", () => {
         const config: MySQLConfig = { ...baseMySQLConfig, disableSsl: true };
         const args = dialect.getRestoreArgs(config);
         expect(args).toContain("--skip-ssl");
+    });
+
+    it("turns TLS off with --ssl-mode for MySQL's own client, which refuses --skip-ssl from 8.0 on", () => {
+        const config: MySQLConfig = { ...baseMySQLConfig, disableSsl: true };
+        const args = dialect.getRestoreArgs(config, "targetdb", undefined, MYSQL_TOOL);
+        expect(args).toContain("--ssl-mode=DISABLED");
+        expect(args).not.toContain("--skip-ssl");
     });
 });
 
@@ -295,10 +306,15 @@ describe("MySQL57Dialect", () => {
             expect(args).toContain("--databases");
         });
 
-        it("adds --ssl-mode=DISABLED when disableSsl is true", () => {
+        it("turns TLS off with the flag of the client that runs, not by the version of the server", () => {
+            // The Docker image runs MariaDB's client against MySQL 5.7 too, which refused
+            // --ssl-mode and failed every backup and restore with TLS off.
             const config: MySQLConfig = { ...baseMySQLConfig, disableSsl: true };
-            const args = dialect.getDumpArgs(config, ["mydb"]);
-            expect(args).toContain("--ssl-mode=DISABLED");
+            expect(dialect.getDumpArgs(config, ["mydb"], undefined, MARIADB_TOOL)).toContain("--skip-ssl");
+            expect(dialect.getDumpArgs(config, ["mydb"], undefined, MARIADB_TOOL)).not.toContain("--ssl-mode=DISABLED");
+            expect(dialect.getRestoreArgs(config, "mydb", undefined, MARIADB_TOOL)).toContain("--skip-ssl");
+            expect(dialect.getDumpArgs(config, ["mydb"], undefined, MYSQL_TOOL)).toContain("--ssl-mode=DISABLED");
+            expect(dialect.getRestoreArgs(config, "mydb", undefined, MYSQL_TOOL)).toContain("--ssl-mode=DISABLED");
         });
 
         it("does not add --ssl-mode=DISABLED when SSL is enabled", () => {

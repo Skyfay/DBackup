@@ -224,6 +224,12 @@ describe("WebDAVAdapter", () => {
 
             await expect(WebDAVAdapter.list(config, "Job")).rejects.toThrow("Connection refused");
         });
+
+        it("lists a folder that does not exist yet as empty, like before the first upload", async () => {
+            mockClient.getDirectoryContents.mockRejectedValue(Object.assign(new Error("Invalid response: 404 Not Found"), { status: 404 }));
+
+            await expect(WebDAVAdapter.list(config, "Job")).resolves.toEqual([]);
+        });
     });
 
     // ===== delete() =====

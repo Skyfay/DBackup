@@ -321,14 +321,7 @@ When a new database version is released:
    RUN apk add --no-cache postgresql18-client
    ```
 
-3. **Add integration tests**:
-   ```yaml
-   # docker-compose.test.yml
-   mysql-9:
-     image: mysql:9.0
-     ports:
-       - "3307:3306"
-   ```
+3. **Add the version to the dev lab**, see [Adding an Engine or Version](/developer-guide/reference/dev-lab#adding-an-engine-or-version)
 
 4. **Update documentation**
 

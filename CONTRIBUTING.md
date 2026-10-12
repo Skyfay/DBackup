@@ -24,7 +24,7 @@ Small fixes (language translations, typos, documentation improvements) can be su
 
 - Node.js 24, the version CI and the Docker image use
 - pnpm 10
-- Docker (for integration tests)
+- Docker (for the dev lab, see the Dev Lab page of the developer guide)
 
 ### Getting Started
 
@@ -57,7 +57,8 @@ src/
   services/    # Business logic layer
   hooks/       # React hooks
 prisma/        # Database schema and migrations (SQLite)
-tests/         # Unit and integration tests
+tests/         # Unit and audit tests
+lab/           # Dev lab: test databases, storage servers and the seed
 docs/          # VitePress documentation
 ```
 
@@ -68,7 +69,6 @@ pnpm dev                # Start development server
 pnpm build              # Production build
 pnpm validate           # Lint, type check and unit tests
 pnpm test               # Run unit tests (vitest)
-pnpm test:integration   # Run integration tests against real DB containers
 pnpm lint               # Run linters
 pnpm type               # Run TypeScript type checks
 ```

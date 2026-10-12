@@ -357,14 +357,15 @@ describe("transport lint guards", () => {
         ).toEqual([]);
     }, 30_000);
 
-    it("passes a host to every adapter call in the integration tests", () => {
+    it("passes a host to every adapter call in the dev lab and the end-to-end tests", () => {
         // `test` and `ping` keep an optional host on BaseAdapter, because
         // requiring one there would have forced a host through 180 storage and
         // notification call sites that have no transport. The cost is that
         // forgetting one here compiles: the adapter then answers "requires an
         // execution host" and the test reads it as a failed connection.
-        const files = findFiles(path.resolve(__dirname, "../../integration"));
-        const call = /\badapter\.(test|ping|getDatabases|getDatabasesWithStats|dump|restore)!?\s*\(/;
+        const root = path.resolve(__dirname, "../../..");
+        const files = [...findFiles(path.join(root, "lab", "src")), ...findFiles(path.join(root, "e2e"))];
+        const call = /\badapter\.(test|ping|getDatabases|getDatabasesWithStats|dump|dumpOne|restore|restoreOne)!?\s*\(/;
 
         const violations: Violation[] = [];
         for (const file of files) {
@@ -372,7 +373,7 @@ describe("transport lint guards", () => {
             lines.forEach((line, index) => {
                 if (call.test(line) && !line.includes("host")) {
                     violations.push({
-                        file: path.relative(path.resolve(__dirname, "../../.."), file),
+                        file: path.relative(root, file),
                         line: index + 1,
                         content: line.trim(),
                         rule: "adapter call without a host",
@@ -384,8 +385,9 @@ describe("transport lint guards", () => {
         const rule: Rule[] = [{
             name: "adapter call without a host",
             pattern: call,
-            reason: "Wrap the call in withHost(adapter, config, (host) => ...) so it uses the configured transport.",
+            reason: "Use runAdapterTest, or wrap the call in withHost(adapter, config, (host) => ...) so it uses the configured transport.",
         }];
+        expect(files.length, "the dev lab and the end-to-end tests were not found").toBeGreaterThan(0);
         expect(violations, formatViolationReport(violations, rule)).toEqual([]);
     });
 

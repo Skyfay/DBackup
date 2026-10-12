@@ -216,6 +216,9 @@ export const WebDAVAdapter: StorageAdapter = {
 
             return files;
         } catch (error: unknown) {
+            // A folder nothing was uploaded to yet is not there. It lists as empty, like on the
+            // other destinations, instead of failing the refresh of the storage numbers after every run.
+            if ((error as { status?: number } | null)?.status === 404) return [];
             log.error("WebDAV list failed", { url: config.url, dir }, wrapError(error));
             throw error;
         }

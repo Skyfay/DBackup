@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { CLIENT_ADDRESS_HEADER as SERVER_HEADER, clientAddressOf, normalizeAddress, trustedProxiesFrom } from "../../../server/client-address";
+import { CLIENT_ADDRESS_HEADER as SERVER_HEADER, CLOUDFLARE_RANGES, clientAddressOf, normalizeAddress, trustedProxiesFrom } from "../../../server/client-address";
 import { CLIENT_ADDRESS_HEADER as APP_HEADER } from "@/lib/core/client-address";
 
 const defaults = trustedProxiesFrom(undefined);
@@ -52,8 +52,37 @@ describe("the address of a client", () => {
         expect(clientAddressOf("127.0.0.1", "203.0.113.7", "203.0.113.7", trustedProxiesFrom("none"))).toBe("127.0.0.1");
     });
 
-    it("refuses an entry of TRUSTED_PROXIES that is no address or range", () => {
-        expect(() => trustedProxiesFrom("10.0.0.0/8, nginx")).toThrow(/"nginx" is no IP address or CIDR range/);
+    it("trusts the edge servers of Cloudflare with TRUSTED_PROXIES=cloudflare", () => {
+        const cloudflare = trustedProxiesFrom("cloudflare");
+        expect(clientAddressOf("104.16.1.1", "203.0.113.7", undefined, cloudflare)).toBe("203.0.113.7");
+        expect(clientAddressOf("2606:4700::1", "2a00:1450::1", undefined, cloudflare)).toBe("2a00:1450::1");
+        // A client that connects past Cloudflare cannot pose as it.
+        expect(clientAddressOf("198.51.100.1", "203.0.113.7", undefined, cloudflare)).toBe("198.51.100.1");
+        // The keyword alone leaves out the private networks, as any list does.
+        expect(clientAddressOf("172.18.0.2", "203.0.113.7", undefined, cloudflare)).toBe("172.18.0.2");
+    });
+
+    it("finds the client behind Cloudflare and a proxy in a private network with private,cloudflare", () => {
+        // Cloudflare sends the address of the client, the proxy appends the edge server it saw.
+        const chain = "203.0.113.7, 162.158.1.1";
+        expect(clientAddressOf("172.18.0.2", chain, undefined, trustedProxiesFrom("private,cloudflare"))).toBe("203.0.113.7");
+        expect(clientAddressOf("172.18.0.2", chain, undefined, defaults)).toBe("162.158.1.1");
+    });
+
+    it("takes the keywords in any case and beside addresses", () => {
+        const mixed = trustedProxiesFrom(" Private , CLOUDFLARE, 198.51.100.9");
+        expect(clientAddressOf("172.18.0.2", "203.0.113.7, 104.16.1.1", undefined, mixed)).toBe("203.0.113.7");
+        expect(clientAddressOf("198.51.100.9", "203.0.113.7", undefined, mixed)).toBe("203.0.113.7");
+    });
+
+    it("knows every range of Cloudflare as a valid IPv4 or IPv6 range", () => {
+        expect(CLOUDFLARE_RANGES.filter((range) => !/^[\d.]+\/\d+$|^[\da-f:]+\/\d+$/.test(range))).toEqual([]);
+        expect(() => trustedProxiesFrom("cloudflare")).not.toThrow();
+    });
+
+    it("refuses an entry of TRUSTED_PROXIES that is no address, range or keyword", () => {
+        expect(() => trustedProxiesFrom("10.0.0.0/8, nginx")).toThrow(/"nginx" is no IP address, CIDR range or one of private, cloudflare/);
+        expect(() => trustedProxiesFrom("constructor")).toThrow(/"constructor"/);
         expect(() => trustedProxiesFrom("10.0.0.0/33")).toThrow(/10\.0\.0\.0\/33/);
         expect(() => trustedProxiesFrom("10.0.0.0/x")).toThrow(/10\.0\.0\.0\/x/);
     });

@@ -39,6 +39,7 @@ const keyPath = path.join(certsDir, "tls.key");
 let trustedProxies: BlockList;
 try {
   trustedProxies = trustedProxiesFrom(process.env.TRUSTED_PROXIES);
+  console.log(`[Server] X-Forwarded-For counts from: ${process.env.TRUSTED_PROXIES?.trim() || "private (the default)"}`);
 } catch (err: unknown) {
   console.error(`[Server] ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);

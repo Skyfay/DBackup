@@ -109,6 +109,7 @@ export function NotificationsTab({ cards }: { cards: boolean }) {
                 rowCount={list.total}
                 onRefresh={list.refresh}
                 isLoading={list.isLoading}
+                loadingRows={!list.loaded}
                 getRowId={(row) => row.id}
                 onRowClick={setOpen}
                 activeRowId={open?.id ?? null}

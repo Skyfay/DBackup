@@ -8,6 +8,7 @@ import { isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { getLoginImageInfo, LOGIN_LOOK_KEY, type LoginLook } from "./login-image-service";
+import { DEFAULT_SESSION_DURATION } from "@/lib/auth/session-lifetime";
 
 const log = logger.child({ service: "SystemSettingsService" });
 
@@ -35,7 +36,6 @@ export interface PrivacySettings {
 }
 
 export const MAX_CONCURRENT_JOBS = 10;
-export const DEFAULT_SESSION_DURATION = 604800;
 
 const KEYS = {
     instanceName: "general.instanceName",

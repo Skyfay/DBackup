@@ -35,10 +35,11 @@ export async function stepRetention(ctx: RunnerContext) {
         });
     }
 
-    // Refresh storage stats cache after retention deletes files (non-blocking)
+    // Refresh storage stats cache of the job's destinations after retention deletes files (non-blocking)
     if (totalDeleted > 0) {
+        const configIds = ctx.destinations.map((destination) => destination.configId);
         import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
-            refreshStorageStatsCache().catch((e) => {
+            refreshStorageStatsCache({ configIds }).catch((e) => {
                 log.warn("Failed to refresh storage stats cache after retention", {}, e instanceof Error ? e : undefined);
             });
         });

@@ -94,9 +94,11 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
     const columns = useMemo(() => runColumns({ now, renderActions: (row) => <BackupRowMenu name={row.name} groups={groupsFor(row)} /> }), [now, groupsFor]);
     const filters = useMemo(() => runFilters(page), [page]);
     const status = page?.facets.status ?? {};
-    const quickCount = (value: RunQuick) => value === "all"
-        ? Object.values(status).reduce((sum, count) => sum + count, 0)
-        : QUICK_STATUSES[value].reduce((sum, key) => sum + (status[key] ?? 0), 0);
+    const quickCount = (value: RunQuick) => !page
+        ? undefined
+        : value === "all"
+            ? Object.values(status).reduce((sum, count) => sum + count, 0)
+            : QUICK_STATUSES[value].reduce((sum, key) => sum + (status[key] ?? 0), 0);
 
     return (
         <div className="space-y-4 md:space-y-0">
@@ -119,6 +121,7 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
                 rowCount={list.total}
                 onRefresh={list.refresh}
                 isLoading={list.isLoading}
+                loadingRows={!list.loaded}
                 getRowId={(row) => row.id}
                 onRowClick={open}
                 view={cards ? "cards" : "table"}

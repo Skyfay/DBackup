@@ -146,16 +146,16 @@ See [SSO Integration](./sso.md) for detailed OIDC implementation.
 
 ### Configurable Session Duration
 
-Session lifetime is configurable by administrators as **Sessions last** under Settings → Sign-in. The value is stored in the `SystemSetting` table under the key `auth.sessionDuration` (in seconds).
+Session lifetime is configurable by administrators as **Sessions last** under Settings → Sign-in. The value is stored in the `SystemSetting` table under the key `auth.sessionDuration` (in seconds). A session ends that long after its sign-in, however often it is used.
 
 ```typescript
-// src/lib/auth.ts - Dynamic session expiry via database hook
+// src/lib/auth/index.ts - the end of a session, set once when it is created
+session: SESSION_OPTIONS, // from src/lib/auth/session-lifetime.ts
 databaseHooks: {
   session: {
     create: {
       before: async (session) => {
-        const duration = await getSessionDuration(); // reads SystemSetting
-        const expiresAt = new Date(Date.now() + duration * 1000);
+        const expiresAt = sessionEndsAt(await getSessionDuration()); // reads SystemSetting
         return { data: { ...session, expiresAt } };
       },
     },
@@ -165,7 +165,12 @@ databaseHooks: {
 
 **Default:** 7 days (604800 seconds). Available options: 1h, 8h, 1d, 3d, 7d, 14d, 30d, 90d.
 
-The `session.expiresIn` config serves as fallback when no database setting exists. The `databaseHooks.session.create.before` hook dynamically overrides `expiresAt` for every new session based on the admin-configured value.
+`SESSION_OPTIONS` sets two things better-auth would otherwise get wrong:
+
+- `disableSessionRefresh: true`. Left on, better-auth extends a session once `updateAge` passed, to its own `expiresIn` from that moment, so every length turned into seven days from the last visit and an active user was never signed out.
+- `expiresIn` of 90 days, the longest length. better-auth gives the session cookie that `Max-Age`, so the cookie never ends before the session in the database does, which decides.
+
+`tests/unit/lib/session-lifetime.test.ts` checks both against better-auth itself, with its memory adapter.
 
 ### Session Listing & Revocation
 

@@ -7,6 +7,7 @@ import {
     buildConnectionArgs,
     withAuthArgs,
 } from "./args";
+import { connectionClientOf } from "./dump-content";
 
 const SYSTEM_DATABASES = ["information_schema", "mysql", "performance_schema", "sys"];
 
@@ -34,7 +35,7 @@ export async function ensureDatabase(
 ) {
     try {
         const mysqlBin = await host.which(...MYSQL_CLIENT);
-        const connArgs = buildConnectionArgs(config, host, { user });
+        const connArgs = buildConnectionArgs(config, host, { user, client: await connectionClientOf(config, host, mysqlBin) });
 
         await withAuthArgs(host, pass, async (authArgs) => {
             const created = await host.exec([
@@ -79,7 +80,7 @@ export async function test(
     try {
         const mysqlBin = await host.which(...MYSQL_CLIENT);
         const adminBin = await host.which(...MYSQL_ADMIN);
-        const connArgs = buildConnectionArgs(config, host);
+        const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
         return await withAuthArgs(host, config.password, async (authArgs) => {
             // 1. Reachability. 10s allows for a server under heavy load.
@@ -119,7 +120,7 @@ export async function test(
 export async function getDatabases(config: MySQLConfig, hostArg: ExecutionHost): Promise<string[]> {
     const host = requireHost(hostArg);
     const mysqlBin = await host.which(...MYSQL_CLIENT);
-    const connArgs = buildConnectionArgs(config, host);
+    const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const result = await host.exec([
@@ -169,7 +170,7 @@ function parseStatsOutput(stdout: string): DatabaseInfo[] {
 export async function getDatabasesWithStats(config: MySQLConfig, hostArg: ExecutionHost): Promise<DatabaseInfo[]> {
     const host = requireHost(hostArg);
     const mysqlBin = await host.which(...MYSQL_CLIENT);
-    const connArgs = buildConnectionArgs(config, host);
+    const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const stats = await host.exec([

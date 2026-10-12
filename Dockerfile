@@ -225,6 +225,7 @@ RUN test -n "$(find /pnpm -type f -name 'schema-engine-*' | head -1)" || \
 
 # Copy compiled custom HTTPS server (replaces default Next.js server entry point)
 COPY --from=builder --link --chown=1001:1001 /app/custom-server.js ./custom-server.js
+COPY --from=builder --link --chown=1001:1001 /app/server/client-address.js ./server/client-address.js
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/

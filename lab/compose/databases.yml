@@ -1,0 +1,377 @@
+# The database servers of the dev lab. Profile "core" holds the oldest and the newest version of
+# every engine, "full" adds the ones between. Started by `pnpm lab:up`, never by hand: the lab
+# loads the datasets of lab/datasets afterwards and knows every port from the engine files under
+# lab/src/engines. With storage.yml and notify.yml it forms one Compose project, dbackup-lab,
+# whose services reach each other by name.
+#
+# No bind mounts except the MSSQL backup folder, so the file runs unchanged on a remote Docker
+# host through a docker context. Credentials are test values and live in the catalog as well.
+
+x-mysql-health: &mysql-health
+  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpassword"]
+  interval: 5s
+  timeout: 20s
+  retries: 20
+x-mariadb-health: &mariadb-health
+  test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+  interval: 5s
+  timeout: 20s
+  retries: 20
+x-postgres-health: &postgres-health
+  test: ["CMD-SHELL", "pg_isready -U testuser -d postgres"]
+  interval: 5s
+  timeout: 5s
+  retries: 20
+x-mongo-health: &mongo-health
+  test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null || mongo --quiet --eval 'db.runCommand({ping:1}).ok'"]
+  interval: 10s
+  timeout: 10s
+  retries: 20
+x-redis-health: &redis-health
+  test: ["CMD-SHELL", "redis-cli -a testpassword --no-auth-warning ping || valkey-cli -a testpassword --no-auth-warning ping"]
+  interval: 5s
+  timeout: 5s
+  retries: 20
+x-firebird-health: &firebird-health
+  test: ["CMD-SHELL", "echo 'quit;' | isql -user sysdba -password masterkey /var/lib/firebird/data/shop.fdb >/dev/null 2>&1 || exit 1"]
+  interval: 10s
+  timeout: 5s
+  retries: 20
+  start_period: 20s
+x-mysql-env: &mysql-env
+  MYSQL_ROOT_PASSWORD: rootpassword
+x-postgres-env: &postgres-env
+  POSTGRES_USER: testuser
+  POSTGRES_PASSWORD: testpassword
+  POSTGRES_DB: postgres
+x-mongo-env: &mongo-env
+  MONGO_INITDB_ROOT_USERNAME: root
+  MONGO_INITDB_ROOT_PASSWORD: rootpassword
+x-mssql-env: &mssql-env
+  ACCEPT_EULA: "Y"
+  MSSQL_SA_PASSWORD: "YourStrong!Passw0rd"
+  MSSQL_PID: Express
+x-firebird-env: &firebird-env
+  FIREBIRD_ROOT_PASSWORD: masterkey
+  FIREBIRD_DATABASE: shop.fdb
+
+services:
+  # ── MySQL ───────────────────────────────────────────────
+  mysql-57:
+    image: mysql:5.7
+    restart: unless-stopped
+    platform: linux/amd64
+    profiles: ["core"]
+    command: --skip-name-resolve
+    environment: *mysql-env
+    ports: ["33357:3306"]
+    volumes: [mysql-57:/var/lib/mysql]
+    healthcheck: *mysql-health
+  mysql-80:
+    image: mysql:8.0
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *mysql-env
+    ports: ["33380:3306"]
+    volumes: [mysql-80:/var/lib/mysql]
+    healthcheck: *mysql-health
+  mysql-84:
+    image: mysql:8.4
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *mysql-env
+    ports: ["33384:3306"]
+    volumes: [mysql-84:/var/lib/mysql]
+    healthcheck: *mysql-health
+  mysql-9:
+    image: mysql:9
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *mysql-env
+    ports: ["33390:3306"]
+    volumes: [mysql-9:/var/lib/mysql]
+    healthcheck: *mysql-health
+
+  # ── MariaDB ─────────────────────────────────────────────
+  mariadb-104:
+    image: mariadb:10.4
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *mysql-env
+    ports: ["33304:3306"]
+    volumes: [mariadb-104:/var/lib/mysql]
+    healthcheck: *mariadb-health
+  mariadb-1011:
+    image: mariadb:10.11
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *mysql-env
+    ports: ["33310:3306"]
+    volumes: [mariadb-1011:/var/lib/mysql]
+    healthcheck: *mariadb-health
+  mariadb-114:
+    image: mariadb:11.4
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *mysql-env
+    ports: ["33314:3306"]
+    volumes: [mariadb-114:/var/lib/mysql]
+    healthcheck: *mariadb-health
+  mariadb-118:
+    image: mariadb:11.8
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *mysql-env
+    ports: ["33318:3306"]
+    volumes: [mariadb-118:/var/lib/mysql]
+    healthcheck: *mariadb-health
+
+  # ── PostgreSQL ──────────────────────────────────────────
+  postgres-12:
+    image: postgres:12-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *postgres-env
+    ports: ["54412:5432"]
+    volumes: [postgres-12:/var/lib/postgresql/data]
+    healthcheck: *postgres-health
+  postgres-13:
+    image: postgres:13-alpine
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *postgres-env
+    ports: ["54413:5432"]
+    volumes: [postgres-13:/var/lib/postgresql/data]
+    healthcheck: *postgres-health
+  postgres-14:
+    image: postgres:14-alpine
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *postgres-env
+    ports: ["54414:5432"]
+    volumes: [postgres-14:/var/lib/postgresql/data]
+    healthcheck: *postgres-health
+  postgres-15:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *postgres-env
+    ports: ["54415:5432"]
+    volumes: [postgres-15:/var/lib/postgresql/data]
+    healthcheck: *postgres-health
+  postgres-16:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *postgres-env
+    ports: ["54416:5432"]
+    volumes: [postgres-16:/var/lib/postgresql/data]
+    healthcheck: *postgres-health
+  postgres-17:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *postgres-env
+    ports: ["54417:5432"]
+    volumes: [postgres-17:/var/lib/postgresql/data]
+    healthcheck: *postgres-health
+  postgres-18:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *postgres-env
+    ports: ["54418:5432"]
+    # PostgreSQL 18 keeps its data one level deeper, in a folder named after the major version.
+    volumes: [postgres-18:/var/lib/postgresql]
+    healthcheck: *postgres-health
+
+  # ── MongoDB ─────────────────────────────────────────────
+  mongo-44:
+    image: mongo:4.4
+    restart: unless-stopped
+    platform: linux/amd64
+    profiles: ["core"]
+    environment: *mongo-env
+    ports: ["27704:27017"]
+    volumes: [mongo-44:/data/db]
+    healthcheck: *mongo-health
+  mongo-60:
+    image: mongo:6.0
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *mongo-env
+    ports: ["27706:27017"]
+    volumes: [mongo-60:/data/db]
+    healthcheck: *mongo-health
+  mongo-70:
+    image: mongo:7.0
+    restart: unless-stopped
+    profiles: ["full"]
+    environment: *mongo-env
+    ports: ["27707:27017"]
+    volumes: [mongo-70:/data/db]
+    healthcheck: *mongo-health
+  mongo-80:
+    image: mongo:8.0
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *mongo-env
+    ports: ["27708:27017"]
+    volumes: [mongo-80:/data/db]
+    healthcheck: *mongo-health
+
+  # ── MSSQL ───────────────────────────────────────────────
+  # SQL Server writes its .bak files to a folder DBackup reads them from. It has the same path
+  # on the Docker host and in the container, as DBackup's SSH file transfer expects.
+  mssql-2017:
+    image: mcr.microsoft.com/mssql/server:2017-latest
+    restart: unless-stopped
+    platform: linux/amd64
+    profiles: ["core"]
+    environment: *mssql-env
+    ports: ["14317:1433"]
+    volumes:
+      - mssql-2017:/var/opt/mssql
+      - ${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}:${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong!Passw0rd' -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+  mssql-2019:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    restart: unless-stopped
+    platform: linux/amd64
+    profiles: ["full"]
+    environment: *mssql-env
+    ports: ["14319:1433"]
+    volumes:
+      - mssql-2019:/var/opt/mssql
+      - ${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}:${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong!Passw0rd' -Q 'SELECT 1' -b -o /dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong!Passw0rd' -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+  mssql-2022:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    platform: linux/amd64
+    profiles: ["core"]
+    environment: *mssql-env
+    ports: ["14322:1433"]
+    volumes:
+      - mssql-2022:/var/opt/mssql
+      - ${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}:${LAB_MSSQL_BACKUP_DIR:-/tmp/dbackup-lab-mssql}
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong!Passw0rd' -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # ── Redis and Valkey ────────────────────────────────────
+  redis-6:
+    image: redis:6-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    command: redis-server --requirepass testpassword --appendonly yes
+    ports: ["63796:6379"]
+    volumes: [redis-6:/data]
+    healthcheck: *redis-health
+  redis-7:
+    image: redis:7-alpine
+    restart: unless-stopped
+    profiles: ["full"]
+    command: redis-server --requirepass testpassword --appendonly yes
+    ports: ["63797:6379"]
+    volumes: [redis-7:/data]
+    healthcheck: *redis-health
+  redis-8:
+    image: redis:8-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    command: redis-server --requirepass testpassword --appendonly yes
+    ports: ["63798:6379"]
+    volumes: [redis-8:/data]
+    healthcheck: *redis-health
+  valkey-72:
+    image: valkey/valkey:7.2-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    command: valkey-server --requirepass testpassword --appendonly yes
+    ports: ["63772:6379"]
+    volumes: [valkey-72:/data]
+    healthcheck: *redis-health
+  valkey-8:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    command: valkey-server --requirepass testpassword --appendonly yes
+    ports: ["63780:6379"]
+    volumes: [valkey-8:/data]
+    healthcheck: *redis-health
+
+  # ── Firebird ────────────────────────────────────────────
+  firebird-3:
+    image: firebirdsql/firebird:3.0.11
+    restart: unless-stopped
+    platform: linux/amd64
+    profiles: ["core"]
+    environment:
+      <<: *firebird-env
+      FIREBIRD_USE_LEGACY_AUTH: "true"
+    ports: ["31530:3050"]
+    volumes: [firebird-3:/var/lib/firebird/data]
+    healthcheck: *firebird-health
+  firebird-4:
+    image: firebirdsql/firebird:4.0.7
+    restart: unless-stopped
+    platform: linux/amd64
+    profiles: ["full"]
+    environment: *firebird-env
+    ports: ["31540:3050"]
+    volumes: [firebird-4:/var/lib/firebird/data]
+    healthcheck: *firebird-health
+  firebird-5:
+    image: firebirdsql/firebird:5.0.3
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *firebird-env
+    ports: ["31550:3050"]
+    volumes: [firebird-5:/var/lib/firebird/data]
+    healthcheck: *firebird-health
+
+volumes:
+  mysql-57:
+  mysql-80:
+  mysql-84:
+  mysql-9:
+  mariadb-104:
+  mariadb-1011:
+  mariadb-114:
+  mariadb-118:
+  postgres-12:
+  postgres-13:
+  postgres-14:
+  postgres-15:
+  postgres-16:
+  postgres-17:
+  postgres-18:
+  mongo-44:
+  mongo-60:
+  mongo-70:
+  mongo-80:
+  mssql-2017:
+  mssql-2019:
+  mssql-2022:
+  redis-6:
+  redis-7:
+  redis-8:
+  valkey-72:
+  valkey-8:
+  firebird-3:
+  firebird-4:
+  firebird-5:

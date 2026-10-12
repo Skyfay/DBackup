@@ -24,6 +24,7 @@ Complete reference for all environment variables in DBackup.
 | `TMPDIR` | Temporary directory for backup processing | `/tmp` |
 | `LOG_LEVEL` | Logging verbosity level | `info` |
 | `DISABLE_HTTPS` | Set to `true` to use plain HTTP instead of HTTPS | `false` |
+| `TRUSTED_PROXIES` | Reverse proxies whose `X-Forwarded-For` counts, addresses, CIDR ranges and the keywords `private` and `cloudflare`, comma-separated, or `none`. See [The Address of a Client](/user-guide/installation#the-address-of-a-client) | loopback and private networks |
 | `CERTS_DIR` | Directory for TLS certificate and key files | `/data/certs` |
 | `DATA_DIR` | Base directory for all persistent data | `/data` |
 | `PUID` | User ID the container runs as (for volume permissions) | `1001` |

@@ -78,9 +78,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
 
         await auditService.logFor(ctx, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.BACKUP, { ...(await backupAuditDetails(params.id, path)) }, params.id);
 
-        // Refresh storage stats cache after file deletion (non-blocking)
+        // Refresh the storage stats of this destination after file deletion (non-blocking)
         import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
-            refreshStorageStatsCache().catch(() => {});
+            refreshStorageStatsCache({ configIds: [params.id] }).catch(() => {});
         });
 
         return NextResponse.json({ success: true });

@@ -65,11 +65,19 @@ export function plannedContent(config: ContentConfig): DumpContent {
     };
 }
 
-/** The dump tool that runs. MariaDB's and MySQL's own know different flags. */
+/** The client tool that runs, the dump tool or the mysql client. MariaDB's and MySQL's own know different flags. */
 export interface DumpClient {
     /** MySQL's own mysqldump from 5.6.9 on, which knows `--set-gtid-purged`. MariaDB's refuses it. */
     setsGtidPurged: boolean;
+    /**
+     * The flag that turns TLS off. MariaDB's tools know only `--skip-ssl`, MySQL's own from 8.0
+     * on only `--ssl-mode=DISABLED`, which came with 5.7.11. The version of the server decides
+     * nothing here.
+     */
+    sslOff: "--skip-ssl" | "--ssl-mode=DISABLED";
 }
+
+const MARIADB_CLIENT: DumpClient = { setsGtidPurged: false, sslOff: "--skip-ssl" };
 
 /** The flags for what the dump holds, which go before the extra options. */
 export function contentArgs(config: ContentConfig, client?: DumpClient): string[] {
@@ -89,14 +97,17 @@ export function contentArgs(config: ContentConfig, client?: DumpClient): string[
 
 /** "mysqldump  Ver 8.0.46 for Linux" is MySQL's own, "Distrib 10.11.18-MariaDB" is MariaDB's. */
 export function clientFromVersion(output: string): DumpClient {
-    if (!output.trim() || /mariadb/i.test(output)) return { setsGtidPurged: false };
+    if (!output.trim() || /mariadb/i.test(output)) return MARIADB_CLIENT;
     const version = output.match(/Distrib (\d+\.\d+\.\d+)/)?.[1] ?? output.match(/Ver (\d+\.\d+\.\d+)/)?.[1];
-    return { setsGtidPurged: version !== undefined && compareVersions(version, "5.6.9") >= 0 };
+    return {
+        setsGtidPurged: version !== undefined && compareVersions(version, "5.6.9") >= 0,
+        sslOff: version !== undefined && compareVersions(version, "5.7.11") < 0 ? "--skip-ssl" : "--ssl-mode=DISABLED",
+    };
 }
 
 const clients = new WeakMap<ExecutionHost, Map<string, Promise<DumpClient>>>();
 
-/** What the dump binary on this host is, asked once per host and binary. A tool that does not answer counts as MariaDB's. */
+/** What a client binary on this host is, asked once per host and binary. A tool that does not answer counts as MariaDB's. */
 export function dumpClientOf(host: ExecutionHost, binary: string): Promise<DumpClient> {
     let known = clients.get(host);
     if (!known) {
@@ -107,11 +118,19 @@ export function dumpClientOf(host: ExecutionHost, binary: string): Promise<DumpC
     if (!client) {
         client = host.exec([binary, "--version"]).then(
             (result) => clientFromVersion(result.code === 0 ? result.stdout : ""),
-            () => ({ setsGtidPurged: false }),
+            () => MARIADB_CLIENT,
         );
         known.set(binary, client);
     }
     return client;
+}
+
+/**
+ * The client tool, where it decides a flag of the connection. Only how TLS is turned off
+ * depends on it, so a source with TLS on asks the binary nothing.
+ */
+export function connectionClientOf(config: { disableSsl?: boolean }, host: ExecutionHost, binary: string): Promise<DumpClient | undefined> {
+    return config.disableSsl ? dumpClientOf(host, binary) : Promise.resolve(undefined);
 }
 
 /** The routines of the current database whose body the login may not read, which make the dump tool give up. */
@@ -142,9 +161,10 @@ export async function readableContent(
     const overrides: Partial<DumpContent> = {};
     try {
         const mysqlBin = await host.which(...MYSQL_CLIENT);
+        const client = await connectionClientOf(config, host, mysqlBin);
         // The database goes in as an argument of its own, so its name needs no quoting.
         const ask = (sql: string) =>
-            host.exec([mysqlBin, ...authArgs, ...buildConnectionArgs(config, host), `--database=${dbName}`, "-N", "-s", "-e", sql]);
+            host.exec([mysqlBin, ...authArgs, ...buildConnectionArgs(config, host, { client }), `--database=${dbName}`, "-N", "-s", "-e", sql]);
 
         if (planned.events) {
             const events = await ask("SHOW EVENTS");

@@ -18,6 +18,6 @@
 ### 🔧 CI/CD
 
 - **lab**: A dev lab starts every database engine, storage server and notification receiver in Docker and fills the dev database with the first user, all connections and sample jobs. `pnpm lab` shows its commands in a menu, with a status that says what runs, what is missing and what to run next.
-- **ci**: A new workflow runs the end-to-end tests on pull requests into dev and main after an approval.
+- **ci**: A new workflow runs the end-to-end tests after an approval, on pull requests into main and on those into dev that touch the app or its end-to-end tests.
 - **docker**: An image built from a checkout no longer contains the development database of that checkout.
 - **scripts**: The Multipass test VM, the old test containers with their seed scripts and four unused one-off scripts are removed.

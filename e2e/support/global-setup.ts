@@ -8,11 +8,10 @@
 
 import { DATABASES } from "../../lab/src/catalog";
 import { describeDown, isUp, serviceStates } from "../../lab/src/containers";
-import { loadDataset } from "../../lab/src/datasets";
 import { compose, type RunResult } from "../../lab/src/docker";
-import { prepareMssqlFolder } from "../../lab/src/environment";
 import { BASE_URL, PORT, lab } from "./environment";
-import { UI_SERVICES, selectedFamilies, servicesOf, uiSelected } from "./targets";
+import { loadDatasets, selectedServices, startServices } from "./services";
+import { selectedFamilies, uiSelected } from "./targets";
 
 const write = (line: string) => process.stdout.write(`${line}\n`);
 const tail = (result: RunResult) => (result.stderr || result.stdout).trim().split("\n").slice(-15).join("\n");
@@ -48,7 +47,7 @@ async function servicesDown(services: string[]): Promise<Record<string, string>>
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
     const families = selectedFamilies();
-    const services = [...new Set([...(uiSelected() ? UI_SERVICES : []), ...families.flatMap(servicesOf)])];
+    const services = selectedServices();
     const names = [...(uiSelected() ? ["ui"] : []), ...families.map((family) => family.name)];
     write(`End-to-end tests of ${names.join(", ")} on ${lab.docker.name} (${lab.docker.address})`);
 
@@ -59,18 +58,13 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     }
 
     write(`Starting ${services.join(", ")}`);
-    // DBackup mounts the folder of SQL Server too, and Docker would make a missing one as root.
-    await prepareMssqlFolder(lab);
-    // --build rebuilds the images of the lab whose files changed, like the customer server, from the cache otherwise.
-    const started = await compose(lab, ["--progress", "quiet", "up", "-d", "--build", "--wait", ...services]);
+    const started = await startServices(services);
     const unavailable = await servicesDown(services);
     if (started.code !== 0 && Object.keys(unavailable).length === 0) throw new Error(`Starting the services failed:\n${tail(started)}`);
     for (const [service, reason] of Object.entries(unavailable)) write(`Skipping the tests of ${service}: ${reason}`);
     // The workers start after the global setup and take its environment along.
     process.env.E2E_UNAVAILABLE = JSON.stringify(unavailable);
-    for (const database of DATABASES.filter((entry) => services.includes(entry.service) && !unavailable[entry.service])) {
-        if (await loadDataset(lab, database)) write(`Loaded the test data into ${database.service}`);
-    }
+    for (const service of await loadDatasets(services, unavailable)) write(`Loaded the test data into ${service}`);
 
     write(`Starting DBackup from scratch at ${BASE_URL}`);
     const app = await compose(lab, ["--progress", "quiet", "up", "-d", "--force-recreate", "--no-build", "--wait", "app"], { env: appEnv });

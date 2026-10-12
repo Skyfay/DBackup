@@ -32,11 +32,19 @@ describe("writing an entry of the audit log", () => {
     });
 
     it("takes the address and the browser from the request it is written in", async () => {
-        request.headers = new Headers({ "x-forwarded-for": "203.0.113.45, 10.0.0.1", "user-agent": "curl/8.5.0" });
+        request.headers = new Headers({ "x-dbackup-client-address": "203.0.113.45", "user-agent": "curl/8.5.0" });
 
         await service.log("lena", "DELETE", "BACKUP", { file: "a.tar" });
 
         expect(prismaMock.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ ipAddress: "203.0.113.45", userAgent: "curl/8.5.0" }) });
+    });
+
+    it("never writes an address the client named in X-Forwarded-For itself", async () => {
+        request.headers = new Headers({ "x-forwarded-for": "198.51.100.1", "x-dbackup-client-address": "203.0.113.45" });
+
+        await service.log("lena", "DELETE", "BACKUP", { file: "a.tar" });
+
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ ipAddress: "203.0.113.45" }) });
     });
 
     it("writes without an address outside a request, like in a scheduled task", async () => {

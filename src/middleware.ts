@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig } from "./lib/rate-limit";
 import type { RateLimitConfig } from "./lib/rate-limit";
 import { logger } from "./lib/logging/logger";
+import { clientAddress, rateLimitKey } from "./lib/core/client-address";
 
 const log = logger.child({ module: "Middleware" });
 
@@ -74,7 +75,10 @@ function anonymizeIp(ip: string): string {
 
 export async function middleware(request: NextRequest) {
     const startTime = Date.now();
-    const ip = request.headers.get("x-forwarded-for") ?? "127.0.0.1";
+    // Set by the custom server from the socket and a trusted proxy, never by the client itself.
+    // Missing under `pnpm dev`, where every request shares one bucket.
+    const ip = clientAddress(request.headers) ?? "127.0.0.1";
+    const key = rateLimitKey(ip);
     const path = request.nextUrl.pathname;
     const method = request.method;
     const shouldLog = shouldLogRequest(path);
@@ -87,14 +91,14 @@ export async function middleware(request: NextRequest) {
     try {
         if (path.startsWith("/api/auth/sign-in")) {
              rateLimitType = "auth";
-             await getAuthLimiter().consume(ip);
+             await getAuthLimiter().consume(key);
         } else if (path.startsWith("/api/")) {
              if (method === 'GET' || method === 'HEAD') {
                 rateLimitType = "api";
-                await getApiLimiter().consume(ip);
+                await getApiLimiter().consume(key);
              } else {
                 rateLimitType = "mutation";
-                await getMutationLimiter().consume(ip);
+                await getMutationLimiter().consume(key);
              }
         }
     } catch {

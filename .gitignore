@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# The custom server as tsconfig.server.json compiles it, in the Docker build only
+/custom-server.js
+/server/*.js
+
 # production
 /build
 

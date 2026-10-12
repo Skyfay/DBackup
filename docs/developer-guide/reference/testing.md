@@ -91,7 +91,7 @@ Every database passes Test connection, is backed up encrypted and compressed, re
 
 `E2E_NO_BUILD=1` uses an image built already, `E2E_KEEP=1` leaves DBackup and the restored databases in place, and `E2E_PORT` moves DBackup off port 3300. A service that does not start on a CPU without AVX, like MongoDB 8 in a virtual machine with a generic CPU model, skips its tests on a developer machine and fails them in CI. A failed test keeps its trace, screenshot and video under `e2e/test-results/`, and `e2e/playwright-report/` shows the report.
 
-In CI the workflow `.github/workflows/e2e.yml` runs after an approval through the environment `e2e`, on every pull request into `main` and on those into `dev` that change more than the docs, the website, the changelog or the unit tests. Each project is a job on the runner itself, which builds the image while the services of its family start in the background. How to write a test is in `e2e/CLAUDE.md`.
+In CI they are jobs of `.github/workflows/validate.yml`, beside lint and the unit tests. They run after an approval through the environment `e2e`, on every pull request into `main` and on those into `dev` that change more than the docs, the website, the changelog or the unit tests. Each project is a job on the runner itself, which builds the image while the services of its family start in the background. The job All Checks waits for every job of the workflow and passes when none failed, so a rule of a branch requires it alone. How to write a test is in `e2e/CLAUDE.md`.
 
 For a quick look at a running dev instance, `pnpm lab:check --run` tests every lab connection of `dev.db` and runs every lab job once.
 

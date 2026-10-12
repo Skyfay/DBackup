@@ -1,9 +1,9 @@
 # ─── Validate ────────────────────────────────────────────────
-# Lint, type checking, unit tests and the builds of the docs and the website
-# run in parallel.
-# A quality gate on every pull request into main or dev, and called by the
-# release workflow on tags. The Docker image of a pull request into main is
-# built by docker-build.yml.
+# Lint, type checking, unit tests, the end-to-end tests and the builds of the docs and the
+# website run in parallel, and All Checks sums them up.
+# A quality gate on every pull request into main or dev, and called by the release workflow on
+# tags. It can also be started by hand. The Docker image of a pull request into main is built by
+# docker-build.yml.
 
 name: Validate
 
@@ -13,6 +13,7 @@ on:
       - main
       - dev
   workflow_call:
+  workflow_dispatch:
 
 concurrency:
   group: validate-${{ github.ref }}
@@ -89,6 +90,150 @@ jobs:
           use_oidc: true
           files: coverage/lcov.info
 
+  # Whether the end-to-end tests have anything to test. A pull request into dev that only changes
+  # the docs, the website, the changelog or the unit tests skips them and asks for no approval. A
+  # pull request into main and a run by hand always run them. The release skips them, the pull
+  # request into main ran them on the same code. Compares the merge commit with its base, which
+  # takes the last two commits only.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      e2e: ${{ steps.check.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: check
+        env:
+          # A workflow called by the release sees the event of the release, the push of its tag.
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+          # What neither the image nor the tests read. Anything else runs them, a new folder or
+          # workflow too, so a path missing here costs a run and never skips one.
+          SKIP: >-
+            ^(docs|website|changelog|api-docs|tests|\.claude)/|(^|/)CLAUDE\.md$|^[^/]+\.md$|^(LICENSE|codecov\.yml)$|^\.github/(ISSUE_TEMPLATE|sponsors)/|^\.github/FUNDING\.yml$|^\.github/workflows/(docker-build|release|sponsors|sync-gitlab)\.yml$
+        run: |
+          if [ "$EVENT" = "push" ]; then
+            echo "The release skips them, the pull request into main ran them on this code."
+            echo "e2e=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT" != "pull_request" ] || [ "$BASE" != "dev" ]; then
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A failing diff fails this job, so the tests are never skipped by mistake.
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          relevant=$(printf '%s\n' "$changed" | grep -vE "$SKIP" || true)
+          if [ -n "$relevant" ]; then
+            echo "$relevant"
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing the end-to-end tests cover changed."
+            echo "e2e=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Waits for an approval through the environment e2e, whose required reviewers are set in the
+  # settings of the repository, like the Docker Build does with docker-build. Only this job names
+  # the environment, so a run asks once and not once per job. Until the environment has a
+  # reviewer, GitHub runs the tests without asking.
+  approve:
+    name: Approve
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    environment: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approved
+        run: echo "The end-to-end tests start now."
+
+  # Builds the image of the pull request and runs the Playwright tests of e2e/ against it, with
+  # the services of the dev lab on the runner itself: DBackup and every server it backs up in one
+  # Compose project, as `pnpm test:e2e` runs them on a developer machine.
+  #
+  # Every family of e2e/support/targets.ts is a job, and so are the browser tests, so each job
+  # pulls only the images it needs and a red job names its family. Each job builds the image
+  # itself while its browser installs and the services of its family start in the background.
+  # That is faster than one build handed to every job, which would wait for the build and then
+  # load an image of over a gigabyte. The first start runs in every job.
+  e2e:
+    name: E2E (${{ matrix.family }})
+    needs: approve
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [ui, postgres, mysql, mongodb, mssql, small, customer, storage]
+    env:
+      CI: "true"
+      E2E_FAMILIES: ${{ matrix.family }}
+      E2E_NO_BUILD: "1"
+      # The runner is thrown away anyway, and the logs of DBackup are wanted after a failure.
+      E2E_KEEP: "1"
+    steps:
+      # The image, its build and the images of the family take more than the free space of a
+      # runner leaves, SQL Server alone pulls 4 GB. Deleting takes a while, so it runs in the
+      # background, and the disk fills only minutes later.
+      - name: Free disk space
+        run: sudo nohup rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL > /dev/null 2>&1 &
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The browser installs and the services of the family start while the image builds, the
+      # longest step. Each writes its exit code beside its log, and Wait for the head start reads
+      # them.
+      - name: Start the browser install and the services
+        run: |
+          nohup sh -c 'pnpm exec playwright install --with-deps chromium; echo $? > "$RUNNER_TEMP/browser.exit"' > "$RUNNER_TEMP/browser.log" 2>&1 &
+          nohup sh -c 'pnpm exec tsx e2e/support/start-services.ts; echo $? > "$RUNNER_TEMP/services.exit"' > "$RUNNER_TEMP/services.log" 2>&1 &
+
+      # No build cache: a pull request into dev can read none that the Docker Build or the
+      # Release write, and with one the build is only half a minute faster, while writing it
+      # takes three. The build of the app itself runs either way.
+      - name: Build the image
+        run: docker build --tag dbackup-e2e:local .
+
+      - name: Wait for the head start
+        run: |
+          timeout 900 sh -c 'until [ -f "$RUNNER_TEMP/browser.exit" ] && [ -f "$RUNNER_TEMP/services.exit" ]; do sleep 2; done'
+          cat "$RUNNER_TEMP/services.log"
+          # The services are only a head start, the global setup starts what is still missing and
+          # names what does not come up. Without its browser no test runs.
+          if [ "$(cat "$RUNNER_TEMP/browser.exit")" != "0" ]; then
+            cat "$RUNNER_TEMP/browser.log"
+            exit 1
+          fi
+
+      - run: pnpm test:e2e
+
+      - name: Logs of the containers
+        if: failure()
+        run: mkdir -p e2e/test-results && docker compose -p dbackup-lab logs --no-color > e2e/test-results/containers.log 2>&1 || true
+
+      # Screenshots, videos and traces of the failed tests, and the logs of every container.
+      - name: Upload the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-${{ matrix.family }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 7
+
   docs-build:
     name: Docs Build
     runs-on: ubuntu-latest
@@ -132,3 +277,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
+
+  # The one check for the rules of a branch to require. It waits for every job above and fails
+  # when one of them failed. End-to-end tests that Changes skipped pass it, so a pull request
+  # that only changes the docs can merge. A rule names this job and not the others, because the
+  # jobs of a matrix that never ran report under no name and would keep a pull request waiting.
+  all-checks:
+    name: All Checks
+    needs: [lint, type-check, test, changes, approve, e2e, docs-build, website-build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results of the jobs: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac

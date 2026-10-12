@@ -37,7 +37,7 @@ This can be done at any time, it changes nothing for existing backups.
 - [ ] Move the body of `dump()` into `dumpOne()` for `sqlite` and `redis`, which currently wrap it.
 - [ ] Remove the whole-file compression and encryption in `src/lib/runner/steps/03-upload.ts`, together with the `compression`, `encryption` and `multiDb` fields it writes into the metadata sidecar. The `isSeekableArchive` guard then has nothing left to guard.
 - [ ] `createMultiDbTar()` and `TarFileEntry` stay until stage 2, because the tests for the reader build their fixtures with them. Move them into a test helper if stage 2 is far off.
-- [ ] Rewrite or delete the tests that call `dump()`: `tests/unit/adapters/database/{mysql,postgres,mongodb,azure-sql,redis,sqlite}/dump.test.ts`, `tests/unit/adapters/mssql/dump.test.ts`, `tests/unit/adapters/database/firebird.test.ts`, the `.gz` and `.enc` cases in `tests/unit/runner/steps/03-upload.test.ts`, and `tests/integration/{backup,multidb-backup,ssh-mode}.test.ts`.
+- [ ] Rewrite or delete the tests that call `dump()`: `tests/unit/adapters/database/{mysql,postgres,mongodb,azure-sql,redis,sqlite}/dump.test.ts`, `tests/unit/adapters/mssql/dump.test.ts`, `tests/unit/adapters/database/firebird.test.ts`, and the `.gz` and `.enc` cases in `tests/unit/runner/steps/03-upload.test.ts`.
 - [ ] Update `docs/developer-guide/adapters/database.md` and `src/lib/adapters/CLAUDE.md`, which still describe `dump()` as part of the interface.
 
 ## Stage 2: the reader
@@ -51,7 +51,7 @@ DBackup cannot tell whether anyone still holds a backup in an older format. Rete
 - [ ] Metadata: remove `multiDb` from `BackupMetadata`.
 - [ ] UI: remove `classicMode` from `restore-validation.ts` and what depends on it in `restore-client.tsx`.
 - [ ] Recovery Kit: remove `unpackMultiDbTar()` from `scripts/dbackup-recover.js`. `--decrypt` stays for config backups.
-- [ ] Tests: `tests/unit/services/restore-legacy-formats.test.ts`, `tests/unit/services/restore-pipeline*.test.ts`, the multi-database cases in the adapter `restore.test.ts` files, `tests/unit/adapters/database/{mysql,postgres,mongodb}/analyze.test.ts`, `tests/unit/adapters/database/common/tar-utils.test.ts`, the older-format cases in `tests/unit/lib/storage-analyze-route.test.ts` and `tests/unit/lib/recovery-kit-archive.test.ts`, and `tests/integration/{restore,multidb-restore}.test.ts`.
+- [ ] Tests: `tests/unit/services/restore-legacy-formats.test.ts`, `tests/unit/services/restore-pipeline*.test.ts`, the multi-database cases in the adapter `restore.test.ts` files, `tests/unit/adapters/database/{mysql,postgres,mongodb}/analyze.test.ts`, `tests/unit/adapters/database/common/tar-utils.test.ts`, and the older-format cases in `tests/unit/lib/storage-analyze-route.test.ts` and `tests/unit/lib/recovery-kit-archive.test.ts`.
 - [ ] Docs: the older-format passages in `docs/user-guide/security/recovery-kit.md`, `encryption.md` and `compression.md`, `docs/user-guide/features/{restore,backups,api-reference}.md`, `docs/user-guide/sources/{mssql,azure-sql,redis}.md`, the multi-database TAR section in `docs/developer-guide/adapters/database.md`, the info box at the top of the archive format reference, and this page.
 
 ## What stays

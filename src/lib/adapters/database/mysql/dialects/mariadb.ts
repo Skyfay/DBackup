@@ -8,13 +8,6 @@ export class MariaDBDialect extends MySQLBaseDialect {
         return version.toLowerCase().includes('mariadb') || parseFloat(version) >= 10.0;
     }
 
-    protected appendAuthArgs(args: string[], config: MariaDBConfig) {
-        // MariaDB tools prefer --skip-ssl over --ssl-mode
-        if (config.disableSsl) {
-             args.push('--skip-ssl');
-        }
-    }
-
     getDumpArgs(config: MariaDBConfig, databases: string[], host?: ExecutionHost, client?: DumpClient): string[] {
         const args = super.getDumpArgs(config, databases, host, client);
 

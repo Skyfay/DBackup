@@ -14,6 +14,7 @@ import { placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/aut
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { DEFAULT_SESSION_DURATION, SESSION_OPTIONS, sessionDurationOf, sessionEndsAt } from "@/lib/auth/session-lifetime";
+import { CLIENT_ADDRESS_HEADER } from "@/lib/core/client-address";
 
 const log = logger.child({ module: "Auth" });
 
@@ -172,6 +173,12 @@ export const auth = betterAuth({
         level: "debug"
     },
     baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+    // The address of a session and of the rate limit of better-auth comes from the custom server,
+    // which reads X-Forwarded-For of a trusted proxy only. Left to itself better-auth would take
+    // a single X-Forwarded-For value from anyone.
+    advanced: {
+        ipAddress: { ipAddressHeaders: [CLIENT_ADDRESS_HEADER] },
+    },
     trustedOrigins: async (_request) => {
         // Refresh trusted providers on every auth request
         // This ensures newly added SSO providers work immediately without server restart

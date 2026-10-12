@@ -308,6 +308,16 @@ describe('stepFinalize', () => {
         expect(mockNotifyAdapter.send).toHaveBeenCalled();
     });
 
+    it('refreshes the storage stats of the destinations of the run only', async () => {
+        const { refreshStorageStatsCache } = await import('@/services/dashboard-service');
+        const ctx = makeCtx({ status: 'Success' });
+
+        await stepFinalize(ctx);
+        await new Promise((r) => setTimeout(r, 20));
+
+        expect(refreshStorageStatsCache).toHaveBeenCalledWith({ configIds: ctx.destinations.map((d) => d.configId) });
+    });
+
     it('handles storage stats cache failure silently after a successful backup', async () => {
         const { refreshStorageStatsCache } = await import('@/services/dashboard-service');
         (refreshStorageStatsCache as ReturnType<typeof vi.fn>).mockRejectedValueOnce(

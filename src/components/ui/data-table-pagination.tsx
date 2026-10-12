@@ -23,18 +23,22 @@ interface DataTablePaginationProps<TData> {
     table: Table<TData>;
     /** Total rows behind the table. Differs from the loaded count under manual pagination. */
     totalRows: number;
+    /** The first rows are still loading, so there is no total to tell yet. */
+    loading?: boolean;
 }
 
 /** Row counter, page size select and pager. */
-export function DataTablePagination<TData>({ table, totalRows }: DataTablePaginationProps<TData>) {
+export function DataTablePagination<TData>({ table, totalRows, loading = false }: DataTablePaginationProps<TData>) {
     const selectedCount = table.getFilteredSelectedRowModel().rows.length;
 
     return (
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-2 py-4">
             <div className="flex-1 text-sm text-muted-foreground">
-                {selectedCount > 0
-                    ? `${selectedCount} of ${totalRows} row(s) selected.`
-                    : `Total ${totalRows} row(s).`
+                {loading
+                    ? "Loading rows..."
+                    : selectedCount > 0
+                        ? `${selectedCount} of ${totalRows} row(s) selected.`
+                        : `Total ${totalRows} row(s).`
                 }
             </div>
             <div className="flex items-center space-x-6 lg:space-x-8">

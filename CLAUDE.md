@@ -16,7 +16,8 @@ Claude Code loads the nearest `CLAUDE.md` when you touch files in a directory. R
 | Database, storage, or notification adapters | [src/lib/adapters/CLAUDE.md](src/lib/adapters/CLAUDE.md) |
 | Wiki pages and the changelog | [docs/CLAUDE.md](docs/CLAUDE.md) |
 | Marketing website (dbackup.app) | [website/CLAUDE.md](website/CLAUDE.md) |
-| Unit and integration tests | [tests/CLAUDE.md](tests/CLAUDE.md) |
+| Unit and audit tests | [tests/CLAUDE.md](tests/CLAUDE.md) |
+| End-to-end tests (Playwright) | [e2e/CLAUDE.md](e2e/CLAUDE.md) |
 
 ## Non-negotiable rules
 
@@ -48,12 +49,15 @@ A Server Action or API route that contains business logic is a bug. Move it into
 ```bash
 pnpm dev                  # Dev server - auto-applies pending migrations on startup
 pnpm run build            # Production build - run before committing
-pnpm validate             # Lint + typecheck + build (scripts/validate.sh)
+pnpm validate             # Lint + typecheck + unit tests (scripts/validate.sh), no build
 pnpm type                 # tsc --noEmit only
 pnpm test                 # Unit tests (vitest)
-pnpm test:integration     # Integration tests against real DB containers
-pnpm test:ui              # Spin up test DBs + seed local DB for manual testing
-pnpm run database:reset   # Reset dev DB from scratch via all migrations
+pnpm test:e2e             # End-to-end tests: the image of this checkout beside the dev lab (Playwright)
+pnpm lab                  # Menu of the dev lab commands, lab:status shows what runs and what is missing
+pnpm lab:up               # Start the dev lab: test DBs, storage servers, notification receivers
+pnpm lab:seed             # Fill the dev DB with the first user and every lab connection and job
+pnpm lab:check --run      # Test every lab connection and run every lab job once
+pnpm run database:reset   # Reset dev DB from scratch via all migrations (lab:reset also seeds it)
 pnpm toolbox              # Menu of the release and maintenance commands below, see scripts/toolbox/README.md
 pnpm changelog:preview    # Show the changelog block the next release writes from the fragments
 pnpm version:bump         # Next version, changelog block and version everywhere, after a CodeQL check of dev
@@ -136,7 +140,7 @@ Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 | Error classes | [src/lib/logging/errors.ts](src/lib/logging/errors.ts) |
 | Shadcn primitives | [src/components/ui/](src/components/ui/) |
 | Task colors (tones) | [src/components/ui/tone.ts](src/components/ui/tone.ts), rules under Color in [src/app/dashboard/CLAUDE.md](src/app/dashboard/CLAUDE.md) |
-| Test containers | [docker-compose.test.yml](docker-compose.test.yml) |
+| Dev lab (test DBs, storage, seed) | [lab/](lab/), guide in [docs/developer-guide/reference/dev-lab.md](docs/developer-guide/reference/dev-lab.md) |
 
 ## Environment variables
 
@@ -144,4 +148,5 @@ Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 - `LOG_LEVEL` - `debug` | `info` (default) | `warn` | `error`.
 - `SQLITE_WAL_MODE` - `true` (default) | `false`. WAL is on by default for the Prisma SQLite DB. See `src/lib/prisma.ts`.
 - `DISABLE_EMAIL_LOGIN` - `true` | `false` (default). Rejects browser email sign-in and sign-up. Server-side `auth.api.*` calls stay open so admin user creation and password resets keep working. See `src/lib/auth/env-flags.ts`.
+- `TRUSTED_PROXIES` - the reverse proxies whose `X-Forwarded-For` counts, comma-separated addresses or CIDR ranges, `none`, or unset for loopback and private networks. The custom server resolves the client address in `server/client-address.ts` and passes it in a header of its own, so the app reads `clientAddress()` from `@/lib/core/client-address` and never `X-Forwarded-For` itself. A lint guard checks that.
 - `OIDC_AUTO_REDIRECT` - `SsoProvider.providerId` to redirect to instead of rendering the login page. Format checked in `env-validation.ts`, existence in `startup-checks.ts`.

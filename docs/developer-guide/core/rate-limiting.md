@@ -88,6 +88,17 @@ async function syncRateLimitConfig(origin: string): Promise<void> {
 }
 ```
 
+### The Address of a Client
+
+Every limiter counts per client address, the key `rateLimitKey(clientAddress(headers))` from `src/lib/core/client-address.ts`, which takes an IPv6 address by its `/64` network. Neither the middleware nor a route can see the socket of a request, so the custom server works the address out and passes it on:
+
+1. `custom-server.ts` calls `clientAddressOf()` of `server/client-address.ts` for every request, with the remote address of the socket, `X-Forwarded-For`, `X-Real-IP` and the proxies of `TRUSTED_PROXIES`.
+2. Only a peer in a trusted network has its `X-Forwarded-For` read, from the right to the first address that is no trusted proxy. The left end is whatever the client wrote and never counts on its own.
+3. The result goes into the header `x-dbackup-client-address`, replacing a value the client sent.
+4. The middleware, the audit log, the sign-in records and better-auth (`advanced.ipAddress.ipAddressHeaders`) read that header only.
+
+Under `pnpm dev` there is no custom server, so the header is missing and every request shares one bucket. `tests/unit/lint-guards/client-address.test.ts` fails when code under `src/` reads `X-Forwarded-For` or `X-Real-IP` itself.
+
 The middleware matcher **excludes** `/api/internal/` to avoid an infinite loop:
 
 ```typescript

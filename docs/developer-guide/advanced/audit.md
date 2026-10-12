@@ -18,7 +18,7 @@ model AuditLog {
   resource    String   // AUDIT_RESOURCES
   resourceId  String?  // The record the entry is about
   details     String?  // JSON, see Details below
-  ipAddress   String?  // From X-Forwarded-For or X-Real-IP
+  ipAddress   String?  // clientAddress(), set by the custom server from a trusted proxy
   userAgent   String?
   createdAt   DateTime @default(now())
 }

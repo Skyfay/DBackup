@@ -38,11 +38,15 @@ import { DataTableColumnSettings } from "./data-table-column-settings";
 import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
 import { useTableDefaults } from "./table-defaults";
 import { isPlainClick, toggleOnClick } from "./row-click";
+import { Skeleton } from "./skeleton";
 import { JOIN_END } from "./page-head";
 import { cn } from "@/lib/utils";
 import type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
 
 export type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk };
+
+/** Rows of skeletons while the first rows load, see `loadingRows`. */
+const LOADING_ROWS = 5;
 
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[];
@@ -54,6 +58,11 @@ interface DataTableProps<TData, TValue> {
     /** Loads the rows again. A promise keeps the refresh button turning until it settles. */
     onRefresh?: () => unknown;
     isLoading?: boolean;
+    /**
+     * The first rows are still on their way. The body shows rows of skeletons instead of No
+     * results, so a list that loads does not look empty. Later loads keep the rows they replace.
+     */
+    loadingRows?: boolean;
 
     // Row selection & bulk actions
     /**
@@ -146,6 +155,7 @@ export function DataTable<TData, TValue>({
     autoResetPageIndex = true,
     onRefresh,
     isLoading = false,
+    loadingRows = false,
     enableRowSelection = false,
     getRowId,
     isRowSelectable,
@@ -414,6 +424,16 @@ export function DataTable<TData, TValue>({
                             ))}
                         </TableRow>
                     )))
+                ) : loadingRows ? (
+                    Array.from({ length: LOADING_ROWS }, (_, index) => (
+                        <TableRow key={index} aria-hidden="true" className="hover:bg-transparent [&>td]:px-3 [&>td]:py-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4">
+                            {table.getVisibleLeafColumns().map((column) => (
+                                <TableCell key={column.id}>
+                                    <Skeleton className="h-4 w-full max-w-32" />
+                                </TableCell>
+                            ))}
+                        </TableRow>
+                    ))
                 ) : (
                     <TableRow>
                         <TableCell
@@ -460,10 +480,14 @@ export function DataTable<TData, TValue>({
                             ))
                         )}
                     </div>
+                ) : loadingRows ? (
+                    <div className={cn("grid grid-cols-1 gap-4", cardGridClassName ?? "sm:grid-cols-2 xl:grid-cols-3")} aria-hidden="true">
+                        {Array.from({ length: LOADING_ROWS }, (_, index) => <Skeleton key={index} className="h-28 rounded-xl" />)}
+                    </div>
                 ) : (
                     <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">No results.</div>
                 )}
-                <DataTablePagination table={table} totalRows={totalRows} />
+                <DataTablePagination table={table} totalRows={totalRows} loading={loadingRows && table.getRowModel().rows.length === 0} />
                 {bulkDialogs}
             </div>
         );
@@ -484,7 +508,7 @@ export function DataTable<TData, TValue>({
                     {aboveRows && toolbarNote && <div className="border-t pt-3">{toolbarNote}</div>}
                     <div className="border-t">{grid}</div>
                     <div className="border-t px-2">
-                        <DataTablePagination table={table} totalRows={totalRows} />
+                        <DataTablePagination table={table} totalRows={totalRows} loading={loadingRows && table.getRowModel().rows.length === 0} />
                     </div>
                 </>
             )}

@@ -10,7 +10,7 @@ import {
 } from "@/services/dashboard-service";
 import { cached } from "./cache";
 import { successShare } from "@/lib/core/success-share";
-import { dailyStorageTotals } from "./trends";
+import { dailyStorageTotals, dayBuckets, type SnapshotPoint } from "./trends";
 import type { CalendarDay, RunSummary } from "./types";
 
 /** How long the aggregates stay cached. A finished backup clears them earlier. */
@@ -214,20 +214,47 @@ async function loadRunStats(now: Date) {
     };
 }
 
+/**
+ * The newest snapshot of each destination in each span, oldest first. They are the only ones
+ * `dailyStorageTotals` keeps, so its totals stay the same as over every snapshot.
+ *
+ * Raw SQL for a measured reason: a busy instance holds hundreds of thousands of snapshots for 30
+ * days, and loading them all took the overview 1.7 s, plus as long again to sort them into days.
+ * One lookup per destination and day on the index of both reads 750 rows at most. `createdAt` is
+ * stored in epoch milliseconds, as Prisma writes every DateTime in SQLite.
+ */
+async function latestSnapshotPerDay(destinationIds: string[], buckets: [number, number][]): Promise<SnapshotPoint[]> {
+    if (destinationIds.length === 0 || buckets.length === 0) return [];
+
+    const picked = await prisma.$queryRaw<{ id: string | null }[]>`
+        SELECT (
+            SELECT s.id FROM StorageSnapshot s
+            WHERE s.adapterConfigId = d.value
+              AND s.createdAt >= json_extract(b.value, '$[0]')
+              AND s.createdAt < json_extract(b.value, '$[1]')
+            ORDER BY s.createdAt DESC
+            LIMIT 1
+        ) AS id
+        FROM json_each(${JSON.stringify(destinationIds)}) d, json_each(${JSON.stringify(buckets)}) b`;
+    const ids = picked.map((row) => row.id).filter((id): id is string => id !== null);
+    if (ids.length === 0) return [];
+
+    return prisma.storageSnapshot.findMany({
+        where: { id: { in: ids } },
+        orderBy: { createdAt: "asc" },
+        select: { adapterConfigId: true, size: true, count: true, createdAt: true },
+    });
+}
+
 async function loadStorage(timezone: string, now: Date): Promise<Aggregates["storage"]> {
-    const [entries, updatedAt, snapshots] = await Promise.all([
-        getStorageVolume(),
-        getStorageVolumeCacheAge(),
-        prisma.storageSnapshot.findMany({
-            where: { createdAt: { gte: subDays(now, STORAGE_TREND_DAYS) } },
-            orderBy: { createdAt: "asc" },
-            select: { adapterConfigId: true, size: true, count: true, createdAt: true },
-        }),
-    ]);
+    const [entries, updatedAt] = await Promise.all([getStorageVolume(), getStorageVolumeCacheAge()]);
 
     const dayKeys = Array.from({ length: STORAGE_TREND_DAYS }, (_, i) =>
         dayKey(subDays(now, STORAGE_TREND_DAYS - 1 - i), timezone));
     const destinationIds = new Set(entries.map((entry) => entry.configId).filter((id): id is string => !!id));
+    const buckets = dayBuckets(dayKeys, subDays(now, STORAGE_TREND_DAYS).getTime(),
+        (day) => fromZonedTime(`${day}T00:00:00`, timezone).getTime());
+    const snapshots = await latestSnapshotPerDay([...destinationIds], buckets);
     const totals = dailyStorageTotals(snapshots, dayKeys, (date) => dayKey(date, timezone), destinationIds);
 
     return { entries, updatedAt, ...totals };

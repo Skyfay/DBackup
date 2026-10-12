@@ -2,6 +2,7 @@ import type { ExecutionHost } from "@/lib/transport";
 import { MySQLConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
 import { MYSQL_CLIENT, buildConnectionArgs, withAuthArgs } from "./args";
+import { connectionClientOf } from "./dump-content";
 
 /** Sanitize a MySQL identifier (database/table/column name) for use in backtick-quoted SQL. */
 function escapeMysqlIdentifier(name: string): string {
@@ -84,7 +85,7 @@ function parseDataRows(
 export async function getTables(config: MySQLConfig, database: string, host: ExecutionHost): Promise<TableInfo[]> {
     const query = tablesQuery(database);
     const mysqlBin = await host.which(...MYSQL_CLIENT);
-    const connArgs = buildConnectionArgs(config, host);
+    const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const result = await host.exec([
@@ -124,7 +125,7 @@ export async function getTableData(
     const colQuery = columnsQuery(database, table);
 
     const mysqlBin = await host.which(...MYSQL_CLIENT);
-    const connArgs = buildConnectionArgs(config, host);
+    const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const base = [mysqlBin, ...authArgs, ...connArgs, "--skip-column-names", "--batch"];

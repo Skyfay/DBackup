@@ -7,7 +7,7 @@ import { DATABASES, STORAGE } from "../../../lab/src/catalog";
 import { ENGINES } from "../../../lab/src/engines";
 import { FAMILIES, servicesOf } from "../../../e2e/support/targets";
 
-const workflow = readFileSync(path.join(REPO_ROOT, ".github", "workflows", "e2e.yml"), "utf8");
+const workflow = readFileSync(path.join(REPO_ROOT, ".github", "workflows", "validate.yml"), "utf8");
 
 /** The services the Compose files of the lab define, read line by line. */
 function composeServices(): Set<string> {

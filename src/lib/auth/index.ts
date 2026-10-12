@@ -13,30 +13,22 @@ import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
 import { placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/auth/sso-guard";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { DEFAULT_SESSION_DURATION, SESSION_OPTIONS, sessionDurationOf, sessionEndsAt } from "@/lib/auth/session-lifetime";
 import { CLIENT_ADDRESS_HEADER } from "@/lib/core/client-address";
 
 const log = logger.child({ module: "Auth" });
 
-// Default session duration: 7 days (in seconds)
-const DEFAULT_SESSION_DURATION = 3600 * 24 * 7;
-
-/**
- * Load session duration from SystemSetting table.
- * Returns the configured duration in seconds, or the default (7 days).
- */
+/** The length of a new session, from Settings > Sign-in, or seven days. */
 async function getSessionDuration(): Promise<number> {
     try {
         const setting = await prisma.systemSetting.findUnique({
             where: { key: "auth.sessionDuration" },
         });
-        if (setting) {
-            const seconds = parseInt(setting.value, 10);
-            if (!isNaN(seconds) && seconds > 0) return seconds;
-        }
+        return sessionDurationOf(setting?.value);
     } catch {
         // DB might not be ready during initial setup
+        return DEFAULT_SESSION_DURATION;
     }
-    return DEFAULT_SESSION_DURATION;
 }
 
 const originalFetch = global.fetch;
@@ -253,16 +245,9 @@ export const auth = betterAuth({
         enabled: true,
         autoSignIn: true
     },
-    session: {
-        // Default expiry; dynamically overridden per-session via databaseHooks
-        expiresIn: DEFAULT_SESSION_DURATION,
-        updateAge: 60 * 60 * 24, // Refresh session every 24h
-        // Disable the "fresh session" requirement (better-auth default: 24h).
-        // Sessions here last up to 7 days and no other self-service action in this
-        // app (password change, passkey/2FA management) requires re-authentication,
-        // so unlinkAccount would otherwise fail with SESSION_NOT_FRESH for most users.
-        freshAge: 0,
-    },
+    // A session ends after the length of Settings > Sign-in, set when it is created below, and
+    // better-auth never extends it. See session-lifetime.ts.
+    session: SESSION_OPTIONS,
     hooks: {
         before: beforeAuth,
         after: afterAuth,
@@ -297,9 +282,8 @@ export const auth = betterAuth({
         session: {
             create: {
                 before: async (session) => {
-                    // Dynamically set session expiry based on admin setting
-                    const duration = await getSessionDuration();
-                    const expiresAt = new Date(Date.now() + duration * 1000);
+                    // The end of every session, from the length the owner set.
+                    const expiresAt = sessionEndsAt(await getSessionDuration());
                     return {
                         data: {
                             ...session,

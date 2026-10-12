@@ -8,6 +8,7 @@ import { MAX_CONCURRENT_JOBS, saveGeneralSettings, saveSignInSettings } from "@/
 import { savePasswordPolicy } from "@/services/auth/password-policy-service";
 import { generalSettings, passwordSettings, signInSettings, SETTINGS_AREAS } from "@/services/system/settings-audit";
 import { MAX_PASSWORD_LENGTH, MAX_SPECIAL_CHARACTERS, MIN_PASSWORD_LENGTH, PASSWORD_LEVELS } from "@/lib/auth/password-policy";
+import { SESSION_DURATION_LIMITS } from "@/lib/auth/session-lifetime";
 import { invalid, savePart, type SaveResult } from "@/lib/settings/save-part";
 
 const generalSchema = z.object({
@@ -22,7 +23,7 @@ const generalSchema = z.object({
 });
 
 const signInSchema = z.object({
-    sessionDuration: z.coerce.number().int().min(3600).max(7776000), // 1h to 90d in seconds
+    sessionDuration: z.coerce.number().int().min(SESSION_DURATION_LIMITS.min).max(SESSION_DURATION_LIMITS.max),
     passkeyLogin: z.boolean(),
     loginLook: z.enum(["logos", "image"]),
 });

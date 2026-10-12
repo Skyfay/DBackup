@@ -94,8 +94,9 @@ function workspacesWithBackups(config: LabConfig): string[] {
 export const COMMANDS: LabCommand[] = [
     {
         name: "status", group: "Lab", title: "What runs, what is missing and what to do next",
+        // A report, so it ends with 0 also when it lists problems, and pnpm adds no error line after it.
         run: async () => {
-            if (!await status(loadConfig(), currentWorkspace(), write)) process.exitCode = 1;
+            await status(loadConfig(), currentWorkspace(), write);
         },
     },
     {

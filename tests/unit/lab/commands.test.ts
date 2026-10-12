@@ -41,7 +41,8 @@ describe("the status of the lab", () => {
     it("says why MongoDB stopped on a CPU without AVX", () => {
         expect(explainExit("mongodb", 132, "")).toMatch(/no AVX/);
         expect(explainExit("mysql", 1, "[ERROR] Data directory is unusable")).toBe("exit 1: [ERROR] Data directory is unusable");
-        expect(explainExit(undefined, 137, "")).toMatch(/out of memory/);
+        expect(explainExit(undefined, 137, "", true)).toMatch(/lack of memory/);
+        expect(explainExit(undefined, 137, "")).toMatch(/did not stop in time/);
     });
 
     it("reads the version of every client tool from its first answer", () => {

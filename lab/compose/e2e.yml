@@ -38,6 +38,7 @@ services:
   customer:
     profiles: ["e2e"]
     image: dbackup-lab-customer:local
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: compose/customer/Dockerfile
@@ -48,6 +49,7 @@ services:
   ftp-e2e:
     profiles: ["e2e"]
     image: delfer/alpine-ftp-server:latest
+    restart: unless-stopped
     environment:
       USERS: "lab|lab-password|/ftp/lab"
       ADDRESS: ftp-e2e

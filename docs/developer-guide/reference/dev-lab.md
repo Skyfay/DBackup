@@ -23,7 +23,7 @@ Sign in with the email and the password `lab:init` printed. They stay in `~/.con
 | :--- | :--- |
 | `pnpm lab:status` | Checks everything and says what to run next, see [Status](#status) |
 | `pnpm lab:up [--full]` | Starts the lab on its Docker host and loads the test data once. Prints one line per part and one per service that did not come up |
-| `pnpm lab:down [--volumes]` | Stops the containers. `--volumes` also removes their data |
+| `pnpm lab:down [--volumes]` | Stops the containers and removes them. `--volumes` also removes their data |
 | `pnpm lab:seed [--history]` | Adds the lab to the database of this checkout. `--history` adds 30 days of runs and storage snapshots |
 | `pnpm lab:check [--run]` | Runs Test connection on every lab connection. `--run` also runs every lab job once and waits for it |
 | `pnpm lab:reset [--empty] [--history]` | A new `dev.db` from the migrations, then the seed. `--empty` leaves it without a user, for the first start and the configuration restore |
@@ -46,7 +46,7 @@ The seed can run as often as you like. It creates the first user only while ther
 | Client tools | The version of every tool DBackup runs when it backs up from this machine, and where the Docker image ships another |
 | Port 3000 | Whether DBackup answers there, and from which checkout |
 
-It ends with the commands that fix what it found, and exits with 1 while anything failed.
+It ends with the commands that fix what it found. It is a report, so it exits with 0 also when it lists problems.
 
 ## What It Contains
 
@@ -58,7 +58,7 @@ It ends with the commands that fix what it found, and exits with 1 while anythin
 
 Every database holds the same `shop` and `inventory` databases: Unicode, NULLs, binary data, decimals and dates, plus what the engine adds, like routines and events in MySQL or schemas and sequences in PostgreSQL. The SSH host reaches the databases by name, so a few sources also come in SSH mode, and it holds a SQLite database.
 
-All of it is one Compose project, `dbackup-lab`, made of `lab/compose/databases.yml`, `storage.yml` and `notify.yml`. `e2e.yml` adds DBackup itself, a customer server with the databases of Ubuntu and a second FTP server under the profile `e2e`, which only the [end-to-end tests](/developer-guide/reference/testing#end-to-end-tests) start. The versions, ports and test credentials of each engine are in its file under `lab/src/engines/`, the storage servers and receivers in `lab/src/catalog.ts`. Mailpit shows every mail at port 8025.
+All of it is one Compose project, `dbackup-lab`, made of `lab/compose/databases.yml`, `storage.yml` and `notify.yml`. `e2e.yml` adds DBackup itself, a customer server with the databases of Ubuntu and a second FTP server under the profile `e2e`, which only the [end-to-end tests](/developer-guide/reference/testing#end-to-end-tests) start. The versions, ports and test credentials of each engine are in its file under `lab/src/engines/`, the storage servers and receivers in `lab/src/catalog.ts`. Mailpit shows every mail at port 8025. Every container restarts with Docker, so the lab is back after a restart of its host, until `pnpm lab:down` removes it.
 
 ## Workspaces
 

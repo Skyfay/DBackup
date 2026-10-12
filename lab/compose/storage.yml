@@ -9,6 +9,7 @@ services:
     build:
       context: ..
       dockerfile: compose/ssh/Dockerfile
+    restart: unless-stopped
     profiles: ["core"]
     ports: ["22220:22"]
     volumes: [ssh-home:/home/dbackup]
@@ -22,6 +23,7 @@ services:
   # key never fails against it.
   s3:
     image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
     profiles: ["core"]
     command: server -s3 -dir=/data -master.telemetry=false
     ports: ["19000:8333"]
@@ -33,6 +35,7 @@ services:
 
   webdav:
     image: rclone/rclone:1.69
+    restart: unless-stopped
     profiles: ["core"]
     command: serve webdav /data --addr :8080 --user lab --pass lab-password
     ports: ["18080:8080"]
@@ -40,6 +43,7 @@ services:
 
   samba:
     image: ghcr.io/servercontainers/samba:latest
+    restart: unless-stopped
     profiles: ["core"]
     environment:
       ACCOUNT_lab: lab-password
@@ -51,6 +55,7 @@ services:
 
   ftp:
     image: delfer/alpine-ftp-server:latest
+    restart: unless-stopped
     profiles: ["core"]
     environment:
       USERS: "lab|lab-password|/ftp/lab"

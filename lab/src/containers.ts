@@ -5,7 +5,7 @@
 
 import type { Group, LabConfig } from "./config";
 import { DATABASES, NOTIFY, STORAGE, databasesOf, type Engine } from "./catalog";
-import { compose } from "./docker";
+import { compose, dockerArgs, run } from "./docker";
 
 /** A service the lab expects in a group, with the port DBackup reaches it on. */
 export interface ExpectedService {
@@ -20,6 +20,8 @@ export interface ServiceState {
     /** healthy, unhealthy, starting, or empty when the service has no healthcheck. */
     health: string;
     exitCode: number;
+    /** The name of the container, for what only `docker inspect` tells. */
+    container: string;
 }
 
 /** The services of a group a profile starts, plus those an earlier full start left there. */
@@ -46,8 +48,8 @@ export async function serviceStates(config: LabConfig): Promise<Map<string, Serv
     const states = new Map<string, ServiceState>();
     for (const line of result.stdout.split("\n")) {
         if (!line.trim().startsWith("{")) continue;
-        const entry = JSON.parse(line) as { Service: string; State: string; Health?: string; ExitCode?: number };
-        states.set(entry.Service, { state: entry.State, health: entry.Health ?? "", exitCode: entry.ExitCode ?? 0 });
+        const entry = JSON.parse(line) as { Service: string; Name: string; State: string; Health?: string; ExitCode?: number };
+        states.set(entry.Service, { state: entry.State, health: entry.Health ?? "", exitCode: entry.ExitCode ?? 0, container: entry.Name });
     }
     return states;
 }
@@ -57,12 +59,19 @@ export const isUp = (state: ServiceState | undefined) => state?.state === "runni
 /**
  * Why a container stopped, from its exit code and the last line it logged. Exit code 132 is an
  * illegal instruction: MongoDB 5 and later need AVX, which a virtual machine with a generic CPU
- * model does not have.
+ * model does not have. Exit code 137 is a kill, by the kernel for lack of memory or by Docker for
+ * a container that did not stop in time, like on a shutdown of the host.
  */
-export function explainExit(engine: Engine | undefined, exitCode: number, lastLog: string): string {
+export function explainExit(engine: Engine | undefined, exitCode: number, lastLog: string, outOfMemory = false): string {
     if (exitCode === 132 && engine === "mongodb") return "the CPU has no AVX, which MongoDB 5 and later need. Give the VM the CPU type of its host";
-    if (exitCode === 137) return "killed, most likely out of memory";
+    if (exitCode === 137) return outOfMemory ? "killed for lack of memory" : "killed after it did not stop in time, as on a shutdown of the host";
     return lastLog ? `exit ${exitCode}: ${lastLog}` : `exit ${exitCode}`;
+}
+
+/** Whether the kernel killed a container for lack of memory. */
+async function outOfMemory(config: LabConfig, container: string): Promise<boolean> {
+    const result = await run("docker", dockerArgs(config.docker, ["inspect", "--format", "{{.State.OOMKilled}}", container]), { timeoutMs: 15_000 });
+    return result.stdout.trim() === "true";
 }
 
 /** The last line a service logged, for the reason it stopped. */
@@ -77,6 +86,9 @@ export async function lastLogLine(config: LabConfig, service: string): Promise<s
 export async function describeDown(config: LabConfig, expected: ExpectedService, state: ServiceState | undefined): Promise<string> {
     if (!state) return "not started";
     if (state.state === "running") return state.health ? `running, ${state.health}` : "running";
-    if (state.state === "exited") return explainExit(expected.engine, state.exitCode, await lastLogLine(config, expected.service));
+    if (state.state === "exited") {
+        const killedForMemory = state.exitCode === 137 && await outOfMemory(config, state.container);
+        return explainExit(expected.engine, state.exitCode, await lastLogLine(config, expected.service), killedForMemory);
+    }
     return state.state;
 }

@@ -59,6 +59,7 @@ services:
   # ── MySQL ───────────────────────────────────────────────
   mysql-57:
     image: mysql:5.7
+    restart: unless-stopped
     platform: linux/amd64
     profiles: ["core"]
     command: --skip-name-resolve
@@ -68,6 +69,7 @@ services:
     healthcheck: *mysql-health
   mysql-80:
     image: mysql:8.0
+    restart: unless-stopped
     profiles: ["full"]
     environment: *mysql-env
     ports: ["33380:3306"]
@@ -75,6 +77,7 @@ services:
     healthcheck: *mysql-health
   mysql-84:
     image: mysql:8.4
+    restart: unless-stopped
     profiles: ["full"]
     environment: *mysql-env
     ports: ["33384:3306"]
@@ -82,6 +85,7 @@ services:
     healthcheck: *mysql-health
   mysql-9:
     image: mysql:9
+    restart: unless-stopped
     profiles: ["core"]
     environment: *mysql-env
     ports: ["33390:3306"]
@@ -91,6 +95,7 @@ services:
   # ── MariaDB ─────────────────────────────────────────────
   mariadb-104:
     image: mariadb:10.4
+    restart: unless-stopped
     profiles: ["core"]
     environment: *mysql-env
     ports: ["33304:3306"]
@@ -98,6 +103,7 @@ services:
     healthcheck: *mariadb-health
   mariadb-1011:
     image: mariadb:10.11
+    restart: unless-stopped
     profiles: ["full"]
     environment: *mysql-env
     ports: ["33310:3306"]
@@ -105,6 +111,7 @@ services:
     healthcheck: *mariadb-health
   mariadb-114:
     image: mariadb:11.4
+    restart: unless-stopped
     profiles: ["full"]
     environment: *mysql-env
     ports: ["33314:3306"]
@@ -112,6 +119,7 @@ services:
     healthcheck: *mariadb-health
   mariadb-118:
     image: mariadb:11.8
+    restart: unless-stopped
     profiles: ["core"]
     environment: *mysql-env
     ports: ["33318:3306"]
@@ -121,6 +129,7 @@ services:
   # ── PostgreSQL ──────────────────────────────────────────
   postgres-12:
     image: postgres:12-alpine
+    restart: unless-stopped
     profiles: ["core"]
     environment: *postgres-env
     ports: ["54412:5432"]
@@ -128,6 +137,7 @@ services:
     healthcheck: *postgres-health
   postgres-13:
     image: postgres:13-alpine
+    restart: unless-stopped
     profiles: ["full"]
     environment: *postgres-env
     ports: ["54413:5432"]
@@ -135,6 +145,7 @@ services:
     healthcheck: *postgres-health
   postgres-14:
     image: postgres:14-alpine
+    restart: unless-stopped
     profiles: ["full"]
     environment: *postgres-env
     ports: ["54414:5432"]
@@ -142,6 +153,7 @@ services:
     healthcheck: *postgres-health
   postgres-15:
     image: postgres:15-alpine
+    restart: unless-stopped
     profiles: ["full"]
     environment: *postgres-env
     ports: ["54415:5432"]
@@ -149,6 +161,7 @@ services:
     healthcheck: *postgres-health
   postgres-16:
     image: postgres:16-alpine
+    restart: unless-stopped
     profiles: ["full"]
     environment: *postgres-env
     ports: ["54416:5432"]
@@ -156,6 +169,7 @@ services:
     healthcheck: *postgres-health
   postgres-17:
     image: postgres:17-alpine
+    restart: unless-stopped
     profiles: ["full"]
     environment: *postgres-env
     ports: ["54417:5432"]
@@ -163,6 +177,7 @@ services:
     healthcheck: *postgres-health
   postgres-18:
     image: postgres:18-alpine
+    restart: unless-stopped
     profiles: ["core"]
     environment: *postgres-env
     ports: ["54418:5432"]
@@ -173,6 +188,7 @@ services:
   # ── MongoDB ─────────────────────────────────────────────
   mongo-44:
     image: mongo:4.4
+    restart: unless-stopped
     platform: linux/amd64
     profiles: ["core"]
     environment: *mongo-env
@@ -181,6 +197,7 @@ services:
     healthcheck: *mongo-health
   mongo-60:
     image: mongo:6.0
+    restart: unless-stopped
     profiles: ["full"]
     environment: *mongo-env
     ports: ["27706:27017"]
@@ -188,6 +205,7 @@ services:
     healthcheck: *mongo-health
   mongo-70:
     image: mongo:7.0
+    restart: unless-stopped
     profiles: ["full"]
     environment: *mongo-env
     ports: ["27707:27017"]
@@ -195,6 +213,7 @@ services:
     healthcheck: *mongo-health
   mongo-80:
     image: mongo:8.0
+    restart: unless-stopped
     profiles: ["core"]
     environment: *mongo-env
     ports: ["27708:27017"]
@@ -206,6 +225,7 @@ services:
   # on the Docker host and in the container, as DBackup's SSH file transfer expects.
   mssql-2017:
     image: mcr.microsoft.com/mssql/server:2017-latest
+    restart: unless-stopped
     platform: linux/amd64
     profiles: ["core"]
     environment: *mssql-env
@@ -221,6 +241,7 @@ services:
       start_period: 30s
   mssql-2019:
     image: mcr.microsoft.com/mssql/server:2019-latest
+    restart: unless-stopped
     platform: linux/amd64
     profiles: ["full"]
     environment: *mssql-env
@@ -236,6 +257,7 @@ services:
       start_period: 30s
   mssql-2022:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
     platform: linux/amd64
     profiles: ["core"]
     environment: *mssql-env
@@ -253,6 +275,7 @@ services:
   # ── Redis and Valkey ────────────────────────────────────
   redis-6:
     image: redis:6-alpine
+    restart: unless-stopped
     profiles: ["core"]
     command: redis-server --requirepass testpassword --appendonly yes
     ports: ["63796:6379"]
@@ -260,6 +283,7 @@ services:
     healthcheck: *redis-health
   redis-7:
     image: redis:7-alpine
+    restart: unless-stopped
     profiles: ["full"]
     command: redis-server --requirepass testpassword --appendonly yes
     ports: ["63797:6379"]
@@ -267,6 +291,7 @@ services:
     healthcheck: *redis-health
   redis-8:
     image: redis:8-alpine
+    restart: unless-stopped
     profiles: ["core"]
     command: redis-server --requirepass testpassword --appendonly yes
     ports: ["63798:6379"]
@@ -274,6 +299,7 @@ services:
     healthcheck: *redis-health
   valkey-72:
     image: valkey/valkey:7.2-alpine
+    restart: unless-stopped
     profiles: ["core"]
     command: valkey-server --requirepass testpassword --appendonly yes
     ports: ["63772:6379"]
@@ -281,6 +307,7 @@ services:
     healthcheck: *redis-health
   valkey-8:
     image: valkey/valkey:8-alpine
+    restart: unless-stopped
     profiles: ["core"]
     command: valkey-server --requirepass testpassword --appendonly yes
     ports: ["63780:6379"]
@@ -290,6 +317,7 @@ services:
   # ── Firebird ────────────────────────────────────────────
   firebird-3:
     image: firebirdsql/firebird:3.0.11
+    restart: unless-stopped
     platform: linux/amd64
     profiles: ["core"]
     environment:
@@ -300,6 +328,7 @@ services:
     healthcheck: *firebird-health
   firebird-4:
     image: firebirdsql/firebird:4.0.7
+    restart: unless-stopped
     platform: linux/amd64
     profiles: ["full"]
     environment: *firebird-env
@@ -308,6 +337,7 @@ services:
     healthcheck: *firebird-health
   firebird-5:
     image: firebirdsql/firebird:5.0.3
+    restart: unless-stopped
     profiles: ["core"]
     environment: *firebird-env
     ports: ["31550:3050"]

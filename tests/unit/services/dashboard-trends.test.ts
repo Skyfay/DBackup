@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { dailyStorageTotals, successRateTrend, valueDaysAgo } from "@/services/dashboard/trends";
+import { subDays } from "date-fns";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { dailyStorageTotals, dayBuckets, successRateTrend, valueDaysAgo, type SnapshotPoint } from "@/services/dashboard/trends";
 import type { ActivityDataPoint } from "@/services/dashboard-service";
 
 const toDayKey = (date: Date) => date.toISOString().slice(0, 10);
@@ -52,6 +54,50 @@ describe("dailyStorageTotals", () => {
         const snapshots = [snapshot("s3", 100, 1, "2026-09-20T02:00:00Z")];
 
         expect(dailyStorageTotals(snapshots, days, toDayKey, new Set(["s3"])).size).toEqual([null, null, 100, 100]);
+    });
+});
+
+describe("dayBuckets", () => {
+    const timezone = "Europe/Amsterdam";
+    const dayKey = (date: Date) => formatInTimeZone(date, timezone, "yyyy-MM-dd");
+    const startOfDay = (day: string) => fromZonedTime(`${day}T00:00:00`, timezone).getTime();
+
+    it("ends each span where the day after its key starts, in the scheduler timezone", () => {
+        const buckets = dayBuckets(["2026-10-24", "2026-10-25", "2026-10-26"], Date.parse("2026-10-23T12:00:00Z"), startOfDay);
+
+        expect(buckets.map(([from, to]) => [new Date(from).toISOString(), new Date(to).toISOString()])).toEqual([
+            ["2026-10-23T12:00:00.000Z", "2026-10-24T22:00:00.000Z"],
+            // The night the clocks go back has 25 hours.
+            ["2026-10-24T22:00:00.000Z", "2026-10-25T23:00:00.000Z"],
+            ["2026-10-25T23:00:00.000Z", "2026-10-26T23:00:00.000Z"],
+        ]);
+    });
+
+    it("gives the same totals from the newest snapshot of each span as from every snapshot", () => {
+        // 30 days around the change to winter time, a snapshot of three destinations every 37 minutes.
+        const now = new Date("2026-11-10T00:20:00Z");
+        const windowStart = subDays(now, 30).getTime();
+        const snapshots: SnapshotPoint[] = [];
+        for (let at = windowStart; at <= now.getTime(); at += 37 * 60_000) {
+            for (const id of ["s3", "nas", "ftp"]) {
+                snapshots.push({ adapterConfigId: id, size: BigInt(at % 9973), count: at % 31, createdAt: new Date(at) });
+            }
+        }
+        const dayKeys = Array.from({ length: 30 }, (_, i) => dayKey(subDays(now, 29 - i)));
+        const ids = new Set(["s3", "nas"]);
+
+        // What the query keeps: the newest snapshot of each destination in each span.
+        const newest = new Map<string, SnapshotPoint>();
+        dayBuckets(dayKeys, windowStart, startOfDay).forEach(([from, to], index) => {
+            for (const entry of snapshots) {
+                const at = entry.createdAt.getTime();
+                if (at >= from && at < to) newest.set(`${index}:${entry.adapterConfigId}`, entry);
+            }
+        });
+        const kept = [...newest.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+        expect(kept.length).toBeLessThan(snapshots.length / 10);
+        expect(dailyStorageTotals(kept, dayKeys, dayKey, ids)).toEqual(dailyStorageTotals(snapshots, dayKeys, dayKey, ids));
     });
 });
 

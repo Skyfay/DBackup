@@ -258,6 +258,10 @@ model Execution {
   @@index([status, startedAt])
   @@index([jobId, startedAt])
   @@index([logsPurgedAt, startedAt])
+  // The Type and Started by filters of the History page count every run. These columns sit
+  // behind `logs` in the row, so without an index each count read the logs of every run.
+  @@index([type, startedAt])
+  @@index([triggerType, triggerLabel])
 }
 
 model User {
@@ -503,7 +507,9 @@ model StorageSnapshot {
   count           Int      @default(0)
   createdAt       DateTime @default(now())
 
-  @@index([adapterConfigId])
+  // The newest snapshot of a destination before a point in time, for the storage trend of the
+  // dashboard, the alerts and the last scan of a destination that does not answer.
+  @@index([adapterConfigId, createdAt])
   @@index([createdAt])
 }
 

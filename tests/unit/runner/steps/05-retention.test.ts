@@ -485,7 +485,8 @@ describe('stepRetention', () => {
 
         // Allow the non-blocking dynamic import to complete
         await new Promise((r) => setTimeout(r, 10));
-        expect(refreshStorageStatsCache).toHaveBeenCalled();
+        // Only the destinations of the job, the others did not change.
+        expect(refreshStorageStatsCache).toHaveBeenCalledWith({ configIds: [dest.configId] });
     });
 
     it('handles cache refresh failure silently after deletion', async () => {

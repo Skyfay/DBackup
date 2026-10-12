@@ -70,7 +70,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (action === "delete" && result.succeeded.length > 0) {
             // Once for the batch, and non-blocking as on the single-file route.
             import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
-                refreshStorageStatsCache().catch(() => {});
+                refreshStorageStatsCache({ configIds: [params.id] }).catch(() => {});
             });
         }
 

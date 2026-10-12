@@ -40,7 +40,7 @@ export function SignInPart({ model }: { model: SettingsModel["signIn"] }) {
             <PartFrame part="sign-in">
                 <LoginLookField value={values.loginLook} onChange={(look) => set("loginLook", look)} image={model.loginImage} readOnly={readOnly} error={save.errorOf("loginLook") ?? undefined} />
                 <fieldset disabled={readOnly} className="min-w-0 space-y-6">
-                    <Field label="Sessions last" setting="signin.sessions" hint="How long someone stays signed in. A new length applies from their next sign-in." error={save.errorOf("sessionDuration")}>
+                    <Field label="Sessions last" setting="signin.sessions" hint="How long someone stays signed in, counted from the sign-in. A new length applies from their next sign-in." error={save.errorOf("sessionDuration")}>
                         {(id) => (
                             <Select value={String(values.sessionDuration)} onValueChange={(seconds) => set("sessionDuration", Number(seconds))} disabled={readOnly}>
                                 <SelectTrigger id={id} className="w-full sm:w-56">

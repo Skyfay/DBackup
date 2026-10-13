@@ -31,7 +31,6 @@ interface SMBConfig {
 
 /**
  * Creates a SambaClient instance with the given config.
- * The `directory` option is set to pathPrefix if provided.
  */
 function createClient(config: SMBConfig): SambaClient {
     return new SambaClient({
@@ -51,6 +50,32 @@ function resolvePath(config: SMBConfig, relativePath: string): string {
         return config.pathPrefix.replace(/\\/g, "/") + "/" + relativePath.replace(/\\/g, "/");
     }
     return relativePath.replace(/\\/g, "/");
+}
+
+type SambaListEntry = { name: string; type: string; size: number; modifyTime: Date };
+
+/** Parse the right-hand metadata without confusing filename words with attributes. */
+function parseRawSmbDirectory(raw: string): SambaListEntry[] {
+    const entries: SambaListEntry[] = [];
+    const row = /^\s*(.+?)\s+([A-Za-z]+)\s+(\d+)\s+(\w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4})\s*$/;
+    for (const line of raw.split(/\r?\n/)) {
+        const match = line.match(row);
+        if (!match) continue;
+        entries.push({
+            name: match[1],
+            type: match[2],
+            size: Number.parseInt(match[3], 10),
+            modifyTime: new Date(`${match[4]}Z`),
+        });
+    }
+    return entries;
+}
+
+
+/** Read each directory once for both recursive inventory and directory browsing. */
+async function listDirectory(client: SambaClient, directory: string): Promise<SambaListEntry[]> {
+    const raw = await client.dir(directory ? directory + "/*" : "*");
+    return parseRawSmbDirectory(typeof raw === "string" ? raw : raw.toString("utf8"));
 }
 
 /**
@@ -180,7 +205,7 @@ export const SMBAdapter: StorageAdapter = {
 
             // smbclient's "dir" needs a glob: "folder/*" lists the folder's contents,
             // while "folder" alone would only match the entry itself.
-            const items = await client.list(base ? base + "/*" : "*");
+            const items = await listDirectory(client, base);
 
             return items
                 // The attribute string carries "D" for a directory, alongside flags like
@@ -200,8 +225,6 @@ export const SMBAdapter: StorageAdapter = {
 
     async list(config: SMBConfig, dir: string = ""): Promise<FileInfo[]> {
         try {
-            const client = createClient(config);
-
             const normalize = (p: string) => p.replace(/\\/g, "/");
 
             const prefix = config.pathPrefix ? normalize(config.pathPrefix) : "";
@@ -214,11 +237,8 @@ export const SMBAdapter: StorageAdapter = {
             const walk = async (currentDir: string) => {
                 let items: Array<{ name: string; type: string; size: number; modifyTime: Date }>;
                 try {
-                    // smbclient's "dir" command requires a glob pattern to list directory contents.
-                    // "dir folder" matches the entry itself, "dir folder/*" lists its contents.
-                    // For root listing (empty currentDir), "*" lists everything in the share root.
-                    const listPath = currentDir ? currentDir + "/*" : "*";
-                    items = await client.list(listPath);
+                    const client = createClient(config);
+                    items = await listDirectory(client, currentDir);
                 } catch (error: unknown) {
                     // Root directory listing failure means the share is unreachable or inaccessible.
                     // Propagate to trigger the DB fallback in the stats cache.

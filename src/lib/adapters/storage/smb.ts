@@ -43,27 +43,60 @@ function createClient(config: SMBConfig): SambaClient {
     });
 }
 
-/**
- * Joins the pathPrefix with a relative path using forward slashes.
- */
-function resolvePath(config: SMBConfig, relativePath: string): string {
-    if (config.pathPrefix) {
-        return config.pathPrefix.replace(/\\/g, "/") + "/" + relativePath.replace(/\\/g, "/");
+/** Keep every SMB object path relative to the configured share root. */
+function normalizeRelativeSmbPath(value: string, label: string): string {
+    const normalized = value.replace(/\\/g, "/");
+    const parts = normalized.split("/").filter((part) => part !== "" && part !== ".");
+    if (parts.some((part) => part === "..")) {
+        throw new Error(`${label} must not traverse outside the SMB share root`);
     }
-    return relativePath.replace(/\\/g, "/");
+    return parts.join("/");
+}
+
+/** Join validated destination-relative paths without escaping the share root. */
+function resolvePath(config: SMBConfig, relativePath: string): string {
+    const root = normalizeRelativeSmbPath(config.pathPrefix ?? "", "SMB pathPrefix");
+    const relative = normalizeRelativeSmbPath(relativePath, "SMB destination");
+    return root ? (relative ? `${root}/${relative}` : root) : relative;
+}
+
+function isDirectoryAlreadyExistsError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    const statuses = message.match(/\bNT_STATUS_[A-Z0-9_]+\b/g) ?? [];
+    return statuses.length > 0 && statuses.every((status) => status === "NT_STATUS_OBJECT_NAME_COLLISION");
 }
 
 /**
  * Ensures the parent directory of the given remote path exists.
  */
-async function ensureDir(client: SambaClient, remotePath: string): Promise<void> {
+async function ensureDir(
+    client: SambaClient,
+    config: SMBConfig,
+    remotePath: string,
+    dirCache: Set<string>
+): Promise<void> {
+    const root = normalizeRelativeSmbPath(config.pathPrefix ?? "", "SMB pathPrefix");
     const dir = path.posix.dirname(remotePath);
-    if (dir && dir !== "." && dir !== "/") {
+    if (!dir || dir === "." || dir === "/" || dir === root) return;
+
+    const relative = root ? dir.slice(root.length + 1) : dir;
+    let current = root;
+    for (const segment of relative.split("/").filter(Boolean)) {
+        current = current ? `${current}/${segment}` : segment;
+        if (dirCache.has(current)) continue;
         try {
-            await client.mkdir(dir, "/");
-        } catch {
-            // Directory may already exist, ignore errors
+            const output = await client.mkdir(current, "/");
+            // smbclient can exit successfully while reporting a protocol failure.
+            const statuses = String(output ?? "").match(/\bNT_STATUS_[A-Z0-9_]+\b/g) ?? [];
+            const failure = statuses.find((status) => status !== "NT_STATUS_OBJECT_NAME_COLLISION");
+            if (failure) throw new Error(failure);
+        } catch (error: unknown) {
+            if (!isDirectoryAlreadyExistsError(error)) {
+                const reason = error instanceof Error ? error.message : String(error);
+                throw new Error(`Cannot create SMB destination parent '${current}': ${reason}`);
+            }
         }
+        dirCache.add(current);
     }
 }
 
@@ -91,8 +124,7 @@ async function performSmbUpload(
         const dir = path.posix.dirname(destination);
 
         if (!dirCache.has(dir)) {
-            await ensureDir(client, destination);
-            dirCache.add(dir);
+            await ensureDir(client, config, destination, dirCache);
         }
 
         if (onLog) onLog(`Starting SMB upload to: ${destination}`, "info", "storage");
@@ -298,9 +330,7 @@ export const SMBAdapter: StorageAdapter = {
         const destination = resolvePath(config, testFileName);
 
         try {
-            // Ensure test subfolder exists (two-step: samba-client does not handle nested mkdir)
-            await client.mkdir(resolvePath(config, '.dbackup'), '/').catch(() => {});
-            await client.mkdir(resolvePath(config, '.dbackup/test'), '/').catch(() => {});
+            await ensureDir(client, config, destination, new Set());
 
             // Create a temp file to upload
             await fs.writeFile(tmpPath, "Connection Test");

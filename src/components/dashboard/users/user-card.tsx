@@ -1,8 +1,10 @@
 "use client";
 
+import { useTenantName } from "@/components/tenant/tenant-view";
 import { isPlainClick } from "@/components/ui/row-click";
 import type { UserRow } from "@/services/user/users-types";
-import { GroupTag, LastSignInCell, MethodsCell, SecondFactorCell, UserAvatar, YouTag } from "./user-cells";
+import { GroupTag, LastSignInCell, MethodsCell, PlatformAdminTag, SecondFactorCell, UserAvatar, YouTag } from "./user-cells";
+import { TenantsCell } from "./user-tenants";
 
 interface UserCardProps {
     user: UserRow;
@@ -10,8 +12,9 @@ interface UserCardProps {
     actions: React.ReactNode;
 }
 
-/** A user on a phone: who they are, their group, how they sign in and when they last did. */
+/** A user on a phone: who they are, their group or in All tenants their tenants, how they sign in and when they last did. */
 export function UserCard({ user, onOpen, actions }: UserCardProps) {
+    const tenantName = useTenantName();
     return (
         <div
             onClick={(event) => isPlainClick(event) && onOpen(user)}
@@ -28,14 +31,15 @@ export function UserCard({ user, onOpen, actions }: UserCardProps) {
                         >
                             {user.name}
                         </button>
+                        {user.superAdmin && <PlatformAdminTag />}
                         {user.isYou && <YouTag />}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">{user.email}</p>
                 </div>
                 <div className="-mt-1 -mr-2">{actions}</div>
             </div>
-            <div className="flex items-center gap-3">
-                <GroupTag group={user.group} />
+            <div className="flex min-w-0 items-center gap-3">
+                {user.tenants ? <TenantsCell tenants={user.tenants} nameOf={tenantName} className="min-w-0" /> : <GroupTag group={user.group} />}
                 <SecondFactorCell value={user.secondFactor} />
             </div>
             <MethodsCell methods={user.methods} />

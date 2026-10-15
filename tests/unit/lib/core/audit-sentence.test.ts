@@ -18,6 +18,12 @@ describe("an entry of the audit log as a sentence", () => {
         expect(auditSentence(entry("CREATE", "USER", { name: "Tom Weber" }))).toBe("Created the user Tom Weber");
     });
 
+    it("says an account joined a tenant through its provider, and the group it got there", () => {
+        const joined = { name: "Lena Graf", via: "sso", change: "Joined through single sign-on", provider: "Acme Entra ID", group: "Viewer" };
+        expect(auditSentence(entry("UPDATE", "USER", joined))).toBe("Joined through Acme Entra ID into the group Viewer");
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Joined through single sign-on" }))).toBe("Joined through single sign-on");
+    });
+
     it("names the account a failed sign-in tried and marks it as failed", () => {
         const failed = describeEntry(entry("LOGIN_FAILED", "AUTH", { email: "admin@example.ch", reason: "unknown_email" }));
 
@@ -74,6 +80,14 @@ describe("an entry of the audit log as a sentence", () => {
         const restored = describeEntry(entry("RESTORE", "USER", { name: "Jana Keller", action: "trash_restore" }));
         expect(restored.parts.map((part) => part.text).join("")).toBe("Restored the user Jana Keller from Recently deleted");
         expect(restored.kind).toBe("sensitive");
+    });
+
+    it("names the platform groups of the MSP and who got one", () => {
+        expect(auditSentence(entry("CREATE", "PLATFORM_GROUP", { name: "Support", scope: "All tenants, new ones too" }))).toBe("Created the platform group Support");
+        expect(auditSentence(entry("UPDATE", "PLATFORM_GROUP", { name: "Support", areas: [] }))).toBe("Changed the platform group Support");
+        expect(auditSentence(entry("DELETE", "PLATFORM_GROUP", { name: "Support", members: 3 }))).toBe("Deleted the platform group Support");
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Platform group set", from: "No platform group", to: "Support" }), "Lena Graf")).toBe("Changed the platform group of Lena Graf");
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Made platform admin" }), "Lena Graf")).toBe("Made Lena Graf a platform admin");
     });
 
     it("stays general for details it cannot read", () => {

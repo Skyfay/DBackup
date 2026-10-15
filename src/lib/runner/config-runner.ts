@@ -7,6 +7,7 @@ import { pipeline } from "stream/promises";
 import { createGzip } from "zlib";
 import { createEncryptionStream } from "@/lib/crypto/stream";
 import prisma from "@/lib/prisma";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { registry } from "@/lib/core/registry";
 import type { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
@@ -65,7 +66,8 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
     }
 
     // 1. The destination
-    const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageId } });
+    // The destination and the key of the platform, never those of a customer, see config-backup-settings.ts.
+    const storageConfig = await prisma.adapterConfig.findFirst({ where: { id: storageId, tenantId: HOME_TENANT_ID } });
     if (!storageConfig) {
         throw new ConfigurationError("config-backup", `Storage adapter ${storageId} not found`);
     }
@@ -82,7 +84,7 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
     }
 
     // 2. The key
-    const profile = await prisma.encryptionProfile.findUnique({ where: { id: profileId } });
+    const profile = await prisma.encryptionProfile.findFirst({ where: { id: profileId, tenantId: HOME_TENANT_ID } });
     if (!profile) {
         throw new ConfigurationError("config-backup", "The encryption key picked under Configuration backup no longer exists");
     }

@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: async () => ({ userId: mocks.userId, permissions: mocks.permissions, isSuperAdmin: false }),
+    getAuthContext: async () => ({ userId: mocks.userId, permissions: mocks.permissions, isPlatformAdmin: false, tenantId: "acme" }),
+    tenantOf: (ctx: { tenantId: string }) => ctx.tenantId,
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
     },
@@ -92,8 +93,21 @@ describe("download links for a pick", () => {
             "BACKUP",
             expect.objectContaining({ action: "download_link", file: "Shop/backup.tar", destination: "NAS", databases: ["billing"], from: "10.0.0.5" }),
             "nas",
-            { ipAddress: "10.0.0.5", userAgent: "curl/8.7.1" }
+            { ipAddress: "10.0.0.5", userAgent: "curl/8.7.1", tenantId: "acme" }
         ));
+    });
+
+    it("serves a link in the tenant it was made in, since the command has no session", async () => {
+        const { explicitScope } = await import("@/lib/tenant/context");
+        let servedIn: unknown;
+        mocks.openArchiveDownload.mockImplementationOnce(async () => {
+            servedIn = explicitScope();
+            throw new Error("stop after the scope was seen");
+        });
+        const { data } = await (await makeLink({ file: "Shop/backup.tar", databases: ["billing"] })).json();
+        await fetchLink(data.url);
+
+        expect(servedIn).toEqual({ kind: "tenant", tenantId: "acme" });
     });
 
     it("lets the command run again after a transfer that broke off", async () => {

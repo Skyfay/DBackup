@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registry } from "@/lib/core/registry";
-import { withHost } from "@/lib/transport";
 import { registerAdapters } from "@/lib/adapters";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { z } from "zod";
-import prisma from "@/lib/prisma";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { readTableData, type ReadRefusal } from "@/services/databases/database-read-service";
 
 registerAdapters();
 
@@ -31,6 +27,13 @@ const BodySchema = z.intersection(
         sortDir: z.enum(["asc", "desc"]).optional(),
     })
 );
+
+/** What the API answers a read that never reached the server with. */
+const REFUSALS: Record<ReadRefusal, { message: string; status: number }> = {
+    "source-missing": { message: "Source not found", status: 404 },
+    "adapter-missing": { message: "Adapter not found", status: 404 },
+    "unsupported": { message: "This adapter does not support reading table data.", status: 200 },
+};
 
 /**
  * POST /api/adapters/database-table-data
@@ -59,37 +62,9 @@ export async function POST(req: NextRequest) {
         }
 
         const body = parsed.data;
+        const target = "sourceId" in body ? { sourceId: body.sourceId } : { adapterId: body.adapterId, config: body.config };
 
-        let resolvedAdapterId: string;
-        let resolvedConfig: unknown;
-
-        if ("sourceId" in body) {
-            const source = await prisma.adapterConfig.findUnique({ where: { id: body.sourceId } });
-
-            if (!source) {
-                return NextResponse.json({ success: false, message: "Source not found" }, { status: 404 });
-            }
-
-            resolvedAdapterId = source.adapterId;
-            resolvedConfig = await resolveAdapterConfig(source);
-        } else {
-            resolvedAdapterId = body.adapterId;
-            resolvedConfig = body.config;
-        }
-
-        const adapter = registry.get(resolvedAdapterId) as DatabaseAdapter | undefined;
-
-        if (!adapter) {
-            return NextResponse.json({ success: false, message: "Adapter not found" }, { status: 404 });
-        }
-
-        const readTableData = adapter.getTableData;
-        if (!readTableData) {
-            return NextResponse.json({ success: false, message: "This adapter does not support reading table data." });
-        }
-
-        const config = resolvedConfig;
-        const result = await withHost(adapter, config, (host) => readTableData(config, {
+        const outcome = await readTableData(target, {
             database: body.database,
             table: body.table,
             page: body.page,
@@ -99,9 +74,13 @@ export async function POST(req: NextRequest) {
             matchMode: body.matchMode,
             sortBy: body.sortBy,
             sortDir: body.sortDir,
-        }, host));
+        });
+        if (!outcome.ok) {
+            const { message, status } = REFUSALS[outcome.reason];
+            return NextResponse.json({ success: false, message }, { status });
+        }
 
-        return NextResponse.json({ success: true, ...result });
+        return NextResponse.json({ success: true, ...outcome.value });
 
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";

@@ -48,6 +48,8 @@ const NOUNS: Record<string, [string, string]> = {
     [R.API_KEY]: ["API key", "an API key"],
     [R.TEMPLATE]: ["template", "a template"],
     [R.SSO_PROVIDER]: ["sign-in provider", "a sign-in provider"],
+    [R.TENANT]: ["tenant", "a tenant"],
+    [R.PLATFORM_GROUP]: ["platform group", "a platform group"],
     [R.AUTH]: ["sign-in", "a sign-in"],
 };
 
@@ -66,6 +68,9 @@ const USER_CHANGES: Record<string, [string, string]> = {
     "Updating Group": ["Changed the group of", ""],
     "Two-Factor Reset": ["Reset the second factor of", ""],
     "Sessions Revoked": ["Signed out", " everywhere"],
+    "Platform group set": ["Changed the platform group of", ""],
+    "Made platform admin": ["Made", " a platform admin"],
+    "No platform admin any more": ["Took the platform admin role from", ""],
 };
 
 const SIGN_IN_WAYS: Record<string, string> = {
@@ -122,6 +127,16 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
         case A.LOGOUT:
             return { parts: [plain("Signed out")], glyph: "log-out" };
         case A.EXECUTE: {
+            // A backup a customer started of a database given to it: in its own log the database, in
+            // the log of the server's tenant the job, the database and the customer.
+            if (kind === "backup_on_demand") {
+                const database = text(details.database);
+                const customer = text(details.tenant);
+                if (entry.resource === R.JOB) {
+                    return { parts: [plain("Started "), ...it, ...(database ? [plain(" for "), strong(database)] : []), ...(customer ? [plain(" of "), strong(customer)] : [])], glyph: "play" };
+                }
+                return { parts: [plain("Started a backup of "), ...(name ? [strong(name)] : [plain("a shared database")])], glyph: "play" };
+            }
             if (entry.resource === R.JOB) return { parts: [plain("Started "), ...it], glyph: "play" };
             if (kind === "database_vacuum") return { parts: [plain("Compacted the database of DBackup")], glyph: "play" };
             if (kind === "config_backup") return { parts: [plain("Backed up the configuration")], glyph: "play" };
@@ -166,6 +181,15 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
         case A.UPDATE: {
             const change = text(details.change);
             if (entry.resource === R.USER && change === "Password Changed") return { parts: [plain("Changed the own password")], glyph: "key" };
+            // An account that signed in through the provider of a tenant for the first time, see sso-tenant-guard.ts.
+            if (entry.resource === R.USER && change === "Joined through single sign-on") {
+                const provider = text(details.provider);
+                const group = text(details.group);
+                return {
+                    parts: [plain("Joined through "), provider ? strong(provider) : plain("single sign-on"), ...(group ? [plain(" into the group "), strong(group)] : [])],
+                    glyph: "plus",
+                };
+            }
             if (entry.resource === R.USER && change && USER_CHANGES[change]) {
                 const [lead, tail] = USER_CHANGES[change];
                 return { parts: [plain(`${lead} `), ...(target ? [strong(target)] : [plain("a user")]), ...(tail ? [plain(tail)] : [])], glyph: change === "Password Set" ? "key" : "pencil" };

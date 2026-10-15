@@ -1,24 +1,11 @@
 "use client"
 
-import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import {
-    Archive,
-    CalendarClock,
-    Database,
-    History,
-    LayoutDashboard,
-    LayoutTemplate,
-    Lock,
-    Rocket,
-    SearchCode,
-    Settings,
-    Users,
-    type LucideIcon,
-} from "lucide-react"
-import { PERMISSIONS } from "@/lib/auth/permissions"
+import { Globe } from "lucide-react"
 import { NavUser } from "@/components/layout/nav-user"
+import { SidebarHead } from "@/components/layout/tenant-switcher"
+import type { HeadTenant } from "@/components/layout/tenant-switch"
 import {
     Sidebar,
     SidebarContent,
@@ -32,75 +19,52 @@ import {
     SidebarRail,
     useSidebar,
 } from "@/components/ui/sidebar"
-
-export interface NavItem {
-    icon: LucideIcon;
-    label: string;
-    href: string;
-    permission?: string | string[];
-    quickSetupOnly?: boolean;
-}
-
-export interface NavGroup {
-    label: string;
-    items: NavItem[];
-}
-
-export const navGroups: NavGroup[] = [
-    {
-        label: "General",
-        items: [
-            { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
-            { icon: Rocket, label: "Quick Setup", href: "/dashboard/setup", permission: [PERMISSIONS.SOURCES.WRITE, PERMISSIONS.DESTINATIONS.WRITE, PERMISSIONS.JOBS.WRITE], quickSetupOnly: true },
-        ],
-    },
-    {
-        label: "Backup",
-        items: [
-            // Databases, storage in either role, and notification channels all live under
-            // one entry - they are the same kind of thing (something DBackup connects to)
-            // and only differ in what they connect to.
-            { icon: Database, label: "Connections", href: "/dashboard/connections", permission: [PERMISSIONS.SOURCES.VIEW, PERMISSIONS.DESTINATIONS.READ, PERMISSIONS.NOTIFICATIONS.READ] },
-            { icon: CalendarClock, label: "Jobs", href: "/dashboard/jobs", permission: PERMISSIONS.JOBS.READ },
-            // What the jobs made, beside the jobs: every backup and where it lies.
-            { icon: Archive, label: "Backups", href: "/dashboard/backups", permission: PERMISSIONS.STORAGE.READ },
-        ],
-    },
-    {
-        label: "Explorer",
-        items: [
-            { icon: SearchCode, label: "Database Explorer", href: "/dashboard/explorer", permission: PERMISSIONS.SOURCES.VIEW },
-            { icon: History, label: "History", href: "/dashboard/history", permission: PERMISSIONS.HISTORY.READ },
-        ],
-    },
-    {
-        label: "Administration",
-        items: [
-            { icon: Lock, label: "Vault", href: "/dashboard/vault", permission: PERMISSIONS.VAULT.READ },
-            { icon: LayoutTemplate, label: "Templates", href: "/dashboard/templates", permission: PERMISSIONS.TEMPLATES.READ },
-            { icon: Users, label: "Users & Groups", href: "/dashboard/users", permission: [PERMISSIONS.USERS.READ, PERMISSIONS.GROUPS.READ, PERMISSIONS.AUDIT.READ, PERMISSIONS.API_KEYS.READ] },
-            { icon: Settings, label: "Settings", href: "/dashboard/settings", permission: PERMISSIONS.SETTINGS.READ },
-        ],
-    },
-]
+import { isActiveRoute, navSections, platformLine, type NavItem } from "./nav-sections"
 
 interface AppSidebarProps {
     permissions?: string[];
-    isSuperAdmin?: boolean;
+    isPlatformAdmin?: boolean;
     currentVersion?: string;
-    /** The name under General, which the head shows instead of DBackup. Later the tenant takes its place. */
+    /** The name under General, which the head shows instead of DBackup. */
     instanceName?: string;
     showQuickSetup?: boolean;
     groupName?: string;
+    /** The tenants the viewer may open, the home tenant first, which the head switches between. */
+    tenants?: HeadTenant[];
+    /** The tenant the viewer works in, null in All tenants. */
+    activeTenantId?: string | null;
+    /** A platform admin looks at every tenant at once. */
+    allTenants?: boolean;
+    /** How many tenants the instance has, also the ones the viewer may not open. */
+    tenantCount?: number;
+    /** What the viewer may do with the tenants in the head, as `isPlatformAdmin` when left out. */
+    tenantAccess?: { opensAll: boolean; see: boolean; create: boolean };
+    /** The platform group of the viewer, which the section Platform names. */
+    platformGroupName?: string | null;
 }
 
-/** Overview is the index route and only matches exactly. Every other entry also owns its sub-pages. */
-function isActiveRoute(pathname: string, href: string) {
-    if (href === "/dashboard") return pathname === href;
-    return pathname === href || pathname.startsWith(`${href}/`);
+/** The entries of one section, each a link that marks the page it leads to. */
+function NavItems({ items, pathname, onNavigate }: { items: NavItem[]; pathname: string; onNavigate: () => void }) {
+    return (
+        <SidebarMenu>
+            {items.map((item) => {
+                const isActive = isActiveRoute(pathname, item.href)
+                return (
+                    <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                            <Link href={item.href} onClick={onNavigate} aria-current={isActive ? "page" : undefined}>
+                                <item.icon />
+                                <span>{item.label}</span>
+                            </Link>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                )
+            })}
+        </SidebarMenu>
+    )
 }
 
-export function AppSidebar({ permissions = [], isSuperAdmin = false, currentVersion, instanceName, showQuickSetup = false, groupName }: AppSidebarProps) {
+export function AppSidebar({ permissions = [], isPlatformAdmin = false, currentVersion, instanceName, showQuickSetup = false, groupName, tenants = [], activeTenantId = null, allTenants = false, tenantCount = 1, tenantAccess, platformGroupName = null }: AppSidebarProps) {
     const pathname = usePathname()
     const { isMobile, setOpenMobile } = useSidebar()
 
@@ -109,64 +73,54 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, currentVers
         if (isMobile) setOpenMobile(false)
     }
 
-    const visibleGroups = navGroups
-        .map((group) => ({
-            ...group,
-            items: group.items.filter((item) => {
-                if (item.quickSetupOnly && !showQuickSetup) return false;
-                if (item.permission) {
-                    const requiredPerms = Array.isArray(item.permission) ? item.permission : [item.permission];
-                    const hasAny = requiredPerms.some((p) => permissions.includes(p));
-                    if (!isSuperAdmin && !hasAny) return false;
-                }
-                return true;
-            }),
-        }))
-        .filter((group) => group.items.length > 0)
+    const held = new Set(permissions)
+    const sections = navSections({ tenantCount, isPlatformAdmin, allTenants, showQuickSetup }, (permission) => held.has(permission))
+    const platform = sections.find((group) => group.platform)
 
     return (
         <Sidebar collapsible="icon">
+            {/* Where the viewer works, and the menu of the tenants for whoever may switch or manage them. */}
             <SidebarHeader className="h-15 justify-center border-b border-sidebar-border px-2.5 py-0">
-                <SidebarMenu>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild className="hover:bg-transparent active:bg-transparent">
-                            <Link href="/dashboard" onClick={closeMobileSheet}>
-                                <Image src="/logo.svg" alt="DBackup Logo" width={30} height={30} priority className="size-7.5 shrink-0" />
-                                {/* Where you work: the name under General, or DBackup. The logo keeps the brand either way. */}
-                                <div className="grid flex-1 text-left leading-tight">
-                                    <span className="truncate text-sm font-semibold text-sidebar-foreground">{instanceName || "DBackup"}</span>
-                                    {currentVersion && (
-                                        <span className="truncate text-xs text-sidebar-foreground/60 dark:text-sidebar-foreground/55">{instanceName ? `DBackup v${currentVersion}` : `v${currentVersion}`}</span>
-                                    )}
-                                </div>
-                            </Link>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                </SidebarMenu>
+                <SidebarHead
+                    tenants={tenants}
+                    activeTenantId={activeTenantId}
+                    allTenants={allTenants}
+                    isPlatformAdmin={isPlatformAdmin}
+                    opensAllTenants={tenantAccess?.opensAll}
+                    canSeeTenants={tenantAccess?.see}
+                    canCreateTenants={tenantAccess?.create}
+                    tenantCount={tenantCount}
+                    instanceName={instanceName}
+                    version={currentVersion}
+                />
             </SidebarHeader>
 
             <SidebarContent>
-                {visibleGroups.map((group) => (
+                {sections.filter((group) => !group.platform).map((group) => (
                     <SidebarGroup key={group.label}>
                         <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-                        <SidebarMenu>
-                            {group.items.map((item) => {
-                                const isActive = isActiveRoute(pathname, item.href)
-                                return (
-                                    <SidebarMenuItem key={item.href}>
-                                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                                            <Link href={item.href} onClick={closeMobileSheet} aria-current={isActive ? "page" : undefined}>
-                                                <item.icon />
-                                                <span>{item.label}</span>
-                                            </Link>
-                                        </SidebarMenuButton>
-                                    </SidebarMenuItem>
-                                )
-                            })}
-                        </SidebarMenu>
+                        <NavItems items={group.items} pathname={pathname} onNavigate={closeMobileSheet} />
                     </SidebarGroup>
                 ))}
             </SidebarContent>
+
+            {/* What decides over every tenant, apart at the foot in every view, so it never reads as part of the tenant open above. */}
+            {platform && (
+                <SidebarGroup className="shrink-0 pt-1 pb-2">
+                    <div
+                        role="group"
+                        aria-label={`${platform.label}, ${platformLine(tenantCount, isPlatformAdmin ? null : platformGroupName)}`}
+                        className="rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-1 group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 dark:bg-sidebar-accent/30"
+                    >
+                        <SidebarGroupLabel className="gap-1.5 px-2 text-sidebar-foreground/75 dark:text-sidebar-foreground/70">
+                            <Globe aria-hidden="true" />
+                            <span className="font-semibold">{platform.label}</span>
+                            <span className="ml-auto truncate font-normal text-sidebar-foreground/55">{platformLine(tenantCount, isPlatformAdmin ? null : platformGroupName)}</span>
+                        </SidebarGroupLabel>
+                        <NavItems items={platform.items} pathname={pathname} onNavigate={closeMobileSheet} />
+                    </div>
+                </SidebarGroup>
+            )}
 
             <SidebarFooter className="gap-1 border-t border-sidebar-border px-2.5 py-2">
                 <NavUser groupName={groupName} version={currentVersion} />

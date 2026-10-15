@@ -23,6 +23,21 @@ describe("the rows of the global search", () => {
         expect(iconOf(backups)).toBe(Archive);
     });
 
+    it("keeps the tenant of a found record, so All tenants opens it there, and none for the people of the instance", () => {
+        expect(one({ ...job, tenantId: "acme" }).tenantId).toBe("acme");
+        expect(one({ kind: "backups", jobId: "j1", name: "Nightly MySQL", tenantId: "acme" }).tenantId).toBe("acme");
+        expect(one(job).tenantId).toBeUndefined();
+        expect(one({ kind: "user", id: "u1", name: "Manu", email: "ops@example.com", group: null }).tenantId).toBeUndefined();
+    });
+
+    it("names the tenants of a person in All tenants instead of a group", () => {
+        const person = (tenants: number | undefined): SearchHit => ({ kind: "user", id: "u1", name: "Manu", email: "ops@example.com", group: null, tenants });
+
+        expect(one(person(2)).sub).toBe("ops@example.com · 2 tenants");
+        expect(one(person(0)).sub).toBe("ops@example.com · No tenant");
+        expect(one(person(undefined)).sub).toBe("ops@example.com · No group");
+    });
+
     it("says a job is paused before how its last run went", () => {
         expect(one({ ...job, enabled: false }).state).toBe("paused");
     });
@@ -120,6 +135,19 @@ describe("what the search offers without the server", () => {
         expect(withoutSettings.every((item) => item.href?.startsWith("/dashboard/profile?part="))).toBe(true);
         expect(withSettings.filter((item) => item.href?.startsWith("/dashboard/settings?part=")).every((item) => item.needs?.includes(PERMISSIONS.SETTINGS.READ))).toBe(true);
         expect(settingItems("", true)).toEqual([]);
+    });
+
+    it("finds Recently deleted in Settings with one tenant and in the tenant settings with several, never as a page", () => {
+        const recently = (items: ReturnType<typeof settingItems>) => items.filter((item) => item.title === "Recently deleted").map((item) => ({ href: item.href, needs: item.needs }));
+
+        expect(recently(settingItems("recently", true, { tenantCount: 1, canTenantSettings: true }))).toEqual([
+            { href: "/dashboard/settings?part=recently-deleted", needs: [PERMISSIONS.SETTINGS.READ, PERMISSIONS.TENANT_SETTINGS.READ] },
+        ]);
+        expect(recently(settingItems("recently", true, { tenantCount: 1, canTenantSettings: false }))).toEqual([]);
+        expect(recently(settingItems("recently", true, { tenantCount: 3, canTenantSettings: true }))).toEqual([
+            { href: "/dashboard/settings?part=recently-deleted", needs: [PERMISSIONS.TENANT_SETTINGS.READ] },
+        ]);
+        expect(pageItems("recently", everything, { tenantCount: 3, isPlatformAdmin: true })).toEqual([]);
     });
 
     it("offers to start a found job that is on, to someone who may start jobs", () => {

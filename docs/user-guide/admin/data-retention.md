@@ -20,7 +20,7 @@ Go to **Settings → Data retention**. Each kind of record shows how many there 
 | **Health check history** | Connection checks against sources and destinations, recorded every minute. | 2 days | 1 to 30 days |
 | **Deleted items** | Keys, saved logins, connections, jobs and users in [Recently deleted](/user-guide/admin/recently-deleted), which cannot be restored afterwards. | 30 days | 1 to 90 days |
 
-The step log is by far the largest part of a run. Keeping the History entries while removing old logs frees most of the space without losing statistics.
+The step log is by far the largest part of a run. Keeping the History entries while removing old logs frees most of the space without losing statistics. The periods apply to the records of every [tenant](/user-guide/admin/tenants).
 
 ### What the Run history cleanup always keeps
 
@@ -67,7 +67,7 @@ After lowering a retention period, run **Clean old data** first and then optimiz
 
 **Download** hands you a copy of the whole SQLite file after it asked first. DBackup writes the copy with `VACUUM INTO` to its temp directory (`TMPDIR`), so it is consistent, compacted and a single `.db` file with nothing left in a WAL file.
 
-- Only members of the **SuperAdmin** group see the button. API keys cannot download the database.
+- Only a [platform admin](/user-guide/admin/tenants#platform-admins) sees the button, since the file holds every tenant. API keys cannot download the database.
 - Is refused while a backup, restore or integrity check is running.
 - Needs free space in the temp directory for the data in use.
 - The temp copy is deleted once the download finishes or is cancelled, and a few minutes later if it was never collected.

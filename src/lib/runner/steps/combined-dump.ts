@@ -71,7 +71,8 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
     // cleanup removes as a whole, whatever a step left in it.
     ctx.runDir = await createTempDir("dbackup-run-");
     const { tempFile, chainInFileName } = await resolveBackupFilename(
-        job,
+        // A run of some databases alone names the backup after them, like a job that picked them.
+        ctx.onlyDatabases ? { ...job, databases: JSON.stringify(ctx.onlyDatabases) } : job,
         isChained && plan ? { type: plan.type, index: plan.index } : undefined,
         ctx.runDir
     );

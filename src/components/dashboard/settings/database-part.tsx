@@ -46,8 +46,8 @@ function ActionRow({ icon: Icon, title, text, children, setting }: { icon: typeo
     );
 }
 
-/** The size of the database, what Optimize gives back and the download for a SuperAdmin. */
-export function DatabasePart({ info, isSuperAdmin }: { info: DatabaseInfo | null; isSuperAdmin: boolean }) {
+/** The size of the database, what Optimize gives back and the download for a platform admin. */
+export function DatabasePart({ info, isPlatformAdmin }: { info: DatabaseInfo | null; isPlatformAdmin: boolean }) {
     const router = useRouter();
     const { readOnly } = useSettingsFrame();
     const [confirm, setConfirm] = useState<"optimize" | "download" | null>(null);
@@ -135,9 +135,9 @@ export function DatabasePart({ info, isSuperAdmin }: { info: DatabaseInfo | null
                     icon={Download}
                     setting="database.download"
                     title="Download the database"
-                    text="Holds every password hash, session and stored login. Only a SuperAdmin downloads it, and the audit log keeps who did."
+                    text="Holds every password hash, session and stored login. Only a platform admin downloads it, and the audit log keeps who did."
                 >
-                    {isSuperAdmin && (
+                    {isPlatformAdmin && (
                         <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setConfirm("download")}>
                             <Download />
                             Download

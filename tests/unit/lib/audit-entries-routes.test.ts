@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     restore: vi.fn(),
 }));
 
-const ctx = { userId: "u1", permissions: [], isSuperAdmin: true, authMethod: "apikey", apiKeyId: "key-1" };
+const ctx = { userId: "u1", permissions: [], isPlatformAdmin: true, authMethod: "apikey", apiKeyId: "key-1" };
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth/access-control", () => ({

@@ -63,6 +63,10 @@ export const PERMISSIONS = {
     READ: "settings:read",
     WRITE: "settings:write",
   },
+  TENANT_SETTINGS: {
+    READ: "tenant-settings:read",
+    WRITE: "tenant-settings:write",
+  },
   API_KEYS: {
     READ: "api-keys:read",
     WRITE: "api-keys:write",
@@ -70,6 +74,22 @@ export const PERMISSIONS = {
   TEMPLATES: {
     READ: "templates:read",
     WRITE: "templates:write",
+  },
+  /**
+   * Rights on the platform itself, which only a platform group gives, never a group of a tenant.
+   * A platform admin holds them all.
+   */
+  PLATFORM: {
+    TENANTS_READ: "platform-tenants:read",
+    TENANTS_WRITE: "platform-tenants:write",
+    ACCOUNTS_READ: "platform-accounts:read",
+    ACCOUNTS_WRITE: "platform-accounts:write",
+    SIGN_IN_READ: "platform-sign-in:read",
+    // Only a platform admin holds it: whoever controls a provider signs in as anyone of its emails,
+    // a platform admin included, so no platform group gives it.
+    SIGN_IN_WRITE: "platform-sign-in:write",
+    SHARING_READ: "platform-sharing:read",
+    SHARING_WRITE: "platform-sharing:write",
   },
 } as const;
 
@@ -109,17 +129,20 @@ export type Permission =
   | typeof PERMISSIONS.PROFILE.MANAGE_SSO
   | typeof PERMISSIONS.SETTINGS.READ
   | typeof PERMISSIONS.SETTINGS.WRITE
+  | typeof PERMISSIONS.TENANT_SETTINGS.READ
+  | typeof PERMISSIONS.TENANT_SETTINGS.WRITE
   | typeof PERMISSIONS.API_KEYS.READ
   | typeof PERMISSIONS.API_KEYS.WRITE
   | typeof PERMISSIONS.TEMPLATES.READ
-  | typeof PERMISSIONS.TEMPLATES.WRITE;
+  | typeof PERMISSIONS.TEMPLATES.WRITE
+  | typeof PERMISSIONS.PLATFORM[keyof typeof PERMISSIONS.PLATFORM];
 
 /**
  * What deleting for good and restoring from Recently deleted need on top of the right to change the
  * record: skipping it with Delete it permanently now, restoring from it and deleting from it. A
  * delete into it only needs the right to change the record.
  */
-export const TRASH_ADMIN_PERMISSION = PERMISSIONS.SETTINGS.WRITE;
+export const TRASH_ADMIN_PERMISSION = PERMISSIONS.TENANT_SETTINGS.WRITE;
 
 export const AVAILABLE_PERMISSIONS = [
   // Users & Groups
@@ -176,6 +199,8 @@ export const AVAILABLE_PERMISSIONS = [
   // Settings
   { id: PERMISSIONS.SETTINGS.READ, label: "View System Settings", category: "Settings" },
   { id: PERMISSIONS.SETTINGS.WRITE, label: "Manage System Settings", category: "Settings" },
+  { id: PERMISSIONS.TENANT_SETTINGS.READ, label: "View Tenant Settings", category: "Tenant Settings" },
+  { id: PERMISSIONS.TENANT_SETTINGS.WRITE, label: "Manage Tenant Settings", category: "Tenant Settings" },
 
   // API Keys
   { id: PERMISSIONS.API_KEYS.READ, label: "View API Keys", category: "API Keys" },
@@ -210,3 +235,19 @@ export function getWritePermissionForAdapterType(type: string): Permission {
     default: return PERMISSIONS.SOURCES.WRITE;
   }
 }
+
+/**
+ * The rights on the platform a platform group gives, apart from `AVAILABLE_PERMISSIONS`, which a
+ * group of a tenant holds. So no group of a tenant ever holds one, not even the one with every
+ * permission. The settings of the instance are no part of it, they also count from the group in
+ * the home tenant.
+ */
+export const PLATFORM_ONLY_PERMISSIONS = [
+  { id: PERMISSIONS.PLATFORM.TENANTS_READ, label: "View Tenants", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.TENANTS_WRITE, label: "Manage Tenants", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.ACCOUNTS_READ, label: "View Accounts", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.ACCOUNTS_WRITE, label: "Manage Accounts", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.SIGN_IN_READ, label: "View Sign-in Providers", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.SHARING_READ, label: "View Shared Databases", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.SHARING_WRITE, label: "Share Databases", category: "Platform" },
+] as const;

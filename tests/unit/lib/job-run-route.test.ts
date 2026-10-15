@@ -58,13 +58,11 @@ vi.mock("@/services/auth/api-key-service", () => ({
   },
 }));
 
-// Mock prisma (used to look up user name for session-auth trigger label)
-const mockUserFindUnique = vi.fn();
-vi.mock("@/lib/prisma", () => ({
-  default: {
-    user: {
-      findUnique: (...args: any[]) => mockUserFindUnique(...args),
-    },
+// Mock userService (used to look up user name for session-auth trigger label)
+const mockUserNameOf = vi.fn();
+vi.mock("@/services/user/user-service", () => ({
+  userService: {
+    nameOf: (...args: any[]) => mockUserNameOf(...args),
   },
 }));
 
@@ -89,7 +87,7 @@ describe("POST /api/jobs/[id]/run", () => {
     vi.clearAllMocks();
     mockHeaders.mockReturnValue(fakeHeaders);
     mockApiKeyGetById.mockResolvedValue({ name: "Test API Key" });
-    mockUserFindUnique.mockResolvedValue({ name: "Test User" });
+    mockUserNameOf.mockResolvedValue("Test User");
   });
 
   function createRequest() {
@@ -137,7 +135,7 @@ describe("POST /api/jobs/[id]/run", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["jobs:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "apikey",
     });
     mockCheckPermissionWithContext.mockImplementation(() => {
@@ -156,7 +154,7 @@ describe("POST /api/jobs/[id]/run", () => {
     const ctx = {
       userId: "user-1",
       permissions: ["jobs:execute"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "apikey",
       apiKeyId: "key-1",
     };
@@ -184,7 +182,7 @@ describe("POST /api/jobs/[id]/run", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["jobs:execute"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "apikey",
       apiKeyId: "key-99",
     });
@@ -217,7 +215,7 @@ describe("POST /api/jobs/[id]/run", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["jobs:execute"],
-      isSuperAdmin: true,
+      isPlatformAdmin: true,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -246,7 +244,7 @@ describe("POST /api/jobs/[id]/run", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["jobs:execute"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);

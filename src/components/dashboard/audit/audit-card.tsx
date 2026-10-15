@@ -1,13 +1,17 @@
 "use client";
 
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { TenantLine } from "@/components/tenant/tenant-column";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { isPlainClick } from "@/components/ui/row-click";
 import { cn } from "@/lib/utils";
 import type { AuditRow } from "@/services/audit/audit-types";
 import { ActorFace, DeletedTag, EntryIcon, NewPlaceBadge, Sentence } from "./audit-cells";
 
-/** An entry as a card for a phone: the sentence, what changed, and who, where and when. */
+/** An entry as a card for a phone: the sentence, what changed, and who, where and when, in All tenants with the tenant. */
 export function AuditCard({ row, onOpen }: { row: AuditRow; onOpen: (row: AuditRow) => void }) {
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
     return (
         <div
             onClick={(event) => isPlainClick(event) && onOpen(row)}
@@ -21,6 +25,7 @@ export function AuditCard({ row, onOpen }: { row: AuditRow; onOpen: (row: AuditR
                 </span>
             </button>
             {row.newPlace && <NewPlaceBadge />}
+            {allTenants && <TenantLine name={tenantName(row.tenantId) ?? row.tenantId} />}
             <div className="flex min-w-0 items-center gap-2.5 border-t pt-3">
                 <ActorFace actor={row.actor} />
                 <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">

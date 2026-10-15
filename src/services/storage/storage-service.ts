@@ -14,6 +14,7 @@ import AdmZip from "adm-zip";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
 import { EncryptionKeyRequiredError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { isBackupFile, sidecarPathsFor, chainFolderOf, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 import { dependentsOf, fileNameOf } from "./bulk-delete-order";
 
@@ -34,6 +35,11 @@ export type RichFileInfo = FileInfo & {
     createdAt?: string;
     /** The databases the backup holds, when its sidecar names them. */
     databases?: string[];
+    /**
+     * The database server the backup was made from. Rows cached before it was kept lack it, the
+     * job of the backup names its server then.
+     */
+    sourceId?: string;
     sourceName?: string;
     sourceType?: string;
     engineVersion?: string;
@@ -115,6 +121,8 @@ interface ListingState {
     reconciliations: Map<string, Promise<void>>;
     /** Background refreshes waiting for a free slot, in the order they were asked for. */
     queued: Map<string, "rebuild" | "reconcile">;
+    /** Background refreshes that left the queue and look up the tenant of their destination. */
+    starting: Set<string>;
     /** The last failed listing or reconciliation per destination. */
     failures: Map<string, { at: number; error: string }>;
 }
@@ -128,14 +136,18 @@ const listingState: ListingState = globalThis.dbackupListingState ??= {
     listings: new Map(),
     reconciliations: new Map(),
     queued: new Map(),
+    starting: new Set(),
     failures: new Map(),
 };
+// A state from before `starting` existed, kept on globalThis by a running development server.
+listingState.starting ??= new Set();
 
 /** Forgets running and queued listings and past failures. For tests, which share one process. */
 export function clearListingState(): void {
     listingState.listings.clear();
     listingState.reconciliations.clear();
     listingState.queued.clear();
+    listingState.starting.clear();
     listingState.failures.clear();
 }
 
@@ -560,7 +572,8 @@ export class StorageService {
                 }));
             }
 
-            const allJobs = await prisma.job.findMany({ include: { source: true } });
+            // The jobs and runs of the destination's tenant, also where the scope reads every tenant.
+            const allJobs = await prisma.job.findMany({ where: { tenantId: adapterConfig.tenantId }, include: { source: true } });
             const jobMap = new Map();
             allJobs.forEach(j => {
                 jobMap.set(j.name.replace(/[^a-z0-9]/gi, '_'), j);
@@ -568,7 +581,7 @@ export class StorageService {
             });
 
             const executions = await prisma.execution.findMany({
-                where: { status: 'Success', path: { not: null } },
+                where: { tenantId: adapterConfig.tenantId, status: 'Success', path: { not: null } },
                 select: { path: true, metadata: true }
             });
             const executionMap = new Map();
@@ -639,7 +652,8 @@ export class StorageService {
     isListing(adapterConfigId: string): boolean {
         return listingState.listings.has(adapterConfigId)
             || listingState.reconciliations.has(adapterConfigId)
-            || listingState.queued.has(adapterConfigId);
+            || listingState.queued.has(adapterConfigId)
+            || listingState.starting.has(adapterConfigId);
     }
 
     /** Why the last listing of a destination failed, until one succeeds again. */
@@ -663,14 +677,30 @@ export class StorageService {
         return true;
     }
 
+    /** Runs a refresh of a destination in its own tenant, which no request around it decides. */
+    private async inTenantOf<T>(adapterConfigId: string, work: () => Promise<T>): Promise<T> {
+        const destination = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: adapterConfigId }, select: { tenantId: true } }));
+        if (!destination) throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
+        return runAsTenant(destination.tenantId, work);
+    }
+
     /** Starts queued background refreshes while slots are free. */
     private startQueued(): void {
-        while (listingState.queued.size > 0 && listingState.listings.size + listingState.reconciliations.size < BACKGROUND_CONCURRENCY) {
+        while (listingState.queued.size > 0 && listingState.listings.size + listingState.reconciliations.size + listingState.starting.size < BACKGROUND_CONCURRENCY) {
             const [adapterConfigId, mode] = listingState.queued.entries().next().value!;
             listingState.queued.delete(adapterConfigId);
-            const work = mode === "rebuild" ? this.listLive(adapterConfigId) : this.reconcileStorageListCache(adapterConfigId);
+            listingState.starting.add(adapterConfigId);
+            // It starts in whatever request frees the slot, so it runs in the tenant of its destination.
+            // The listing takes over the place of `starting` in the same tick, so it never looks idle.
+            const work = this.inTenantOf<unknown>(adapterConfigId, () => {
+                listingState.starting.delete(adapterConfigId);
+                return mode === "rebuild" ? this.listLive(adapterConfigId) : this.reconcileStorageListCache(adapterConfigId);
+            });
             // The failure is kept for the pages, nothing else is waiting for it.
-            work.catch(() => {}).finally(() => this.startQueued());
+            work.catch(() => {}).finally(() => {
+                listingState.starting.delete(adapterConfigId);
+                this.startQueued();
+            });
         }
     }
 
@@ -751,7 +781,9 @@ export class StorageService {
             await Promise.all(metaReads);
         }
 
+        // The jobs and runs of the destination's tenant, also where the scope reads every tenant.
         const allJobs = await prisma.job.findMany({
+             where: { tenantId: adapterConfig.tenantId },
              include: { source: true }
         });
 
@@ -764,6 +796,7 @@ export class StorageService {
 
         const executions = await prisma.execution.findMany({
             where: {
+                tenantId: adapterConfig.tenantId,
                 status: 'Success',
                 path: { not: null }
             },

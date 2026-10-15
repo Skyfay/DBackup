@@ -42,7 +42,10 @@ describe("dashboard cache", () => {
 
     it("does not store a load that was already running when the cache was invalidated", async () => {
         let resolveStale: (value: string) => void = () => {};
-        const stale = cached("key", 60_000, () => new Promise<string>((resolve) => { resolveStale = resolve; }));
+        let started: () => void = () => {};
+        const running = new Promise<void>((resolve) => { started = resolve; });
+        const stale = cached("key", 60_000, () => new Promise<string>((resolve) => { resolveStale = resolve; started(); }));
+        await running;
 
         invalidateDashboardCache();
         resolveStale("stale");

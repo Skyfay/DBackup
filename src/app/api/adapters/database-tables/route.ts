@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registry } from "@/lib/core/registry";
-import { withHost } from "@/lib/transport";
 import { registerAdapters } from "@/lib/adapters";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { z } from "zod";
-import prisma from "@/lib/prisma";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { listTables, type ReadRefusal } from "@/services/databases/database-read-service";
 
 registerAdapters();
 
@@ -16,6 +12,13 @@ const BodySchema = z.union([
     z.object({ sourceId: z.string().min(1), database: z.string().min(1) }),
     z.object({ adapterId: z.string().min(1), config: z.record(z.string(), z.unknown()), database: z.string().min(1) }),
 ]);
+
+/** What the API answers a read that never reached the server with. */
+const REFUSALS: Record<ReadRefusal, { message: string; status: number }> = {
+    "source-missing": { message: "Source not found", status: 404 },
+    "adapter-missing": { message: "Adapter not found", status: 404 },
+    "unsupported": { message: "This adapter does not support listing tables.", status: 200 },
+};
 
 /**
  * POST /api/adapters/database-tables
@@ -41,40 +44,15 @@ export async function POST(req: NextRequest) {
         }
 
         const body = parsed.data;
-        const database = body.database;
+        const target = "sourceId" in body ? { sourceId: body.sourceId } : { adapterId: body.adapterId, config: body.config };
 
-        let resolvedAdapterId: string;
-        let resolvedConfig: unknown;
-
-        if ("sourceId" in body) {
-            const source = await prisma.adapterConfig.findUnique({ where: { id: body.sourceId } });
-
-            if (!source) {
-                return NextResponse.json({ success: false, message: "Source not found" }, { status: 404 });
-            }
-
-            resolvedAdapterId = source.adapterId;
-            resolvedConfig = await resolveAdapterConfig(source);
-        } else {
-            resolvedAdapterId = body.adapterId;
-            resolvedConfig = body.config;
+        const outcome = await listTables(target, body.database);
+        if (!outcome.ok) {
+            const { message, status } = REFUSALS[outcome.reason];
+            return NextResponse.json({ success: false, message }, { status });
         }
 
-        const adapter = registry.get(resolvedAdapterId) as DatabaseAdapter | undefined;
-
-        if (!adapter) {
-            return NextResponse.json({ success: false, message: "Adapter not found" }, { status: 404 });
-        }
-
-        const listTables = adapter.getTables;
-        if (!listTables) {
-            return NextResponse.json({ success: false, message: "This adapter does not support listing tables." });
-        }
-
-        const config = resolvedConfig;
-        const tables = await withHost(adapter, config, (host) => listTables(config, database, host));
-
-        return NextResponse.json({ success: true, tables });
+        return NextResponse.json({ success: true, tables: outcome.value });
 
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";

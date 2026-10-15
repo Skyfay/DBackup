@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { registerAdapters } from "@/lib/adapters";
-import { registry } from "@/lib/core/registry";
-import { StorageAdapter, BackupMetadata } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import prisma from "@/lib/prisma";
 import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
-
-registerAdapters();
+import { NotFoundError, ValidationError, wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { browseArchive } from "@/services/storage/backup-contents";
+import { isMissingStorage } from "@/services/storage/storage-lookup";
 
 const log = logger.child({ route: "storage/browse-archive" });
 
@@ -52,48 +46,27 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const { file, jobSourceId, prefix, profileIdOverride } = parsed.data;
         const keyOverride = profileIdOverride ? { profileId: profileIdOverride } : undefined;
 
-        const storageConfig = await prisma.adapterConfig.findUnique({ where: { id } });
-        if (!storageConfig || storageConfig.type !== "storage") {
-            return NextResponse.json({ success: false, error: "Storage adapter not found" }, { status: 404 });
-        }
-
-        const adapter = registry.get(storageConfig.adapterId) as StorageAdapter | undefined;
-        if (!adapter?.read) {
-            return NextResponse.json({ success: false, error: "This storage adapter cannot read backup metadata" }, { status: 400 });
-        }
-
-        const resolved = await resolveAdapterConfig(storageConfig);
-        const metaContent = await adapter.read(resolved, `${file}.meta.json`);
-        if (!metaContent) {
-            return NextResponse.json({ success: false, error: "Backup metadata not found" }, { status: 404 });
-        }
-
-        const meta = JSON.parse(metaContent) as BackupMetadata;
-        if (meta.archive?.formatVersion !== 2) {
-            return NextResponse.json(
-                { success: false, error: "This backup cannot be browsed. Only backups with directory sources created by a recent version carry a file index." },
-                { status: 400 }
-            );
-        }
-
-        // No source selected yet - list the directory sources to pick from.
-        if (!jobSourceId) {
-            const summary = await archiveIndexService.summarize(id, file, meta, keyOverride);
-            if (!summary) {
-                return NextResponse.json({ success: false, error: "Could not read the backup's file index" }, { status: 502 });
-            }
-            return NextResponse.json({ success: true, data: { sources: summary.directories, entries: [] } });
-        }
-
-        const entries = await archiveIndexService.browse(id, file, meta, jobSourceId, prefix, keyOverride);
-        if (!entries) {
+        const listing = await browseArchive(id, file, { jobSourceId, prefix, keyOverride });
+        if (!listing) {
             return NextResponse.json({ success: false, error: "Could not read the backup's file index" }, { status: 502 });
         }
 
-        return NextResponse.json({ success: true, data: { sources: [], entries } });
+        return NextResponse.json({ success: true, data: listing });
     } catch (e: unknown) {
         const keyRequired = keyRequiredResponse(e);
         if (keyRequired) return keyRequired;
+
+        if (isMissingStorage(e)) {
+            return NextResponse.json({ success: false, error: "Storage adapter not found" }, { status: 404 });
+        }
+        // The only other thing a browse can miss is the metadata of the backup.
+        if (e instanceof NotFoundError) {
+            return NextResponse.json({ success: false, error: "Backup metadata not found" }, { status: 404 });
+        }
+        // A storage that cannot read metadata, or a backup without a file index.
+        if (e instanceof ValidationError) {
+            return NextResponse.json({ success: false, error: e.message }, { status: 400 });
+        }
 
         log.error("Failed to browse archive", { configId: id }, wrapError(e));
         return NextResponse.json({ success: false, error: getErrorMessage(e) }, { status: 500 });

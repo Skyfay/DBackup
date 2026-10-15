@@ -15,7 +15,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers(
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn(async () => mocks.ctx),
-    getCurrentUserWithGroup: vi.fn(async () => mocks.user),
+    getViewer: vi.fn(async () => mocks.user),
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/services/user/avatar-service", async (importOriginal) => ({

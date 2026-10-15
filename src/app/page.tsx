@@ -30,6 +30,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <LoginForm
                     instance={model.instanceName ?? "DBackup"}
                     providers={model.providers}
+                    domainRouting={model.domainRouting}
                     emailLogin={model.emailLogin}
                     passkeyLogin={model.passkeyLogin}
                     autoRedirectProviderId={model.autoRedirectProviderId}

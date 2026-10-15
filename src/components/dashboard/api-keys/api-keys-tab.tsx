@@ -6,6 +6,8 @@ import { Power, PowerOff, Trash } from "lucide-react";
 import { toast } from "sonner";
 import { bulkDeleteApiKeys, bulkToggleApiKeys, toggleApiKey } from "@/app/actions/auth/api-key";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { withTenantColumn } from "@/components/tenant/tenant-rows";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
@@ -28,6 +30,7 @@ import { ApiKeyDetails } from "./api-key-details";
 import { ApiKeyFormDialog, type ApiKeyFormMode } from "./api-key-form-dialog";
 import { ApiKeysStrip } from "./api-key-strip";
 import { API_KEYS_TABLE_ID } from "./api-keys-tables";
+import { useNewFromLink } from "@/hooks/use-new-from-link";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 const log = logger.child({ component: "api-keys-tab" });
@@ -49,6 +52,9 @@ const QUICK: { value: Quick; label: string; keep: (key: ApiKeyRow, now: number) 
 
 const RAN_OUT = "Ran out, edit it to give it a new end";
 
+/** The tenant a key acts in, for the Tenant column of All tenants. */
+const tenantOfKey = (key: ApiKeyRow) => key.tenantId;
+
 interface ApiKeysTabProps {
     ref?: Ref<ApiKeysTabHandle>;
     view: "table" | "cards";
@@ -61,7 +67,9 @@ interface ApiKeysTabProps {
 
 /**
  * The API keys: the numbers, then the list as a table or as cards, a panel with what a key may do
- * and the runs it started, and the dialogs to make, change, rotate and delete a key. A phone gets cards.
+ * and the runs it started, and the dialogs to make, change, rotate and delete a key. A phone gets
+ * cards. In All tenants the keys of every tenant with their tenant, to look at only, since a key
+ * changes in its tenant.
  */
 export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }: ApiKeysTabProps) {
     const router = useRouter();
@@ -78,6 +86,8 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
     const [secret, setSecret] = useState<CreatedKey | null>(null);
 
     useImperativeHandle(ref, () => ({ openCreate: () => setForm({ open: true, mode: { kind: "create" } }) }), []);
+    // New API key of All tenants picks the tenant first and lands here with `?new=1`.
+    useNewFromLink(model !== null && canManage, () => setForm({ open: true, mode: { kind: "create" } }));
 
     // The counts beside the tabs come from the server, so they are loaded again too.
     const afterChange = useCallback(() => {
@@ -117,12 +127,14 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
         return key.isMine || key.effective.every((permission) => viewer.has(permission)) ? handlers : { ...handlers, onRotate: undefined };
     }, [handlers, viewerPermissions]);
 
+    // The Tenant column and filter of All tenants, which lists the keys of every tenant.
+    const tenantColumns = useTenantColumns(tenantOfKey, model?.keys);
     const open = useCallback((key: ApiKeyRow) => setDetails({ id: key.id, open: true }), []);
     // A link like the search in the header opens one with `?open=`.
     useOpenFromLink(model?.keys, open);
     const columns = useMemo(
-        () => apiKeyColumns({ onOpen: open, now, renderActions: (key) => <BackupRowMenu name={key.name} groups={apiKeyActions(key, handlersFor(key))} /> }),
-        [open, now, handlersFor]
+        () => withTenantColumn(apiKeyColumns({ onOpen: open, now, renderActions: (key) => <BackupRowMenu name={key.name} groups={apiKeyActions(key, handlersFor(key))} /> }), tenantColumns.column),
+        [open, now, handlersFor, tenantColumns.column]
     );
 
     const keys = useMemo(() => model?.keys ?? [], [model]);
@@ -130,7 +142,7 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
         const keep = QUICK.find((option) => option.value === quick)?.keep ?? (() => true);
         return keys.filter((key) => keep(key, now));
     }, [keys, quick, now]);
-    const filters = useMemo(() => apiKeyFilters(keys), [keys]);
+    const filters = useMemo(() => [...(tenantColumns.filter ? [tenantColumns.filter] : []), ...apiKeyFilters(keys)], [keys, tenantColumns.filter]);
     const bulkActions = useMemo<BulkAction<ApiKeyRow>[]>(() => canManage ? [
         {
             id: "enable",

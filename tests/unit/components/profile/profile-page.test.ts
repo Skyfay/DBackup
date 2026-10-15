@@ -11,6 +11,7 @@ function model(overrides: Partial<ProfileModel["user"]> = {}, rest: Partial<Prof
     return {
         user: { id: "u1", name: "Lena Graf", email: "lena@example.ch", image: null, timezone: "Europe/Zurich", dateFormat: "P", timeFormat: "p", autoRedirectOnJobStart: true, twoFactorEnabled: false, passkeyTwoFactor: false, ...overrides },
         group: { id: "g1", name: "Operators" },
+        platformAdmin: false,
         access: ["Sees everything.", "Changes nothing."],
         hasPassword: true,
         passwordPolicy: policyOf("standard"),

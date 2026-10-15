@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Archive, ArrowRight, ArrowUpRight, Clock, Layers, List, Pencil, RefreshCw, TrendingUp, X } from "lucide-react";
+import { Archive, ArrowRight, ArrowUpRight, Building2, Clock, Layers, List, Pencil, RefreshCw, TrendingUp, X } from "lucide-react";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { IssueBanner } from "@/components/adapter/connection-details-sections";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { signedBytes } from "@/components/dashboard/widgets/storage-history-data";
+import { useOpenRecord } from "@/components/tenant/tenant-actions";
+import { TenantLine } from "@/components/tenant/tenant-column";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
 import type { BackupRun, ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
@@ -19,6 +22,7 @@ import { AnswerText, DestinationTile } from "./explorer-cells";
 import { count } from "./explorer-format";
 import { ExplorerStrip } from "./explorer-strip";
 import type { BackupTarget } from "./use-backup-actions";
+import { destinationHref } from "./use-explorer-address";
 
 interface DestinationDetailsProps {
     destination: ExplorerDestination;
@@ -45,6 +49,12 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
     const share = limitShare(destination);
     const [size, unit] = formatBytes(destination.size, 1).split(" ");
     const behind = destination.listError !== null || !destination.listedAt;
+    // In All tenants the details only read. Its alerts and its backups change in its tenant.
+    const { allTenants } = useTenantView();
+    const nameOf = useTenantName();
+    const tenantName = nameOf(destination.tenantId);
+    const openRecord = useOpenRecord();
+    const inTenant = allTenants && destination.tenantId && tenantName ? { tenantId: destination.tenantId, name: tenantName } : null;
 
     const deleteJob = (entry: DestinationJob) => {
         const targets = runs.filter((run) => run.jobKey === entry.job.key).flatMap((run) => targetsOf(run, [destination.id]));
@@ -64,8 +74,15 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
                         {kindNames.get(destination.adapterId) ?? destination.adapterId}
                         {destination.airGapped && " · air-gapped"} · {count(entries.length, "job")} with backups here
                     </p>
+                    <TenantLine name={inTenant?.name ?? null} className="mt-0.5" />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                    {inTenant && (
+                        <Button variant="outline" size="sm" className="min-w-0" onClick={() => openRecord(inTenant.tenantId, destinationHref(destination.id), () => undefined)}>
+                            <Building2 />
+                            <span className="truncate">Open in {inTenant.name}</span>
+                        </Button>
+                    )}
                     <Button variant="outline" size="sm" asChild>
                         <Link href={`/dashboard/backups?at=${encodeURIComponent(destination.id)}`}>
                             <ArrowRight />

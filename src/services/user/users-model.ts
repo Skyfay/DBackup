@@ -4,10 +4,11 @@ import { attentionOf, type TabAttention } from "@/lib/core/tab-attention";
 import { parseUserAgent } from "@/lib/core/user-agent";
 import { SOON_MS } from "@/services/auth/api-keys-types";
 import { getPasswordPolicy } from "@/services/auth/password-policy-service";
-import type { SecondFactor, SignInMethod, UserRow, UserSignIn, UsersGroup, UsersModel } from "./users-types";
-
-/** The name of the group that passes every check. */
-export const SUPER_ADMIN_GROUP = "SuperAdmin";
+import { runAsSystem } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { peopleOf, roleIn } from "@/services/tenant/membership-service";
+import type { SecondFactor, SignInMethod, UserRow, UserSignIn, UsersGroup, UsersModel, UserTenantRole } from "./users-types";
 
 /** The window of Signed in above the list. */
 const SIGNED_IN_WINDOW_MS = 30 * 86_400_000;
@@ -34,17 +35,24 @@ export interface ListedUser {
     createdAt: Date;
     twoFactorEnabled: boolean | null;
     passkeyTwoFactor: boolean | null;
-    group: { id: string; name: string } | null;
+    platformRole: string | null;
+    /** The membership in the tenant the list is for, none or one. In All tenants every one, with its tenant. */
+    memberships: { tenantId?: string; group: { id: string; name: string } }[];
     accounts: { providerId: string }[];
     sessions: ListedSession[];
-    _count: { apiKeys: number; passkeys: number };
+    /** The memberships counted are the ones in other tenants. */
+    _count: { apiKeys: number; passkeys: number; memberships?: number };
 }
 
 export interface ListedGroup {
     id: string;
     name: string;
     permissions: string;
-    _count: { users: number };
+    fullAccess: boolean;
+    /** The tenant of the group, for the list of every account. */
+    tenantId?: string;
+    /** Members in the tenant the list is for. */
+    _count: { memberships: number };
 }
 
 export interface ListedProvider {
@@ -112,12 +120,23 @@ interface BuildInput {
     /** The newest sign-in entry of the audit log per user. */
     logins: Map<string, SignInSource>;
     viewerId: string | null;
-    viewerSuperAdmin: boolean;
+    viewerPlatformAdmin: boolean;
+    /** Every account of the instance with all its memberships, for All tenants. */
+    allTenants?: boolean;
     now?: number;
 }
 
-/** The Users tab: every user with how they sign in, and the numbers above the list. */
-export function buildUsersModel({ users, groups, providers, logins, viewerId, viewerSuperAdmin, now = Date.now() }: BuildInput): Omit<UsersModel, "passwordPolicy"> {
+/** The tenants of an account with its group in each, from all its memberships. */
+function tenantsOf(user: Pick<ListedUser, "memberships">): UserTenantRole[] {
+    return user.memberships.flatMap((membership) => (membership.tenantId ? [{ tenantId: membership.tenantId, group: { id: membership.group.id, name: membership.group.name } }] : []));
+}
+
+/**
+ * The Users tab: the people of a tenant with how they sign in, and the numbers above the list. In
+ * All tenants every account with the group it holds in each of its tenants, where an account of
+ * no tenant is the one that sees nothing.
+ */
+export function buildUsersModel({ users, groups, providers, logins, viewerId, viewerPlatformAdmin, allTenants = false, now = Date.now() }: BuildInput): Omit<UsersModel, "passwordPolicy" | "homeTenant"> {
     const providerMap = new Map(providers.map((provider) => [provider.providerId, provider]));
     const devices = new Set<string>();
     let sessions = 0;
@@ -130,14 +149,18 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
             const agent = parseUserAgent(session.userAgent);
             devices.add(`${user.id}|${agent.browser}|${agent.os}|${agent.device}`);
         }
+        const group = allTenants ? undefined : user.memberships[0]?.group;
+        const tenants = allTenants ? tenantsOf(user) : undefined;
         return {
             id: user.id,
             name: user.name,
             email: user.email,
             image: user.image,
             createdAt: user.createdAt.toISOString(),
-            group: user.group ? { id: user.group.id, name: user.group.name } : null,
-            superAdmin: user.group?.name === SUPER_ADMIN_GROUP,
+            group: group ? { id: group.id, name: group.name } : null,
+            ...(tenants ? { tenants } : {}),
+            superAdmin: user.platformRole === PLATFORM_ADMIN_ROLE,
+            elsewhere: tenants ? tenants.length > 1 : (user._count.memberships ?? 0) > 0,
             methods,
             secondFactor: secondFactorOf(user, methods),
             lastSignIn: lastSignInOf(logins.get(user.id), user.sessions),
@@ -152,21 +175,24 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
         .map((group) => ({
             id: group.id,
             name: group.name,
-            members: group._count.users,
+            ...(group.tenantId ? { tenantId: group.tenantId } : {}),
+            members: group._count.memberships,
             permissions: parsePermissions(group.permissions),
-            superAdmin: group.name === SUPER_ADMIN_GROUP,
+            superAdmin: group.fullAccess,
         }))
-        // The SuperAdmin group first, then by name, like the choice in New user.
+        // The group with every permission first, then by name, like the choice in New user.
         .sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin) || a.name.localeCompare(b.name));
 
     const passwordOnly = rows.filter((row) => row.secondFactor === "none").map((row) => row.name);
+    // In All tenants an account sees something once it works in some tenant.
+    const placed = (row: UserRow) => (row.tenants ? row.tenants.length > 0 : row.group !== null);
     return {
         users: rows,
         groups: groupRows,
         stats: {
             users: rows.length,
-            inGroup: rows.filter((row) => row.group).length,
-            withoutGroup: rows.filter((row) => !row.group).map((row) => row.name),
+            inGroup: rows.filter(placed).length,
+            withoutGroup: rows.filter((row) => !placed(row)).map((row) => row.name),
             passwordOnly,
             protected: rows.length - passwordOnly.length,
             signedIn: rows.filter((row) => row.lastSignIn && now - Date.parse(row.lastSignIn.at) <= SIGNED_IN_WINDOW_MS).length,
@@ -174,14 +200,31 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
             sessions,
             devices: devices.size,
         },
-        viewerSuperAdmin,
+        viewerPlatformAdmin,
+        allTenants,
     };
 }
 
-/** Loads the Users tab. The password hashes of the accounts never leave the database. */
-export async function getUsersModel(viewerId: string | null, viewerSuperAdmin: boolean): Promise<UsersModel> {
+/**
+ * The newest sign-in the audit log knows per user. A sign-in belongs to the account and is written
+ * into the home tenant, so it is read for these people alone, in every tenant.
+ */
+export async function loadLogins(userIds: string[]): Promise<Map<string, SignInSource>> {
+    // One entry per user, the newest, since the rows come newest first.
+    const logins = await runAsSystem(() => prisma.auditLog.findMany({
+        where: { action: AUDIT_ACTIONS.LOGIN, userId: { in: userIds } },
+        orderBy: { createdAt: "desc" },
+        distinct: ["userId"],
+        select: { userId: true, createdAt: true, userAgent: true, ipAddress: true },
+    }));
+    return new Map(logins.flatMap((login) => (login.userId ? [[login.userId, login] as const] : [])));
+}
+
+/** Loads the Users tab of a tenant. The password hashes of the accounts never leave the database. */
+export async function getUsersModel(viewerId: string | null, viewerPlatformAdmin: boolean, tenantId: string): Promise<UsersModel> {
     const [users, groups, providers, passwordPolicy] = await Promise.all([
         prisma.user.findMany({
+            where: peopleOf(tenantId),
             select: {
                 id: true,
                 name: true,
@@ -190,43 +233,46 @@ export async function getUsersModel(viewerId: string | null, viewerSuperAdmin: b
                 createdAt: true,
                 twoFactorEnabled: true,
                 passkeyTwoFactor: true,
-                group: { select: { id: true, name: true } },
+                platformRole: true,
+                memberships: roleIn(tenantId),
                 accounts: { select: { providerId: true } },
                 sessions: { select: { createdAt: true, expiresAt: true, userAgent: true, ipAddress: true } },
-                _count: { select: { apiKeys: true, passkeys: true } },
+                // A relation count skips the tenant filter, so the keys of other tenants are left out here.
+                _count: { select: { apiKeys: { where: { tenantId } }, passkeys: true, memberships: { where: { tenantId: { not: tenantId } } } } },
             },
         }),
-        prisma.group.findMany({ select: { id: true, name: true, permissions: true, _count: { select: { users: true } } } }),
+        // The groups of the tenant, which a group belongs to, whatever tenant the caller runs in.
+        prisma.group.findMany({
+            where: { tenantId },
+            select: { id: true, name: true, permissions: true, fullAccess: true, _count: { select: { memberships: { where: { tenantId } } } } },
+        }),
         prisma.ssoProvider.findMany({ select: { providerId: true, name: true, adapterId: true } }),
         getPasswordPolicy(),
     ]);
-
-    // One entry per user, the newest, since the rows come newest first.
-    const logins = await prisma.auditLog.findMany({
-        where: { action: AUDIT_ACTIONS.LOGIN, userId: { in: users.map((user) => user.id) } },
-        orderBy: { createdAt: "desc" },
-        distinct: ["userId"],
-        select: { userId: true, createdAt: true, userAgent: true, ipAddress: true },
-    });
 
     const model = buildUsersModel({
         users,
         groups,
         providers,
-        logins: new Map(logins.flatMap((login) => (login.userId ? [[login.userId, login] as const] : []))),
+        logins: await loadLogins(users.map((user) => user.id)),
         viewerId,
-        viewerSuperAdmin,
+        viewerPlatformAdmin,
     });
-    return { ...model, passwordPolicy };
+    return { ...model, passwordPolicy, homeTenant: tenantId === HOME_TENANT_ID };
 }
 
 /**
  * What needs a look in the tabs of the page: someone without a group, who signs in and sees
- * nothing, and a working API key that runs out within two weeks, like the badge of its row.
+ * nothing, and a working API key that runs out within two weeks, like the badge of its row. A null
+ * tenant is All tenants, where an account of no tenant is the one that sees nothing and the keys
+ * of every tenant count.
  */
-export async function getUsersPageAttention(now = Date.now()): Promise<{ users?: TabAttention; apikeys?: TabAttention }> {
+export async function getUsersPageAttention(tenantId: string | null, now = Date.now()): Promise<{ users?: TabAttention; apikeys?: TabAttention }> {
     const [grouplessUsers, endingKeys] = await Promise.all([
-        prisma.user.findMany({ where: { groupId: null }, select: { name: true }, orderBy: { name: "asc" } }),
+        // An account of no tenant shows in the home tenant and in All tenants alone, see `peopleOf`.
+        tenantId === HOME_TENANT_ID || tenantId === null
+            ? prisma.user.findMany({ where: { memberships: { none: {} } }, select: { name: true }, orderBy: { name: "asc" } })
+            : [],
         prisma.apiKey.findMany({
             where: { enabled: true, expiresAt: { gt: new Date(now), lte: new Date(now + SOON_MS) } },
             select: { name: true },
@@ -234,7 +280,9 @@ export async function getUsersPageAttention(now = Date.now()): Promise<{ users?:
         }),
     ]);
     return {
-        users: attentionOf("warning", grouplessUsers.map((user) => user.name), "has no group and sees nothing", "have no group and see nothing"),
+        users: tenantId === null
+            ? attentionOf("warning", grouplessUsers.map((user) => user.name), "works in no tenant and sees nothing", "work in no tenant and see nothing")
+            : attentionOf("warning", grouplessUsers.map((user) => user.name), "has no group and sees nothing", "have no group and see nothing"),
         apikeys: attentionOf("warning", endingKeys.map((key) => key.name), "runs out within two weeks", "run out within two weeks"),
     };
 }

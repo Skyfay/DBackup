@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: async () => (mocks.signedIn ? { userId: "u1", permissions: mocks.permissions, isSuperAdmin: false } : null),
+    getAuthContext: async () => (mocks.signedIn ? { userId: "u1", permissions: mocks.permissions, isPlatformAdmin: false } : null),
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
     },

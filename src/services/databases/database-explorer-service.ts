@@ -33,6 +33,8 @@ export class DatabaseExplorerService {
                     id: true,
                     name: true,
                     adapterId: true,
+                    // The tenant of the server, which the lists show while they hold every tenant.
+                    tenantId: true,
                     metadata: true,
                     lastStatus: true,
                     databaseListCache: { select: { databasesJson: true, readAt: true, error: true } },
@@ -54,6 +56,7 @@ export class DatabaseExplorerService {
                 id: source.id,
                 name: source.name,
                 adapterId: source.adapterId,
+                tenantId: source.tenantId,
                 version: versionOf(source.metadata),
                 versionSince: change ? change.detectedAt.toISOString() : null,
                 previousVersion: change?.previousVersion ?? null,
@@ -66,7 +69,7 @@ export class DatabaseExplorerService {
         const instances = sources.filter((source) => isInstance(source.adapterId));
         const listed = sources
             .filter((source) => !isInstance(source.adapterId))
-            .flatMap((source) => parseListedDatabases(source.databaseListCache?.databasesJson).map((database) => ({ serverId: source.id, ...database })));
+            .flatMap((source) => parseListedDatabases(source.databaseListCache?.databasesJson).map((database) => ({ serverId: source.id, tenantId: source.tenantId, ...database })));
         const kept = withJobs ? await this.keptRuns(jobs) : [];
         const coverage = withJobs ? coverageOf(listed, jobs) : new Map<string, string[]>();
         const lastBackups = withJobs ? lastBackupsOf(kept, jobs, listed) : new Map<string, LastBackup>();
@@ -76,6 +79,7 @@ export class DatabaseExplorerService {
             return {
                 key,
                 serverId: database.serverId,
+                tenantId: database.tenantId,
                 kind: "database",
                 name: database.name,
                 sizeInBytes: database.sizeInBytes ?? null,
@@ -98,6 +102,7 @@ export class DatabaseExplorerService {
             databases.push({
                 key: source.id,
                 serverId: source.id,
+                tenantId: source.tenantId,
                 kind: "instance",
                 name: source.name,
                 sizeInBytes: null,

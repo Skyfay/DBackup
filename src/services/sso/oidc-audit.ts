@@ -9,12 +9,15 @@ import { getOIDCAdapter } from "./oidc-registry";
  * every field of the provider type that is a password, is written as changed without its values.
  */
 
-/** A provider as read from the database, with its client id and secret in plain text and the name of its group. */
+/** A provider as read from the database, with its client id and secret in plain text and the names of its group and tenant. */
 export type ProviderState = Pick<SsoProvider, "adapterId" | "adapterConfig" | "providerId" | "domain" | "clientId" | "clientSecret" | "allowProvisioning"> & {
     groupName?: string | null;
+    /** The tenant that brings the provider, null or left out for one of the platform. */
+    tenantName?: string | null;
 };
 
 const FIELDS: Record<string, AuditField> = {
+    tenant: { label: "Belongs to" },
     providerId: { label: "Provider ID" },
     domain: { label: "Email domain" },
     clientId: { label: "Client ID" },
@@ -41,6 +44,7 @@ const text = (value: unknown): AuditValue => (typeof value === "string" || typeo
 export function ssoProviderChanges(before: ProviderState, after: ProviderState): AuditChange[] {
     const fields: Record<string, AuditField> = { ...FIELDS };
     const values = (provider: ProviderState): Record<string, AuditValue> => ({
+        tenant: provider.tenantName ?? "Platform",
         providerId: provider.providerId,
         domain: provider.domain,
         clientId: provider.clientId,

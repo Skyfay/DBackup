@@ -12,7 +12,7 @@ import { isSystemTaskId, SYSTEM_TASKS } from "@/services/system/system-task-defi
 import { saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
 import { integritySettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
-import type { SaveResult } from "@/lib/settings/save-part";
+import type { SaveResult } from "@/services/system/settings-save";
 
 const log = logger.child({ action: "system-tasks" });
 

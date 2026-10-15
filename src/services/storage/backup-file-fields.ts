@@ -47,6 +47,7 @@ export function describeBackupFromMetadata(
         jobName: sidecar.jobName || (isConfigBackup ? "Config Backup" : undefined),
         ...(sidecar.timestamp ? { createdAt: sidecar.timestamp } : {}),
         ...(names && names.length > 0 ? { databases: names } : {}),
+        ...(sidecar.sourceId ? { sourceId: sidecar.sourceId } : {}),
         sourceName: sidecar.sourceName || (isConfigBackup ? "System" : undefined),
         sourceType: sidecar.sourceType || (isConfigBackup ? "SYSTEM" : undefined),
         engineVersion: sidecar.engineVersion,
@@ -64,6 +65,7 @@ export function describeBackupFromMetadata(
         // did not exist yet.
         backupType: sidecar.backupType ?? sidecar.chain?.type ?? 'full',
         ...(sidecar.combined ? { combined: sidecar.combined } : {}),
+        ...(Array.isArray(sidecar.onlyDatabases) && sidecar.onlyDatabases.length > 0 ? { onlyDatabases: sidecar.onlyDatabases } : {}),
         ...(sidecar.chain ? { chain: sidecar.chain } : {}),
         ...(typeof sidecar.logicalSize === 'number' ? { logicalSize: sidecar.logicalSize } : {}),
         verification: sidecar.verification ? {

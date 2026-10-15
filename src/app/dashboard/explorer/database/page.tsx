@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DatabasePage } from "@/components/dashboard/explorer/database-page";
+import { TenantKeyed } from "@/components/tenant/tenant-keyed";
 import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -18,10 +19,13 @@ export default async function ExplorerDatabasePage() {
             {/* The head of the page names the database, the header bar the page. */}
             <h1 className="sr-only">Database</h1>
             <Suspense>
-                <DatabasePage
-                    canBrowse={permissions.includes(PERMISSIONS.SOURCES.READ)}
-                    canOpenBackups={permissions.includes(PERMISSIONS.STORAGE.READ)}
-                />
+                {/* Opened in the tenant of the database from All tenants, the page reads it again there. */}
+                <TenantKeyed>
+                    <DatabasePage
+                        canBrowse={permissions.includes(PERMISSIONS.SOURCES.READ)}
+                        canOpenBackups={permissions.includes(PERMISSIONS.STORAGE.READ)}
+                    />
+                </TenantKeyed>
             </Suspense>
         </>
     );

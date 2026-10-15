@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipHead, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
-import { ScheduleText, SourceIcon, sourceOf } from "../job-cells";
+import { JobTenant, ScheduleText, SourceIcon, sourceOf } from "../job-cells";
 import { barsOf, demandOf, HOUR_MS, packBars, rangeOf, type TimelineBar, type TimelineZoom } from "./job-timeline-model";
 import { percentOf, TimelineBarGroup, TimelineLegend } from "./timeline-bars";
 import { useTimelineClock } from "./timeline-clock";
@@ -186,7 +186,7 @@ export function JobsTimeline({ jobs, allJobs, timeline, canViewHistory, onOpenJo
                                         <SourceIcon adapterId={sourceOf(job).adapterId} className="size-4" />
                                     </span>
                                     <span className="min-w-0">
-                                        <span className={cn("block truncate text-sm font-medium", paused && "text-muted-foreground")}>{job.name}</span>
+                                        <span className={cn("block truncate text-sm font-medium", paused && "text-muted-foreground")}>{job.name}<JobTenant job={job} /></span>
                                         <ScheduleText job={job} className="block" />
                                     </span>
                                 </button>

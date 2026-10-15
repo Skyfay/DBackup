@@ -1,15 +1,20 @@
 import type { Metadata } from "next";
-import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { redirect } from "next/navigation";
+import { RestoreAllTenants } from "./restore-all-tenants";
 import { RestoreClient } from "./restore-client";
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
 export const metadata: Metadata = { title: "Restore" };
 
 export default async function RestorePage() {
-    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
     const canRestore = permissions.includes(PERMISSIONS.STORAGE.RESTORE);
+
+    // All tenants restores nothing, a restore happens in the tenant of the backup. The page says so
+    // there and opens the same restore in that tenant.
+    if (user?.allTenants) return <RestoreAllTenants />;
 
     if (!canRestore) {
         redirect("/dashboard/backups");
@@ -21,7 +26,7 @@ export default async function RestorePage() {
         <RestoreClient
             canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)}
             canDownload={permissions.includes(PERMISSIONS.STORAGE.DOWNLOAD)}
-            canRestoreConfig={user?.group?.name === "SuperAdmin"}
+            canRestoreConfig={user?.isPlatformAdmin ?? false}
         />
     );
 }

@@ -11,14 +11,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // An admin who may change the settings, unless a test takes that away.
-const ADMIN = ["jobs:write", "destinations:write", "credentials:delete", "settings:write"];
-const ctx = { userId: "u1", permissions: [...ADMIN], isSuperAdmin: false, authMethod: "session", apiKeyId: undefined };
+const ADMIN = ["jobs:write", "destinations:write", "credentials:delete", "tenant-settings:write"];
+const ctx = { userId: "u1", permissions: [...ADMIN], isPlatformAdmin: false, authMethod: "session", apiKeyId: undefined };
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: async () => ctx,
     checkPermissionWithContext: () => undefined,
-    hasPermissionWithContext: (context: typeof ctx, permission: string) => context.isSuperAdmin || context.permissions.includes(permission),
+    hasPermissionWithContext: (context: typeof ctx, permission: string) => context.isPlatformAdmin || context.permissions.includes(permission),
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: mocks.logFor } }));
 vi.mock("@/services/jobs/job-service", () => ({ jobService: { deleteJob: mocks.deleteJob, deleteJobs: mocks.deleteJobs } }));
@@ -61,7 +61,7 @@ describe("the delete routes and Recently deleted", () => {
     });
 
     it("refuses a permanent delete, one or several, from someone who may not change the settings", async () => {
-        ctx.permissions = ADMIN.filter((permission) => permission !== "settings:write");
+        ctx.permissions = ADMIN.filter((permission) => permission !== "tenant-settings:write");
 
         const single = await deleteJobRoute(new NextRequest("http://localhost/api/jobs/job-1?permanently=true", { method: "DELETE" }), params("job-1"));
         const connection = await deleteAdapterRoute(new NextRequest("http://localhost/api/adapters/nas?permanently=true", { method: "DELETE" }), params("nas"));

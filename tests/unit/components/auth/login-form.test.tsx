@@ -203,4 +203,74 @@ describe("the sign-in of the login page", () => {
 
         expect(screen.getByRole("alert")).toHaveTextContent("DISABLE_EMAIL_LOGIN=false");
     });
+
+    describe("a provider of a tenant, which only the email reaches", () => {
+        const entra = { providerId: "entra-acme", name: "Acme Entra ID", adapterId: "generic", domain: "acme.ch", allowProvisioning: true };
+        let lookup: ReturnType<typeof vi.fn>;
+
+        beforeEach(() => {
+            lookup = vi.fn(async (_url: string, init: { body: string }) => {
+                const { domain } = JSON.parse(init.body) as { domain: string };
+                return new Response(JSON.stringify({ success: true, data: { provider: domain === "acme.ch" ? entra : null } }), { status: 200 });
+            });
+            vi.stubGlobal("fetch", lookup);
+        });
+
+        it("says where the email goes once it is typed and goes there, never showing the provider as a button", async () => {
+            const user = renderForm({ providers: [pocket], domainRouting: true });
+
+            expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+            await user.type(screen.getByLabelText("Email"), "lena.graf@acme.ch");
+
+            expect(await screen.findByText("acme.ch signs in with Acme Entra ID")).toBeInTheDocument();
+            const buttons = screen.getAllByRole("button", { name: "Continue with Acme Entra ID" });
+            expect(buttons.map((button) => button.getAttribute("type"))).toEqual(["submit"]);
+            await user.click(buttons[0]);
+
+            await waitFor(() => expect(mocks.sso).toHaveBeenCalledWith(expect.objectContaining({ providerId: "entra-acme", requestSignUp: true, loginHint: "lena.graf@acme.ch" })));
+            // The server only ever hears the domain, never the whole email.
+            expect(lookup.mock.calls.every(([, init]) => JSON.parse((init as { body: string }).body).domain === "acme.ch")).toBe(true);
+        });
+
+        it("asks the server on Continue when the email was sent before it answered", async () => {
+            const user = renderForm({ providers: [], domainRouting: true });
+
+            await user.type(screen.getByLabelText("Email"), "lena.graf@acme.ch{Enter}");
+
+            await waitFor(() => expect(mocks.sso).toHaveBeenCalledWith(expect.objectContaining({ providerId: "entra-acme" })));
+        });
+
+        it("goes on to the password for a domain no provider claims", async () => {
+            const user = renderForm({ providers: [], domainRouting: true });
+
+            await user.type(screen.getByLabelText("Email"), "manu@globex.ch");
+            await user.click(screen.getByRole("button", { name: "Continue" }));
+
+            expect(await screen.findByLabelText("Password")).toBeInTheDocument();
+            expect(mocks.sso).not.toHaveBeenCalled();
+        });
+
+        it("keeps the email while passwords are off, and says when no provider takes it", async () => {
+            const user = renderForm({ providers: [], domainRouting: true, emailLogin: false, passkeyLogin: false });
+
+            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+            await user.type(screen.getByLabelText("Email"), "manu@globex.ch");
+            await user.click(screen.getByRole("button", { name: "Continue" }));
+
+            expect(await screen.findByText("No sign-in provider takes this email. Sign in another way.")).toBeInTheDocument();
+            expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+        });
+    });
+
+    it("says why a provider of a tenant turned someone away", () => {
+        renderForm({ errorCode: "sso_tenant_refused" });
+
+        expect(screen.getByRole("alert")).toHaveTextContent("Not through this provider");
+    });
+
+    it("says when a provider of a tenant signs in only its members", () => {
+        renderForm({ errorCode: "sso_tenant_not_member" });
+
+        expect(screen.getByRole("alert")).toHaveTextContent("Not a member here yet");
+    });
 });

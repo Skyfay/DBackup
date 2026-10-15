@@ -7,11 +7,12 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { ssoProviderChanges } from "@/services/sso/oidc-audit";
 import { discoverEndpoints } from "@/services/sso/oidc-discovery";
 import { OidcProviderService } from "@/services/sso/oidc-provider-service";
-import { SUPER_ADMIN_GROUP } from "@/services/user/users-model";
+import { settlePlacement } from "@/services/sso/sso-provider-rules";
 
 const log = logger.child({ action: "oidc" });
 
@@ -26,6 +27,8 @@ const providerFields = {
     allowProvisioning: z.boolean().optional(),
     /** The group new people start in, null for none. */
     defaultGroupId: z.string().min(1).nullable().optional(),
+    /** The tenant the provider belongs to, null for the platform. */
+    tenantId: z.string().min(1).nullable().optional(),
     adapterConfig: z.record(z.string(), z.unknown()),
 };
 
@@ -55,24 +58,23 @@ const firstIssue = (error: z.ZodError) => error.issues[0]?.message ?? "Invalid r
 
 /**
  * Whoever controls a sign-in provider signs in as anyone whose email it names, and the second
- * factor is not asked after it. So only a SuperAdmin adds, changes, switches and deletes one.
+ * factor is not asked after it. So only someone who may manage the sign-in providers of the
+ * platform, a right only a platform group gives and a platform admin holds, adds, changes,
+ * switches and deletes one.
  */
-const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a SuperAdmin adds and changes sign-in providers." };
+const MANAGE = PERMISSIONS.PLATFORM.SIGN_IN_WRITE;
 
-const isSuperAdmin = (user: { group: { name: string } | null }) => user.group?.name === SUPER_ADMIN_GROUP;
-
-/** The group new people start in, when it changes, has to exist still. */
-async function missingGroup(groupId: string | null | undefined, current: string | null): Promise<string | null> {
-    if (!groupId || groupId === current) return null;
-    return (await OidcProviderService.getGroup(groupId)) ? null : "The group no longer exists.";
-}
+/**
+ * The providers are the platform's, so every change is written to the log of the platform,
+ * whichever tenant the viewer works in. The people a provider adds are written to its tenant.
+ */
+const PLATFORM_LOG = { tenantId: HOME_TENANT_ID };
 
 // --- Actions ---
 
 /** Reads the endpoints of a provider from its fields, for the check in its dialog and in its panel. */
 export async function checkSsoConnection(input: z.input<typeof checkSchema>) {
-    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    await checkPermission(MANAGE);
     const parsed = checkSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
 
@@ -86,14 +88,14 @@ export async function checkSsoConnection(input: z.input<typeof checkSchema>) {
 }
 
 export async function createSsoProvider(input: CreateSsoProviderInput) {
-    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    const user = await checkPermission(MANAGE);
     const parsed = createProviderSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
-    const { name, adapterId, providerId, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId } = parsed.data;
+    const { name, adapterId, providerId, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId, tenantId } = parsed.data;
 
-    const missing = await missingGroup(defaultGroupId, null);
-    if (missing) return { success: false, error: missing };
+    const settled = await settlePlacement({ tenantId: tenantId ?? null, domain: domain ?? null, allowProvisioning: allowProvisioning ?? true, defaultGroupId: defaultGroupId ?? null }, null);
+    if (!settled.ok) return { success: false, error: settled.error };
+    const { placement } = settled;
 
     const found = await discoverEndpoints(adapterId, adapterConfig);
     if (!found.ok) return { success: false, error: found.error };
@@ -104,11 +106,12 @@ export async function createSsoProvider(input: CreateSsoProviderInput) {
             adapterId,
             type: "oidc",
             providerId,
-            domain: domain || null,
+            domain: placement.domain,
+            tenantId: placement.tenantId,
             clientId,
             clientSecret,
-            allowProvisioning: allowProvisioning ?? true,
-            defaultGroupId: defaultGroupId ?? null,
+            allowProvisioning: placement.allowProvisioning,
+            defaultGroupId: placement.defaultGroupId,
             adapterConfig: JSON.stringify(found.config),
             // The endpoints of the adapter, with the discovery endpoint for providers with an unusual path.
             issuer: found.endpoints.issuer,
@@ -124,8 +127,15 @@ export async function createSsoProvider(input: CreateSsoProviderInput) {
             user.id,
             AUDIT_ACTIONS.CREATE,
             AUDIT_RESOURCES.SSO_PROVIDER,
-            { name: provider.name, adapterId: provider.adapterId, providerId: provider.providerId, ...(state?.groupName ? { group: state.groupName } : {}) },
-            provider.id
+            {
+                name: provider.name,
+                adapterId: provider.adapterId,
+                providerId: provider.providerId,
+                ...(settled.tenantName ? { tenant: settled.tenantName } : {}),
+                ...(state?.groupName ? { group: state.groupName } : {}),
+            },
+            provider.id,
+            PLATFORM_LOG
         );
 
         revalidatePath(PAGE);
@@ -137,18 +147,28 @@ export async function createSsoProvider(input: CreateSsoProviderInput) {
 }
 
 export async function updateSsoProvider(input: UpdateSsoProviderInput) {
-    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    const user = await checkPermission(MANAGE);
     const parsed = updateProviderSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
-    const { id, name, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId } = parsed.data;
+    const { id, name, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId, tenantId } = parsed.data;
 
     // Read with the secrets in plain text, so a new client secret shows as changed. It is never written.
     const before = await OidcProviderService.getAuditState(id);
     if (!before) return { success: false, error: "The provider no longer exists." };
 
-    const missing = await missingGroup(defaultGroupId, before.defaultGroupId);
-    if (missing) return { success: false, error: missing };
+    // What the request leaves out stays as it is saved. Moving a provider to another tenant asks
+    // for a group of that tenant again.
+    const settled = await settlePlacement(
+        {
+            tenantId: tenantId === undefined ? before.tenantId : tenantId,
+            domain: domain === undefined ? before.domain : domain,
+            allowProvisioning: allowProvisioning ?? before.allowProvisioning,
+            defaultGroupId: defaultGroupId === undefined ? before.defaultGroupId : defaultGroupId,
+        },
+        before
+    );
+    if (!settled.ok) return { success: false, error: settled.error };
+    const { placement } = settled;
 
     const found = await discoverEndpoints(before.adapterId, adapterConfig);
     if (!found.ok) return { success: false, error: found.error };
@@ -156,12 +176,13 @@ export async function updateSsoProvider(input: UpdateSsoProviderInput) {
     try {
         await OidcProviderService.updateProvider(id, {
             name,
-            domain: domain || null,
+            domain: placement.domain,
+            tenantId: placement.tenantId,
             clientId,
             // Empty keeps the saved secret, the browser never has it.
             clientSecret: clientSecret || undefined,
-            allowProvisioning,
-            defaultGroupId,
+            allowProvisioning: placement.allowProvisioning,
+            defaultGroupId: placement.defaultGroupId,
             adapterConfig: JSON.stringify(found.config),
             issuer: found.endpoints.issuer,
             authorizationEndpoint: found.endpoints.authorizationEndpoint,
@@ -182,7 +203,8 @@ export async function updateSsoProvider(input: UpdateSsoProviderInput) {
                     ...(before.name !== after.name ? { renamedFrom: before.name } : {}),
                     changes: ssoProviderChanges(before, after),
                 },
-                id
+                id,
+                PLATFORM_LOG
             );
         }
 
@@ -195,11 +217,10 @@ export async function updateSsoProvider(input: UpdateSsoProviderInput) {
 }
 
 export async function deleteSsoProvider(id: string) {
-    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    const user = await checkPermission(MANAGE);
     try {
         const deleted = await OidcProviderService.deleteProvider(id);
-        await auditService.log(user.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.SSO_PROVIDER, { name: deleted.name, providerId: deleted.providerId }, id);
+        await auditService.log(user.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.SSO_PROVIDER, { name: deleted.name, providerId: deleted.providerId }, id, PLATFORM_LOG);
         revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {
@@ -208,11 +229,10 @@ export async function deleteSsoProvider(id: string) {
 }
 
 export async function toggleSsoProvider(id: string, enabled: boolean) {
-    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
+    const user = await checkPermission(MANAGE);
     try {
         const provider = await OidcProviderService.toggleProvider(id, enabled);
-        await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SSO_PROVIDER, { name: provider.name, enabled: provider.enabled }, id);
+        await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SSO_PROVIDER, { name: provider.name, enabled: provider.enabled }, id, PLATFORM_LOG);
         revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {

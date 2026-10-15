@@ -34,7 +34,7 @@ import { GET as getServers } from "@/app/api/databases/servers/route";
 import { GET as getServer } from "@/app/api/databases/servers/[id]/route";
 import { GET as getVersions } from "@/app/api/databases/servers/[id]/versions/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const versions = (query = "") => getVersions(new NextRequest(`http://localhost/api/databases/servers/shop/versions${query}`), params("shop"));
 

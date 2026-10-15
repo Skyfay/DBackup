@@ -23,6 +23,8 @@ export interface RunQuery {
     /** Who started them, as `starterOf` keys them. */
     starters?: string[];
     search?: string;
+    /** The tenants of the Tenant filter of All tenants. Inside a tenant every run is of that tenant anyway. */
+    tenantIds?: string[];
 }
 
 export const RUN_MAX_PAGE_SIZE = 100;
@@ -34,6 +36,8 @@ const DAY_MS = 86_400_000;
 export const RUN_SELECT = {
     id: true,
     jobId: true,
+    // The tenant of the run, which the list shows and filters by while it holds every tenant.
+    tenantId: true,
     type: true,
     status: true,
     startedAt: true,
@@ -67,8 +71,10 @@ function clean(values: string[] | undefined): string[] {
 }
 
 /** The `where` of a query. A filter left out by `omit` counts beside its own options. */
-export function buildRunWhere(query: RunQuery, omit?: "types" | "statuses" | "jobIds" | "starters"): Prisma.ExecutionWhereInput {
+export function buildRunWhere(query: RunQuery, omit?: "types" | "statuses" | "jobIds" | "starters" | "tenantIds"): Prisma.ExecutionWhereInput {
     const and: Prisma.ExecutionWhereInput[] = [];
+    const tenantIds = omit === "tenantIds" ? [] : clean(query.tenantIds);
+    if (tenantIds.length > 0) and.push({ tenantId: { in: tenantIds } });
     const types = omit === "types" ? [] : clean(query.types);
     if (types.length > 0) and.push({ type: { in: types } });
     const statuses = omit === "statuses" ? [] : clean(query.statuses);
@@ -143,19 +149,24 @@ function tally<T>(groups: T[], keyOf: (group: T) => string | null, countOf: (gro
     return result;
 }
 
-/** How many runs each option leaves. A filter counts under every other filter, not its own. */
-export async function getRunFacets(query: RunQuery): Promise<RunFacets> {
-    const [type, status, job, starter] = await Promise.all([
+/**
+ * How many runs each option leaves. A filter counts under every other filter, not its own.
+ * `byTenant` counts the tenants too, for the Tenant filter of All tenants.
+ */
+export async function getRunFacets(query: RunQuery, byTenant = false): Promise<RunFacets> {
+    const [type, status, job, starter, tenant] = await Promise.all([
         prisma.execution.groupBy({ by: ["type"], where: buildRunWhere(query, "types"), _count: { _all: true } }),
         prisma.execution.groupBy({ by: ["status"], where: buildRunWhere(query, "statuses"), _count: { _all: true } }),
         prisma.execution.groupBy({ by: ["jobId"], where: buildRunWhere(query, "jobIds"), _count: { _all: true } }),
         prisma.execution.groupBy({ by: ["triggerType", "triggerLabel"], where: buildRunWhere(query, "starters"), _count: { _all: true } }),
+        byTenant ? prisma.execution.groupBy({ by: ["tenantId"], where: buildRunWhere(query, "tenantIds"), _count: { _all: true } }) : null,
     ]);
     return {
         type: tally(type, (group) => group.type, (group) => group._count._all),
         status: tally(status, (group) => group.status, (group) => group._count._all),
         job: tally(job, (group) => group.jobId, (group) => group._count._all),
         starter: tally(starter, (group) => starterOf(group.triggerType, group.triggerLabel).key, (group) => group._count._all),
+        ...(tenant ? { tenant: tally(tenant, (group) => group.tenantId, (group) => group._count._all) } : {}),
     };
 }
 
@@ -164,7 +175,7 @@ const STARTER_ORDER: Record<RunStarterOption["group"], number> = { System: 0, "B
 /** The options of the Job and Started by filters: every job, the schedule, every person and every API key. */
 export async function getRunOptions(): Promise<{ jobs: RunJobOption[]; starters: RunStarterOption[] }> {
     const [jobs, starters] = await Promise.all([
-        prisma.job.findMany({ select: { id: true, name: true, source: { select: { adapterId: true } } }, orderBy: { name: "asc" } }),
+        prisma.job.findMany({ select: { id: true, name: true, tenantId: true, source: { select: { adapterId: true } } }, orderBy: { name: "asc" } }),
         prisma.execution.groupBy({ by: ["triggerType", "triggerLabel"], _count: { _all: true } }),
     ]);
     const options = new Map<string, RunStarterOption>();
@@ -174,7 +185,7 @@ export async function getRunOptions(): Promise<{ jobs: RunJobOption[]; starters:
         options.set(starter.key, { value: starter.key, label: starter.label, group: optionGroup });
     }
     return {
-        jobs: jobs.map((job) => ({ id: job.id, name: job.name, adapterId: job.source?.adapterId ?? null })),
+        jobs: jobs.map((job) => ({ id: job.id, name: job.name, adapterId: job.source?.adapterId ?? null, tenantId: job.tenantId })),
         starters: [...options.values()].sort((a, b) => STARTER_ORDER[a.group] - STARTER_ORDER[b.group] || a.label.localeCompare(b.label)),
     };
 }

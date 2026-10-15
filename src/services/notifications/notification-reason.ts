@@ -22,6 +22,12 @@ export function eventReason(definition: NotificationEventDefinition | undefined,
     return `You get this because "${name}" is on under Settings, Notifications.${reminder}`;
 }
 
+/** Why a channel of a tenant gets an event about the data of that tenant. */
+export function tenantReason(name: string, test: boolean): string {
+    if (test) return `This is a test of "${name}" from the tenant settings, Notifications.`;
+    return `You get this because "${name}" is on in the tenant settings under Notifications.`;
+}
+
 /** Why the person a sign-in or a new account is about gets a mail of their own. */
 export function userReason(eventType: NotificationEventType, instanceName: string | null): string {
     const about = eventType === NOTIFICATION_EVENTS.USER_LOGIN ? "sign-ins" : "new accounts";

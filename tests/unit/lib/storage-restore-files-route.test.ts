@@ -15,7 +15,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 // The real checks, reduced to the permission list of the signed in user.
 vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isSuperAdmin: false }),
+    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isPlatformAdmin: false }),
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
     },

@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { HistoryClient } from "@/components/dashboard/history/history-client";
 import { runHref } from "@/components/dashboard/history/run-links";
+import { TenantKeyed } from "@/components/tenant/tenant-keyed";
 import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -23,13 +24,16 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             {/* The header bar names the page. */}
             <h1 className="sr-only">History</h1>
             <Suspense>
-                <HistoryClient
-                    access={{
-                        canExecute: permissions.includes(PERMISSIONS.JOBS.EXECUTE),
-                        canOpenJobs: permissions.includes(PERMISSIONS.JOBS.READ),
-                        canOpenBackups: permissions.includes(PERMISSIONS.STORAGE.READ),
-                    }}
-                />
+                {/* A switch into a tenant on this page loads the runs of that tenant at once. */}
+                <TenantKeyed>
+                    <HistoryClient
+                        access={{
+                            canExecute: permissions.includes(PERMISSIONS.JOBS.EXECUTE),
+                            canOpenJobs: permissions.includes(PERMISSIONS.JOBS.READ),
+                            canOpenBackups: permissions.includes(PERMISSIONS.STORAGE.READ),
+                        }}
+                    />
+                </TenantKeyed>
             </Suspense>
         </>
     );

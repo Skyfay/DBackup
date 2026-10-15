@@ -6,29 +6,55 @@
  */
 
 import prisma from "@/lib/prisma";
+import { peopleOf, roleIn } from "@/services/tenant/membership-service";
 import { PER_KIND, type SearchHit, type TemplateKind } from "./search-types";
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
-/** The people by name or email, like the Users tab lists them. */
-export async function users(query: string): Promise<SearchHit[]> {
+/**
+ * The people of the tenant by name or email, like its Users tab lists them. Accounts are global, so
+ * the filter is here. In All tenants (`tenantId` null) every account, with how many tenants it works in.
+ */
+export async function users(query: string, tenantId: string | null): Promise<SearchHit[]> {
+    if (tenantId === null) {
+        const everyone = await prisma.user.findMany({
+            where: { OR: [{ name: { contains: query } }, { email: { contains: query } }] },
+            orderBy: { name: "asc" },
+            take: PER_KIND,
+            select: { id: true, name: true, email: true, _count: { select: { memberships: true } } },
+        });
+        return everyone.map((user) => ({ kind: "user", id: user.id, name: user.name, email: user.email, group: null, tenants: user._count.memberships }));
+    }
     const found = await prisma.user.findMany({
-        where: { OR: [{ name: { contains: query } }, { email: { contains: query } }] },
+        where: { AND: [peopleOf(tenantId), { OR: [{ name: { contains: query } }, { email: { contains: query } }] }] },
         orderBy: { name: "asc" },
         take: PER_KIND,
-        select: { id: true, name: true, email: true, group: { select: { name: true } } },
+        select: { id: true, name: true, email: true, memberships: roleIn(tenantId) },
     });
-    return found.map((user) => ({ kind: "user", id: user.id, name: user.name, email: user.email, group: user.group?.name ?? null }));
+    return found.map((user) => ({ kind: "user", id: user.id, name: user.name, email: user.email, group: user.memberships[0]?.group.name ?? null }));
 }
 
-export async function groups(query: string): Promise<SearchHit[]> {
+/**
+ * The groups with the number of people who hold them in the tenant. In All tenants (`tenantId` null)
+ * the people who hold them in any tenant, each once.
+ */
+export async function groups(query: string, tenantId: string | null): Promise<SearchHit[]> {
+    if (tenantId === null) {
+        const everywhere = await prisma.group.findMany({
+            where: { name: { contains: query } },
+            orderBy: { name: "asc" },
+            take: PER_KIND,
+            select: { id: true, name: true, memberships: { select: { userId: true } } },
+        });
+        return everywhere.map((group) => ({ kind: "group", id: group.id, name: group.name, people: new Set(group.memberships.map((entry) => entry.userId)).size }));
+    }
     const found = await prisma.group.findMany({
         where: { name: { contains: query } },
         orderBy: { name: "asc" },
         take: PER_KIND,
-        select: { id: true, name: true, _count: { select: { users: true } } },
+        select: { id: true, name: true, _count: { select: { memberships: { where: { tenantId } } } } },
     });
-    return found.map((group) => ({ kind: "group", id: group.id, name: group.name, people: group._count.users }));
+    return found.map((group) => ({ kind: "group", id: group.id, name: group.name, people: group._count.memberships }));
 }
 
 /** Every API key, like the API keys tab lists them for someone who may read them. */
@@ -37,7 +63,7 @@ export async function apiKeys(query: string): Promise<SearchHit[]> {
         where: { name: { contains: query } },
         orderBy: { name: "asc" },
         take: PER_KIND,
-        select: { id: true, name: true, prefix: true, enabled: true, expiresAt: true, user: { select: { name: true } } },
+        select: { id: true, name: true, tenantId: true, prefix: true, enabled: true, expiresAt: true, user: { select: { name: true } } },
     });
     const now = Date.now();
     return found.map((key) => ({
@@ -48,6 +74,7 @@ export async function apiKeys(query: string): Promise<SearchHit[]> {
         owner: key.user.name,
         enabled: key.enabled,
         expired: key.expiresAt !== null && key.expiresAt.getTime() < now,
+        tenantId: key.tenantId,
     }));
 }
 
@@ -56,13 +83,13 @@ export async function templates(query: string): Promise<SearchHit[]> {
     const where = { name: { contains: query } };
     const take = PER_KIND;
     const [retention, naming, schedules, notifications, excludes] = await Promise.all([
-        prisma.retentionPolicy.findMany({ where, take, select: { id: true, name: true, description: true } }),
-        prisma.namingTemplate.findMany({ where, take, select: { id: true, name: true, pattern: true } }),
-        prisma.schedulePreset.findMany({ where, take, select: { id: true, name: true, schedule: true } }),
-        prisma.notificationTemplate.findMany({ where, take, select: { id: true, name: true, description: true } }),
-        prisma.excludePatternPreset.findMany({ where, take, select: { id: true, name: true, description: true } }),
+        prisma.retentionPolicy.findMany({ where, take, select: { id: true, name: true, tenantId: true, description: true } }),
+        prisma.namingTemplate.findMany({ where, take, select: { id: true, name: true, tenantId: true, pattern: true } }),
+        prisma.schedulePreset.findMany({ where, take, select: { id: true, name: true, tenantId: true, schedule: true } }),
+        prisma.notificationTemplate.findMany({ where, take, select: { id: true, name: true, tenantId: true, description: true } }),
+        prisma.excludePatternPreset.findMany({ where, take, select: { id: true, name: true, tenantId: true, description: true } }),
     ]);
-    const hit = (row: { id: string; name: string }, template: TemplateKind, detail: string | null): Extract<SearchHit, { kind: "template" }> => ({ kind: "template", id: row.id, name: row.name, template, detail });
+    const hit = (row: { id: string; name: string; tenantId?: string }, template: TemplateKind, detail: string | null): Extract<SearchHit, { kind: "template" }> => ({ kind: "template", id: row.id, name: row.name, template, detail, tenantId: row.tenantId });
     return [
         ...retention.map((row) => hit(row, "retention", row.description)),
         ...naming.map((row) => hit(row, "naming", row.pattern)),
@@ -78,9 +105,9 @@ export async function keys(query: string): Promise<SearchHit[]> {
         where: { name: { contains: query } },
         orderBy: { name: "asc" },
         take: PER_KIND,
-        select: { id: true, name: true, _count: { select: { jobs: true } } },
+        select: { id: true, name: true, tenantId: true, _count: { select: { jobs: true } } },
     });
-    return found.map((key) => ({ kind: "key", id: key.id, name: key.name, jobs: key._count.jobs }));
+    return found.map((key) => ({ kind: "key", id: key.id, name: key.name, jobs: key._count.jobs, tenantId: key.tenantId }));
 }
 
 /** The saved logins with their kind, never what they hold. */
@@ -89,7 +116,7 @@ export async function credentials(query: string): Promise<SearchHit[]> {
         where: { name: { contains: query } },
         orderBy: { name: "asc" },
         take: PER_KIND,
-        select: { id: true, name: true, type: true },
+        select: { id: true, name: true, tenantId: true, type: true },
     });
-    return found.map((profile) => ({ kind: "credential", id: profile.id, name: profile.name, type: profile.type }));
+    return found.map((profile) => ({ kind: "credential", id: profile.id, name: profile.name, type: profile.type, tenantId: profile.tenantId }));
 }

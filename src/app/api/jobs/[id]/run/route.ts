@@ -10,7 +10,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ApiKeyError } from "@/lib/logging/errors";
 import { apiKeyService } from "@/services/auth/api-key-service";
 import { jobAuditName } from "@/services/jobs/job-audit";
-import prisma from "@/lib/prisma";
+import { userService } from "@/services/user/user-service";
 
 const triggerBodySchema = z.object({
     lock: z.boolean().optional(),
@@ -63,8 +63,7 @@ export async function POST(
             const apiKey = await apiKeyService.getById(ctx.apiKeyId);
             triggerInfo = { type: "Api", label: apiKey.name };
         } else {
-            const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
-            triggerInfo = { type: "Manual", label: user?.name ?? "Unknown" };
+            triggerInfo = { type: "Manual", label: (await userService.nameOf(ctx.userId)) ?? "Unknown" };
         }
 
         const result = await backupService.executeJob(id, triggerInfo, { lock });

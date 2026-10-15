@@ -4,7 +4,7 @@ The audit log records who signed in, who changed what, and who revealed secrets,
 
 ## The Audit Log Tab
 
-Open **Users & Groups → Audit log**. It needs the `audit:read` permission.
+Open **Users & Groups → Audit log**. It needs the `audit:read` permission. Every [tenant](/user-guide/admin/tenants) has its own log, and the tab shows the one of the open tenant. Sign-ins, sign-outs, failed sign-ins and the changes of groups, tenants and platform admins belong to the platform and go into the log of the home tenant.
 
 The strip above the list covers the last 30 days:
 
@@ -33,7 +33,7 @@ A click opens the entry in a panel:
 - **What changed** lists every field before and after. A group or an API key shows the level of each area with the permissions it added or removed. A secret shows that it changed, never its value.
 - **Who** names the person with the sign-in the change came from, or the API key and its owner.
 - **Earlier entries of this record** lists what happened to the same record before, and **Every entry of this record** narrows the list to it.
-- A sign-in shows its address, its browser, when the session ended and everything the person did until then. **Sign out everywhere** ends every session of that person, for someone who may manage users. A SuperAdmin is signed out only by a SuperAdmin, so anyone else gets no button on their sign-ins.
+- A sign-in shows its address, its browser, when the session ended and everything the person did until then. **Sign out everywhere** ends every session of that person, for someone who may manage users. A platform admin is signed out only by a platform admin, so anyone else gets no button on their sign-ins. Someone who also works in another tenant is signed out only by a platform admin as well.
 - **Stored details** shows the entry as it was written.
 
 ### The Timeline
@@ -54,10 +54,11 @@ The view switch shows the timeline above the list: a row per person and API key,
 | Backups | Downloads, download links, restores, restored files, locked and deleted backups |
 | Vault | Encryption keys, revealed keys and secrets, recovery kits, credential profiles |
 | Templates | Created, changed and deleted templates |
-| Users, Groups, API keys | Every change, set passwords, reset second factors, ended sessions, rotated keys |
+| Users, Groups, API keys | Every change, set passwords, reset second factors, ended sessions, rotated keys, invitations |
+| Tenants | Created, renamed and deleted tenants, members added and removed, platform admins |
 | Settings | Every settings page, system tasks, the configuration backup and its restore, the database download |
 
-A change keeps what it changed from and to. An entry keeps the name of the person who wrote it, so it still names them after the person is deleted. A request made with an API key names the key and its owner.
+A download or restore of a [shared database](/user-guide/admin/shared-databases) goes into the log of the customer, a change of who a database belongs to into the log of the server's tenant. A change keeps what it changed from and to. An entry keeps the name of the person who wrote it, so it still names them after the person is deleted. A request made with an API key names the key and its owner.
 
 ::: tip
 The address comes from the `X-Forwarded-For` or `X-Real-IP` header of a trusted reverse proxy in front of DBackup, see [The Address of a Client](/user-guide/installation#the-address-of-a-client). A header a client sends itself is not written.

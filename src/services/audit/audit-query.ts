@@ -24,6 +24,8 @@ export interface AuditFilter {
     /** Only the entries of one record. */
     record?: { resource: string; resourceId: string } | null;
     search?: string;
+    /** Ids of the tenants whose log is read, for the Tenant filter of All tenants. Every one the scope reads when empty. */
+    tenants?: string[];
 }
 
 export interface AuditQuery extends AuditFilter {
@@ -49,7 +51,7 @@ export function whoWhere(key: string): Prisma.AuditLogWhereInput | null {
  * The entries a filter keeps. `omit` leaves one filter out, so the counts beside that filter say
  * what each of its values would keep under the others.
  */
-export function buildAuditWhere(filter: AuditFilter, now: Date, omit?: "who" | "area" | "action" | "quick"): Prisma.AuditLogWhereInput {
+export function buildAuditWhere(filter: AuditFilter, now: Date, omit?: "who" | "area" | "action" | "quick" | "tenant"): Prisma.AuditLogWhereInput {
     const and: Prisma.AuditLogWhereInput[] = [];
 
     if (filter.from || filter.to) {
@@ -67,6 +69,7 @@ export function buildAuditWhere(filter: AuditFilter, now: Date, omit?: "who" | "
     if (omit !== "action" && filter.actions.length > 0) and.push({ action: { in: filter.actions } });
     if (omit !== "quick" && filter.quick !== "all") and.push({ action: { in: QUICK_ACTIONS[filter.quick] } });
     if (filter.record) and.push({ resource: filter.record.resource, resourceId: filter.record.resourceId });
+    if (omit !== "tenant" && filter.tenants && filter.tenants.length > 0) and.push({ tenantId: { in: filter.tenants } });
 
     // SQLite matches LIKE without case for ASCII, so the search needs no mode of its own.
     const search = filter.search?.trim();

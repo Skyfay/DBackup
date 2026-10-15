@@ -23,7 +23,7 @@ async function jobs(query: string, scope: SearchScope): Promise<SearchHit[]> {
         where: { name: { contains: query } },
         orderBy: { name: "asc" },
         take: PER_KIND,
-        select: { id: true, name: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } }, source: { select: { adapterId: true } } },
+        select: { id: true, name: true, tenantId: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } }, source: { select: { adapterId: true } } },
     });
     // The newest finished run of each, which the index on job and start time finds at once.
     const last = scope.jobs
@@ -42,9 +42,10 @@ async function jobs(query: string, scope: SearchScope): Promise<SearchHit[]> {
             schedule: job.schedulePreset?.schedule ?? job.schedule,
             adapterId: job.source?.adapterId ?? null,
             lastStatus: last[index]?.status ?? null,
+            tenantId: job.tenantId,
         }))
         : [];
-    const asBackups: SearchHit[] = scope.backups ? found.map((job) => ({ kind: "backups", jobId: job.id, name: job.name })) : [];
+    const asBackups: SearchHit[] = scope.backups ? found.map((job) => ({ kind: "backups", jobId: job.id, name: job.name, tenantId: job.tenantId })) : [];
     return [...asJobs, ...asBackups];
 }
 
@@ -54,7 +55,7 @@ async function connections(query: string, types: SearchScope["connections"]): Pr
         where: { name: { contains: query }, type: { in: [...types] } },
         orderBy: { name: "asc" },
         take: PER_KIND + 1,
-        select: { id: true, name: true, adapterId: true, type: true, storageRole: true, lastStatus: true, metadata: true },
+        select: { id: true, name: true, tenantId: true, adapterId: true, type: true, storageRole: true, lastStatus: true, metadata: true },
     });
     return found.map((config) => ({
         kind: "connection",
@@ -65,12 +66,13 @@ async function connections(query: string, types: SearchScope["connections"]): Pr
         storageRole: config.storageRole,
         // An air-gapped destination that is not connected is away, never offline.
         status: isNotConnected(config) ? "AWAY" : config.lastStatus,
+        tenantId: config.tenantId,
     }));
 }
 
 async function databases(query: string): Promise<SearchHit[]> {
     const lists = await prisma.databaseListCache.findMany({
-        select: { adapterConfigId: true, databasesJson: true, adapterConfig: { select: { name: true, adapterId: true } } },
+        select: { adapterConfigId: true, databasesJson: true, adapterConfig: { select: { name: true, adapterId: true, tenantId: true } } },
     });
     const needle = query.toLowerCase();
     const hits: Extract<SearchHit, { kind: "database" }>[] = [];
@@ -91,6 +93,7 @@ async function databases(query: string): Promise<SearchHit[]> {
                 adapterId: list.adapterConfig.adapterId,
                 name: entry.name,
                 sizeInBytes: typeof entry.sizeInBytes === "number" ? entry.sizeInBytes : null,
+                tenantId: list.adapterConfig.tenantId,
             });
         }
     }
@@ -102,7 +105,7 @@ async function runs(query: string): Promise<SearchHit[]> {
         where: { job: { name: { contains: query } } },
         orderBy: { startedAt: "desc" },
         take: 3,
-        select: { id: true, status: true, startedAt: true, job: { select: { name: true, source: { select: { adapterId: true } } } } },
+        select: { id: true, tenantId: true, status: true, startedAt: true, job: { select: { name: true, source: { select: { adapterId: true } } } } },
     });
     return found.map((run) => ({
         kind: "run",
@@ -111,11 +114,17 @@ async function runs(query: string): Promise<SearchHit[]> {
         status: run.status,
         startedAt: run.startedAt.toISOString(),
         adapterId: run.job?.source?.adapterId ?? null,
+        tenantId: run.tenantId,
     }));
 }
 
-/** Everything of the allowed kinds whose name holds the query, regardless of case. */
-export async function searchRecords(query: string, scope: SearchScope): Promise<SearchHit[]> {
+/**
+ * Everything of the allowed kinds whose name holds the query, regardless of case. `tenantId` is the
+ * tenant the viewer works in, null for a platform admin in All tenants, who searches every tenant.
+ * The records of a tenant are narrowed by the scope of the request, the people and groups, which
+ * belong to the whole instance, by the tenant here.
+ */
+export async function searchRecords(query: string, scope: SearchScope, tenantId: string | null): Promise<SearchHit[]> {
     const term = query.trim();
     if (term.length < MIN_QUERY_LENGTH) return [];
     const parts = await Promise.all([
@@ -123,8 +132,8 @@ export async function searchRecords(query: string, scope: SearchScope): Promise<
         connections(term, scope.connections),
         scope.databases ? databases(term) : [],
         scope.runs ? runs(term) : [],
-        scope.users ? users(term) : [],
-        scope.groups ? groups(term) : [],
+        scope.users ? users(term, tenantId) : [],
+        scope.groups ? groups(term, tenantId) : [],
         scope.apiKeys ? apiKeys(term) : [],
         scope.templates ? templates(term) : [],
         scope.keys ? keys(term) : [],

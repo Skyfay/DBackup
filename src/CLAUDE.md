@@ -26,8 +26,8 @@ src/services/
   backup/        backup-service.ts (runJob), retention-service.ts (GFS), encryption-service.ts, integrity-service.ts
   restore/       restore-service.ts, preflight.ts, pipeline.ts, smart-recovery.ts, types.ts
   auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key), login-page-service.ts (what the public login page shows, never a secret of a provider), password-policy-service.ts (the rules of Settings > Passwords)
-  sso/           oidc-provider-service.ts, oidc-registry.ts, oidc-discovery.ts (the endpoints of a provider), sso-providers-model.ts (SSO tab page model)
-  storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
+  sso/           oidc-provider-service.ts, oidc-registry.ts, oidc-discovery.ts (the endpoints of a provider), sso-providers-model.ts (SSO tab page model), sso-connections-service.ts (the providers linked to the own account)
+  storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts, storage-lookup.ts, backup-contents.ts (analyze and browse an archive), restore-path-check.ts
   databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
   history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts
   vault/         vault-keys.ts and vault-credentials.ts (the tabs of the Vault page), vault-audit.ts (what the audit log knows), key-id.ts, vault-counts.ts
@@ -40,6 +40,7 @@ src/services/
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
   audit/         the Audit log tab: audit-list-service.ts (page, filters, numbers), audit-details.ts, audit-timeline.ts, audit-export.ts (CSV)
   search/        search-service.ts (what the search in the header finds by name, only of the kinds its caller allows) with search-admin.ts (people, templates, Vault), search-types.ts (shared with the browser)
+  tenant/        tenant-service.ts (create, rename, delete, switch), tenant-seed.ts (the built-in templates of a new tenant), membership-service.ts (the group of a user in a tenant, platform admins), invitation-service.ts (links that add someone to a tenant), database-assignments.ts (the databases of a shared server given to customers), shared-servers.ts (a shared server that outlives its connection), database-moves.ts (a database moved to another server), shared-databases.ts with shared-places.ts and shared-backups.ts (what a customer sees of them, the one path that reads across tenants on purpose) and shared-on-demand.ts (a backup a customer starts). Who may share is `SHARE_DATABASES_PERMISSION` in `src/lib/tenant/sharing.ts`
   audit-service.ts, dashboard-service.ts   (flat, no subdirectory)
 ```
 
@@ -82,14 +83,19 @@ Rules:
 
 Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `STORAGE`, `HISTORY`, `DASHBOARD`, `AUDIT`, `NOTIFICATIONS`, `VAULT`, `PROFILE`, `SETTINGS`, `API_KEYS`. Storage has extra verbs (`DOWNLOAD`, `RESTORE`, `DELETE`), jobs have `EXECUTE`.
 
-### SuperAdmin only
+### Platform admins and accounts
 
-No permission is enough for what decides who is a SuperAdmin or who signs in as whom. These actions check their permission first, then refuse anyone whose group is not SuperAdmin:
+The platform has rights of its own, `PERMISSIONS.PLATFORM.*` (tenants, accounts with the platform groups, the sign-in providers to see, the shared databases), which only a platform group gives and a platform admin holds. The tenants and their members check `platform-tenants:*` (`actions/tenant/tenant.ts`, `members.ts`), the accounts of every tenant and the platform groups `platform-accounts:*` (`actions/auth/platform-group.ts`), sharing databases `SHARE_DATABASES_PERMISSION` in `src/lib/tenant/sharing.ts`. Nobody makes, changes or gives a platform group that may do more than they may, see `src/lib/auth/platform-group-caps.ts`.
 
-- Making someone a SuperAdmin, and changing the group, the password, the second factor or the sessions of a SuperAdmin or deleting one (`actions/auth/user.ts`, `user-security.ts`, `group.ts`).
-- Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts` and the routes under `api/settings/config-backup/restore`, which also refuse API keys). The routes under `api/setup/restore` answer only while no account exists, and `src/lib/auth/sign-up-guard.ts` refuses a sign-up from the browser once one does, so New user signs up from the server.
+No permission is enough for what decides who signs in as whom or brings back every tenant. These refuse anyone who is no platform admin (`User.platformRole`, checked through `viewer.isPlatformAdmin` or `checkPlatformAdmin()`):
 
-Nobody changes or deletes the group they are in, and an API key never gets more than its owner holds. A new action of this kind follows the same pattern and gets a guard test.
+- Who is a platform admin, and the account of a platform admin.
+- Changing the sign-in providers (`actions/auth/oidc.ts`, `platform-sign-in:write`, which no group gives), since a provider signs in as anyone of its emails.
+- The configuration restore (`actions/backup/config-management.ts` and the routes under `api/settings/config-backup/restore`, which also refuse API keys) and the database download. The routes under `api/setup/restore` answer only while no account exists, and `src/lib/auth/sign-up-guard.ts` refuses a sign-up from the browser once one does, so New user signs up from the server.
+
+An account belongs to every tenant it works in. A change of the account itself (password, second factor, sessions, name, email, delete) goes through `accountRefusal` in `src/lib/auth/account-access.ts`: only a platform admin changes the account of a platform admin, whoever holds `platform-accounts:write` changes any other, and the admin of a tenant only an account that works in that tenant alone. A group is given and taken through `roleRefusal`: nobody hands out or takes away a group that may do more than they may. Nobody changes or deletes a group they hold in any tenant, and an API key never gets more than its owner holds in the tenant of the key. A new action of this kind follows the same pattern and gets a guard test.
+
+The settings of the platform point only at connections and keys of the home tenant, like the destination and key of the configuration backup and the channels of Settings > Notifications. Their lists, their checks on save and the runs that use them read in `runAsTenant(HOME_TENANT_ID)` or filter on it, whichever tenant the admin works in. A customer's destination must never receive the configuration backup, which holds the key of every login.
 
 ### The own profile
 
@@ -298,7 +304,7 @@ JSON files of older versions still restore through `importConfiguration()`, whic
 
 ## Recently deleted (`src/services/trash/`)
 
-Deleting an encryption key, a credential profile, a connection, a job or a user keeps a snapshot of the record and everything that cascades from it in `DeletedRecord`, in the transaction of the delete, unless `permanently`. The delete functions of those services take `DeleteOptions` (`permanently`, `by`), the routes read `?permanently=true` or `permanently` in a bulk body. A restore creates the rows again under their old ids and drops links to what is gone with a note. The actions in `src/app/actions/settings/trash.ts` check the permission of every row they touch, stored with the row, and only a SuperAdmin handles the account of a SuperAdmin. Restoring, purging and deleting `permanently` also need `TRASH_ADMIN_PERMISSION` (`settings:write`), so someone who may only delete a record cannot make that final. Undo needs no more than the kind's right, for the viewer's own delete of the last 5 minutes. A new table that cascades from one of the five belongs in its snapshot in `trash-snapshot.ts`, or a restore loses it. The retention is `deletedItems` under Data retention, 30 days by default.
+Deleting an encryption key, a credential profile, a connection, a job or a user keeps a snapshot of the record and everything that cascades from it in `DeletedRecord`, in the transaction of the delete, unless `permanently`. The delete functions of those services take `DeleteOptions` (`permanently`, `by`), the routes read `?permanently=true` or `permanently` in a bulk body. A restore creates the rows again under their old ids and drops links to what is gone with a note. The actions in `src/app/actions/settings/trash.ts` check the permission of every row they touch, stored with the row, and only a platform admin handles the account of a platform admin or of someone who also worked in another tenant (`superAdminOnly`). Restoring, purging and deleting `permanently` also need `TRASH_ADMIN_PERMISSION` (`tenant-settings:write`), so someone who may only delete a record cannot make that final. Undo needs no more than the kind's right, for the viewer's own delete of the last 5 minutes. A new table that cascades from one of the five belongs in its snapshot in `trash-snapshot.ts`, or a restore loses it. The assignments of a shared server do not cascade, they hang off its `SharedServer`, which keeps the name of a deleted connection for its customers. The retention is `deletedItems` under Data retention, 30 days by default.
 
 ## Credential profiles (`src/services/auth/credential-service.ts`)
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { registerAdapters } from "@/lib/adapters";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { generateLinkToken, linkStatus } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             fileName = plan.fileName;
         }
 
-        const { token, expiresAt } = generateLinkToken({ storageId: id, file, userId: ctx.userId, decrypt: pick ? true : decrypt, database, pick });
+        const { token, expiresAt } = generateLinkToken({ tenantId: tenantOf(ctx), storageId: id, file, userId: ctx.userId, decrypt: pick ? true : decrypt, database, pick });
         const url = `${req.headers.get("origin") || ""}/api/storage/public-download?token=${token}`;
 
         const dumps = databases ?? (database ? [database] : undefined);

@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SortingState } from "@tanstack/react-table";
-import { Archive, ArrowRight, Bell, HardDrive, Layers, PanelBottomClose, PanelBottomOpen, RefreshCw, TrendingUp } from "lucide-react";
+import { Archive, ArrowRight, Bell, Building2, HardDrive, Layers, PanelBottomClose, PanelBottomOpen, RefreshCw, TrendingUp } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { signedBytes } from "@/components/dashboard/widgets/storage-history-data";
+import { useOpenRecord } from "@/components/tenant/tenant-actions";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { withTenantColumn } from "@/components/tenant/tenant-rows";
 import { Button } from "@/components/ui/button";
 import { DataTable, type BulkAction, type DataTableFilterableColumn } from "@/components/ui/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,6 +27,7 @@ import { DestinationTile } from "./explorer-cells";
 import { count } from "./explorer-format";
 import { ExplorerStrip } from "./explorer-strip";
 import type { BackupTarget } from "./use-backup-actions";
+import { destinationHref } from "./use-explorer-address";
 
 const STATES: { value: DestinationState; label: string; dot?: string }[] = [
     { value: "online", label: "Answers right now", dot: "bg-success" },
@@ -33,6 +37,9 @@ const STATES: { value: DestinationState; label: string; dot?: string }[] = [
     { value: "behind", label: "Its list is old" },
     { value: "alert", label: "An alert fires" },
 ];
+
+/** The tenant of a destination, for the Tenant column in All tenants. */
+const tenantOfDestination = (destination: ExplorerDestination) => destination.tenantId;
 
 /** Holds the place of what needs every backup while they load, or says why they did not. */
 function RunsPending({ error, onRetry, className }: { error: string | null; onRetry: () => void; className: string }) {
@@ -91,6 +98,10 @@ export function DestinationsView(props: DestinationsViewProps) {
     // The destination whose alerts are open from its menu, without going through its details.
     const [alertsOf, setAlertsOf] = useState<ExplorerDestination | null>(null);
     const toggle = useCallback((destinationId: string) => onPick(picked === destinationId ? null : destinationId), [picked, onPick]);
+    // In All tenants the list holds the destinations of every tenant. Their details read fine here,
+    // a change happens in the tenant of the destination.
+    const { allTenants, nameOf: tenantNameOf, column: tenantColumn, filter: tenantFilter } = useTenantColumns(tenantOfDestination, destinations);
+    const openRecord = useOpenRecord();
 
     // The details open under the list, so the page moves to them.
     useEffect(() => {
@@ -98,16 +109,22 @@ export function DestinationsView(props: DestinationsViewProps) {
     }, [picked]);
 
     // What a destination offers, once for the button at the end of its row and its right click.
-    const groupsFor = useCallback((destination: ExplorerDestination): BackupActionGroup[] => [{
-        actions: [
-            picked === destination.id
-                ? { id: "hide", label: "Hide details", icon: PanelBottomClose, onSelect: () => onPick(null), tone: "neutral" }
-                : { id: "show", label: "Show details", icon: PanelBottomOpen, onSelect: () => onPick(destination.id), tone: "neutral" },
-            { id: "backups", label: "Open backups", icon: ArrowRight, onSelect: () => onOpenBackups(destination.id), tone: "neutral" },
-            { id: "check", label: "Check now", icon: RefreshCw, onSelect: () => onCheckNow(destination), tone: "neutral" },
-            ...(canEditAlerts ? [{ id: "alerts", label: "Edit alerts", icon: Bell, onSelect: () => setAlertsOf(destination), tone: "edit" as const }] : []),
-        ],
-    }], [picked, onPick, onOpenBackups, onCheckNow, canEditAlerts]);
+    const groupsFor = useCallback((destination: ExplorerDestination): BackupActionGroup[] => {
+        const tenantName = allTenants ? tenantNameOf(destination.tenantId) : null;
+        const open: BackupActionGroup[] = tenantName
+            ? [{ actions: [{ id: "open-in-tenant", label: `Open in ${tenantName}`, icon: Building2, onSelect: () => openRecord(destination.tenantId, destinationHref(destination.id), () => undefined), tone: "neutral" }] }]
+            : [];
+        return [...open, {
+            actions: [
+                picked === destination.id
+                    ? { id: "hide", label: "Hide details", icon: PanelBottomClose, onSelect: () => onPick(null), tone: "neutral" }
+                    : { id: "show", label: "Show details", icon: PanelBottomOpen, onSelect: () => onPick(destination.id), tone: "neutral" },
+                { id: "backups", label: "Open backups", icon: ArrowRight, onSelect: () => onOpenBackups(destination.id), tone: "neutral" },
+                { id: "check", label: "Check now", icon: RefreshCw, onSelect: () => onCheckNow(destination), tone: "neutral" },
+                ...(canEditAlerts ? [{ id: "alerts", label: "Edit alerts", icon: Bell, onSelect: () => setAlertsOf(destination), tone: "edit" as const }] : []),
+            ],
+        }];
+    }, [picked, onPick, onOpenBackups, onCheckNow, canEditAlerts, allTenants, tenantNameOf, openRecord]);
 
     // What the ticked destinations can do together, in the bar over the table and the right click on one of them.
     const bulkActions = useMemo(() => {
@@ -137,10 +154,10 @@ export function DestinationsView(props: DestinationsViewProps) {
         return actions;
     }, [canEditAlerts, onCheckMany]);
 
-    const columns = useMemo(() => destinationColumns({
+    const columns = useMemo(() => withTenantColumn(destinationColumns({
         jobs,
         renderActions: (destination) => <BackupRowMenu name={destination.name} groups={groupsFor(destination)} />,
-    }), [jobs, groupsFor]);
+    }), tenantColumn), [jobs, groupsFor, tenantColumn]);
 
     const filterableColumns = useMemo<DataTableFilterableColumn<ExplorerDestination>[]>(() => {
         const kinds = [...new Set(destinations.map((destination) => destination.adapterId))];
@@ -169,8 +186,9 @@ export function DestinationsView(props: DestinationsViewProps) {
                     count: destinations.filter((destination) => statesOfDestination(destination).includes(state.value)).length,
                 })),
             },
+            ...(tenantFilter ? [tenantFilter] : []),
         ];
-    }, [destinations]);
+    }, [destinations, tenantFilter]);
 
     const [storedValue, storedUnit] = formatBytes(summary.size, 1).split(" ");
 
@@ -225,6 +243,7 @@ export function DestinationsView(props: DestinationsViewProps) {
                         picked={picked === row.original.id}
                         onPick={(destination) => toggle(destination.id)}
                         actions={<BackupRowMenu name={row.original.name} groups={groupsFor(row.original)} />}
+                        tenantName={allTenants ? tenantNameOf(row.original.tenantId) : null}
                     />
                 )}
                 renderRowMenu={(destination, bulk) => (
@@ -236,9 +255,10 @@ export function DestinationsView(props: DestinationsViewProps) {
                         bulk={bulk}
                     />
                 )}
-                aboveRows={view === "timeline" ? (
+                // The timeline draws the destinations the search and the filters leave.
+                aboveRows={view === "timeline" ? (rows) => (
                     runs ? (
-                        <DestinationsTimeline destinations={destinations} runs={runs} jobs={jobs} plan={plan} picked={picked} onPick={toggle} />
+                        <DestinationsTimeline destinations={rows.map((row) => row.original)} runs={runs} jobs={jobs} plan={plan} picked={picked} onPick={toggle} />
                     ) : (
                         <div className="p-5"><RunsPending error={runsError} onRetry={onRefresh} className="h-40" /></div>
                     )

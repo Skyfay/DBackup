@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, KeyRound, LogIn, Plus, ScrollText, User, Users, type LucideIcon } from "lucide-react";
+import { Download, KeyRound, Link2, LogIn, Plus, ScrollText, User, Users, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { ApiKeysTab, type ApiKeysTabHandle } from "@/components/dashboard/api-keys/api-keys-tab";
@@ -13,6 +13,8 @@ import { GroupsTab, type GroupsTabHandle } from "@/components/dashboard/groups/g
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
 import { SignInTab, type SignInTabHandle } from "@/components/dashboard/sign-in/sign-in-tab";
 import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
+import { useNewInTenant } from "@/components/tenant/tenant-actions";
+import { useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { PageHead } from "@/components/ui/page-head";
 import { PageTabs } from "@/components/ui/page-tabs";
@@ -57,10 +59,12 @@ interface UsersClientProps {
     /** May open the runs an API key started. */
     canOpenRuns: boolean;
     canReadAudit: boolean;
-    /** May see the sign-in providers, which reading the settings allows. */
+    /** May see the sign-in providers, a right on the platform. */
     canReadSignIn: boolean;
-    /** Only a SuperAdmin changes the sign-in providers and signs out a SuperAdmin. */
-    viewerSuperAdmin: boolean;
+    /** May add and change the sign-in providers. */
+    canManageSignIn: boolean;
+    /** The viewer is a platform admin, the only one who signs out a platform admin. */
+    viewerPlatformAdmin: boolean;
     attention: UsersPageAttention;
     layouts: Record<string, TablePreferences>;
     /** The view of the groups this user picked last. */
@@ -79,7 +83,7 @@ interface UsersClientProps {
  * open one, and a phone gets cards.
  */
 export function UsersClient(props: UsersClientProps) {
-    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, viewerSuperAdmin, attention, layouts } = props;
+    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, canManageSignIn, viewerPlatformAdmin, attention, layouts } = props;
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
@@ -92,6 +96,25 @@ export function UsersClient(props: UsersClientProps) {
     const [groupView, setGroupView] = useState<"table" | "cards">(listView(props.groupsView));
     const [keyView, setKeyView] = useState<"table" | "cards">(listView(props.apiKeysView));
     const [signInView, setSignInView] = useState<"table" | "cards">(listView(props.signInView));
+    // All tenants changes no tenant, so Invite and New API key ask for the tenant first and open
+    // their dialog in it, with `?new=1` on the tab.
+    const { allTenants } = useTenantView();
+    const openInvite = useCallback(() => users.current?.openInvite(), []);
+    const openNewKey = useCallback(() => apiKeys.current?.openCreate(), []);
+    const invite = useNewInTenant({
+        canCreate: canManageUsers,
+        title: "Invite",
+        description: "An invitation adds someone to one tenant. Pick the tenant they join.",
+        href: "/dashboard/users?tab=users&new=1",
+        onCreate: openInvite,
+    });
+    const newKey = useNewInTenant({
+        canCreate: canManageApiKeys,
+        title: "New API key",
+        description: "A key acts in one tenant. Pick the tenant it works in.",
+        href: "/dashboard/users?tab=apikeys&new=1",
+        onCreate: openNewKey,
+    });
 
     const tabs: UsersPageTab[] = [
         ...(canReadUsers ? ["users" as const] : []),
@@ -152,10 +175,17 @@ export function UsersClient(props: UsersClientProps) {
 
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {active === "users" && canManageUsers && (
-                        <Button tone="create" onClick={() => users.current?.openCreate()} aria-label="New user">
-                            <Plus />
-                            <span className="hidden sm:inline">New user</span>
-                        </Button>
+                        <>
+                            {/* A link for someone to join with. Outline beside the one main action of the list, its icon in the tone of its dialog. */}
+                            <Button variant="outline" tone="create" onClick={invite.start} aria-label="Invite">
+                                <Link2 className="text-tone" />
+                                <span className="hidden sm:inline">Invite</span>
+                            </Button>
+                            <Button tone="create" onClick={() => users.current?.openCreate()} aria-label="New user">
+                                <Plus />
+                                <span className="hidden sm:inline">New user</span>
+                            </Button>
+                        </>
                     )}
                     {active === "groups" && (
                         <>
@@ -187,7 +217,7 @@ export function UsersClient(props: UsersClientProps) {
                             <div className="hidden md:block">
                                 <ViewSwitch value={signInView} onChange={changeSignInView} views={LIST_VIEWS} />
                             </div>
-                            {viewerSuperAdmin && (
+                            {canManageSignIn && (
                                 <Button tone="create" onClick={() => signIn.current?.openCreate()} aria-label="New provider">
                                     <Plus />
                                     <span className="hidden sm:inline">New provider</span>
@@ -200,8 +230,8 @@ export function UsersClient(props: UsersClientProps) {
                             <div className="hidden md:block">
                                 <ViewSwitch value={keyView} onChange={changeKeyView} views={LIST_VIEWS} />
                             </div>
-                            {canManageApiKeys && (
-                                <Button tone="create" onClick={() => apiKeys.current?.openCreate()} aria-label="New API key">
+                            {newKey.available && (
+                                <Button tone="create" onClick={newKey.start} aria-label="New API key">
                                     <Plus />
                                     <span className="hidden sm:inline">New API key</span>
                                 </Button>
@@ -226,7 +256,8 @@ export function UsersClient(props: UsersClientProps) {
                             ref={groups}
                             view={isMobile ? "cards" : groupView}
                             canManage={canManageGroups}
-                            canMove={canManageUsers}
+                            // People move between groups inside one tenant, All tenants does it per tenant in the panel of a user.
+                            canMove={canManageUsers && !allTenants}
                             initialLayout={layouts[GROUPS_TABLE_ID] ?? null}
                         />
                     )}
@@ -248,7 +279,7 @@ export function UsersClient(props: UsersClientProps) {
             {canReadAudit && (
                 <TabsContent value="audit">
                     {isMobile !== undefined && (
-                        <AuditTab ref={audit} view={auditView} cards={isMobile} canSignOut={canManageUsers} viewerSuperAdmin={viewerSuperAdmin} />
+                        <AuditTab ref={audit} view={auditView} cards={isMobile} canSignOut={canManageUsers} viewerPlatformAdmin={viewerPlatformAdmin} />
                     )}
                 </TabsContent>
             )}
@@ -258,12 +289,15 @@ export function UsersClient(props: UsersClientProps) {
                         <SignInTab
                             ref={signIn}
                             view={isMobile ? "cards" : signInView}
-                            canManage={viewerSuperAdmin}
+                            canManage={canManageSignIn}
                             initialLayout={layouts[SIGN_IN_TABLE_ID] ?? null}
                         />
                     )}
                 </TabsContent>
             )}
+
+            {invite.dialog}
+            {newKey.dialog}
         </Tabs>
     );
 }

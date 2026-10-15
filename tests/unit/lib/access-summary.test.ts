@@ -62,12 +62,13 @@ describe("saying in words what a group lets its members do", () => {
         expect(accessSentences(summary)).toEqual(["Sees the jobs.", "Deletes backups.", "Changes jobs and the Vault."]);
     });
 
-    it("gives the SuperAdmin group everything", () => {
+    it("gives the group with every permission everything", () => {
         const summary = summarizeAccess([], true);
 
         expect(summary.all).toBe(true);
         expect(summary.count).toBe(AVAILABLE_PERMISSIONS.length);
         expect(accessLine(summary)).toBe("Everything, always");
+        expect(accessSentences(summary)).toEqual(["Everything, always. Every permission there is, also the ones a new version adds."]);
     });
 
     it("says nothing for a group without permissions or with only the own profile", () => {

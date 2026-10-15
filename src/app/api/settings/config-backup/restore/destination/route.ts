@@ -21,7 +21,7 @@ const bodySchema = z.object({
  */
 export async function POST(req: NextRequest) {
     const ctx = await requireConfigRestorer();
-    if (ctx instanceof NextResponse) return ctx;
+    if (ctx instanceof Response) return ctx;
 
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });

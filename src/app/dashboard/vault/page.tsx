@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { PickTenantPanel } from "@/components/tenant/tenant-pick";
 import { VaultClient } from "@/components/dashboard/vault/vault-client";
 import { VAULT_TABLE_IDS } from "@/components/dashboard/vault/vault-tables";
-import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences } from "@/services/user/preference-service";
 import { getVaultAttention, getVaultCounts } from "@/services/vault/vault-counts";
@@ -16,10 +17,23 @@ export const metadata: Metadata = { title: "Vault" };
  * with. The lists load in the browser, the page only resolves who may do what.
  */
 export default async function VaultPage() {
-    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
     // The login lives on the root page, there is no /login.
     if (!user) redirect("/");
     if (!permissions.includes(PERMISSIONS.VAULT.READ)) redirect("/dashboard");
+    // Keys and logins are those of one tenant, which the viewer picks first in All tenants.
+    if (user.allTenants) {
+        return (
+            <>
+                <h1 className="sr-only">Vault</h1>
+                <PickTenantPanel
+                    title="The Vault holds the keys and logins of one tenant"
+                    description="Pick the tenant to open it in"
+                    href="/dashboard/vault"
+                />
+            </>
+        );
+    }
 
     const canReadCredentials = permissions.includes(PERMISSIONS.CREDENTIALS.READ);
     // The dot of a tab the viewer cannot open stays out, so the page never hints at it.

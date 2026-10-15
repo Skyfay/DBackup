@@ -108,6 +108,9 @@ function AccessBox({ model }: { model: ProfileModel }) {
                 <span className="text-sm font-semibold">Your access</span>
                 {model.group ? (
                     <span className="rounded-md border px-2 py-0.5 text-xs font-medium">{model.group.name}</span>
+                ) : model.platformAdmin ? (
+                    // A platform admin opens every tenant, also one where they hold no group, like All tenants.
+                    <span className="rounded-md border px-2 py-0.5 text-xs font-medium">Platform admin</span>
                 ) : (
                     <span className="rounded-md border border-dashed border-warning/60 px-2 py-0.5 text-xs font-medium text-warning">No group</span>
                 )}

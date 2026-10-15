@@ -6,9 +6,9 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import prisma from "@/lib/prisma";
 import { auditService } from "@/services/audit-service";
 import { apiKeyService } from "@/services/auth/api-key-service";
+import { userService } from "@/services/user/user-service";
 import { isSystemTaskId } from "@/services/system/system-task-definitions";
 import { getSystemTaskRows, saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { getGeneralSettings } from "@/services/system/system-settings-service";
@@ -99,8 +99,7 @@ export async function PUT(req: NextRequest) {
         const apiKey = await apiKeyService.getById(ctx.apiKeyId);
         started = await startSystemTask(task, apiKey.name, "Api");
     } else {
-        const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
-        started = await startSystemTask(task, user?.name ?? "Manual");
+        started = await startSystemTask(task, (await userService.nameOf(ctx.userId)) ?? "Manual");
     }
     if (!started.started) return NextResponse.json({ error: started.reason }, { status: 409 });
 

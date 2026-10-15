@@ -2,6 +2,7 @@ import cron from "node-cron";
 import type { ScheduledTask } from "node-cron";
 import prisma from "@/lib/prisma";
 import { runJob } from "@/lib/runner";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { systemTaskService, SYSTEM_TASKS } from "@/services/system/system-task-service";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -38,7 +39,7 @@ export class BackupScheduler {
                 log.debug("Scheduling startup run for system task", { taskId, delayMs: 10000 });
                 setTimeout(() => {
                     log.debug("Running startup task", { taskId });
-                    systemTaskService.runTask(taskId).catch((e) => log.error("Startup task failed", { taskId }, wrapError(e)));
+                    runAsSystem(() => systemTaskService.runTask(taskId)).catch((e) => log.error("Startup task failed", { taskId }, wrapError(e)));
                 }, 10000);
             } catch (error) {
                 log.error("Failed to schedule startup run", { taskId }, wrapError(error));
@@ -60,7 +61,8 @@ export class BackupScheduler {
         this.refreshQueued = false;
 
         try {
-            await this._doRefresh();
+            // The jobs of every tenant, also when a saved job of one tenant asks for the refresh.
+            await runAsSystem(() => this._doRefresh());
         } finally {
             this.refreshing = false;
             if (this.refreshQueued) {
@@ -102,7 +104,7 @@ export class BackupScheduler {
 
                     const task = cron.schedule(effectiveSchedule, () => {
                         log.debug("Triggering job", { jobName: job.name });
-                        runJob(job.id, { type: "Scheduler", label: "Scheduler" }).catch((e) => log.error("Job failed", { jobId: job.id }, wrapError(e)));
+                        runAsTenant(job.tenantId, () => runJob(job.id, { type: "Scheduler", label: "Scheduler" })).catch((e) => log.error("Job failed", { jobId: job.id }, wrapError(e)));
                     }, { timezone });
 
                     this.tasks.set(job.id, task);
@@ -124,7 +126,7 @@ export class BackupScheduler {
                     if (schedule && cron.validate(schedule)) {
                         log.debug("Scheduling system task", { taskId, schedule, timezone });
                         const task = cron.schedule(schedule, () => {
-                            systemTaskService.runTask(taskId).catch((e) => log.error("System task failed", { taskId }, wrapError(e)));
+                            runAsSystem(() => systemTaskService.runTask(taskId)).catch((e) => log.error("System task failed", { taskId }, wrapError(e)));
                         }, { timezone });
                         this.tasks.set(taskId, task);
                     }

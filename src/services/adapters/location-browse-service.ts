@@ -1,6 +1,7 @@
+import type { AdapterConfig } from "@prisma/client";
 import { registry } from "@/lib/core/registry";
 import type { DirectoryBrowseEntry, StorageAdapter } from "@/lib/core/interfaces";
-import { applyStoredSecrets, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { applyStoredSecrets, overlayCredentialsOnConfig, resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { locationBrowseOf } from "@/lib/adapters/location-browse";
 import { ValidationError } from "@/lib/logging/errors";
 
@@ -44,4 +45,16 @@ export async function browseLocation(input: BrowseLocationInput): Promise<Direct
     } finally {
         clearTimeout(timer);
     }
+}
+
+/**
+ * The folders one level below `path` of a saved storage connection, within its own folder, for
+ * the folder tree of a directory source. Null when the adapter cannot browse.
+ */
+export async function browseSavedFolders(source: AdapterConfig, path: string): Promise<DirectoryBrowseEntry[] | null> {
+    const adapter = registry.get(source.adapterId) as StorageAdapter | undefined;
+    if (!adapter?.browseDirectories) return null;
+
+    const config = await resolveAdapterConfig(source);
+    return adapter.browseDirectories(config, path);
 }

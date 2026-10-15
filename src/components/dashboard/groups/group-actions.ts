@@ -2,10 +2,10 @@ import { Copy, Pencil, Trash } from "lucide-react";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import type { GroupRow } from "@/services/user/groups-types";
 
-/** The viewer is in the group, and nobody changes or deletes the group they are in. */
+/** The viewer is in the group in the open tenant, and nobody changes or deletes the group they are in. */
 export const isOwnGroup = (group: Pick<GroupRow, "members">) => group.members.some((member) => member.isYou);
 
-/** Whether a viewer who may change groups changes this one: never the SuperAdmin group or their own. */
+/** Whether a viewer who may change groups changes this one: never the group with every permission or their own. */
 export const isEditable = (group: Pick<GroupRow, "superAdmin" | "members">) => !group.superAdmin && !isOwnGroup(group);
 
 export interface GroupActionHandlers {
@@ -17,7 +17,7 @@ export interface GroupActionHandlers {
 /**
  * Everything one group can do, as data, for the button at the end of the row, the right click
  * menu, the cards and the panel. Actions the viewer may not take have no handler and are left
- * out, and neither the SuperAdmin group nor the group of the viewer is edited or deleted. The
+ * out, and neither the group with every permission nor the group of the viewer is edited or deleted. The
  * panel shows Edit and Duplicate as buttons of their own, so `inPanel` leaves them out.
  */
 export function groupActions(group: GroupRow, handlers: GroupActionHandlers, inPanel = false): BackupActionGroup[] {

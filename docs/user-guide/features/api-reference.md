@@ -33,7 +33,7 @@ For scripts, CI/CD pipelines, and external integrations. Create an API key under
 Authorization: Bearer dbackup_your_api_key
 ```
 
-> **Note:** API keys do not inherit SuperAdmin privileges. Only explicitly assigned permissions are available, and never more than the group of the key's owner allows.
+> **Note:** API keys do not inherit the rights of a platform admin. Only explicitly assigned permissions are available, and never more than the key's owner may do in the [tenant](/user-guide/admin/tenants) the key was made in. A key reads and changes only the records of that tenant.
 
 ### Error Responses
 
@@ -80,6 +80,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 | Notification logs | `GET /api/notification-logs` | The notifications sent, paged with `page` and `pageSize`, filtered by the repeatable `channel`, `eventType`, `status` and `adapterId`, by `executionId` and `search`. `facets=true` adds the counts beside each filter, `stats=true` the numbers of the last 30 days and the options of the filters |
 | Dashboard | `GET /api/dashboard/stats`, `GET /api/dashboard/calendar` | Overview statistics and calendar heatmap |
 | Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications. A delete moves the connection to [Recently deleted](/user-guide/admin/recently-deleted), `?permanently=true` deletes it at once with `settings:write` |
+| Shared databases | `GET/PUT /api/adapters/:id/database-assignments` | Which tenant each database of a shared server belongs to, and giving many of them to tenants at once, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api). `GET` needs `sources:view`, `PUT` `sources:write` |
 | Connection Testing | `POST /api/adapters/test-connection` | Test adapter connections |
 | Folder Browsing | `POST /api/adapters/browse-location` | List the folders of a storage connection from the values of its form |
 | Backups page | `GET/POST/DELETE /api/storage/:id/*` | Browse, download, delete, restore backups |
@@ -96,7 +97,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 
 Every API endpoint requires a specific permission. Permissions are assigned to API keys and user groups.
 
-For the complete permission reference, see [Groups & Permissions](/user-guide/admin/permissions#permission-reference).
+For the complete permission reference, see [Groups & Permissions](/user-guide/admin/permissions#areas-and-levels).
 
 ## Common Patterns
 

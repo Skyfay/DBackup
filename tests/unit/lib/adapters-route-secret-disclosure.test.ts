@@ -48,12 +48,10 @@ vi.mock("@/lib/core/audit-types", () => ({
     AUDIT_RESOURCES: {},
 }));
 
-vi.mock("@/lib/auth/permissions", () => ({
-    PERMISSIONS: {
-        DESTINATIONS: { READ: "destinations:read", WRITE: "destinations:write" },
-        SOURCES: { VIEW: "sources:view", WRITE: "sources:write" },
-        NOTIFICATIONS: { READ: "notifications:read", WRITE: "notifications:write" },
-    },
+// The real constants: the owner permissions read every group of them and AVAILABLE_PERMISSIONS
+// when they load, so a subset takes the import of the route down.
+vi.mock("@/lib/auth/permissions", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/lib/auth/permissions")>()),
 }));
 
 vi.mock("@/lib/adapters/credential-validation", () => ({

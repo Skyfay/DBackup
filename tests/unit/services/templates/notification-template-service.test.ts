@@ -21,7 +21,7 @@ import {
   unsetDefaultNotificationTemplate,
   deleteNotificationTemplate,
 } from "@/services/templates/notification-template-service";
-import { NotFoundError, ServiceError } from "@/lib/logging/errors";
+import { NotFoundError, ServiceError, ValidationError } from "@/lib/logging/errors";
 
 const makeTemplate = (overrides: object = {}) => ({
   id: "tpl-1",
@@ -43,6 +43,9 @@ const CHANNELS = { include: { config: { select: { id: true, name: true, adapterI
 describe("NotificationTemplateService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The check that every channel is a connection of the tenant counts them through the tenant
+    // filter. By default it finds every id it is asked for.
+    prismaMock.adapterConfig.count.mockImplementation((async (args: { where: { id: { in: string[] } } }) => args.where.id.in.length) as any);
   });
 
   // ── getNotificationTemplates ─────────────────────────────────
@@ -94,7 +97,7 @@ describe("NotificationTemplateService", () => {
 
   describe("createNotificationTemplate", () => {
     it("creates a new template successfully", async () => {
-      prismaMock.notificationTemplate.findUnique.mockResolvedValue(null);
+      prismaMock.notificationTemplate.findFirst.mockResolvedValue(null);
       const created = makeTemplate({ name: "New" });
       prismaMock.notificationTemplate.create.mockResolvedValue(created as any);
 
@@ -108,17 +111,38 @@ describe("NotificationTemplateService", () => {
     });
 
     it("throws ServiceError when a template with the same name already exists", async () => {
-      prismaMock.notificationTemplate.findUnique.mockResolvedValue(
+      // A name is unique per tenant, so the lookup by name is a findFirst the tenant filter narrows.
+      prismaMock.notificationTemplate.findFirst.mockResolvedValue(
         makeTemplate() as any
       );
 
       await expect(
         createNotificationTemplate({ name: "Default", channels: [] })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.notificationTemplate.findFirst).toHaveBeenCalledWith({ where: { name: "Default" } });
+      expect(prismaMock.notificationTemplate.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses a channel that is no connection of the tenant, like one of another tenant", async () => {
+      prismaMock.notificationTemplate.findFirst.mockResolvedValue(null);
+      // The tenant filter hides the connection of the other tenant, so only one of two is counted.
+      prismaMock.adapterConfig.count.mockResolvedValue(1);
+
+      await expect(
+        createNotificationTemplate({
+          name: "Sneaky",
+          channels: [
+            { configId: "own-slack", events: "FAILED" },
+            { configId: "foreign-mail", events: "FAILED" },
+          ],
+        })
+      ).rejects.toThrow(ValidationError);
+      expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({ where: { id: { in: ["own-slack", "foreign-mail"] } } });
+      expect(prismaMock.notificationTemplate.create).not.toHaveBeenCalled();
     });
 
     it("clears previous default when isDefault is true", async () => {
-      prismaMock.notificationTemplate.findUnique.mockResolvedValue(null);
+      prismaMock.notificationTemplate.findFirst.mockResolvedValue(null);
       prismaMock.notificationTemplate.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.notificationTemplate.create.mockResolvedValue(
         makeTemplate({ isDefault: true }) as any
@@ -137,7 +161,7 @@ describe("NotificationTemplateService", () => {
     });
 
     it("does not clear defaults when isDefault is false", async () => {
-      prismaMock.notificationTemplate.findUnique.mockResolvedValue(null);
+      prismaMock.notificationTemplate.findFirst.mockResolvedValue(null);
       prismaMock.notificationTemplate.create.mockResolvedValue(
         makeTemplate() as any
       );
@@ -152,7 +176,7 @@ describe("NotificationTemplateService", () => {
     });
 
     it("creates channels with default events when events is empty string", async () => {
-      prismaMock.notificationTemplate.findUnique.mockResolvedValue(null);
+      prismaMock.notificationTemplate.findFirst.mockResolvedValue(null);
       const created = makeTemplate({ name: "WithChannels" });
       prismaMock.notificationTemplate.create.mockResolvedValue(created as any);
 
@@ -178,9 +202,8 @@ describe("NotificationTemplateService", () => {
   describe("updateNotificationTemplate", () => {
     it("updates a user template successfully", async () => {
       const tpl = makeTemplate();
-      prismaMock.notificationTemplate.findUnique
-        .mockResolvedValueOnce(tpl as any) // template lookup
-        .mockResolvedValueOnce(null);       // name collision check
+      prismaMock.notificationTemplate.findUnique.mockResolvedValueOnce(tpl as any); // template lookup
+      prismaMock.notificationTemplate.findFirst.mockResolvedValueOnce(null); // name collision check
       const updated = makeTemplate({ name: "Renamed" });
       prismaMock.$transaction.mockImplementation(async (fn: any) => fn(prismaMock));
       prismaMock.notificationTemplate.update.mockResolvedValue(updated as any);
@@ -213,13 +236,14 @@ describe("NotificationTemplateService", () => {
 
     it("throws ServiceError when renaming to an already used name", async () => {
       const tpl = makeTemplate({ name: "OldName" });
-      prismaMock.notificationTemplate.findUnique
-        .mockResolvedValueOnce(tpl as any)
-        .mockResolvedValueOnce(makeTemplate({ name: "Taken" }) as any);
+      prismaMock.notificationTemplate.findUnique.mockResolvedValueOnce(tpl as any); // template lookup
+      prismaMock.notificationTemplate.findFirst.mockResolvedValueOnce(makeTemplate({ name: "Taken" }) as any); // name collision check
 
       await expect(
         updateNotificationTemplate("tpl-1", { name: "Taken" })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.notificationTemplate.findFirst).toHaveBeenCalledWith({ where: { name: "Taken" } });
+      expect(prismaMock.notificationTemplate.update).not.toHaveBeenCalled();
     });
 
     it("clears previous default when isDefault is set to true", async () => {
@@ -259,6 +283,20 @@ describe("NotificationTemplateService", () => {
       });
     });
 
+    it("refuses to switch a channel to a connection of another tenant", async () => {
+      prismaMock.notificationTemplate.findUnique.mockResolvedValue(makeTemplate() as any);
+      prismaMock.$transaction.mockImplementation(async (fn: any) => fn(prismaMock));
+      // The tenant filter hides the connection of the other tenant.
+      prismaMock.adapterConfig.count.mockResolvedValue(0);
+
+      await expect(
+        updateNotificationTemplate("tpl-1", { channels: [{ configId: "foreign-mail", events: "FAILED" }] })
+      ).rejects.toThrow(ValidationError);
+      expect(prismaMock.notificationTemplateChannel.deleteMany).not.toHaveBeenCalled();
+      expect(prismaMock.notificationTemplateChannel.createMany).not.toHaveBeenCalled();
+      expect(prismaMock.notificationTemplate.update).not.toHaveBeenCalled();
+    });
+
     it("deletes channels but does not create when channels array is empty", async () => {
       const tpl = makeTemplate();
       prismaMock.notificationTemplate.findUnique.mockResolvedValue(tpl as any);
@@ -274,9 +312,8 @@ describe("NotificationTemplateService", () => {
 
     it("skips channel operations when channels are not provided", async () => {
       const tpl = makeTemplate();
-      prismaMock.notificationTemplate.findUnique
-        .mockResolvedValueOnce(tpl as any) // template lookup
-        .mockResolvedValueOnce(null);       // name collision check
+      prismaMock.notificationTemplate.findUnique.mockResolvedValueOnce(tpl as any); // template lookup
+      prismaMock.notificationTemplate.findFirst.mockResolvedValueOnce(null); // name collision check
       prismaMock.$transaction.mockImplementation(async (fn: any) => fn(prismaMock));
       prismaMock.notificationTemplate.update.mockResolvedValue(tpl as any);
 

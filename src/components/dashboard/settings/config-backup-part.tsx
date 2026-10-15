@@ -77,7 +77,7 @@ function ConfigStatus({ model, enabled }: { model: SettingsModel["configBackup"]
 }
 
 /** Where the configuration backup goes, the key, the schedule, how many stay and what it holds. */
-export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel["configBackup"]; isSuperAdmin: boolean }) {
+export function ConfigBackupPart({ model, isPlatformAdmin }: { model: SettingsModel["configBackup"]; isPlatformAdmin: boolean }) {
     const router = useRouter();
     const { readOnly } = useSettingsFrame();
     const form = usePartValues("config-backup", model.settings);
@@ -113,7 +113,7 @@ export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel
                 {starting || model.running ? <Loader2 className="animate-spin" /> : <Play />}
                 Back up now
             </Button>
-            {isSuperAdmin && (
+            {isPlatformAdmin && (
                 <Button variant="outline" size="sm" onClick={() => setRestoring(true)} data-setting="config.restore">
                     <Upload />
                     Restore from a file
@@ -212,10 +212,10 @@ export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel
                     </SwitchList>
                 </fieldset>
 
-                {!isSuperAdmin && (
+                {!isPlatformAdmin && (
                     <p data-setting="config.restore" className="flex items-center gap-2 text-sm text-muted-foreground">
                         <LockKeyhole className="size-4 shrink-0" aria-hidden="true" />
-                        Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers.
+                        Only a platform admin restores a configuration, since it brings back users, groups and sign-in providers.
                     </p>
                 )}
             </PartFrame>
@@ -229,7 +229,7 @@ export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel
                 }}
                 onSave={() => save.run(() => saveConfigBackupSettingsAction(values), form.commit)}
             />
-            {isSuperAdmin && <ConfigRestoreDialog open={restoring} onOpenChange={setRestoring} />}
+            {isPlatformAdmin && <ConfigRestoreDialog open={restoring} onOpenChange={setRestoring} />}
         </>
     );
 }

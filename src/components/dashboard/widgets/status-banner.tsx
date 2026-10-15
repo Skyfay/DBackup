@@ -10,6 +10,7 @@ import type { DashboardHealth, UnhealthyJob } from "@/services/dashboard/types";
 import { RelativeTime } from "./relative-time";
 import { useRunJob } from "./use-run-job";
 import { runHref } from "@/components/dashboard/history/run-links";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Matches the number of jobs the service fills with error details. */
@@ -88,6 +89,13 @@ function JobActions({ job, canViewHistory, canExecute, runJob, startingJobId, pr
 /** The banner at the top of the dashboard: all good, or which jobs need attention and why. */
 export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs }: StatusBannerProps) {
     const { runJob, startingJobId } = useRunJob("overview");
+    // In All tenants the jobs of every tenant count, so a job is named with its tenant.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
+    const jobLabel = (job: UnhealthyJob) => {
+        const tenant = allTenants ? tenantName(job.tenantId) : null;
+        return tenant ? `${job.jobName} in ${tenant}` : job.jobName;
+    };
     // A problem banner starts folded to two lines, the errors and actions sit behind the toggle.
     // It stays open through auto refreshes while the page is open, but every visit starts folded.
     const [expanded, setExpanded] = useState(false);
@@ -146,7 +154,7 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
 
         if (health.jobs.length === 1) {
             const [job] = health.jobs;
-            title = `${job.jobName} ${outcomeText(state, job)}`;
+            title = `${jobLabel(job)} ${outcomeText(state, job)}`;
             body = <p className="text-sm text-muted-foreground"><LastClean job={job} /></p>;
             if (expanded) {
                 details = (
@@ -171,7 +179,7 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                                 <li key={job.jobId} className="flex flex-col gap-2 py-2.5 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
                                     <div className="min-w-0 flex-1 space-y-0.5">
                                         <p className="text-sm">
-                                            <span className="font-medium">{job.jobName}</span>{" "}
+                                            <span className="font-medium">{jobLabel(job)}</span>{" "}
                                             <span className="text-muted-foreground">{outcomeText(state, job)}</span>
                                         </p>
                                         {job.error && <p className="line-clamp-1 text-xs wrap-anywhere text-muted-foreground">{job.error}</p>}

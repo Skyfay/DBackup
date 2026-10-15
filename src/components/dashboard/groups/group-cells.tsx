@@ -11,7 +11,7 @@ export const TOTAL_PERMISSIONS = AVAILABLE_PERMISSIONS.length;
 
 const TILE_SIZES = { sm: ["size-7", "size-3.5"], md: ["size-8", "size-4"], lg: ["size-11", "size-5"] } as const;
 
-/** A group as a tile, a lock for the built-in SuperAdmin group. */
+/** A group as a tile, a lock for the built-in group with every permission. */
 export function GroupTile({ group, size = "md" }: { group: Pick<GroupRow, "superAdmin">; size?: keyof typeof TILE_SIZES }) {
     const [box, icon] = TILE_SIZES[size];
     const Icon = group.superAdmin ? Lock : Users;
@@ -24,7 +24,7 @@ export function GroupTile({ group, size = "md" }: { group: Pick<GroupRow, "super
 
 export const countWord = (value: number, one: string, many: string) => `${value.toLocaleString()} ${value === 1 ? one : many}`;
 
-/** How many permissions a group holds, all of them for the SuperAdmin group. */
+/** How many permissions a group holds, all of them for the group with every permission. */
 export const permissionCount = (group: Pick<GroupRow, "superAdmin" | "permissions">) =>
     group.superAdmin ? TOTAL_PERMISSIONS : AVAILABLE_PERMISSIONS.filter((permission) => group.permissions.includes(permission.id)).length;
 
@@ -85,13 +85,13 @@ const SHORT: Record<string, string> = {
 };
 
 /** The level of every area as a small column of four bars, for the cards and the first step of New group. */
-export function LevelStrip({ permissions, superAdmin = false, className }: { permissions: readonly string[]; superAdmin?: boolean; className?: string }) {
+export function LevelStrip({ permissions, fullAccess = false, className }: { permissions: readonly string[]; fullAccess?: boolean; className?: string }) {
     const held = new Set(permissions);
     return (
         <div className={cn("grid grid-cols-10 gap-1", className)}>
             {SUMMARY_AREAS.map((area) => {
-                const rank = superAdmin ? 4 : rankOf(area, held);
-                const level = superAdmin ? "full" : levelOf(area, held);
+                const rank = fullAccess ? 4 : rankOf(area, held);
+                const level = fullAccess ? "full" : levelOf(area, held);
                 return (
                     <div key={area.id} className="flex min-w-0 flex-col items-center gap-1" title={`${area.label}: ${LEVEL_LABELS[level]}`}>
                         <span className="flex w-5 flex-col gap-0.5" aria-hidden="true">

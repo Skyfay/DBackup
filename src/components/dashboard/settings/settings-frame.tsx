@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, LockKeyhole, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import type { SaveResult } from "@/lib/settings/save-part";
+import type { SaveResult } from "@/services/system/settings-save";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toneAttribute } from "@/components/ui/tone";
@@ -25,6 +25,8 @@ interface SettingsFrameContextValue {
     setDirty: (part: string, dirty: boolean) => void;
     /** The title and the line of a part. */
     describe?: (part: string) => { label: string; description: string };
+    /** What a viewer who may only read is told, when the page needs other words than the Settings. */
+    readOnlyNote?: string;
 }
 
 export const SettingsFrameContext = createContext<SettingsFrameContextValue>({ readOnly: false, setDirty: () => {} });
@@ -49,7 +51,7 @@ interface PartFrameProps {
 
 /** The open part: its title and line on top, a note for a viewer who may only read, then its body. */
 export function PartFrame({ part, action, flush = false, children }: PartFrameProps) {
-    const { readOnly } = useSettingsFrame();
+    const { readOnly, readOnlyNote } = useSettingsFrame();
     const { label, description } = useDescribe()(part);
     return (
         <section aria-labelledby={`settings-${part}`} className="min-w-0 flex-1">
@@ -63,7 +65,7 @@ export function PartFrame({ part, action, flush = false, children }: PartFramePr
             {readOnly && (
                 <p className="mx-4 mt-4 flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm md:mx-6">
                     <LockKeyhole className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    You may look at the settings. Changing them needs a group that may change the settings.
+                    {readOnlyNote ?? "You may look at the settings. Changing them needs a group that may change the settings."}
                 </p>
             )}
             {flush ? children : <div className="max-w-3xl space-y-6 px-4 py-5 md:px-6">{children}</div>}

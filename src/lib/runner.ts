@@ -22,6 +22,19 @@ export interface TriggerInfo {
 
 export interface RunJobOptions {
     lock?: boolean;
+    /**
+     * Backs up only these databases of the job's source, like a backup a customer starts of one
+     * database of a shared server. The job itself stays as it is, and the run leaves its folders out.
+     */
+    databases?: string[];
+}
+
+/** The databases a run is limited to, from the metadata it was queued with, undefined for a whole run. */
+export function onlyDatabasesOf(metadata: Record<string, unknown>): string[] | undefined {
+    const value = metadata.onlyDatabases;
+    if (!Array.isArray(value)) return undefined;
+    const names = value.filter((name): name is string => typeof name === "string" && name.length > 0);
+    return names.length > 0 ? [...new Set(names)] : undefined;
 }
 
 /**
@@ -29,7 +42,8 @@ export interface RunJobOptions {
  * It now enqueues the job instead of running immediately.
  */
 export async function runJob(jobId: string, triggerInfo?: TriggerInfo, options?: RunJobOptions) {
-    log.info("Enqueuing job", { jobId, triggerType: triggerInfo?.type, lock: options?.lock });
+    log.info("Enqueuing job", { jobId, triggerType: triggerInfo?.type, lock: options?.lock, databases: options?.databases?.length });
+    const onlyDatabases = onlyDatabasesOf({ onlyDatabases: options?.databases });
 
     try {
         const initialLog: LogEntry = {
@@ -45,7 +59,7 @@ export async function runJob(jobId: string, triggerInfo?: TriggerInfo, options?:
                 jobId: jobId,
                 status: "Pending",
                 logs: JSON.stringify([initialLog]),
-                metadata: JSON.stringify({ progress: 0, stage: "Queued", ...(options?.lock ? { lock: true } : {}) }),
+                metadata: JSON.stringify({ progress: 0, stage: "Queued", ...(options?.lock ? { lock: true } : {}), ...(onlyDatabases ? { onlyDatabases } : {}) }),
                 triggerType: triggerInfo?.type ?? null,
                 triggerLabel: triggerInfo?.label ?? null,
             }
@@ -244,6 +258,7 @@ export async function performExecution(executionId: string, jobId: string) {
         ? JSON.parse(initialExe.metadata)
         : {};
     const lockBackup = initialMetadataParsed.lock === true;
+    const onlyDatabases = onlyDatabasesOf(initialMetadataParsed);
 
     // Create Context
     // We cast initialExe to any because Prisma types might mismatch RunnerContext expectation slightly,
@@ -279,6 +294,9 @@ export async function performExecution(executionId: string, jobId: string) {
             label: initialExe.triggerLabel ?? "Unknown",
         } : undefined,
         lock: lockBackup,
+        onlyDatabases,
+        // Kept in the metadata the run ends with, so its page tells it backed up these alone.
+        ...(onlyDatabases ? { metadata: { onlyDatabases } } : {}),
     };
 
     // Helper: throw if cancellation was requested

@@ -43,7 +43,7 @@ import { GET as getEntry } from "@/app/api/audit/[id]/route";
 import { GET as getTimeline } from "@/app/api/audit/timeline/route";
 import { GET as getExport } from "@/app/api/audit/export/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "manu", permissions, isSuperAdmin: false, authMethod: "session" });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "manu", permissions, isPlatformAdmin: false, authMethod: "session" });
 const request = (path: string) => new NextRequest(`http://localhost${path}`);
 
 describe("the routes of the audit log", () => {

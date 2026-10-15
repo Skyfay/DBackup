@@ -20,13 +20,14 @@ model AuditLog {
   details     String?  // JSON, see Details below
   ipAddress   String?  // clientAddress(), set by the custom server from a trusted proxy
   userAgent   String?
+  tenantId    String   @default("default") // The tenant whose log keeps the entry
   createdAt   DateTime @default(now())
 }
 ```
 
 ### Constants
 
-`src/lib/core/audit-types.ts` holds `AUDIT_ACTIONS` (`LOGIN`, `LOGIN_FAILED`, `LOGOUT`, `CREATE`, `UPDATE`, `DELETE`, `EXECUTE`, `RESTORE`, `EXPORT`) and `AUDIT_RESOURCES` (`AUTH`, `USER`, `GROUP`, `JOB`, `BACKUP`, `ADAPTER`, `VAULT`, `CREDENTIAL`, `API_KEY`, `TEMPLATE`, `SYSTEM`, `SSO_PROVIDER`, plus `SOURCE` and `DESTINATION` from before). `src/lib/core/audit-areas.ts` groups the resources into the areas of the Area filter and the actions into the quick filters. `EXPORT` and `RESTORE` count as sensitive.
+`src/lib/core/audit-types.ts` holds `AUDIT_ACTIONS` (`LOGIN`, `LOGIN_FAILED`, `LOGOUT`, `CREATE`, `UPDATE`, `DELETE`, `EXECUTE`, `RESTORE`, `EXPORT`) and `AUDIT_RESOURCES` (`AUTH`, `USER`, `GROUP`, `JOB`, `BACKUP`, `ADAPTER`, `VAULT`, `CREDENTIAL`, `API_KEY`, `TEMPLATE`, `SYSTEM`, `SSO_PROVIDER`, `TENANT`, plus `SOURCE` and `DESTINATION` from before). `src/lib/core/audit-areas.ts` groups the resources into the areas of the Area filter and the actions into the quick filters. `EXPORT` and `RESTORE` count as sensitive.
 
 ## Writing an Entry
 
@@ -46,6 +47,7 @@ await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.JOB, { name
 - `logFor(ctx, ...)` takes the `AuthContext` of the route and records the API key when the request came with one. The key acts as its owner, so `userId` is the owner.
 - The service reads the address and the browser from the request it runs in and snapshots the names of the user and the key. Callers never pass them. Outside a request, like in a scheduled task, they stay empty.
 - `log` never throws. A failed write is logged, the action goes on.
+- The entry goes into the log of `origin.tenantId` when the caller names one, else of `currentTenantId()`, else of the home tenant, and is written in `runAsSystem`. What belongs to the platform names the home tenant itself, like the changes of groups, tenants and platform admins (`{ tenantId: HOME_TENANT_ID }` as the last argument). A sign-in has no tenant in its request yet and lands there as well. See [Tenants](/developer-guide/advanced/tenants).
 
 Sign-ins, failed sign-ins and sign-outs are written by the server around the endpoints of better-auth, in `src/lib/auth/sign-in-audit.ts`: the `after` hook turns a new session into `LOGIN` with its method (`password`, `passkey`, `two-factor`, `sso` with the name of the provider in `provider` and its ID in `providerId`) and a turned down password into `LOGIN_FAILED`, the `before` hook of `/sign-out` writes `LOGOUT`. A password sign-in of someone with a second factor is written by the second step. Someone a sign-in provider adds is written as `CREATE USER` with `via: "sso"`, the provider and the group it put them in, by `placeSsoUser` in `src/lib/auth/sso-guard.ts`.
 
@@ -86,7 +88,7 @@ A sign-in counts as from a new place when the person signed in before, but never
 
 ## API Endpoints
 
-All need `audit:read`.
+All need `audit:read` and read the log of the tenant of the request.
 
 | Route | Returns |
 | :--- | :--- |
@@ -99,4 +101,4 @@ The filters are query parameters shared by all four: `who` (repeatable, `user:<i
 
 ## Retention Policy
 
-Old entries are removed by `auditService.cleanOldLogs(retentionDays)` based on the system setting `audit.retentionDays` (default 90 days, **Audit log** under Settings → Data retention). It runs as part of the "Clean old data" system task, together with the other data retention settings.
+Old entries are removed by `auditService.cleanOldLogs(retentionDays)` based on the system setting `audit.retentionDays` (default 90 days, **Audit log** under Settings → Data retention). It runs as part of the "Clean old data" system task, together with the other data retention settings, for every tenant at once.

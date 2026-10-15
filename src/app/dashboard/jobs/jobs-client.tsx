@@ -45,6 +45,10 @@ import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import { runHref } from "@/components/dashboard/history/run-links";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
+import { useNewFromLink } from "@/hooks/use-new-from-link";
+import { useNewInTenant, useOpenRecord } from "@/components/tenant/tenant-actions";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { withTenantColumn } from "@/components/tenant/tenant-rows";
 
 interface JobsClientProps {
     canManage: boolean;
@@ -60,6 +64,9 @@ interface JobsClientProps {
     /** The view this user picked last. */
     initialView: ViewMode;
 }
+
+const tenantOfJob = (job: JobListItem) => job.tenantId;
+const jobHref = (job: JobListItem) => `/dashboard/jobs?job=${encodeURIComponent(job.id)}`;
 
 /** The views the Jobs page offers: the table, cards, the runs over the hours, and the runs to come by time. */
 const VIEWS: ViewMode[] = ["table", "cards", "timeline", "upcoming"];
@@ -156,9 +163,24 @@ export function JobsClient({
     };
 
     const openForm = useCallback((job: JobListItem | null) => setForm({ open: true, job }), []);
-    const openDetails = useCallback((job: JobListItem) => setDetails({ id: job.id, open: true }), []);
+    // In All tenants the list holds the jobs of every tenant, and one opens in its tenant.
+    const tenant = useTenantColumns(tenantOfJob, jobs);
+    const { allTenants: inAllTenants, nameOf: tenantNameOf } = tenant;
+    const openRecord = useOpenRecord();
+    const showDetails = useCallback((job: JobListItem) => setDetails({ id: job.id, open: true }), []);
+    const openDetails = useCallback((job: JobListItem) => openRecord(job.tenantId, jobHref(job), () => showDetails(job)), [openRecord, showDetails]);
     // A link like Open job of the Backups page or the search in the header names a job with `?job=`.
-    useOpenFromLink(hasLoaded ? jobs : null, openDetails, "job");
+    useOpenFromLink(hasLoaded ? jobs : null, showDetails, "job");
+    // A job belongs to one tenant, so in All tenants New asks for it and opens the form there.
+    const openNewForm = useCallback(() => openForm(null), [openForm]);
+    const newJob = useNewInTenant({
+        canCreate: canManage,
+        title: "New job",
+        description: "A job belongs to one tenant, pick the one it runs in.",
+        href: "/dashboard/jobs?new=1",
+        onCreate: openNewForm,
+    });
+    useNewFromLink(hasLoaded && canManage, openNewForm);
 
     /** What one job can do. The panel shows Run now and Edit as buttons of their own, so its menu leaves them out. */
     const handlers = useCallback((job: JobListItem, inPanel = false): JobActionHandlers => ({
@@ -168,18 +190,22 @@ export function JobsClient({
             ? [{ label: "Open backups", onSelect: () => router.push(`/dashboard/backups?job=${encodeURIComponent(job.id)}`) }]
             : [],
         onApiTrigger: canExecute ? () => setApiTrigger({ id: job.id, name: job.name }) : undefined,
+        openInTenant: inAllTenants && tenantNameOf(job.tenantId)
+            ? { label: `Open in ${tenantNameOf(job.tenantId)}`, onSelect: () => openDetails(job) }
+            : undefined,
         onEdit: canManage && !inPanel ? () => openForm(job) : undefined,
         onClone: canManage ? () => setCloneTarget({ id: job.id, name: job.name }) : undefined,
         toggle: canManage ? { paused: !job.enabled, onSelect: () => void toggle(job) } : undefined,
         onDelete: canManage ? () => setDeletingId(job.id) : undefined,
         busy: startingJobId === job.id || cloningId === job.id,
-    }), [canExecute, canViewHistory, canViewStorage, canManage, run, toggle, openForm, router, startingJobId, cloningId]);
+    }), [canExecute, canViewHistory, canViewStorage, canManage, run, toggle, openForm, router, startingJobId, cloningId, inAllTenants, tenantNameOf, openDetails]);
 
     const renderActions = useCallback(
         (job: JobListItem) => <JobRowActions name={job.name} starting={startingJobId === job.id} {...handlers(job)} />,
         [handlers, startingJobId]
     );
-    const columns = useMemo(() => jobColumns({ renderActions, onOpen: openDetails }), [renderActions, openDetails]);
+    const columns = useMemo(() => withTenantColumn(jobColumns({ renderActions, onOpen: openDetails }), tenant.column), [renderActions, openDetails, tenant.column]);
+    const filterableColumns = useMemo(() => (tenant.filter ? [tenant.filter] : []), [tenant.filter]);
     const trash = useTrash("job", reload);
     const bulkActions = useMemo(() => jobBulkActions(canManage, trash), [canManage, trash]);
     const visibleJobs = useMemo(() => jobs.filter((job) => matchesJobFilter(job, filter)), [jobs, filter]);
@@ -202,8 +228,8 @@ export function JobsClient({
                     <div className="hidden md:block">
                         <ViewSwitch value={view} onChange={changeView} views={VIEWS} />
                     </div>
-                    {canManage && (
-                        <Button tone="create" onClick={() => openForm(null)} aria-label="New job">
+                    {newJob.available && (
+                        <Button tone="create" onClick={newJob.start} aria-label="New job">
                             <Plus />
                             <span className="hidden sm:inline">New job</span>
                         </Button>
@@ -218,7 +244,7 @@ export function JobsClient({
                     icon={CalendarClock}
                     title="No backup jobs yet"
                     description="A job backs up a database or folders on a schedule and keeps the backups where you say."
-                    action={canManage ? { label: "New job", onClick: () => openForm(null) } : undefined}
+                    action={newJob.available ? { label: "New job", onClick: newJob.start } : undefined}
                 />
             ) : (
                 <>
@@ -229,6 +255,7 @@ export function JobsClient({
                         data={visibleJobs}
                         searchKey="name"
                         searchPlaceholder="Search jobs"
+                        filterableColumns={filterableColumns}
                         toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} jobs={jobs} />}
                         onRefresh={() => {
                             if (timelineView) timeline.reload();
@@ -250,7 +277,7 @@ export function JobsClient({
                                 : <JobsUpcoming jobs={rows.map((row) => row.original)} allJobs={jobs} timeline={timeline} onOpenJob={openDetails} />
                             : undefined}
                         hideRows={timelineView}
-                        renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} />}
+                        renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} tenantName={tenant.allTenants ? tenant.nameOf(row.original.tenantId) : null} />}
                         // A card shows the way of a backup from left to right, which needs more room than three abreast leave.
                         cardGridClassName="lg:grid-cols-2"
                         renderRowMenu={(job, bulk) => <JobContextMenu job={job} bulk={bulk} {...handlers(job)} />}
@@ -299,6 +326,8 @@ export function JobsClient({
                     onRestored={reload}
                 />
             )}
+
+            {newJob.dialog}
 
             {apiTrigger && (
                 <ApiTriggerDialog jobId={apiTrigger.id} jobName={apiTrigger.name} open onOpenChange={(open) => !open && setApiTrigger(null)} />

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { getCurrentUserWithGroup } from "@/lib/auth/access-control";
+import { getViewer } from "@/lib/auth/access-control";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ValidationError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
@@ -15,7 +15,7 @@ const FIELD = "Picture";
  * @no-permission-required Self-service: the own picture of a signed-in session, never of an API key.
  */
 export async function POST(req: NextRequest) {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
     const form = await req.formData().catch(() => null);
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
  * @no-permission-required Self-service: the own picture of a signed-in session, never of an API key.
  */
 export async function DELETE() {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     if (!user.image) return NextResponse.json({ success: true });
 

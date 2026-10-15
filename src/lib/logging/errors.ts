@@ -395,6 +395,23 @@ export class ApiKeyError extends DBackupError {
 }
 
 // ============================================================================
+// Tenant Errors
+// ============================================================================
+
+/**
+ * Thrown when tenant data is read or written without a tenant, or across one. It stands for a
+ * bug, never for something the user did, since handing out every row instead would be a leak.
+ */
+export class TenantScopeError extends DBackupError {
+  public readonly model: string;
+
+  constructor(model: string, message = `${model} was queried outside a tenant`) {
+    super(message, "TENANT_SCOPE_ERROR", { isOperational: false, context: { model } });
+    this.model = model;
+  }
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

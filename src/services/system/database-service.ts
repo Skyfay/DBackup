@@ -78,6 +78,13 @@ export async function getDatabaseFilePath(): Promise<string> {
     return main.file;
 }
 
+/** Throws when the database does not answer. The health check of the container asks this. */
+export async function pingDatabase(): Promise<void> {
+    // Raw on purpose: the lightest query there is, which proves the connection answers without
+    // reading a table.
+    await prisma.$queryRaw`SELECT 1`;
+}
+
 async function fileSize(filePath: string): Promise<number> {
     try {
         return (await fs.stat(filePath)).size;

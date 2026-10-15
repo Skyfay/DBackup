@@ -24,8 +24,9 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unkn
 // Restore from a file is the route /api/settings/config-backup/restore, see config-restore-route.test.ts.
 const { restoreFromStorageAction } = await import("@/app/actions/backup/config-management");
 
-const SUPER_ADMIN = { id: "root", group: { name: "SuperAdmin" } };
-const SETTINGS_ADMIN = { id: "lena", group: { name: "Settings" } };
+const PLATFORM_ADMIN = { id: "root", isPlatformAdmin: true, tenantId: "default", permissions: [], role: null };
+/** The full access role in the home tenant gives every permission, but no platform admin. */
+const SETTINGS_ADMIN = { id: "lena", isPlatformAdmin: false, tenantId: "default", permissions: ["settings:read", "settings:write"], role: { id: "g-admin", name: "Admin" } };
 
 describe("restoring the configuration of DBackup", () => {
     beforeEach(() => {
@@ -33,9 +34,9 @@ describe("restoring the configuration of DBackup", () => {
         mocks.restoreFromStorage.mockResolvedValue("exec-1");
     });
 
-    it("is for a SuperAdmin only, since a restore writes users and groups and could make anyone a SuperAdmin", async () => {
+    it("is for a platform admin only, since a restore writes users and groups and could make anyone a platform admin", async () => {
         mocks.caller.mockReturnValue(SETTINGS_ADMIN);
-        const refused = { success: false, error: "Only a SuperAdmin restores a configuration backup." };
+        const refused = { success: false, error: "Only a platform admin restores a configuration backup." };
 
         expect(await restoreFromStorageAction("dest-1", "config_backup.json.gz")).toEqual(refused);
         expect(mocks.importConfig).not.toHaveBeenCalled();
@@ -43,8 +44,8 @@ describe("restoring the configuration of DBackup", () => {
         expect(mocks.audit).not.toHaveBeenCalled();
     });
 
-    it("starts a restore from a destination for a SuperAdmin and writes it to the audit log", async () => {
-        mocks.caller.mockReturnValue(SUPER_ADMIN);
+    it("starts a restore from a destination for a platform admin and writes it to the audit log", async () => {
+        mocks.caller.mockReturnValue(PLATFORM_ADMIN);
 
         expect(await restoreFromStorageAction("dest-1", "config_backup.json.gz")).toEqual({ success: true, executionId: "exec-1" });
         expect(mocks.audit).toHaveBeenCalledWith("root", "RESTORE", "SYSTEM", { action: "config_restore", file: "config_backup.json.gz", destination: "NAS" });

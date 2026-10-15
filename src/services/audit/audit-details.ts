@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { changesOf } from "@/lib/core/audit-changes";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getDataRetentionValues } from "@/services/system/data-retention-service";
+import { TENANT_SETTINGS_AREA } from "@/services/tenant/tenant-settings-audit";
 import { AUDIT_ROW_SELECT, deviceOf, networkOf, newPlacesOf, parseDetails, resolveTargets, targetOf, toLine, type AuditRecord } from "./audit-rows";
 import type { AuditDetails } from "./audit-types";
 
@@ -21,10 +22,17 @@ function recordLink(record: AuditRecord, name: string | null): AuditDetails["rec
             return page("Users", `${USERS}?tab=users`);
         case AUDIT_RESOURCES.GROUP:
             return page("Groups", `${USERS}?tab=groups`);
+        case AUDIT_RESOURCES.PLATFORM_GROUP:
+            return page("the platform groups", "/dashboard/platform/users?tab=groups");
         case AUDIT_RESOURCES.API_KEY:
             return page("API keys", `${USERS}?tab=apikeys`);
         case AUDIT_RESOURCES.SSO_PROVIDER:
             return page("SSO", `${USERS}?tab=sso`);
+        case AUDIT_RESOURCES.TENANT:
+            // A change of the tenant settings stays in the tenant, the rest is the platform's Tenants page.
+            return parseDetails(record.details).area === TENANT_SETTINGS_AREA
+                ? page("the tenant settings", "/dashboard/settings")
+                : page("Tenants", "/dashboard/platform/tenants");
         case AUDIT_RESOURCES.ADAPTER:
         case AUDIT_RESOURCES.SOURCE:
             return page("Connections", "/dashboard/connections");
@@ -37,7 +45,8 @@ function recordLink(record: AuditRecord, name: string | null): AuditDetails["rec
         case AUDIT_RESOURCES.DESTINATION:
             return page("Backups", "/dashboard/backups");
         case AUDIT_RESOURCES.SYSTEM:
-            return page("Settings", "/dashboard/settings");
+            // The settings of the instance, which stay at Settings while there is one tenant.
+            return page("Settings", "/dashboard/platform/settings");
         default:
             return null;
     }

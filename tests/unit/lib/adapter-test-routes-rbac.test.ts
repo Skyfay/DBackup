@@ -78,7 +78,7 @@ describe.each(routes)("POST /api/adapters/%s RBAC", (_name, post) => {
     mocks.getAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: [],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
     });
     mocks.registryGet.mockReturnValue(undefined);
   });

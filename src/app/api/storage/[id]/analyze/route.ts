@@ -1,22 +1,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { registry } from "@/lib/core/registry";
-import { registerAdapters } from "@/lib/adapters";
-import { StorageAdapter, DatabaseAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import prisma from "@/lib/prisma";
-import { getTempDir } from "@/lib/temp-dir";
-import path from "path";
-import fs from "fs";
 import { headers } from "next/headers";
 import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
-import { EncryptionKeyRequiredError } from "@/lib/logging/errors";
-import type { BackupMetadata } from "@/lib/core/interfaces";
-
-registerAdapters();
+import { analyzeBackup } from "@/services/storage/backup-contents";
+import { isMissingStorage } from "@/services/storage/storage-lookup";
 
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
@@ -26,7 +15,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
 
     const params = await props.params;
-    let tempFile: string | null = null;
     try {
         // Read-only: listing what a backup holds is part of restoring it and of downloading from it.
         checkAnyPermissionWithContext(ctx, [PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD]);
@@ -44,142 +32,17 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
         }
 
-        const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: params.id } });
-        if (!storageConfig || storageConfig.type !== "storage") {
-            return NextResponse.json({ error: "Storage adapter not found" }, { status: 404 });
-        }
-
-        const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
-        if (!storageAdapter) return NextResponse.json({ error: "Storage impl missing" }, { status: 500 });
-
-        // This relies on MySQL Adapter (or any DB adapter) to analyze the file.
-        // But here we don't know the SOURCE adapter type yet because it's just a file.
-        // However, we can use the MySQL adapter specifically to inspect, or assume common SQL format.
-        // Better: frontend should tell us what KIND of backup this is (e.g. from the source extension).
-        // But for now, we'll try to use the MySQL adapter logic since we know it's likely MySQL based on user context.
-        // Ideally, we'd have a generic "SQL Analyzer" or rely on the filename extension.
-
-        // To properly support this generically, we should accept a "type" parameter or try all adapters.
-        // For this MVP, we will instantiate the MySQL adapter temporarily just to use its static-like logic,
-        // OR better: we define a utility function. But since the logic is inside the adapter `analyzeDump`, we need an instance.
-        // Let's use the `mysql` adapter ID hardcoded for inspection if file ends in .sql?
-        // Or cleaner: The user selects "Restore to Source X". We use Source X to inspect the file.
-        // But the inspection happens BEFORE selecting target source in the ideal flow?
-        // Let's assume the user selects target source FIRST in the UI? Or we just download and peek.
-
-        // Simpler flow for now: Just download to temp and try to detect known formats.
-
-        const tempDir = getTempDir();
-        tempFile = path.join(tempDir, path.basename(file));
-        const sConf = await resolveAdapterConfig(storageConfig);
-
-        // OPTIMIZATION: Try to read sidecar metadata first. For combined (manifest v2)
-        // archives the metadata sidecar points at the archive's index sidecar, which
-        // describes every database and directory source without touching the archive - so
-        // a listing never costs a multi-gigabyte download.
-        let seekableArchiveMeta: BackupMetadata | null = null;
-
-        if (storageAdapter.read) {
-            try {
-                const metaPath = file + ".meta.json";
-                const metaContent = await storageAdapter.read(sConf, metaPath);
-                if (metaContent) {
-                    const meta = JSON.parse(metaContent);
-
-                    if ((meta as BackupMetadata).archive?.formatVersion === 2) {
-                        seekableArchiveMeta = meta as BackupMetadata;
-                        const summary = await archiveIndexService.summarize(params.id, file, seekableArchiveMeta, keyOverride);
-                        if (summary) return NextResponse.json(summary);
-                        // Sidecar missing or unreadable. Deliberately NOT falling through to
-                        // the legacy shortcuts below - they only understand databases and
-                        // would silently drop this archive's directory sources. The embedded
-                        // index is read from the downloaded archive instead.
-                    }
-
-                    // LEGACY-FORMAT(read): Shortcuts for older backups, which list their databases in the metadata.
-                    if (!seekableArchiveMeta && !(meta.combined && meta.combined.directorySources > 0)) {
-                        if (meta.databases) {
-                             if (Array.isArray(meta.databases.names) && meta.databases.names.length > 0) {
-                                  return NextResponse.json({ databases: meta.databases.names });
-                             }
-                             if (Array.isArray(meta.databases) && meta.databases.length > 0) {
-                                  return NextResponse.json({ databases: meta.databases });
-                             }
-                        }
-                        // For multi-DB TAR archives, return the embedded database list
-                        if (meta.multiDb?.databases?.length > 0) {
-                            return NextResponse.json({ databases: meta.multiDb.databases });
-                        }
-                        // For server-based adapters (not sqlite) with empty names,
-                        // use the source type to signal the frontend that this is a DB restore
-                        const serverAdapters = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'azure-sql', 'redis', 'valkey', 'firebird'];
-                        if (meta.sourceType && serverAdapters.includes(meta.sourceType.toLowerCase())) {
-                            return NextResponse.json({ databases: [], sourceType: meta.sourceType });
-                        }
-                    }
-                }
-            } catch (e: unknown) {
-                // A missing key has to escape this catch. It is the one failure here that is
-                // answerable, and the fallbacks below cannot help anyway: reading the
-                // archive's embedded index needs exactly the key the sidecar already
-                // refused. Swallowing it downloaded the whole archive to fail again, then
-                // reported the backup as containing nothing.
-                if (e instanceof EncryptionKeyRequiredError) throw e;
-                // Anything else falls through to the download and the embedded index.
-            }
-        }
-
-        const downloadSuccess = await storageAdapter.download(sConf, file, tempFile);
-        if (!downloadSuccess) return NextResponse.json({ error: "Download failed" }, { status: 500 });
-
-        // Seekable (v2) archive whose index sidecar could not be read. Every archive also
-        // carries a copy of its index as its last member, so the listing still works - it
-        // just costs the download that the sidecar exists to avoid.
-        if (seekableArchiveMeta) {
-            const summary = await archiveIndexService.summarizeFromArchive(tempFile, seekableArchiveMeta, keyOverride);
-            if (summary) return NextResponse.json(summary);
-        }
-
-        // LEGACY-FORMAT(read): Analyzing a downloaded file only applies to backups written before the
-        // seekable archive.
-        let databases: string[] = [];
-
-        // Try to find the correct adapter to analyze the file
-        // 1. If type is provided (most reliable)
-        if (type) {
-            const adapter = registry.get(type) as DatabaseAdapter;
-            if (adapter && adapter.analyzeDump) {
-                databases = await adapter.analyzeDump(tempFile);
-            }
-        }
-        // 2. Fallback: Try all known database adapters (Heuristic)
-        else {
-            const adapters = ["mysql", "postgres", "mongodb"];
-            for (const id of adapters) {
-                const adapter = registry.get(id) as DatabaseAdapter;
-                if (adapter && adapter.analyzeDump) {
-                    const dbs = await adapter.analyzeDump(tempFile);
-                    if (dbs.length > 0) {
-                        databases = dbs;
-                        break;
-                    }
-                }
-            }
-        }
-
-        return NextResponse.json({ databases });
-
+        return NextResponse.json(await analyzeBackup(params.id, file, type, keyOverride));
     } catch (e: unknown) {
         // A backup nobody holds the key for is answerable, so it is reported rather than
         // rendered as an archive with nothing in it.
         const keyRequired = keyRequiredResponse(e);
         if (keyRequired) return keyRequired;
 
+        if (isMissingStorage(e)) {
+            return NextResponse.json({ error: "Storage adapter not found" }, { status: 404 });
+        }
         const message = e instanceof Error ? e.message : "Unknown error";
         return NextResponse.json({ error: message }, { status: 500 });
-    } finally {
-        if (tempFile) {
-            await fs.promises.unlink(tempFile).catch(() => {});
-        }
     }
 }

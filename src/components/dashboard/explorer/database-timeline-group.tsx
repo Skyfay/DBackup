@@ -1,16 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { ChevronDown, ChevronRight, Database } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import type { TimelineFormat } from "@/components/dashboard/storage/explorer/timeline-cells";
 import type { DayKey } from "@/components/dashboard/storage/explorer/timeline-model";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { cn } from "@/lib/utils";
 import type { ExplorerDbJob } from "@/services/databases/database-explorer-types";
 import { engineOf } from "./database-columns";
 import { databaseHref, type TimelineDatabaseRow, type TimelineGroup } from "./database-model";
 import { Cell, VersionMark } from "./database-timeline-parts";
+import { RecordLink } from "./record-link";
 
 /** A database, or a folded server by `server:` and its id, and a day of it. */
 export interface TimelinePick {
@@ -45,9 +46,13 @@ export function ServerGroup({ group, rows, folded, onFold, days, template, jobsB
     const total = group.rows.length;
     const covered = group.rows.filter((row) => row.database.jobIds.length > 0).length;
     const serverKey = serverPickKey(server.id);
-    const sub = folded
+    // In All tenants the head names the tenant of the server first.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName()(allTenants ? server.tenantId : null);
+    const facts = folded
         ? `${engineOf(server)} · ${count(total, "database")}, ${covered === total ? "all in a job" : `${covered} in a job`}`
         : `${engineOf(server)} · ${covered} of ${total} in a job`;
+    const sub = tenantName ? `${tenantName} · ${facts}` : facts;
 
     return (
         <div role="group" aria-label={server.name}>
@@ -100,8 +105,9 @@ export function ServerGroup({ group, rows, folded, onFold, days, template, jobsB
                         const names = database.jobIds.map((id) => jobsById.get(id)?.name ?? "A deleted job");
                         return (
                             <div key={database.key} className="relative grid items-center border-b px-5 py-1.5" style={template}>
-                                <Link
+                                <RecordLink
                                     href={databaseHref(database)}
+                                    tenantId={database.tenantId}
                                     className="flex min-w-0 items-center gap-2.5 rounded-md pr-3 pl-6 text-left outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
                                 >
                                     <Database className={cn("size-4 shrink-0", names.length === 0 ? "text-warning" : "text-muted-foreground")} aria-hidden="true" />
@@ -111,7 +117,7 @@ export function ServerGroup({ group, rows, folded, onFold, days, template, jobsB
                                             {names.length === 0 ? "In no job" : names.join(", ")}
                                         </span>
                                     </span>
-                                </Link>
+                                </RecordLink>
                                 {cells.map((cell) => (
                                     <Cell
                                         key={cell.day}

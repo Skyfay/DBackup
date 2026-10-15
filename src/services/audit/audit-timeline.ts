@@ -2,7 +2,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import prisma from "@/lib/prisma";
 import { isSensitive } from "@/lib/core/audit-areas";
 import { buildAuditWhere, type AuditFilter } from "./audit-query";
-import { actorOf } from "./audit-rows";
+import { AUDIT_ACTOR_SELECT, actorOf } from "./audit-rows";
 import type { AuditTimeline, AuditTimelineRow } from "./audit-types";
 
 /** A day as `yyyy-MM-dd`, like the timelines of the Backups page. */
@@ -41,6 +41,7 @@ export async function getAuditTimeline(
     const records = await prisma.auditLog.findMany({
         where: buildAuditWhere({ ...filter, period: "all", from: start, to: end }, now),
         select: {
+            tenantId: true,
             createdAt: true,
             userId: true,
             actorName: true,
@@ -48,7 +49,7 @@ export async function getAuditTimeline(
             apiKeyName: true,
             action: true,
             details: true,
-            user: { select: { name: true, image: true, group: { select: { name: true } } } },
+            user: { select: AUDIT_ACTOR_SELECT },
         },
     });
 

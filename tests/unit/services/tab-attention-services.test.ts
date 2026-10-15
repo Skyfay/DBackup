@@ -27,14 +27,34 @@ describe("the dots of the page tabs worked out on the server", () => {
         prismaMock.user.findMany.mockResolvedValue([{ name: "Sara Nguyen" }] as never);
         prismaMock.apiKey.findMany.mockResolvedValue([{ name: "CI deploy" }, { name: "Backup bot" }] as never);
 
-        expect(await getUsersPageAttention(NOW)).toEqual({
+        expect(await getUsersPageAttention("default", NOW)).toEqual({
             users: { tone: "warning", note: "Sara Nguyen has no group and sees nothing" },
             apikeys: { tone: "warning", note: "CI deploy and Backup bot run out within two weeks" },
         });
-        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { groupId: null } }));
+        // An account without a group anywhere shows in the home tenant, whose admins give it one.
+        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} } } }));
         expect(prismaMock.apiKey.findMany).toHaveBeenCalledWith(expect.objectContaining({
             where: { enabled: true, expiresAt: { gt: new Date(NOW), lte: new Date(NOW + 14 * 86_400_000) } },
         }));
+    });
+
+    it("marks Users in All tenants for an account that works in no tenant, and counts the keys of every tenant", async () => {
+        prismaMock.user.findMany.mockResolvedValue([{ name: "Sara Nguyen" }, { name: "Tom Weber" }] as never);
+        prismaMock.apiKey.findMany.mockResolvedValue([{ name: "CI deploy" }] as never);
+
+        expect(await getUsersPageAttention(null, NOW)).toEqual({
+            users: { tone: "warning", note: "Sara Nguyen and Tom Weber work in no tenant and see nothing" },
+            apikeys: { tone: "warning", note: "CI deploy runs out within two weeks" },
+        });
+        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} } } }));
+    });
+
+    it("names the accounts without a group only to the home tenant, never to a customer", async () => {
+        prismaMock.user.findMany.mockResolvedValue([{ name: "Sara Nguyen" }] as never);
+        prismaMock.apiKey.findMany.mockResolvedValue([] as never);
+
+        expect(await getUsersPageAttention("tenant-a", NOW)).toEqual({ users: undefined, apikeys: undefined });
+        expect(prismaMock.user.findMany).not.toHaveBeenCalled();
     });
 
     it("marks each Connections tab by the health check of its connections", async () => {

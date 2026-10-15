@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { Database, Download, FolderInput, Layers, Lock, LockOpen, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
+import { Building2, Database, Download, FolderInput, Layers, Lock, LockOpen, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { needsRestoreScopeChoice, type RestoreMode } from "@/components/dashboard/storage/restore-scope";
 import type { Tone } from "@/components/ui/tone";
 import type { ExplorerFile } from "@/services/storage/explorer-types";
@@ -20,6 +20,8 @@ export interface BackupActionGroup {
 }
 
 export interface BackupActionHandlers {
+    /** In All tenants: opens the backup in the tenant of its destination, where it can be restored and changed. */
+    openInTenant?: { label: string; onSelect: () => void };
     onRestore?: (mode?: RestoreMode) => void;
     /** Opens the download dialog, which holds every download of a backup and the commands for a server. */
     onDownload?: () => void;
@@ -43,6 +45,9 @@ export function isArchived(file: Pick<ExplorerFile, "storageClass">): boolean {
  */
 export function backupActions(file: ExplorerFile, handlers: BackupActionHandlers): BackupActionGroup[] {
     const archived = isArchived(file);
+    const open: BackupAction[] = handlers.openInTenant
+        ? [{ id: "open-in-tenant", label: handlers.openInTenant.label, icon: Building2, onSelect: handlers.openInTenant.onSelect, tone: "neutral" }]
+        : [];
     const restore: BackupAction[] = [];
     if (handlers.onRestore) {
         const onRestore = handlers.onRestore;
@@ -73,6 +78,7 @@ export function backupActions(file: ExplorerFile, handlers: BackupActionHandlers
         : [];
 
     return [
+        ...(open.length > 0 ? [{ actions: open }] : []),
         ...(restore.length > 0 ? [{ label: "Restore", actions: restore }] : []),
         ...(download.length > 0 ? [{ label: "Download", actions: download }] : []),
         ...(manage.length > 0 ? [{ label: "Manage", actions: manage }] : []),

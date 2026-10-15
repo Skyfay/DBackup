@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { getCurrentUserWithGroup, hasPermission } from "@/lib/auth/access-control";
+import { getViewer, hasPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { diffFields } from "@/lib/core/audit-diff";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -11,7 +11,7 @@ import { DATE_FORMAT_VALUES, TIME_FORMAT_VALUES, isKnownTimezone } from "@/lib/c
 import { TaskColorsSchema, type TaskColors } from "@/lib/core/task-colors";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { invalid, type SaveResult } from "@/lib/settings/save-part";
+import { invalid, type SaveResult } from "@/services/system/settings-save";
 import { auditService } from "@/services/audit-service";
 import { setTaskColors } from "@/services/user/preference-service";
 import { userService } from "@/services/user/user-service";
@@ -32,7 +32,7 @@ const ACCOUNT_FIELDS = { name: { label: "Name" }, email: { label: "Email" } };
  * @no-permission-required - Self-service: only the own account, the permission of each changed field is checked below.
  */
 export async function saveProfileAccountAction(input: { name: string; email: string }): Promise<SaveResult> {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
     const parsed = AccountSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -76,7 +76,7 @@ const DATE_FIELDS = { timezone: { label: "Time zone" }, dateFormat: { label: "Da
  * @no-permission-required - Self-service: how the own dashboard shows dates, for the signed-in user alone.
  */
 export async function saveProfileDatesAction(input: { timezone: string; dateFormat: string; timeFormat: string }): Promise<SaveResult> {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
     const parsed = DatesSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -104,7 +104,7 @@ export async function saveProfileDatesAction(input: { timezone: string; dateForm
  * @no-permission-required - Self-service: a display preference of the signed-in user, like the table defaults.
  */
 export async function saveTaskColorsAction(colors: TaskColors): Promise<SaveResult> {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
     const parsed = TaskColorsSchema.safeParse(colors);
     if (!parsed.success) return invalid(parsed.error.issues);

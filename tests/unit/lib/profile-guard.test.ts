@@ -24,20 +24,41 @@ describe("the own profile through better-auth", () => {
 describe("what a user holds through the group", () => {
     beforeEach(() => prismaMock.user.findUnique.mockReset());
 
-    it("reads the permissions of the group, every one for a SuperAdmin and none without a group", async () => {
-        prismaMock.user.findUnique.mockResolvedValueOnce({ group: { name: "Operators", permissions: '["profile:manage_2fa"]' } } as never);
+    /** An account as the guard reads it, with its groups per tenant. */
+    const account = (platformRole: string | null, ...memberships: { tenantId?: string; permissions: string; fullAccess?: boolean }[]) => ({
+        platformRole,
+        memberships: memberships.map((membership) => ({
+            tenantId: membership.tenantId ?? "default",
+            group: { permissions: membership.permissions, fullAccess: membership.fullAccess ?? false },
+        })),
+    });
+
+    it("reads the permissions of the group, every one for a platform admin and none without a group", async () => {
+        prismaMock.user.findUnique.mockResolvedValueOnce(account(null, { permissions: '["profile:manage_2fa"]' }) as never);
         expect(await userHolds("u1", "profile:manage_2fa")).toBe(true);
 
-        prismaMock.user.findUnique.mockResolvedValueOnce({ group: { name: "Operators", permissions: '["jobs:read"]' } } as never);
+        prismaMock.user.findUnique.mockResolvedValueOnce(account(null, { permissions: '["jobs:read"]' }) as never);
         expect(await userHolds("u1", "profile:manage_passkeys")).toBe(false);
 
-        prismaMock.user.findUnique.mockResolvedValueOnce({ group: { name: "SuperAdmin", permissions: "[]" } } as never);
+        prismaMock.user.findUnique.mockResolvedValueOnce(account("ADMIN") as never);
         expect(await userHolds("u1", "profile:manage_passkeys")).toBe(true);
 
-        prismaMock.user.findUnique.mockResolvedValueOnce({ group: null } as never);
+        prismaMock.user.findUnique.mockResolvedValueOnce(account(null, { permissions: "[]", fullAccess: true }) as never);
+        expect(await userHolds("u1", "profile:manage_passkeys")).toBe(true);
+
+        prismaMock.user.findUnique.mockResolvedValueOnce(account(null) as never);
         expect(await userHolds("u1", "profile:manage_2fa")).toBe(false);
 
-        prismaMock.user.findUnique.mockResolvedValueOnce({ group: { name: "Broken", permissions: "not json" } } as never);
+        prismaMock.user.findUnique.mockResolvedValueOnce(account(null, { permissions: "not json" }) as never);
         expect(await userHolds("u1", "profile:manage_2fa")).toBe(false);
+
+        prismaMock.user.findUnique.mockResolvedValueOnce(null as never);
+        expect(await userHolds("gone", "profile:manage_2fa")).toBe(false);
+    });
+
+    it("counts the group of any tenant, since the own profile belongs to none", async () => {
+        prismaMock.user.findUnique.mockResolvedValueOnce(account(null, { tenantId: "default", permissions: '["jobs:read"]' }, { tenantId: "tenant-a", permissions: '["profile:manage_passkeys"]' }) as never);
+
+        expect(await userHolds("u1", "profile:manage_passkeys")).toBe(true);
     });
 });

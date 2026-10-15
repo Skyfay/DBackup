@@ -304,24 +304,24 @@ export async function warmupStorageCache(): Promise<TaskOutcome> {
 
 export async function syncPermissions(): Promise<TaskOutcome> {
     try {
-        log.debug("Syncing permissions for SuperAdmin group");
+        log.debug("Syncing permissions for the groups with every permission");
 
         // Flatten all permissions from the source of truth
         const allPerms = Object.values(PERMISSIONS).flatMap(group => Object.values(group));
 
-        // Update SuperAdmin group(s)
-        // Using updateMany to handle case if multiple groups somehow have this name (though name is unique in schema)
+        // The checks give such a group every permission anyway. The stored list keeps the pages
+        // that show it right, and a configuration backup of it complete.
         const result = await prisma.group.updateMany({
-            where: { name: "SuperAdmin" },
+            where: { fullAccess: true },
             data: { permissions: JSON.stringify(allPerms) }
         });
 
         if (result.count > 0) {
-            log.info("Updated permissions for SuperAdmin groups", { count: result.count });
+            log.info("Updated permissions for the groups with every permission", { count: result.count });
             return { summary: `${allPerms.length} permissions` };
         }
-        log.debug("No SuperAdmin group found, skipping permission sync");
-        return { ok: false, summary: "No SuperAdmin group" };
+        log.debug("No group with every permission found, skipping permission sync");
+        return { ok: false, summary: "No group with every permission" };
     } catch (error: unknown) {
         log.error("Failed to sync permissions", {}, wrapError(error));
         return { ok: false, summary: getErrorMessage(error) };
@@ -392,6 +392,11 @@ export async function startIntegrityCheck(
                         errors: result.errors,
                     },
                 }, { executionId: runner.id });
+                // Each tenant hears about the copies at its own destinations too, on its own channels.
+                const { notifyTenantsOfIntegrity } = await import("@/services/notifications/tenant-integrity");
+                await notifyTenantsOfIntegrity(copies, triggerType ?? "Scheduler").catch((error: unknown) => {
+                    log.warn("Telling the tenants about the integrity check failed", { executionId: runner.id }, wrapError(error));
+                });
             }
             const checked = result.passed + result.failed;
             outcome = result.failed > 0

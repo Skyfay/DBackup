@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, BellOff, Pencil, Plus, Send } from "lucide-react";
 import { toast } from "sonner";
-import { saveNotificationEventsAction, sendTestNotificationAction } from "@/app/actions/settings/notification-settings";
 import { AddConnectionDialogs } from "@/components/adapter/add-connection-dialogs";
 import { useCan } from "@/components/permissions/permissions-context";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
@@ -17,6 +16,7 @@ import type { BulkResult } from "@/lib/core/bulk";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import type { NotificationEventRow, NotificationsModel } from "@/services/notifications/notification-settings-service";
+import { useNotificationsApi } from "./notification-api";
 import { DefaultChannelsDialog, SendToDialog } from "./notification-bulk";
 import { ChannelLogos } from "./notification-channels";
 import { EventTile, notificationActions, notificationColumns, type NotificationHandlers } from "./notification-columns";
@@ -63,13 +63,23 @@ function DefaultsStrip({ channels, onChange }: { channels: AdapterListItemDTO[];
     );
 }
 
+interface NotificationsPartProps {
+    model: NotificationsModel;
+    openEventId: string | null;
+    onOpened: () => void;
+    /** The part it is on, the Notifications of the platform by default or the ones of a tenant. */
+    part?: string;
+}
+
 /**
  * Every system event as a row with the logos of where it goes, its reminder and its switch, like
  * the system tasks. A row opens its Edit dialog, and ticked rows go on, off or to other channels
- * together, so a change of many events needs no dialog per event.
+ * together, so a change of many events needs no dialog per event. The tenant settings show the
+ * same part for the events of a tenant, saving through their own actions, see `NotificationsApi`.
  */
-export function NotificationsPart({ model, openEventId, onOpened }: { model: NotificationsModel; openEventId: string | null; onOpened: () => void }) {
+export function NotificationsPart({ model, openEventId, onOpened, part = "notifications" }: NotificationsPartProps) {
     const router = useRouter();
+    const api = useNotificationsApi();
     const { readOnly } = useSettingsFrame();
     const canAddChannel = useCan(PERMISSIONS.NOTIFICATIONS.WRITE) && !readOnly;
     const [filter, setFilter] = useState<EventFilter>("all");
@@ -96,19 +106,19 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
     const test = useCallback(async (event: NotificationEventRow) => {
         const toastId = toast.loading(`Sending a test of ${event.name}`);
         try {
-            const result = await sendTestNotificationAction(event.id);
+            const result = await api.sendTest(event.id);
             if (result.success) toast.success(result.message ?? "Test sent", { id: toastId });
             else toast.error(result.error ?? "The test could not be sent.", { id: toastId });
         } catch (error: unknown) {
             log.warn("Sending a test notification failed", { eventId: event.id }, wrapError(error));
             toast.error("The test could not be sent.", { id: toastId });
         }
-    }, []);
+    }, [api]);
 
     const switchEvent = useCallback(async (event: NotificationEventRow, enabled: boolean) => {
         setSwitching(event.id);
         try {
-            const result = await saveNotificationEventsAction([event.id], { enabled });
+            const result = await api.saveEvents([event.id], { enabled });
             if (!result.success) toast.error(result.error);
             else router.refresh();
         } catch (error: unknown) {
@@ -117,17 +127,20 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
         } finally {
             setSwitching(null);
         }
-    }, [router]);
+    }, [router, api]);
 
     const handlers = useMemo<NotificationHandlers>(
         () => (readOnly ? { onTest: undefined } : { onEdit: (event) => setEditing(event.id), onTest: (event) => void test(event), onSwitch: (event, enabled) => void switchEvent(event, enabled) }),
         [readOnly, test, switchEvent]
     );
 
+    // The events of a tenant have no reminders, those are the platform's.
+    const reminders = model.events.some((event) => event.supportsReminder);
     const columns = useMemo(() => notificationColumns({
         handlers,
         channelsOf: channelsFor,
         switching,
+        reminders,
         renderActions: (event) => (
             <>
                 {handlers.onTest && event.enabled && (
@@ -138,14 +151,14 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
                 <BackupRowMenu name={event.name} groups={notificationActions(event, handlers)} />
             </>
         ),
-    }), [handlers, channelsFor, switching]);
+    }), [handlers, channelsFor, switching, reminders]);
 
     // What the ticked events do together, one save for all of them.
     const bulkActions = useMemo<BulkAction<NotificationEventRow>[]>(() => {
         if (readOnly) return [];
         const switchAll = (enabled: boolean) => async (rows: NotificationEventRow[]): Promise<BulkResult> => {
             const ids = rows.map((row) => row.id);
-            const result = await saveNotificationEventsAction(ids, { enabled });
+            const result = await api.saveEvents(ids, { enabled });
             router.refresh();
             return result.success ? { succeeded: ids, failed: [] } : { succeeded: [], failed: rows.map((row) => ({ id: row.id, name: row.name, error: result.error })) };
         };
@@ -180,7 +193,7 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
                 run: switchAll(false),
             },
         ];
-    }, [readOnly, router, model.channels, model.defaultChannels]);
+    }, [readOnly, router, model.channels, model.defaultChannels, api]);
 
     const filters: Record<EventFilter, (event: NotificationEventRow) => boolean> = {
         all: () => true,
@@ -196,7 +209,7 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
 
     return (
         <PartFrame
-            part="notifications"
+            part={part}
             flush
             action={canAddChannel && (
                 <Button tone="create" size="sm" onClick={() => setAdding(true)}>
@@ -205,7 +218,7 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
                 </Button>
             )}
         >
-            <div data-setting="notifications.events">
+            <div data-setting={`${part}.events`}>
                 <DefaultsStrip channels={model.defaultChannels.map((id) => byId.get(id)).filter((channel): channel is AdapterListItemDTO => !!channel)} onChange={readOnly ? undefined : () => setChangingDefaults(true)} />
                 <DataTable
                     frameless

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimLinkToken, generateLinkToken, linkStatus, markTokenUsed, releaseLinkToken } from "@/lib/auth/download-tokens";
 
-const link = () => generateLinkToken({ storageId: "nas", file: "Shop/backup.tar", userId: "u1", decrypt: true, pick: { databases: ["billing"] } });
+const link = () => generateLinkToken({ tenantId: "default", storageId: "nas", file: "Shop/backup.tar", userId: "u1", decrypt: true, pick: { databases: ["billing"] } });
 
 describe("links for a command on another host", () => {
     beforeEach(() => {

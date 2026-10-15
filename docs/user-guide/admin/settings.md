@@ -1,6 +1,12 @@
 # Settings
 
-The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup, how people sign in and what a password needs. Looking at it needs `settings:read`, changing anything needs `settings:write`.
+The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup, how people sign in and what a password needs. Looking at it needs `settings:read`, changing anything needs `settings:write`. With [tenants](/user-guide/admin/tenants), both count only from the group someone holds in the home tenant, since the settings apply to every tenant.
+
+With one tenant the page sits under **Administration → Settings**. With more than one it moves to **Platform → Settings**, and **Administration → Settings** holds the [settings of the open tenant](#tenant-settings) instead.
+
+::: info Recently deleted belongs to the tenant
+With more than one tenant, Recently deleted is a part of the [tenant settings](#tenant-settings), since every tenant keeps its own. With one tenant it stays a part of this page.
+:::
 
 ## The Page
 
@@ -40,7 +46,7 @@ What DBackup does by itself, each on its own schedule in the time zone of Genera
 | **Backups page cache** | Every hour | Yes | |
 | **Clean old data** | Every day at 00:00 | Yes | |
 | **Check for updates** | Every day at 00:00 | Yes | **Look for new versions** under General |
-| **SuperAdmin permissions** | Every day at 00:00 | Yes | |
+| **Full access permissions** | Every day at 00:00 | Yes | |
 | **Configuration backup** | Every day at 03:00 | No | **Back up the configuration** under Configuration backup |
 | **Integrity check** | Sundays at 04:00 | No | |
 | **Optimize the database** | The 1st of the month at 05:00 | Yes | |
@@ -113,6 +119,16 @@ The certificate DBackup answers with, from `/data/certs`: who it is issued to an
 
 A new certificate applies after a restart of DBackup. `DISABLE_HTTPS=true` on the container turns HTTPS off, for example behind a proxy that encrypts the way to it.
 
+## Tenant Settings
+
+With more than one tenant, **Administration → Settings** holds what belongs to the open tenant. Looking needs `tenant-settings:read`, changing `tenant-settings:write`, both from the group in that tenant.
+
+- **Name and logo**: the name of the tenant and its logo, a PNG, JPG, GIF or WebP of up to 1 MB. The logo shows in the head of the sidebar, in the tenant switcher and on the Tenants page. A preview shows both.
+- **Recently deleted**: what was deleted in the tenant, see [Recently deleted](/user-guide/admin/recently-deleted).
+- **Notifications**: which channels of the tenant hear about its own data, like a failed backup, a restore, a storage alert, a connection that went offline or a failed integrity check. It works like the notifications of the instance, with default channels, a switch and own channels per event, and **Send a test**. A channel a job tells already gets the news of that run once. The home tenant reports through the notifications of the instance instead.
+
+The tenants themselves are managed under **Platform → Tenants**, see [Tenants](/user-guide/admin/tenants#managing-tenants).
+
 ## Rate Limits
 
 How many requests one address may make in a time window. See [Rate Limits](/user-guide/features/rate-limits).
@@ -125,5 +141,5 @@ How many requests one address may make in a time window. See [Rate Limits](/user
 
 - `settings:read` shows the page, `settings:write` changes it, starts the system tasks, sends test notifications and optimizes the database.
 - **New channel** under Notifications also needs `notifications:write`.
-- Only a SuperAdmin restores a configuration backup and downloads the database, see [Groups & Permissions](/user-guide/admin/permissions).
+- Only a platform admin restores a configuration backup, downloads the database and manages the tenants, see [Groups & Permissions](/user-guide/admin/permissions#what-only-a-platform-admin-does).
 - Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) with the values before and after.

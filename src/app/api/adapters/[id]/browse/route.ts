@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import type { StorageAdapter } from "@/lib/core/interfaces";
-import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { getSavedConnection } from "@/services/adapters/adapter-list";
+import { browseSavedFolders } from "@/services/adapters/location-browse-service";
 
 registerAdapters();
 
@@ -36,22 +34,16 @@ export async function GET(
     const params = await props.params;
     const subPath = req.nextUrl.searchParams.get("path") ?? "";
 
-    const adapterConfig = await prisma.adapterConfig.findUnique({
-        where: { id: params.id },
-    });
-
-    if (!adapterConfig || adapterConfig.type !== "storage") {
+    const source = await getSavedConnection(params.id, "storage");
+    if (!source) {
         return NextResponse.json({ success: false, error: "Storage adapter not found" }, { status: 404 });
     }
 
-    const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter | undefined;
-    if (!adapter?.browseDirectories) {
-        return NextResponse.json({ success: true, supported: false, data: { path: subPath, entries: [] } });
-    }
-
     try {
-        const config = await resolveAdapterConfig(adapterConfig);
-        const entries = await adapter.browseDirectories(config, subPath);
+        const entries = await browseSavedFolders(source, subPath);
+        if (!entries) {
+            return NextResponse.json({ success: true, supported: false, data: { path: subPath, entries: [] } });
+        }
         return NextResponse.json({ success: true, supported: true, data: { path: subPath, entries } });
     } catch (error: unknown) {
         log.error("Directory browse failed", { adapterConfigId: params.id, subPath }, wrapError(error));

@@ -1,6 +1,5 @@
 import fs from "fs";
 import fsPromises from "fs/promises";
-import { NextResponse } from "next/server";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
 
 /**
@@ -9,7 +8,7 @@ import { attachmentDisposition } from "@/lib/server/content-disposition";
  * The file is removed once it was sent, when reading it fails, and when the browser cancels
  * the download. The last case matters most for large files, which are the ones people abort.
  */
-export function tempFileDownloadResponse(tempFile: string, fileName: string, contentType: string): NextResponse {
+export function tempFileDownloadResponse(tempFile: string, fileName: string, contentType: string): Response {
     const { size } = fs.statSync(tempFile);
     const fileStream = fs.createReadStream(tempFile);
     const removeTempFile = () => {
@@ -34,7 +33,7 @@ export function tempFileDownloadResponse(tempFile: string, fileName: string, con
         },
     });
 
-    return new NextResponse(body, {
+    return new Response(body, {
         headers: {
             "Content-Disposition": attachmentDisposition(fileName),
             "Content-Type": contentType,

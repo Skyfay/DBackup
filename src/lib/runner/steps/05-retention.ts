@@ -2,7 +2,7 @@ import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
 import { isBackupFile, sidecarPathsFor, effectiveBackupTime } from '@/lib/core/backup-files';
-import { loadBackupSidecars } from './retention-sidecars';
+import { loadBackupSidecars, retentionGroup } from './retention-sidecars';
 import { folderKey, loadFormerBackups } from './retention-folders';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
@@ -121,7 +121,16 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     for (const { folder, count } of former.folders) {
         ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
     }
-    const backupFiles = [...current, ...former.files];
+    // The backups of some databases alone are judged with the others of the same databases, and the
+    // whole backups together, each group by the same policy, see retentionGroup.
+    const group = retentionGroup(ctx.onlyDatabases);
+    const allFiles = [...current, ...former.files];
+    const backupFiles = allFiles.filter(f => retentionGroup(f.onlyDatabases) === group);
+    if (backupFiles.length < allFiles.length) {
+        ctx.log(group
+            ? `${destLabel} Retention: Judging the ${backupFiles.length} backup(s) of ${ctx.onlyDatabases!.join(", ")} alone, ${allFiles.length - backupFiles.length} other backup(s) of the job are left as they are.`
+            : `${destLabel} Retention: ${allFiles.length - backupFiles.length} backup(s) of single databases are judged on their own and left as they are.`);
+    }
     const own = new Set(backupFiles);
     const drifted = [...sidecars.drifted, ...former.drifted];
     const formerFiles = new Set(former.files);

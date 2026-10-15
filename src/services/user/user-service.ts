@@ -1,59 +1,79 @@
 import prisma from "@/lib/prisma";
+import { runAsTenant } from "@/lib/tenant/context";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { ValidationError } from "@/lib/logging/errors";
 import { authService } from "@/services/auth/auth-service";
-import { SUPER_ADMIN_GROUP } from "./users-model";
+import type { AccountTarget } from "@/lib/auth/account-access";
+import { EVERY_PERMISSION, PLATFORM_ADMIN_ROLE, permissionsIn } from "@/lib/auth/owner-permissions";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 
 export const userService = {
   /**
-   * Creates a user with their password and the group they start in. Better Auth signs a new user
-   * in while creating them, on the server where no browser gets the session, so that session is
-   * removed again instead of staying open until it runs out.
+   * Creates a user with their password and, with a group, their role in a tenant. Better Auth signs
+   * a new user in while creating them, on the server where no browser gets the session, so that
+   * session is removed again instead of staying open until it runs out.
    */
-  async createUser(data: { name: string; email: string; password: string; groupId: string | null }) {
-    if (data.groupId && !(await prisma.group.findUnique({ where: { id: data.groupId }, select: { id: true } }))) {
+  async createUser(data: { name: string; email: string; password: string; groupId: string | null; tenantId: string }) {
+    // An account of no tenant shows in the home tenant alone, so elsewhere it would vanish from the list it was made in.
+    if (!data.groupId && data.tenantId !== HOME_TENANT_ID) throw new ValidationError("Pick the group the person works with in this tenant.");
+    // A platform admin in All tenants names the tenant, which may be gone since the page loaded.
+    if (!(await prisma.tenant.findUnique({ where: { id: data.tenantId }, select: { id: true } }))) throw new ValidationError("The tenant no longer exists.");
+    // A group of that tenant only, looked up there whichever tenant the admin works in.
+    if (data.groupId && !(await runAsTenant(data.tenantId, () => prisma.group.findUnique({ where: { id: data.groupId! }, select: { id: true } })))) {
       throw new ValidationError("The group no longer exists.");
     }
     const result = await authService.createUser(data);
     await prisma.$transaction([
       prisma.session.deleteMany({ where: { userId: result.user.id } }),
-      ...(data.groupId ? [prisma.user.update({ where: { id: result.user.id }, data: { groupId: data.groupId } })] : []),
+      ...(data.groupId ? [prisma.tenantMembership.create({ data: { userId: result.user.id, tenantId: data.tenantId, groupId: data.groupId } })] : []),
     ]);
     return result.user;
   },
 
-  /** Whether the group with this id is the SuperAdmin group, which only a SuperAdmin may give. */
-  async isSuperAdminGroup(groupId: string | null) {
-    if (!groupId || groupId === "none") return false;
-    const group = await prisma.group.findUnique({ where: { id: groupId }, select: { name: true } });
-    return group?.name === SUPER_ADMIN_GROUP;
+  /** The name of a user, which a run or a task they start records as who started it. */
+  async nameOf(userId: string): Promise<string | null> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    return user?.name ?? null;
   },
 
-  /** Whether the user is in the SuperAdmin group. */
-  async isSuperAdmin(userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { group: { select: { name: true } } } });
-    return user?.group?.name === SUPER_ADMIN_GROUP;
+  /** The names of users to report them by, the email for one without a name. */
+  async namesOf(userIds: string[]): Promise<{ id: string; name: string }[]> {
+    const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } });
+    return users.map((user) => ({ id: user.id, name: user.name || user.email }));
+  },
+
+  /** Whether the user can sign in with a password, which SSO alone does not give. */
+  async hasPassword(userId: string): Promise<boolean> {
+    const account = await prisma.account.findFirst({ where: { userId, providerId: "credential" }, select: { id: true } });
+    return account !== null;
   },
 
   /**
-   * Moves users into a group, or into none. Each goes through `updateUserGroup`, so the last
-   * SuperAdmin keeps the group.
+   * What an account may do in a tenant, as its session would there: every permission for a platform
+   * admin, else what its group there and its platform group give. For a check made in a tenant
+   * other than the one the account works in now, like New user of the list of every account.
    */
-  async moveUsers(userIds: string[], groupId: string | null): Promise<BulkResult> {
-    const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } });
-    const names = new Map(users.map((user) => [user.id, user.name || user.email]));
-    return runBulk(userIds, (id) => this.updateUserGroup(id, groupId ?? "none").then(() => undefined), (id) => names.get(id));
+  async permissionsIn(userId: string, tenantId: string): Promise<string[]> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        platformRole: true,
+        memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } },
+        platformGroup: { select: { platformPermissions: true, tenantPermissions: true, allTenants: true, tenants: { select: { tenantId: true } } } },
+      },
+    });
+    if (!user) return [];
+    if (user.platformRole === PLATFORM_ADMIN_ROLE) return [...EVERY_PERMISSION];
+    return permissionsIn(user.memberships, tenantId, user.platformGroup);
   },
 
-  /** The users among these ids who are in the SuperAdmin group, with the name to report them by. */
-  async superAdminsAmong(userIds: string[]) {
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds }, group: { name: SUPER_ADMIN_GROUP } },
-      select: { id: true, name: true, email: true },
-    });
-    return users.map((user) => ({ id: user.id, name: user.name || user.email }));
+  /** Whom an account belongs to, which decides who may change it, see `accountRefusal`. */
+  async accountOf(userId: string): Promise<AccountTarget | null> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, memberships: { select: { tenantId: true } } } });
+    if (!user) return null;
+    return { isPlatformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE, tenantIds: user.memberships.map((membership) => membership.tenantId) };
   },
 
   /** Ends one session of a user. False when the user holds no such session. */
@@ -69,47 +89,6 @@ export const userService = {
   async revokeSessions(userId: string, keepSessionId: string | null = null) {
     const { count } = await prisma.session.deleteMany({ where: { userId, ...(keepSessionId ? { id: { not: keepSessionId } } : {}) } });
     return count;
-  },
-
-  /**
-   * Update a user's group.
-   * Prevents removing the last SuperAdmin.
-   */
-  async updateUserGroup(userId: string, groupId: string | null) {
-    const targetGroupId = groupId === "none" ? null : groupId;
-
-    // Security check: Prevent removing the last SuperAdmin
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { group: true },
-    });
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    if (user.group?.name === "SuperAdmin" && targetGroupId !== user.groupId) {
-      const superAdminCount = await prisma.user.count({
-        where: {
-          group: {
-            name: "SuperAdmin",
-          },
-        },
-      });
-
-      if (superAdminCount <= 1) {
-        throw new Error("Cannot remove the last user from the SuperAdmin group.");
-      }
-    }
-
-    return await prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: {
-        groupId: targetGroupId,
-      },
-    });
   },
 
   /**
@@ -131,32 +110,21 @@ export const userService = {
     ]);
   },
 
-  /**
-   * Delete a user.
-   * Prevents deleting the last SuperAdmin or the last user.
-   */
-  /** Deletes a user, who waits in Recently deleted unless `permanently`. Their sessions end either way. */
+  /** Deletes a user, who waits in Recently deleted unless `permanently`. Their sessions end either way. The last platform admin stays. */
   async deleteUser(userId: string, options: DeleteOptions = {}) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { group: true },
+      select: { id: true, name: true, email: true, platformRole: true },
     });
 
     if (!user) {
       throw new Error("User not found");
     }
 
-    // Check if user is the last SuperAdmin
-    if (user.group?.name === "SuperAdmin") {
-      const superAdminCount = await prisma.user.count({
-        where: {
-          group: {
-            name: "SuperAdmin",
-          },
-        },
-      });
-      if (superAdminCount <= 1) {
-        throw new Error("Cannot delete the last SuperAdmin user.");
+    if (user.platformRole === PLATFORM_ADMIN_ROLE) {
+      const platformAdmins = await prisma.user.count({ where: { platformRole: PLATFORM_ADMIN_ROLE } });
+      if (platformAdmins <= 1) {
+        throw new Error("Cannot delete the last platform admin.");
       }
     }
 
@@ -175,7 +143,7 @@ export const userService = {
   /**
    * Deletes several users, reporting per-user outcomes.
    *
-   * Every user goes through `deleteUser`, so the last-SuperAdmin and last-user guards are
+   * Every user goes through `deleteUser`, so the last-platform-admin and last-user guards are
    * re-evaluated after each deletion rather than against the state the batch started in.
    * That is what keeps "delete everyone" from emptying the instance: the guard trips on
    * whoever is left, not on who was there when the request arrived.

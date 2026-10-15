@@ -39,6 +39,9 @@ import { connectionBulkActions, deleteBlocker } from "./connection-bulk-actions"
 import { ConnectionDeleteDialog } from "./connection-delete-dialog";
 import { useTrash } from "@/components/trash/use-trash";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { useOpenRecord } from "@/components/tenant/tenant-actions";
+import { withTenantColumn } from "@/components/tenant/tenant-rows";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -52,7 +55,17 @@ const SEARCH_NOUNS: Record<ConnectionKind, string> = {
     notification: "channels",
 };
 
-export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
+/** The tab of the Connections page each list sits on, the `?tab=` of its address. */
+const TAB_OF: Record<ConnectionKind, string> = {
+    database: "databases",
+    source: "directory-sources",
+    destination: "destinations",
+    notification: "notifications",
+};
+
+const tenantOfConfig = (config: AdapterConfig) => config.tenantId;
+
+export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view, onCreate }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -84,6 +97,10 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         type === "database" ? "database"
             : type === "notification" ? "notification"
                 : roleFilter === STORAGE_ROLES.SOURCE ? "source" : "destination";
+    // In All tenants the list holds the connections of every tenant, and one opens in its tenant.
+    const tenant = useTenantColumns(tenantOfConfig, configs);
+    const { allTenants: inAllTenants, nameOf: tenantNameOf } = tenant;
+    const openRecord = useOpenRecord();
 
     // A storage adapter has exactly one role; a manager instance scoped to one (the
     // "Directory Sources" section, the Destinations page) only shows configs in it -
@@ -217,9 +234,13 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         // Only a destination holds backups, so only it has a storage history.
         const isDestination = type === "storage" && (config.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION;
 
+        const tenantName = inAllTenants && config.tenantId ? tenantNameOf(config.tenantId) : null;
         return {
             onExplore: !inPanel && type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined,
             onHistory: isDestination && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name, adapterId: config.adapterId }) : undefined,
+            openInTenant: tenantName
+                ? { label: `Open in ${tenantName}`, onSelect: () => openRecord(config.tenantId, `/dashboard/connections?tab=${TAB_OF[kind]}&open=${encodeURIComponent(config.id)}`, () => undefined) }
+                : undefined,
             onEdit: !inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
             onClone: canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
             counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
@@ -231,18 +252,23 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             } : undefined,
             busy: cloningId === config.id,
         };
-    }, [type, canViewStorage, canManage, cloningId, router]);
+    }, [type, kind, canViewStorage, canManage, cloningId, router, inAllTenants, tenantNameOf, openRecord]);
 
     const renderActions = useCallback(
         (config: AdapterConfig, inPanel = false) => <ConnectionRowActions name={config.name} {...rowHandlers(config, inPanel)} />,
         [rowHandlers]
     );
 
-    const openDetails = useCallback((config: AdapterConfig) => setDetails({ id: config.id, open: true, view }), [view]);
+    // In All tenants a connection opens in its tenant, with its details on the page there.
+    const openDetails = useCallback((config: AdapterConfig) => openRecord(
+        config.tenantId,
+        `/dashboard/connections?tab=${TAB_OF[kind]}&open=${encodeURIComponent(config.id)}`,
+        () => setDetails({ id: config.id, open: true, view }),
+    ), [openRecord, kind, view]);
 
     const columns = useMemo(
-        () => connectionColumns({ kind, canViewHealth, renderActions: (config) => renderActions(config), onOpen: openDetails }),
-        [kind, canViewHealth, renderActions, openDetails]
+        () => withTenantColumn(connectionColumns({ kind, canViewHealth, renderActions: (config) => renderActions(config), onOpen: openDetails }), tenant.column),
+        [kind, canViewHealth, renderActions, openDetails, tenant.column]
     );
 
     // A deleted connection has no row left to show, so its panel closes with it.
@@ -269,9 +295,10 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             .filter(a => usedAdapterIds.has(a.id))
             .map(a => ({ label: a.name, value: a.id, icon: adapterTypeIcon(a.id) }));
 
-        if (options.length <= 1) return [];
-        return [{ id: "adapterId", title: "Type", options }];
-    }, [configs, availableAdapters]);
+        const tenantFilter = tenant.filter ? [tenant.filter] : [];
+        if (options.length <= 1) return tenantFilter;
+        return [{ id: "adapterId", title: "Type", options }, ...tenantFilter];
+    }, [configs, availableAdapters, tenant.filter]);
 
     const trash = useTrash("connection", afterChange);
     const bulkActions = useMemo(() => connectionBulkActions(kind, canManage, trash), [kind, canManage, trash]);
@@ -301,7 +328,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     icon={EMPTY[kind].icon}
                     title={EMPTY[kind].title}
                     description={EMPTY[kind].description}
-                    action={canManage ? { label: EMPTY[kind].action, onClick: openCreate } : undefined}
+                    action={onCreate ? { label: EMPTY[kind].action, onClick: onCreate } : canManage ? { label: EMPTY[kind].action, onClick: openCreate } : undefined}
                 />
             ) : (
                 <>
@@ -333,7 +360,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                         columnLayout={layout}
                         onRowClick={openDetails}
                         view={view}
-                        renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}
+                        renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} tenantName={tenant.allTenants ? tenant.nameOf(row.original.tenantId) : null} />}
                         renderRowMenu={(config, bulk) => (
                             <ConnectionContextMenu config={config} bulk={bulk} {...rowHandlers(config)} />
                         )}
@@ -343,6 +370,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                                 withHealth={type !== "notification"}
                                 selectedId={splitId}
                                 onSelect={setSplitId}
+                                tenantName={tenant.allTenants ? tenant.nameOf : undefined}
                                 renderPanel={(config) => (
                                     <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />
                                 )}

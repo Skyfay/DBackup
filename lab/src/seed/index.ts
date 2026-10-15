@@ -8,13 +8,20 @@
  */
 
 import prisma from "@/lib/prisma";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { LabConfig } from "../config";
 import { ensureAdmin } from "./admin";
 import { seedConnections } from "./connections";
 import { seedHistory } from "./history";
 import { seedJobs } from "./jobs";
 
-export async function seed(config: LabConfig, workspace: string, options: { history?: boolean } = {}): Promise<string[]> {
+/** Everything of the lab goes into the tenant every installation starts with. */
+export function seed(config: LabConfig, workspace: string, options: { history?: boolean } = {}): Promise<string[]> {
+    return runAsTenant(HOME_TENANT_ID, () => seedHome(config, workspace, options));
+}
+
+async function seedHome(config: LabConfig, workspace: string, options: { history?: boolean }): Promise<string[]> {
     const log: string[] = [];
     const admin = await ensureAdmin(config.admin);
     log.push(admin === "created" ? `created user ${config.admin.email}` : "kept the existing users");

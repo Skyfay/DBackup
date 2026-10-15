@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
     try {
         const [list, facets, who, stats] = await Promise.all([
             listAudit(query),
-            getAuditFacets(query),
+            // All tenants reads the log of every tenant and filters it by tenant.
+            getAuditFacets(query, new Date(), ctx.allTenants),
             cached("audit-who", CACHE_MS, getAuditWhoOptions),
             cached("audit-stats", CACHE_MS, () => getAuditStats()),
         ]);

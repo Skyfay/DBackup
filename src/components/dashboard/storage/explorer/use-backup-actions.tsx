@@ -9,6 +9,8 @@ import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/compo
 import { DownloadDialog } from "@/components/dashboard/storage/download/download-dialog";
 import { IntegrityDialog } from "@/components/dashboard/storage/integrity/integrity-dialog";
 import type { RestoreMode } from "@/components/dashboard/storage/restore-scope";
+import { useOpenRecord } from "@/components/tenant/tenant-actions";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { ConfirmDialog, DialogItemList } from "@/components/ui/confirm-dialog";
 import { keyOverrideBody, useEncryptionKeyRecovery } from "@/hooks/use-encryption-key-recovery";
 import { requestBulk } from "@/lib/bulk-request";
@@ -16,6 +18,7 @@ import { emptyBulkResult, summarizeBulkResult, type BulkResult } from "@/lib/cor
 import { encodeUrlPayload } from "@/lib/url-payload";
 import type { BackupCopy, ExplorerDestination, ExplorerFile } from "@/services/storage/explorer-types";
 import type { BackupActionHandlers } from "./backup-actions";
+import { backupHref } from "./use-explorer-address";
 
 /** One copy of a backup: the file and the destination it lies at. */
 export interface BackupTarget {
@@ -67,6 +70,10 @@ export async function bulkAcross(action: "delete" | "lock" | "unlock", targets: 
 export function useBackupActions({ canDownload, canRestore, canDelete, canManageVault, destinations, onChanged, canViewHistory = false, copiesOf }: Options) {
     const router = useRouter();
     const keyRecovery = useEncryptionKeyRecovery();
+    // In All tenants a backup is only read. A check writes a run, so it waits for the tenant of the backup.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
+    const openRecord = useOpenRecord();
     /** Which backup the key dialog is about, so a typed key can be checked against it. */
     const [pendingKey, setPendingKey] = useState<BackupTarget | null>(null);
     const [downloading, setDownloading] = useState<BackupTarget | null>(null);
@@ -156,13 +163,20 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
     };
 
     /** The handlers of one copy, for its menu and its details. Actions the user may not take are left out. */
-    const handlersFor = useCallback((target: BackupTarget): BackupActionHandlers => ({
-        onRestore: canRestore ? (mode) => restore(target, mode) : undefined,
-        onDownload: canDownload ? () => setDownloading(target) : undefined,
-        onVerify: () => setVerify(target),
-        onToggleLock: canDelete ? () => void toggleLock(target) : undefined,
-        onDelete: canDelete ? () => askDelete([target]) : undefined,
-    }), [canRestore, canDownload, canDelete, restore, toggleLock, askDelete]);
+    const handlersFor = useCallback((target: BackupTarget): BackupActionHandlers => {
+        const tenantId = allTenants ? destinations.get(target.destinationId)?.tenantId : undefined;
+        const name = tenantName(tenantId);
+        return {
+            openInTenant: tenantId && name
+                ? { label: `Open in ${name}`, onSelect: () => openRecord(tenantId, backupHref(target.file.path), () => undefined) }
+                : undefined,
+            onRestore: canRestore ? (mode) => restore(target, mode) : undefined,
+            onDownload: canDownload ? () => setDownloading(target) : undefined,
+            onVerify: allTenants ? undefined : () => setVerify(target),
+            onToggleLock: canDelete ? () => void toggleLock(target) : undefined,
+            onDelete: canDelete ? () => askDelete([target]) : undefined,
+        };
+    }, [allTenants, destinations, tenantName, openRecord, canRestore, canDownload, canDelete, restore, toggleLock, askDelete]);
 
     const deleteCount = deleting?.targets.length ?? 0;
     const dialogs = (

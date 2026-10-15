@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Trash } from "lucide-react";
 import { bulkDeleteGroups } from "@/app/actions/auth/group";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
+import { groupBeyond, type GroupViewer } from "@/components/dashboard/users/user-access";
+import { useViewerPermissions } from "@/components/permissions/permissions-context";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
@@ -52,7 +54,8 @@ interface GroupsTabProps {
 
 /**
  * The groups: the numbers, then the list as a table or as cards, a panel with the details of a
- * group, and the dialogs to make, change, delete a group and move its people. A phone gets cards.
+ * group, and the dialogs to make, change, delete a group and move its people. The groups and their
+ * members are the ones of the open tenant, where a group belongs. A phone gets cards.
  */
 export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: GroupsTabProps) {
     const router = useRouter();
@@ -75,22 +78,29 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
         router.refresh();
     }, [refresh, router]);
 
-    const viewerSuperAdmin = model?.viewerSuperAdmin ?? false;
+    const permissions = useViewerPermissions();
+    const viewerPlatformAdmin = model?.viewerPlatformAdmin ?? false;
+    const viewer = useMemo<GroupViewer>(() => ({ platformAdmin: viewerPlatformAdmin, permissions }), [viewerPlatformAdmin, permissions]);
     const handlers = useMemo<GroupActionHandlers>(() => canManage ? {
         onEdit: (group) => setForm({ open: true, mode: { kind: "edit", group } }),
         onDuplicate: (group) => setForm({ open: true, mode: { kind: "duplicate", group } }),
         onDelete: setRemoving,
     } : {}, [canManage]);
 
-    // Only a SuperAdmin moves people into or out of the SuperAdmin group.
-    const movable = useCallback((group: GroupRow) => canMove && (!group.superAdmin || viewerSuperAdmin), [canMove, viewerSuperAdmin]);
+    // Nobody gives a group that may do more than they may, or takes it from anyone.
+    const movable = useCallback((group: GroupRow) => canMove && !groupBeyond(group, viewer), [canMove, viewer]);
+    // Nor changes or deletes it, which the server refuses as well.
+    const handlersFor = useCallback(
+        (group: GroupRow): GroupActionHandlers => (groupBeyond(group, viewer) ? { ...handlers, onEdit: undefined, onDelete: undefined } : handlers),
+        [handlers, viewer]
+    );
 
     const open = useCallback((group: GroupRow) => setDetails({ id: group.id, open: true }), []);
     // A link like the search in the header opens one with `?open=`.
     useOpenFromLink(model?.groups, open);
     const columns = useMemo(
-        () => groupColumns({ onOpen: open, renderActions: (group) => <BackupRowMenu name={group.name} groups={groupActions(group, handlers)} /> }),
-        [open, handlers]
+        () => groupColumns({ onOpen: open, renderActions: (group) => <BackupRowMenu name={group.name} groups={groupActions(group, handlersFor(group))} /> }),
+        [open, handlersFor]
     );
 
     const groups = useMemo(() => model?.groups ?? [], [model]);
@@ -103,10 +113,11 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
         itemName: (group) => group.name,
         itemDetail: (group) => countWord(group.members.length, "member", "members"),
         // A group with members is deleted on its own, where the dialog asks where they go.
-        ineligible: (group) => (group.superAdmin ? "Built in" : group.members.length > 0 ? "People are in it, delete it on its own to move them" : null),
+        ineligible: (group) => (group.superAdmin ? "Holds every permission" : group.members.length > 0 ? "People are in it, delete it on its own to move them" : null),
         confirm: {
             title: (selected) => `Delete ${selected.length} group${selected.length === 1 ? "" : "s"}?`,
-            description: () => "Nobody is in these groups, so no one loses access.",
+            // The server keeps a group that has members anywhere, so nobody loses access by this.
+            description: () => "Nobody loses access, a group that still has members stays.",
             confirmLabel: "Delete",
         },
         run: (selected) => unwrapBulkAction(bulkDeleteGroups(selected.map((group) => group.id))),
@@ -146,7 +157,7 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                     isLoading={isLoading}
                     enableRowSelection={canManage && view === "table"}
                     getRowId={(group) => group.id}
-                    isRowSelectable={(group) => !group.superAdmin}
+                    isRowSelectable={(group) => !group.superAdmin && !groupBeyond(group, viewer)}
                     bulkActions={bulkActions}
                     onBulkActionComplete={afterChange}
                     columnLayout={layout}
@@ -154,10 +165,10 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                     activeRowId={details?.open ? details.id : null}
                     view={view}
                     renderCard={(row) => (
-                        <GroupCard group={row.original} onOpen={open} actions={<BackupRowMenu name={row.original.name} groups={groupActions(row.original, handlers)} />} />
+                        <GroupCard group={row.original} onOpen={open} actions={<BackupRowMenu name={row.original.name} groups={groupActions(row.original, handlersFor(row.original))} />} />
                     )}
                     renderRowMenu={(group, bulk) => (
-                        <BackupContextMenu tile={<GroupTile group={group} size="sm" />} title={group.name} note={groupLine(group)} groups={groupActions(group, handlers)} bulk={bulk} />
+                        <BackupContextMenu tile={<GroupTile group={group} size="sm" />} title={group.name} note={groupLine(group)} groups={groupActions(group, handlersFor(group))} bulk={bulk} />
                     )}
                 />
             )}
@@ -166,11 +177,11 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                 open={details?.open ?? false}
                 group={shown}
                 onClose={() => setDetails((current) => current && { ...current, open: false })}
-                onEdit={handlers.onEdit}
+                onEdit={shown ? handlersFor(shown).onEdit : undefined}
                 onDuplicate={handlers.onDuplicate}
                 onMove={shown && movable(shown) ? (group: GroupRow, member: GroupMember) => setMoving({ kind: "member", group, member }) : undefined}
                 onAddPeople={shown && movable(shown) && model?.people ? (group: GroupRow) => setMoving({ kind: "add", group }) : undefined}
-                groupsMenu={shown ? groupActions(shown, handlers, true) : []}
+                groupsMenu={shown ? groupActions(shown, handlersFor(shown), true) : []}
                 version={version}
             />
 
@@ -178,6 +189,7 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                 open={form.open}
                 mode={form.mode}
                 groups={groups}
+                viewer={viewer}
                 onOpenChange={(next) => setForm((current) => ({ ...current, open: next }))}
                 onSaved={afterChange}
             />
@@ -186,7 +198,7 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                 <GroupDeleteDialog
                     group={removing}
                     groups={groups}
-                    viewerSuperAdmin={viewerSuperAdmin}
+                    viewer={viewer}
                     onClose={() => setRemoving(null)}
                     onDeleted={() => {
                         setRemoving(null);
@@ -200,7 +212,7 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                     task={moving}
                     groups={groups}
                     people={model?.people ?? []}
-                    viewerSuperAdmin={viewerSuperAdmin}
+                    viewer={viewer}
                     onClose={() => setMoving(null)}
                     onDone={() => {
                         setMoving(null);

@@ -15,6 +15,11 @@ export interface DownloadSelection {
 }
 
 interface DownloadToken {
+    /**
+     * The tenant the token was made in. A link is fetched without a session, so it is served in
+     * this tenant, and no other one finds its destination.
+     */
+    tenantId?: string;
     storageId: string;
     file: string;
     decrypt: boolean;
@@ -120,6 +125,7 @@ export function generateDownloadToken(storageId: string, file: string, decrypt: 
  * who made it, so that user can ask whether it was fetched yet.
  */
 export function generateLinkToken(params: {
+    tenantId: string;
     storageId: string;
     file: string;
     userId: string;
@@ -131,6 +137,7 @@ export function generateLinkToken(params: {
     const now = Date.now();
 
     tokenStore.set(token, {
+        tenantId: params.tenantId,
         storageId: params.storageId,
         file: params.file,
         decrypt: params.decrypt,

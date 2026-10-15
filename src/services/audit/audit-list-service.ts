@@ -30,13 +30,17 @@ export async function listAudit(query: AuditQuery, now = new Date()): Promise<{ 
 const whoKey = (group: { userId: string | null; actorName: string | null; apiKeyId: string | null }) =>
     group.apiKeyId ? `key:${group.apiKeyId}` : group.userId ? `user:${group.userId}` : group.actorName ? `deleted:${group.actorName}` : "unknown";
 
-/** How many entries each value of every filter keeps under the other filters. */
-export async function getAuditFacets(filter: AuditFilter, now = new Date()): Promise<AuditFacets> {
-    const [who, area, action, quick] = await Promise.all([
+/**
+ * How many entries each value of every filter keeps under the other filters. `byTenant` counts
+ * the tenants too, for the Tenant filter of All tenants.
+ */
+export async function getAuditFacets(filter: AuditFilter, now = new Date(), byTenant = false): Promise<AuditFacets> {
+    const [who, area, action, quick, tenant] = await Promise.all([
         prisma.auditLog.groupBy({ by: ["userId", "actorName", "apiKeyId"], where: buildAuditWhere(filter, now, "who"), _count: { _all: true } }),
         prisma.auditLog.groupBy({ by: ["resource"], where: buildAuditWhere(filter, now, "area"), _count: { _all: true } }),
         prisma.auditLog.groupBy({ by: ["action"], where: buildAuditWhere(filter, now, "action"), _count: { _all: true } }),
         prisma.auditLog.groupBy({ by: ["action"], where: buildAuditWhere(filter, now, "quick"), _count: { _all: true } }),
+        byTenant ? prisma.auditLog.groupBy({ by: ["tenantId"], where: buildAuditWhere(filter, now, "tenant"), _count: { _all: true } }) : null,
     ]);
 
     const tally = <T>(groups: (T & { _count: { _all: number } })[], keyOf: (group: T) => string | null) => {
@@ -57,6 +61,7 @@ export async function getAuditFacets(filter: AuditFilter, now = new Date()): Pro
         area: tally(area, (group) => areaOfResource(group.resource)?.id ?? null),
         action: tally(action, (group) => group.action),
         quick: quickCounts,
+        ...(tenant ? { tenant: tally(tenant, (group) => group.tenantId) } : {}),
     };
 }
 

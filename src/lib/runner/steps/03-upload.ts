@@ -196,6 +196,8 @@ export async function stepUpload(ctx: RunnerContext) {
             : {}),
         trigger,
         locked: ctx.lock === true,
+        // A backup of some databases alone, which retention judges apart from the whole backups.
+        ...(ctx.onlyDatabases ? { onlyDatabases: ctx.onlyDatabases } : {}),
     };
 
     const metaPath = ctx.tempFile + ".meta.json";

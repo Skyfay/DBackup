@@ -18,7 +18,7 @@ const bodySchema = z.object({ token: z.string().min(1) });
  */
 export async function POST(req: NextRequest) {
     const ctx = await requireConfigRestorer();
-    if (ctx instanceof NextResponse) return ctx;
+    if (ctx instanceof Response) return ctx;
 
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ success: false, error: "No checked backup given" }, { status: 400 });

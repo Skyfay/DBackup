@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Layers } from "lucide-react";
+import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
@@ -45,6 +46,8 @@ interface OpenList {
  */
 export function JobsTimeline({ runs, jobs, plan, destinations, at, onOpen, onShowInList }: JobsTimelineProps) {
     const router = useRouter();
+    // In All tenants a job opens in its tenant.
+    const openRecord = useOpenRecord();
     const format = useTimelineFormat();
     const { ref, cols } = useColumns();
     const today = format.dayOf(new Date().toISOString());
@@ -247,7 +250,10 @@ export function JobsTimeline({ runs, jobs, plan, destinations, at, onOpen, onSho
                             at={at}
                             value={list.value}
                             onOpenRun={openRun}
-                            onOpenJob={(job) => router.push(`/dashboard/jobs?job=${encodeURIComponent(job.jobId ?? job.key)}`)}
+                            onOpenJob={(job) => {
+                                const href = `/dashboard/jobs?job=${encodeURIComponent(job.jobId ?? job.key)}`;
+                                openRecord(job.tenantId, href, () => router.push(href));
+                            }}
                             onShowInList={() => {
                                 setList(null);
                                 onShowInList(list.pick);

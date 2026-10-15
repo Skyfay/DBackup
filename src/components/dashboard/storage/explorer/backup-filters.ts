@@ -1,3 +1,4 @@
+import { matchesTenants } from "@/components/tenant/tenant-rows";
 import type { BackupCopy, BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
 import type { BackupTarget } from "./use-backup-actions";
 
@@ -26,6 +27,8 @@ export interface BackupFilters {
     search: string;
     /** States, none for every backup. */
     states: BackupState[];
+    /** Tenants in All tenants, none for every tenant. */
+    tenants?: string[];
 }
 
 /** What the filters look up: the jobs by key and the destinations that answer right now. */
@@ -45,7 +48,7 @@ export function lookupOf(jobs: Map<string, ExplorerJob>, destinations: Pick<Expl
 }
 
 /** A filter left out, for the counts beside that filter. */
-type Skip = "jobs" | "at" | "by" | "states";
+type Skip = "jobs" | "at" | "by" | "states" | "tenants";
 
 /** Who started the run that made a backup: `schedule`, `manual:<person>`, `api:<key name>`, or `none` when the backup does not say. */
 export function startedByKey(file: Pick<ExplorerFile, "trigger">): string {
@@ -157,6 +160,7 @@ function matchesSearch(run: BackupRun, search: string, jobs: Map<string, Explore
 }
 
 function passes(run: BackupRun, filters: BackupFilters, lookup: BackupLookup, skip?: Skip): boolean {
+    if (skip !== "tenants" && !matchesTenants(run.tenantId, filters.tenants)) return false;
     if (skip !== "jobs" && filters.jobs.length > 0 && !filters.jobs.includes(run.jobKey)) return false;
     if (skip !== "by" && filters.by.length > 0 && !filters.by.includes(startedByKey(run.file))) return false;
     const at = skip === "at" ? [] : filters.at;
@@ -180,6 +184,8 @@ export interface BackupCounts {
     by: Map<string, number>;
     /** Backups per state under every other filter. */
     states: Record<BackupState, number>;
+    /** Backups per tenant under every other filter, for the Tenant filter in All tenants. */
+    tenants: Map<string, number>;
     /** Of those, the ones that need a look: with a copy missing, and with a failed check or no copy that answers. */
     attention: { warning: number; destructive: number };
 }
@@ -198,6 +204,11 @@ export function countBackups(runs: BackupRun[], filters: BackupFilters, lookup: 
         byStarter.set(key, (byStarter.get(key) ?? 0) + 1);
     }
 
+    const byTenant = new Map<string, number>();
+    for (const run of filterBackups(runs, filters, lookup, "tenants")) {
+        if (run.tenantId) byTenant.set(run.tenantId, (byTenant.get(run.tenantId) ?? 0) + 1);
+    }
+
     const states: Record<BackupState, number> = { missing: 0, failed: 0, unreachable: 0, locked: 0, deleted: 0 };
     const attention = { warning: 0, destructive: 0 };
     for (const run of filterBackups(runs, filters, lookup, "states")) {
@@ -206,7 +217,7 @@ export function countBackups(runs: BackupRun[], filters: BackupFilters, lookup: 
         if (holds.includes("missing")) attention.warning++;
         if (holds.includes("failed") || holds.includes("unreachable")) attention.destructive++;
     }
-    return { jobs: byJob, at: byDestination, by: byStarter, states, attention };
+    return { jobs: byJob, at: byDestination, by: byStarter, states, tenants: byTenant, attention };
 }
 
 export interface BackupSummary {

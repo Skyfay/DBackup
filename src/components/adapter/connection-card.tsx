@@ -7,9 +7,11 @@ import { cn } from "@/lib/utils";
 import type { AdapterConfig } from "./types";
 import { kindNames } from "./connection-columns";
 import { connectionVersion } from "@/lib/adapters/connection-summary";
+import { TenantLine } from "@/components/tenant/tenant-column";
+import { TENANT_COLUMN_ID } from "@/components/tenant/tenant-rows";
 
 /** Columns a card draws in their own place rather than in the row of values. */
-const PLACED = new Set(["select", "name", "status", "address", "health", "actions"]);
+const PLACED = new Set(["select", "name", "status", "address", "health", "actions", TENANT_COLUMN_ID]);
 /** Values fit three abreast, more would crowd the card. */
 const VALUES_SHOWN = 3;
 
@@ -18,6 +20,8 @@ const BUCKETS = { ok: "bg-success", failed: "bg-warning", offline: "bg-destructi
 interface ConnectionCardProps {
     row: Row<AdapterConfig>;
     onOpen: (config: AdapterConfig) => void;
+    /** The tenant of the connection, a small line under its type in All tenants. */
+    tenantName?: string | null;
 }
 
 /**
@@ -25,7 +29,7 @@ interface ConnectionCardProps {
  * what a card shows: the status, the address and the first three other visible columns,
  * plus the health strip while its column is on.
  */
-export function ConnectionCard({ row, onOpen }: ConnectionCardProps) {
+export function ConnectionCard({ row, onOpen, tenantName = null }: ConnectionCardProps) {
     const config = row.original;
     const cells = row.getVisibleCells();
     const byId = new Map(cells.map((cell) => [cell.column.id, cell]));
@@ -58,6 +62,7 @@ export function ConnectionCard({ row, onOpen }: ConnectionCardProps) {
                         {kindNames.get(config.adapterId) ?? config.adapterId}
                         {version && ` ${version}`}
                     </p>
+                    <TenantLine name={tenantName} className="mt-0.5" />
                 </div>
                 <div className="-mt-1 -mr-2">{render("actions")}</div>
             </div>

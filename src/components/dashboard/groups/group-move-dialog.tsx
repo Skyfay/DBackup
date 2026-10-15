@@ -5,6 +5,7 @@ import { ArrowRight, Loader2, Search, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { moveUsersToGroup } from "@/app/actions/auth/group";
 import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
+import { groupBeyond, type GroupViewer } from "@/components/dashboard/users/user-access";
 import { GroupTag } from "@/components/dashboard/users/user-cells";
 import { NO_GROUP } from "@/components/dashboard/users/user-columns";
 import { Button } from "@/components/ui/button";
@@ -28,9 +29,9 @@ export type GroupMoveTask = { kind: "member"; group: GroupRow; member: GroupMemb
 interface GroupMoveDialogProps {
     task: GroupMoveTask;
     groups: GroupRow[];
-    /** Everyone who signs in, for Add people. */
+    /** The people of the open tenant, for Add people. */
     people: GroupPerson[];
-    viewerSuperAdmin: boolean;
+    viewer: GroupViewer;
     onClose: () => void;
     onDone: () => void;
 }
@@ -42,10 +43,11 @@ function report(result: BulkResult) {
 }
 
 /**
- * Moves people between groups from the panel of a group: one member to another group, or several
- * people into this one. Both change the users, so both need the right to change users.
+ * Moves people between groups from the panel of a group, in the open tenant: one member to another
+ * group, or several people into this one. Both change the users, so both need the right to change
+ * users, and nobody gives or takes a group that may do more than they may.
  */
-export function GroupMoveDialog({ task, groups, people, viewerSuperAdmin, onClose, onDone }: GroupMoveDialogProps) {
+export function GroupMoveDialog({ task, groups, people, viewer, onClose, onDone }: GroupMoveDialogProps) {
     const [pending, setPending] = useState(false);
     const [target, setTarget] = useState("");
     const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -85,11 +87,11 @@ export function GroupMoveDialog({ task, groups, people, viewerSuperAdmin, onClos
                 {task.kind === "member" ? (
                     <ScrollArea className="min-h-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-10rem)]">
                         <div className="p-5">
-                            <ChoiceCards value={target} onValueChange={setTarget} options={groupTargets(groups, task.group.id, viewerSuperAdmin)} aria-label="The group to move to" />
+                            <ChoiceCards value={target} onValueChange={setTarget} options={groupTargets(groups, task.group.id, viewer)} aria-label="The group to move to" />
                         </div>
                     </ScrollArea>
                 ) : (
-                    <PeoplePicker group={task.group} groups={groups} people={people} viewerSuperAdmin={viewerSuperAdmin} picked={picked} onPickedChange={setPicked} />
+                    <PeoplePicker group={task.group} groups={groups} people={people} viewer={viewer} picked={picked} onPickedChange={setPicked} />
                 )}
 
                 <div className={cn(DIALOG_FOOTER, "flex items-center justify-end gap-2")}>
@@ -111,27 +113,27 @@ interface PeoplePickerProps {
     group: GroupRow;
     groups: GroupRow[];
     people: GroupPerson[];
-    viewerSuperAdmin: boolean;
+    viewer: GroupViewer;
     picked: Set<string>;
     onPickedChange: (next: Set<string>) => void;
 }
 
-/** Why someone cannot be moved from here, or null. */
-function blocker(person: GroupPerson, viewerSuperAdmin: boolean): string | null {
+/** Why someone cannot be moved from here, or null: the viewer, and whoever is in a group that may do more than the viewer may. */
+export function moveBlocker(person: Pick<GroupPerson, "isYou" | "groupId">, groups: readonly GroupRow[], viewer: GroupViewer): string | null {
     if (person.isYou) return "You";
-    if (person.superAdmin && !viewerSuperAdmin) return "Only a SuperAdmin moves a SuperAdmin";
-    return null;
+    const current = person.groupId ? groups.find((group) => group.id === person.groupId) : undefined;
+    return current && groupBeyond(current, viewer) ? "Their group may do more than you may" : null;
 }
 
 /** The people outside the group, with a search, a checkbox for all the search shows and their current group. */
-function PeoplePicker({ group, groups, people, viewerSuperAdmin, picked, onPickedChange }: PeoplePickerProps) {
+function PeoplePicker({ group, groups, people, viewer, picked, onPickedChange }: PeoplePickerProps) {
     const [search, setSearch] = useState("");
     const idBase = useId();
     const names = useMemo(() => new Map(groups.map((entry) => [entry.id, entry.name])), [groups]);
     const outside = people.filter((person) => person.groupId !== group.id);
     const term = search.trim().toLowerCase();
     const shown = term ? outside.filter((person) => person.name.toLowerCase().includes(term) || person.email.toLowerCase().includes(term)) : outside;
-    const pickable = shown.filter((person) => !blocker(person, viewerSuperAdmin));
+    const pickable = shown.filter((person) => !moveBlocker(person, groups, viewer));
     const all = pickable.length > 0 && pickable.every((person) => picked.has(person.id));
     const some = pickable.some((person) => picked.has(person.id));
 
@@ -145,7 +147,7 @@ function PeoplePicker({ group, groups, people, viewerSuperAdmin, picked, onPicke
     };
 
     if (outside.length === 0) {
-        return <p className="p-5 text-sm text-muted-foreground">Everyone is in {group.name} already.</p>;
+        return <p className="p-5 text-sm text-muted-foreground">Everyone here is in {group.name} already.</p>;
     }
 
     return (
@@ -162,7 +164,7 @@ function PeoplePicker({ group, groups, people, viewerSuperAdmin, picked, onPicke
                 <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[min(20rem,calc(95dvh-18rem))]">
                     <ul className="divide-y">
                         {shown.map((person) => {
-                            const reason = blocker(person, viewerSuperAdmin);
+                            const reason = moveBlocker(person, groups, viewer);
                             const id = `${idBase}-${person.id}`;
                             return (
                                 <li key={person.id} className={cn("flex min-w-0 items-center gap-3 px-3 py-2", reason && "opacity-60")}>

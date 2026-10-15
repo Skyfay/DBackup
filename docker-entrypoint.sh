@@ -73,8 +73,10 @@ chmod 1777 /tmp
 
 # ─── Start application ───────────────────────────────────────
 # A configuration restore waits beside the database until DBackup is down, swap it in first.
-# Then run database migrations, which bring an older restored copy up to date, and exec node
-# as PID 1 for proper signal handling
+# Keep a copy of the database when a migration is pending, since none can be undone. Then run
+# the migrations, which bring an older restored copy up to date, and exec node as PID 1 for
+# proper signal handling
 gosu "$PUID:$PGID" node /app/scripts/apply-pending-restore.js
+gosu "$PUID:$PGID" node /app/scripts/backup-before-migrate.js
 gosu "$PUID:$PGID" prisma migrate deploy
 exec gosu "$PUID:$PGID" node custom-server.js

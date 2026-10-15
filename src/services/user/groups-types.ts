@@ -1,7 +1,8 @@
 /**
- * What the Groups tab of the Users & Groups page shows: every group with what it lets its
- * members do and who they are, and a panel with its history. Plain data, so the browser can
- * import it without the services behind it.
+ * What the Groups tab of the Users & Groups page shows: every group of the tenant with what it
+ * lets its members do and who they are, and a panel with its history. A group belongs to one
+ * tenant. Users & Groups of the Platform lists the groups of every tenant, read only. Plain data,
+ * so the browser can import it without the services behind it.
  */
 
 /** Who did something to a group and when, as far as the audit log still knows. */
@@ -21,9 +22,12 @@ export interface GroupMember {
 export interface GroupRow {
     id: string;
     name: string;
-    /** The built-in group that passes every check, which nobody edits or deletes. */
+    /** The tenant it belongs to, on the list of every tenant of the Platform. Absent inside a tenant. */
+    tenantId?: string;
+    /** The group with every permission (`fullAccess`), which nobody edits or deletes. */
     superAdmin: boolean;
     permissions: string[];
+    /** Its members, who hold it in its tenant. */
     members: GroupMember[];
     createdAt: string;
     made: GroupActor | null;
@@ -35,7 +39,9 @@ export interface GroupPerson {
     id: string;
     name: string;
     email: string;
+    /** Their group in the tenant the list is for. */
     groupId: string | null;
+    /** A platform admin, who sees every tenant. */
     superAdmin: boolean;
     isYou: boolean;
 }
@@ -56,10 +62,12 @@ export interface GroupsStats {
 export interface GroupsModel {
     groups: GroupRow[];
     stats: GroupsStats;
-    /** Everyone who signs in, only for a viewer who may see the users. */
+    /** The people of the tenant the list is for, only for a viewer who may see the users. */
     people: GroupPerson[] | null;
-    /** A SuperAdmin may move someone into the SuperAdmin group. */
-    viewerSuperAdmin: boolean;
+    /** The viewer is a platform admin, who may give every group. */
+    viewerPlatformAdmin: boolean;
+    /** The groups of every tenant, read only, for Users & Groups of the Platform. A group is changed in its tenant. */
+    allTenants: boolean;
 }
 
 export interface GroupHistoryEntry {

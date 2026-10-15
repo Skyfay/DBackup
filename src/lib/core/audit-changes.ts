@@ -1,4 +1,4 @@
-import { areaOf, LEVEL_LABELS, permissionInfo, PERMISSION_AREAS, type AreaLevel } from "@/lib/auth/permission-areas";
+import { areaOf, LEVEL_LABELS, permissionInfo, PERMISSION_AREAS, PLATFORM_AREAS, type AreaLevel } from "@/lib/auth/permission-areas";
 import { AUDIT_ACTIONS } from "./audit-types";
 
 /**
@@ -39,7 +39,8 @@ export function changesOf(details: Record<string, unknown>): ChangeRow[] {
     for (const entry of areas) {
         if (!entry || typeof entry !== "object") continue;
         const { area, from, to } = entry as Record<string, unknown>;
-        const info = PERMISSION_AREAS.find((candidate) => candidate.id === area);
+        // The areas of a group of a tenant, and those on the platform of a platform group.
+        const info = PERMISSION_AREAS.find((candidate) => candidate.id === area) ?? PLATFORM_AREAS.find((candidate) => candidate.id === area);
         if (!info) continue;
         const inArea = (id: string) => areaOf(id)?.id === info.id;
         added.filter(inArea).forEach((id) => shown.add(id));

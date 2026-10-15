@@ -19,6 +19,8 @@ export interface RunRecord {
     metadata: string | null;
     triggerType: string | null;
     triggerLabel: string | null;
+    /** The tenant of the run. A record the tests build may leave it out. */
+    tenantId?: string;
     job: {
         name: string;
         source: { adapterId: string } | null;
@@ -204,5 +206,6 @@ export function runRow(record: RunRecord, usualMs: number | null, error: string 
         note: noteOf(status, copies, live, error),
         live: running ? live : null,
         starter: starterOf(record.triggerType, record.triggerLabel),
+        tenantId: record.tenantId,
     };
 }

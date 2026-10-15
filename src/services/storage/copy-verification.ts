@@ -136,7 +136,8 @@ export async function startCopyVerification(targets: CopyTarget[], triggeredBy: 
                         triggerType: "Manual",
                         errors: failures,
                     },
-                });
+                // The check is a run of the tenant of the backup, whose channels hear about it too.
+                }, { executionId: runner.id });
             }
         } catch (e: unknown) {
             log.error("Copy verification failed", { executionId: runner.id }, wrapError(e));

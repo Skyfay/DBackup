@@ -26,11 +26,15 @@ export interface JobRecord {
     destinationIds: string[];
     /** The retention policy of each of those destinations, as its JSON. */
     retention?: Record<string, string>;
+    /** The tenant of the job. */
+    tenantId?: string;
 }
 
 export interface DestinationListing {
     destinationId: string;
     files: ExplorerFile[];
+    /** The tenant of the destination, which the files without an existing job belong to. */
+    tenantId?: string;
 }
 
 export interface ExplorerModel {
@@ -173,33 +177,39 @@ function nameOf(key: string, files: ExplorerFile[]): string {
 
 const KIND_ORDER: Record<ExplorerJobKind, number> = { job: 0, deleted: 1, system: 2, none: 3 };
 
-/** Every job with backups or a destination, and its runs. `airGapped` are the destinations connected only now and then. */
-export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[], airGapped: Set<string> = new Set()): ExplorerModel {
+/**
+ * The jobs and runs of one tenant. `prefix` goes in front of the keys of the kinds without a job
+ * record, which are only unique within a tenant.
+ */
+function buildTenant(jobs: JobRecord[], listings: DestinationListing[], airGapped: Set<string>, tenantId: string | undefined, prefix: string): ExplorerModel {
     const jobsById = new Map(jobs.map((job) => [job.id, job]));
     const collected = collect(jobs, listings);
     const result: ExplorerJob[] = [];
     const runsByKey = new Map<string, BackupRun[]>();
+    const tenant = tenantId === undefined ? {} : { tenantId };
 
-    for (const [key, { byDestination }] of collected) {
-        const record = jobsById.get(key);
-        const kind = kindOfKey(key, jobsById);
+    for (const [found, { byDestination }] of collected) {
+        const record = jobsById.get(found);
+        const kind = kindOfKey(found, jobsById);
         const files = [...byDestination.values()].flat();
         // A job with neither backups nor destinations has nothing to show, a config backup or a
         // file without a job only exists through its files.
         if (kind !== "job" && files.length === 0) continue;
 
+        const key = kind === "job" ? found : `${prefix}${found}`;
         const configured = record?.destinationIds ?? [];
         const holding = [...byDestination.keys()].filter((id) => !configured.includes(id)).sort();
         const expected = [...configured, ...holding];
-        const runs = runsOf(key, expected, byDestination, new Set(configured), airGapped);
+        const runs = runsOf(key, expected, byDestination, new Set(configured), airGapped).map((run) => ({ ...run, ...tenant }));
         runsByKey.set(key, runs);
 
         const sample = files.find((file) => file.sourceType) ?? files[0];
         result.push({
             key,
             kind,
-            name: record?.name ?? nameOf(key, files),
-            jobId: record?.id ?? (key.startsWith(DELETED_ID) ? key.slice(DELETED_ID.length) : null),
+            name: record?.name ?? nameOf(found, files),
+            ...tenant,
+            jobId: record?.id ?? (found.startsWith(DELETED_ID) ? found.slice(DELETED_ID.length) : null),
             sourceType: record ? record.sourceType : sample?.sourceType && sample.sourceType !== "directory-only" ? sample.sourceType : null,
             sourceName: record ? record.sourceName : sample?.sourceName ?? null,
             hasFolders: record ? record.hasFolders : files.some((file) => (file.combined?.directorySources ?? 0) > 0 || file.sourceType === "directory-only"),
@@ -216,7 +226,28 @@ export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[],
             retention: record?.retention ?? {},
         });
     }
-
-    result.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name));
     return { jobs: result, runs: runsByKey };
+}
+
+/**
+ * Every job with backups or a destination, and its runs. `airGapped` are the destinations connected
+ * only now and then.
+ *
+ * Each tenant is put together on its own, since a file without a job id finds its job by name and
+ * the files of no job share one group, which must not reach into another tenant. With more than one
+ * tenant the keys of those groups name their tenant, with one they stay as they are.
+ */
+export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[], airGapped: Set<string> = new Set()): ExplorerModel {
+    const tenants = [...new Set<string | undefined>([...jobs.map((job) => job.tenantId), ...listings.map((listing) => listing.tenantId)])];
+    const models = tenants.map((tenantId) => buildTenant(
+        jobs.filter((job) => job.tenantId === tenantId),
+        listings.filter((listing) => listing.tenantId === tenantId),
+        airGapped,
+        tenantId,
+        tenants.length > 1 && tenantId !== undefined ? `${tenantId}:` : "",
+    ));
+
+    const result = models.flatMap((model) => model.jobs);
+    result.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name) || (a.tenantId ?? "").localeCompare(b.tenantId ?? ""));
+    return { jobs: result, runs: new Map(models.flatMap((model) => [...model.runs])) };
 }

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { clientAddress } from "@/lib/core/client-address";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 
 /**
@@ -72,7 +73,7 @@ export async function recordSignIn(ctx: SignInHookContext): Promise<void> {
             AUDIT_RESOURCES.AUTH,
             { method, ...(providerId ? { provider: provider?.name ?? providerId, providerId } : {}) },
             undefined,
-            { ipAddress: created.session.ipAddress ?? request.ipAddress, userAgent: created.session.userAgent ?? request.userAgent }
+            { ipAddress: created.session.ipAddress ?? request.ipAddress, userAgent: created.session.userAgent ?? request.userAgent, tenantId: HOME_TENANT_ID }
         );
         return;
     }
@@ -88,12 +89,13 @@ export async function recordSignIn(ctx: SignInHookContext): Promise<void> {
         AUDIT_RESOURCES.AUTH,
         { method, ...(email ? { email } : {}), reason: account ? "wrong_password" : "unknown_email" },
         account?.id,
-        requestOf(ctx)
+        { ...requestOf(ctx), tenantId: HOME_TENANT_ID }
     );
 }
 
 /** Runs before the sign-out endpoint, while the session to end is still there. */
 export async function recordSignOut(ctx: SignInHookContext, session: { user: { id: string } } | null): Promise<void> {
     if (ctx.path !== "/sign-out" || !session) return;
-    await auditService.log(session.user.id, AUDIT_ACTIONS.LOGOUT, AUDIT_RESOURCES.AUTH, {}, undefined, requestOf(ctx));
+    // An account signs in and out of the instance, not of the tenant it looks at, so both go to the home tenant.
+    await auditService.log(session.user.id, AUDIT_ACTIONS.LOGOUT, AUDIT_RESOURCES.AUTH, {}, undefined, { ...requestOf(ctx), tenantId: HOME_TENANT_ID });
 }

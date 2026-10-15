@@ -3,6 +3,7 @@ import { prismaMock } from '@/lib/testing/prisma-mock';
 import { StorageService, CACHE_SCHEMA_VERSION, clearListingState } from '@/services/storage/storage-service';
 import { registry } from '@/lib/core/registry';
 import type { FileInfo, StorageAdapter } from '@/lib/core/interfaces';
+import { explicitScope, runAsTenant } from '@/lib/tenant/context';
 
 vi.mock('@/lib/crypto', () => ({ decryptConfig: (input: unknown) => input }));
 vi.mock('@/lib/core/registry', () => ({ registry: { get: vi.fn() } }));
@@ -48,6 +49,24 @@ describe('listings of a destination that does not always answer', () => {
 
         await expect(Promise.all([first, second])).resolves.toHaveLength(2);
         expect(list).toHaveBeenCalledTimes(1);
+    });
+
+    it('lists a queued destination in its own tenant, whichever request frees the slot', async () => {
+        prismaMock.adapterConfig.findUnique.mockResolvedValue({ ...destination, tenantId: 'acme' } as never);
+        prismaMock.storageListCache.findUnique.mockResolvedValue(null);
+        const scopes: unknown[] = [];
+        const list = vi.fn(async () => {
+            scopes.push(explicitScope());
+            return [];
+        });
+        vi.mocked(registry.get).mockReturnValue(adapterWith(list));
+
+        // Asked for from a request of another tenant, like a page of Globex that freed the slot.
+        runAsTenant('globex', () => service.refreshInBackground('nas', 'rebuild'));
+        await vi.waitFor(() => expect(list).toHaveBeenCalled());
+
+        expect(scopes).toEqual([{ kind: 'tenant', tenantId: 'acme' }]);
+        expect(prismaMock.job.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: 'acme' } }));
     });
 
     it('remembers a failed listing and leaves the destination alone for a while, unless asked to check now', async () => {

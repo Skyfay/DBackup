@@ -18,12 +18,14 @@ export interface AuditActor {
     image: string | null;
     /** The person was deleted since, the name is the one the entry kept. */
     deleted: boolean;
-    /** A person in the SuperAdmin group now, whom only a SuperAdmin signs out. */
+    /** A person who is a platform admin now, whom only a platform admin signs out. */
     superAdmin: boolean;
 }
 
 export interface AuditRow {
     id: string;
+    /** The tenant whose log keeps the entry, for the Tenant column of All tenants. */
+    tenantId: string;
     at: string;
     actor: AuditActor;
     action: string;
@@ -66,6 +68,8 @@ export interface AuditFacets {
     area: Record<string, number>;
     action: Record<string, number>;
     quick: Record<AuditQuick, number>;
+    /** By tenant, only in All tenants, where the list has a Tenant filter. */
+    tenant?: Record<string, number>;
 }
 
 export interface AuditPage {

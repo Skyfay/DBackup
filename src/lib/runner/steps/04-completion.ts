@@ -7,6 +7,7 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
+import type { NotificationEventData } from "@/lib/notifications/types";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
@@ -193,15 +194,27 @@ export async function stepFinalize(ctx: RunnerContext) {
         }
     }
 
-    if (channelsToNotify.length > 0 && ctx.job) {
+    const eventType = isSuccess
+        ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
+        : isPartial
+            ? NOTIFICATION_EVENTS.BACKUP_PARTIAL
+            : NOTIFICATION_EVENTS.BACKUP_FAILURE;
+
+    // The tenant of the job hears about the run on its own channels too, once it picked any for it
+    // in its settings. The home tenant does not, its jobs report through their own channels.
+    const tenantId = ctx.job?.tenantId;
+    const tenantHears = tenantId
+        ? await import("@/services/notifications/tenant-notification-settings")
+            .then(({ tenantHearsAbout }) => tenantHearsAbout(tenantId, eventType))
+            .catch((e: unknown) => {
+                log.warn("Could not read the notifications of the tenant", { tenantId }, wrapError(e));
+                return false;
+            })
+        : false;
+
+    if ((channelsToNotify.length > 0 || tenantHears) && ctx.job) {
         ctx.setStage(PIPELINE_STAGES.NOTIFICATIONS);
         ctx.log("Sending notifications...");
-
-        const eventType = isSuccess
-            ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
-            : isPartial
-                ? NOTIFICATION_EVENTS.BACKUP_PARTIAL
-                : NOTIFICATION_EVENTS.BACKUP_FAILURE;
 
         // What the run did, read once for every channel.
         const brand = await loadNotificationBrand();
@@ -301,6 +314,15 @@ export async function stepFinalize(ctx: RunnerContext) {
                     executionId: ctx.execution?.id,
                 });
             }
+        }
+
+        if (tenantHears && tenantId) {
+            // Only the channels of the tenant, the platform hears about runs through the jobs alone.
+            const { notify } = await import("@/services/notifications/system-notification-service");
+            // A channel the job told already gets it once.
+            const skipChannelIds = channelsToNotify.map(({ channel }) => channel.id);
+            const sent = await notify({ eventType, data } as NotificationEventData, { executionId: ctx.execution?.id, tenantId, platform: false, skipChannelIds });
+            if (sent && sent.failed > 0) ctx.log(`${sent.failed} channel(s) of the tenant did not take the notification`);
         }
     }
 }

@@ -241,7 +241,15 @@ export const integrityDetail = () => detail({
 export const fetchMock = vi.fn();
 const json = (body: unknown, status = 200) => Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) } as Response);
 
-export function serve({ run = detail(), page = runPage }: { run?: RunDetail | null; page?: RunPage } = {}) {
+interface Served {
+    run?: RunDetail | null;
+    page?: RunPage;
+    /** The notifications of the list, and how many each tenant sent for the Tenant filter of All tenants. */
+    logs?: NotificationLogRow[];
+    logTenants?: Record<string, number>;
+}
+
+export function serve({ run = detail(), page = runPage, logs = notifications, logTenants }: Served = {}) {
     fetchMock.mockReset();
     fetchMock.mockImplementation((url: string) => {
         if (url === "/api/history/attention") return json({ success: true, data: { runs: { tone: "destructive", note: "Shop offsite failed on its last run" } } });
@@ -251,11 +259,14 @@ export function serve({ run = detail(), page = runPage }: { run?: RunDetail | nu
             if (url.includes("row=1")) return json({ success: true, data: row() });
             return json({ success: true, data: run });
         }
-        if (url.startsWith("/api/notification-logs?executionId=")) return json({ data: notifications, total: 2 });
+        if (url.startsWith("/api/notification-logs?executionId=")) return json({ data: logs, total: logs.length });
         if (url.startsWith("/api/notification-logs?")) {
             return json({
-                data: notifications, total: 2, page: 1, pageSize: 25,
-                facets: { adapterId: {}, status: { Success: 1, Failed: 1 }, channelName: { "Discord #ops": 1, "Telegram Manu": 1 }, eventType: { backup_partial: 2 } },
+                data: logs, total: logs.length, page: 1, pageSize: 25,
+                facets: {
+                    adapterId: {}, status: { Success: 1, Failed: 1 }, channelName: { "Discord #ops": 1, "Telegram Manu": 1 }, eventType: { backup_partial: 2 },
+                    ...(logTenants ? { tenantId: logTenants } : {}),
+                },
                 stats: { sent: 3396, failed: 6, lastFailed: { channelName: "Telegram Manu", at: ago(6) }, channels: ["Discord #ops", "Telegram Manu"], events: 9 },
                 options: { channels: [{ name: "Discord #ops", adapterId: "discord" }, { name: "Telegram Manu", adapterId: "telegram" }], events: ["backup_partial"] },
             });

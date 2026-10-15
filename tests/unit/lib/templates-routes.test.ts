@@ -41,7 +41,7 @@ import { getRetentionPolicyTargets } from "@/app/actions/templates-retention";
 import { deleteSchedulePreset } from "@/app/actions/templates";
 import { bulkDeleteSchedulePresets } from "@/app/actions/templates-bulk";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 
 describe("GET /api/templates", () => {
     beforeEach(() => {

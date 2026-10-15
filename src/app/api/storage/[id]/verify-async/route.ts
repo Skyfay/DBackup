@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
 import { startCopyVerification } from "@/services/storage/copy-verification";
+import { userService } from "@/services/user/user-service";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -25,9 +25,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
         }
 
-        const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
+        const startedBy = (await userService.nameOf(ctx.userId)) ?? "Manual";
         // One copy is a check of copies with one entry, so it runs, logs and notifies the same way.
-        const { executionId } = await startCopyVerification([{ destinationId: params.id, file }], user?.name ?? "Manual");
+        const { executionId } = await startCopyVerification([{ destinationId: params.id, file }], startedBy);
 
         return NextResponse.json({ success: true, executionId });
     } catch (error: unknown) {

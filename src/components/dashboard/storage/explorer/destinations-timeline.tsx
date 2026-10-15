@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Layers, Scissors } from "lucide-react";
 import { signedBytes } from "@/components/dashboard/widgets/storage-history-data";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatBytes } from "@/lib/utils";
 import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
@@ -53,6 +54,13 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
     const { ref, cols } = useColumns();
     const today = format.dayOf(new Date().toISOString());
     const { days, last, ahead, toToday, back, forward, center } = useTimelineWindow(cols, today);
+    // In All tenants the line under a destination names its tenant.
+    const { allTenants } = useTenantView();
+    const nameOf = useTenantName();
+
+    // The destinations the filters leave come as a new list with every render of the table. The
+    // tallies only follow the air-gapped ones among them.
+    const airGappedIds = destinations.filter((destination) => destination.airGapped).map((destination) => destination.id).join("\n");
 
     // What arrived and went missing at every destination by day, and what the schedules plan there.
     const tallies = useMemo(() => {
@@ -60,7 +68,7 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
         const jobsByKey = new Map(jobs.map((job) => [job.key, job]));
         // An air-gapped destination has no missing copies. A run without it counts as a day it was
         // away, from its first backup on, so its gray days show when it was not connected.
-        const airGapped = new Set(destinations.filter((destination) => destination.airGapped).map((destination) => destination.id));
+        const airGapped = new Set(airGappedIds ? airGappedIds.split("\n") : []);
         const firstArrival = new Map<string, number>();
         for (const run of runs) {
             for (const copy of run.copies) {
@@ -96,7 +104,7 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
             }
         }
         return byKey;
-    }, [runs, jobs, destinations, plan, today, format]);
+    }, [runs, jobs, airGappedIds, plan, today, format]);
 
     const rows = useMemo(() => destinations.map((destination) => ({
         destination,
@@ -123,11 +131,17 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
         planned: day > today,
     }));
     const peak = Math.max(...totals.map((total) => total.count), 1);
+    // The days the calendar marks, of the destinations that show.
+    const shownIds = destinations.map((destination) => destination.id).join("\n");
     const problems = useMemo(() => {
+        const shown = new Set(shownIds.split("\n"));
         const marked = new Set<DayKey>();
-        for (const [key, tally] of tallies) if (tally.missing > 0) marked.add(key.split("|")[1]);
+        for (const [key, tally] of tallies) {
+            const [destinationId, day] = key.split("|");
+            if (tally.missing > 0 && shown.has(destinationId)) marked.add(day);
+        }
         return [...marked].map(toDate);
-    }, [tallies]);
+    }, [tallies, shownIds]);
 
     const template = gridTemplate(cols);
     const sub = ahead
@@ -200,6 +214,7 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
                                         <AnswerDot answer={answerOf(destination)} />
                                     </span>
                                     <span className="block truncate text-xs text-muted-foreground">
+                                        {allTenants && nameOf(destination.tenantId) && `${nameOf(destination.tenantId)} · `}
                                         {formatBytes(destination.size)}
                                         {destination.growth !== null && ` · ${signedBytes(destination.growth)} in 7 days`}
                                     </span>

@@ -179,6 +179,8 @@ COPY --from=builder --link --chown=1001:1001 /app/scripts/dbackup-recover.js ./s
 
 # Swaps in a configuration restore before the migrations run, called by docker-entrypoint.sh.
 COPY --from=builder --link --chown=1001:1001 /app/scripts/apply-pending-restore.js ./scripts/apply-pending-restore.js
+# Keeps a copy of the database before the migrations change it, called by docker-entrypoint.sh.
+COPY --from=builder --link --chown=1001:1001 /app/scripts/backup-before-migrate.js ./scripts/backup-before-migrate.js
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

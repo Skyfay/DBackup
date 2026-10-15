@@ -6,6 +6,10 @@
 
 import { ConflictError } from "@/lib/logging/errors";
 import type { Tx } from "@/lib/prisma-tx";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { rememberServer, serverRestored } from "@/services/tenant/shared-servers";
 import type { ConnectionSnapshot, CredentialSnapshot, JobSnapshot, KeySnapshot, UserSnapshot } from "./trash-snapshot";
 import type { TrashKind } from "./trash-types";
 
@@ -30,7 +34,7 @@ async function restoreKey(tx: Tx, { record }: KeySnapshot, newName?: string): Pr
 
 async function restoreCredential(tx: Tx, { record }: CredentialSnapshot, newName?: string): Promise<RestoredRecord> {
     const name = newName || record.name;
-    if (await tx.credentialProfile.findUnique({ where: { name }, select: { id: true } })) {
+    if (await tx.credentialProfile.findFirst({ where: { name }, select: { id: true } })) {
         throw new ConflictError(`A saved login named ${name} exists already.`);
     }
     await tx.credentialProfile.create({ data: { ...record, name } });
@@ -57,7 +61,30 @@ async function restoreConnection(tx: Tx, snapshot: ConnectionSnapshot, newName?:
     }
     await tx.adapterConfig.create({ data: record });
     for (const version of snapshot.versionHistory ?? []) await tx.dbVersionHistory.create({ data: version });
+    // The assignments of its databases waited for it, and its customers restore again.
+    await serverRestored(tx, record.id);
+    await restoreOldAssignments(tx, snapshot, record);
     return { name: record.name, notes };
+}
+
+/**
+ * A snapshot of an earlier version holds the assignments the delete took along. They come back under
+ * a SharedServer, unless they are back already. A customer deleted meanwhile takes its databases along.
+ */
+async function restoreOldAssignments(tx: Tx, snapshot: ConnectionSnapshot, record: ConnectionSnapshot["record"]): Promise<void> {
+    const assignments = snapshot.assignments ?? [];
+    const rules = snapshot.assignmentRules ?? [];
+    if (assignments.length === 0 && rules.length === 0) return;
+    await rememberServer(tx, record);
+    const customerHere = async (tenantId: string) => !!(await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }));
+    for (const assignment of assignments) {
+        if (!(await customerHere(assignment.tenantId))) continue;
+        if (!(await tx.databaseAssignment.findUnique({ where: { id: assignment.id }, select: { id: true } }))) await tx.databaseAssignment.create({ data: assignment });
+    }
+    for (const rule of rules) {
+        if (!(await customerHere(rule.tenantId))) continue;
+        if (!(await tx.databaseAssignmentRule.findUnique({ where: { id: rule.id }, select: { id: true } }))) await tx.databaseAssignmentRule.create({ data: rule });
+    }
 }
 
 async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Promise<RestoredRecord> {
@@ -140,16 +167,36 @@ async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): P
         throw new ConflictError(`An account with ${email} exists already. Restore this one with another email.`);
     }
     const notes: string[] = [];
-    const record = { ...snapshot.record, email };
-    if (record.groupId && !(await tx.group.findUnique({ where: { id: record.groupId }, select: { id: true } }))) {
-        record.groupId = null;
-        notes.push("Its group is gone, so it sees nothing until it gets one.");
+    const { groupId: legacyGroupId, ...record } = { ...snapshot.record, email };
+    // A snapshot of an earlier version knows one group, in the only tenant there was. Its
+    // SuperAdmin group holds every permission now, and its members are platform admins, like the
+    // migration made them.
+    const memberships = snapshot.memberships ?? (legacyGroupId ? [{ tenantId: HOME_TENANT_ID, groupId: legacyGroupId }] : []);
+    if (!snapshot.memberships && legacyGroupId && (await runAsTenant(HOME_TENANT_ID, () => tx.group.findUnique({ where: { id: legacyGroupId }, select: { fullAccess: true } })))?.fullAccess) {
+        record.platformRole = PLATFORM_ADMIN_ROLE;
     }
     await tx.user.create({ data: record });
+    let lost = 0;
+    for (const membership of memberships) {
+        // The group has to be one of the membership's tenant, looked up there.
+        const [group, tenant] = await Promise.all([
+            runAsTenant(membership.tenantId, () => tx.group.findUnique({ where: { id: membership.groupId }, select: { id: true } })),
+            tx.tenant.findUnique({ where: { id: membership.tenantId }, select: { id: true } }),
+        ]);
+        if (group && tenant) await tx.tenantMembership.create({ data: { userId: record.id, ...membership } });
+        else lost++;
+    }
+    if (lost > 0) notes.push(lost === memberships.length ? "Its group is gone, so it sees nothing until it gets one." : `${plural(lost, "of its groups is", "of its groups are")} gone.`);
     for (const account of snapshot.accounts) await tx.account.create({ data: account });
     if (snapshot.twoFactor) await tx.twoFactor.create({ data: snapshot.twoFactor });
     for (const passkey of snapshot.passkeys) await tx.passkey.create({ data: passkey });
-    for (const apiKey of snapshot.apiKeys) await tx.apiKey.create({ data: apiKey });
+    // Its keys go back into the tenants they were made in, the home tenant for an earlier version.
+    for (const apiKey of snapshot.apiKeys) {
+        const tenantId = (apiKey as { tenantId?: string }).tenantId ?? HOME_TENANT_ID;
+        if (await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } })) {
+            await runAsSystem(() => tx.apiKey.create({ data: { ...apiKey, tenantId } }));
+        }
+    }
     for (const preference of snapshot.preferences) await tx.userPreference.create({ data: preference });
     if (snapshot.avatar) {
         const { data, ...avatar } = snapshot.avatar;

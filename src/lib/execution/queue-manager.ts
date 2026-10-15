@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { logger } from "@/lib/logging/logger";
 import { isShutdownRequested } from "@/lib/server/shutdown";
 import { isDatabaseMaintenanceActive, isRunHoldActive } from "@/lib/server/database-maintenance";
@@ -12,8 +13,15 @@ const log = logger.child({ module: "Queue" });
  * during the scheduled one. Two runs of one job at once would plan the same position of an
  * incremental chain and could write the same file, so the waiting run starts right after,
  * when the queue is checked again at the end of the first.
+ *
+ * The queue is one for every tenant, so it reads the runs of all of them, whoever asks for it, and
+ * starts each run in the tenant of its job.
  */
-export async function processQueue() {
+export function processQueue(): Promise<void> {
+    return runAsSystem(processAllTenants);
+}
+
+async function processAllTenants() {
     // Skip queue processing during shutdown
     if (isShutdownRequested()) {
         log.info("Shutdown in progress - skipping queue processing");
@@ -40,7 +48,7 @@ export async function processQueue() {
     const pending = await prisma.execution.findMany({
         where: { status: "Pending" },
         orderBy: { startedAt: 'asc' }, // Creation time
-        select: { id: true, jobId: true },
+        select: { id: true, jobId: true, tenantId: true },
     });
 
     if (pending.length === 0) {
@@ -87,7 +95,7 @@ export async function processQueue() {
     for (const execution of pendingJobs) {
         // Trigger execution asynchronously
         // We push to array to possibly await them, or just to catch errors
-        promises.push(executeQueuedJob(execution.id, execution.jobId!));
+        promises.push(runAsTenant(execution.tenantId, () => executeQueuedJob(execution.id, execution.jobId!)));
     }
 
     // For testing purposes, we wait significantly longer than we think is needed.

@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { abortExecution, isExecutionRunning } from "@/lib/execution/abort";
+import { ConflictError, NotFoundError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
+import { cancelRun, type CancelledRun, type CancelResult } from "@/services/history/run-cancel";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-
-interface CancelledRun {
-    id: string;
-    jobId: string | null;
-    job: { name: string } | null;
-}
 
 /**
  * Notes a cancel that went through as a change of the job the run belongs to. A run without a job,
@@ -47,83 +41,20 @@ export async function POST(
 
     const { id } = await props.params;
 
-    const execution = await prisma.execution.findUnique({
-        where: { id },
-        select: { id: true, status: true, jobId: true, job: { select: { name: true } } },
-    });
-
-    if (!execution) {
-        return NextResponse.json({ success: false, error: "Execution not found" }, { status: 404 });
-    }
-
-    // Cancel pending executions directly (not yet running)
-    if (execution.status === "Pending") {
-        await prisma.execution.update({
-            where: { id },
-            data: {
-                status: "Cancelled",
-                endedAt: new Date(),
-                logs: JSON.stringify([{
-                    timestamp: new Date().toISOString(),
-                    level: "warn",
-                    type: "general",
-                    message: "Execution was cancelled by user before it started",
-                    stage: "Cancelled",
-                }]),
-                metadata: JSON.stringify({ progress: 0, stage: "Cancelled" }),
-            },
-        });
-        await logCancel(ctx, execution);
-        return NextResponse.json({ success: true, message: "Pending execution cancelled" });
-    }
-
-    // Cancel running executions via abort signal (or DB fallback if not tracked in this process)
-    if (execution.status === "Running") {
-        // Try in-memory abort first (works when execution runs in this process)
-        if (isExecutionRunning(id)) {
-            const aborted = abortExecution(id);
-            if (aborted) {
-                await logCancel(ctx, execution);
-                return NextResponse.json({ success: true, message: "Cancellation signal sent" });
-            }
+    let result: CancelResult;
+    try {
+        result = await cancelRun(id);
+    } catch (error: unknown) {
+        if (error instanceof NotFoundError) {
+            return NextResponse.json({ success: false, error: "Execution not found" }, { status: 404 });
         }
-
-        // Fallback: execution not tracked in memory (e.g. HMR reload, different process).
-        // Force cancel via direct DB update.
-        const current = await prisma.execution.findUnique({
-            where: { id },
-            select: { logs: true },
-        });
-
-        let logs: Array<Record<string, unknown>> = [];
-        try {
-            logs = current?.logs ? JSON.parse(current.logs as string) : [];
-        } catch { /* ignore parse errors */ }
-
-        logs.push({
-            timestamp: new Date().toISOString(),
-            level: "warn",
-            type: "general",
-            message: "Execution was force-cancelled by user (process not tracked)",
-            stage: "Cancelled",
-        });
-
-        await prisma.execution.update({
-            where: { id },
-            data: {
-                status: "Cancelled",
-                endedAt: new Date(),
-                logs: JSON.stringify(logs),
-                metadata: JSON.stringify({ progress: 0, stage: "Cancelled" }),
-            },
-        });
-
-        await logCancel(ctx, execution);
-        return NextResponse.json({ success: true, message: "Execution force-cancelled" });
+        // A run that has finished already. Earlier versions answer this with 400, so it stays.
+        if (error instanceof ConflictError) {
+            return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+        }
+        throw error;
     }
 
-    return NextResponse.json(
-        { success: false, error: `Cannot cancel execution with status: ${execution.status}` },
-        { status: 400 }
-    );
+    await logCancel(ctx, result.run);
+    return NextResponse.json({ success: true, message: result.message });
 }

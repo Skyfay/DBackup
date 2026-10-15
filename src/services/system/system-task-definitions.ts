@@ -93,8 +93,8 @@ export const DEFAULT_TASK_CONFIG: Record<SystemTaskId, SystemTaskDefinition> = {
         interval: "0 0 * * *",
         runOnStartup: true,
         enabled: true,
-        label: "SuperAdmin permissions",
-        description: "Gives the SuperAdmin group every permission there is.",
+        label: "Full access permissions",
+        description: "Gives the group with every permission each permission there is, also the ones a new version adds.",
     },
     [SYSTEM_TASKS.CONFIG_BACKUP]: {
         interval: "0 3 * * *",

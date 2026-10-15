@@ -64,15 +64,15 @@ The hooks in `sso-guard.ts` decide what the browser cannot:
 | :--- | :--- |
 | `refuseDisabledProvider`, before every endpoint | Starting a sign-in through a provider that is off, and its callback, which goes back to the login page. Hiding it on the login page is not enough, the endpoints are public |
 | `refuseSsoSignUp`, before a user is created | Someone new through a provider that is off or does not add new people, whatever `requestSignUp` said |
-| `placeSsoUser`, after a user is created | Puts them into `defaultGroupId` and writes `CREATE USER` with `via: "sso"` to the audit log |
+| `placeSsoUser`, after a user is created | Gives them a membership of the home tenant with `defaultGroupId`, none without one, and writes `CREATE USER` with `via: "sso"` to the audit log |
 
 The sign-in itself is written as `LOGIN` with `method: "sso"`, the provider name and its ID, see [Audit Log](/developer-guide/advanced/audit).
 
 ## Changing Providers
 
-`GET /api/sso-providers` needs `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for a SuperAdmin the groups new people can start in.
+`GET /api/sso-providers` needs `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for a platform admin the groups new people can start in.
 
-The Server Actions in `src/app/actions/auth/oidc.ts` check `settings:write` first and then refuse anyone who is no SuperAdmin:
+The Server Actions in `src/app/actions/auth/oidc.ts` check `settings:write` first and then refuse anyone who is no platform admin:
 
 | Action | Does |
 | :--- | :--- |
@@ -81,7 +81,7 @@ The Server Actions in `src/app/actions/auth/oidc.ts` check `settings:write` firs
 | `updateSsoProvider` | The same without the type and the provider ID, which stay. An empty secret keeps the saved one |
 | `toggleSsoProvider`, `deleteSsoProvider` | Switches a provider, deletes it with every link to it |
 
-Whoever controls a provider signs in as any user whose email it names, and skips their second factor, so no permission is enough to change one. The configuration restore in `src/app/actions/backup/config-management.ts` is for a SuperAdmin only for the same reason, it writes users and groups from a file.
+Whoever controls a provider signs in as any user whose email it names, in every tenant they work in, and skips their second factor, so no permission is enough to change one. The configuration restore in `src/app/actions/backup/config-management.ts` is for a platform admin only for the same reason, it writes every tenant, user and group from a file.
 
 ## Implementing an Adapter
 

@@ -1,4 +1,3 @@
-import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -16,9 +15,9 @@ export function invalid(issues: { message: string; path: PropertyKey[] }[]): Sav
 
 /**
  * Saves one part of the Settings page for its Server Action, after the action checked the
- * permission and the input,
- * and writes what changed in the words of the part. A `ValidationError` of the service goes back
- * to the save bar as it is, anything else only to the log.
+ * permission and the input, and writes what changed in the words of the part. A
+ * `ValidationError` of the service goes back to the save bar as it is, anything else only to the
+ * log. The action revalidates the page once it succeeded.
  */
 export async function savePart(
     userId: string,
@@ -33,7 +32,6 @@ export async function savePart(
         if (changes.length > 0) {
             await auditService.log(userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area, changes });
         }
-        revalidatePath("/dashboard/settings");
         return { success: true };
     } catch (error: unknown) {
         if (error instanceof ValidationError) return { success: false, error: error.message, field: error.field };

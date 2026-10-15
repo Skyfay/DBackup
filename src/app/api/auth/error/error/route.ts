@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
         "access_denied": "sso_access_denied",
         "account not linked": "sso_account_not_linked",
         "account_not_linked": "sso_account_not_linked",
+        // A provider of a tenant refused an email of another domain, see sso-guard.ts.
+        "tenant sign-in refused": "sso_tenant_refused",
     };
 
     const errorCode = errorMessages[error.toLowerCase()] || "sso_error";

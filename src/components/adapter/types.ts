@@ -23,6 +23,8 @@ export interface AdapterConfig {
     overview?: ConnectionOverview | null;
     /** Storage adapters only: whether this config is a backup destination or a directory source. */
     storageRole?: StorageRole;
+    /** The tenant of the connection, which a list in All tenants shows and opens it in. */
+    tenantId?: string;
 }
 
 export interface AdapterManagerProps {
@@ -42,4 +44,9 @@ export interface AdapterManagerProps {
      * the table. Undefined while the page still measures the screen, which shows the skeleton.
      */
     view?: "table" | "cards" | "split";
+    /**
+     * What the New of the empty list does, like the New button beside the tabs, which in All tenants
+     * first asks for the tenant. The form of this list when left out, while the viewer may add.
+     */
+    onCreate?: () => void;
 }

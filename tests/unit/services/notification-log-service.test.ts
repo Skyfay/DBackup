@@ -244,6 +244,24 @@ describe('the notifications of the History page', () => {
         expect(facets.channelName).toEqual({ 'Discord #ops': 2 });
         expect(facets.eventType).toEqual({ backup_failure: 2 });
         expect(groupBy.mock.calls[2][0].where).toEqual({});
+        // Inside a tenant every entry is of that tenant, so nothing counts them by tenant.
+        expect(facets.tenantId).toBeUndefined();
+        expect(groupBy).toHaveBeenCalledTimes(4);
+    });
+
+    it('narrows to the tenants of the Tenant filter of All tenants and counts each tenant under the other filters', async () => {
+        expect(buildNotificationLogWhere({ tenantId: ['acme', 'globex'], status: 'Failed' })).toEqual({ tenantId: { in: ['acme', 'globex'] }, status: 'Failed' });
+
+        groupBy.mockReset();
+        groupBy.mockImplementation(async (args: { by: string[] }) =>
+            args.by[0] === 'tenantId' ? [{ tenantId: 'acme', _count: { _all: 3 } }] : []);
+        const facets = await getNotificationLogFacets({ tenantId: ['acme'], status: 'Failed' }, true);
+
+        expect(facets.tenantId).toEqual({ acme: 3 });
+        const byTenant = groupBy.mock.calls.find(([args]) => args.by[0] === 'tenantId')![0];
+        expect(byTenant.where).toEqual({ status: 'Failed' });
+        const byChannel = groupBy.mock.calls.find(([args]) => args.by[0] === 'channelName')![0];
+        expect(byChannel.where).toEqual({ tenantId: 'acme', status: 'Failed' });
     });
 
     it('counts the last 30 days with the last channel that failed', async () => {

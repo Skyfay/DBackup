@@ -47,6 +47,8 @@ export interface RunRow {
     note: string | null;
     live: RunLive | null;
     starter: RunStarter;
+    /** The tenant of the run, which All tenants shows and filters by. */
+    tenantId?: string;
 }
 
 export interface RunFacets {
@@ -54,12 +56,16 @@ export interface RunFacets {
     status: Record<string, number>;
     job: Record<string, number>;
     starter: Record<string, number>;
+    /** The runs of each tenant, only in All tenants, where the list holds every tenant. */
+    tenant?: Record<string, number>;
 }
 
 export interface RunJobOption {
     id: string;
     name: string;
     adapterId: string | null;
+    /** The tenant of the job, which the Job filter groups by in All tenants. */
+    tenantId?: string;
 }
 
 export interface RunStarterOption {

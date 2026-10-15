@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useRouter } from "next/navigation"
@@ -11,10 +11,11 @@ import { ProviderTile } from "@/components/oidc/provider-logo"
 import { Button } from "@/components/ui/button"
 import { wrapError } from "@/lib/logging/errors"
 import { logger } from "@/lib/logging/logger"
-import type { LoginProvider } from "@/services/auth/login-page-service"
-import { needsSecondFactor, providerOfEmail, signInError, ssoProblem, type LoginProblem } from "./login-problems"
+import type { DomainProvider, LoginProvider } from "@/services/auth/login-page-service"
+import { needsSecondFactor, signInError, ssoProblem, type LoginProblem } from "./login-problems"
 import { SecondFactorStep } from "./second-factor-step"
 import { SignInStep, type LoginValues } from "./sign-in-step"
+import { useDomainProvider } from "./use-domain-provider"
 import { AFTER_SIGN_IN } from "@/lib/auth/sign-in-target"
 
 const log = logger.child({ component: "LoginForm" })
@@ -35,10 +36,16 @@ const schema = z.object({
 /** A passkey prompt the person closed is no failure worth a note. */
 const CANCELLED = /not allowed|timed out|cancel/i
 
+/** Where better-auth sends a sign-in a provider or a hook refused, which turns it into a message of the page. */
+const SSO_ERROR_URL = "/api/auth/error/error"
+
 interface LoginFormProps {
     /** The name under General, or DBackup. */
     instance: string;
+    /** The providers of the platform, each a button. */
     providers: LoginProvider[];
+    /** A provider of a tenant claims a domain, which the server tells for the typed email. */
+    domainRouting?: boolean;
     emailLogin: boolean;
     passkeyLogin: boolean;
     autoRedirectProviderId: string | null;
@@ -77,9 +84,11 @@ function RedirectStep({ provider }: { provider: LoginProvider }) {
 /**
  * The sign-in of the login page: a provider, the email with its password, a passkey, and the
  * second factor after the password. With a provider that claims a domain the email comes first
- * and its button says where it leads, without one email and password are one step.
+ * and its button says where it leads, without one email and password are one step. A provider of
+ * a tenant is never a button, only the email reaches it, so the email field stays even while
+ * passwords are off.
  */
-export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoRedirectProviderId, errorCode }: LoginFormProps) {
+export function LoginForm({ instance, providers, domainRouting = false, emailLogin, passkeyLogin, autoRedirectProviderId, errorCode }: LoginFormProps) {
     const router = useRouter()
     const [step, setStep] = useState<"sign-in" | "password" | "factor">("sign-in")
     const [loading, setLoading] = useState(false)
@@ -93,17 +102,28 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
     // redirect. The effect clears it if it stays, or if the redirect fails.
     const [redirecting, setRedirecting] = useState(Boolean(autoProvider) && !errorCode)
     const fired = useRef(false)
-    const twoStep = emailLogin && providers.some((provider) => provider.domain)
+    const emailField = emailLogin || domainRouting
+    const twoStep = emailField && (domainRouting || providers.some((provider) => provider.domain))
     const form = useForm<LoginValues>({ resolver: zodResolver(schema), defaultValues: { email: "", password: "" } })
+    const email = useWatch({ control: form.control, name: "email" })
+    const { claimed, resolve } = useDomainProvider(email ?? "", providers, domainRouting)
 
     /** Returns false when the provider could not be reached, so the caller can fall back to the form. */
-    const sso = useCallback(async (provider: LoginProvider): Promise<boolean> => {
+    const sso = useCallback(async (provider: Pick<DomainProvider, "providerId" | "name" | "allowProvisioning">, loginHint?: string): Promise<boolean> => {
         setLoading(true)
         setProblem(null)
         const failed = (text?: string) => setProblem({ title: `${provider.name} did not answer`, text: text || "Try again, or sign in another way." })
         try {
-            // sso-guard.ts checks the wish to create an account against the saved provider.
-            const result = await signIn.sso({ providerId: provider.providerId, callbackURL: AFTER_SIGN_IN, requestSignUp: provider.allowProvisioning })
+            // sso-guard.ts checks the wish to create an account against the saved provider. The
+            // provider is named by its ID, also one found by the domain of the email, which goes
+            // along as the hint of who signs in.
+            const result = await signIn.sso({
+                providerId: provider.providerId,
+                callbackURL: AFTER_SIGN_IN,
+                errorCallbackURL: SSO_ERROR_URL,
+                requestSignUp: provider.allowProvisioning,
+                ...(loginHint ? { loginHint } : {}),
+            })
             if (result.error) {
                 failed(result.error.message)
                 return false
@@ -157,9 +177,16 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
 
     const next = async () => {
         if (!(await form.trigger("email"))) return
-        const provider = providerOfEmail(providers, form.getValues("email"))
+        const typed = form.getValues("email").trim()
+        setLoading(true)
+        const provider = await resolve(typed)
+        setLoading(false)
         if (provider) {
-            await sso(provider)
+            await sso(provider, typed)
+            return
+        }
+        if (!emailLogin) {
+            form.setError("email", { message: "No sign-in provider takes this email. Sign in another way." }, { shouldFocus: true })
             return
         }
         form.clearErrors("password")
@@ -222,6 +249,8 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
             instance={instance}
             providers={providers}
             emailLogin={emailLogin}
+            emailField={emailField}
+            claimed={twoStep && step !== "password" ? claimed : undefined}
             passkeyLogin={passkeyLogin}
             twoStep={twoStep}
             passwordStep={step === "password"}

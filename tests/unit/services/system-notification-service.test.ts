@@ -148,6 +148,7 @@ describe("SystemNotificationService", () => {
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
       storageRole: 'DESTINATION',
+      tenantId: "default",
     };
 
     const discordChannel = {
@@ -167,6 +168,7 @@ describe("SystemNotificationService", () => {
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
       storageRole: 'DESTINATION',
+      tenantId: "default",
     };
 
     it("should skip disabled events", async () => {
@@ -274,10 +276,10 @@ describe("SystemNotificationService", () => {
         },
       });
 
-      // Should query for discord channel, not email
+      // Should query for discord channel, not email, and only among the channels of the platform
       expect(prismaMock.adapterConfig.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: { in: ["ch-discord"] }, type: "notification" },
+          where: { id: { in: ["ch-discord"] }, type: "notification", tenantId: "default" },
         })
       );
       expect(mockSend).toHaveBeenCalledTimes(1);
@@ -504,6 +506,7 @@ describe("SystemNotificationService", () => {
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
       storageRole: 'DESTINATION',
+      tenantId: "default",
     };
 
     const emailChannel = {
@@ -523,6 +526,7 @@ describe("SystemNotificationService", () => {
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
       storageRole: 'DESTINATION',
+      tenantId: "default",
     };
 
     it("should skip channel and not send when adapter is not registered", async () => {

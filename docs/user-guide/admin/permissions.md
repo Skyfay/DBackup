@@ -5,20 +5,41 @@ Decide what people may see and do in DBackup through the group they are in.
 ## Overview
 
 - A **group** holds a set of permissions
-- Every **user** is in one group, or in none
+- Every **user** is in one group per [tenant](/user-guide/admin/tenants) they work in, or in none
 - A user may do exactly what the permissions of their group allow, there are no deny rules
 
-The built-in **SuperAdmin** group passes every check. It cannot be edited or deleted, and only a SuperAdmin can make someone a SuperAdmin.
+Groups are the same in every tenant, and a change of a group applies in all of them. With only one tenant, everyone has exactly one group or none, as before.
 
-### What Only a SuperAdmin Does
+The group with every permission, named **Admin** after the update and the SuperAdmin group of earlier versions, holds each permission DBackup has, also the ones a new version adds. It cannot be edited or deleted.
 
-Some tasks decide who is a SuperAdmin or who signs in as whom, so no permission is enough for them:
+### Settings Count in the Home Tenant
 
-- Make someone a SuperAdmin, and change the group of a SuperAdmin, set their password, reset their second factor, sign them out or delete them
-- Add, change, switch and delete sign-in providers, see [SSO / OIDC](/user-guide/admin/sso)
-- Restore a configuration backup, which brings back users and groups
+The **Settings** area acts on the whole instance. It counts only from the group someone holds in the home tenant, so the admin of a customer never reaches it through a group in the customer's tenant. Groups belong to their tenant, so `groups:read` and `groups:write` count in each tenant like every other permission, and so do the **Tenant settings**. The **Own profile** permissions count from any group someone holds.
 
-Nobody changes or deletes the group they are in, since that would hand them any permission.
+A group never gets a permission its maker does not hold in that tenant, and a group of a customer never holds the settings of the instance.
+
+### The Rights of the Platform
+
+The tenants, the accounts of every tenant, the sign-in providers and the shared databases belong to the platform. A [platform group](/user-guide/admin/tenants#platform-groups) gives them, never the group of a tenant, not even one with every permission:
+
+| Area | See | Change |
+| :--- | :--- | :--- |
+| **Tenants** | `platform-tenants:read`: every tenant and All tenants | `platform-tenants:write`: create, rename and delete tenants and decide who works in them |
+| **Accounts** | `platform-accounts:read`: every account and the platform groups | `platform-accounts:write`: change any account but a platform admin's, and give platform groups |
+| **Sign-in providers** | `platform-sign-in:read`, also given by `settings:read` | A platform admin only, since a provider signs in as anyone of its emails |
+| **Shared databases** | `platform-sharing:read`: who holds which database | `platform-sharing:write`: give databases away, move them, allow backups on demand |
+
+### What Only a Platform Admin Does
+
+A platform admin passes every check in every tenant. A few tasks are for a platform admin alone, whatever a group gives:
+
+- Make someone a platform admin or take it back, see [Tenants](/user-guide/admin/tenants#platform-admins)
+- Change the account of a platform admin
+- Add, change and delete sign-in providers
+- Restore a configuration backup, which brings back every tenant, user and group
+- Download the database
+
+Nobody changes or deletes a group they hold in any tenant, since that would hand them any permission. Nobody gives a group that may do more than they may, or takes one away from someone whose group may do more than they may.
 
 ::: warning No Group = No Access
 A user without a group signs in but sees and does nothing until someone picks a group. The Users tab counts them above the list.
@@ -26,11 +47,11 @@ A user without a group signs in but sees and does nothing until someone picks a 
 
 ## The Groups Tab
 
-Go to **Users & Groups → Groups**. Each group shows what its members may do in one sentence, its members, how many of the 39 permissions it holds and when it last changed. The numbers above the list name the groups that may delete backups or reveal secrets and the groups nobody is in.
+Go to **Users & Groups → Groups**. Each group shows what its members may do in one sentence, its members in the open tenant, how many of the 39 permissions it holds and when it last changed. The numbers above the list name the groups that may delete backups or reveal secrets and the groups nobody is in.
 
 The switch beside the tabs shows the groups as a table or as cards with a bar of the level of every area. Phones always get the cards.
 
-A click on a group opens its details: what its members may do in words, the level of every area, the members, and its changes from the audit log. With the right to change users, **Move** sends a member to another group and **Add people** moves people into this one.
+A click on a group opens its details: what its members may do in words, the level of every area, its members in the open tenant, and its changes from the audit log. With the right to change users, **Move** sends a member to another group and **Add people** moves people into this one, both in the open tenant.
 
 ## Areas and Levels
 
@@ -58,13 +79,14 @@ Not every area has every level. A group whose permissions match no level of an a
 | **API keys** | `api-keys:read` | | + `api-keys:write` | |
 | **Audit log** | `audit:read` | | | |
 | **Settings** | `settings:read` | | + `settings:write` | |
+| **Tenant settings** | `tenant-settings:read` | | + `tenant-settings:write` | |
 | **Own profile** | | | `profile:update_name`, `profile:update_email`, `profile:update_password`, `profile:manage_2fa`, `profile:manage_passkeys`, `profile:manage_sso` | |
 
 `dashboard:read` belongs to History but stands beside its levels. It lets an API key read the totals of the overview through `GET /api/dashboard/stats` without access to jobs, history or storage. The overview page itself needs no permission.
 
 `sources:read` browses the tables and rows of a database in the Database Explorer, `credentials:reveal` shows the secret of a saved login and is written to the audit log.
 
-`settings:write` also restores from [Recently deleted](/user-guide/admin/recently-deleted), deletes for good there and offers **Delete it permanently now** in every delete, each together with the right to change the record. Without it a delete always goes to Recently deleted.
+`tenant-settings:write` also restores from [Recently deleted](/user-guide/admin/recently-deleted), deletes for good there and offers **Delete it permanently now** in every delete, each together with the right to change the record. Without it a delete always goes to Recently deleted.
 
 ## Create a Group
 
@@ -95,13 +117,13 @@ Every template gives the members their own profile. **Change start** in the next
 
 The foot names every area whose level changes. Members get a change with their next click, and the audit log keeps what changed rather than the whole list.
 
-**Duplicate** opens the editor with a copy of a group and nobody in it. The group you are in has no **Edit**, another admin changes it.
+**Duplicate** opens the editor with a copy of a group and nobody in it. A group you hold has no **Edit**, another admin changes it.
 
 ## Delete a Group
 
-**Delete** asks first. A group with members asks which group they move to, or **No group**, and the button waits for the pick. Nobody loses access by surprise, and the audit log keeps the group and who was in it.
+**Delete** asks first. A group with members asks which group they move to, or **No group**, and the button waits for the pick. The members move in every tenant they hold the group in, and only into a group that may do no more than you may. **No group** works only while nobody outside the open tenant holds the group, and takes its members out of the tenant. Nobody loses access by surprise, and the audit log keeps the group and who was in it.
 
-Several empty groups can be ticked and deleted together. A group with members is left out of that and deleted on its own. You cannot delete the group you are in.
+Several empty groups can be ticked and deleted together. A group with members in any tenant is left out of that and deleted on its own. You cannot delete a group you hold.
 
 ::: tip Keep groups small
 Start from the template closest to the work, lower what it does not need, and name the group after the work, like "Backup Operators". The **Can delete backups** and **Can reveal secrets** numbers above the list show where the sensitive permissions are.
@@ -111,11 +133,11 @@ Start from the template closest to the work, lower what it does not need, and na
 
 ### A User Sees Nothing
 
-The user has no group. Open the user on the Users tab and click **Change group**, or use **Add people** on a group.
+The user has no group in the open tenant. Open the user on the Users tab and click **Change group**, or use **Add people** on a group.
 
 ### A Button Is Missing
 
-The group of the user lacks the permission. Open the group and check the level of the area in its details. Some tasks are for a SuperAdmin only whatever the group holds, see [What Only a SuperAdmin Does](#what-only-a-superadmin-does).
+The group of the user lacks the permission in the open tenant. Open the group and check the level of the area in its details. The settings of the instance count only from the group in the home tenant, see [Settings Count in the Home Tenant](#settings-count-in-the-home-tenant), and some tasks are for a platform admin only whatever the group holds, see [What Only a Platform Admin Does](#what-only-a-platform-admin-does).
 
 ### An Area Shows Custom
 
@@ -133,9 +155,10 @@ Permissions are strings in the form `{resource}:{action}`, like `jobs:execute`. 
 }
 ```
 
-API keys hold a list in the same form and never use more than the group of their owner allows. See [API Keys](/user-guide/features/api-keys#what-a-key-may-do).
+API keys hold a list in the same form and never use more than their owner may in the tenant of the key. See [API Keys](/user-guide/features/api-keys#what-a-key-may-do).
 
 ## Next Steps
 
 - [User Management](/user-guide/admin/users) - Manage user accounts
+- [Tenants](/user-guide/admin/tenants) - Groups and people across customers
 - [SSO/OIDC](/user-guide/admin/sso) - Enterprise authentication

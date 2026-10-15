@@ -44,11 +44,13 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
     // Log Buffer
     const internalLogs: LogEntry[] = [{
         timestamp: new Date().toISOString(),
-        message: `Starting restore for ${path.basename(file)}`,
+        message: input.shared ? `Starting restore of ${input.shared.databaseName}` : `Starting restore for ${path.basename(file)}`,
         level: 'info',
         type: 'general',
         stage: 'Initializing'
     }];
+    // What the log calls the backup. A customer's run names its database, never the archive.
+    const shownFile = input.shared ? `the backup of ${input.shared.databaseName}` : file;
 
     // State
     let currentProgress = 0;
@@ -167,7 +169,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         //    read itself fetches the sidecar - but the message waits until we know which
         //    path this is, so it never claims a download that will not happen.
         setStage(RESTORE_STAGES.DOWNLOADING);
-        log(`Reading backup metadata: ${file}...`, 'info');
+        log(`Reading backup metadata: ${shownFile}...`, 'info');
         const tempDir = getTempDir();
         tempFile = path.join(tempDir, path.basename(file));
 
@@ -307,7 +309,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                         sourceName: resolvedSourceName ?? "Combined archive",
                         databaseType: resolvedSourceType,
                         targetDatabase: targetDatabaseName,
-                        backupFile: path.basename(file),
+                        backupFile: input.shared ? input.shared.databaseName : path.basename(file),
                         storageName: resolvedStorageName,
                         duration: Date.now() - restoreStartTime,
                         executionId,
@@ -323,6 +325,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         // Full download, whole-file checksum, decryption, decompression, then adapter.restore(). Once
         // those backups no longer need restoring, a backup without an archive marker can be rejected
         // here instead, and the missing-sidecar guard below becomes that rejection.
+
+        // A shared database is only ever restored out of an archive with an index. The full download
+        // below would list every database of the server in the customer's log.
+        if (input.shared) throw new Error("This backup can only be restored out of an archive with an index.");
 
         log(`Downloading backup file: ${file}...`, 'info');
         const downloadStartTime = Date.now();

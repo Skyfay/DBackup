@@ -22,7 +22,7 @@ export async function createExcludePatternPreset(input: {
   groups?: string[];
   excludedGroupPatterns?: string[];
 }) {
-  const existing = await prisma.excludePatternPreset.findUnique({
+  const existing = await prisma.excludePatternPreset.findFirst({
     where: { name: input.name },
   });
   if (existing) {
@@ -58,7 +58,7 @@ export async function updateExcludePatternPreset(
   if (!preset) throw new NotFoundError("ExcludePatternPreset", id);
 
   if (input.name && input.name !== preset.name) {
-    const existing = await prisma.excludePatternPreset.findUnique({
+    const existing = await prisma.excludePatternPreset.findFirst({
       where: { name: input.name },
     });
     if (existing) {

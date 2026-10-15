@@ -106,7 +106,7 @@ describe("checking the copies of a backup", () => {
         expect(mocks.runner.finished).toBe("Failed");
         expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({
             data: expect.objectContaining({ failed: 1, passed: 1, errors: [{ file: FILE, destination: "NAS Backups", expected: "aaa", actual: "bbb" }] }),
-        }));
+        }), expect.objectContaining({ executionId: expect.any(String) }));
     });
 
     it("says why a copy without a checksum was skipped", async () => {

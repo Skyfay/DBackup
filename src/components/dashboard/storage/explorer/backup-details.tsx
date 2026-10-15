@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, Database, Download, FolderOpen, Layers, Lock, RefreshCw, RotateCcw, ShieldCheck, TriangleAlert, Unlink } from "lucide-react";
+import { Building2, Calendar, Database, Download, FolderOpen, Layers, Lock, RefreshCw, RotateCcw, ShieldCheck, TriangleAlert, Unlink } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { DetailStats, FactList, Section, type DetailStat } from "@/components/adapter/connection-details-sections";
+import { TenantLine } from "@/components/tenant/tenant-column";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -192,6 +194,10 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
     const started = startedBy(file);
     const took = execution?.endedAt ? Date.parse(execution.endedAt) - Date.parse(execution.startedAt) : null;
     const jobName = job?.name ?? file.jobName ?? "Backup";
+    // In All tenants the panel names the tenant, whose backup it is.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
+    const tenant = allTenants ? tenantName(here?.tenantId ?? job?.tenantId) : null;
 
     const stats: DetailStat[] = [
         { label: "Snapshot", value: formatBytes(snapshotBytes(file), 1), extra: "what a restore brings back" },
@@ -230,6 +236,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                         <Description className="truncate text-sm text-muted-foreground" title={file.name}>
                             {jobName} · {file.name}
                         </Description>
+                        <TenantLine name={tenant} className="mt-0.5" />
                         <div className="mt-2 flex flex-wrap gap-1.5">
                             <TypeChip file={file} />
                             {file.isEncrypted && <span className="inline-flex h-5 items-center rounded-md bg-muted px-1.5 text-[11px] font-medium">Encrypted</span>}
@@ -239,6 +246,12 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                    {handlers.openInTenant && (
+                        <Button variant="outline" size="sm" className="min-w-0" onClick={handlers.openInTenant.onSelect}>
+                            <Building2 />
+                            <span className="truncate">{handlers.openInTenant.label}</span>
+                        </Button>
+                    )}
                     {restorePicked ? (
                         // The other databases stay a click away in the menu, as Restore.
                         <Button variant="outline" size="sm" onClick={() => restorePicked.onRestore?.()}>

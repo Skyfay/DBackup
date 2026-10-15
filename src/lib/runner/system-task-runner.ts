@@ -1,4 +1,6 @@
 import prisma from "@/lib/prisma";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { LogEntry, LogLevel, LogType, INTEGRITY_CHECK_STAGE_PROGRESS_MAP } from "@/lib/core/logs";
 import { createLogFlusher, LogFlusher } from "@/lib/execution/log-flusher";
 import { formatDuration } from "@/lib/utils";
@@ -49,6 +51,8 @@ export class SystemTaskRunner {
 
     const execution = await prisma.execution.create({
       data: {
+        // A check someone starts shows in their tenant, a system task in the home tenant.
+        tenantId: (await currentTenantId()) ?? HOME_TENANT_ID,
         jobId: null,
         type: taskType,
         status: "Pending",

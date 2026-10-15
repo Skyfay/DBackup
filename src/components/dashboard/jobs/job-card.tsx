@@ -9,6 +9,7 @@ import { isPlainClick } from "@/components/ui/row-click";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
+import { TenantLine } from "@/components/tenant/tenant-column";
 import { NextRun, RunLine, ScheduleText, SourceIcon, sourceOf } from "./job-cells";
 
 const COMPRESSION: Record<string, string> = { GZIP: "Gzip", BROTLI: "Brotli" };
@@ -112,6 +113,8 @@ interface JobCardProps {
     onOpen: (job: JobListItem) => void;
     /** Run now and the menu, the same as at the end of a table row. */
     actions: React.ReactNode;
+    /** The tenant of the job, a small line under its schedule in All tenants. */
+    tenantName?: string | null;
 }
 
 /**
@@ -119,7 +122,7 @@ interface JobCardProps {
  * the way of the backup instead of the table's columns: source, what happens on the way and the
  * destinations, then how the last runs went and when the next one starts.
  */
-export function JobCard({ job, onOpen, actions }: JobCardProps) {
+export function JobCard({ job, onOpen, actions, tenantName = null }: JobCardProps) {
     return (
         <div
             onClick={(event) => isPlainClick(event) && onOpen(job)}
@@ -138,6 +141,7 @@ export function JobCard({ job, onOpen, actions }: JobCardProps) {
                         {job.name}
                     </button>
                     <ScheduleText job={job} className="block" />
+                    <TenantLine name={tenantName} className="mt-0.5" />
                 </div>
                 <ExecutionStatusBadge status={job.enabled || job.overview.live ? job.overview.status : null} label={!job.enabled && !job.overview.live ? "Paused" : job.overview.status ? undefined : "Never ran"} />
             </div>

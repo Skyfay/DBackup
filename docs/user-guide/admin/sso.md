@@ -16,10 +16,10 @@ The four named providers read their endpoints from the OpenID configuration of t
 
 ## The SSO Tab
 
-Open **Users & Groups → SSO**. Seeing it needs `settings:read`. Only a SuperAdmin adds, changes, switches and deletes providers.
+Open **Users & Groups → SSO**, with more than one tenant **Platform → Users & Groups → Sign-in providers**. Seeing it needs `settings:read` from the group in the home tenant or `platform-sign-in:read` from a [platform group](/user-guide/admin/tenants#platform-groups). Only a platform admin adds, changes, switches and deletes providers, since a provider signs in as anyone of its emails.
 
 ::: warning A provider holds the keys to every account
-A provider that names the email of a user in DBackup signs in as that user, and DBackup asks no second factor after a sign-in through a provider. That is why only a SuperAdmin adds or changes one. Add only providers you run or trust.
+A provider that names the email of a user in DBackup signs in as that user, and DBackup asks no second factor after a sign-in through a provider. That is why only a platform admin adds or changes one. Add only providers you run or trust.
 :::
 
 The strip above the list shows how many providers are on, how many people are linked through them, who has no password or passkey and signs in only through a provider, the sign-ins of the last 30 days, and whether password sign-in is on. The line under the list says whether passkeys are on, which providers the login page shows, and where `OIDC_AUTO_REDIRECT` sends it.
@@ -53,11 +53,27 @@ The callback URL starts with `BETTER_AUTH_URL`. Set it to the address people ope
 
 ## New People
 
-With **Add new people on their first sign-in**, someone the provider knows gets an account in DBackup when they first sign in, in the group picked for the provider. The audit log says so, like "Signed up through Authentik into the group Operators". With **No group** they sign in but see nothing until someone picks a group for them.
+With **Add new people on their first sign-in**, someone the provider knows gets an account in DBackup when they first sign in, in the group picked for the provider in the home tenant. The audit log says so, like "Signed up through Authentik into the group Operators". With **No group** they belong to no tenant and see nothing until someone picks a group for them or they accept an [invitation](/user-guide/admin/tenants#invitations).
+
+::: tip Customers and a shared provider
+Where the people of customers sign in through the provider too, give it **No group**. A new account then joins the home tenant only when someone puts it there, and the people of a customer join their tenant with an invitation link.
+:::
 
 Without it only people who already have an account in DBackup sign in through the provider. Their account is linked by its email on their first sign-in, when the provider marks the email as verified, and someone new is turned away.
 
 Deleting a group moves the new people of its providers where its members go, or leaves them without a group.
+
+## Providers of a Tenant
+
+A provider belongs to the platform or to one [tenant](/user-guide/admin/tenants), set under **Belongs to**. A customer that brings its own identity provider, like Microsoft Entra ID, gets a provider of its tenant:
+
+- It never shows as a button. Someone types an email of its domain, the login page says "acme.ch signs in with Acme Entra ID" and offers **Continue with Acme Entra ID**. The page asks the server about the one domain typed, so it never lists the domains of the customers.
+- It needs an **Email domain**, and while it adds new people, a group of its tenant. One domain belongs to one provider, also among the providers of the platform.
+- It signs in only emails of exactly its domain, never a subdomain and never a platform admin.
+- New people land in its tenant with its group. An existing account of its domain joins the tenant with that group on its first sign-in through it, while the provider adds new people. Without that, only members of the tenant sign in through it.
+- Deleting the tenant deletes its providers and the links to them. The accounts stay.
+
+Only a platform admin adds and changes either kind, and every change goes into the audit log of the home tenant. DBackup does not check that a tenant owns its domain, so never give a tenant a domain like `gmail.com`.
 
 ## Provider Notes
 
@@ -99,7 +115,7 @@ It asks for the issuer, the authorization, token and user info endpoints, and th
 
 ## Login Page
 
-Every provider that is on shows as a button with its logo on the login page. With an **Email domain**, the login page asks for the email first, says under it which provider an email of that domain signs in with, and its button goes there. A provider takes one domain.
+Every provider of the platform that is on shows as a button with its logo on the login page. With an **Email domain**, the login page asks for the email first, says under it which provider an email of that domain signs in with, and its button goes there. A provider takes one domain. A provider of a tenant is reached by its domain only, see [Providers of a Tenant](#providers-of-a-tenant).
 
 Two environment variables change the login page. Both are set on the container rather than in the UI, because either one can lock you out and the lever has to work without signing in.
 
@@ -113,7 +129,7 @@ Create the first administrator and configure your provider **before** setting th
 
 ### Skipping the login page entirely
 
-`OIDC_AUTO_REDIRECT` takes a **provider ID** and sends visitors straight to that provider:
+`OIDC_AUTO_REDIRECT` takes the **provider ID** of a provider of the platform and sends visitors straight to that provider:
 
 ```bash
 OIDC_AUTO_REDIRECT=authentik

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 // Mock logger to prevent output during tests
 vi.mock("@/lib/logging/logger", () => ({
@@ -52,6 +53,7 @@ describe("Storage History (dashboard-service)", () => {
           adapterConfigId: "config-123",
           adapterName: "Local",
           adapterId: "local",
+          tenantId: HOME_TENANT_ID,
           size: BigInt(1024 * 1024 * 100), // 100 MB
           count: 5,
           createdAt: new Date("2026-02-10T10:00:00.000Z"),
@@ -61,6 +63,7 @@ describe("Storage History (dashboard-service)", () => {
           adapterConfigId: "config-123",
           adapterName: "Local",
           adapterId: "local",
+          tenantId: HOME_TENANT_ID,
           size: BigInt(1024 * 1024 * 200), // 200 MB
           count: 8,
           createdAt: new Date("2026-02-12T10:00:00.000Z"),
@@ -70,6 +73,7 @@ describe("Storage History (dashboard-service)", () => {
           adapterConfigId: "config-123",
           adapterName: "Local",
           adapterId: "local",
+          tenantId: HOME_TENANT_ID,
           size: BigInt(1024 * 1024 * 350), // 350 MB
           count: 12,
           createdAt: new Date("2026-02-14T10:00:00.000Z"),
@@ -145,6 +149,7 @@ describe("Storage History (dashboard-service)", () => {
           adapterConfigId: "config-large",
           adapterName: "Local",
           adapterId: "local",
+          tenantId: HOME_TENANT_ID,
           size: largeSize,
           count: 50,
           createdAt: new Date("2026-02-14T12:00:00.000Z"),

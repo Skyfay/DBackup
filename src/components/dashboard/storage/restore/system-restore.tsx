@@ -27,7 +27,7 @@ const PARTS: { key: keyof RestoreOptions; title: string; description: string }[]
 interface SystemRestoreProps {
     file: FileInfo;
     destinationId: string;
-    /** Only a SuperAdmin restores a configuration, since it could make anyone a SuperAdmin. */
+    /** Only a platform admin restores a configuration, since it could make anyone a platform admin. */
     canRestore: boolean;
     onCancel: () => void;
 }
@@ -78,7 +78,7 @@ export function SystemRestore({ file, destinationId, canRestore, onCancel }: Sys
             <RestoreBar
                 title={`Restores ${picked.length} of ${PARTS.length} parts of the configuration`}
                 detail={picked.length > 0 ? picked.map((part) => part.title).join(", ") : ""}
-                blocker={!canRestore ? "Only a SuperAdmin restores the configuration" : picked.length === 0 ? "Pick a part of the configuration to restore" : null}
+                blocker={!canRestore ? "Only a platform admin restores the configuration" : picked.length === 0 ? "Pick a part of the configuration to restore" : null}
                 onCancel={onCancel}
                 action={{ label: "Restore the configuration", onClick: () => setConfirming(true), pending: restoring, tone: "destructive" }}
             />

@@ -8,8 +8,9 @@ import prisma from "@/lib/prisma";
 import { getDataRetentionSetting, parseRetentionDays } from "@/lib/core/data-retention";
 import { ConflictError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { runAsTenant } from "@/lib/tenant/context";
 import { restoreSnapshot } from "./trash-restore";
-import { isTrashKind, type TrashKind, type TrashRestoreResult, type TrashRow } from "./trash-types";
+import { isTrashKind, type TrashKind, type TrashPart, type TrashRestoreResult, type TrashRow } from "./trash-types";
 
 const log = logger.child({ service: "TrashService" });
 
@@ -18,12 +19,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Who looks at Recently deleted: only what they may change shows. */
 export interface TrashViewer {
     permissions: readonly string[];
-    isSuperAdmin: boolean;
+    isPlatformAdmin: boolean;
 }
 
-/** Whether a viewer may restore or purge a deleted record: its permission, and SuperAdmin for a SuperAdmin's account. */
+/** Whether a viewer may restore or purge a deleted record: its permission, and a platform admin for the account of a platform admin. */
 export function mayHandle(viewer: TrashViewer, entry: { permission: string; superAdminOnly: boolean }): boolean {
-    if (viewer.isSuperAdmin) return true;
+    if (viewer.isPlatformAdmin) return true;
     return !entry.superAdminOnly && viewer.permissions.includes(entry.permission);
 }
 
@@ -40,7 +41,7 @@ export async function listTrash(viewer: TrashViewer): Promise<TrashRow[]> {
     const [rows, days] = await Promise.all([
         prisma.deletedRecord.findMany({
             orderBy: { deletedAt: "desc" },
-            select: { id: true, kind: true, recordId: true, name: true, detail: true, deletedAt: true, deletedByName: true, permission: true, superAdminOnly: true },
+            select: { id: true, kind: true, recordId: true, name: true, detail: true, deletedAt: true, deletedByName: true, permission: true, superAdminOnly: true, tenantId: true },
         }),
         getTrashDays(),
     ]);
@@ -55,8 +56,14 @@ export async function listTrash(viewer: TrashViewer): Promise<TrashRow[]> {
             deletedAt: row.deletedAt.toISOString(),
             deletedByName: row.deletedByName,
             expiresAt: new Date(row.deletedAt.getTime() + days * DAY_MS).toISOString(),
+            tenantId: row.tenantId,
         }];
     });
+}
+
+/** Recently deleted as a part of the settings, with whether the viewer may restore and delete for good. */
+export async function getTrashPart(viewer: TrashViewer & { canManage: boolean }): Promise<TrashPart> {
+    return { rows: await listTrash(viewer), canManage: viewer.canManage };
 }
 
 /** The deleted records of these ids, for the permission check of an action. */
@@ -94,12 +101,15 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
             continue;
         }
         const kind = entry.kind;
+        const restore = () => prisma.$transaction(async (tx) => {
+            const done = await restoreSnapshot(tx, kind, JSON.parse(entry.data), newName);
+            await tx.deletedRecord.delete({ where: { id } });
+            return done;
+        });
         try {
-            const restored = await prisma.$transaction(async (tx) => {
-                const done = await restoreSnapshot(tx, kind, JSON.parse(entry.data), newName);
-                await tx.deletedRecord.delete({ where: { id } });
-                return done;
-            });
+            // An account belongs to no tenant, so its Undo also works in All tenants, which changes
+            // no tenant. Its entry lives in the tenant that keeps it, the home tenant from there.
+            const restored = kind === "user" ? await runAsTenant(entry.tenantId, restore) : await restore();
             result.restored.push({ id, recordId: entry.recordId, kind, name: restored.name, notes: restored.notes });
         } catch (error: unknown) {
             if (error instanceof ConflictError) {

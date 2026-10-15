@@ -11,6 +11,7 @@ import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
+import { assertOwnRecords } from "@/lib/tenant/references";
 
 registerAdapters();
 
@@ -224,6 +225,23 @@ export class JobService {
      * while: without this, a directory source could be picked as a backup target and the
      * runner would write `<root>/<jobName>/` into the very tree the job reads from.
      */
+    /**
+     * Refuses a link to a record of another tenant. The sources and destinations are checked by
+     * their own validation, which reads them through the filtered client as well.
+     */
+    private async assertOwnReferences(input: CreateJobInput | UpdateJobInput, jobId?: string) {
+        await assertOwnRecords(prisma, {
+            job: jobId ? [jobId] : [],
+            adapterConfig: [input.sourceId, ...(input.notificationIds ?? [])],
+            encryptionProfile: [input.encryptionProfileId],
+            namingTemplate: [input.namingTemplateId],
+            schedulePreset: [input.schedulePresetId],
+            notificationTemplate: input.notificationTemplateIds ?? [],
+            retentionPolicy: (input.destinations ?? []).map((destination) => destination.retentionPolicyId),
+            excludePatternPreset: (input.sources ?? []).flatMap((source) => source.excludePatternPresetIds ?? []),
+        });
+    }
+
     private async validateJobDestinations(destinations: DestinationInput[] | undefined) {
         if (!destinations || destinations.length === 0) return;
 
@@ -251,6 +269,7 @@ export class JobService {
 
         await this.validateJobSources(null, sourceId || null, sources);
         await this.validateJobDestinations(destinations);
+        await this.assertOwnReferences(input);
 
         const newJob = await prisma.job.create({
             data: {
@@ -326,6 +345,7 @@ export class JobService {
             await this.validateJobSources(id, sourceId !== undefined ? (sourceId || null) : undefined, sources);
             await this.validateJobDestinations(destinations);
         }
+        await this.assertOwnReferences(input, id);
 
         const updatedJob = await prisma.$transaction(async (tx) => {
             // Update destinations if provided

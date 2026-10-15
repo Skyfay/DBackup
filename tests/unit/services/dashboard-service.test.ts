@@ -46,6 +46,8 @@ import {
   hasRunningJobs,
 } from "@/services/dashboard-service";
 import { registry } from "@/lib/core/registry";
+import { explicitScope, runAsTenant, type TenantScope } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 // ---------------------------------------------------------------------------
 // getDashboardStats
@@ -60,6 +62,8 @@ describe("getDashboardStats", () => {
         { configId: "cfg-1", name: "Local", adapterId: "local", size: 2048, count: 4 },
       ]),
     } as any);
+    // The read of the connections, which keeps the destinations of other tenants out, finds it.
+    prismaMock.adapterConfig.findMany.mockResolvedValue([{ id: "cfg-1" }] as any);
   });
 
   it("returns correct KPI stats aggregated from parallel queries", async () => {
@@ -197,8 +201,28 @@ describe("getStorageVolume", () => {
       key: "cache.storageVolume",
       value: JSON.stringify(cached),
     } as any);
+    prismaMock.adapterConfig.findMany.mockResolvedValue([{ id: "cfg-1" }] as any);
 
     expect(await getStorageVolume()).toEqual(cached);
+  });
+
+  it("leaves out the destinations of another tenant, which the read of the connections does not return", async () => {
+    // The cache holds the destinations of every tenant, the read of the connections only the viewer's.
+    prismaMock.systemSetting.findUnique.mockResolvedValue({
+      key: "cache.storageVolume",
+      value: JSON.stringify([
+        { configId: "own-s3", name: "S3", adapterId: "s3", size: 500, count: 3 },
+        { configId: "other-nas", name: "NAS of another tenant", adapterId: "local", size: 9000, count: 40 },
+      ]),
+    } as any);
+    prismaMock.adapterConfig.findMany.mockResolvedValue([{ id: "own-s3" }] as any);
+
+    const result = await getStorageVolume();
+
+    expect(result).toEqual([{ configId: "own-s3", name: "S3", adapterId: "s3", size: 500, count: 3 }]);
+    expect(prismaMock.adapterConfig.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: { in: ["own-s3", "other-nas"] } },
+    }));
   });
 
   it("triggers a live refresh when no cache entry exists", async () => {
@@ -367,6 +391,37 @@ describe("refreshStorageStatsCache", () => {
     expect(result[0].configId).toBe("cfg-snap");
     expect(prismaMock.storageSnapshot.createMany).toHaveBeenCalled();
     expect(vi.mocked(checkStorageAlerts)).toHaveBeenCalledWith(result);
+  });
+
+  it("measures the destinations of every tenant, also when a run of one tenant asks for it", async () => {
+    let scope: TenantScope | undefined;
+    prismaMock.adapterConfig.findMany.mockImplementation((async () => {
+      scope ??= explicitScope();
+      return [];
+    }) as any);
+
+    await runAsTenant("acme", () => refreshStorageStatsCache());
+
+    expect(scope).toEqual({ kind: "system" });
+  });
+
+  it("stamps each snapshot with the tenant of its destination", async () => {
+    vi.mocked(registry.get).mockReturnValue({
+      list: vi.fn().mockResolvedValue([{ name: "backup.tar", path: "backup.tar", size: 100, lastModified: new Date() }]),
+    } as any);
+    prismaMock.adapterConfig.findMany.mockResolvedValue([
+      { id: "home-s3", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID },
+      { id: "acme-nas", name: "NAS", adapterId: "local", type: "storage", config: "{}", tenantId: "acme" },
+    ] as any);
+
+    await refreshStorageStatsCache();
+
+    expect(prismaMock.storageSnapshot.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ adapterConfigId: "home-s3", tenantId: HOME_TENANT_ID }),
+        expect.objectContaining({ adapterConfigId: "acme-nas", tenantId: "acme" }),
+      ],
+    });
   });
 
   describe("of the destinations a backup wrote to", () => {

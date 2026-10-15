@@ -6,9 +6,10 @@ import { ProviderLogo } from "@/components/oidc/provider-logo";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import type { LoginProvider } from "@/services/auth/login-page-service";
+import { domainOfEmail } from "@/lib/auth/sso-domain";
+import type { DomainProvider, LoginProvider } from "@/services/auth/login-page-service";
 import { ForgotHint, LoginHeading, LoginNote, OrDivider, PasskeyButton, PasswordInput, ProviderButton } from "./login-parts";
-import { providerOfEmail, type LoginProblem } from "./login-problems";
+import type { LoginProblem } from "./login-problems";
 
 export interface LoginValues {
     email: string;
@@ -19,7 +20,12 @@ interface SignInStepProps {
     form: UseFormReturn<LoginValues>;
     instance: string;
     providers: LoginProvider[];
+    /** Passwords are on. */
     emailLogin: boolean;
+    /** The email field shows, for a password or for a provider found by its domain. */
+    emailField: boolean;
+    /** The provider the typed email goes to, of the platform or of a tenant. */
+    claimed: Pick<DomainProvider, "name" | "adapterId"> | undefined;
     passkeyLogin: boolean;
     /** A provider claims a domain, so the email comes first and decides where it goes. */
     twoStep: boolean;
@@ -51,13 +57,12 @@ function EmailChip({ email, onChange }: { email: string; onChange: () => void })
 
 /** The first step of the login page: the providers, the email and its password, and the passkey. */
 export function SignInStep(props: SignInStepProps) {
-    const { form, instance, providers, emailLogin, passkeyLogin, twoStep, passwordStep, problem, loading, passkeyBusy } = props;
+    const { form, instance, providers, emailLogin, emailField, claimed, passkeyLogin, twoStep, passwordStep, problem, loading, passkeyBusy } = props;
     const email = useWatch({ control: form.control, name: "email" });
-    const claimed = twoStep && !passwordStep ? providerOfEmail(providers, email ?? "") : undefined;
-    const domain = email?.split("@")[1];
+    const domain = domainOfEmail(email);
     const showPassword = emailLogin && (!twoStep || passwordStep);
     const providerRows = !passwordStep && providers.length > 0;
-    const noWayIn = !emailLogin && providers.length === 0 && !passkeyLogin;
+    const noWayIn = !emailField && providers.length === 0 && !passkeyLogin;
 
     return (
         <div className="w-full max-w-sm">
@@ -76,9 +81,9 @@ export function SignInStep(props: SignInStepProps) {
                     ))}
                 </div>
             )}
-            {providerRows && emailLogin && <OrDivider />}
+            {providerRows && emailField && <OrDivider />}
 
-            {emailLogin && (
+            {emailField && (
                 <Form {...form}>
                     <form
                         noValidate
@@ -138,7 +143,7 @@ export function SignInStep(props: SignInStepProps) {
             {passkeyLogin && !passwordStep && (
                 <>
                     {/* Right under the email when providers are listed above it, set apart from a form of its own. */}
-                    {emailLogin ? providerRows ? <div className="h-2.5" /> : <OrDivider /> : providerRows && <OrDivider />}
+                    {emailField ? providerRows ? <div className="h-2.5" /> : <OrDivider /> : providerRows && <OrDivider />}
                     <PasskeyButton onClick={props.onPasskey} disabled={loading} busy={passkeyBusy} />
                 </>
             )}

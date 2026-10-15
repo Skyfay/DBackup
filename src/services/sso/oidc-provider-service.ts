@@ -1,4 +1,6 @@
 import prisma from "@/lib/prisma";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { encrypt } from "@/lib/crypto";
 
 export interface CreateSsoProviderInput {
@@ -11,6 +13,8 @@ export interface CreateSsoProviderInput {
     /** The group someone the provider adds starts in, null for none. */
     defaultGroupId?: string | null;
     domain?: string | null; // Email domain for SSO matching (e.g., "example.com")
+    /** The tenant that brings the provider, null for one of the platform. */
+    tenantId?: string | null;
     adapterConfig?: string; // JSON string of the raw adapter configuration
 
     // Credentials
@@ -47,20 +51,25 @@ export class OidcProviderService {
 
     /**
      * A provider as the audit log compares it before and after a change: in plain text, so a new
-     * secret shows as changed, with the name of the group of new people. The secret is never written.
+     * secret shows as changed, with the name of the group of new people and of its tenant. The
+     * secret is never written.
      */
     static async getAuditState(id: string) {
         const provider = await prisma.ssoProvider.findUnique({ where: { id } });
         if (!provider) return null;
-        const group = provider.defaultGroupId
-            ? await prisma.group.findUnique({ where: { id: provider.defaultGroupId }, select: { name: true } })
-            : null;
-        return { ...provider, groupName: group?.name ?? null };
+        // The group lives in the tenant of the provider, the home tenant for one of the platform.
+        const [group, tenant] = await Promise.all([
+            provider.defaultGroupId
+                ? runAsTenant(provider.tenantId ?? HOME_TENANT_ID, () => prisma.group.findUnique({ where: { id: provider.defaultGroupId! }, select: { name: true } }))
+                : null,
+            provider.tenantId ? prisma.tenant.findUnique({ where: { id: provider.tenantId }, select: { name: true } }) : null,
+        ]);
+        return { ...provider, groupName: group?.name ?? null, tenantName: tenant?.name ?? null };
     }
 
-    /** A group new people of a provider could start in, with what it may do. */
-    static async getGroup(id: string) {
-        return prisma.group.findUnique({ where: { id }, select: { id: true, name: true, permissions: true } });
+    /** A group new people of a provider could start in, with what it may do, a group of the provider's tenant. */
+    static async getGroup(id: string, tenantId: string = HOME_TENANT_ID) {
+        return runAsTenant(tenantId, () => prisma.group.findUnique({ where: { id }, select: { id: true, name: true, permissions: true } }));
     }
 
     static async createProvider(data: CreateSsoProviderInput) {
@@ -102,6 +111,7 @@ export class OidcProviderService {
                 allowProvisioning: data.allowProvisioning ?? true,
                 defaultGroupId: data.defaultGroupId ?? null,
                 domain: data.domain, // Required by better-auth SSO plugin
+                tenantId: data.tenantId ?? null,
                 adapterConfig: data.adapterConfig,
 
                 clientId: encryptedClientId,
@@ -175,6 +185,8 @@ export class OidcProviderService {
                 enabled: data.enabled,
                 allowProvisioning: data.allowProvisioning,
                 defaultGroupId: data.defaultGroupId,
+                // Moves the provider to another tenant, or to the platform with null.
+                tenantId: data.tenantId,
                 adapterConfig: data.adapterConfig,
 
                 clientId: encryptedClientId,

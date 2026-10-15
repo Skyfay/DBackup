@@ -221,7 +221,9 @@ async function loadRunStats(now: Date) {
  * Raw SQL for a measured reason: a busy instance holds hundreds of thousands of snapshots for 30
  * days, and loading them all took the overview 1.7 s, plus as long again to sort them into days.
  * One lookup per destination and day on the index of both reads 750 rows at most. `createdAt` is
- * stored in epoch milliseconds, as Prisma writes every DateTime in SQLite.
+ * stored in epoch milliseconds, as Prisma writes every DateTime in SQLite. The raw query skips the
+ * tenant filter, so it only picks ids, and the rows are read through the client, which keeps the
+ * snapshots of other tenants out.
  */
 async function latestSnapshotPerDay(destinationIds: string[], buckets: [number, number][]): Promise<SnapshotPoint[]> {
     if (destinationIds.length === 0 || buckets.length === 0) return [];

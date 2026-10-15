@@ -92,6 +92,11 @@ export async function middleware(request: NextRequest) {
         if (path.startsWith("/api/auth/sign-in")) {
              rateLimitType = "auth";
              await getAuthLimiter().consume(key);
+        } else if (path === "/invite" && method === "POST") {
+             // The Server Actions of an invitation, which make accounts without a session. They post
+             // to the page and would otherwise pass every limiter.
+             rateLimitType = "auth";
+             await getAuthLimiter().consume(key);
         } else if (path.startsWith("/api/")) {
              if (method === 'GET' || method === 'HEAD') {
                 rateLimitType = "api";

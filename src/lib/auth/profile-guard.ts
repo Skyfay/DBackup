@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
+import { PLATFORM_ADMIN_ROLE, permissionsIn } from "@/lib/auth/owner-permissions";
 
 /**
  * What of the own profile a group may change holds for the endpoints of better-auth too, which the
@@ -26,17 +27,18 @@ export function profilePermissionFor(path: string | undefined, fromBrowser: bool
     return PROFILE_ENDPOINTS[path] ?? null;
 }
 
-/** Whether a user holds a permission through their group, a SuperAdmin every one. */
+/**
+ * Whether a user may change this part of their own profile, which any of their groups gives, a
+ * platform admin every part. The profile belongs to no tenant, see `permissionsIn`.
+ */
 export async function userHolds(userId: string, permission: Permission): Promise<boolean> {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { group: { select: { name: true, permissions: true } } } });
-    if (!user?.group) return false;
-    if (user.group.name === "SuperAdmin") return true;
-    try {
-        const held: unknown = JSON.parse(user.group.permissions);
-        return Array.isArray(held) && held.includes(permission);
-    } catch {
-        return false;
-    }
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { platformRole: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } } },
+    });
+    if (!user) return false;
+    if (user.platformRole === PLATFORM_ADMIN_ROLE) return true;
+    return permissionsIn(user.memberships, null).includes(permission);
 }
 
 export const PROFILE_CHANGE_REFUSED = "Your group may not change this part of your profile.";

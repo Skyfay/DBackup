@@ -6,12 +6,21 @@ import { stageLabel } from "@/lib/core/logs";
 import { ExecutionStatusBadge } from "@/components/dashboard/widgets/execution-status";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { DateDisplay } from "@/components/utils/date-display";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { cn, formatDuration } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import { describeSchedule } from "./job-schedule";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COMPRESSION: Record<string, string> = { GZIP: "Gzip", BROTLI: "Brotli" };
+
+/** The tenant of a job after its name, in the timelines of All tenants, which show the jobs of every tenant. */
+export function JobTenant({ job }: { job: JobListItem }) {
+    const { allTenants } = useTenantView();
+    const name = useTenantName()(job.tenantId);
+    if (!allTenants || !name) return null;
+    return <span className="font-normal text-muted-foreground"> · {name}</span>;
+}
 
 /** The schedule in words, and the preset it follows. An expression without words stays code. */
 export function ScheduleText({ job, className }: { job: JobListItem; className?: string }) {

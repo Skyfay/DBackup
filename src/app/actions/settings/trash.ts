@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { checkPermission, getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES, type AuditResource } from "@/lib/core/audit-types";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
@@ -25,21 +25,25 @@ const RESOURCES: Record<TrashKind, AuditResource> = {
 
 /**
  * How long Undo works after a delete. The toast shows for seconds, this leaves room for a slow
- * answer, and anything older is restored under Settings by someone who may change the settings.
+ * answer, and anything older is restored under Settings › Recently deleted by someone who may
+ * change the tenant settings.
  */
 const UNDO_WINDOW_MS = 5 * 60 * 1000;
 
 const GONE = "It is not in Recently deleted any more.";
 
+/** All tenants only reads, a deleted record comes back or goes for good in its own tenant. */
+const IN_ITS_TENANT = "Open the tenant of the entry to restore it or delete it for good.";
+
 export type TrashActionResult<T> = { success: true; data: T } | { success: false; error: string };
 
 type Entry = Omit<Awaited<ReturnType<typeof trashEntries>>[number], "kind"> & { kind: TrashKind };
 
-type Viewer = { id: string; group: { name: string } | null };
+type Viewer = { id: string; isPlatformAdmin: boolean };
 
 /** The viewer with the permissions each entry is checked against, the one it was deleted with. */
 function trashViewer(user: Viewer, permissions: string[]): TrashViewer {
-    return { permissions, isSuperAdmin: user.group?.name === "SuperAdmin" };
+    return { permissions, isPlatformAdmin: user.isPlatformAdmin };
 }
 
 /**
@@ -89,6 +93,7 @@ export async function restoreDeletedAction(ids: string[], newName?: string): Pro
     const viewer = trashViewer(user, await getUserPermissions());
     const parsed = RestoreSchema.safeParse({ ids, newName });
     if (!parsed.success) return { success: false, error: "Invalid request" };
+    if (user.allTenants) return { success: false, error: IN_ITS_TENANT };
 
     try {
         const entries = await allowed(viewer, parsed.data.ids);
@@ -119,7 +124,7 @@ const UndoSchema = z.object({
  */
 export async function undoDeleteAction(kind: TrashKind, recordIds: string[]): Promise<TrashActionResult<TrashRestoreResult>> {
     const permissions = await getUserPermissions();
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) throw new AuthenticationError();
     const parsed = UndoSchema.safeParse({ kind, recordIds });
     if (!parsed.success) return { success: false, error: "Invalid request" };
@@ -128,7 +133,7 @@ export async function undoDeleteAction(kind: TrashKind, recordIds: string[]): Pr
         const since = Date.now() - UNDO_WINDOW_MS;
         const entries = (await allowed(trashViewer(user, permissions), await latestTrashIds(parsed.data.kind, parsed.data.recordIds)))
             .filter((entry) => entry.deletedById === user.id && entry.deletedAt.getTime() >= since);
-        if (entries.length === 0) return { success: false, error: "It can no longer be undone. Someone who may change the settings restores it under Settings, Recently deleted." };
+        if (entries.length === 0) return { success: false, error: "It can no longer be undone. Someone who may change the tenant settings restores it under Settings › Recently deleted." };
         const result = await restoreFromTrash(entries.map((entry) => entry.id));
         await recordRestored(user.id, entries, result);
         return { success: true, data: result };
@@ -147,6 +152,7 @@ export async function purgeDeletedAction(ids: string[]): Promise<TrashActionResu
     const viewer = trashViewer(user, await getUserPermissions());
     const parsed = BulkIdsSchema.safeParse(ids);
     if (!parsed.success) return { success: false, error: "Invalid request" };
+    if (user.allTenants) return { success: false, error: IN_ITS_TENANT };
 
     try {
         const entries = await allowed(viewer, parsed.data);

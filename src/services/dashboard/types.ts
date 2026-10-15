@@ -12,6 +12,8 @@ export interface RunSummary {
 export interface UnhealthyJob {
     jobId: string;
     jobName: string;
+    /** The tenant of the job, which the banner names in All tenants. */
+    tenantId?: string;
     /** The run that put the job into this state, for "View logs". */
     executionId: string;
     failedAt: string;
@@ -82,6 +84,8 @@ export interface DashboardStrip {
 export interface DashboardJobRow {
     id: string;
     name: string;
+    /** The tenant of the job, which the list names in All tenants. */
+    tenantId?: string;
     enabled: boolean;
     /** "PostgreSQL", "Directory", or both joined with a plus. */
     sourceLabel: string;

@@ -11,3 +11,15 @@ export async function hasNothingToBackUp(): Promise<boolean> {
     ]);
     return connections === 0 && jobs === 0;
 }
+
+/**
+ * Whether the sidebar offers Quick Setup: while no database is set up, or always once General
+ * says so.
+ */
+export async function showsQuickSetup(): Promise<boolean> {
+    const [databases, setting] = await Promise.all([
+        prisma.adapterConfig.count({ where: { type: "database" } }),
+        prisma.systemSetting.findUnique({ where: { key: "general.showQuickSetup" }, select: { value: true } }),
+    ]);
+    return setting?.value === "true" || databases === 0;
+}

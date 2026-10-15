@@ -18,8 +18,9 @@ This document covers the API key authentication system and the webhook trigger m
 
 **Key Principles:**
 - API keys provide stateless, token-based authentication for programmatic access
-- API keys **never** inherit SuperAdmin privileges - only explicitly assigned permissions apply
-- A key never gets more than the group of its owner may do. `validate()` cuts its permissions to that group at every request (`capToOwner` in `src/lib/auth/owner-permissions.ts`)
+- API keys **never** pass the checks only a platform admin passes - only explicitly assigned permissions apply
+- A key belongs to the tenant it was made in (`ApiKey.tenantId`) and acts only there, see [Tenants](./tenants.md)
+- A key never gets more than its owner may do in that tenant. `validate()` cuts its permissions at every request with `capToOwner(key, ownerPermissionsIn(owner, key.tenantId))` from `src/lib/auth/owner-permissions.ts`
 - The raw key is shown exactly once at creation; only a scrypt hash is stored (SHA-256 is kept as a legacy fallback and is automatically upgraded on next use)
 - All API routes support both session (cookie) and API key (Bearer token) authentication via the unified `getAuthContext()` function
 
@@ -34,6 +35,7 @@ model ApiKey {
   permissions String    // JSON array: ["jobs:read", "jobs:execute"]
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId    String    @default("default") // The tenant it was made in and acts in
   expiresAt   DateTime?
   lastUsedAt  DateTime?
   enabled     Boolean   @default(true)
@@ -101,7 +103,7 @@ Location: `src/services/auth/api-key-service.ts`
 | `toggle` | `(id: string, enabled: boolean) → ApiKeyListItem` | Enable or disable a key |
 | `rotate` | `(id: string) → { apiKey, rawKey }` | Generate a new key, replace the old hash |
 | `update` | `(id, { name, permissions, expiresAt }) → { before, after }` | Change a key and say what it was before. The secret stays |
-| `ownerOf` | `(id: string) → { ownerId, name, permissions, group }` | The owner with their group, which caps what the key may get |
+| `ownerOf` | `(id: string) → { ownerId, name, permissions, ownerPermissions }` | The owner with what they may do in the tenant of the key, which caps what the key may get |
 | `nameTaken` | `(name: string, exceptId?: string) → boolean` | Whether another key has the name in any case. Runs name the key that started them |
 | `delete` | `(id: string) → void` | Delete a key |
 
@@ -144,12 +146,12 @@ Request with "Authorization: Bearer dbackup_abc123..."
                    │
                    ▼
           ┌─────────────────┐
-          │ 7. Owner Cap    │  permissions ∩ group of the owner
-          │                 │  SuperAdmin group → all it holds, no group → none
+          │ 7. Owner Cap    │  permissions ∩ what the owner may do in the key's tenant
+          │                 │  platform admin → all it holds, no group there → none
           └────────┬────────┘
                    │
                    ▼
-          Return { id, userId, permissions }
+          Return { id, userId, permissions, tenantId }
 ```
 
 ## Unified Authentication (`getAuthContext`)
@@ -163,49 +165,42 @@ The `getAuthContext()` function provides a single entry point for authenticating
 ```typescript
 export interface AuthContext {
   userId: string;
-  permissions: string[];
-  isSuperAdmin: boolean;
+  permissions: string[];       // What the caller may do in its tenant, see permissionsIn
+  isPlatformAdmin: boolean;    // Never through an API key
   authMethod: "session" | "apikey";
-  apiKeyId?: string;   // Only set for API key auth
+  apiKeyId?: string;           // Only set for API key auth
+  tenantId: string | null;     // The tenant the request acts in
 }
 ```
 
 ### Authentication Flow
 
 ```typescript
-export async function getAuthContext(
-  headersObj: Headers
-): Promise<AuthContext | null> {
+// Memoised per Headers object, so a request resolves its session or key once.
+export function getAuthContext(headersObj: Headers): Promise<AuthContext | null>;
+
+async function resolveAuthContext(headersObj: Headers): Promise<AuthContext | null> {
   // 1. Try session authentication first (browser cookies)
   const session = await auth.api.getSession({ headers: headersObj });
-  if (session) {
-    const user = await getUserWithGroup(session.user.id);
-    return {
-      userId: user.id,
-      permissions: user.isSuperAdmin
-        ? AVAILABLE_PERMISSIONS
-        : JSON.parse(user.group?.permissions || "[]"),
-      isSuperAdmin: user.isSuperAdmin,
-      authMethod: "session",
-    };
+  if (session?.user) {
+    // The memberships of the user decide the tenant (Session.activeTenantId while it holds)
+    // and the permissions there. A platform admin gets every permission.
+    return sessionContext(session.user.id, session.session.activeTenantId);
   }
 
-  // 2. Fall back to API key (Bearer token)
+  // 2. Fall back to API key (Bearer token). A key is found by its hash before its tenant is known.
   const token = extractBearerToken(headersObj);
-  if (token) {
-    const validated = await apiKeyService.validate(token);
-    if (validated) {
-      return {
-        userId: validated.userId,
-        permissions: validated.permissions,
-        isSuperAdmin: false,  // API keys NEVER get SuperAdmin
-        authMethod: "apikey",
-        apiKeyId: validated.id,
-      };
-    }
-  }
-
-  return null;
+  if (!token) return null;
+  const validated = await runAsSystem(() => apiKeyService.validate(token));
+  if (!validated) return null;
+  return {
+    userId: validated.userId,
+    permissions: validated.permissions,
+    isPlatformAdmin: false,  // API keys never act as a platform admin
+    authMethod: "apikey",
+    apiKeyId: validated.id,
+    tenantId: validated.tenantId,
+  };
 }
 ```
 
@@ -216,8 +211,8 @@ export function checkPermissionWithContext(
   ctx: AuthContext,
   permission: Permission
 ): void {
-  // SuperAdmin bypass (session-only - API keys never have this)
-  if (ctx.isSuperAdmin) return;
+  // Platform admin bypass (session-only - API keys never have this)
+  if (ctx.isPlatformAdmin) return;
 
   if (!ctx.permissions.includes(permission)) {
     throw new PermissionError(permission);
@@ -394,13 +389,14 @@ export class ApiKeyError extends DBackupError {
 
 ## Security Considerations
 
-1. **No SuperAdmin for API Keys**: Even if the key owner is a SuperAdmin, the API key only has its explicitly assigned permissions
+1. **No Platform Admin for API Keys**: Even if the key owner is a platform admin, the API key only has its explicitly assigned permissions, and the routes only a platform admin may call refuse every key
 2. **Hash-Only Storage**: Raw keys are never persisted - only scrypt hashes
-3. **Owner Cap**: A key never exceeds the group of its owner, at every request. Creating a key or adding a permission also needs the caller's group to allow it, and only the owner or a user whose group covers the key may rotate it
-4. **One-Time Reveal**: The full key is displayed exactly once, after creation or rotation
-5. **Expiration**: New keys run out after 90 days by default
-6. **Rate Limiting**: API key requests go through the same IP-based rate limiter as browser requests
-7. **Cascade Deletion**: When a user is deleted, all their API keys are automatically removed
+3. **Owner Cap**: A key never exceeds what its owner may do in the tenant of the key, at every request. Creating a key or adding a permission also needs the caller to hold it, and only the owner or a user who holds everything the key holds may rotate it
+4. **One Tenant**: A key reads and writes only the tenant it was made in, since the tenant filter narrows every query of its requests
+5. **One-Time Reveal**: The full key is displayed exactly once, after creation or rotation
+6. **Expiration**: New keys run out after 90 days by default
+7. **Rate Limiting**: API key requests go through the same IP-based rate limiter as browser requests
+8. **Cascade Deletion**: When a user is deleted, all their API keys are automatically removed
 
 ## UI Components
 

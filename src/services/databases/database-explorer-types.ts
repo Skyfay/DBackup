@@ -8,6 +8,8 @@ export interface ExplorerServer {
     id: string;
     name: string;
     adapterId: string;
+    /** The tenant the connection belongs to, which the lists show and open it in while they hold every tenant. */
+    tenantId?: string;
     /** The version the hourly check read last. */
     version: string | null;
     /** When the version last changed, null while it never did since the connection was added. */
@@ -42,6 +44,8 @@ export interface ExplorerDatabase {
     /** `serverId/name` for a database, the server id for an instance, unique across every server. */
     key: string;
     serverId: string;
+    /** The tenant of its server, which the list shows and opens it in while it holds every tenant. */
+    tenantId?: string;
     /**
      * A database of a server, or an instance: a Redis or Valkey server, which DBackup backs up as
      * a whole, so its numbered databases are one entry.

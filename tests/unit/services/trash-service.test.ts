@@ -30,14 +30,14 @@ function row(overrides: Record<string, unknown> = {}) {
     };
 }
 
-const VAULT_ADMIN = { permissions: ["vault:write"], isSuperAdmin: false };
+const VAULT_ADMIN = { permissions: ["vault:write"], isPlatformAdmin: false };
 
 describe("who may handle a deleted record", () => {
     it("needs the permission the record was deleted with, and a SuperAdmin for the account of one", () => {
         expect(mayHandle(VAULT_ADMIN, { permission: "vault:write", superAdminOnly: false })).toBe(true);
         expect(mayHandle(VAULT_ADMIN, { permission: "users:write", superAdminOnly: false })).toBe(false);
-        expect(mayHandle({ permissions: ["users:write"], isSuperAdmin: false }, { permission: "users:write", superAdminOnly: true })).toBe(false);
-        expect(mayHandle({ permissions: [], isSuperAdmin: true }, { permission: "users:write", superAdminOnly: true })).toBe(true);
+        expect(mayHandle({ permissions: ["users:write"], isPlatformAdmin: false }, { permission: "users:write", superAdminOnly: true })).toBe(false);
+        expect(mayHandle({ permissions: [], isPlatformAdmin: true }, { permission: "users:write", superAdminOnly: true })).toBe(true);
     });
 });
 

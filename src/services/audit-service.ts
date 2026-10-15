@@ -1,9 +1,12 @@
-import { headers } from "next/headers";
+import { requestHeaders } from "@/lib/server/request-headers";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { clientAddress } from "@/lib/core/client-address";
 import type { AuthContext } from "@/lib/auth/access-control";
+import { runAsSystem } from "@/lib/tenant/context";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ service: "AuditService" });
 
@@ -16,12 +19,17 @@ export interface AuditOrigin {
   apiKeyId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  /**
+   * The tenant whose log keeps the entry. Left out, the tenant of the code that writes it, and the
+   * home tenant for what belongs to no tenant, like a sign-in or a system task.
+   */
+  tenantId?: string;
 }
 
 /** The address and browser of the request being handled, nothing outside a request. */
 async function requestOrigin(): Promise<{ ipAddress: string | null; userAgent: string | null }> {
   try {
-    const list = await headers();
+    const list = await requestHeaders();
     return { ipAddress: clientAddress(list), userAgent: list.get("user-agent") };
   } catch {
     return { ipAddress: null, userAgent: null };
@@ -49,25 +57,30 @@ export class AuditService {
       const ipAddress = origin.ipAddress ?? text(details?.ipAddress) ?? fromRequest?.ipAddress ?? null;
       const userAgent = origin.userAgent ?? text(details?.userAgent) ?? fromRequest?.userAgent ?? null;
       const apiKeyId = origin.apiKeyId ?? null;
+      const tenantId = origin.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
 
-      const [user, apiKey] = await Promise.all([
-        userId ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } }) : null,
-        apiKeyId ? prisma.apiKey.findUnique({ where: { id: apiKeyId }, select: { name: true } }) : null,
-      ]);
+      // Written for the tenant named above, also where no request names one, like at a sign-in.
+      await runAsSystem(async () => {
+        const [user, apiKey] = await Promise.all([
+          userId ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } }) : null,
+          apiKeyId ? prisma.apiKey.findUnique({ where: { id: apiKeyId }, select: { name: true } }) : null,
+        ]);
 
-      await prisma.auditLog.create({
-        data: {
-          userId,
-          actorName: user?.name ?? null,
-          apiKeyId,
-          apiKeyName: apiKey?.name ?? null,
-          action,
-          resource,
-          resourceId,
-          details: details ? JSON.stringify(details) : undefined,
-          ipAddress,
-          userAgent,
-        },
+        await prisma.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            actorName: user?.name ?? null,
+            apiKeyId,
+            apiKeyName: apiKey?.name ?? null,
+            action,
+            resource,
+            resourceId,
+            details: details ? JSON.stringify(details) : undefined,
+            ipAddress,
+            userAgent,
+          },
+        });
       });
     } catch (error) {
       // We don't want audit logging to crash the application, but we should log the error
@@ -91,20 +104,18 @@ export class AuditService {
     });
   }
 
-  /**
-   * Clean up old audit logs
-   */
+  /** Clean up old audit logs, of every tenant. */
   async cleanOldLogs(retentionDays: number) {
     const dateThreshold = new Date();
     dateThreshold.setDate(dateThreshold.getDate() - retentionDays);
 
-    return prisma.auditLog.deleteMany({
+    return runAsSystem(() => prisma.auditLog.deleteMany({
       where: {
         createdAt: {
           lt: dateThreshold,
         },
       },
-    });
+    }));
   }
 }
 

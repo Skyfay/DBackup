@@ -24,7 +24,7 @@ export async function createSchedulePreset(input: {
   description?: string;
   schedule: string;
 }) {
-  const existing = await prisma.schedulePreset.findUnique({
+  const existing = await prisma.schedulePreset.findFirst({
     where: { name: input.name },
   });
   if (existing) {
@@ -55,7 +55,7 @@ export async function updateSchedulePreset(
   if (!preset) throw new NotFoundError("SchedulePreset", id);
 
   if (input.name && input.name !== preset.name) {
-    const existing = await prisma.schedulePreset.findUnique({
+    const existing = await prisma.schedulePreset.findFirst({
       where: { name: input.name },
     });
     if (existing) {

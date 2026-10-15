@@ -12,7 +12,7 @@ info:
     - **Session Authentication** - Used automatically when logged in via the web UI. Session cookies are sent with each request.
     - **API Key Authentication** - For scripts, CI/CD pipelines, and external integrations. Create an API key under **Access Management → API Keys**.
 
-    > API keys do not inherit SuperAdmin privileges. Only explicitly assigned permissions are available.
+    > API keys do not inherit the rights of a platform admin. Only explicitly assigned permissions are available, and a key reads and changes only the tenant it was made in.
 
     ## Rate Limits
 
@@ -1388,6 +1388,132 @@ paths:
                         detectedAt:
                           type: string
                           format: date-time
+
+  /adapters/{id}/database-assignments:
+    get:
+      tags: [Adapters]
+      summary: Database Assignments
+      description: |
+        The databases of a shared database server with the tenant each belongs to now, every
+        assignment with its start and end, the rules that give databases away by their name, and
+        the tenants a database can be given to. The databases are the ones DBackup last read from
+        the server. Requires `platform-sharing:read` or `platform-sharing:write`, rights on the
+        platform that only a platform group gives and an API key never holds, so it answers a
+        signed-in session only.
+      operationId: getDatabaseAssignments
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The databases of the server and who they belong to
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/SourceAssignments"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No database source with this ID in the tenant of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Adapters]
+      summary: Assign Databases
+      description: |
+        Gives databases of a shared database server to tenants, up to 500 at once, for a hosting
+        panel that creates them. A `null` tenant takes a database back, so it belongs to nobody but
+        the tenant of the server. A database that changes hands ends its current assignment, so the
+        backups made before stay with the tenant that had it then. A start never lies in the future,
+        and a backdated one never before the end of the previous assignment of the name. Requires
+        `platform-sharing:write`, a right on the platform that only a platform group gives and an
+        API key never holds, so it answers a signed-in session only.
+      operationId: assignDatabases
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assignments]
+              properties:
+                assignments:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [database, tenantId]
+                    properties:
+                      database:
+                        type: string
+                        description: The name of the database on the server
+                        example: shop_acme
+                      tenantId:
+                        type: [string, "null"]
+                        description: The tenant the database belongs to, null to take it back. The IDs come from `customers` of the GET
+                        example: cm2x8k1q40000acme
+                      validFrom:
+                        type: string
+                        format: date-time
+                        description: When the tenant's backups of it start, now when left out. An earlier day shows older backups too
+                        example: "2026-10-01T00:00:00.000Z"
+            example:
+              assignments:
+                - database: shop_acme
+                  tenantId: cm2x8k1q40000acme
+                  validFrom: "2026-10-01T00:00:00.000Z"
+                - database: shop_old
+                  tenantId: null
+      responses:
+        "200":
+          description: How many databases changed hands
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      changed:
+                        type: integer
+                        description: The databases whose tenant changed. One that belongs to the tenant already is left as it is
+                        example: 2
+        "400":
+          description: Invalid body, a start in the future, the tenant of the server itself or a tenant that does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No database source with this ID in the tenant of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   # ─── Connection Testing ────────────────────────────────────────
   /adapters/test-connection:
@@ -4249,6 +4375,107 @@ components:
           format: date-time
         error:
           type: [string, "null"]
+
+    SourceAssignments:
+      type: object
+      description: Which tenant each database of a shared server belongs to
+      properties:
+        databases:
+          type: array
+          description: The databases DBackup last read from the server, by name
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                example: shop_acme
+              sizeInBytes:
+                type: [integer, "null"]
+                example: 52428800
+              owner:
+                type: [object, "null"]
+                description: The tenant it belongs to now, null when it belongs to nobody but the tenant of the server
+                properties:
+                  tenantId:
+                    type: string
+                  tenantName:
+                    type: string
+                    example: Acme Corp
+                  via:
+                    type: string
+                    enum: [assignment, rule]
+                  since:
+                    type: string
+                    format: date-time
+              backups:
+                type: integer
+                description: The backups of it the destinations of the server keep, one per backup however many copies
+                example: 30
+        assignments:
+          type: array
+          description: Every assignment, the ended ones too, newest first
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              databaseName:
+                type: string
+              tenantId:
+                type: string
+              tenantName:
+                type: string
+              validFrom:
+                type: string
+                format: date-time
+              validUntil:
+                type: [string, "null"]
+                format: date-time
+                description: Null while it holds
+              byName:
+                type: [string, "null"]
+                description: The user who gave it, null when it came without one or the user is gone
+        rules:
+          type: array
+          description: The rules that give databases away by their name, the highest priority first
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              pattern:
+                type: string
+                example: "shop_*"
+              tenantId:
+                type: string
+              tenantName:
+                type: string
+              priority:
+                type: integer
+                example: 0
+              validFrom:
+                type: string
+                format: date-time
+        customers:
+          type: array
+          description: The tenants a database can be given to, every tenant but the one of the server
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: cm2x8k1q40000acme
+              name:
+                type: string
+                example: Acme Corp
+        backupDates:
+          type: object
+          description: When each database a tenant ever held was backed up, of the backups kept, oldest first, by its name
+          additionalProperties:
+            type: array
+            items:
+              type: string
+              format: date-time
 
     NotificationLog:
       type: object

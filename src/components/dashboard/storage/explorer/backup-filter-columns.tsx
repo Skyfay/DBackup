@@ -2,6 +2,7 @@
 
 import { Clock, KeyRound, Lock, MousePointerClick, Unlink, Unplug } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { TENANT_COLUMN_ID, tenantFilterOptions, type NamedTenant } from "@/components/tenant/tenant-rows";
 import type { DataTableFilterableColumn } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
 import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerJobKind } from "@/services/storage/explorer-types";
@@ -65,6 +66,12 @@ interface FilterColumnsInput {
     counts: BackupCounts;
     /** How many backups the filters leave, for the foot of each. */
     shown: number;
+    /**
+     * In All tenants: every tenant, the tenant of each backup and the name of a tenant by its id. The
+     * Tenant filter offers the tenants of the backups, and a job names its tenant, since two tenants
+     * may have a job of the same name. Null anywhere else.
+     */
+    tenants?: { all: readonly NamedTenant[]; of: (string | undefined)[]; nameOf: (tenantId: string | undefined) => string | null } | null;
 }
 
 /**
@@ -72,8 +79,12 @@ interface FilterColumnsInput {
  * what used to be quick filters beside the search, so the toolbar keeps to one row, and while
  * nothing is picked it counts what needs a look.
  */
-export function backupFilterColumns({ jobs, destinations, starters, counts, shown }: FilterColumnsInput): DataTableFilterableColumn<BackupRun>[] {
+export function backupFilterColumns({ jobs, destinations, starters, counts, shown, tenants = null }: FilterColumnsInput): DataTableFilterableColumn<BackupRun>[] {
     const shared = { note: "The numbers count the backups", resultLabel: count(shown, "backup"), unavailableLabel: UNAVAILABLE };
+    const labelOf = (name: string, tenantId: string | undefined) => {
+        const tenant = tenants?.nameOf(tenantId);
+        return tenant ? `${name} · ${tenant}` : name;
+    };
     return [
         {
             id: "job",
@@ -81,7 +92,7 @@ export function backupFilterColumns({ jobs, destinations, starters, counts, show
             ...shared,
             options: jobs.map((job) => ({
                 value: job.key,
-                label: job.name,
+                label: labelOf(job.name, job.tenantId),
                 group: GROUPS[job.kind],
                 lead: <JobIcon job={job} className="size-4 shrink-0" />,
                 count: counts.jobs.get(job.key) ?? 0,
@@ -93,7 +104,7 @@ export function backupFilterColumns({ jobs, destinations, starters, counts, show
             ...shared,
             options: destinations.map((destination) => ({
                 value: destination.id,
-                label: destination.name,
+                label: labelOf(destination.name, destination.tenantId),
                 lead: <AdapterIcon adapterId={destination.adapterId} className="size-4 shrink-0" />,
                 count: counts.at.get(destination.id) ?? 0,
             })),
@@ -122,5 +133,13 @@ export function backupFilterColumns({ jobs, destinations, starters, counts, show
             hint: <NeedsLook {...counts.attention} />,
             options: STATES.map((state) => ({ ...state, count: counts.states[state.value] })),
         },
+        ...(tenants
+            ? [{
+                id: TENANT_COLUMN_ID,
+                title: "Tenant",
+                ...shared,
+                options: tenantFilterOptions(tenants.all, tenants.of).map((option) => ({ ...option, count: counts.tenants.get(option.value) ?? 0 })),
+            }]
+            : []),
     ];
 }

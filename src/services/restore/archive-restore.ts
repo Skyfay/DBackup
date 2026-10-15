@@ -100,10 +100,13 @@ export async function restoreArchiveSnapshot(
                 : "Destination cannot serve byte ranges - the archive is fetched once in full.",
             'info'
         );
-        if (index.deps.length > 0) {
-            log(`Incremental snapshot - restore reads from ${index.deps.length + 1} archives of its chain.`, 'info');
+        // The run of a customer says nothing about the rest of the archive of the server.
+        if (!input.shared) {
+            if (index.deps.length > 0) {
+                log(`Incremental snapshot - restore reads from ${index.deps.length + 1} archives of its chain.`, 'info');
+            }
+            log(`Archive contains ${index.databases.length} database(s) and ${index.directories.length} directory source(s).`, 'info');
         }
-        log(`Archive contains ${index.databases.length} database(s) and ${index.directories.length} directory source(s).`, 'info');
 
         // ── Selection (identical conventions to the old path) ────────────────
         // A scope of 'databases' or 'files' means the other half was deliberately left out

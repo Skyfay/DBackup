@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { ApiKeyError, NotFoundError, wrapError } from "@/lib/logging/errors";
 import { Permission } from "@/lib/auth/permissions";
-import { capToOwner } from "@/lib/auth/owner-permissions";
+import { capToOwner, ownerPermissionsIn } from "@/lib/auth/owner-permissions";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 
 const log = logger.child({ service: "ApiKeyService" });
@@ -63,7 +63,12 @@ export interface ValidatedApiKey {
   id: string;
   userId: string;
   permissions: string[];
+  /** The tenant the key acts in, the one it was made in. */
+  tenantId: string;
 }
+
+/** The roles of the owner of a key, which decide the most the key may do in its tenant. */
+const OWNER_ROLES = { select: { platformRole: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } }, platformGroup: { select: { platformPermissions: true, tenantPermissions: true, allTenants: true, tenants: { select: { tenantId: true } } } } } } as const;
 
 export class ApiKeyService {
   /**
@@ -289,16 +294,21 @@ export class ApiKeyService {
     return keys.some((key) => key.name.trim().toLowerCase() === wanted);
   }
 
-  /** The owner of a key with their group, which decides the most the key may get, and what the key holds. */
+  /** The owner of a key with what they may do in its tenant, which is the most the key may get, and what the key holds. */
   async ownerOf(id: string) {
     const record = await prisma.apiKey.findUnique({
       where: { id },
-      select: { userId: true, name: true, permissions: true, user: { select: { group: { select: { name: true, permissions: true } } } } },
+      select: { userId: true, name: true, permissions: true, tenantId: true, user: OWNER_ROLES },
     });
     if (!record) {
       throw new NotFoundError("ApiKey", id);
     }
-    return { ownerId: record.userId, name: record.name, permissions: JSON.parse(record.permissions) as string[], group: record.user.group };
+    return {
+      ownerId: record.userId,
+      name: record.name,
+      permissions: JSON.parse(record.permissions) as string[],
+      ownerPermissions: ownerPermissionsIn(record.user, record.tenantId),
+    };
   }
 
   /**
@@ -335,8 +345,8 @@ export class ApiKeyService {
 
     const hashed = hashKey(rawKey);
 
-    // The group of the owner decides the most the key may do, at every request.
-    const withOwner = { user: { select: { group: { select: { name: true, permissions: true } } } } } as const;
+    // The roles of the owner decide the most the key may do, at every request.
+    const withOwner = { user: OWNER_ROLES } as const;
     let record = await prisma.apiKey.findUnique({
       where: { hashedKey: hashed },
       include: withOwner,
@@ -384,11 +394,12 @@ export class ApiKeyService {
         log.error("Failed to update lastUsedAt for API key", { apiKeyId: record.id }, wrapError(err));
       });
 
-    // A permission the group of the owner no longer has stays stored but does nothing.
+    // A permission the owner no longer has in the tenant of the key stays stored but does nothing.
     return {
       id: record.id,
       userId: record.userId,
-      permissions: capToOwner(JSON.parse(record.permissions) as string[], record.user?.group),
+      permissions: capToOwner(JSON.parse(record.permissions) as string[], ownerPermissionsIn(record.user, record.tenantId)),
+      tenantId: record.tenantId,
     };
   }
 }

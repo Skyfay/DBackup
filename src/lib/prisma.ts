@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { logger } from '@/lib/logging/logger'
 import { wrapError } from '@/lib/logging/errors'
+import { tenantScopeExtension } from '@/lib/tenant/prisma-scope'
 
 const log = logger.child({ module: 'Prisma' })
 
@@ -115,7 +116,10 @@ const prismaClientSingleton = () => {
     },
   });
 
-  return client;
+  // ── Tenants ──────────────────────────────────────────────────
+  // Every query on a tenant model is narrowed to the tenant of the code that runs now, see
+  // src/lib/tenant/prisma-scope.ts. The request is asked lazily, it imports this client itself.
+  return client.$extends(tenantScopeExtension(async () => (await import('./tenant/current')).requestScope()));
 }
 
 declare global {

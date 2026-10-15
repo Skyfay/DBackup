@@ -13,7 +13,9 @@ import { logger } from "@/lib/logging/logger";
 import { getNotificationsModel } from "@/services/notifications/notification-settings-service";
 import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import { getConfigBackupSettings } from "@/services/config/config-backup-settings";
-import { listTrash } from "@/services/trash/trash-service";
+import { getTrashPart, type TrashViewer } from "@/services/trash/trash-service";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { getCertificateInfo } from "./certificate-service";
 import { getDatabaseInfo } from "./database-service";
 import { getDataRetentionOverview } from "./data-retention-service";
@@ -36,7 +38,23 @@ async function orNull<T>(what: string, read: () => Promise<T> | T): Promise<T | 
     }
 }
 
-export async function getSettingsModel({ permissions, ...viewer }: { canManage: boolean; isSuperAdmin: boolean; permissions: string[] }): Promise<SettingsModel> {
+interface SettingsViewer {
+    canManage: boolean;
+    isPlatformAdmin: boolean;
+    allTenants: boolean;
+    /**
+     * Who looks at Recently deleted and whether they restore, with one tenant only, where it is a
+     * part of Settings. Left out with more, or for a viewer who may not read the tenant settings.
+     */
+    trash?: (TrashViewer & { canManage: boolean }) | null;
+}
+
+export async function getSettingsModel({ trash: trashViewer = null, ...viewer }: SettingsViewer): Promise<SettingsModel> {
+    // The connections and keys the platform's own settings point at, like the destination of the
+    // configuration backup or the default channels. They belong to the home tenant, wherever the
+    // viewer works: a customer's destination or channel must never get what the platform sends,
+    // least of all the configuration backup, which holds the key of every login.
+    const platformOwn = <T>(read: () => Promise<T>): Promise<T> => runAsTenant(HOME_TENANT_ID, read);
     const general = await getGeneralSettings();
     const [signIn, lastWayIn, loginImage, providers, passwords, privacy, retention, database, configBackup, storage, keys, configRun, rateLimits, certificate, tasks, integrity, notifications, trash] =
         await Promise.all([
@@ -50,19 +68,19 @@ export async function getSettingsModel({ permissions, ...viewer }: { canManage: 
             // Size figures come from the file system. A failure there should not take the whole page down.
             orNull("database info", getDatabaseInfo),
             getConfigBackupSettings(),
-            getAdapterOptions("storage"),
-            prisma.encryptionProfile.findMany({
+            platformOwn(() => getAdapterOptions("storage")),
+            platformOwn(() => prisma.encryptionProfile.findMany({
                 select: { id: true, name: true, description: true, _count: { select: { jobs: true } } },
                 orderBy: { name: "asc" },
-            }),
+            })),
             systemTaskService.getTaskLastRun(SYSTEM_TASKS.CONFIG_BACKUP),
             getRateLimitConfig(),
             orNull("certificate info", getCertificateInfo),
             getSystemTaskRows(general.timezone),
             getIntegritySettings(),
-            getNotificationsModel(),
+            platformOwn(getNotificationsModel),
             // Only what the viewer may restore, so the list never offers what the server refuses.
-            listTrash({ permissions, isSuperAdmin: viewer.isSuperAdmin }),
+            trashViewer ? getTrashPart(trashViewer) : null,
         ]);
 
     return {

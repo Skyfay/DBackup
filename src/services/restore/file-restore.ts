@@ -97,7 +97,7 @@ export interface OpenedArchive extends ManagedArchiveSource {
  * Reads the backup's `.meta.json`, which carries the crypto parameters needed to open the
  * index without touching the archive.
  */
-async function readBackupMetadata(
+export async function readBackupMetadata(
     adapter: StorageAdapter,
     config: AdapterConfig,
     file: string

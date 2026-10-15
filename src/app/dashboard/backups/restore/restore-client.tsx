@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, HardDrive } from "lucide-react";
+import { HardDrive } from "lucide-react";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
 import type { FileInfo } from "@/components/dashboard/storage/file-info";
 import { startPreparedArchiveDownload } from "@/components/dashboard/storage/prepared-download";
@@ -14,7 +14,7 @@ import { RestoreBar, RestoreFailureCard, RestoreSteps, type RestoreStep } from "
 import { RedisGuide } from "@/components/dashboard/storage/restore/redis-guide";
 import { RestoreHead } from "@/components/dashboard/storage/restore/restore-head";
 import { databaseSentence, pickedCount, plural, restoreBlocker, restoreLabel } from "@/components/dashboard/storage/restore/restore-model";
-import { Notice } from "@/components/dashboard/storage/restore/restore-parts";
+import { Notice, RestorePlaceholder } from "@/components/dashboard/storage/restore/restore-parts";
 import { DatabaseCopyRestore, isDatabaseCopyFile } from "@/components/dashboard/storage/restore/database-copy-restore";
 import { SystemRestore } from "@/components/dashboard/storage/restore/system-restore";
 import { useRestoreAnalysis } from "@/components/dashboard/storage/restore/use-restore-analysis";
@@ -36,7 +36,7 @@ interface RestoreClientProps {
     canManageVault?: boolean;
     /** Whether this user may download backups, which offers each database as a dump. */
     canDownload?: boolean;
-    /** Only a SuperAdmin restores a config backup, since it brings back users and groups. */
+    /** Only a platform admin restores a config backup, since it brings back users and groups. */
     canRestoreConfig?: boolean;
 }
 
@@ -74,15 +74,9 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
 
     if (!file || !destinationId) {
         return (
-            <div className="rounded-xl border border-dashed bg-card px-4 py-16 text-center shadow-sm">
-                <HardDrive className="mx-auto mb-4 size-10 text-muted-foreground/40" aria-hidden="true" />
-                <p className="font-medium">No backup is picked</p>
-                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Open a backup on the Backups page and pick Restore.</p>
-                <Button variant="outline" className="mt-4" onClick={() => router.push("/dashboard/backups")}>
-                    <ArrowLeft />
-                    Back to Backups
-                </Button>
-            </div>
+            <RestorePlaceholder icon={HardDrive} title="No backup is picked" action={{ label: "Back to Backups", onClick: () => router.push("/dashboard/backups") }}>
+                Open a backup on the Backups page and pick Restore.
+            </RestorePlaceholder>
         );
     }
 

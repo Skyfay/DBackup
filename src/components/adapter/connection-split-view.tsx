@@ -23,20 +23,22 @@ interface ConnectionSplitViewProps {
     renderPanel: (config: AdapterConfig) => React.ReactNode;
     /** The right click menu of one entry, as a `ContextMenuContent`. */
     renderMenu?: (config: AdapterConfig) => React.ReactNode;
+    /** The name of the tenant of an entry, which leads its line in All tenants. */
+    tenantName?: (tenantId: string | undefined) => string | null;
 }
 
-function subline(config: AdapterConfig): string {
+function subline(config: AdapterConfig, tenant: string | null): string {
     const address = connectionAddress(config.adapterId, config.config) ?? "";
     const used = config.overview?.usedBy;
     const unused = used !== undefined && used.jobs + used.templates === 0;
-    return unused ? ["Not used", address].filter(Boolean).join(" · ") : address;
+    return [tenant, unused ? "Not used" : null, address].filter(Boolean).join(" · ");
 }
 
 /**
  * A slim list beside the details of the picked connection. The arrow keys move through the
  * list, so going over every connection needs no clicks.
  */
-export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect, renderPanel, renderMenu }: ConnectionSplitViewProps) {
+export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect, renderPanel, renderMenu, tenantName }: ConnectionSplitViewProps) {
     const buttons = useRef(new Map<string, HTMLButtonElement>());
     const groups = splitGroups(configs, withHealth);
     const selected = resolveSelection(groups, selectedId);
@@ -94,7 +96,7 @@ export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect,
                                                         </span>
                                                         <span className="min-w-0 flex-1">
                                                             <span className="block truncate text-sm font-medium">{config.name}</span>
-                                                            <span className="block truncate text-xs text-muted-foreground">{subline(config)}</span>
+                                                            <span className="block truncate text-xs text-muted-foreground">{subline(config, tenantName?.(config.tenantId) ?? null)}</span>
                                                         </span>
                                                         {withHealth && (
                                                             <span className={cn("size-2 shrink-0 rounded-full", DOTS[health])}>

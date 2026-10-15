@@ -15,7 +15,7 @@ export async function GET() {
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.API_KEYS.READ);
-        const model = await getApiKeysModel({ id: ctx.userId, superAdmin: ctx.isSuperAdmin, permissions: ctx.permissions });
+        const model = await getApiKeysModel({ id: ctx.userId, superAdmin: ctx.isPlatformAdmin, permissions: ctx.permissions });
         return NextResponse.json({ success: true, data: model });
     } catch (error: unknown) {
         if (error instanceof PermissionError) return NextResponse.json({ success: false, error: error.message }, { status: 403 });

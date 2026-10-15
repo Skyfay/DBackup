@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useIsMobileState } from "@/hooks/use-mobile";
@@ -16,12 +16,12 @@ import { NotificationsPart } from "./notifications-part";
 import { PasswordsPart } from "./passwords-part";
 import { PrivacyPart } from "./privacy-part";
 import { RateLimitsPart } from "./rate-limits-part";
-import { RecentlyDeletedPart } from "./recently-deleted-part";
+import { RecentlyDeletedFrame } from "./recently-deleted-frame";
 import { RetentionPart } from "./retention-part";
 import { SettingsFrameContext } from "./settings-frame";
 import { searchSettings, settingsIndex, type SettingEntry } from "./settings-index";
 import { RAIL_STICKY, SettingsNav, SettingsPhoneList, SettingsSearchField } from "./settings-nav";
-import { SETTINGS_GROUPS, partFromAddress, partOf, type SettingsPartId } from "./settings-parts";
+import { isTenantPart, partFromAddress, partOf, settingsGroups, type SettingsPartId } from "./settings-parts";
 import { SettingsResults } from "./settings-search";
 import { SettingsSkeleton } from "./settings-skeleton";
 import { partStates } from "./settings-states";
@@ -35,19 +35,25 @@ interface SettingsClientProps {
     model: SettingsModel;
     /** The name of the viewer, as the example in the metadata of the Privacy part. */
     viewerName: string;
+    /** A line above the page, like that the settings of the platform count for every tenant. */
+    note?: React.ReactNode;
 }
 
 /**
  * The Settings page: its parts on the left with the state of each and a search above them, the
  * open part beside them. A phone lists the parts and opens each as a page of its own. The open
- * part lives in the address, and leaving one with unsaved changes asks first.
+ * part lives in the address, and leaving one with unsaved changes asks first. With one tenant it
+ * holds Recently deleted as well, as before tenants, when the model brings it.
  */
-export function SettingsClient({ model, viewerName }: SettingsClientProps) {
+export function SettingsClient({ model, viewerName, note }: SettingsClientProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
-    const addressed = partFromAddress(searchParams.get("part"), searchParams.get("tab"));
+    // Recently deleted belongs to the tenant, so it is only a part here when the model brings it.
+    const withTrash = model.trash !== null;
+    const fromAddress = partFromAddress(searchParams.get("part"), searchParams.get("tab"));
+    const addressed = fromAddress && (withTrash || !isTenantPart(fromAddress)) ? fromAddress : null;
     const current: SettingsPartId = addressed ?? "general";
     const [term, setTerm] = useState("");
     const [mark, setMark] = useState<string | null>(null);
@@ -116,7 +122,8 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
     const clearOpenTask = useCallback(() => setOpenTaskId(null), []);
     const clearOpenEvent = useCallback(() => setOpenEventId(null), []);
 
-    const index = useMemo(() => settingsIndex(model.tasks, model.notifications.events), [model.tasks, model.notifications.events]);
+    const groups = useMemo(() => settingsGroups(withTrash), [withTrash]);
+    const index = useMemo(() => settingsIndex(model.tasks, model.notifications.events, withTrash), [model.tasks, model.notifications.events, withTrash]);
     const search = useMemo(() => searchSettings(index, term), [index, term]);
     const states = useMemo(() => partStates(model), [model]);
     const searching = term.trim().length > 0;
@@ -129,9 +136,9 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
             case "tasks": return <TasksPart tasks={model.tasks} integrity={model.integrity} openTaskId={openTaskId} onOpened={clearOpenTask} onOpenPart={open} />;
             case "notifications": return <NotificationsPart model={model.notifications} openEventId={openEventId} onOpened={clearOpenEvent} />;
             case "retention": return <RetentionPart model={model.retention} />;
-            case "database": return <DatabasePart info={model.database} isSuperAdmin={model.isSuperAdmin} />;
-            case "config-backup": return <ConfigBackupPart model={model.configBackup} isSuperAdmin={model.isSuperAdmin} />;
-            case "recently-deleted": return <RecentlyDeletedPart rows={model.trash} />;
+            case "database": return <DatabasePart info={model.database} isPlatformAdmin={model.isPlatformAdmin} />;
+            case "config-backup": return <ConfigBackupPart model={model.configBackup} isPlatformAdmin={model.isPlatformAdmin} />;
+            case "recently-deleted": return model.trash && <RecentlyDeletedFrame trash={model.trash} />;
             case "sign-in": return <SignInPart model={model.signIn} />;
             case "passwords": return <PasswordsPart saved={model.passwords} />;
             case "https": return <HttpsPart certificate={model.certificate} />;
@@ -143,11 +150,17 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
 
     return (
         <SettingsFrameContext.Provider value={frame}>
+            {note && (
+                <p className="flex items-start gap-2 rounded-lg border bg-card px-3 py-2.5 text-sm text-muted-foreground shadow-sm">
+                    <Globe className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0">{note}</span>
+                </p>
+            )}
             {isMobile ? (
                 searching || !addressed ? (
                     <div className="space-y-4">
                         <SettingsSearchField value={term} onChange={setTerm} />
-                        {searching ? <div className="overflow-clip rounded-xl border bg-card shadow-sm">{results}</div> : <SettingsPhoneList groups={SETTINGS_GROUPS} states={states} onOpen={open} />}
+                        {searching ? <div className="overflow-clip rounded-xl border bg-card shadow-sm">{results}</div> : <SettingsPhoneList groups={groups} states={states} onOpen={open} />}
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -163,7 +176,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
                 <div className="flex min-h-[calc(100svh-6.75rem)] min-w-0 overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">
                     <div className="shrink-0 border-r">
                         <div className={RAIL_STICKY}>
-                            <SettingsNav groups={SETTINGS_GROUPS} label="Settings" current={current} states={states} term={term} onTermChange={setTerm} counts={searching ? search.counts : null} onOpen={open} />
+                            <SettingsNav groups={groups} label="Settings" current={current} states={states} term={term} onTermChange={setTerm} counts={searching ? search.counts : null} onOpen={open} />
                         </div>
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col">{searching ? results : part}</div>

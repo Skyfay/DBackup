@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { CirclePause, CirclePlay, Copy, FolderOpen, History, Pencil, Play, Trash, Webhook } from "lucide-react";
+import { Building2, CirclePause, CirclePlay, Copy, FolderOpen, History, Pencil, Play, Trash, Webhook } from "lucide-react";
 import type { Tone } from "@/components/ui/tone";
 
 export interface JobAction {
@@ -24,6 +24,8 @@ export interface JobActionHandlers {
     /** One entry per destination, like "Backups on NAS". */
     backups?: { label: string; onSelect: () => void }[];
     onApiTrigger?: () => void;
+    /** In All tenants: opens the job in its tenant, where it can be changed and run. */
+    openInTenant?: { label: string; onSelect: () => void };
     onEdit?: () => void;
     onClone?: () => void;
     /** Pause for a job that runs on its schedule, Resume for a paused one. */
@@ -40,7 +42,7 @@ export interface JobActionHandlers {
  * same list, so they can never drift apart. Actions the user may not take have no handler and
  * are left out.
  */
-export function jobActions({ onRun, onOpenLastRun, backups = [], onApiTrigger, onEdit, onClone, toggle, onDelete, busy = false }: JobActionHandlers): JobActionGroup[] {
+export function jobActions({ onRun, onOpenLastRun, backups = [], onApiTrigger, openInTenant, onEdit, onClone, toggle, onDelete, busy = false }: JobActionHandlers): JobActionGroup[] {
     const run: JobAction[] = [
         ...(onRun ? [{ id: "run", label: "Run now", icon: Play, onSelect: onRun, disabled: busy, tone: "neutral" as const }] : []),
         ...(onOpenLastRun ? [{ id: "last-run", label: "Open the last run", icon: History, onSelect: onOpenLastRun, tone: "neutral" as const }] : []),
@@ -48,6 +50,7 @@ export function jobActions({ onRun, onOpenLastRun, backups = [], onApiTrigger, o
         ...(onApiTrigger ? [{ id: "api", label: "Trigger by API", icon: Webhook, onSelect: onApiTrigger, tone: "neutral" as const }] : []),
     ];
     const manage: JobAction[] = [
+        ...(openInTenant ? [{ id: "open-in-tenant", label: openInTenant.label, icon: Building2, onSelect: openInTenant.onSelect, tone: "neutral" as const }] : []),
         ...(onEdit ? [{ id: "edit", label: "Edit", icon: Pencil, onSelect: onEdit, tone: "edit" as const }] : []),
         // A clone adds a new job, so it has the blue of adding.
         ...(onClone ? [{ id: "clone", label: "Clone", icon: Copy, onSelect: onClone, disabled: busy, tone: "create" as const }] : []),

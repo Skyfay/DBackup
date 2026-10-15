@@ -1,16 +1,32 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getUserPermissions } from "@/lib/auth/access-control";
+import { getUserPermissions, getViewer } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canUseQuickSetup } from "@/lib/auth/sign-in-target";
 import { SetupWizard } from "@/components/dashboard/setup/setup-wizard";
+import { PickTenantPanel } from "@/components/tenant/tenant-pick";
 import { getEncryptionProfiles } from "@/services/backup/encryption-service";
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
 export const metadata: Metadata = { title: "Quick Setup" };
 
 export default async function SetupPage() {
-    const permissions = await getUserPermissions();
+    const [permissions, viewer] = await Promise.all([getUserPermissions(), getViewer()]);
+
+    // What the Quick Setup makes belongs to one tenant, which All tenants asks for first. It changes
+    // nothing itself, so the check of the rights to create waits for that tenant.
+    if (viewer?.allTenants) {
+        return (
+            <>
+                <h1 className="sr-only">Quick Setup</h1>
+                <PickTenantPanel
+                    title="The Quick Setup sets up the backups of one tenant"
+                    description="Pick the tenant its database, destination and job belong to"
+                    href="/dashboard/setup"
+                />
+            </>
+        );
+    }
 
     // Require at minimum source + destination + job write permissions
     if (!canUseQuickSetup(permissions)) {

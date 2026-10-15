@@ -43,6 +43,8 @@ export interface AdapterListItemDTO {
     storageRole: StorageRole;
     /** Storage adapters only: whether the folder tree picker (directory sources) can browse this adapter. */
     supportsBrowse: boolean;
+    /** The tenant the connection belongs to, which a list in All tenants shows and opens it in. */
+    tenantId?: string;
 }
 
 /**
@@ -66,6 +68,7 @@ export interface AdapterRowInput {
     lastError: string | null;
     consecutiveFailures: number;
     storageRole: string;
+    tenantId?: string;
 }
 
 /**
@@ -115,6 +118,7 @@ export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
         consecutiveFailures: row.consecutiveFailures,
         storageRole: isStorageRole(row.storageRole) ? row.storageRole : STORAGE_ROLES.DESTINATION,
         supportsBrowse: row.type === "storage" && typeof (registry.get(row.adapterId) as StorageAdapter | undefined)?.browseDirectories === "function",
+        tenantId: row.tenantId,
     };
 }
 

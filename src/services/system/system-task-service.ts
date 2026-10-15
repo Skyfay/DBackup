@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
 import { registerAdapters } from "@/lib/adapters";
 import { isValidCron } from "@/lib/core/cron";
 import { healthCheckService } from "./healthcheck-service";
@@ -202,7 +203,12 @@ export class SystemTaskService {
         }
     }
 
-    async runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
+    /** Runs a system task for every tenant, also when someone starts it from a page of one. */
+    runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
+        return runAsSystem(() => this.runForAllTenants(taskId, triggerType, triggerLabel));
+    }
+
+    private async runForAllTenants(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
         // VACUUM or a database download holds Prisma's only connection. A task started now
         // would just queue behind it until the pool timeout fails it.
         if (isDatabaseMaintenanceActive()) {

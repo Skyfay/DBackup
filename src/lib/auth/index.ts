@@ -11,6 +11,7 @@ import { sso } from "@better-auth/sso";
 import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
 import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
 import { placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/auth/sso-guard";
+import { allowTenantSsoLink, joinSsoTenant, refuseTenantSsoSession } from "@/lib/auth/sso-tenant-guard";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { DEFAULT_SESSION_DURATION, SESSION_OPTIONS, sessionDurationOf, sessionEndsAt } from "@/lib/auth/session-lifetime";
@@ -247,7 +248,13 @@ export const auth = betterAuth({
     },
     // A session ends after the length of Settings > Sign-in, set when it is created below, and
     // better-auth never extends it. See session-lifetime.ts.
-    session: SESSION_OPTIONS,
+    session: {
+        ...SESSION_OPTIONS,
+        // The tenant the session works in. Only the server sets it, see setActiveTenant.
+        additionalFields: {
+            activeTenantId: { type: "string", required: false, input: false },
+        },
+    },
     hooks: {
         before: beforeAuth,
         after: afterAuth,
@@ -257,7 +264,7 @@ export const auth = betterAuth({
             create: {
                 before: async (user, context) => {
                     // The browser asks better-auth to add someone new, the provider decides.
-                    await refuseSsoSignUp(context);
+                    await refuseSsoSignUp(context, user);
                     // Email verification is not used as a feature anywhere in DBackup
                     // (no verification emails are sent, no login gating on this flag).
                     // Its only remaining effect is better-auth's SSO account-linking check
@@ -279,9 +286,24 @@ export const auth = betterAuth({
                 },
             },
         },
+        account: {
+            create: {
+                // A provider of a tenant links no account it may not sign in, see sso-tenant-guard.ts.
+                before: async (account, context) => ((await allowTenantSsoLink(account, context)) ? undefined : false),
+                after: async (account, context) => {
+                    try {
+                        await joinSsoTenant(account, context);
+                    } catch (error) {
+                        log.warn("Adding an account to the tenant of its sign-in provider failed", { userId: account.userId }, wrapError(error));
+                    }
+                },
+            },
+        },
         session: {
             create: {
-                before: async (session) => {
+                before: async (session, context) => {
+                    // A provider of a tenant signs in only the accounts it may, whenever they linked.
+                    await refuseTenantSsoSession(session, context, (url) => context?.redirect(url) ?? new APIError("FORBIDDEN"));
                     // The end of every session, from the length the owner set.
                     const expiresAt = sessionEndsAt(await getSessionDuration());
                     return {

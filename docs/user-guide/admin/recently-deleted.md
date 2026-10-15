@@ -1,6 +1,6 @@
 # Recently Deleted
 
-A deleted encryption key, saved login, connection, job or user is not gone at once. It waits under **Settings → Recently deleted** for 30 days, where it can be restored with everything that belonged to it or deleted for good.
+A deleted encryption key, saved login, connection, job or user is not gone at once. It waits under **Settings → Recently deleted** for 30 days, where it can be restored with everything that belonged to it or deleted for good. Every [tenant](/user-guide/admin/tenants) has its own list, with what was deleted while it was open.
 
 ## What a Delete Keeps
 
@@ -10,9 +10,9 @@ Every delete dialog of these five says where the record goes and until when it c
 | :--- | :--- |
 | **Encryption key** | Its key, so the backups it encrypted open again |
 | **Saved login** | Its secret |
-| **Connection** | Its settings, its login links and the versions a database server ran |
+| **Connection** | Its settings, its login links, the versions a database server ran and the [databases it gave to customers](/user-guide/admin/shared-databases) |
 | **Job** | Its destinations with their retention, its folders, its notifications and the link of its runs in History |
-| **User** | Their password, second factor, passkeys, API keys, preferences and picture |
+| **User** | Their password, second factor, passkeys, API keys, preferences and picture, and their group in every tenant they worked in |
 
 What only belongs to the moment stays gone: a user's sessions end with the delete, and a connection starts its health checks and storage history anew.
 
@@ -20,7 +20,7 @@ A delete that other records still depend on is refused as before, like a key a j
 
 ### Delete Permanently
 
-Someone who may change the settings sees **Delete it permanently now** in the delete dialog, to skip Recently deleted, like for a key or a login that leaked. The dialog turns red and names what is lost. A key deleted this way leaves every backup it encrypted unreadable unless a [recovery kit](/user-guide/security/recovery-kit) holds it. Everyone else deletes into Recently deleted only.
+Someone who may change the tenant settings sees **Delete it permanently now** in the delete dialog, to skip Recently deleted, like for a key or a login that leaked. The dialog turns red and names what is lost. A key deleted this way leaves every backup it encrypted unreadable unless a [recovery kit](/user-guide/security/recovery-kit) holds it. Everyone else deletes into Recently deleted only.
 
 ### Undo
 
@@ -28,7 +28,7 @@ After a delete a message offers **Undo** for a few seconds, which brings back wh
 
 ## The List
 
-Go to **Settings → Recently deleted**. Every row names the record, what it was, who deleted it and when, and when it is gone. A record with 3 days or less left is marked in amber. The chips above the list show one kind at a time.
+Go to **Settings → Recently deleted**. With more than one tenant that is the Settings under **Administration**, the settings of the open tenant. In All tenants the page lists what was deleted in every tenant, read only, with **Open tenant** on every row. Every row names the record, what it was, who deleted it and when, and when it is gone. A record with 3 days or less left is marked in amber. The chips above the list show one kind at a time.
 
 Only the kinds you may change show here:
 
@@ -38,9 +38,9 @@ Only the kinds you may change show here:
 | **Saved login** | `credentials:delete` |
 | **Connection** | Write access to its kind: `sources:write`, `destinations:write` or `notifications:write` |
 | **Job** | `jobs:write` |
-| **User** | `users:write`, and a SuperAdmin for a SuperAdmin's account |
+| **User** | `users:write`, and a platform admin for the account of a platform admin or one that also worked in another tenant |
 
-The page needs `settings:read`, which shows the list without its buttons. **Restore** and **Delete permanently** need `settings:write` as well, like every change under Settings.
+The page needs `tenant-settings:read`, which shows the list without its buttons. **Restore** and **Delete permanently** need `tenant-settings:write` as well. Both count in the open tenant, so the admin of a customer manages the Recently deleted of that customer, see [Groups & Permissions](/user-guide/admin/permissions#settings-count-in-the-home-tenant).
 
 ### Restore
 
@@ -56,7 +56,7 @@ The page needs `settings:read`, which shows the list without its buttons. **Rest
 | The retention policy of a destination | The destination keeps every backup until a policy is picked again |
 | The naming template or schedule preset of a job | The job uses the default file names or its own schedule |
 | The login of a connection | The connection comes back without it, pick one again before it connects |
-| The group of a user | The user comes back without a group and sees nothing until they get one |
+| The group of a user, or a tenant they worked in | The user comes back without that membership, and sees nothing until they get a group when none is left |
 
 ### Delete for Good
 
@@ -72,7 +72,7 @@ A delete into Recently deleted, a permanent delete, a restore and a removal from
 
 ## API
 
-The delete endpoints move a record to Recently deleted as well. Add `?permanently=true` to a single delete, or `"permanently": true` to the body of a bulk delete, to delete at once. That needs `settings:write` on top of the right to delete, or the request is refused with `403`:
+The delete endpoints move a record to Recently deleted as well. Add `?permanently=true` to a single delete, or `"permanently": true` to the body of a bulk delete, to delete at once. That needs `tenant-settings:write` on top of the right to delete, or the request is refused with `403`:
 
 ```bash
 curl -s -X DELETE "${BASE_URL}/api/jobs/${JOB_ID}?permanently=true" \

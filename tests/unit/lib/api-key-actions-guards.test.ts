@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PermissionError } from "@/lib/logging/errors";
+import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
 
-type Group = { name: string; permissions: string } | null;
+type Viewer = { id: string; name: string; isPlatformAdmin: boolean; permissions: string[] };
 
 const mocks = vi.hoisted(() => ({
     denied: new Set<string>(),
-    viewer: null as { id: string; name: string; group: { name: string; permissions: string } | null } | null,
+    viewer: null as Viewer | null,
     keys: { create: vi.fn(), update: vi.fn(), rotate: vi.fn(), ownerOf: vi.fn(), nameTaken: vi.fn() },
     audit: vi.fn(),
 }));
@@ -13,8 +14,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth/access-control", () => ({
     checkPermission: vi.fn(async (permission: string) => {
         if (mocks.denied.has(permission)) throw new PermissionError(permission);
+        return mocks.viewer;
     }),
-    getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
+    getViewer: vi.fn(async () => mocks.viewer),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/services/auth/api-key-service", () => ({ apiKeyService: mocks.keys }));
@@ -22,15 +24,16 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } 
 
 const { createApiKey, rotateApiKey, updateApiKey } = await import("@/app/actions/auth/api-key");
 
-const group = (name: string, permissions: string[]): Group => ({ name, permissions: JSON.stringify(permissions) });
-const OPERATORS = group("Operators", ["jobs:read", "jobs:execute", "history:read"]);
+/** Someone who may do what their group in the tenant gives, as `getViewer` hands them on. */
+const viewer = (id: string, name: string, permissions: string[], isPlatformAdmin = false): Viewer => ({ id, name, isPlatformAdmin, permissions });
+const OPERATORS = ["jobs:read", "jobs:execute", "history:read"];
 const IN_90_DAYS = "2026-12-28T10:00:00.000Z";
 
 describe("what an API key may get", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.denied = new Set();
-        mocks.viewer = { id: "lena", name: "Lena Graf", group: OPERATORS };
+        mocks.viewer = viewer("lena", "Lena Graf", OPERATORS);
         mocks.keys.nameTaken.mockResolvedValue(false);
         mocks.keys.create.mockResolvedValue({ apiKey: { id: "key-new" }, rawKey: "dbackup_secret" });
         mocks.keys.update.mockResolvedValue({ before: { name: "CI pipeline", permissions: ["jobs:execute"], expiresAt: null }, after: {} });
@@ -67,8 +70,9 @@ describe("what an API key may get", () => {
     });
 
     it("gives a key of someone else nothing beyond the group of its owner", async () => {
-        mocks.viewer = { id: "manu", name: "Manu", group: group("SuperAdmin", []) };
-        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute"], group: OPERATORS });
+        // A platform admin may do anything, but the key never gets more than its owner may do in its tenant.
+        mocks.viewer = viewer("manu", "Manu", AVAILABLE_PERMISSIONS.map((permission) => permission.id), true);
+        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute"], ownerPermissions: OPERATORS });
 
         const result = await updateApiKey("key-1", { name: "CI pipeline", permissions: ["jobs:execute", "storage:delete"], expiresAt: null });
 
@@ -77,8 +81,8 @@ describe("what an API key may get", () => {
     });
 
     it("never lets someone hand a key more than they may do themselves", async () => {
-        mocks.viewer = { id: "tom", name: "Tom Weber", group: group("Viewers", ["jobs:read"]) };
-        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:read"], group: OPERATORS });
+        mocks.viewer = viewer("tom", "Tom Weber", ["jobs:read"]);
+        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:read"], ownerPermissions: OPERATORS });
 
         const result = await updateApiKey("key-1", { name: "CI pipeline", permissions: ["jobs:read", "jobs:execute"], expiresAt: null });
 
@@ -86,8 +90,8 @@ describe("what an API key may get", () => {
     });
 
     it("keeps what a key holds already, even what its owner lost, when only its name changes", async () => {
-        mocks.viewer = { id: "tom", name: "Tom Weber", group: group("Viewers", ["jobs:read"]) };
-        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "storage:delete"], group: OPERATORS });
+        mocks.viewer = viewer("tom", "Tom Weber", ["jobs:read"]);
+        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "storage:delete"], ownerPermissions: OPERATORS });
 
         const result = await updateApiKey("key-1", { name: "Deploy", permissions: ["jobs:execute", "storage:delete"], expiresAt: null });
 
@@ -103,20 +107,20 @@ describe("what an API key may get", () => {
     });
 
     it("lets only the owner, or someone who may do all the key may do, rotate it", async () => {
-        mocks.viewer = { id: "tom", name: "Tom Weber", group: group("Viewers", ["jobs:read"]) };
-        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "history:read"], group: OPERATORS });
+        mocks.viewer = viewer("tom", "Tom Weber", ["jobs:read"]);
+        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "history:read"], ownerPermissions: OPERATORS });
 
         expect(await rotateApiKey("key-1")).toEqual({ success: false, error: "The key may run jobs and see the history, which your group may not, so only its owner rotates it." });
         expect(mocks.keys.rotate).not.toHaveBeenCalled();
 
-        mocks.viewer = { id: "lena", name: "Lena Graf", group: OPERATORS };
+        mocks.viewer = viewer("lena", "Lena Graf", OPERATORS);
         expect(await rotateApiKey("key-1")).toEqual({ success: true, data: { apiKey: { id: "key-1", name: "CI pipeline" }, rawKey: "dbackup_new" } });
     });
 
     it("counts only what a key may use when someone else rotates it", async () => {
-        mocks.viewer = { id: "tom", name: "Tom Weber", group: group("Viewers", ["jobs:execute"]) };
+        mocks.viewer = viewer("tom", "Tom Weber", ["jobs:execute"]);
         // The key holds history:read too, but its owner lost it, so it may not use it.
-        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "history:read"], group: group("Operators", ["jobs:execute"]) });
+        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "history:read"], ownerPermissions: ["jobs:execute"] });
 
         expect(await rotateApiKey("key-1")).toMatchObject({ success: true });
     });

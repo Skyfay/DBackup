@@ -189,4 +189,11 @@ export interface RunnerContext {
 
     // Auto-lock: if true the backup will be written with locked=true in .meta.json
     lock?: boolean;
+
+    /**
+     * The databases this run backs up alone, of the ones the job would. Set for a backup a customer
+     * starts of one database of a shared server. The run leaves the folders of the job out, and its
+     * backup carries the list in `.meta.json`, so retention judges it apart from the whole backups.
+     */
+    onlyDatabases?: string[];
 }

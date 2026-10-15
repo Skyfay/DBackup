@@ -14,6 +14,7 @@ import { runBulk, emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
+import { keepDeletedServer } from "@/services/tenant/shared-servers";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 import { isAirGapped } from "@/lib/core/air-gap";
 
@@ -144,7 +145,11 @@ async function removeAdapter(id: string, options: DeleteOptions) {
     await prisma.storageSnapshot.deleteMany({ where: { adapterConfigId: id } });
     return prisma.$transaction(async (tx) => {
         if (!options.permanently) await keepInTrash(tx, "connection", id, options.by);
-        return tx.adapterConfig.delete({ where: { id } });
+        const deleted = await tx.adapterConfig.delete({ where: { id } });
+        // A server that shares databases leaves its assignments behind, so its customers keep the
+        // backups of their time to download.
+        await keepDeletedServer(tx, deleted);
+        return deleted;
     });
 }
 

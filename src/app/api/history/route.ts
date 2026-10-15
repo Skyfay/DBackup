@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getExecutionHistoryFacets, listExecutionHistory } from "@/services/system/execution-history-service";
+import { getTimezone } from "@/services/system/system-settings-service";
 
 const QuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
@@ -59,10 +59,10 @@ export async function GET(req: NextRequest) {
             triggers: q.trigger,
             search: q.search,
         };
-        const [result, facets, tzSetting] = await Promise.all([
+        const [result, facets, systemTimezone] = await Promise.all([
             listExecutionHistory(historyQuery),
             q.facets === "true" ? getExecutionHistoryFacets(historyQuery) : Promise.resolve(undefined),
-            prisma.systemSetting.findUnique({ where: { key: "system.timezone" } })
+            getTimezone(),
         ]);
 
         return NextResponse.json({
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
             page: result.page,
             pageSize: result.pageSize,
             ...(facets ? { facets } : {}),
-            systemTimezone: tzSetting?.value || "UTC"
+            systemTimezone,
         });
     } catch (_error) {
         return NextResponse.json({ error: "Failed to fetch history" }, { status: 500 });

@@ -1,3 +1,5 @@
+import { domainOfEmail } from "@/lib/auth/sso-domain";
+
 /**
  * What went wrong at a sign-in, in the words of the login page. The page says it at the field or
  * on top of the step, where it stays until the next try, instead of in a message that disappears.
@@ -31,6 +33,14 @@ const SSO_PROBLEMS: Record<string, LoginProblem> = {
         title: "Account not connected",
         text: "This identity belongs to another account. Sign in to the provider with the email of your DBackup account, then try again.",
     },
+    sso_tenant_not_member: {
+        title: "Not a member here yet",
+        text: "This provider signs in only the people of its tenant. An admin of the tenant adds you under Users & Groups first.",
+    },
+    sso_tenant_refused: {
+        title: "Not through this provider",
+        text: "This provider signs in only emails of its own domain, and never a platform admin. Sign in another way.",
+    },
     sso_error: { title: "Sign-in failed", text: "The provider answered with an error. Try again." },
 };
 
@@ -62,7 +72,7 @@ export function codeError(error: AuthError, backup: boolean): string {
 
 /** The provider an email belongs to by its domain, if one claims it. */
 export function providerOfEmail<T extends { domain: string | null }>(providers: T[], email: string): T | undefined {
-    const domain = email.trim().split("@")[1]?.toLowerCase();
+    const domain = domainOfEmail(email);
     if (!domain) return undefined;
     return providers.find((provider) => provider.domain?.toLowerCase() === domain);
 }

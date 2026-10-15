@@ -8,18 +8,18 @@ datasource db {
 }
 
 model AdapterConfig {
-  id               String   @id @default(uuid())
-  name             String
-  type             String
-  adapterId        String
-  config           String
-  metadata         String? // Stores non-sensitive runtime data (e.g., version, connection status)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  jobsSource       Job[]    @relation("Source")
-  jobsNotification Job[]    @relation("Notifications")
-  jobDestinations  JobDestination[]
-  jobSources       JobSource[]                   @relation("JobSourceConfig")
+  id                           String                        @id @default(uuid())
+  name                         String
+  type                         String
+  adapterId                    String
+  config                       String
+  metadata                     String? // Stores non-sensitive runtime data (e.g., version, connection status)
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  jobsSource                   Job[]                         @relation("Source")
+  jobsNotification             Job[]                         @relation("Notifications")
+  jobDestinations              JobDestination[]
+  jobSources                   JobSource[]                   @relation("JobSourceConfig")
   notificationTemplateChannels NotificationTemplateChannel[]
 
   // Storage adapters only (app enforces this): a config is either a backup destination or
@@ -40,28 +40,36 @@ model AdapterConfig {
   defaultRetentionPolicy   RetentionPolicy? @relation(fields: [defaultRetentionPolicyId], references: [id], onDelete: SetNull)
 
   // Caching-Felder für schnelle UI-Anzeige ohne Joins
-  lastHealthCheck      DateTime?
-  lastStatus           String        @default("ONLINE") // ONLINE, DEGRADED, OFFLINE
-  lastError            String?       // Human-readable reason when lastStatus != ONLINE (e.g. "No credential profile assigned")
-  consecutiveFailures  Int           @default(0) // Zähler für Logik (Grün -> Orange -> Rot)
+  lastHealthCheck     DateTime?
+  lastStatus          String    @default("ONLINE") // ONLINE, DEGRADED, OFFLINE
+  lastError           String? // Human-readable reason when lastStatus != ONLINE (e.g. "No credential profile assigned")
+  consecutiveFailures Int       @default(0) // Zähler für Logik (Grün -> Orange -> Rot)
 
-  healthLogs           HealthCheckLog[]
-  versionHistory       DbVersionHistory[]
-  storageListCache     StorageListCache?
-  databaseListCache    DatabaseListCache?
+  healthLogs              HealthCheckLog[]
+  versionHistory          DbVersionHistory[]
+  storageListCache        StorageListCache?
+  databaseListCache       DatabaseListCache?
+  // The tenant the row belongs to, see src/lib/tenant/prisma-scope.ts. The default only fills the
+  // rows of the migration, the client names the tenant of every new row itself.
+  tenantId                String                   @default("default")
+
+  @@index([tenantId])
 }
 
 model CredentialProfile {
   id          String   @id @default(cuid())
-  name        String   @unique
+  name        String
   description String?
-  type        String   // USERNAME_PASSWORD | SSH_KEY | ACCESS_KEY | TOKEN | SMTP
-  data        String   // Encrypted JSON payload (encrypt(JSON.stringify(payload)))
+  type        String // USERNAME_PASSWORD | SSH_KEY | ACCESS_KEY | TOKEN | SMTP
+  data        String // Encrypted JSON payload (encrypt(JSON.stringify(payload)))
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   primaryAdapters AdapterConfig[] @relation("PrimaryCredential")
   sshAdapters     AdapterConfig[] @relation("SshCredential")
+  tenantId        String          @default("default") // See AdapterConfig.tenantId
+
+  @@unique([tenantId, name])
 }
 
 model EncryptionProfile {
@@ -77,98 +85,119 @@ model EncryptionProfile {
   aliases         String    @default("[]")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  tenantId        String    @default("default") // See AdapterConfig.tenantId
+
+  @@index([tenantId])
 }
 
 model RetentionPolicy {
-  id          String           @id @default(cuid())
-  name        String           @unique
-  description String?
-  config      String           // JSON RetentionConfiguration (same format as legacy JobDestination.retention)
-  isDefault   Boolean          @default(false)
-  isSystem    Boolean          @default(false)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id              String           @id @default(cuid())
+  name            String
+  description     String?
+  config          String // JSON RetentionConfiguration (same format as legacy JobDestination.retention)
+  isDefault       Boolean          @default(false)
+  isSystem        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   jobDestinations JobDestination[]
   adapterConfigs  AdapterConfig[]
+  tenantId        String           @default("default") // See AdapterConfig.tenantId
+
+  @@unique([tenantId, name])
 }
 
 model NamingTemplate {
   id          String   @id @default(cuid())
-  name        String   @unique
+  name        String
   description String?
-  pattern     String   // e.g. "{name}_yyyy-MM-dd_HH-mm-ss"
+  pattern     String // e.g. "{name}_yyyy-MM-dd_HH-mm-ss"
   isDefault   Boolean  @default(false) // Only one can be true at a time
   isSystem    Boolean  @default(false) // System templates are read-only in the UI
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   jobs        Job[]
+  tenantId    String   @default("default") // See AdapterConfig.tenantId
+
+  @@unique([tenantId, name])
 }
 
 model SchedulePreset {
   id          String   @id @default(cuid())
-  name        String   @unique
+  name        String
   description String?
-  schedule    String   // Cron expression (5-part format)
+  schedule    String // Cron expression (5-part format)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   jobs        Job[]
+  tenantId    String   @default("default") // See AdapterConfig.tenantId
+
+  @@unique([tenantId, name])
 }
 
 model ExcludePatternPreset {
-  id          String      @id @default(cuid())
-  name        String      @unique
-  description String?
-  patterns    String      // JSON array of the preset's OWN glob patterns, on top of any groups below
-  groups      String      @default("[]") // JSON array of curated group ids from src/lib/exclude-groups.ts - referenced, not copied, so releases can extend them
-  excludedGroupPatterns String @default("[]") // JSON array of individual group patterns this preset opts out of
-  isDefault   Boolean     @default(false) // Pre-selected on newly added directory sources; several may be default
-  isSystem    Boolean     @default(false)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  jobSources  JobSource[]
+  id                    String      @id @default(cuid())
+  name                  String
+  description           String?
+  patterns              String // JSON array of the preset's OWN glob patterns, on top of any groups below
+  groups                String      @default("[]") // JSON array of curated group ids from src/lib/exclude-groups.ts - referenced, not copied, so releases can extend them
+  excludedGroupPatterns String      @default("[]") // JSON array of individual group patterns this preset opts out of
+  isDefault             Boolean     @default(false) // Pre-selected on newly added directory sources; several may be default
+  isSystem              Boolean     @default(false)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  jobSources            JobSource[]
+  tenantId              String      @default("default") // See AdapterConfig.tenantId
+
+  @@unique([tenantId, name])
 }
 
 model Job {
-  id                  String             @id @default(uuid())
-  name                String
-  schedule            String
-  enabled             Boolean            @default(true)
-  sourceId            String?
-  databases           String             @default("[]") // JSON array of database names to back up (e.g. ["db1","db2"])
-  encryptionProfileId String?
-  encryptionProfile   EncryptionProfile? @relation(fields: [encryptionProfileId], references: [id])
-  compression         String             @default("NONE")
-  pgCompression       String             @default("") // PostgreSQL native dump compression: "" (legacy gzip-6), "NONE", "GZIP:6", "LZ4:1", "ZSTD:3"
-  namingTemplateId    String?            // References NamingTemplate; null = use system default at runtime
-  namingTemplate      NamingTemplate?    @relation(fields: [namingTemplateId], references: [id], onDelete: SetNull)
-  schedulePresetId    String?            // Live-link to a SchedulePreset; scheduler uses preset.schedule when set
-  schedulePreset      SchedulePreset?    @relation(fields: [schedulePresetId], references: [id], onDelete: SetNull)
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  executions          Execution[]
-  destinations        JobDestination[]
-  source              AdapterConfig?     @relation("Source", fields: [sourceId], references: [id], onDelete: Restrict)
-  sources             JobSource[]
-  notifications       AdapterConfig[]    @relation("Notifications")
-  notificationEvents  String             @default("ALWAYS") // Legacy: "ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY" - kept for backward compat
+  id                    String                    @id @default(uuid())
+  name                  String
+  schedule              String
+  enabled               Boolean                   @default(true)
+  sourceId              String?
+  databases             String                    @default("[]") // JSON array of database names to back up (e.g. ["db1","db2"])
+  encryptionProfileId   String?
+  encryptionProfile     EncryptionProfile?        @relation(fields: [encryptionProfileId], references: [id])
+  compression           String                    @default("NONE")
+  pgCompression         String                    @default("") // PostgreSQL native dump compression: "" (legacy gzip-6), "NONE", "GZIP:6", "LZ4:1", "ZSTD:3"
+  namingTemplateId      String? // References NamingTemplate; null = use system default at runtime
+  namingTemplate        NamingTemplate?           @relation(fields: [namingTemplateId], references: [id], onDelete: SetNull)
+  schedulePresetId      String? // Live-link to a SchedulePreset; scheduler uses preset.schedule when set
+  schedulePreset        SchedulePreset?           @relation(fields: [schedulePresetId], references: [id], onDelete: SetNull)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  executions            Execution[]
+  destinations          JobDestination[]
+  source                AdapterConfig?            @relation("Source", fields: [sourceId], references: [id], onDelete: Restrict)
+  sources               JobSource[]
+  notifications         AdapterConfig[]           @relation("Notifications")
+  notificationEvents    String                    @default("ALWAYS") // Legacy: "ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY" - kept for backward compat
   notificationTemplates JobNotificationTemplate[]
-  skipVerification    Boolean            @default(false)
+  skipVerification      Boolean                   @default(false)
   // Incremental backups (directory sources only - database dumps are always full).
-  backupMode          String             @default("FULL")  // "FULL" | "INCREMENTAL"
-  fullEveryDays       Int                @default(7)       // Forces a fresh chain this often
-  verifyByHash        Boolean            @default(false)   // Hash every file instead of trusting size+mtime
+  backupMode            String                    @default("FULL") // "FULL" | "INCREMENTAL"
+  fullEveryDays         Int                       @default(7) // Forces a fresh chain this often
+  verifyByHash          Boolean                   @default(false) // Hash every file instead of trusting size+mtime
+  tenantId              String                    @default("default") // See AdapterConfig.tenantId
+
+  @@index([tenantId])
 }
 
 model NotificationTemplate {
-  id          String   @id @default(cuid())
-  name        String   @unique
+  id          String                        @id @default(cuid())
+  name        String
   description String?
-  isDefault   Boolean  @default(false)
-  isSystem    Boolean  @default(false)
+  isDefault   Boolean                       @default(false)
+  isSystem    Boolean                       @default(false)
   channels    NotificationTemplateChannel[]
   jobs        JobNotificationTemplate[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime                      @default(now())
+  updatedAt   DateTime                      @updatedAt
+  tenantId    String                        @default("default") // See AdapterConfig.tenantId
+
+  @@unique([tenantId, name])
 }
 
 model NotificationTemplateChannel {
@@ -194,37 +223,37 @@ model JobNotificationTemplate {
 }
 
 model JobDestination {
-  id                   String           @id @default(uuid())
-  jobId                String
-  configId             String
-  priority             Int              @default(0) // Upload order (ascending)
-  retention            String           @default("{}") // Legacy: RetentionConfiguration JSON (kept for backward compat)
-  retentionPolicyId    String?          // References RetentionPolicy template; takes precedence over retention JSON
-  retentionPolicy      RetentionPolicy? @relation(fields: [retentionPolicyId], references: [id], onDelete: SetNull)
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  id                String           @id @default(uuid())
+  jobId             String
+  configId          String
+  priority          Int              @default(0) // Upload order (ascending)
+  retention         String           @default("{}") // Legacy: RetentionConfiguration JSON (kept for backward compat)
+  retentionPolicyId String? // References RetentionPolicy template; takes precedence over retention JSON
+  retentionPolicy   RetentionPolicy? @relation(fields: [retentionPolicyId], references: [id], onDelete: SetNull)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
-  job        Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  config     AdapterConfig @relation(fields: [configId], references: [id])
+  job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  config AdapterConfig @relation(fields: [configId], references: [id])
 
   @@unique([jobId, configId])
 }
 
 model JobSource {
-  id                     String                @id @default(uuid())
-  jobId                  String
-  configId               String
-  priority               Int                   @default(0) // Collection/manifest ordering
-  path                   String                // Remote path on the storage adapter to pull from
-  excludePatterns        String                @default("[]") // JSON array of job-specific extra glob patterns (in addition to any linked presets' patterns)
-  excludePatternPresets  ExcludePatternPreset[] // Live-linked templates - re-read fresh at execution time (see 01-initialize.ts); patterns from every linked preset are unioned
-  useStagingCache        Boolean               @default(false) // Reserved for a later phase (persistent rsync mirror); unused for now
+  id                    String                 @id @default(uuid())
+  jobId                 String
+  configId              String
+  priority              Int                    @default(0) // Collection/manifest ordering
+  path                  String // Remote path on the storage adapter to pull from
+  excludePatterns       String                 @default("[]") // JSON array of job-specific extra glob patterns (in addition to any linked presets' patterns)
+  excludePatternPresets ExcludePatternPreset[] // Live-linked templates - re-read fresh at execution time (see 01-initialize.ts); patterns from every linked preset are unioned
+  useStagingCache       Boolean                @default(false) // Reserved for a later phase (persistent rsync mirror); unused for now
   // Whether the adapter may stop whatever holds this source open while it is read. Only
   // consulted by adapters that stop anything at all; the rest ignore it. Default true: a
   // consistent backup with a short interruption is what asking for one implies.
-  stopContainers         Boolean               @default(true)
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  stopContainers        Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
   config AdapterConfig @relation("JobSourceConfig", fields: [configId], references: [id], onDelete: Restrict)
@@ -243,16 +272,17 @@ model Execution {
   size         BigInt?
   path         String?
   metadata     String?
-  triggerType  String?   // "Manual" | "Scheduler" | "Api"
-  triggerLabel String?   // e.g. user name, API key name, "Scheduler"
+  triggerType  String? // "Manual" | "Scheduler" | "Api"
+  triggerLabel String? // e.g. user name, API key name, "Scheduler"
   // Incremental chain bookkeeping. All null for a standalone full backup.
-  backupType   String?   // "Full" | "Incremental"
-  chainId      String?   // Shared by the full and every incremental built on it
-  baseArchive  String?   // Filename of the predecessor, not an Execution id
-  chainIndex   Int?      // Position in the chain, full = 0
-  logicalSize  BigInt?   // Full snapshot size, as opposed to `size` which is what was stored
+  backupType   String? // "Full" | "Incremental"
+  chainId      String? // Shared by the full and every incremental built on it
+  baseArchive  String? // Filename of the predecessor, not an Execution id
+  chainIndex   Int? // Position in the chain, full = 0
+  logicalSize  BigInt? // Full snapshot size, as opposed to `size` which is what was stored
   logsPurgedAt DateTime? // Set when data retention cleared `logs`, so the UI can tell it apart from a run without logs
   job          Job?      @relation(fields: [jobId], references: [id])
+  tenantId     String    @default("default") // See AdapterConfig.tenantId
 
   @@index([startedAt])
   @@index([status, startedAt])
@@ -262,37 +292,228 @@ model Execution {
   // behind `logs` in the row, so without an index each count read the logs of every run.
   @@index([type, startedAt])
   @@index([triggerType, triggerLabel])
+  // The same lists narrowed to the tenant of the viewer. With one tenant every row holds the same
+  // tenantId, so an index on it alone would tell SQLite nothing and could still be picked.
+  @@index([tenantId, startedAt])
+  @@index([tenantId, status, startedAt])
+  @@index([tenantId, type, startedAt])
+  @@index([tenantId, triggerType, triggerLabel])
 }
 
 model User {
-  id               String     @id
-  name             String
-  email            String     @unique
-  emailVerified    Boolean
-  image            String?
-  timezone         String     @default("")
-  dateFormat       String     @default("P")
-  timeFormat       String     @default("p")
-  autoRedirectOnJobStart Boolean @default(true)
-  createdAt        DateTime
-  updatedAt        DateTime
-  twoFactorEnabled Boolean?
-  passkeyTwoFactor Boolean?   @default(false)
-  twoFactor        TwoFactor?
-  accounts         Account[]
-  passkeys         Passkey[]
-  sessions         Session[]
-  auditLogs        AuditLog[]
-  apiKeys          ApiKey[]
-  preferences      UserPreference[]
-  avatar           Avatar?
+  id                     String           @id
+  name                   String
+  email                  String           @unique
+  emailVerified          Boolean
+  image                  String?
+  timezone               String           @default("")
+  dateFormat             String           @default("P")
+  timeFormat             String           @default("p")
+  autoRedirectOnJobStart Boolean          @default(true)
+  createdAt              DateTime
+  updatedAt              DateTime
+  twoFactorEnabled       Boolean?
+  passkeyTwoFactor       Boolean?         @default(false)
+  twoFactor              TwoFactor?
+  accounts               Account[]
+  passkeys               Passkey[]
+  sessions               Session[]
+  auditLogs              AuditLog[]
+  apiKeys                ApiKey[]
+  preferences            UserPreference[]
+  avatar                 Avatar?
 
-  groupId String?
-  group   Group?  @relation(fields: [groupId], references: [id])
+  // "ADMIN" sees and changes every tenant and the platform: the settings, the sign-in providers,
+  // the roles and the tenants. Null for everyone else, whose rights come from their memberships.
+  // The pages show it as the built-in platform group Platform admin.
+  platformRole    String?
+  memberships     TenantMembership[]
+  // A group of the platform someone of the MSP holds besides their memberships, null for none.
+  // A platform admin holds none, their role covers everything.
+  platformGroupId String?
+  platformGroup   PlatformGroup? @relation(fields: [platformGroupId], references: [id], onDelete: SetNull)
+
+  @@index([platformGroupId])
+}
+
+// A group of the platform, for the people of the MSP: rights on the instance itself, and rights in
+// the tenants of its scope on top of the group someone holds there. Platform admin is no row, it is
+// `User.platformRole`.
+model PlatformGroup {
+  id                  String                @id @default(uuid())
+  name                String                @unique
+  // The rights on the platform, a JSON list like the permissions of a group.
+  platformPermissions String                @default("[]")
+  // The rights in every tenant of its scope, a JSON list.
+  tenantPermissions   String                @default("[]")
+  // Every tenant, the ones made later too. Otherwise the tenants listed in `tenants`.
+  allTenants          Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  members             User[]
+  tenants             PlatformGroupTenant[]
+}
+
+// A tenant in the scope of a platform group that does not cover every tenant.
+model PlatformGroupTenant {
+  groupId  String
+  tenantId String
+  group    PlatformGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, tenantId])
+  @@index([tenantId])
 }
 
 /// Settings a user makes for themselves in the UI, such as the columns picked for a table.
 /// Kept in the account rather than the browser, so they follow the user to every device.
+// A customer of the instance, and the boundary of its data: every connection, job, key, run and
+// template belongs to one tenant, see src/lib/tenant/. An instance starts with the tenant "default",
+// which holds what the platform owns and is never deleted.
+model Tenant {
+  id                      String                   @id @default(cuid())
+  name                    String                   @unique
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  memberships             TenantMembership[]
+  invitations             TenantInvitation[]
+  // The databases of shared servers of other tenants this tenant sees the backups of.
+  databaseAssignments     DatabaseAssignment[]
+  databaseAssignmentRules DatabaseAssignmentRule[]
+  logo                    TenantLogo?
+  platformGroups          PlatformGroupTenant[]
+}
+
+// The logo of a tenant, which the head of the sidebar and the tenant switcher show.
+model TenantLogo {
+  tenantId  String   @id
+  mimeType  String // image/png, image/jpeg, image/gif, image/webp or image/svg+xml, read from the bytes
+  size      Int
+  data      Bytes
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Who works in a tenant, and with which role. One account can be a member of several tenants.
+model TenantMembership {
+  userId    String
+  tenantId  String
+  groupId   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id])
+
+  @@id([userId, tenantId])
+  @@index([tenantId])
+  @@index([groupId])
+}
+
+// A link a tenant admin hands out to add someone to the tenant. Only the hash of its token is
+// kept, and it works once until it runs out.
+model TenantInvitation {
+  id            String    @id @default(cuid())
+  tenantId      String
+  groupId       String
+  tokenHash     String    @unique
+  // Who the link is meant for, as the admin wrote it. Only shown, never checked.
+  note          String?
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  acceptedById  String?
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group         Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// A database server of a tenant whose databases are given to customers. The id is the one of its
+// connection, and it stays when the connection is deleted, with the name and the engine the server
+// had: its customers keep the backups of their time to download, and the assignments and rules
+// stay. See src/services/tenant/shared-servers.ts.
+model SharedServer {
+  id          String                   @id
+  name        String
+  adapterId   String
+  // When the connection was deleted. Its databases only download from then on, unless one moved
+  // to another server before.
+  deletedAt   DateTime?
+  createdAt   DateTime                 @default(now())
+  assignments DatabaseAssignment[]
+  rules       DatabaseAssignmentRule[]
+  // The tenant of the server, see AdapterConfig.tenantId.
+  tenantId    String
+
+  @@index([tenantId])
+}
+
+// One database of a shared server, the source of another tenant, given to a customer. The job of the
+// server's tenant backs it up with all the others, the customer sees the backups of this database
+// alone and restores it into itself. An assignment ends rather than being deleted, so the backups of
+// a name a new customer takes over later stay with the one it belonged to then.
+model DatabaseAssignment {
+  id              String       @id @default(cuid())
+  // The connection of the server, kept as it was after the connection is deleted.
+  sourceId        String
+  databaseName    String
+  // The customer, not the tenant of the server.
+  tenantId        String
+  // The customer sees the backups made from here on, and up to the end.
+  validFrom       DateTime
+  validUntil      DateTime?
+  // Set on the assignment a move ended: the server and the name the database lives on since,
+  // where an assignment of the same customer starts at the end of this one.
+  movedToSourceId String?
+  movedToDatabase String?
+  // How many backups of it a day the customer may start, null when it may start none.
+  onDemandPerDay  Int?
+  createdAt       DateTime     @default(now())
+  createdById     String?
+  server          SharedServer @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId, databaseName])
+  @@index([tenantId])
+}
+
+// Gives the databases of a shared server whose names match a pattern, like "shop_*", to a customer.
+// An assignment of the name itself wins over every rule, and of several rules the highest priority.
+model DatabaseAssignmentRule {
+  id             String       @id @default(cuid())
+  sourceId       String
+  pattern        String
+  tenantId       String
+  priority       Int          @default(0)
+  validFrom      DateTime
+  // How many backups a day the customer may start of each database the rule gives, null for none.
+  onDemandPerDay Int?
+  createdAt      DateTime     @default(now())
+  server         SharedServer @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@index([tenantId])
+}
+
+// A backup a customer started of a database given to them. It counts towards the backups of that
+// day the assignment allows and lets the customer follow the run, which belongs to the tenant of
+// the server and which the customer never opens itself.
+model SharedBackupRequest {
+  id            String   @id @default(cuid())
+  sourceId      String
+  databaseName  String
+  executionId   String
+  requestedById String?
+  createdAt     DateTime @default(now())
+  // The customer that asked, see AdapterConfig.tenantId.
+  tenantId      String
+
+  @@index([tenantId, sourceId, databaseName, createdAt])
+}
+
 model UserPreference {
   userId    String
   /// Namespaced, e.g. "table:connections.databases".
@@ -314,12 +535,22 @@ model SystemSetting {
 }
 
 model Group {
-  id          String   @id @default(uuid())
-  name        String   @unique
+  id          String             @id @default(uuid())
+  name        String
   permissions String // Stored as JSON
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  users       User[]
+  // The role with every permission of its tenant, now and in later versions. The permission sync
+  // keeps it complete, and nobody edits or deletes it. The SuperAdmin group of earlier versions.
+  fullAccess  Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  // A group belongs to one tenant, whose admins make and change it. See AdapterConfig.tenantId.
+  tenantId    String             @default("default")
+  // Who holds it in its tenant.
+  memberships TenantMembership[]
+  invitations TenantInvitation[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model TwoFactor {
@@ -350,15 +581,18 @@ model Passkey {
 }
 
 model Session {
-  id        String   @id
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime
-  updatedAt DateTime
-  ipAddress String?
-  userAgent String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id
+  expiresAt      DateTime
+  token          String   @unique
+  createdAt      DateTime
+  updatedAt      DateTime
+  ipAddress      String?
+  userAgent      String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The tenant this session works in, which every device picks on its own. Checked against the
+  // memberships on every request, so a removed membership ends it.
+  activeTenantId String?
 }
 
 model Account {
@@ -388,52 +622,57 @@ model Verification {
 }
 
 model SsoProvider {
-  id             String   @id @default(cuid())
-  providerId     String   @unique // e.g. "authentik-main"
-  type           String   @default("oidc") // "oidc" or "saml"
-  domain         String?  // Required by better-auth SSO plugin for email domain matching
-  domainVerified Boolean  @default(false) // Required by better-auth for trusted provider status
+  id             String  @id @default(cuid())
+  providerId     String  @unique // e.g. "authentik-main"
+  type           String  @default("oidc") // "oidc" or "saml"
+  domain         String? // Required by better-auth SSO plugin for email domain matching
+  domainVerified Boolean @default(false) // Required by better-auth for trusted provider status
 
   // OIDC Specific Fields (Managed by Better-Auth)
-  oidcConfig     String?  // JSON string containing issuer, clientId, clientSecret, etc.
-  samlConfig     String?  // JSON string containing spMetadata, idpMetadata, etc.
+  oidcConfig String? // JSON string containing issuer, clientId, clientSecret, etc.
+  samlConfig String? // JSON string containing spMetadata, idpMetadata, etc.
 
   // Legacy/UI Specific Fields (Kept for UI convenience, synced with oidcConfig)
-  issuer         String?
+  issuer                String?
   authorizationEndpoint String?
-  tokenEndpoint  String?
-  userInfoEndpoint String?
-  jwksEndpoint   String?
+  tokenEndpoint         String?
+  userInfoEndpoint      String?
+  jwksEndpoint          String?
 
   // Credentials
-  clientId       String?
-  clientSecret   String?
+  clientId     String?
+  clientSecret String?
 
   // Custom App Logic
-  adapterId      String   // e.g. "authentik", "pocket-id"
-  adapterConfig  String?  // JSON string storing the raw inputs used to generate the config (e.g. { "url": "...", "realm": "..." })
-  name           String   // Display Name e.g. "Corporate Login"
-  enabled        Boolean  @default(true)
+  adapterId         String // e.g. "authentik", "pocket-id"
+  adapterConfig     String? // JSON string storing the raw inputs used to generate the config (e.g. { "url": "...", "realm": "..." })
+  name              String // Display Name e.g. "Corporate Login"
+  enabled           Boolean @default(true)
   allowProvisioning Boolean @default(true) // Whether to create new users automatically
-  defaultGroupId String? // The group a user the provider creates starts in, none leaves them without a group
+  defaultGroupId    String? // The group a user the provider creates starts in, none leaves them without a group
 
-  userId         String? // Optional: If linked to a specific user (Account Linking) logic, usually null for global SSO
+  userId String? // Optional: If linked to a specific user (Account Linking) logic, usually null for global SSO
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  // The tenant that brings this provider, null for one of the platform. A tenant's provider is
+  // reached by the domain of an email, never as a button, and the people it adds join that tenant.
+  tenantId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
-
 
 // Log-Eintrag für jeden Prüfzyklus (wird regelmäßig bereinigt)
 model HealthCheckLog {
-  id              String        @id @default(uuid())
+  id              String   @id @default(uuid())
   adapterConfigId String
-  status          String        // ONLINE, DEGRADED, OFFLINE
-  latencyMs       Int           // Antwortzeit in Millisekunden
-  error           String?       // Fehlermeldung falls fehlgeschlagen
-  createdAt       DateTime      @default(now())
+  status          String // ONLINE, DEGRADED, OFFLINE
+  latencyMs       Int // Antwortzeit in Millisekunden
+  error           String? // Fehlermeldung falls fehlgeschlagen
+  createdAt       DateTime @default(now())
 
-  adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
+  adapterConfig AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
 
   @@index([adapterConfigId, createdAt])
 }
@@ -442,99 +681,107 @@ model HealthCheckLog {
 // "Update Database Versions" system task. One row is inserted only when the
 // detected version differs from the latest stored entry for the same source.
 model DbVersionHistory {
-  id              String        @id @default(uuid())
+  id              String   @id @default(uuid())
   adapterConfigId String
-  previousVersion String?       // null for the first recorded entry per source
+  previousVersion String? // null for the first recorded entry per source
   newVersion      String
-  edition         String?       // optional adapter-specific info (e.g. MSSQL edition)
-  detectedAt      DateTime      @default(now())
+  edition         String? // optional adapter-specific info (e.g. MSSQL edition)
+  detectedAt      DateTime @default(now())
 
-  adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
+  adapterConfig AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
 
   @@index([adapterConfigId, detectedAt])
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String?  // Nullable because some actions might be system actions or deleted users
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id     String  @id @default(uuid())
+  userId String? // Nullable because some actions might be system actions or deleted users
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   // The name of the user when the entry was written, so it stays after the user is deleted
-  actorName   String?
+  actorName  String?
   // The API key the request came with, and its name at the time
-  apiKeyId    String?
-  apiKeyName  String?
+  apiKeyId   String?
+  apiKeyName String?
 
-  action      String   // ENUM-like string: "LOGIN", "LOGIN_FAILED", "CREATE", "UPDATE", "DELETE", "RESTORE", ...
-  resource    String   // ENUM-like string: "USER", "JOB", "BACKUP", "SYSTEM", ...
-  resourceId  String?  // The ID of the affected object
+  action     String // ENUM-like string: "LOGIN", "LOGIN_FAILED", "CREATE", "UPDATE", "DELETE", "RESTORE", ...
+  resource   String // ENUM-like string: "USER", "JOB", "BACKUP", "SYSTEM", ...
+  resourceId String? // The ID of the affected object
 
-  details     String?  // JSON string storing changes (diff) or connection info
-  ipAddress   String?
-  userAgent   String?
+  details   String? // JSON string storing changes (diff) or connection info
+  ipAddress String?
+  userAgent String?
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
+  tenantId  String   @default("default") // See AdapterConfig.tenantId
 
   @@index([userId])
   @@index([resource])
   @@index([action])
   @@index([createdAt])
+  @@index([tenantId, createdAt])
 }
 
 model ApiKey {
   id          String    @id @default(uuid())
   name        String
-  prefix      String    // First 16 chars of raw key for UI identification (e.g. "dbackup_a3f2b1c8")
+  prefix      String // First 16 chars of raw key for UI identification (e.g. "dbackup_a3f2b1c8")
   hashedKey   String    @unique // SHA-256 hash of the full key
-  permissions String    // JSON array of permission strings (same format as Group.permissions)
+  permissions String // JSON array of permission strings (same format as Group.permissions)
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt   DateTime? // Optional expiration date
   lastUsedAt  DateTime? // Updated on each successful authentication
   enabled     Boolean   @default(true)
   createdAt   DateTime  @default(now())
+  tenantId    String    @default("default") // See AdapterConfig.tenantId
 
   @@index([hashedKey])
   @@index([userId])
+  @@index([tenantId])
 }
 
 model StorageSnapshot {
   id              String   @id @default(uuid())
   adapterConfigId String
   adapterName     String
-  adapterId       String   // e.g. "local", "s3", "dropbox"
+  adapterId       String // e.g. "local", "s3", "dropbox"
   size            BigInt   @default(0)
   count           Int      @default(0)
   createdAt       DateTime @default(now())
+  tenantId        String   @default("default") // See AdapterConfig.tenantId
 
   // The newest snapshot of a destination before a point in time, for the storage trend of the
   // dashboard, the alerts and the last scan of a destination that does not answer.
   @@index([adapterConfigId, createdAt])
   @@index([createdAt])
+  @@index([tenantId])
 }
 
 // Tracks every notification sent through any adapter (per-job or system)
 model NotificationLog {
   id              String   @id @default(uuid())
-  eventType       String   // e.g. "backup_success", "user_login"
-  channelId       String?  // AdapterConfig.id (nullable if channel was deleted)
-  channelName     String   // Display name snapshot at send time
-  adapterId       String   // e.g. "discord", "email", "slack"
-  status          String   // "Success" | "Failed"
-  title           String   // Notification title / email subject
-  message         String   // Plain text body
-  fields          String?  // JSON array of { name, value, inline? }
-  color           String?  // Hex color used
-  renderedHtml    String?  // Pre-rendered HTML (email only)
-  renderedPayload String?  // JSON of adapter-specific payload (Discord embed, Slack blocks, etc.)
-  error           String?  // Error message if failed
-  executionId     String?  // Link to Execution if triggered by backup/restore
+  eventType       String // e.g. "backup_success", "user_login"
+  channelId       String? // AdapterConfig.id (nullable if channel was deleted)
+  channelName     String // Display name snapshot at send time
+  adapterId       String // e.g. "discord", "email", "slack"
+  status          String // "Success" | "Failed"
+  title           String // Notification title / email subject
+  message         String // Plain text body
+  fields          String? // JSON array of { name, value, inline? }
+  color           String? // Hex color used
+  renderedHtml    String? // Pre-rendered HTML (email only)
+  renderedPayload String? // JSON of adapter-specific payload (Discord embed, Slack blocks, etc.)
+  error           String? // Error message if failed
+  executionId     String? // Link to Execution if triggered by backup/restore
   sentAt          DateTime @default(now())
+  tenantId        String   @default("default") // See AdapterConfig.tenantId
 
   @@index([eventType])
   @@index([adapterId])
   @@index([sentAt])
   @@index([executionId])
+  @@index([tenantId, sentAt])
 }
 
 model StorageListCache {
@@ -566,13 +813,15 @@ model DeletedRecord {
   detail         String? // One line under the name, like the key id or the email
   data           String // JSON snapshot of the record and what belonged to it, secrets as they were stored
   permission     String // The permission that restores or purges it, like destinations:write for a destination
-  superAdminOnly Boolean  @default(false) // A SuperAdmin's account, which only a SuperAdmin brings back
+  superAdminOnly Boolean  @default(false) // The account of a platform admin, which only a platform admin brings back
   deletedAt      DateTime @default(now())
   deletedById    String?
   deletedByName  String?
+  tenantId       String   @default("default") // See AdapterConfig.tenantId
 
   @@index([kind])
   @@index([deletedAt])
+  @@index([tenantId])
 }
 
 // The picture of the login page under Settings, Sign-in, one row at most. It shows to everyone who

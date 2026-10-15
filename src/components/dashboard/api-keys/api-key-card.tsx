@@ -2,6 +2,8 @@
 
 import { LevelStrip } from "@/components/dashboard/groups/group-cells";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { TenantLine } from "@/components/tenant/tenant-column";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { isPlainClick } from "@/components/ui/row-click";
 import { cn } from "@/lib/utils";
 import type { ApiKeyRow } from "@/services/auth/api-keys-types";
@@ -14,8 +16,10 @@ interface ApiKeyCardProps {
     actions: React.ReactNode;
 }
 
-/** A key as a card: what it may do, the level of every area, its owner and its use. */
+/** A key as a card: what it may do, the level of every area, its owner and its use, and in All tenants its tenant. */
 export function ApiKeyCard({ apiKey, now, onOpen, actions }: ApiKeyCardProps) {
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
     return (
         <div
             onClick={(event) => isPlainClick(event) && onOpen(apiKey)}
@@ -35,6 +39,7 @@ export function ApiKeyCard({ apiKey, now, onOpen, actions }: ApiKeyCardProps) {
                         {apiKey.name}
                     </button>
                     <PrefixText prefix={apiKey.prefix} className="block truncate text-muted-foreground" />
+                    {allTenants && <TenantLine name={tenantName(apiKey.tenantId) ?? apiKey.tenantId} className="mt-0.5" />}
                 </div>
                 <StateBadge apiKey={apiKey} now={now} />
                 <div className="-mt-1 -mr-2">{actions}</div>

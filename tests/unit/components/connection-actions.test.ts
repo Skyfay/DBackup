@@ -23,6 +23,17 @@ describe("connectionActions", () => {
         expect(connectionActions({})).toEqual([]);
     });
 
+    it("offers to open a connection in its tenant in All tenants, where nothing of it can change", () => {
+        const onSelect = vi.fn();
+        const groups = connectionActions({ onExplore: vi.fn(), openInTenant: { label: "Open in Acme GmbH", onSelect } });
+        const open = groups.flatMap((group) => group.actions).find((action) => action.id === "open-in-tenant");
+
+        expect(ids(groups)).toEqual([["Inspect", ["explore"]], ["Manage", ["open-in-tenant"]]]);
+        expect(open).toMatchObject({ label: "Open in Acme GmbH", tone: "neutral" });
+        open?.onSelect();
+        expect(onSelect).toHaveBeenCalledOnce();
+    });
+
     it("names the counterpart action and blocks it while a clone is being created", () => {
         const groups = connectionActions({
             onClone: vi.fn(),

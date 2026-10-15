@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { stageLabel } from "@/lib/core/logs";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
-import { FlowCell, ScheduleText, SourceIcon, sourceOf } from "../job-cells";
+import { FlowCell, JobTenant, ScheduleText, SourceIcon, sourceOf } from "../job-cells";
 import { agendaOf, DAY_MS, horizonOf, ZOOMS, type AgendaRow, type TimelineZoom } from "./job-timeline-model";
 import { aboutLength, useTimelineClock, type TimelineClock } from "./timeline-clock";
 import { ZoomTabs } from "./timeline-controls";
@@ -25,7 +25,7 @@ function JobLabel({ job }: { job: JobListItem }) {
                 <SourceIcon adapterId={sourceOf(job).adapterId} className="size-4" />
             </span>
             <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{job.name}</span>
+                <span className="block truncate text-sm font-medium">{job.name}<JobTenant job={job} /></span>
                 <ScheduleText job={job} className="block" />
             </span>
         </span>

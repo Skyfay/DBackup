@@ -41,7 +41,7 @@ import { GET as getKeys } from "@/app/api/vault/keys/route";
 import { GET as getCredentials } from "@/app/api/vault/credentials/route";
 import { inspectEncryptionKey, revealMasterKey } from "@/app/actions/backup/encryption";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 
 describe("GET /api/vault/keys", () => {
     beforeEach(() => {

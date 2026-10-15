@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { PickTenantPanel } from "@/components/tenant/tenant-pick";
 import { TemplatesClient } from "@/components/dashboard/templates/templates-client";
 import { TEMPLATE_TABLE_IDS } from "@/components/dashboard/templates/template-tables";
-import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences } from "@/services/user/preference-service";
 
@@ -15,10 +16,23 @@ export const metadata: Metadata = { title: "Templates" };
  * patterns. The lists load in the browser, the page only resolves who may do what.
  */
 export default async function TemplatesPage() {
-    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
     // The login lives on the root page, there is no /login.
     if (!user) redirect("/");
     if (!permissions.includes(PERMISSIONS.TEMPLATES.READ)) redirect("/dashboard");
+    // Every tenant has templates of its own, so All tenants asks which first.
+    if (user.allTenants) {
+        return (
+            <>
+                <h1 className="sr-only">Templates</h1>
+                <PickTenantPanel
+                    title="Every tenant has templates of its own"
+                    description="Pick the tenant whose templates to open"
+                    href="/dashboard/templates"
+                />
+            </>
+        );
+    }
 
     const layouts = await getTablePreferences(user.id, Object.values(TEMPLATE_TABLE_IDS));
 

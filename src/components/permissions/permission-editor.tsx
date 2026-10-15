@@ -27,6 +27,8 @@ interface PermissionEditorProps {
     note?: React.ReactNode;
     /** The areas whose level changed, marked in the list. */
     changedAreas?: ReadonlySet<string>;
+    /** The areas offered, every one by default. A group outside the home tenant leaves out the settings of the instance. */
+    areas?: PermissionArea[];
 }
 
 /**
@@ -34,9 +36,9 @@ interface PermissionEditorProps {
  * left, a `Select` of them on a phone, and the open area with its level and every permission of it
  * on the right. The height stays the same from area to area, so the dialog does not jump.
  */
-export function PermissionEditor({ fields, held, onHeldChange, lockedReason, withNeeds = true, note, changedAreas }: PermissionEditorProps) {
-    const [active, setActive] = useState(PERMISSION_AREAS[0].id);
-    const area = PERMISSION_AREAS.find((entry) => entry.id === active) ?? PERMISSION_AREAS[0];
+export function PermissionEditor({ fields, held, onHeldChange, lockedReason, withNeeds = true, note, changedAreas, areas = PERMISSION_AREAS }: PermissionEditorProps) {
+    const [active, setActive] = useState(areas[0].id);
+    const area = areas.find((entry) => entry.id === active) ?? areas[0];
 
     return (
         <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[15.5rem_minmax(0,1fr)] md:grid-rows-1">
@@ -49,7 +51,7 @@ export function PermissionEditor({ fields, held, onHeldChange, lockedReason, wit
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            {PERMISSION_AREAS.map((entry) => (
+                            {areas.map((entry) => (
                                 <SelectItem key={entry.id} value={entry.id}>
                                     {entry.label} · {LEVEL_LABELS[levelOf(entry, held)]}
                                 </SelectItem>
@@ -60,7 +62,7 @@ export function PermissionEditor({ fields, held, onHeldChange, lockedReason, wit
 
                 <ScrollArea className="hidden min-h-0 flex-1 md:block">
                     <nav aria-label="Areas" className="space-y-0.5 px-3 pb-3">
-                        {PERMISSION_AREAS.map((entry) => {
+                        {areas.map((entry) => {
                             const level = levelOf(entry, held);
                             const on = entry.id === area.id;
                             return (
@@ -101,6 +103,10 @@ interface AreaPaneProps {
     lockedReason?: (permission: string) => string | null;
     withNeeds: boolean;
     note?: React.ReactNode;
+    /** A small line above the name of the area, like where its permissions count. */
+    eyebrow?: React.ReactNode;
+    /** Shows the area without a way to change it, with this sentence under every permission, like for a built-in group. */
+    readOnly?: string;
 }
 
 /** Ticks or unticks one permission alone, for an API key, which gets exactly what is ticked. */
@@ -111,12 +117,16 @@ function toggleAlone(held: ReadonlySet<string>, id: string, on: boolean): Set<st
     return next;
 }
 
-/** One area: its level, then every permission with a sentence, what it needs and why it may be locked. */
-function AreaPane({ area, held, onHeldChange, lockedReason, withNeeds, note }: AreaPaneProps) {
+/**
+ * One area: its level, then every permission with a sentence, what it needs and why it may be
+ * locked. The editor of a group and the one of a platform group both show it.
+ */
+export function AreaPane({ area, held, onHeldChange, lockedReason, withNeeds, note, eyebrow, readOnly }: AreaPaneProps) {
     const idBase = useId();
     const level = levelOf(area, held);
     // A permission is locked when it may not be given, or when what it needs may not be.
     const lockOf = (id: string): string | null => {
+        if (readOnly) return readOnly;
         const own = lockedReason?.(id) ?? null;
         if (own || !withNeeds) return own;
         for (const needed of permissionInfo(id)?.needs ?? []) {
@@ -131,6 +141,7 @@ function AreaPane({ area, held, onHeldChange, lockedReason, withNeeds, note }: A
 
     return (
         <div className="space-y-4 p-5">
+            {eyebrow}
             {/* On a phone the levels take a line of their own under the name of the area. */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="min-w-0 sm:flex-1">
@@ -144,6 +155,7 @@ function AreaPane({ area, held, onHeldChange, lockedReason, withNeeds, note }: A
                     value={level}
                     onChange={(next) => onHeldChange(withLevel(area, held, next))}
                     blocked={lockedReason ? blocked : undefined}
+                    disabled={readOnly !== undefined}
                     className="w-full sm:w-auto"
                 />
             </div>
@@ -159,7 +171,7 @@ function AreaPane({ area, held, onHeldChange, lockedReason, withNeeds, note }: A
                             <Checkbox
                                 id={id}
                                 checked={held.has(permission.id)}
-                                disabled={locked !== null && !held.has(permission.id)}
+                                disabled={readOnly !== undefined || (locked !== null && !held.has(permission.id))}
                                 onCheckedChange={(checked) =>
                                     onHeldChange(withNeeds ? withPermission(held, permission.id, checked === true) : toggleAlone(held, permission.id, checked === true))
                                 }

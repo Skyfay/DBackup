@@ -79,7 +79,7 @@ describe("SchedulePresetService", () => {
 
   describe("createSchedulePreset", () => {
     it("creates a new preset successfully", async () => {
-      prismaMock.schedulePreset.findUnique.mockResolvedValue(null);
+      prismaMock.schedulePreset.findFirst.mockResolvedValue(null);
       const created = makePreset({ name: "Daily" });
       prismaMock.schedulePreset.create.mockResolvedValue(created as any);
 
@@ -93,17 +93,20 @@ describe("SchedulePresetService", () => {
     });
 
     it("throws ServiceError when a preset with the same name already exists", async () => {
-      prismaMock.schedulePreset.findUnique.mockResolvedValue(
+      // A name is unique per tenant, so the lookup by name is a findFirst the tenant filter narrows.
+      prismaMock.schedulePreset.findFirst.mockResolvedValue(
         makePreset() as any
       );
 
       await expect(
         createSchedulePreset({ name: "Every Hour", schedule: "0 * * * *" })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.schedulePreset.findFirst).toHaveBeenCalledWith({ where: { name: "Every Hour" } });
+      expect(prismaMock.schedulePreset.create).not.toHaveBeenCalled();
     });
 
     it("creates a preset with description", async () => {
-      prismaMock.schedulePreset.findUnique.mockResolvedValue(null);
+      prismaMock.schedulePreset.findFirst.mockResolvedValue(null);
       const created = makePreset({
         name: "Weekly",
         description: "Runs every Monday",
@@ -154,13 +157,14 @@ describe("SchedulePresetService", () => {
 
     it("throws ServiceError when renaming to an already used name", async () => {
       const preset = makePreset({ name: "OldName" });
-      prismaMock.schedulePreset.findUnique
-        .mockResolvedValueOnce(preset as any)
-        .mockResolvedValueOnce(makePreset({ name: "Taken" }) as any);
+      prismaMock.schedulePreset.findUnique.mockResolvedValueOnce(preset as any); // current preset lookup
+      prismaMock.schedulePreset.findFirst.mockResolvedValueOnce(makePreset({ name: "Taken" }) as any); // name-collision check
 
       await expect(
         updateSchedulePreset("pre-1", { name: "Taken" })
       ).rejects.toBeInstanceOf(ServiceError);
+      expect(prismaMock.schedulePreset.findFirst).toHaveBeenCalledWith({ where: { name: "Taken" } });
+      expect(prismaMock.schedulePreset.update).not.toHaveBeenCalled();
     });
 
     it("does not check for name collision when name is unchanged", async () => {
@@ -170,8 +174,9 @@ describe("SchedulePresetService", () => {
 
       await updateSchedulePreset("pre-1", { name: "Every Hour" });
 
-      // findUnique called only once (for the existence check, not for name-collision)
+      // Only the existence check by id, no lookup by name.
       expect(prismaMock.schedulePreset.findUnique).toHaveBeenCalledTimes(1);
+      expect(prismaMock.schedulePreset.findFirst).not.toHaveBeenCalled();
     });
   });
 

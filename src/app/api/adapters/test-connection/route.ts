@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registry } from "@/lib/core/registry";
-import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { registerAdapters } from "@/lib/adapters";
-import { applyStoredSecrets, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { headers } from "next/headers";
-import prisma from "@/lib/prisma";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
-import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
-
-const log = logger.child({ route: "adapters/test-connection" });
+import { testConnection } from "@/services/adapters/connection-test";
 
 // Ensure adapters are registered
 registerAdapters();
@@ -37,73 +30,19 @@ export async function POST(req: NextRequest) {
         }
         checkPermissionWithContext(ctx, requiredPermission);
 
-        const adapter = registry.get(adapterId);
+        // Only someone who may change the saved connection gets its secrets filled in.
+        const storedConfigId = typeof configId === "string" && configId && canEditStoredConfig(ctx, adapterId)
+            ? configId
+            : undefined;
 
-        if (!adapter) {
-            return NextResponse.json({ success: false, message: "Adapter not found" }, { status: 404 });
+        const outcome = await testConnection({ adapterId, config, storedConfigId, configId, primaryCredentialId, sshCredentialId });
+        if (!outcome.ok) {
+            return outcome.reason === "adapter-missing"
+                ? NextResponse.json({ success: false, message: "Adapter not found" }, { status: 404 })
+                : NextResponse.json({ success: false, message: "This adapter does not support connection testing." });
         }
 
-        if (!adapter.test) {
-            return NextResponse.json({ success: false, message: "This adapter does not support connection testing." });
-        }
-
-        // Secrets living in the config itself are redacted on their way to the
-        // browser, so an edit of a saved source submits them missing. Fill them
-        // back in before testing, or the test runs against a config the saved
-        // source never had.
-        const submittedConfig = typeof configId === "string" && configId && canEditStoredConfig(ctx, adapterId)
-            ? await applyStoredSecrets(adapterId, configId, { ...config })
-            : { ...config };
-
-        // Overlay credential profiles onto the (plaintext) config so that the
-        // adapter receives a fully merged, ready-to-use config. Required when
-        // the user has assigned credential profiles instead of inline secrets.
-        const mergedConfig = await overlayCredentialsOnConfig(
-            adapterId,
-            submittedConfig,
-            primaryCredentialId ?? null,
-            sshCredentialId ?? null
-        );
-
-        const TEST_TIMEOUT_MS = 10_000;
-
-        const result = await Promise.race([
-            runAdapterTest(adapter, mergedConfig).then((r) => r!),
-            new Promise<{ success: false; message: string }>((resolve) =>
-                setTimeout(
-                    () => resolve({ success: false, message: "Connection test timed out after 10s. Check the host and port settings." }),
-                    TEST_TIMEOUT_MS
-                )
-            ),
-        ]);
-
-        // If test successful and we have a configId (editing existing config), update metadata
-        if (result.success && result.version && configId) {
-            try {
-                const existingConfig = await prisma.adapterConfig.findUnique({
-                    where: { id: configId },
-                    select: { metadata: true }
-                });
-
-                const currentMeta = existingConfig?.metadata ? JSON.parse(existingConfig.metadata) : {};
-                const newMeta = {
-                    ...currentMeta,
-                    engineVersion: result.version,
-                    lastCheck: new Date().toISOString(),
-                    status: 'Online'
-                };
-
-                await prisma.adapterConfig.update({
-                    where: { id: configId },
-                    data: { metadata: JSON.stringify(newMeta) }
-                });
-            } catch (metaError: unknown) {
-                log.error("Failed to update metadata", { configId }, wrapError(metaError));
-                // Don't fail the entire request if metadata update fails
-            }
-        }
-
-        return NextResponse.json(result);
+        return NextResponse.json(outcome.result);
 
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";

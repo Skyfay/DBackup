@@ -11,14 +11,17 @@ prisma/schema.prisma
 ## Entity Relationship Overview
 
 ```
-┌───────────────────┐     ┌───────────────────┐
-│       User        │────▶│       Group       │
-│                   │     │   (permissions)   │
-└────────┬──────────┘     └───────────────────┘
-         │ has many
-         ├──── Session, Account, Passkey, TwoFactor
-         ├──── AuditLog
+┌───────────────────┐     ┌───────────────────┐     ┌───────────────────┐
+│       User        │────▶│ TenantMembership  │────▶│       Group       │
+│  (platformRole)   │     │  (one per tenant) │     │   (permissions)   │
+└────────┬──────────┘     └─────────┬─────────┘     └───────────────────┘
+         │ has many                 ▼
+         ├──── Session, Account,  ┌───────────────────┐
+         │     Passkey, TwoFactor │      Tenant       │──▶ TenantInvitation
+         ├──── AuditLog           └───────────────────┘
          └──── ApiKey
+
+Every model below that holds data of a customer carries tenantId, see Tenant Models.
 
 ┌──────────────────────────────────────────────────┐
 │                   AdapterConfig                  │
@@ -315,8 +318,8 @@ model User {
   createdAt              DateTime
   updatedAt              DateTime
 
-  groupId                String?
-  group                  Group?     @relation(...)
+  platformRole           String?    // "ADMIN" for a platform admin, null for everyone else
+  memberships            TenantMembership[]  // The group of the user in each tenant
 
   twoFactor              TwoFactor?
   accounts               Account[]
@@ -329,17 +332,19 @@ model User {
 
 ### Group
 
-RBAC group. `permissions` is a JSON array of permission strings (same format as `ApiKey.permissions`).
+RBAC group, the same in every tenant. `permissions` is a JSON array of permission strings (same format as `ApiKey.permissions`). Who holds it in which tenant is a `TenantMembership`.
 
 ```prisma
 model Group {
   id          String   @id @default(uuid())
   name        String   @unique
   permissions String              // JSON array of permission strings
+  fullAccess  Boolean  @default(false)  // Every permission, cannot be edited or deleted
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  users       User[]
+  memberships TenantMembership[]
+  invitations TenantInvitation[]
 }
 ```
 
@@ -353,6 +358,7 @@ model ApiKey {
   hashedKey   String    @unique   // scrypt hash of the full key
   permissions String              // JSON array of permission strings
   userId      String
+  tenantId    String    @default("default")  // The tenant it was made in and acts in
   expiresAt   DateTime?
   lastUsedAt  DateTime?
   enabled     Boolean   @default(true)
@@ -379,6 +385,7 @@ model Session {
   ipAddress String?
   userAgent String?
   userId    String
+  activeTenantId String?  // The tenant this session picked, checked against the memberships
 
   user      User     @relation(...)
 }
@@ -456,6 +463,96 @@ model Verification {
   expiresAt  DateTime
   createdAt  DateTime?
   updatedAt  DateTime?
+}
+```
+
+---
+
+## Tenant Models
+
+Every connection, job, run, key, saved login, template, API key and log belongs to one tenant. The models in `TENANT_MODELS` of `src/lib/tenant/prisma-scope.ts` carry a column for it, which the Prisma client fills and filters by itself, see [Tenants](/developer-guide/advanced/tenants):
+
+```prisma
+  tenantId  String  @default("default")  // Only fills the rows of the migration
+```
+
+`CredentialProfile`, `RetentionPolicy`, `NamingTemplate`, `SchedulePreset`, `ExcludePatternPreset` and `NotificationTemplate` keep their names unique per tenant with `@@unique([tenantId, name])`.
+
+### Tenant
+
+```prisma
+model Tenant {
+  id          String   @id @default(cuid())  // "default" for the home tenant
+  name        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships             TenantMembership[]
+  invitations             TenantInvitation[]
+  databaseAssignments     DatabaseAssignment[]      // Databases of other tenants' servers given to it
+  databaseAssignmentRules DatabaseAssignmentRule[]
+}
+```
+
+### TenantMembership
+
+```prisma
+model TenantMembership {
+  userId    String
+  tenantId  String
+  groupId   String
+  createdAt DateTime @default(now())
+
+  @@id([userId, tenantId])
+}
+```
+
+### TenantInvitation
+
+```prisma
+model TenantInvitation {
+  id            String    @id @default(cuid())
+  tenantId      String
+  groupId       String
+  tokenHash     String    @unique  // SHA-256 of the token, which is shown once
+  note          String?            // Who it is for, only shown
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  acceptedById  String?
+}
+```
+
+### DatabaseAssignment
+
+One database of a shared server given to a customer. `tenantId` names the customer, the row belongs to the tenant of the server.
+
+```prisma
+model DatabaseAssignment {
+  id           String    @id @default(cuid())
+  sourceId     String              // The database server, an AdapterConfig
+  databaseName String
+  tenantId     String              // The customer
+  validFrom    DateTime
+  validUntil   DateTime?           // Null while it holds, an assignment ends rather than being deleted
+  createdAt    DateTime  @default(now())
+  createdById  String?
+}
+```
+
+### DatabaseAssignmentRule
+
+```prisma
+model DatabaseAssignmentRule {
+  id        String   @id @default(cuid())
+  sourceId  String
+  pattern   String             // A glob like "shop_*"
+  tenantId  String             // The customer
+  priority  Int      @default(0)
+  validFrom DateTime
+  createdAt DateTime @default(now())
 }
 ```
 
@@ -719,12 +816,12 @@ const jobs = await prisma.job.findMany({
   },
 });
 
-// Get user with permissions
+// Get what a user may do in a tenant
 const user = await prisma.user.findUnique({
   where: { id: userId },
-  include: { group: true },
+  include: { memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } } },
 });
-const permissions = JSON.parse(user.group?.permissions || "[]");
+const permissions = permissionsIn(user.memberships, tenantId);
 
 // Get recent executions
 const executions = await prisma.execution.findMany({

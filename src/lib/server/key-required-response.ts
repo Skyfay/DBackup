@@ -11,7 +11,6 @@
  * cannot be completed without something only the user can supply.
  */
 
-import { NextResponse } from "next/server";
 import { EncryptionKeyRequiredError } from "@/lib/logging/errors";
 
 /**
@@ -27,10 +26,10 @@ import { EncryptionKeyRequiredError } from "@/lib/logging/errors";
  * }
  * ```
  */
-export function keyRequiredResponse(error: unknown): NextResponse | null {
+export function keyRequiredResponse(error: unknown): Response | null {
     if (!(error instanceof EncryptionKeyRequiredError)) return null;
 
-    return NextResponse.json(
+    return Response.json(
         {
             // Both shapes are present because the routes that can raise this predate a
             // single convention: some clients read `success`, others only `error`.

@@ -42,7 +42,18 @@ src/lib/runner/   Step-based backup execution pipeline
 
 Data flows one direction: `page.tsx` (Server Component) fetches through a Service, then passes props to a Client Component. Server Actions are thin wrappers: auth check, Zod validation, service call, revalidate.
 
-A Server Action or API route that contains business logic is a bug. Move it into `src/services/`.
+A Server Action or API route that contains business logic is a bug. Move it into `src/services/`. Nothing under `src/app` imports `@/lib/prisma`, and nothing under `src/lib` or `src/services` imports Next.js except `src/lib/server/request-headers.ts`. Two lint guards check both.
+
+## Tenants
+
+Every connection, job, run, key, template, API key and log belongs to one tenant, and a Prisma extension narrows every query to the tenant of the code that runs now (`src/lib/tenant/`). Read [docs/developer-guide/advanced/tenants.md](docs/developer-guide/advanced/tenants.md) before touching data access. The rules that bite:
+
+- A request finds its tenant by itself, through the session or the API key. Code outside a request (scheduler, queue, system tasks, startup, scripts) runs in `runAsTenant(id, fn)` or `runAsSystem(fn)`, or its query throws `TenantScopeError`. In the system scope a create of a tenant model names its `tenantId` itself.
+- A new model that holds data of a customer gets `tenantId`, goes into `TENANT_MODELS` (or `CHILD_MODELS` when it hangs off a parent), and the isolation test in `tests/unit/tenant/tenant-isolation.test.ts` covers it. A model of the whole instance (settings, users, sign-in providers) stays global. Groups belong to a tenant like its data.
+- The filter narrows queries, it does not check the ids a write links to. A write that links records checks them with `assertOwnRecords`. Raw SQL skips the filter: select ids only and read the rows through the client.
+- A cache in memory or in a global setting that holds data of tenants is keyed by tenant or filtered on the way out, see `src/services/dashboard/cache.ts` and `getStorageVolume`.
+- A platform admin (`User.platformRole`) passes every check in every tenant. A platform group (`User.platformGroupId`) adds rights on the platform (`PLATFORM_ONLY_PERMISSIONS`, never held by a group of a tenant) and rights in the tenants of its scope, both in `ctx.permissions`. Every tenant has its own groups, and a user holds one of them per tenant through `TenantMembership`. A lookup of a group for another tenant runs in `runAsTenant` of that tenant. Nothing checks a group by its name, the group with every permission of a tenant is `Group.fullAccess`.
+- A platform admin in All tenants (`ctx.allTenants`, no `tenantId`) reads every tenant and writes none, the scope `all` refuses it. A page offers no change there, it opens the record in its tenant first with `useOpenInTenant`, and a new record asks for its tenant with `TenantPickDialog`.
 
 ## Commands
 
@@ -150,3 +161,13 @@ Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 - `DISABLE_EMAIL_LOGIN` - `true` | `false` (default). Rejects browser email sign-in and sign-up. Server-side `auth.api.*` calls stay open so admin user creation and password resets keep working. See `src/lib/auth/env-flags.ts`.
 - `TRUSTED_PROXIES` - the reverse proxies whose `X-Forwarded-For` counts, comma-separated addresses, CIDR ranges and the keywords `private` and `cloudflare`, `none`, or unset for `private`, the loopback and private networks. The custom server resolves the client address in `server/client-address.ts` and passes it in a header of its own, so the app reads `clientAddress()` from `@/lib/core/client-address` and never `X-Forwarded-For` itself. A lint guard checks that.
 - `OIDC_AUTO_REDIRECT` - `SsoProvider.providerId` to redirect to instead of rendering the login page. Format checked in `env-validation.ts`, existence in `startup-checks.ts`.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

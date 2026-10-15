@@ -30,6 +30,12 @@ export type RestoreScope = 'all' | 'databases' | 'files';
 export interface RestoreInput {
     storageConfigId: string;
     file: string;
+    /**
+     * A restore a customer started of a database of a shared server. Its run lands in the
+     * customer's History, so it names that database alone: never the archive, its path, the
+     * destination or the other databases of the server. Only an archive with an index is read.
+     */
+    shared?: { databaseName: string };
     /** Defaults to 'all', which is what every request written before scopes existed means. */
     scope?: RestoreScope;
     /** Optional - a directory-only archive has no database target. Required whenever the

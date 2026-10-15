@@ -16,10 +16,10 @@ const configService = new ConfigService();
 
 /**
  * A restore writes users, groups and sign-in providers from a file, so it could make anyone a
- * SuperAdmin. Only a SuperAdmin restores a configuration. Restore from a file is the route
+ * platform admin. Only a platform admin restores a configuration. Restore from a file is the route
  * `/api/settings/config-backup/restore`, since a Server Action takes at most 1 MB.
  */
-const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a SuperAdmin restores a configuration backup." };
+const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a platform admin restores a configuration backup." };
 
 /**
  * Trigger the Automated Config Backup Logic Manually
@@ -48,7 +48,7 @@ export async function restoreFromStorageAction(
     options?: RestoreOptions
 ) {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    if (user.group?.name !== "SuperAdmin") return ONLY_SUPER_ADMIN;
+    if (!user.isPlatformAdmin) return ONLY_SUPER_ADMIN;
 
     try {
         const executionId = await configService.restoreFromStorage(storageConfigId, file, decryptionProfileId, options);

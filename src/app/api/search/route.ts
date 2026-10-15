@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
         credentials: can(PERMISSIONS.VAULT.READ) && can(PERMISSIONS.CREDENTIALS.READ),
     };
 
-    const hits = await searchRecords(req.nextUrl.searchParams.get("q") ?? "", scope);
+    // A platform admin in All tenants searches every tenant, each hit with its tenant. An account of
+    // no tenant finds nothing, like someone who may see nothing.
+    if (!ctx.tenantId && !ctx.allTenants) return NextResponse.json({ success: true, data: { hits: [] } });
+    const hits = await searchRecords(req.nextUrl.searchParams.get("q") ?? "", scope, ctx.allTenants ? null : ctx.tenantId);
     return NextResponse.json({ success: true, data: { hits } });
 }

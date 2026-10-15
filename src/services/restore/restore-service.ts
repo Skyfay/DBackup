@@ -9,6 +9,7 @@ import { preflightRestore } from "./preflight";
 import { runRestorePipeline } from "./pipeline";
 import { normalizeDatabaseMapping } from "./database-mapping";
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
+import { runAsSystem } from "@/lib/tenant/context";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -26,6 +27,20 @@ export type { RestoreInput };
  */
 export class RestoreService {
     async restore(rawInput: RestoreInput) {
+        return this.start(rawInput);
+    }
+
+    /**
+     * Restores a database given to a customer on a shared server of another tenant, which the
+     * caller checked. The run belongs to the customer, so it shows in their history. The backup,
+     * its destination, its key and the server belong to the tenant of the server, so the restore
+     * reads them for every tenant, with nothing but the ids the caller fixed.
+     */
+    async restoreShared(input: RestoreInput, customerTenantId: string) {
+        return runAsSystem(() => this.start(input, customerTenantId));
+    }
+
+    private async start(rawInput: RestoreInput, runTenantId?: string) {
         // One mapping shape from here on, so the preflight checks the same databases the
         // pipeline then restores.
         const input: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping) };
@@ -37,7 +52,7 @@ export class RestoreService {
         // Initial Structured Log
         const initialLog: LogEntry = {
             timestamp: new Date().toISOString(),
-            message: `Starting restore for ${path.basename(file)}`,
+            message: input.shared ? `Starting restore of ${input.shared.databaseName}` : `Starting restore for ${path.basename(file)}`,
             level: 'info',
             type: 'general',
             stage: 'Initializing'
@@ -49,11 +64,13 @@ export class RestoreService {
         // Start Logging Execution
         const execution = await prisma.execution.create({
             data: {
+                ...(runTenantId ? { tenantId: runTenantId } : {}),
                 type: 'Restore',
                 status: 'Running',
                 logs: JSON.stringify([initialLog]),
                 startedAt: new Date(),
-                path: file,
+                // The run of a customer never names the archive of the server it came from.
+                path: input.shared ? null : file,
                 metadata: JSON.stringify({ progress: 0, stage: 'Initializing' }),
                 triggerType: input.triggerInfo?.type ?? null,
                 triggerLabel: input.triggerInfo?.label ?? null,

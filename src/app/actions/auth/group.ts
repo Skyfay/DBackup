@@ -2,15 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, getCurrentUserWithGroup } from "@/lib/auth/access-control";
+import { checkPermission, type Viewer } from "@/lib/auth/access-control";
+import { roleRefusal } from "@/lib/auth/account-access";
+import { capToTenant, groupCapRefusal } from "@/lib/auth/group-caps";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import type { BulkResult } from "@/lib/core/bulk";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { ValidationError, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { groupService } from "@/services/user/group-service";
+import { membershipService } from "@/services/tenant/membership-service";
 import { userService } from "@/services/user/user-service";
+
+/**
+ * The groups of the tenant the viewer works in. A group belongs to one tenant, so it is made,
+ * changed, deleted and given there, and its changes go into the audit log of that tenant. All
+ * tenants, which changes no tenant, is refused. Nobody makes or changes a group that may do more
+ * than they may, a group outside the home tenant never holds the settings of the instance, and
+ * the group with every permission stays as it is.
+ */
 
 const log = logger.child({ action: "group" });
 
@@ -25,27 +37,39 @@ export type GroupFormValues = z.input<typeof GroupSchema>;
 
 const IdSchema = z.string().min(1).max(200);
 
+const OPEN_A_TENANT = "Open a tenant to change its groups.";
+const GROUP_BEYOND = "This group may do more than you may, so only someone who may do all of it changes it.";
+const MOVE_BEYOND = "This group may do more than you may, so you cannot move anyone into it.";
+
 /** The message of a refusal the user can act on, a plain one for anything else. */
-const messageOf = (error: unknown, fallback: string) => (error instanceof ValidationError ? error.message : fallback);
+const messageOf = (error: unknown, fallback: string) => (error instanceof ValidationError || error instanceof NotFoundError ? error.message : fallback);
+
+/** The tenant whose groups the viewer changes, or why there is none. */
+function tenantOf(viewer: Viewer): { tenantId: string } | { error: string } {
+    return viewer.allTenants || !viewer.tenantId ? { error: OPEN_A_TENANT } : { tenantId: viewer.tenantId };
+}
 
 export async function createGroup(input: GroupFormValues) {
-    await checkPermission(PERMISSIONS.GROUPS.WRITE);
+    const viewer = await checkPermission(PERMISSIONS.GROUPS.WRITE);
     const parsed = GroupSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
-    const currentUser = await getCurrentUserWithGroup();
+    const scope = tenantOf(viewer);
+    if ("error" in scope) return { success: false, error: scope.error };
+
+    const permissions = capToTenant(parsed.data.permissions, scope.tenantId);
+    const refused = groupCapRefusal(viewer, permissions);
+    if (refused) return { success: false, error: refused };
 
     try {
-        const group = await groupService.create(parsed.data);
+        const group = await groupService.create({ name: parsed.data.name, permissions });
         revalidatePath("/dashboard/users");
-        if (currentUser) {
-            await auditService.log(
-                currentUser.id,
-                AUDIT_ACTIONS.CREATE,
-                AUDIT_RESOURCES.GROUP,
-                { name: group.name, permissions: group.permissions, ...(parsed.data.template ? { template: parsed.data.template } : {}) },
-                group.id
-            );
-        }
+        await auditService.log(
+            viewer.id,
+            AUDIT_ACTIONS.CREATE,
+            AUDIT_RESOURCES.GROUP,
+            { name: group.name, permissions: group.permissions, ...(parsed.data.template ? { template: parsed.data.template } : {}) },
+            group.id
+        );
         return { success: true, data: { id: group.id } };
     } catch (error: unknown) {
         log.error("Failed to create group", {}, wrapError(error));
@@ -55,25 +79,33 @@ export async function createGroup(input: GroupFormValues) {
 
 /**
  * Saves a group. The audit log gets what changed, not the whole list of permissions. Nobody
- * changes the group they are in, since that would hand them any permission.
+ * changes the group they are in, since that would hand them any permission, nor a group that
+ * may do more than they may.
  */
 export async function updateGroup(id: string, input: GroupFormValues) {
-    await checkPermission(PERMISSIONS.GROUPS.WRITE);
+    const viewer = await checkPermission(PERMISSIONS.GROUPS.WRITE);
     const groupId = IdSchema.safeParse(id);
     const parsed = GroupSchema.safeParse(input);
     if (!groupId.success || !parsed.success) return { success: false, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
-    const currentUser = await getCurrentUserWithGroup();
+    const scope = tenantOf(viewer);
+    if ("error" in scope) return { success: false, error: scope.error };
 
-    if (currentUser?.groupId === groupId.data) {
+    if (await groupService.heldBy(groupId.data, viewer.id)) {
         return { success: false, error: "You are in this group. Another admin changes it." };
     }
+    const group = await groupService.find(groupId.data);
+    if (!group) return { success: false, error: "The group no longer exists." };
+    if (group.fullAccess) return { success: false, error: `${group.name} holds every permission and cannot be edited.` };
+    if (roleRefusal(viewer, group)) return { success: false, error: GROUP_BEYOND };
+
+    const permissions = capToTenant(parsed.data.permissions, scope.tenantId);
+    const refused = groupCapRefusal(viewer, permissions);
+    if (refused) return { success: false, error: refused };
 
     try {
-        const change = await groupService.update(groupId.data, parsed.data);
+        const change = await groupService.update(groupId.data, { name: parsed.data.name, permissions }, { platformAdmin: viewer.isPlatformAdmin });
         revalidatePath("/dashboard/users");
-        if (currentUser) {
-            await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.GROUP, { ...change }, groupId.data);
-        }
+        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.GROUP, { ...change }, groupId.data);
         return { success: true };
     } catch (error: unknown) {
         log.error("Failed to update group", { groupId: groupId.data }, wrapError(error));
@@ -82,31 +114,32 @@ export async function updateGroup(id: string, input: GroupFormValues) {
 }
 
 /**
- * Deletes a group and moves its members to `moveTo`, another group or none. The own group of the
- * caller is refused, since it would move them out of it, and only a SuperAdmin moves people into
- * the SuperAdmin group.
+ * Deletes a group of the tenant and moves its members to `moveTo`, another group there, or to
+ * none, which takes them out of the tenant. Nobody deletes their own group or one that may do
+ * more than they may, and nobody moves people into a group that may do more than they may.
  */
 export async function deleteGroup(id: string, moveTo: string | null = null) {
-    await checkPermission(PERMISSIONS.GROUPS.WRITE);
+    const viewer = await checkPermission(PERMISSIONS.GROUPS.WRITE);
     const groupId = IdSchema.safeParse(id);
     const target = IdSchema.nullable().safeParse(moveTo);
     if (!groupId.success || !target.success) return { success: false, error: "Invalid request" };
-    const currentUser = await getCurrentUserWithGroup();
+    const scope = tenantOf(viewer);
+    if ("error" in scope) return { success: false, error: scope.error };
 
-    const membership = await groupService.membership(groupId.data, currentUser?.id ?? null);
-    if (membership.includes) {
+    if (await groupService.heldBy(groupId.data, viewer.id)) {
         return { success: false, error: "You are in this group. Another admin deletes it." };
     }
-    if (membership.members > 0 && await userService.isSuperAdminGroup(target.data) && currentUser?.group?.name !== "SuperAdmin") {
-        return { success: false, error: "Only a SuperAdmin can make someone a SuperAdmin." };
-    }
+    const group = await groupService.find(groupId.data);
+    if (!group) return { success: false, error: "The group no longer exists." };
+    if (roleRefusal(viewer, group)) return { success: false, error: GROUP_BEYOND };
+    const moveToGroup = target.data ? await groupService.find(target.data) : null;
+    if (target.data && !moveToGroup) return { success: false, error: "The group for the members no longer exists." };
+    if (moveToGroup && roleRefusal(viewer, moveToGroup)) return { success: false, error: MOVE_BEYOND };
 
     try {
-        const result = await groupService.delete(groupId.data, target.data);
+        const result = await groupService.delete(groupId.data, target.data, { platformAdmin: viewer.isPlatformAdmin });
         revalidatePath("/dashboard/users");
-        if (currentUser) {
-            await auditService.log(currentUser.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.GROUP, { name: result.name, moved: result.moved, moveTo: target.data }, groupId.data);
-        }
+        await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.GROUP, { name: result.name, moved: result.moved, moveTo: target.data }, groupId.data);
         return { success: true, data: { moved: result.moved } };
     } catch (error: unknown) {
         log.error("Failed to delete group", { groupId: groupId.data }, wrapError(error));
@@ -115,30 +148,37 @@ export async function deleteGroup(id: string, moveTo: string | null = null) {
 }
 
 /**
- * Deletes several groups. Groups with members are refused and listed, since each needs a group
- * for its members, which the delete of a single group asks for. SuperAdmin stays.
+ * Deletes several groups of the tenant. Groups with members are refused and listed, since each
+ * needs a group for its members, which the delete of a single group asks for, and so is a group
+ * that may do more than the viewer. The group with every permission stays.
  */
 export async function bulkDeleteGroups(ids: string[]) {
-    await checkPermission(PERMISSIONS.GROUPS.WRITE);
-    const currentUser = await getCurrentUserWithGroup();
-
+    const viewer = await checkPermission(PERMISSIONS.GROUPS.WRITE);
     const parsed = BulkIdsSchema.safeParse(ids);
-    if (!parsed.success) {
-        return { success: false as const, error: "Invalid request" };
-    }
+    if (!parsed.success) return { success: false as const, error: "Invalid request" };
+    const scope = tenantOf(viewer);
+    if ("error" in scope) return { success: false as const, error: scope.error };
 
     try {
-        const result = await groupService.deleteMany(parsed.data);
+        // A group that may do more than the viewer stays, with why.
+        const beyond: BulkResult["failed"] = [];
+        if (!viewer.isPlatformAdmin) {
+            for (const id of parsed.data) {
+                const group = await groupService.find(id);
+                if (group && roleRefusal(viewer, group)) beyond.push({ id, name: group.name, error: GROUP_BEYOND });
+            }
+        }
+        const allowed = parsed.data.filter((id) => !beyond.some((entry) => entry.id === id));
+        const deleted = allowed.length > 0 ? await groupService.deleteMany(allowed) : { succeeded: [], failed: [] };
+        const result: BulkResult = { succeeded: deleted.succeeded, failed: [...deleted.failed, ...beyond] };
         revalidatePath("/dashboard/users");
 
-        if (currentUser) {
-            await auditService.log(
-                currentUser.id,
-                AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.GROUP,
-                { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length }
-            );
-        }
+        await auditService.log(
+            viewer.id,
+            AUDIT_ACTIONS.DELETE,
+            AUDIT_RESOURCES.GROUP,
+            { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length },
+        );
 
         return { success: true as const, data: result };
     } catch (error: unknown) {
@@ -148,38 +188,47 @@ export async function bulkDeleteGroups(ids: string[]) {
 }
 
 /**
- * Moves people into a group, or into none, for Add people and Move of a group. Nobody moves
- * themselves, and only a SuperAdmin moves a SuperAdmin or makes someone one. Each move is
- * written to the audit log like a change of the group of one user.
+ * Moves people into a group, or into none, in the caller's tenant, for Add people and Move of a
+ * group. Nobody moves themselves, gives a group that may do more than they may, or moves someone
+ * whose group may do more. Each move is written to the audit log like a change of the group of
+ * one user.
  */
 export async function moveUsersToGroup(userIds: string[], groupId: string | null) {
-    await checkPermission(PERMISSIONS.USERS.WRITE);
+    const viewer = await checkPermission(PERMISSIONS.USERS.WRITE);
     const ids = BulkIdsSchema.safeParse(userIds);
     const target = IdSchema.nullable().safeParse(groupId);
     if (!ids.success || !target.success) return { success: false as const, error: "Invalid request" };
-    const currentUser = await getCurrentUserWithGroup();
-    const actorSuperAdmin = currentUser?.group?.name === "SuperAdmin";
+    // A group is given in one tenant, All tenants gives none.
+    const scope = tenantOf(viewer);
+    if ("error" in scope) return { success: false as const, error: "Open a tenant to move people between groups." };
+    const tenantId = scope.tenantId;
 
-    if (await userService.isSuperAdminGroup(target.data) && !actorSuperAdmin) {
-        return { success: false as const, error: "Only a SuperAdmin can make someone a SuperAdmin." };
-    }
+    const group = target.data ? await groupService.find(target.data) : null;
+    if (target.data && !group) return { success: false as const, error: "The group no longer exists." };
+    const refused = group ? roleRefusal(viewer, group) : null;
+    if (refused) return { success: false as const, error: refused };
 
     try {
-        const guarded = actorSuperAdmin ? [] : await userService.superAdminsAmong(ids.data);
-        const movable = ids.data.filter((id) => id !== currentUser?.id && !guarded.some((user) => user.id === id));
-        const result = await userService.moveUsers(movable, target.data);
-
-        if (currentUser && ids.data.includes(currentUser.id)) {
-            result.failed.push({ id: currentUser.id, name: currentUser.name || currentUser.email, error: "You cannot change your own group." });
-        }
-        for (const user of guarded) {
-            result.failed.push({ id: user.id, name: user.name, error: "Only a SuperAdmin can change the group of a SuperAdmin." });
-        }
-
-        if (currentUser) {
-            for (const id of result.succeeded) {
-                await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Updating Group", groupId: target.data ?? "none" }, id);
+        // Nobody takes a group from someone that may do more than they may.
+        const guarded: string[] = [];
+        if (!viewer.isPlatformAdmin) {
+            for (const id of ids.data) {
+                const current = await membershipService.roleOf(id, tenantId);
+                if (current && roleRefusal(viewer, current)) guarded.push(id);
             }
+        }
+        const movable = ids.data.filter((id) => id !== viewer.id && !guarded.includes(id));
+        const result = await membershipService.setRoles(movable, tenantId, target.data, { platformAdmin: viewer.isPlatformAdmin });
+
+        if (ids.data.includes(viewer.id)) {
+            result.failed.push({ id: viewer.id, name: viewer.name || viewer.email, error: "You cannot change your own group." });
+        }
+        for (const user of await userService.namesOf(guarded)) {
+            result.failed.push({ id: user.id, name: user.name, error: "This user's group may do more than you may, so only someone who may do all of it changes it." });
+        }
+
+        for (const id of result.succeeded) {
+            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Updating Group", groupId: target.data ?? "none" }, id);
         }
         revalidatePath("/dashboard/users");
         return { success: true as const, data: result };

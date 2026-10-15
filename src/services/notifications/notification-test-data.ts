@@ -29,6 +29,41 @@ export function buildTestData(eventType: string): NotificationEventData | null {
         timestamp: now,
       },
     },
+    // The runs of a job, which only the notifications of a tenant send without the job.
+    backup_success: {
+      eventType: "backup_success",
+      data: {
+        jobName: "Nightly MySQL (test)",
+        sourceName: "MySQL Production",
+        sourceType: "MySQL",
+        duration: 42000,
+        size: 52428800,
+        timestamp: now,
+      },
+    },
+    backup_partial: {
+      eventType: "backup_partial",
+      data: {
+        jobName: "Nightly MySQL (test)",
+        sourceName: "MySQL Production",
+        sourceType: "MySQL",
+        duration: 45000,
+        size: 52428800,
+        error: "One destination did not take the backup (test)",
+        timestamp: now,
+      },
+    },
+    backup_failure: {
+      eventType: "backup_failure",
+      data: {
+        jobName: "Nightly MySQL (test)",
+        sourceName: "MySQL Production",
+        sourceType: "MySQL",
+        duration: 3000,
+        error: "Connection refused (test)",
+        timestamp: now,
+      },
+    },
     restore_complete: {
       eventType: "restore_complete",
       data: {

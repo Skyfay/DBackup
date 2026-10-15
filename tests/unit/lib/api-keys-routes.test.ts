@@ -24,7 +24,7 @@ vi.mock("@/services/auth/api-key-details", () => ({ getApiKeyDetails: (...args: 
 import { GET as getKeys } from "@/app/api/api-keys/route";
 import { GET as getKey } from "@/app/api/api-keys/[id]/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "lena", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "lena", permissions, isPlatformAdmin: false, authMethod: "session", tenantId: "default" });
 const openKey = (id: string) => getKey(new NextRequest(`http://localhost/api/api-keys/${id}`), { params: Promise.resolve({ id }) });
 
 describe("GET /api/api-keys", () => {

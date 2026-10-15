@@ -6,6 +6,9 @@
  */
 
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { Prisma } from "@prisma/client";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -42,6 +45,8 @@ export interface NotificationLogQuery {
   executionId?: string;
   /** Free text, matched against the notification title. */
   search?: string;
+  /** The tenants of the Tenant filter of All tenants. Inside a tenant every entry is of that tenant anyway. */
+  tenantId?: string | string[];
 }
 
 export const NOTIFICATION_LOG_MAX_PAGE_SIZE = 100;
@@ -57,8 +62,15 @@ export async function recordNotificationLog(
   entry: NotificationLogEntry
 ): Promise<void> {
   try {
-    await prisma.notificationLog.create({
+    // The entry belongs to the tenant of its channel, else to the code that sends it, else to the
+    // home tenant, like a system event without a channel.
+    const channel = entry.channelId
+      ? await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: entry.channelId! }, select: { tenantId: true } }))
+      : null;
+    const tenantId = channel?.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
+    await runAsSystem(() => prisma.notificationLog.create({
       data: {
+        tenantId,
         eventType: entry.eventType,
         channelId: entry.channelId,
         channelName: entry.channelName,
@@ -73,7 +85,7 @@ export async function recordNotificationLog(
         error: entry.error ?? null,
         executionId: entry.executionId ?? null,
       },
-    });
+    }));
   } catch (err) {
     // Never block the caller – log and swallow
     log.error("Failed to record notification log", {}, wrapError(err));
@@ -97,8 +109,10 @@ function normalizePageSize(value: number | undefined): number {
 
 /** Prisma `where` for a query. Exported for tests. */
 export function buildNotificationLogWhere(query: NotificationLogQuery): Prisma.NotificationLogWhereInput {
-  const { adapterId, channelName, eventType, status, executionId, search } = query;
+  const { adapterId, channelName, eventType, status, executionId, search, tenantId } = query;
   const where: Prisma.NotificationLogWhereInput = {};
+  const tenantIds = toList(tenantId);
+  if (tenantIds) where.tenantId = tenantIds;
   const adapterIds = toList(adapterId);
   if (adapterIds) where.adapterId = adapterIds;
   const channels = toList(channelName);
@@ -119,19 +133,26 @@ export interface NotificationLogFacets {
   status: Record<string, number>;
   channelName: Record<string, number>;
   eventType: Record<string, number>;
+  /** The entries of each tenant, only in All tenants, where the log holds every tenant. */
+  tenantId?: Record<string, number>;
 }
 
-/** Per-option counts. Each column honours every other active filter but not its own. */
-export async function getNotificationLogFacets(query: NotificationLogQuery = {}): Promise<NotificationLogFacets> {
-  const count = async (column: "adapterId" | "status" | "channelName" | "eventType") => {
+/**
+ * Per-option counts. Each column honours every other active filter but not its own. `byTenant`
+ * counts the tenants too, for the Tenant filter of All tenants.
+ */
+export async function getNotificationLogFacets(query: NotificationLogQuery = {}, byTenant = false): Promise<NotificationLogFacets> {
+  const count = async (column: "adapterId" | "status" | "channelName" | "eventType" | "tenantId") => {
     const where = buildNotificationLogWhere({ ...query, [column]: undefined });
     const groups = await prisma.notificationLog.groupBy({ by: [column], where, _count: { _all: true } });
     const result: Record<string, number> = {};
     for (const g of groups) result[g[column]] = g._count._all;
     return result;
   };
-  const [adapterId, status, channelName, eventType] = await Promise.all([count("adapterId"), count("status"), count("channelName"), count("eventType")]);
-  return { adapterId, status, channelName, eventType };
+  const [adapterId, status, channelName, eventType, tenantId] = await Promise.all([
+    count("adapterId"), count("status"), count("channelName"), count("eventType"), byTenant ? count("tenantId") : null,
+  ]);
+  return { adapterId, status, channelName, eventType, ...(tenantId ? { tenantId } : {}) };
 }
 
 /**

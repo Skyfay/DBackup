@@ -20,13 +20,14 @@ const QuerySchema = z.object({
     job: z.array(z.string().max(100)).max(200),
     by: z.array(z.string().max(300)).max(200),
     search: z.string().max(200).optional(),
+    tenant: z.array(z.string().min(1).max(200)).max(500),
 });
 
 /**
  * One page of the runs of the History page, with the counts beside every filter, the options of
  * the Job and Started by filters and the numbers above the list. Filters may repeat to match any
- * of their values: `type`, `status`, `job` (a job id) and `by` (schedule, manual:<person>,
- * api:<key name> or none).
+ * of their values: `type`, `status`, `job` (a job id), `by` (schedule, manual:<person>,
+ * api:<key name> or none) and in All tenants `tenant` (a tenant id).
  */
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -47,6 +48,7 @@ export async function GET(req: NextRequest) {
         job: params.getAll("job"),
         by: params.getAll("by"),
         search: params.get("search") ?? undefined,
+        tenant: params.getAll("tenant"),
     });
     if (!parsed.success) return NextResponse.json({ success: false, error: "Invalid query parameters" }, { status: 400 });
 
@@ -58,11 +60,14 @@ export async function GET(req: NextRequest) {
         jobIds: parsed.data.job,
         starters: parsed.data.by,
         search: parsed.data.search,
+        // The Tenant filter of All tenants. Inside a tenant every run is of that tenant anyway.
+        ...(ctx.allTenants && parsed.data.tenant.length > 0 ? { tenantIds: parsed.data.tenant } : {}),
     };
     try {
         const [list, facets, options, stats] = await Promise.all([
             listRuns(query),
-            getRunFacets(query),
+            // All tenants counts the runs of each tenant for its Tenant filter.
+            getRunFacets(query, ctx.allTenants),
             cached("history-run-options", OPTIONS_TTL_MS, getRunOptions),
             getRunStats(),
         ]);

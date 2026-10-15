@@ -1,13 +1,46 @@
 import { encrypt } from "@/lib/crypto";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import type { Tx } from "@/lib/prisma-tx";
+import { ensureFullAccessGroup } from "@/services/user/group-service";
 import { counted, exists, idHere, listed, type ImportContext } from "./import-context";
+
+/** A name no group has yet, the wanted one or with a number after it. */
+async function freeGroupName(tx: Tx, wanted: string): Promise<string> {
+    for (let n = 1; ; n++) {
+        const name = n === 1 ? wanted : `${wanted} ${n}`;
+        if (!(await tx.group.findFirst({ where: { name }, select: { id: true } }))) return name;
+    }
+}
+
+/** The group of the files of earlier versions that passed every check. */
+const LEGACY_SUPER_ADMIN = "SuperAdmin";
 
 /**
  * Groups, users with their sign-ins, and API keys. A group of the same name or a user of the same
- * email here takes the one of the file and keeps its id.
+ * email here takes the one of the file and keeps its id. A file holds one group per user, from
+ * before tenants, which becomes their group in the home tenant. The SuperAdmin group of a file is
+ * the group with every permission here, and its people become platform admins.
  */
 export async function importUsers({ tx, data, ids, known, notes }: ImportContext): Promise<void> {
+    const fullAccessIds = new Set<string>();
     for (const group of data.groups) {
-        const existingByName = await tx.group.findUnique({ where: { name: group.name } });
+        if (group.name === LEGACY_SUPER_ADMIN) {
+            const full = await ensureFullAccessGroup(tx);
+            ids.groups.set(group.id, full);
+            fullAccessIds.add(full);
+            continue;
+        }
+        const existingByName = await tx.group.findFirst({ where: { name: group.name } });
+        // An ordinary group of the file never merges into the group with every permission, which
+        // may share its name, like Admin. It comes in under a name of its own.
+        if (existingByName?.fullAccess || (await tx.group.findUnique({ where: { id: group.id }, select: { fullAccess: true } }))?.fullAccess) {
+            const name = await freeGroupName(tx, `${group.name} (imported)`);
+            const created = await tx.group.create({ data: { name, permissions: group.permissions }, select: { id: true } });
+            ids.groups.set(group.id, created.id);
+            notes.push(`The group ${group.name} of the file came in as ${name}, since ${group.name} holds every permission here.`);
+            continue;
+        }
         if (existingByName && existingByName.id !== group.id) {
             await tx.group.update({ where: { id: existingByName.id }, data: { permissions: group.permissions, updatedAt: group.updatedAt } });
             ids.groups.set(group.id, existingByName.id);
@@ -18,8 +51,8 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
 
     const withoutSecondFactor: string[] = [];
     for (const user of data.users) {
-        const { accounts, ...userFields } = user;
-        if (userFields.groupId) userFields.groupId = idHere(ids.groups, userFields.groupId);
+        const { accounts, groupId: fileGroupId, ...userFields } = user as typeof user & { groupId?: string | null };
+        const groupId = fileGroupId ? idHere(ids.groups, fileGroupId) : null;
 
         const existingUser = await tx.user.findUnique({ where: { email: user.email } });
         if (existingUser && existingUser.id !== user.id) {
@@ -32,6 +65,15 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
 
         const userId = idHere(ids.users, user.id);
         known.users.add(userId);
+
+        if (groupId && (await tx.group.findUnique({ where: { id: groupId }, select: { id: true } }))) {
+            await tx.tenantMembership.upsert({
+                where: { userId_tenantId: { userId, tenantId: HOME_TENANT_ID } },
+                create: { userId, tenantId: HOME_TENANT_ID, groupId },
+                update: { groupId },
+            });
+            if (fullAccessIds.has(groupId)) await tx.user.update({ where: { id: userId }, data: { platformRole: PLATFORM_ADMIN_ROLE } });
+        }
 
         for (const account of Array.isArray(accounts) ? accounts : []) {
             const remappedAccount = { ...account, userId };

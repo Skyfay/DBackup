@@ -1,6 +1,7 @@
 "use client";
 
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { TenantLine } from "@/components/tenant/tenant-column";
 import { isPlainClick } from "@/components/ui/row-click";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes } from "@/lib/utils";
@@ -18,13 +19,15 @@ interface BackupCardProps {
     onOpen: (run: BackupRun) => void;
     /** The menu, the same as at the end of a table row. */
     actions: React.ReactNode;
+    /** The tenant of the backup, a small line under when it was made in All tenants. */
+    tenantName?: string | null;
 }
 
 /**
  * One backup as a card, the second view of the list and the one a phone always gets: its job and
  * when it was made, where its copies lie, and its check, size and menu at the foot.
  */
-export function BackupCard({ run, job, destinations, at, onOpen, actions }: BackupCardProps) {
+export function BackupCard({ run, job, destinations, at, onOpen, actions, tenantName = null }: BackupCardProps) {
     const started = startedBy(run.file);
     const date = madeAt(run.file);
     return (
@@ -49,6 +52,7 @@ export function BackupCard({ run, job, destinations, at, onOpen, actions }: Back
                         <DateDisplay date={date} format="Pp" /> · <RelativeTime date={date} />
                         {started && <> · {started.label}</>}
                     </p>
+                    <TenantLine name={tenantName} className="mt-0.5" />
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                     <TypeChip file={run.file} />

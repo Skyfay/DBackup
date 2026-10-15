@@ -9,6 +9,7 @@ import { kindNames } from "@/components/adapter/connection-columns";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import { ExplorerStrip, type StripCell } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { PickList, PickTrigger, type PickEntry, type PickGroup } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -34,12 +35,14 @@ function entryOf(database: ExplorerDatabase, server: ExplorerServer): PickEntry 
     };
 }
 
-/** Opens another database of any server, grouped by server like the timeline. */
+/** Opens another database of any server, grouped by server like the timeline. In All tenants each server names its tenant. */
 function DatabaseSwitcher({ overview, current, server }: { overview: DatabaseOverview; current: ExplorerDatabase; server: ExplorerServer }) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
+    const { allTenants } = useTenantView();
+    const nameOf = useTenantName();
     const groups: PickGroup[] = overview.servers.map((entry) => ({
-        heading: entry.name,
+        heading: [entry.name, allTenants ? nameOf(entry.tenantId) : null].filter(Boolean).join(" · "),
         entries: overview.databases.filter((database) => database.serverId === entry.id).map((database) => entryOf(database, entry)),
     }));
 

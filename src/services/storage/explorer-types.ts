@@ -16,6 +16,8 @@ export type HealthStatus = "ONLINE" | "DEGRADED" | "OFFLINE";
 export interface ExplorerDestination {
     id: string;
     name: string;
+    /** The tenant of the destination, which the lists show and open it in while they hold every tenant. */
+    tenantId?: string;
     adapterId: string;
     /** Connected only now and then, so not answering is no problem and a backup it lacks is no copy missing. */
     airGapped: boolean;
@@ -70,6 +72,11 @@ export interface ExplorerJob {
     key: string;
     kind: ExplorerJobKind;
     name: string;
+    /**
+     * The tenant of the job. Backups without an existing job belong to the tenant of the
+     * destinations that hold them.
+     */
+    tenantId?: string;
     /** The id of the job, also for a deleted one when its backups carry it. */
     jobId: string | null;
     /** Adapter id of the database source, for its logo. Null for a job with folders only. */
@@ -119,6 +126,8 @@ export interface BackupRun {
     /** The path of the backup, the same at every destination. */
     path: string;
     jobKey: string;
+    /** The tenant of its job, the same as of its destinations. */
+    tenantId?: string;
     /** The file of the first stored copy, which the list shows. */
     file: ExplorerFile;
     /** When the backup was made. */

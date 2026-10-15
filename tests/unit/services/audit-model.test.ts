@@ -50,6 +50,16 @@ describe("what the filters of the audit log keep", () => {
         });
     });
 
+    it("reads the log of the picked tenants for the Tenant filter of All tenants, and counts that filter under the others", () => {
+        const filter = parseAuditFilter(new URLSearchParams("period=all&tenant=default&tenant=tenant-a&action=DELETE"));
+
+        expect(filter?.tenants).toEqual(["default", "tenant-a"]);
+        expect(buildAuditWhere(filter!, NOW)).toEqual({ AND: [{ action: { in: ["DELETE"] } }, { tenantId: { in: ["default", "tenant-a"] } }] });
+        expect(buildAuditWhere(filter!, NOW, "tenant")).toEqual({ AND: [{ action: { in: ["DELETE"] } }] });
+        // Without the filter every tenant the scope reads stays.
+        expect(parseAuditFilter(new URLSearchParams("period=all"))?.tenants).toBeUndefined();
+    });
+
     it("turns a day of the timeline into the hours of that day in the time zone of the viewer", () => {
         const filter = parseAuditFilter(new URLSearchParams("fromDay=2026-09-29&toDay=2026-09-29&tz=Europe/Zurich&area=jobs&area=nope"));
         expect(filter).toBeNull();
@@ -62,10 +72,12 @@ describe("what the filters of the audit log keep", () => {
 });
 
 describe("who an entry came from", () => {
-    const base = { userId: null, actorName: null, apiKeyId: null, apiKeyName: null, action: "UPDATE", details: null, user: null };
+    const base = { tenantId: "default", userId: null, actorName: null, apiKeyId: null, apiKeyName: null, action: "UPDATE", details: null, user: null };
+    const MANU = { name: "Manu", image: null, platformRole: "ADMIN", memberships: [{ tenantId: "default", group: { name: "Admin" } }] };
+    const LENA = { name: "Lena Graf", image: null, platformRole: null, memberships: [{ tenantId: "default", group: { name: "Operators" } }, { tenantId: "acme", group: { name: "Admin" } }] };
 
     it("names an API key with its owner under it", () => {
-        expect(actorOf({ ...base, userId: "manu", apiKeyId: "key-1", apiKeyName: "CI pipeline", user: { name: "Manu", image: null, group: { name: "SuperAdmin" } } })).toMatchObject({
+        expect(actorOf({ ...base, userId: "manu", apiKeyId: "key-1", apiKeyName: "CI pipeline", user: MANU })).toMatchObject({
             kind: "key",
             key: "key:key-1",
             name: "CI pipeline",
@@ -73,14 +85,24 @@ describe("who an entry came from", () => {
         });
     });
 
-    it("marks a person of the SuperAdmin group, whom only a SuperAdmin signs out from the panel", () => {
+    it("marks a platform admin, whom only a platform admin signs out from the panel", () => {
         const signIn = { ...base, action: "LOGIN", userId: "manu" };
 
-        expect(actorOf({ ...signIn, user: { name: "Manu", image: null, group: { name: "SuperAdmin" } } })).toMatchObject({ kind: "person", sub: "SuperAdmin", superAdmin: true });
-        expect(actorOf({ ...signIn, user: { name: "Lena Graf", image: null, group: { name: "Operators" } } })).toMatchObject({ superAdmin: false });
-        // The key of a SuperAdmin is no SuperAdmin, and neither is a deleted person.
-        expect(actorOf({ ...base, userId: "manu", apiKeyId: "key-1", apiKeyName: "CI pipeline", user: { name: "Manu", image: null, group: { name: "SuperAdmin" } } })).toMatchObject({ superAdmin: false });
+        expect(actorOf({ ...signIn, user: MANU })).toMatchObject({ kind: "person", sub: "Admin", superAdmin: true });
+        expect(actorOf({ ...signIn, user: LENA })).toMatchObject({ superAdmin: false });
+        // The full access group of a tenant makes nobody a platform admin.
+        expect(actorOf({ ...signIn, tenantId: "acme", user: LENA })).toMatchObject({ sub: "Admin", superAdmin: false });
+        // The key of a platform admin is no platform admin, and neither is a deleted person.
+        expect(actorOf({ ...base, userId: "manu", apiKeyId: "key-1", apiKeyName: "CI pipeline", user: MANU })).toMatchObject({ superAdmin: false });
         expect(actorOf({ ...base, actorName: "Kim Frei" })).toMatchObject({ superAdmin: false });
+    });
+
+    it("names the group the person holds in the tenant of the entry", () => {
+        const signIn = { ...base, action: "LOGIN", userId: "lena" };
+
+        expect(actorOf({ ...signIn, user: LENA })).toMatchObject({ sub: "Operators" });
+        expect(actorOf({ ...signIn, tenantId: "acme", user: LENA })).toMatchObject({ sub: "Admin" });
+        expect(actorOf({ ...signIn, tenantId: "globex", user: LENA })).toMatchObject({ sub: "No group" });
     });
 
     it("keeps the name of a person who was deleted since", () => {

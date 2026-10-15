@@ -33,16 +33,25 @@ export interface SearchScope {
     credentials: boolean;
 }
 
+/**
+ * The tenant a hit belongs to. A platform admin in All tenants searches every tenant, and a hit opens
+ * in its tenant. People and groups belong to the whole instance and carry none.
+ */
+interface InTenant {
+    tenantId?: string;
+}
+
 export type SearchHit =
-    | { kind: "job"; id: string; name: string; enabled: boolean; schedule: string; adapterId: string | null; lastStatus: string | null }
-    | { kind: "backups"; jobId: string; name: string }
-    | { kind: "connection"; id: string; name: string; adapterId: string; type: string; storageRole: string | null; status: string }
-    | { kind: "database"; serverId: string; serverName: string; adapterId: string; name: string; sizeInBytes: number | null }
-    | { kind: "run"; id: string; name: string; status: string; startedAt: string; adapterId: string | null }
-    | { kind: "user"; id: string; name: string; email: string; group: string | null }
+    | ({ kind: "job"; id: string; name: string; enabled: boolean; schedule: string; adapterId: string | null; lastStatus: string | null } & InTenant)
+    | ({ kind: "backups"; jobId: string; name: string } & InTenant)
+    | ({ kind: "connection"; id: string; name: string; adapterId: string; type: string; storageRole: string | null; status: string } & InTenant)
+    | ({ kind: "database"; serverId: string; serverName: string; adapterId: string; name: string; sizeInBytes: number | null } & InTenant)
+    | ({ kind: "run"; id: string; name: string; status: string; startedAt: string; adapterId: string | null } & InTenant)
+    /** `group` is the group in the tenant searched. In All tenants `tenants` counts the tenants of the account instead. */
+    | { kind: "user"; id: string; name: string; email: string; group: string | null; tenants?: number }
     | { kind: "group"; id: string; name: string; people: number }
-    | { kind: "apiKey"; id: string; name: string; prefix: string; owner: string; enabled: boolean; expired: boolean }
+    | ({ kind: "apiKey"; id: string; name: string; prefix: string; owner: string; enabled: boolean; expired: boolean } & InTenant)
     /** `detail` is the pattern of a file name, the cron of a schedule and the description of the others. */
-    | { kind: "template"; id: string; name: string; template: TemplateKind; detail: string | null }
-    | { kind: "key"; id: string; name: string; jobs: number }
-    | { kind: "credential"; id: string; name: string; type: string };
+    | ({ kind: "template"; id: string; name: string; template: TemplateKind; detail: string | null } & InTenant)
+    | ({ kind: "key"; id: string; name: string; jobs: number } & InTenant)
+    | ({ kind: "credential"; id: string; name: string; type: string } & InTenant);

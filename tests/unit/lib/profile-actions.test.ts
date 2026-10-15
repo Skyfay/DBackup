@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
-    getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
+    getViewer: vi.fn(async () => mocks.viewer),
     hasPermission: vi.fn(async (permission: string) => mocks.held.has(permission)),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

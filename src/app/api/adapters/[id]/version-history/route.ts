@@ -15,7 +15,7 @@ export async function GET(
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (!ctx.isSuperAdmin && !ctx.permissions.includes(PERMISSIONS.SOURCES.VIEW)) {
+    if (!ctx.isPlatformAdmin && !ctx.permissions.includes(PERMISSIONS.SOURCES.VIEW)) {
         return NextResponse.json({ error: "Permission denied: sources:view required" }, { status: 403 });
     }
 

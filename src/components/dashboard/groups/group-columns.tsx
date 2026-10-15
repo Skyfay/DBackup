@@ -11,9 +11,9 @@ import { GroupTile, MemberFaces, permissionCount, ShareBar } from "./group-cells
 /** What members of a group may do in one line. */
 export const groupLine = (group: Pick<GroupRow, "permissions" | "superAdmin">) => accessLine(summarizeAccess(group.permissions, group.superAdmin));
 
-/** "built in", or when the group was made and by whom. */
+/** "built in" for the group with every permission, or when the group was made and by whom. */
 export function MadeText({ group }: { group: GroupRow }) {
-    if (group.superAdmin) return <>built in, the group of the first user</>;
+    if (group.superAdmin) return <>built in, holds every permission</>;
     return (
         <>
             made <DateDisplay date={group.made?.at ?? group.createdAt} format="P" />

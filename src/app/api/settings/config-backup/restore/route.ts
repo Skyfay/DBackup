@@ -17,7 +17,7 @@ const text = (value: FormDataEntryValue | null) => (typeof value === "string" &&
  */
 export async function POST(req: NextRequest) {
     const ctx = await requireConfigRestorer();
-    if (ctx instanceof NextResponse) return ctx;
+    if (ctx instanceof Response) return ctx;
 
     // The middleware cuts a bigger body off, so the file would arrive broken.
     if (Number(req.headers.get("content-length") ?? 0) > CONFIG_UPLOAD_MAX_BYTES) {

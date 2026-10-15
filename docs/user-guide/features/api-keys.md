@@ -5,13 +5,14 @@ API keys let scripts, CI/CD pipelines and monitoring tools call the DBackup API 
 ## Overview
 
 - A key starts with `dbackup_`, followed by 60 hex characters. DBackup stores only a scrypt hash of it and shows the key once, right after it was created or rotated.
-- A key **acts as its owner**, the user who created it. It never gets more than the group of its owner may do, checked at every request.
+- A key **acts as its owner**, the user who created it. It never gets more than its owner may do, checked at every request.
+- A key **belongs to the tenant** it was made in and acts only there, whichever [tenant](/user-guide/admin/tenants) its owner opens later.
 - A new key **runs out after 90 days** unless you pick another end or Never.
 - A key can be disabled and enabled again, rotated to a new secret, or deleted.
 
 ## The API Keys Tab
 
-**Users & Groups → API keys** lists every key. The strip above the list counts the keys and names the ones that run out within two weeks, were never used, may do more than read, and who owns them.
+**Users & Groups → API keys** lists every key of the open tenant. The strip above the list counts the keys and names the ones that run out within two weeks, were never used, may do more than read, and who owns them.
 
 - Search finds a key by its name or by the start of its secret, like `dbackup_4f1a9c0e`.
 - **All**, **Active**, **Runs out soon**, **Disabled** and **Expired** filter by state, **Owner** by the user who created it. **Runs out soon** is marked amber while a key runs out within two weeks.
@@ -50,10 +51,10 @@ A task the group of your account does not allow shows why and cannot be picked.
 
 ## What a Key May Do
 
-- **Never more than its owner.** The permissions of a key are cut to what the group of its owner may do at every request. A key of a SuperAdmin can hold any permission, a key of a user without a group can do nothing.
+- **Never more than its owner.** The permissions of a key are cut to what its owner may do in the tenant of the key at every request. A key of a platform admin can hold any permission, a key of a user without a group there can do nothing.
 - **It follows the group.** When the group of the owner loses a permission, the key loses it too. The panel lists it as paused, and the key may use it again once the group allows it.
 - **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too. What a key holds already stays when someone else edits its name or end.
-- **No SuperAdmin bypass.** A key only ever uses the permissions it holds, even when its owner is a SuperAdmin.
+- **No platform admin bypass.** A key only ever uses the permissions it holds, even when its owner is a platform admin, and never does what only a platform admin may, like restoring a configuration backup or downloading the database.
 
 ## Manage Keys
 

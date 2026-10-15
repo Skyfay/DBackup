@@ -256,14 +256,15 @@ describe('SystemTaskService', () => {
             expect(updateService.checkForUpdates).toHaveBeenCalledTimes(1);
         });
 
-        it('calls prisma.group.updateMany for SYNC_PERMISSIONS', async () => {
+        it('gives the full access groups every permission for SYNC_PERMISSIONS, whatever they are named', async () => {
             prismaMock.group.updateMany.mockResolvedValue({ count: 1 });
 
             await service.runTask(SYSTEM_TASKS.SYNC_PERMISSIONS);
 
-            expect(prismaMock.group.updateMany).toHaveBeenCalledWith(
-                expect.objectContaining({ where: { name: 'SuperAdmin' } })
-            );
+            expect(prismaMock.group.updateMany).toHaveBeenCalledWith({
+                where: { fullAccess: true },
+                data: { permissions: JSON.stringify(['system.admin']) },
+            });
         });
 
         it('calls runConfigBackup for CONFIG_BACKUP', async () => {
@@ -642,7 +643,7 @@ describe('SystemTaskService', () => {
             await expect(service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS)).resolves.toBeUndefined();
         });
 
-        it('logs when no SuperAdmin group is found during SYNC_PERMISSIONS', async () => {
+        it('runs without error when no full access group exists during SYNC_PERMISSIONS', async () => {
             prismaMock.group.updateMany.mockResolvedValue({ count: 0 });
 
             await service.runTask(SYSTEM_TASKS.SYNC_PERMISSIONS);

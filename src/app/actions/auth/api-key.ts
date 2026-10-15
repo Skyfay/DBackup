@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, getCurrentUserWithGroup } from "@/lib/auth/access-control";
+import { checkPermission, getViewer } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { apiKeyService } from "@/services/auth/api-key-service";
 import { auditService } from "@/services/audit-service";
@@ -10,7 +10,6 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { groupPermissions } from "@/lib/auth/owner-permissions";
 import { areaChanges, knownPermissions, permissionPhrase } from "@/lib/auth/permission-areas";
 import { listWords } from "@/lib/auth/access-summary";
 
@@ -55,7 +54,7 @@ function beyond(requested: string[], allowed: string[]): string[] {
  */
 export async function createApiKey(data: CreateApiKeyFormValues) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
-  const currentUser = await getCurrentUserWithGroup();
+  const currentUser = await getViewer();
   if (!currentUser) {
     return { success: false, error: "Not authenticated" };
   }
@@ -64,7 +63,7 @@ export async function createApiKey(data: CreateApiKeyFormValues) {
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
   const permissions = knownPermissions(parsed.data.permissions);
   if (permissions.length === 0) return { success: false, error: "Give the key at least one permission." };
-  const refused = beyond(permissions, groupPermissions(currentUser.group));
+  const refused = beyond(permissions, currentUser.permissions);
   if (refused.length > 0) {
     return { success: false, error: `Your group may not ${listWords(refused)}, so no key of yours may.` };
   }
@@ -116,7 +115,7 @@ export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
   const keyId = IdSchema.safeParse(id);
   const parsed = KeyFieldsSchema.safeParse(data);
   if (!keyId.success || !parsed.success) return { success: false, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
-  const currentUser = await getCurrentUserWithGroup();
+  const currentUser = await getViewer();
   if (!currentUser) return { success: false, error: "Not authenticated" };
 
   const permissions = knownPermissions(parsed.data.permissions);
@@ -128,11 +127,11 @@ export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
     const owner = await apiKeyService.ownerOf(keyId.data);
     const stored = new Set(owner.permissions);
     const added = permissions.filter((permission) => !stored.has(permission));
-    const beyondOwner = beyond(added, groupPermissions(owner.group));
+    const beyondOwner = beyond(added, owner.ownerPermissions);
     if (beyondOwner.length > 0) {
       return { success: false, error: `The group of its owner may not ${listWords(beyondOwner)}, so the key may not either.` };
     }
-    const beyondCaller = beyond(added, groupPermissions(currentUser.group));
+    const beyondCaller = beyond(added, currentUser.permissions);
     if (beyondCaller.length > 0) {
       return { success: false, error: `Your group may not ${listWords(beyondCaller)}, so you cannot give it to a key.` };
     }
@@ -174,7 +173,7 @@ export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
  */
 export async function deleteApiKey(id: string) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
-  const currentUser = await getCurrentUserWithGroup();
+  const currentUser = await getViewer();
 
   try {
     const existing = await apiKeyService.getById(id);
@@ -205,7 +204,7 @@ export async function deleteApiKey(id: string) {
  */
 export async function toggleApiKey(id: string, enabled: boolean) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
-  const currentUser = await getCurrentUserWithGroup();
+  const currentUser = await getViewer();
 
   try {
     const result = await apiKeyService.toggle(id, enabled);
@@ -234,13 +233,13 @@ export async function toggleApiKey(id: string, enabled: boolean) {
  */
 export async function rotateApiKey(id: string) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
-  const currentUser = await getCurrentUserWithGroup();
+  const currentUser = await getViewer();
 
   try {
     // Rotating hands out the new secret. Only its owner, or someone who may do all the key may do, gets it.
     const owner = await apiKeyService.ownerOf(id);
     if (currentUser?.id !== owner.ownerId) {
-      const refused = beyond(owner.permissions.filter((permission) => groupPermissions(owner.group).includes(permission)), groupPermissions(currentUser?.group));
+      const refused = beyond(owner.permissions.filter((permission) => owner.ownerPermissions.includes(permission)), currentUser?.permissions ?? []);
       if (refused.length > 0) {
         return { success: false, error: `The key may ${listWords(refused)}, which your group may not, so only its owner rotates it.` };
       }
@@ -276,7 +275,7 @@ export async function rotateApiKey(id: string) {
 /** Deletes several API keys, reporting per-key outcomes. */
 export async function bulkDeleteApiKeys(ids: string[]) {
     await checkPermission(PERMISSIONS.API_KEYS.WRITE);
-    const currentUser = await getCurrentUserWithGroup();
+    const currentUser = await getViewer();
 
     const parsed = BulkIdsSchema.safeParse(ids);
     if (!parsed.success) return { success: false as const, error: "Invalid request" };
@@ -304,7 +303,7 @@ export async function bulkDeleteApiKeys(ids: string[]) {
 /** Enables or disables several API keys. Absolute, so a mixed selection converges. */
 export async function bulkToggleApiKeys(ids: string[], enabled: boolean) {
     await checkPermission(PERMISSIONS.API_KEYS.WRITE);
-    const currentUser = await getCurrentUserWithGroup();
+    const currentUser = await getViewer();
 
     const parsed = BulkIdsSchema.safeParse(ids);
     if (!parsed.success) return { success: false as const, error: "Invalid request" };

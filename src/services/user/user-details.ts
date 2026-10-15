@@ -24,13 +24,19 @@ export async function getUserDetails(userId: string, viewerSessionId: string | n
             accounts: { select: { providerId: true, createdAt: true, updatedAt: true } },
             passkeys: { select: { id: true, name: true, createdAt: true, deviceType: true }, orderBy: { createdAt: "desc" } },
             sessions: { select: { id: true, createdAt: true, expiresAt: true, userAgent: true, ipAddress: true }, orderBy: { createdAt: "desc" } },
-            apiKeys: { select: { id: true, name: true, prefix: true, enabled: true, expiresAt: true, lastUsedAt: true }, orderBy: { createdAt: "desc" } },
         },
     });
     if (!user) return null;
 
     const ssoIds = user.accounts.filter((account) => account.providerId !== CREDENTIAL_PROVIDER).map((account) => account.providerId);
-    const [providers, activity, retention] = await Promise.all([
+    const [keys, providers, activity, retention] = await Promise.all([
+        // Read on their own, not through the user: a relation of a row skips the tenant filter, and
+        // an admin of one tenant sees the keys the account holds there only.
+        prisma.apiKey.findMany({
+            where: { userId },
+            select: { id: true, name: true, prefix: true, enabled: true, expiresAt: true, lastUsedAt: true },
+            orderBy: { createdAt: "desc" },
+        }),
         ssoIds.length === 0
             ? Promise.resolve([])
             : prisma.ssoProvider.findMany({ where: { providerId: { in: ssoIds } }, select: { providerId: true, name: true, adapterId: true } }),
@@ -77,7 +83,7 @@ export async function getUserDetails(userId: string, viewerSessionId: string | n
                     current: session.id === viewerSessionId,
                 };
             }),
-        apiKeys: user.apiKeys.map((key) => ({
+        apiKeys: keys.map((key) => ({
             id: key.id,
             name: key.name,
             prefix: key.prefix,

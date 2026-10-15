@@ -24,8 +24,8 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/prisma", () => ({
     default: {
         systemSetting: { findMany: (...args: unknown[]) => mocks.settings(...args) },
-        adapterConfig: { findUnique: (...args: unknown[]) => mocks.adapterConfig(...args) },
-        encryptionProfile: { findUnique: (...args: unknown[]) => mocks.profile(...args) },
+        adapterConfig: { findFirst: (...args: unknown[]) => mocks.adapterConfig(...args) },
+        encryptionProfile: { findFirst: (...args: unknown[]) => mocks.profile(...args) },
     },
 }));
 vi.mock("@/lib/core/registry", () => ({
@@ -113,6 +113,15 @@ describe("the configuration backup, a copy of the whole database", () => {
 
         await expect(runConfigBackup()).rejects.toThrow("no longer exists");
         expect(mocks.upload).not.toHaveBeenCalled();
+    });
+
+    it("takes its destination and key from the home tenant only, never from a customer", async () => {
+        settings(ON);
+        mocks.profile.mockResolvedValue(null);
+
+        await expect(runConfigBackup()).rejects.toThrow("no longer exists");
+        expect(mocks.adapterConfig).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ tenantId: "default" }) }));
+        expect(mocks.profile).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ tenantId: "default" }) }));
     });
 
     it("uploads the encrypted copy with metadata that says it is one, and removes every temp file", async () => {

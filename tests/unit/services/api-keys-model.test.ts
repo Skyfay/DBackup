@@ -11,9 +11,11 @@ const NOW = Date.parse("2026-09-29T12:00:00Z");
 const at = (iso: string) => new Date(iso);
 const DAY = 86_400_000;
 
-const OPERATORS = { name: "Operators", permissions: JSON.stringify(["jobs:read", "jobs:execute", "history:read"]) };
-const lena = { id: "lena", name: "Lena Graf", email: "lena@example.ch", image: null, group: OPERATORS };
-const manu = { id: "manu", name: "Manu", email: "manu@example.ch", image: null, group: { name: "SuperAdmin", permissions: "[]" } };
+const HOME = "default";
+const OPERATORS = { name: "Operators", permissions: JSON.stringify(["jobs:read", "jobs:execute", "history:read"]), fullAccess: false };
+const FULL_ACCESS = { name: "Admin", permissions: "[]", fullAccess: true };
+const lena = { id: "lena", name: "Lena Graf", email: "lena@example.ch", image: null, platformRole: null, memberships: [{ tenantId: HOME, group: OPERATORS }] };
+const manu = { id: "manu", name: "Manu", email: "manu@example.ch", image: null, platformRole: null, memberships: [{ tenantId: HOME, group: FULL_ACCESS }] };
 
 const key = (overrides: Partial<Build["keys"][number]>): Build["keys"][number] => ({
     id: "key",
@@ -24,6 +26,7 @@ const key = (overrides: Partial<Build["keys"][number]>): Build["keys"][number] =
     expiresAt: null,
     lastUsedAt: null,
     createdAt: at("2026-06-12T09:00:00Z"),
+    tenantId: HOME,
     user: lena,
     ...overrides,
 });
@@ -38,12 +41,33 @@ const KEYS: Build["keys"] = [
 function build(overrides: Partial<Build> = {}) {
     return buildApiKeysModel({
         keys: KEYS,
-        runs: [{ triggerLabel: "CI pipeline", startedAt: at("2026-09-29T11:58:00Z"), status: "Success", job: { name: "Shop nightly" } }],
+        runs: [{ tenantId: HOME, triggerLabel: "CI pipeline", startedAt: at("2026-09-29T11:58:00Z"), status: "Success", job: { name: "Shop nightly" } }],
         viewer: { id: "lena", superAdmin: false, permissions: ["jobs:read", "jobs:execute", "history:read"] },
         now: NOW,
         ...overrides,
     });
 }
+
+describe("the keys of every tenant in All tenants", () => {
+    it("names the tenant of each key and takes its last run from that tenant alone, though two keys share a name", () => {
+        const model = build({
+            keys: [
+                key({ id: "k-home", name: "CI pipeline", tenantId: HOME }),
+                key({ id: "k-acme", name: "CI pipeline", tenantId: "tenant-a", user: { ...lena, memberships: [{ tenantId: "tenant-a", group: OPERATORS }] } }),
+            ],
+            runs: [
+                { tenantId: "tenant-a", triggerLabel: "CI pipeline", startedAt: at("2026-09-29T11:00:00Z"), status: "Failed", job: { name: "Acme shop" } },
+                { tenantId: HOME, triggerLabel: "CI pipeline", startedAt: at("2026-09-28T11:00:00Z"), status: "Success", job: { name: "Shop nightly" } },
+            ],
+        });
+        const byId = new Map(model.keys.map((row) => [row.id, row]));
+
+        expect(byId.get("k-home")?.tenantId).toBe(HOME);
+        expect(byId.get("k-acme")?.tenantId).toBe("tenant-a");
+        expect(byId.get("k-home")?.lastRun).toEqual({ job: "Shop nightly", at: "2026-09-28T11:00:00.000Z", status: "Success" });
+        expect(byId.get("k-acme")?.lastRun).toEqual({ job: "Acme shop", at: "2026-09-29T11:00:00.000Z", status: "Failed" });
+    });
+});
 
 describe("the keys of the API keys tab", () => {
     it("lists the keys by name with their owner and state", () => {
@@ -65,11 +89,22 @@ describe("the keys of the API keys tab", () => {
         expect(old?.ownerPermissions).toEqual(["jobs:read", "jobs:execute", "history:read"]);
     });
 
-    it("gives a key of a SuperAdmin all it holds", () => {
+    it("gives a key of an owner with the full access group all it holds", () => {
         const widget = build().keys.find((row) => row.id === "k-widget");
 
         expect(widget?.effective).toEqual(["dashboard:read"]);
         expect(widget?.paused).toEqual([]);
+        expect(widget?.owner.groupName).toBe("Admin");
+    });
+
+    it("counts the group of the owner in the tenant of the key, and pauses all of a key whose owner left it", () => {
+        // Lena runs jobs for the customer, but in the home tenant she has no group anymore.
+        const away = { ...lena, memberships: [{ tenantId: "tenant-a", group: OPERATORS }] };
+        const model = build({ keys: [key({ id: "k-left", name: "Left behind", permissions: JSON.stringify(["jobs:execute"]), user: away })] });
+
+        expect(model.keys[0].effective).toEqual([]);
+        expect(model.keys[0].paused).toEqual(["jobs:execute"]);
+        expect(model.keys[0].owner.groupName).toBeNull();
     });
 
     it("names the job a key started last", () => {
@@ -77,7 +112,7 @@ describe("the keys of the API keys tab", () => {
     });
 
     it("never takes a run of a deleted key with the same name", () => {
-        const model = build({ runs: [{ triggerLabel: "Uptime", startedAt: at("2026-01-02T10:00:00Z"), status: "Failed", job: { name: "CRM daily" } }] });
+        const model = build({ runs: [{ tenantId: HOME, triggerLabel: "Uptime", startedAt: at("2026-01-02T10:00:00Z"), status: "Failed", job: { name: "CRM daily" } }] });
 
         expect(model.keys.find((row) => row.name === "Uptime")?.lastRun).toBeNull();
     });

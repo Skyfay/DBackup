@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil } from "lucide-react";
+import { Lock, Pencil } from "lucide-react";
 import { BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,12 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { DateDisplay } from "@/components/utils/date-display";
 import { usePageModel } from "@/hooks/use-page-model";
 import type { UserDetails as UserDetailsModel, UserRow, UsersGroup } from "@/services/user/users-types";
-import { GroupTag, UserAvatar, YouTag } from "./user-cells";
+import { GroupTag, PlatformAdminTag, UserAvatar, YouTag } from "./user-cells";
 import { AccessSection, ActivitySection, ApiKeysSection, SessionsSection, SignInSection } from "./user-details-sections";
+import { NoTenantTag } from "./user-tenants";
+import { UserTenantsSection } from "./user-tenants-section";
+import { PlatformGroupTag } from "@/components/dashboard/platform/platform-group-cells";
+import { UserPlatformGroupSection } from "@/components/dashboard/platform/user-platform-group";
 
 interface UserDetailsProps {
     open: boolean;
@@ -23,10 +27,19 @@ interface UserDetailsProps {
     onPassword?: (user: UserRow) => void;
     onResetTwoFactor?: (user: UserRow) => void;
     onSignOut?: (user: UserRow) => void;
+    /**
+     * Why a viewer who may change users may not change this account, like the account of a platform
+     * admin. Its buttons show off with the reason, while the group can still change.
+     */
+    lock?: string | null;
     /** The rest of what the user can have done to them, as the menu of the row shows it. */
     groupsMenu: BackupActionGroup[];
     /** Runs after something in the panel changed the user, so the list follows. */
     onChanged: () => void;
+    /** In All tenants, whether the viewer gives and takes the group of each tenant, which whoever may manage the tenants does. */
+    canManageTenants?: boolean;
+    /** On the list of every account, whether the viewer gives platform groups, which whoever may manage the accounts of the platform does. */
+    canManagePlatformGroup?: boolean;
     /** Bumped after a change elsewhere, so the panel loads again. */
     version: number;
 }
@@ -46,7 +59,7 @@ export function UserDetails(props: UserDetailsProps) {
     );
 }
 
-function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut, groupsMenu, onChanged, version }: UserDetailsProps & { user: UserRow }) {
+function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut, lock, groupsMenu, onChanged, canManageTenants = false, canManagePlatformGroup = false, version }: UserDetailsProps & { user: UserRow }) {
     // The version is part of the address, so a change elsewhere loads the panel again.
     const { model: details, refresh } = usePageModel<UserDetailsModel>(`/api/users/${encodeURIComponent(user.id)}?v=${version}`, "The user could not be loaded.");
     // A panel that still shows the user before holds nothing about this one.
@@ -65,7 +78,10 @@ function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut
                     <div className="min-w-0">
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <SheetTitle className="truncate text-lg font-semibold">{user.name}</SheetTitle>
-                            <GroupTag group={user.group} />
+                            {/* In All tenants the account has a group per tenant, which the section below lists. */}
+                            {!user.tenants ? <GroupTag group={user.group} /> : user.tenants.length === 0 && <NoTenantTag />}
+                            {user.superAdmin && <PlatformAdminTag />}
+                            {!user.superAdmin && user.platformGroup && <PlatformGroupTag user={user} />}
                             {user.isYou && <YouTag />}
                         </div>
                         <SheetDescription className="truncate text-sm text-muted-foreground">
@@ -84,16 +100,28 @@ function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut
                         {groupsMenu.length > 0 && <BackupRowMenu name={user.name} groups={groupsMenu} variant="outline" align="start" />}
                     </div>
                 )}
+                {lock && (
+                    <p className="flex min-w-0 items-start gap-2 text-xs text-muted-foreground">
+                        <Lock className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                        <span>{lock}{onEdit ? " The group can still change." : ""}</span>
+                    </p>
+                )}
             </SheetHeader>
 
             <ScrollArea className="min-h-0 flex-1">
                 <div className="space-y-6 p-5">
-                    <AccessSection user={user} groups={groups} onChangeGroup={onEdit && !user.isYou ? () => onEdit(user) : undefined} />
+                    {user.platformGroup !== undefined && <UserPlatformGroupSection user={user} canManage={canManagePlatformGroup} onChanged={changed} />}
+                    {user.tenants ? (
+                        <UserTenantsSection user={user} groups={groups} canManage={canManageTenants} onChanged={changed} />
+                    ) : (
+                        <AccessSection user={user} groups={groups} onChangeGroup={onEdit && !user.isYou ? () => onEdit(user) : undefined} />
+                    )}
                     <SignInSection
                         user={user}
                         details={shown}
                         onPassword={onPassword && !user.isYou ? () => onPassword(user) : undefined}
                         onResetTwoFactor={onResetTwoFactor ? () => onResetTwoFactor(user) : undefined}
+                        lock={lock}
                     />
                     <SessionsSection user={user} details={shown} onSignOutAll={onSignOut ? () => onSignOut(user) : undefined} onChanged={changed} />
                     <ApiKeysSection user={user} details={shown} />

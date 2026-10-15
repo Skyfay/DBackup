@@ -26,6 +26,8 @@ const ADAPTER_NAMES = new Map(ADAPTER_DEFINITIONS.map((definition) => [definitio
 const jobSelect = {
     id: true,
     name: true,
+    // In All tenants the lists name the tenant of each job.
+    tenantId: true,
     enabled: true,
     schedule: true,
     encryptionProfileId: true,
@@ -163,6 +165,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
         return {
             id: job.id,
             name: job.name,
+            tenantId: job.tenantId,
             enabled: job.enabled,
             sourceLabel: describeSource(job),
             destinationLabel: describeDestinations(job),

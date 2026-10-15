@@ -6,8 +6,8 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
-import prisma from "@/lib/prisma";
 import { auditService } from "@/services/audit-service";
+import { userService } from "@/services/user/user-service";
 import { restoreAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
         }
 
-        const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
+        const startedBy = (await userService.nameOf(ctx.userId)) ?? "Unknown";
 
         const result = await restoreService.restore({
             storageConfigId: params.id,
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             ...(typeof profileIdOverride === "string" && profileIdOverride
                 ? { keyOverride: { profileId: profileIdOverride } }
                 : {}),
-            triggerInfo: { type: "Manual", label: user?.name ?? "Unknown" },
+            triggerInfo: { type: "Manual", label: startedBy },
         });
 
         // Written once the restore was accepted and runs, with where it goes and what it picked.

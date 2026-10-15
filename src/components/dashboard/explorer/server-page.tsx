@@ -6,12 +6,14 @@ import { useSearchParams } from "next/navigation";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { Banner } from "@/components/dashboard/storage/explorer/backup-details";
+import { AllTenantsNotice } from "@/components/tenant/all-tenants-notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DatabaseOverview, ServerDetails } from "@/services/databases/database-explorer-types";
 import { useDatabaseData } from "./database-data";
 import { DatabasesEmpty } from "./database-list-parts";
 import { ServerDatabases } from "./server-databases";
+import { ServerAssignments } from "./server-assignments";
 import { ServerPageHead, ServerStrip } from "./server-page-head";
 import { ServerVersions } from "./server-versions";
 
@@ -43,12 +45,21 @@ function ServerPageSkeleton() {
     );
 }
 
+/** What the card of the tenants needs, null while this DBackup has a single tenant. */
+export interface ServerSharing {
+    /** The tenant of the server, the one the viewer works in. */
+    tenantName: string;
+    canAssign: boolean;
+}
+
 /**
  * A database server as a page of its own, opened from the Servers tab of the Database Explorer:
  * where it runs, its numbers, every version it ran with the backups of each, and its databases.
- * A server too old for the newest backups of its engine says so on top.
+ * A server too old for the newest backups of its engine says so on top. With more than one tenant
+ * a card below says which tenant sees the backups of each database. In All tenants the page only
+ * reads, and a note on top opens it in the tenant of the server.
  */
-export function ServerPage({ canOpenBackups }: { canOpenBackups: boolean }) {
+export function ServerPage({ canOpenBackups, sharing = null }: { canOpenBackups: boolean; sharing?: ServerSharing | null }) {
     const searchParams = useSearchParams();
     const serverId = searchParams.get("server");
     const overview = useDatabaseData<DatabaseOverview>("/api/databases");
@@ -89,6 +100,7 @@ export function ServerPage({ canOpenBackups }: { canOpenBackups: boolean }) {
 
     return (
         <div className="space-y-4 md:space-y-6">
+            <AllTenantsNotice tenantId={server.tenantId} />
             <ServerPageHead overview={data} server={server} details={details.data} jobIds={jobIds} canOpenBackups={canOpenBackups} />
             {behind && (
                 <Banner tone="warning" icon={TriangleAlert} title={`Behind ${behind.serverName}`}>
@@ -100,6 +112,7 @@ export function ServerPage({ canOpenBackups }: { canOpenBackups: boolean }) {
                 <ServerVersions key={server.id} serverId={server.id} />
                 <ServerDatabases server={server} databases={databases} jobsById={jobsById} coverage={data.coverage} />
             </div>
+            {sharing && <ServerAssignments key={server.id} serverId={server.id} serverName={server.name} tenantName={sharing.tenantName} canAssign={sharing.canAssign} />}
         </div>
     );
 }

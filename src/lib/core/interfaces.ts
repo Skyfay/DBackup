@@ -125,6 +125,12 @@ export interface BackupMetadata {
         /** Username or API key name. Only present if privacy.includeActorInMetadata is enabled. */
         actor?: string;
     };
+    /**
+     * The databases a run backed up alone, of the ones the job backs up, like a backup a customer
+     * started of one database of a shared server. Absent on a backup of the whole job. Retention
+     * judges such backups apart, by the same policy, so they never push a whole backup out.
+     */
+    onlyDatabases?: string[];
     /** Allow additional adapter-specific properties */
     [key: string]: unknown;
 }
@@ -410,6 +416,11 @@ export type FileInfo = {
      * into the same folder, and the backups the deleted job left there are not its to delete.
      */
     jobId?: string;
+    /**
+     * The databases a run backed up alone, read from its `.meta.json`. Retention judges such a
+     * backup with the others of the same databases, apart from the whole backups of the job.
+     */
+    onlyDatabases?: string[];
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */

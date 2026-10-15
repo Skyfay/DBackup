@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-    ctx: { userId: "u1", permissions: ["settings:write"], isSuperAdmin: false, authMethod: "session" },
+    ctx: { userId: "u1", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "session" },
     settings: new Map<string, { schedule: string; runOnStartup: boolean; enabled: boolean }>(),
     logFor: vi.fn(),
     runTask: vi.fn(),
@@ -49,7 +49,7 @@ describe("the audit entries of system tasks", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.settings.clear();
-        mocks.ctx = { userId: "u1", permissions: ["settings:write"], isSuperAdmin: false, authMethod: "session" };
+        mocks.ctx = { userId: "u1", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "session" };
     });
 
     it("writes a new schedule by the name of the task with the schedule before and after", async () => {
@@ -78,7 +78,7 @@ describe("the audit entries of system tasks", () => {
     });
 
     it("starts a task through the API in the name of the key, not its owner", async () => {
-        mocks.ctx = { userId: "u1", permissions: ["settings:write"], isSuperAdmin: false, authMethod: "apikey", apiKeyId: "k1" } as typeof mocks.ctx;
+        mocks.ctx = { userId: "u1", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "apikey", apiKeyId: "k1" } as typeof mocks.ctx;
         mocks.getKey.mockResolvedValue({ id: "k1", name: "CI deploy" });
         mocks.runTask.mockResolvedValue("exec-2");
 

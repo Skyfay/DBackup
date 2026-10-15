@@ -176,3 +176,58 @@ describe('buildExplorer', () => {
         expect(model.jobs.map((entry) => entry.kind)).toEqual(['job', 'deleted', 'system', 'none']);
     });
 });
+
+describe('buildExplorer in All tenants', () => {
+    const ACME_NAS = 'acme-nas';
+    const BETA_NAS = 'beta-nas';
+    const acmeShop = job({ tenantId: 'acme', destinationIds: [ACME_NAS] });
+    const betaShop = job({ id: 'job-beta-shop', tenantId: 'beta', destinationIds: [BETA_NAS] });
+
+    it('gives a file without a job id the job of its own tenant, never one of another tenant with the same name', () => {
+        const model = buildExplorer([acmeShop, betaShop], [
+            { destinationId: ACME_NAS, tenantId: 'acme', files: [file(22, { jobId: undefined })] },
+            { destinationId: BETA_NAS, tenantId: 'beta', files: [file(23, { jobId: undefined })] },
+        ]);
+
+        expect(model.runs.get('job-shop')?.map((run) => [run.createdAt.slice(0, 10), run.tenantId])).toEqual([['2026-09-22', 'acme']]);
+        expect(model.runs.get('job-beta-shop')?.map((run) => [run.createdAt.slice(0, 10), run.tenantId])).toEqual([['2026-09-23', 'beta']]);
+    });
+
+    it('keeps the files without a job and the config backups of two tenants in a group of each tenant', () => {
+        const loose = (day: number) => file(day, { jobId: undefined, jobName: 'Unknown', path: `loose-${day}.tar` });
+        const config = (day: number) => file(day, { sourceType: 'SYSTEM', jobId: undefined, jobName: 'Config Backup', path: `config/c-${day}.tar` });
+        const model = buildExplorer([], [
+            { destinationId: ACME_NAS, tenantId: 'acme', files: [loose(1), config(1)] },
+            { destinationId: BETA_NAS, tenantId: 'beta', files: [loose(2), loose(3)] },
+        ]);
+
+        expect(model.jobs.map((entry) => [entry.key, entry.kind, entry.tenantId, entry.runs])).toEqual([
+            [`acme:${SYSTEM_KEY}`, 'system', 'acme', 1],
+            [`acme:${NO_JOB_KEY}`, 'none', 'acme', 1],
+            [`beta:${NO_JOB_KEY}`, 'none', 'beta', 2],
+        ]);
+        expect(model.runs.get(`beta:${NO_JOB_KEY}`)?.every((run) => run.jobKey === `beta:${NO_JOB_KEY}` && run.tenantId === 'beta')).toBe(true);
+    });
+
+    it('keeps the backups of a deleted job of the same name apart in each tenant', () => {
+        const gone = (day: number) => file(day, { jobId: undefined, jobName: 'ERP', path: `ERP/erp-${day}.tar` });
+        const model = buildExplorer([], [
+            { destinationId: ACME_NAS, tenantId: 'acme', files: [gone(1)] },
+            { destinationId: BETA_NAS, tenantId: 'beta', files: [gone(2)] },
+        ]);
+
+        expect(model.jobs.map((entry) => [entry.key, entry.kind, entry.name, entry.tenantId])).toEqual([
+            ['acme:deleted-name:ERP', 'deleted', 'ERP', 'acme'],
+            ['beta:deleted-name:ERP', 'deleted', 'ERP', 'beta'],
+        ]);
+    });
+
+    it('keeps the keys of today for a single tenant and names its tenant on every job and run', () => {
+        const model = buildExplorer([acmeShop], [
+            { destinationId: ACME_NAS, tenantId: 'acme', files: [file(22), file(22, { jobId: undefined, jobName: 'Unknown', path: 'x.tar' })] },
+        ]);
+
+        expect(model.jobs.map((entry) => [entry.key, entry.tenantId])).toEqual([['job-shop', 'acme'], [NO_JOB_KEY, 'acme']]);
+        expect([...model.runs.values()].flat().every((run) => run.tenantId === 'acme')).toBe(true);
+    });
+});

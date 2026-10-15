@@ -4,6 +4,7 @@ import { prismaMock } from '@/lib/testing/prisma-mock';
 import { StorageService, clearListingState } from '@/services/storage/storage-service';
 import { registry } from '@/lib/core/registry';
 import { StorageAdapter, FileInfo } from '@/lib/core/interfaces';
+import { HOME_TENANT_ID } from '@/lib/tenant/home';
 import { EncryptionKeyRequiredError } from '@/lib/logging/errors';
 
 // ── Module Mocks ───────────────────────────────────────────────
@@ -137,6 +138,7 @@ function makeDbConfig(overrides?: Record<string, any>) {
         sshCredentialId: null,
         defaultRetentionPolicyId: null,
         storageRole: 'DESTINATION',
+        tenantId: HOME_TENANT_ID,
         ...overrides,
     };
 }
@@ -222,6 +224,7 @@ describe('StorageService', () => {
                 sshCredentialId: null,
                 defaultRetentionPolicyId: null,
                 storageRole: 'DESTINATION',
+                tenantId: HOME_TENANT_ID,
             };
 
             // Prisma Mock
@@ -265,6 +268,7 @@ describe('StorageService', () => {
                 sshCredentialId: null,
                 defaultRetentionPolicyId: null,
                 storageRole: 'DESTINATION',
+                tenantId: HOME_TENANT_ID,
             });
 
             await expect(service.listFiles('db-conf'))
@@ -289,6 +293,7 @@ describe('StorageService', () => {
                 sshCredentialId: null,
                 defaultRetentionPolicyId: null,
                 storageRole: 'DESTINATION',
+                tenantId: HOME_TENANT_ID,
             });
 
             vi.mocked(registry.get).mockReturnValue(undefined);

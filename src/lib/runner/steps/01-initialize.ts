@@ -76,9 +76,15 @@ export async function stepInitialize(ctx: RunnerContext) {
         ctx.sourceAdapter = sourceAdapter;
     }
 
+    // A run limited to some databases backs up those alone, never the folders of the job.
+    if (ctx.onlyDatabases) {
+        if (!job.source) throw new Error(`Job ${ctx.jobId} has no database source, so it cannot back up ${ctx.onlyDatabases.join(", ")} alone`);
+        if (job.sources.length > 0) ctx.log(`This run backs up ${ctx.onlyDatabases.join(", ")} alone and leaves the ${job.sources.length} folder source(s) of the job out.`);
+    }
+
     // 3b. Resolve Directory Sources (JobSource[]) - empty array for every job without one
     ctx.sources = [];
-    for (const src of job.sources) {
+    for (const src of ctx.onlyDatabases ? [] : job.sources) {
         const adapter = registry.get(src.config.adapterId) as StorageAdapter;
         if (!adapter) {
             ctx.log(`Warning: Directory source adapter '${src.config.adapterId}' for '${src.config.name}' not found. Skipping.`, 'warning');
@@ -116,7 +122,7 @@ export async function stepInitialize(ctx: RunnerContext) {
         ctx.sources.push(sourceCtx);
     }
 
-    if (job.sources.length > 0 && ctx.sources.length === 0) {
+    if (!ctx.onlyDatabases && job.sources.length > 0 && ctx.sources.length === 0) {
         throw new Error(`Job ${ctx.jobId}: No valid directory source adapters could be resolved`);
     }
 

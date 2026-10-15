@@ -12,9 +12,13 @@ export function listed(names: string[]): string {
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
-/** The numbers above the users: who has no group, who signs in with a password alone, who never signed in. */
+/**
+ * The numbers above the users: who has no group, who signs in with a password alone, who never
+ * signed in. In All tenants an account without a tenant is the one that sees nothing.
+ */
 export function UsersStrip({ model }: { model: UsersModel | null }) {
     const stats = model?.stats;
+    const all = model?.allTenants ?? false;
     const withoutGroup = stats?.withoutGroup ?? [];
     const passwordOnly = stats?.passwordOnly ?? [];
     const never = stats?.never ?? [];
@@ -25,16 +29,16 @@ export function UsersStrip({ model }: { model: UsersModel | null }) {
                     label: "Users",
                     icon: Users,
                     value: stats ? stats.users.toLocaleString() : "-",
-                    extra: stats ? `${stats.inGroup.toLocaleString()} in a group` : " ",
+                    extra: stats ? `${stats.inGroup.toLocaleString()} ${all ? "in a tenant" : "in a group"}` : " ",
                 },
                 {
-                    label: "Without a group",
+                    label: all ? "In no tenant" : "Without a group",
                     icon: UserX,
                     value: stats ? withoutGroup.length.toLocaleString() : "-",
                     tone: withoutGroup.length > 0 ? "warning" : undefined,
                     extra: withoutGroup.length > 0
                         ? `${listed(withoutGroup)} ${plural(withoutGroup.length, "can sign in but sees", "can sign in but see")} nothing`
-                        : "everyone has a group",
+                        : all ? "everyone works in a tenant" : "everyone has a group",
                 },
                 {
                     label: "Second factor",

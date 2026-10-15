@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import prisma from "@/lib/prisma";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { readCopyVerification, startCopyVerification } from "@/services/storage/copy-verification";
+import { userService } from "@/services/user/user-service";
 
 const log = logger.child({ route: "storage/verify-copies" });
 
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
         }
 
-        const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
-        const { executionId } = await startCopyVerification(parsed.data.copies, user?.name ?? "Manual");
+        const startedBy = (await userService.nameOf(ctx.userId)) ?? "Manual";
+        const { executionId } = await startCopyVerification(parsed.data.copies, startedBy);
         return NextResponse.json({ success: true, data: { executionId } });
     } catch (error: unknown) {
         return failure(error, "Starting a copy verification failed");

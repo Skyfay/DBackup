@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { getAuthContext } from "@/lib/auth/access-control";
+import { getTimezone } from "@/services/system/system-settings-service";
 
 export async function GET() {
     const ctx = await getAuthContext(await headers());
@@ -9,8 +9,7 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const tzSetting = await prisma.systemSetting.findUnique({ where: { key: "system.timezone" } });
-    const schedulerTimezone = tzSetting?.value || "UTC";
+    const schedulerTimezone = await getTimezone();
 
     return NextResponse.json({ schedulerTimezone });
 }

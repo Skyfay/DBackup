@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!ctx.isSuperAdmin && !ctx.permissions.includes(PERMISSIONS.CREDENTIALS.READ)) {
+    if (!ctx.isPlatformAdmin && !ctx.permissions.includes(PERMISSIONS.CREDENTIALS.READ)) {
         return NextResponse.json(
             { valid: false, message: "Permission denied: credentials:read required" },
             { status: 403 }

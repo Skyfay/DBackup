@@ -18,6 +18,7 @@ import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
 import { encryptConfig } from "@/lib/crypto";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { AuthContext } from "@/lib/auth/access-control";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 /**
  * A form round trip never carries a config secret back, because the adapter DTO
@@ -83,8 +84,8 @@ describe("applyStoredSecrets", () => {
 });
 
 describe("canEditStoredConfig", () => {
-    function ctx(permissions: string[], isSuperAdmin = false): AuthContext {
-        return { permissions, isSuperAdmin } as AuthContext;
+    function ctx(permissions: string[], isPlatformAdmin = false): AuthContext {
+        return { userId: "user-1", permissions, isPlatformAdmin, authMethod: "session", tenantId: HOME_TENANT_ID, allTenants: false };
     }
 
     it("allows a caller who may write sources", () => {
@@ -104,7 +105,7 @@ describe("canEditStoredConfig", () => {
         expect(canEditStoredConfig(ctx([PERMISSIONS.NOTIFICATIONS.WRITE]), "telegram")).toBe(true);
     });
 
-    it("allows a SuperAdmin", () => {
+    it("allows a platform admin", () => {
         expect(canEditStoredConfig(ctx([], true), "mongodb")).toBe(true);
     });
 

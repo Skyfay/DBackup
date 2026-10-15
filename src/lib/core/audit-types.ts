@@ -27,6 +27,8 @@ export const AUDIT_RESOURCES = {
   TEMPLATE: "TEMPLATE", // Retention policies, naming templates, schedule presets, exclude pattern presets
   BACKUP: "BACKUP", // One backup at a destination: downloaded, restored, locked or deleted
   SSO_PROVIDER: "SSO_PROVIDER", // A way to sign in through an identity provider
+  TENANT: "TENANT", // A customer of the instance and the boundary of its data
+  PLATFORM_GROUP: "PLATFORM_GROUP", // A group of the people of the MSP, with rights on the platform and in the tenants of its scope
 } as const;
 
 export type AuditResource = typeof AUDIT_RESOURCES[keyof typeof AUDIT_RESOURCES];

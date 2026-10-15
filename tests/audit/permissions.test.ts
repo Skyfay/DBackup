@@ -29,7 +29,7 @@ describe('Security Audit: Server Actions', () => {
             const content = fs.readFileSync(filePath, 'utf-8');
 
             // 1. Check if checkPermission is imported (skip if ALL functions are self-service)
-            const hasImport = /import.*checkPermission.*from.*@\/lib\/auth\/access-control/.test(content);
+            const hasImport = /import.*(checkPermission|checkPlatformAdmin).*from.*@\/lib\/auth\/access-control/.test(content);
 
             // 2. Count exported functions (rough estimation via regex)
             // Matches: export async function name(...)
@@ -43,8 +43,8 @@ describe('Security Audit: Server Actions', () => {
 
             // 3. Count checkPermission OR getUserPermissions calls
             // Some functions use complex logic (OR conditions) which checkPermission doesn't support directly.
-            // So we accept getUserPermissions as a valid alternative.
-            const permissionCallsMatch = content.match(/await\s+(checkPermission|getUserPermissions|hasPermission)\(/g);
+            // So we accept getUserPermissions as a valid alternative, and checkPlatformAdmin, which is stricter.
+            const permissionCallsMatch = content.match(/await\s+(checkPermission|checkPlatformAdmin|getUserPermissions|hasPermission)\(/g);
             const permissionCallsCount = permissionCallsMatch ? permissionCallsMatch.length : 0;
 
             // 4. Heuristic Assertion

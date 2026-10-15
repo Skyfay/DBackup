@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, currentSessionId, getCurrentUserWithGroup } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { checkPermission, currentSessionId, getViewer, type Viewer } from "@/lib/auth/access-control";
+import { ACCOUNT_CHANGE, accountRefusal } from "@/lib/auth/account-access";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { getErrorMessage, ValidationError, wrapError } from "@/lib/logging/errors";
@@ -28,32 +28,38 @@ const PasswordSchema = z.object({
     signOut: z.boolean(),
 });
 
-/** Whether the user is a SuperAdmin whom the caller, who is none, may not touch. */
-async function guardsSuperAdmin(userId: string, caller: { group: { name: string } | null } | null): Promise<boolean> {
-    return caller?.group?.name !== "SuperAdmin" && (await userService.isSuperAdmin(userId));
+/**
+ * Why the caller may not change how this account signs in, null when they may: the account of a
+ * platform admin, and one that also works in another tenant, is for a platform admin alone. The
+ * own account is always the caller's to change.
+ */
+async function refusal(userId: string, caller: Viewer | null): Promise<string | null> {
+    if (!caller) return "Unauthorized";
+    if (caller.id === userId) return null;
+    const target = await userService.accountOf(userId);
+    return target ? accountRefusal(caller, target) : null;
 }
 
 /**
  * Sets a new password for another user. The own password changes under Profile, which asks for
- * the current one. Only a SuperAdmin sets the password of a SuperAdmin, since whoever knows it
- * signs in with every permission.
+ * the current one. Only a platform admin sets the password of a platform admin, or of an account
+ * that also works in another tenant, since whoever knows it signs in to all of them.
  */
 export async function setUserPassword(userId: string, input: z.input<typeof PasswordSchema>) {
-    await checkPermission(PERMISSIONS.USERS.WRITE);
+    await checkPermission(ACCOUNT_CHANGE);
     const id = IdSchema.safeParse(userId);
     const parsed = PasswordSchema.safeParse(input);
     if (!id.success || !parsed.success) {
         return { success: false, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
     }
 
-    const currentUser = await getCurrentUserWithGroup();
+    const currentUser = await getViewer();
     if (!currentUser) return { success: false, error: "Unauthorized" };
     if (currentUser.id === id.data) {
         return { success: false, error: "Change your own password under Profile." };
     }
-    if (await userService.isSuperAdmin(id.data) && currentUser.group?.name !== "SuperAdmin") {
-        return { success: false, error: "Only a SuperAdmin can set the password of a SuperAdmin." };
-    }
+    const refused = await refusal(id.data, currentUser);
+    if (refused) return { success: false, error: refused };
 
     try {
         await authService.setPassword(id.data, parsed.data.password);
@@ -70,17 +76,16 @@ export async function setUserPassword(userId: string, input: z.input<typeof Pass
 
 /**
  * Removes the authenticator app and the passkey as second factor, so the user can set one up
- * again. Only a SuperAdmin does it for a SuperAdmin, like setting their password.
+ * again. Who may is the same as for setting their password.
  */
 export async function resetUserTwoFactor(userId: string) {
-    await checkPermission(PERMISSIONS.USERS.WRITE);
+    await checkPermission(ACCOUNT_CHANGE);
     const id = IdSchema.safeParse(userId);
     if (!id.success) return { success: false, error: "Invalid request" };
-    const currentUser = await getCurrentUserWithGroup();
+    const currentUser = await getViewer();
 
-    if (await guardsSuperAdmin(id.data, currentUser)) {
-        return { success: false, error: "Only a SuperAdmin can reset the second factor of a SuperAdmin." };
-    }
+    const refused = await refusal(id.data, currentUser);
+    if (refused) return { success: false, error: refused };
 
     try {
         await userService.resetTwoFactor(id.data);
@@ -97,18 +102,17 @@ export async function resetUserTwoFactor(userId: string) {
 
 /**
  * Ends one session of a user. The session the caller uses is refused, the menu signs out of that
- * one. Only a SuperAdmin signs out a SuperAdmin.
+ * one. Who may is the same as for setting their password.
  */
 export async function revokeUserSession(userId: string, sessionId: string) {
-    await checkPermission(PERMISSIONS.USERS.WRITE);
+    await checkPermission(ACCOUNT_CHANGE);
     const id = IdSchema.safeParse(userId);
     const session = IdSchema.safeParse(sessionId);
     if (!id.success || !session.success) return { success: false, error: "Invalid request" };
-    const currentUser = await getCurrentUserWithGroup();
+    const currentUser = await getViewer();
 
-    if (await guardsSuperAdmin(id.data, currentUser)) {
-        return { success: false, error: "Only a SuperAdmin can sign out a SuperAdmin." };
-    }
+    const refused = await refusal(id.data, currentUser);
+    if (refused) return { success: false, error: refused };
 
     if (session.data === (await currentSessionId())) {
         return { success: false, error: "This is the session you are using. Sign out from the menu instead." };
@@ -129,18 +133,17 @@ export async function revokeUserSession(userId: string, sessionId: string) {
 }
 
 /**
- * Ends every session of a user. For the caller's own account the session they use stays. Only a
- * SuperAdmin signs out a SuperAdmin.
+ * Ends every session of a user. For the caller's own account the session they use stays. Who may
+ * is the same as for setting their password.
  */
 export async function revokeUserSessions(userId: string) {
-    await checkPermission(PERMISSIONS.USERS.WRITE);
+    await checkPermission(ACCOUNT_CHANGE);
     const id = IdSchema.safeParse(userId);
     if (!id.success) return { success: false, error: "Invalid request" };
-    const currentUser = await getCurrentUserWithGroup();
+    const currentUser = await getViewer();
 
-    if (await guardsSuperAdmin(id.data, currentUser)) {
-        return { success: false, error: "Only a SuperAdmin can sign out a SuperAdmin." };
-    }
+    const refused = await refusal(id.data, currentUser);
+    if (refused) return { success: false, error: refused };
 
     try {
         const keep = currentUser?.id === id.data ? await currentSessionId() : null;

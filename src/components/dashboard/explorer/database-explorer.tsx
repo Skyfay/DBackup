@@ -3,16 +3,18 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
-import { ArrowRight, CalendarClock, Database, Layers, RefreshCw, Server, ShieldCheck, ShieldOff, Table2 } from "lucide-react";
+import { Database, Layers, RefreshCw, Server, ShieldCheck, ShieldOff, Table2 } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { kindNames } from "@/components/adapter/connection-columns";
-import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { DestinationTile } from "@/components/dashboard/storage/explorer/explorer-cells";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { useOpenRecord } from "@/components/tenant/tenant-actions";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { withTenantColumn } from "@/components/tenant/tenant-rows";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -23,17 +25,20 @@ import type { ViewMode } from "@/lib/core/table-preferences";
 import { cn, formatBytes } from "@/lib/utils";
 import type { DatabaseOverview, ExplorerDatabase } from "@/services/databases/database-explorer-types";
 import { databaseColumns, engineOf } from "./database-columns";
-import { backupsHref, readNow, useDatabaseData } from "./database-data";
+import { readNow, useDatabaseData } from "./database-data";
 import { DatabaseDayPanel, type DayPanelAccess, type DayPick } from "./database-day-panel";
 import { DatabaseCard, DatabasesEmpty, DatabasesSkeleton, databaseFilters } from "./database-list-parts";
 import { databaseHref, explorerAttention, freshnessOf, summarize } from "./database-model";
 import { DatabasesTimeline } from "./databases-timeline";
+import { databaseActions } from "./explorer-actions";
 import { DATABASES_PAGE_ID } from "./explorer-ids";
 import { ExplorerTabs, type ExplorerTab } from "./explorer-tabs";
 import { ServerFreshness } from "./server-freshness";
 import { ServersTab } from "./servers-tab";
 
 const VIEWS: ViewMode[] = ["table", "timeline"];
+
+const tenantOfDatabase = (database: ExplorerDatabase) => database.tenantId;
 
 interface DatabaseExplorerProps extends DayPanelAccess {
     /** The view this user picked last, table or timeline. */
@@ -61,7 +66,14 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
         const sourceId = searchParams.get("sourceId");
         return sourceId ? [{ id: "server", value: [sourceId] }] : [];
     });
-    const open = useCallback((database: ExplorerDatabase) => router.push(databaseHref(database)), [router]);
+    // In All tenants the list holds the databases of every tenant, and one opens in its tenant.
+    const { allTenants, nameOf, column: tenantColumn, filter: tenantFilter } = useTenantColumns(tenantOfDatabase, data?.databases);
+    const openRecord = useOpenRecord();
+    const open = useCallback((database: ExplorerDatabase) => {
+        const href = databaseHref(database);
+        openRecord(database.tenantId, href, () => router.push(href));
+    }, [openRecord, router]);
+    const tenantName = useCallback((database: ExplorerDatabase) => (allTenants ? nameOf(database.tenantId) : null), [allTenants, nameOf]);
     const tab: ExplorerTab = searchParams.get("tab") === "servers" ? "servers" : "databases";
     const setTab = (next: ExplorerTab) => router.replace(next === "servers" ? "/dashboard/explorer?tab=servers" : "/dashboard/explorer", { scroll: false });
 
@@ -99,32 +111,22 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
     const jobsById = useMemo(() => new Map((data?.jobs ?? []).map((job) => [job.id, job])), [data]);
     const summary = useMemo(() => (data ? summarize(data) : null), [data]);
 
-    const groupsFor = useCallback((database: ExplorerDatabase): BackupActionGroup[] => [{
-        actions: [
-            { id: "open", label: "Open", icon: Database, onSelect: () => open(database), tone: "neutral" },
-            ...(coverage && canOpenBackups && database.jobIds.length > 0
-                ? [{ id: "backups", label: "Open backups", icon: ArrowRight, onSelect: () => router.push(backupsHref(database.jobIds)), tone: "neutral" as const }]
-                : []),
-            ...(coverage
-                ? [{
-                    id: "jobs",
-                    label: database.jobIds.length === 0 ? "Open jobs" : "Open job",
-                    icon: CalendarClock,
-                    onSelect: () => router.push(database.jobIds.length > 0 ? `/dashboard/jobs?job=${encodeURIComponent(database.jobIds[0])}` : "/dashboard/jobs"),
-                    tone: "neutral" as const,
-                }]
-                : []),
-        ],
-    }], [open, coverage, canOpenBackups, router]);
+    const groupsFor = useCallback((database: ExplorerDatabase) => databaseActions(database, {
+        coverage,
+        canOpenBackups,
+        tenantName: tenantName(database),
+        onOpen: () => open(database),
+        go: (href) => router.push(href),
+    }), [open, tenantName, coverage, canOpenBackups, router]);
 
-    const columns = useMemo(() => databaseColumns({
+    const columns = useMemo(() => withTenantColumn(databaseColumns({
         serversById,
         jobsById,
         coverage,
         biggest: summary?.biggest?.sizeInBytes ?? 0,
         renderActions: (database) => <BackupRowMenu name={database.name} groups={groupsFor(database)} />,
-    }), [serversById, jobsById, coverage, summary, groupsFor]);
-    const filterableColumns = useMemo(() => (data ? databaseFilters(data) : []), [data]);
+    }), tenantColumn), [serversById, jobsById, coverage, summary, groupsFor, tenantColumn]);
+    const filterableColumns = useMemo(() => (data ? [...databaseFilters(data), ...(tenantFilter ? [tenantFilter] : [])] : []), [data, tenantFilter]);
 
     const { reload } = overview;
     const read = useCallback(async () => {
@@ -247,13 +249,18 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
                                     coverage={coverage}
                                     href={databaseHref(row.original)}
                                     actions={<BackupRowMenu name={row.original.name} groups={groupsFor(row.original)} />}
+                                    tenantName={tenantName(row.original)}
                                 />
                             )}
                             renderRowMenu={(database) => (
                                 <BackupContextMenu
                                     tile={<DestinationTile destination={{ adapterId: serversById.get(database.serverId)?.adapterId ?? "" }} />}
                                     title={database.name}
-                                    note={database.kind === "instance" ? engineOf(serversById.get(database.serverId)) : `${serversById.get(database.serverId)?.name ?? ""} · ${engineOf(serversById.get(database.serverId))}`}
+                                    note={[
+                                        database.kind === "instance" ? null : serversById.get(database.serverId)?.name,
+                                        engineOf(serversById.get(database.serverId)),
+                                        tenantName(database),
+                                    ].filter(Boolean).join(" · ")}
                                     groups={groupsFor(database)}
                                     bulk={null}
                                 />

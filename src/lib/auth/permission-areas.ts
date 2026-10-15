@@ -1,4 +1,4 @@
-import { AVAILABLE_PERMISSIONS, PERMISSIONS, type Permission } from "@/lib/auth/permissions";
+import { AVAILABLE_PERMISSIONS, PERMISSIONS, PLATFORM_ONLY_PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 
 /**
  * The 39 permissions as areas of the app with a level each, None, See, Use, Change or Full, and
@@ -166,10 +166,20 @@ export const PERMISSION_AREAS: PermissionArea[] = [
         label: "Settings",
         summary: "Change: the system and sign-in",
         permissions: [
-            { id: P.SETTINGS.READ, label: "See the settings", description: "The system settings, the sign-in providers and the system tasks" },
-            { id: P.SETTINGS.WRITE, label: "Change the settings", description: "Change them, add sign-in providers, run system tasks and restore or delete for good what was deleted", needs: [P.SETTINGS.READ] },
+            { id: P.SETTINGS.READ, label: "See the settings", description: "The settings of the instance, how people sign in and the system tasks" },
+            { id: P.SETTINGS.WRITE, label: "Change the settings", description: "Change them and run system tasks", needs: [P.SETTINGS.READ] },
         ],
         levels: { see: [P.SETTINGS.READ], change: [P.SETTINGS.READ, P.SETTINGS.WRITE] },
+    },
+    {
+        id: "tenant-settings",
+        label: "Tenant settings",
+        summary: "Change: the tenant and Recently deleted",
+        permissions: [
+            { id: P.TENANT_SETTINGS.READ, label: "See the tenant settings", description: "The name, the logo, the notifications and Recently deleted of the tenant" },
+            { id: P.TENANT_SETTINGS.WRITE, label: "Change the tenant settings", description: "Change them, and restore or delete for good what was deleted", needs: [P.TENANT_SETTINGS.READ] },
+        ],
+        levels: { see: [P.TENANT_SETTINGS.READ], change: [P.TENANT_SETTINGS.READ, P.TENANT_SETTINGS.WRITE] },
     },
     {
         id: "profile",
@@ -192,7 +202,62 @@ export const PERMISSION_AREAS: PermissionArea[] = [
 /** The areas the details and the cards of a group draw, without the own profile every member has. */
 export const SUMMARY_AREAS = PERMISSION_AREAS.filter((area) => area.id !== "profile");
 
-const INFO = new Map(PERMISSION_AREAS.flatMap((area) => area.permissions.map((permission) => [permission.id, { permission, area }] as const)));
+/**
+ * The areas of the rights on the platform a platform group gives: the tenants, the accounts, the
+ * settings of the instance, the sign-in providers and the shared databases. A group of a tenant
+ * holds none of them but the settings, see `PLATFORM_ONLY_PERMISSIONS`.
+ */
+export const PLATFORM_AREAS: PermissionArea[] = [
+    {
+        id: "platform-tenants",
+        label: "Tenants",
+        summary: "See: the tenants · Change: create, rename and delete them, and their members",
+        permissions: [
+            { id: P.PLATFORM.TENANTS_READ, label: "See the tenants", description: "Every tenant with its members, connections and jobs, and All tenants" },
+            { id: P.PLATFORM.TENANTS_WRITE, label: "Manage the tenants", description: "Create, rename and delete tenants and decide who works in them", needs: [P.PLATFORM.TENANTS_READ] },
+        ],
+        levels: { see: [P.PLATFORM.TENANTS_READ], change: [P.PLATFORM.TENANTS_READ, P.PLATFORM.TENANTS_WRITE] },
+    },
+    {
+        id: "platform-accounts",
+        label: "Accounts",
+        summary: "See: every account · Change: change them and give platform groups",
+        permissions: [
+            { id: P.PLATFORM.ACCOUNTS_READ, label: "See every account", description: "Every account of the instance with its tenants and groups, and the platform groups" },
+            { id: P.PLATFORM.ACCOUNTS_WRITE, label: "Manage the accounts", description: "Change accounts of every tenant and give platform groups that may do no more than you", needs: [P.PLATFORM.ACCOUNTS_READ] },
+        ],
+        levels: { see: [P.PLATFORM.ACCOUNTS_READ], change: [P.PLATFORM.ACCOUNTS_READ, P.PLATFORM.ACCOUNTS_WRITE] },
+    },
+    PERMISSION_AREAS.find((area) => area.id === "settings")!,
+    {
+        id: "platform-sign-in",
+        label: "Sign-in providers",
+        summary: "See: the providers · Changing them is for a platform admin",
+        permissions: [
+            { id: P.PLATFORM.SIGN_IN_READ, label: "See the sign-in providers", description: "The providers of the platform and of the tenants. Only a platform admin changes them, since a provider signs in as anyone of its emails" },
+        ],
+        levels: { see: [P.PLATFORM.SIGN_IN_READ] },
+    },
+    {
+        id: "platform-sharing",
+        label: "Shared databases",
+        summary: "See: who holds which · Change: give databases to tenants",
+        permissions: [
+            { id: P.PLATFORM.SHARING_READ, label: "See the shared databases", description: "Which tenant holds which database of a shared server, and since when" },
+            { id: P.PLATFORM.SHARING_WRITE, label: "Share databases", description: "Give databases to tenants, by hand or by rules, move them and allow backups on demand", needs: [P.PLATFORM.SHARING_READ] },
+        ],
+        levels: { see: [P.PLATFORM.SHARING_READ], change: [P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE] },
+    },
+];
+
+/**
+ * The areas of the rights a platform group gives in the tenants of its scope: those of a group of
+ * a tenant, without the settings of the instance, which belong to the platform part, and without
+ * the own profile, which every member has from their group in a tenant.
+ */
+export const PLATFORM_GROUP_TENANT_AREAS: PermissionArea[] = PERMISSION_AREAS.filter((area) => area.id !== "settings" && area.id !== "profile");
+
+const INFO = new Map([...PERMISSION_AREAS, ...PLATFORM_AREAS].flatMap((area) => area.permissions.map((permission) => [permission.id, { permission, area }] as const)));
 
 export function permissionInfo(id: string): PermissionInfo | undefined {
     return INFO.get(id as Permission)?.permission;
@@ -278,15 +343,22 @@ export function knownPermissions(ids: Iterable<string>): Permission[] {
     return AVAILABLE_PERMISSIONS.filter((permission) => held.has(permission.id)).map((permission) => permission.id);
 }
 
+/** The rights on the platform a platform group may store: the settings and the platform's own. */
+export function knownPlatformPermissions(ids: Iterable<string>): Permission[] {
+    const held = new Set(ids);
+    const platform: Permission[] = [...Object.values(P.SETTINGS), ...PLATFORM_ONLY_PERMISSIONS.map((permission) => permission.id)];
+    return platform.filter((permission) => held.has(permission));
+}
+
 export interface AreaChange {
     area: PermissionArea;
     from: AreaLevel;
     to: AreaLevel;
 }
 
-/** The areas whose permissions differ, with their level before and after. */
-export function areaChanges(before: ReadonlySet<string>, after: ReadonlySet<string>): AreaChange[] {
-    return PERMISSION_AREAS.filter((area) => area.permissions.some((permission) => before.has(permission.id) !== after.has(permission.id))).map((area) => ({
+/** The areas whose permissions differ, with their level before and after. Of a group of a tenant unless other areas are given. */
+export function areaChanges(before: ReadonlySet<string>, after: ReadonlySet<string>, areas: readonly PermissionArea[] = PERMISSION_AREAS): AreaChange[] {
+    return areas.filter((area) => area.permissions.some((permission) => before.has(permission.id) !== after.has(permission.id))).map((area) => ({
         area,
         from: levelOf(area, before),
         to: levelOf(area, after),

@@ -4,7 +4,7 @@ import { AuthenticationError, PermissionError } from "@/lib/logging/errors";
 type Entry = { id: string; kind: string; recordId: string; name: string; permission: string; superAdminOnly: boolean; deletedById: string | null; deletedAt: Date };
 
 const mocks = vi.hoisted(() => ({
-    viewer: null as { id: string; group: { name: string } | null } | null,
+    viewer: null as { id: string; isPlatformAdmin: boolean; tenantId: string | null; allTenants?: boolean } | null,
     permissions: [] as string[],
     entries: [] as Entry[],
     restore: vi.fn(),
@@ -18,10 +18,10 @@ vi.mock("@/lib/auth/access-control", async () => {
     return {
         checkPermission: vi.fn(async (permission: string) => {
             if (!mocks.viewer) throw new NotSignedIn();
-            if (mocks.viewer.group?.name !== "SuperAdmin" && !mocks.permissions.includes(permission)) throw new NotAllowed(permission);
+            if (!mocks.viewer.isPlatformAdmin && !mocks.permissions.includes(permission)) throw new NotAllowed(permission);
             return mocks.viewer;
         }),
-        getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
+        getViewer: vi.fn(async () => mocks.viewer),
         getUserPermissions: vi.fn(async () => mocks.permissions),
     };
 });
@@ -48,8 +48,8 @@ const JOB: Entry = { id: "t-job", kind: "job", recordId: "job-1", name: "Shop ni
 describe("the actions of Recently deleted", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.viewer = { id: "lena", group: { name: "Admins" } };
-        mocks.permissions = ["settings:write", "vault:write", "users:write"];
+        mocks.viewer = { id: "lena", isPlatformAdmin: false, tenantId: "default" };
+        mocks.permissions = ["tenant-settings:write", "vault:write", "users:write"];
         mocks.entries = [KEY, ROOT, JOB];
         mocks.restore.mockImplementation(async (ids: string[]) => ({
             restored: ids.map((id) => ({ id, recordId: `r-${id}`, kind: mocks.entries.find((entry) => entry.id === id)!.kind, name: "back", notes: [] })),
@@ -80,7 +80,7 @@ describe("the actions of Recently deleted", () => {
     it("restores only what the viewer may change, and tells nothing about the rest", async () => {
         const result = await restoreDeletedAction(["t-key", "t-job", "t-root"]);
 
-        // A job needs jobs:write, and a SuperAdmin's account needs a SuperAdmin.
+        // A job needs jobs:write, and the account of a platform admin needs a platform admin.
         expect(mocks.restore).toHaveBeenCalledWith(["t-key"], { newName: undefined });
         expect(result).toMatchObject({
             success: true,
@@ -94,12 +94,23 @@ describe("the actions of Recently deleted", () => {
         expect(mocks.audit).toHaveBeenCalledWith("lena", "RESTORE", "VAULT", { name: "back", action: "trash_restore", originalName: "Offsite 2025" }, "r-t-key");
     });
 
-    it("lets a SuperAdmin bring back the account of a SuperAdmin", async () => {
-        mocks.viewer = { id: "root-2", group: { name: "SuperAdmin" } };
+    it("lets a platform admin bring back the account of a platform admin", async () => {
+        mocks.viewer = { id: "root-2", isPlatformAdmin: true, tenantId: "default" };
+        mocks.permissions = [];
 
         await restoreDeletedAction(["t-root"]);
 
         expect(mocks.restore).toHaveBeenCalledWith(["t-root"], { newName: undefined });
+    });
+
+    it("leaves a restore or a delete for good to the tenant of the entry, never All tenants", async () => {
+        mocks.viewer = { id: "root-2", isPlatformAdmin: true, tenantId: null, allTenants: true };
+        const refused = { success: false, error: "Open the tenant of the entry to restore it or delete it for good." };
+
+        expect(await restoreDeletedAction(["t-key"])).toEqual(refused);
+        expect(await purgeDeletedAction(["t-key"])).toEqual(refused);
+        expect(mocks.restore).not.toHaveBeenCalled();
+        expect(mocks.purge).not.toHaveBeenCalled();
     });
 
     it("asks for a valid email when a user is restored under another one", async () => {
@@ -130,7 +141,7 @@ describe("the actions of Recently deleted", () => {
     it("is no way around the settings for a delete of someone else or one from long ago", async () => {
         mocks.permissions = ["jobs:write"];
         mocks.latest.mockResolvedValue(["t-job"]);
-        const refused = { success: false, error: "It can no longer be undone. Someone who may change the settings restores it under Settings, Recently deleted." };
+        const refused = { success: false, error: "It can no longer be undone. Someone who may change the tenant settings restores it under Settings › Recently deleted." };
 
         mocks.entries = [{ ...JOB, deletedById: "tom" }];
         expect(await undoDeleteAction("job", ["job-1"])).toEqual(refused);

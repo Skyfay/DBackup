@@ -11,15 +11,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
-    getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
+    getViewer: vi.fn(async () => mocks.viewer),
     hasPermission: vi.fn(async () => true),
     checkPermission: vi.fn(),
     currentSessionId: vi.fn(async () => "s-here"),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/prisma", () => ({ default: { account: { findFirst: vi.fn(async () => mocks.account) } } }));
+vi.mock("@/services/user/preference-service", () => ({ getAutoRedirectOnJobStart: vi.fn(), setAutoRedirectOnJobStart: vi.fn() }));
 vi.mock("@/services/auth/auth-service", () => ({ authService: { verifyPassword: mocks.verifyPassword, setPassword: mocks.setPassword } }));
-vi.mock("@/services/user/user-service", () => ({ userService: { revokeSessions: mocks.revokeSessions } }));
+vi.mock("@/services/user/user-service", () => ({ userService: { revokeSessions: mocks.revokeSessions, hasPassword: vi.fn(async () => mocks.account !== null) } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 

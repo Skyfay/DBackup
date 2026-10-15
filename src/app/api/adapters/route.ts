@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStorageRole } from "@/lib/core/storage-roles";
-import prisma from "@/lib/prisma";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
@@ -10,8 +9,8 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
-import { getConnectionOverview } from "@/services/adapters/connection-overview";
 import { createAdapter } from "@/services/adapters/adapter-create";
+import { listAdapters } from "@/services/adapters/adapter-list";
 
 registerAdapters();
 
@@ -47,27 +46,9 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        const adapters = await prisma.adapterConfig.findMany({
-            where: {
-                ...(type ? { type } : {}),
-                ...(role && type === 'storage' ? { storageRole: role } : {}),
-            },
-            orderBy: { createdAt: 'desc' }
-        });
-
-        // Map every row through the safe DTO. `toAdapterListItem` redacts all
-        // sensitive keys (deletes them, not blanks them) and reports `secretStatus`,
-        // so a decrypted secret can never reach the client regardless of caller
-        // permission level. See src/lib/adapters/dto.ts.
-        const items = adapters.map(toAdapterListItem);
-
-        // The connection tables ask for usage, last backup and health on top. Other callers
-        // skip it, because it costs several aggregate queries.
-        if (searchParams.get("overview") === "true") {
-            const overview = await getConnectionOverview(items.map((item) => item.id));
-            return NextResponse.json(items.map((item) => ({ ...item, overview: overview.get(item.id) ?? null })));
-        }
-
+        // Every row is the safe DTO, so a decrypted secret never reaches the client whatever the
+        // caller may see. The connection tables ask for usage, last backup and health on top.
+        const items = await listAdapters(type, { role, overview: searchParams.get("overview") === "true" });
         return NextResponse.json(items);
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Failed to fetch adapters";

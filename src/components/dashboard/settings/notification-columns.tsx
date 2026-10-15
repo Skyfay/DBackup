@@ -54,11 +54,13 @@ interface ColumnOptions {
     channelsOf: (event: NotificationEventRow) => AdapterListItemDTO[];
     /** The event whose switch is being saved. */
     switching: string | null;
+    /** Shows the column of the reminders, which only the events of the platform have. */
+    reminders?: boolean;
     renderActions: (event: NotificationEventRow) => React.ReactNode;
 }
 
 /** The columns of the notification events. */
-export function notificationColumns({ handlers, channelsOf, switching, renderActions }: ColumnOptions): ColumnDef<NotificationEventRow>[] {
+export function notificationColumns({ handlers, channelsOf, switching, reminders = true, renderActions }: ColumnOptions): ColumnDef<NotificationEventRow>[] {
     return [
         {
             accessorKey: "name",
@@ -93,12 +95,12 @@ export function notificationColumns({ handlers, channelsOf, switching, renderAct
             enableSorting: false,
             cell: ({ row }) => <div className="w-64"><GoesTo event={row.original} channels={channelsOf(row.original)} /></div>,
         },
-        {
+        ...(reminders ? [{
             id: "reminder",
             header: "Reminder",
             enableSorting: false,
             cell: ({ row }) => <span className={cn("text-sm", (!row.original.enabled || !row.original.supportsReminder) && "text-muted-foreground")}>{row.original.enabled ? reminderText(row.original) : "-"}</span>,
-        },
+        } satisfies ColumnDef<NotificationEventRow>] : []),
         {
             id: "enabled",
             header: "On",

@@ -36,6 +36,19 @@ export function ExplorerSkeleton({ joined = false }: { joined?: boolean }) {
     );
 }
 
+/** The whole Backups page while its index loads: the row of the tabs, then the numbers and a list. */
+export function ExplorerPageSkeleton() {
+    return (
+        <div className="space-y-4 md:space-y-6">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                <Skeleton className="h-9 w-56" />
+                <Skeleton className="ml-auto h-9 w-40" />
+            </div>
+            <ExplorerSkeleton />
+        </div>
+    );
+}
+
 /** What the Backups page shows when it has nothing to list or could not load it. */
 export function ExplorerEmpty({ title, children, joined = false }: { title: string; children: React.ReactNode; joined?: boolean }) {
     return (

@@ -99,6 +99,27 @@ describe("the page model of the Database Explorer", () => {
         expect(overview.coverage).toBe(true);
     });
 
+    it("names the tenant of every server and of each of its databases, for the list in All tenants", async () => {
+        mocks.prisma.adapterConfig.findMany.mockResolvedValue([
+            {
+                id: "s1", name: "Shop cluster", adapterId: "postgres", tenantId: "acme", metadata: null, lastStatus: "ONLINE",
+                databaseListCache: { databasesJson: JSON.stringify([{ name: "shop" }]), readAt: new Date("2026-09-27T09:00:00Z"), error: null },
+                versionHistory: [],
+            },
+            {
+                id: "cache", name: "Cache", adapterId: "redis", tenantId: "default", metadata: null, lastStatus: "ONLINE",
+                databaseListCache: { databasesJson: JSON.stringify([{ name: "0", tableCount: 3 }]), readAt: new Date("2026-09-27T09:00:00Z"), error: null },
+                versionHistory: [],
+            },
+        ]);
+
+        const overview = await new DatabaseExplorerService().getOverview({ withJobs: false });
+
+        expect(mocks.prisma.adapterConfig.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ tenantId: true }) }));
+        expect(overview.servers.map((server) => [server.id, server.tenantId])).toEqual([["s1", "acme"], ["cache", "default"]]);
+        expect(overview.databases.map((database) => [database.key, database.tenantId])).toEqual([["s1/shop", "acme"], ["cache", "default"]]);
+    });
+
     it("shows a Redis server as one entry with the keys of its numbered databases, backed up by every enabled job of it", async () => {
         mocks.prisma.adapterConfig.findMany.mockResolvedValue([{
             id: "cache",

@@ -3,19 +3,22 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SortingState } from "@tanstack/react-table";
-import { Activity, ArrowRight, ArrowUpRight, Boxes, CircleArrowUp, Database, Server, TriangleAlert } from "lucide-react";
+import { Activity, Boxes, CircleArrowUp, Database, Server, TriangleAlert } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
-import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { DestinationTile } from "@/components/dashboard/storage/explorer/explorer-cells";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
+import { useOpenRecord } from "@/components/tenant/tenant-actions";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { withTenantColumn } from "@/components/tenant/tenant-rows";
 import { DataTable, type DataTableFilterableColumn } from "@/components/ui/data-table";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import type { DatabaseOverview, ServersOverview } from "@/services/databases/database-explorer-types";
 import { engineOf } from "./database-columns";
-import { backupsHref, useDatabaseData } from "./database-data";
+import { useDatabaseData } from "./database-data";
+import { serverActions } from "./explorer-actions";
 import { ServerCard } from "./server-card";
 import { serverColumns } from "./server-columns";
 import { matchesQuick, serverHref, serverRows, serversSummary, type ServerQuick, type ServerRow } from "./server-model";
@@ -25,6 +28,8 @@ const QUICK: { value: ServerQuick; label: string; dot?: string }[] = [
     { value: "behind", label: "Behind", dot: "bg-warning" },
     { value: "uncovered", label: "Not all backed up" },
 ];
+
+const tenantOfServer = (row: ServerRow) => row.server.tenantId;
 
 interface ServersTabProps {
     overview: DatabaseOverview;
@@ -50,29 +55,34 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
     const summary = serversSummary(rows);
     const coverage = overview.coverage;
     const backups = loaded.data?.backups ?? false;
-    const open = useCallback((row: ServerRow) => router.push(serverHref(row.server.id)), [router]);
+    // In All tenants the list holds the servers of every tenant, and one opens in its tenant.
+    const { allTenants, nameOf, column: tenantColumn, filter: tenantFilter } = useTenantColumns(tenantOfServer, rows);
+    const openRecord = useOpenRecord();
+    const open = useCallback((row: ServerRow) => {
+        const href = serverHref(row.server.id);
+        openRecord(row.server.tenantId, href, () => router.push(href));
+    }, [openRecord, router]);
+    const tenantName = useCallback((row: ServerRow) => (allTenants ? nameOf(row.server.tenantId) : null), [allTenants, nameOf]);
 
-    const groupsFor = useCallback((row: ServerRow): BackupActionGroup[] => [{
-        actions: [
-            { id: "open", label: "Open", icon: Server, onSelect: () => open(row), tone: "neutral" },
-            ...(coverage && canOpenBackups && row.jobIds.length > 0
-                ? [{ id: "backups", label: "Open backups", icon: ArrowRight, onSelect: () => router.push(backupsHref(row.jobIds)), tone: "neutral" as const }]
-                : []),
-            { id: "connection", label: "Open connection", icon: ArrowUpRight, onSelect: () => router.push("/dashboard/connections"), tone: "neutral" },
-        ],
-    }], [open, coverage, canOpenBackups, router]);
+    const groupsFor = useCallback((row: ServerRow) => serverActions(row.jobIds, {
+        coverage,
+        canOpenBackups,
+        tenantName: tenantName(row),
+        onOpen: () => open(row),
+        go: (href) => router.push(href),
+    }), [open, tenantName, coverage, canOpenBackups, router]);
 
-    const columns = useMemo(() => serverColumns({
+    const columns = useMemo(() => withTenantColumn(serverColumns({
         coverage,
         backups,
         biggest: Math.max(0, ...rows.map((row) => row.size ?? 0)),
         renderActions: (row) => <BackupRowMenu name={row.server.name} groups={groupsFor(row)} />,
-    }), [coverage, backups, rows, groupsFor]);
+    }), tenantColumn), [coverage, backups, rows, groupsFor, tenantColumn]);
 
     const filterableColumns = useMemo<DataTableFilterableColumn<ServerRow>[]>(() => {
         const engines = [...new Set(rows.map((row) => row.server.adapterId))];
         // The numbers come from the table, so they count what the quick filter and the search leave.
-        return [{
+        const byEngine: DataTableFilterableColumn<ServerRow> = {
             id: "engine",
             title: "Engine",
             note: "The numbers count the servers",
@@ -82,8 +92,9 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
                 label: kindNames.get(adapterId) ?? adapterId,
                 lead: <AdapterIcon adapterId={adapterId} className="size-4 shrink-0" />,
             })),
-        }];
-    }, [rows]);
+        };
+        return tenantFilter ? [byEngine, tenantFilter] : [byEngine];
+    }, [rows, tenantFilter]);
 
     const behind = summary.behind[0];
     return (
@@ -136,6 +147,7 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
                         backups={backups}
                         href={serverHref(row.original.server.id)}
                         actions={<BackupRowMenu name={row.original.server.name} groups={groupsFor(row.original)} />}
+                        tenantName={tenantName(row.original)}
                     />
                 )}
                 toolbarExtra={(
@@ -151,7 +163,7 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
                     <BackupContextMenu
                         tile={<DestinationTile destination={{ adapterId: row.server.adapterId }} />}
                         title={row.server.name}
-                        note={engineOf(row.server)}
+                        note={[engineOf(row.server), tenantName(row)].filter(Boolean).join(" · ")}
                         groups={groupsFor(row)}
                         bulk={null}
                     />

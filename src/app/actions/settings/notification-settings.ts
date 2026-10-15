@@ -7,7 +7,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import type { SaveResult } from "@/lib/settings/save-part";
+import type { SaveResult } from "@/services/system/settings-save";
 import type { SystemNotificationConfig } from "@/lib/notifications/types";
 import { auditService } from "@/services/audit-service";
 import { notificationSettingsChanges } from "@/services/notifications/notification-settings-audit";

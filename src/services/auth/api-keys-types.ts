@@ -42,6 +42,8 @@ export interface ApiKeyRow {
     /** The newest run the key started. */
     lastRun: { job: string | null; at: string; status: string } | null;
     isMine: boolean;
+    /** The tenant the key acts in, for the Tenant column of All tenants. */
+    tenantId: string;
 }
 
 export interface ApiKeysStats {

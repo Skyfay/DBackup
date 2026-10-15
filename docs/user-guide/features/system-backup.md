@@ -58,7 +58,7 @@ The `.meta.json` beside it names the key and holds what its decryption needs. Th
 
 ## Restore Process
 
-Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers. The one exception is the first start of a new DBackup, see [On a New Server](#on-a-new-server).
+A restore brings back the whole instance, every [tenant](/user-guide/admin/tenants) with its users, groups and sign-in providers, so only a platform admin restores a configuration. The one exception is the first start of a new DBackup, see [On a New Server](#on-a-new-server).
 
 ### What Happens
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
+import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
@@ -9,6 +10,9 @@ import {
 } from "@/services/notifications/notification-log-service";
 
 const log = logger.child({ route: "notification-logs" });
+
+/** The tenants of the Tenant filter of All tenants, each a tenant id. */
+const TenantsSchema = z.array(z.string().min(1).max(200)).max(500);
 
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext(await headers());
@@ -29,6 +33,10 @@ export async function GET(req: NextRequest) {
     const status = searchParams.getAll("status");
     const executionId = searchParams.get("executionId") || undefined;
     const search = searchParams.get("search")?.slice(0, 200) || undefined;
+    const tenants = TenantsSchema.safeParse(searchParams.getAll("tenant"));
+    if (!tenants.success) {
+      return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
+    }
 
     const query = {
       page: Number.isFinite(page) ? page : 1,
@@ -39,13 +47,16 @@ export async function GET(req: NextRequest) {
       status,
       executionId,
       search,
+      // The Tenant filter of All tenants. Inside a tenant every entry is of that tenant anyway.
+      ...(ctx.allTenants && tenants.data.length > 0 ? { tenantId: tenants.data } : {}),
     };
     const withFacets = searchParams.get("facets") === "true";
     // The History page also asks for the numbers above the list and the options of its filters.
     const withStats = searchParams.get("stats") === "true";
     const [result, facets, stats, options] = await Promise.all([
       getNotificationLogs(query),
-      withFacets ? getNotificationLogFacets(query) : Promise.resolve(undefined),
+      // All tenants counts the entries of each tenant for its Tenant filter.
+      withFacets ? getNotificationLogFacets(query, ctx.allTenants) : Promise.resolve(undefined),
       withStats ? getNotificationStats() : Promise.resolve(undefined),
       withStats ? getNotificationFilterOptions() : Promise.resolve(undefined),
     ]);

@@ -44,6 +44,7 @@ describe("sign-ins in the audit log, written by the server", () => {
         expect(mocks.log).toHaveBeenCalledWith("tom", "LOGIN", "AUTH", { method: "sso", provider: "Authentik", providerId: "authentik-417" }, undefined, {
             ipAddress: "198.51.100.23",
             userAgent: "Mozilla/5.0 Firefox/131.0",
+            tenantId: "default",
         });
     });
 
@@ -64,6 +65,7 @@ describe("sign-ins in the audit log, written by the server", () => {
         expect(mocks.log).toHaveBeenCalledWith(null, "LOGIN_FAILED", "AUTH", { method: "password", email: "lena@example.ch", reason: "wrong_password" }, "lena", {
             ipAddress: "198.51.100.23",
             userAgent: "Mozilla/5.0 Firefox/131.0",
+            tenantId: "default",
         });
     });
 
@@ -85,6 +87,6 @@ describe("sign-ins in the audit log, written by the server", () => {
         await recordSignOut({ path: "/sign-out", headers, context: {} }, null);
 
         expect(mocks.log).toHaveBeenCalledTimes(1);
-        expect(mocks.log).toHaveBeenCalledWith("tom", "LOGOUT", "AUTH", {}, undefined, expect.objectContaining({ ipAddress: "198.51.100.23" }));
+        expect(mocks.log).toHaveBeenCalledWith("tom", "LOGOUT", "AUTH", {}, undefined, expect.objectContaining({ ipAddress: "198.51.100.23", tenantId: "default" }));
     });
 });

@@ -15,6 +15,8 @@ import { attachmentDisposition } from "@/lib/server/content-disposition";
 import { clientAddress } from "@/lib/core/client-address";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ route: "storage/public-download" });
 registerAdapters();
@@ -64,73 +66,77 @@ export async function GET(req: NextRequest) {
         }
         claimed = token;
 
-        const from = requesterOf(req);
-        const userAgent = req.headers.get("user-agent");
-        const { storageId, file, decrypt, database, pick, createdBy } = tokenData;
-        const fetched = () => {
-            markTokenUsed(token, from);
-            if (createdBy) {
-                // The entry belongs to the maker of the link and says where it was fetched from. It is
-                // written after the response went out, so the address and browser are handed over.
-                void backupAuditDetails(storageId, file).then((backup) => auditService.log(
-                    createdBy, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
-                    { action: "download_link", ...backup, databases: pick?.databases ?? (database ? [database] : undefined), selections: pick?.selections, from },
-                    storageId,
-                    { ipAddress: from ?? null, userAgent }
-                ));
-            }
-        };
+        // A link has no session, so it carries the tenant it was made in and is served there.
+        const tenantId = tokenData.tenantId ?? HOME_TENANT_ID;
+        return await runAsTenant(tenantId, async () => {
+            const from = requesterOf(req);
+            const userAgent = req.headers.get("user-agent");
+            const { storageId, file, decrypt, database, pick, createdBy } = tokenData;
+            const fetched = () => {
+                markTokenUsed(token, from);
+                if (createdBy) {
+                    // The entry belongs to the maker of the link and says where it was fetched from. It is
+                    // written after the response went out, so the address and browser are handed over.
+                    void backupAuditDetails(storageId, file).then((backup) => auditService.log(
+                        createdBy, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
+                        { action: "download_link", ...backup, databases: pick?.databases ?? (database ? [database] : undefined), selections: pick?.selections, from },
+                        storageId,
+                        { ipAddress: from ?? null, userAgent, tenantId }
+                    ));
+                }
+            };
 
-        if (pick) {
-            // Streamed like a browser download of the same pick, so the first byte leaves at
-            // once and nothing waits on the disk of this host.
-            const download = await openArchiveDownload({
-                storageConfigId: storageId, file, databases: pick.databases, selections: pick.selections, target: { kind: "download" },
-                ...(pick.profileIdOverride ? { keyOverride: { profileId: pick.profileIdOverride } } : {}),
-            });
-            settleWhenDone(download.stream, token, fetched);
-            return new NextResponse(Readable.toWeb(download.stream as Readable) as ReadableStream, {
+            if (pick) {
+                // Streamed like a browser download of the same pick, so the first byte leaves at
+                // once and nothing waits on the disk of this host.
+                const download = await openArchiveDownload({
+                    storageConfigId: storageId, file, databases: pick.databases, selections: pick.selections, target: { kind: "download" },
+                    ...(pick.profileIdOverride ? { keyOverride: { profileId: pick.profileIdOverride } } : {}),
+                });
+                settleWhenDone(download.stream, token, fetched);
+                return new NextResponse(Readable.toWeb(download.stream as Readable) as ReadableStream, {
+                    headers: {
+                        "Content-Disposition": attachmentDisposition(download.fileName),
+                        "Content-Type": download.contentType,
+                        ...(download.contentLength !== undefined ? { "Content-Length": String(download.contentLength) } : {}),
+                        "Cache-Control": "no-store",
+                    },
+                });
+            }
+
+            tempFile = path.join(os.tmpdir(), `${path.basename(file)}_${Date.now()}`);
+            const result = await storageService.downloadFile(storageId, file, tempFile, decrypt, { database });
+            if (!result.success) {
+                await fsPromises.unlink(tempFile).catch(() => {});
+                releaseLinkToken(token);
+                return NextResponse.json({ error: "Download failed" }, { status: 500 });
+            }
+
+            const stat = await fsPromises.stat(tempFile);
+
+            // Determine filename. A dump pulled out of a seekable archive arrives already named.
+            let downloadFilename = path.basename(file);
+            if (result.fileName) {
+                downloadFilename = result.fileName;
+            } else if (result.isZip) {
+                downloadFilename = downloadFilename.replace(/\.enc$/, "") + ".zip";
+                if (!downloadFilename.endsWith(".zip")) downloadFilename += ".zip";
+            } else if (decrypt && downloadFilename.endsWith(".enc")) {
+                downloadFilename = downloadFilename.slice(0, -4);
+            }
+
+            const localFile = tempFile;
+            const fileStream = fs.createReadStream(localFile);
+            settleWhenDone(fileStream, token, fetched);
+            fileStream.on("close", () => { fsPromises.unlink(localFile).catch(() => {}); });
+
+            return new NextResponse(Readable.toWeb(fileStream) as ReadableStream, {
                 headers: {
-                    "Content-Disposition": attachmentDisposition(download.fileName),
-                    "Content-Type": download.contentType,
-                    ...(download.contentLength !== undefined ? { "Content-Length": String(download.contentLength) } : {}),
-                    "Cache-Control": "no-store",
-                },
+                    "Content-Disposition": attachmentDisposition(downloadFilename),
+                    "Content-Type": result.isZip ? "application/zip" : "application/octet-stream",
+                    "Content-Length": String(stat.size),
+                }
             });
-        }
-
-        tempFile = path.join(os.tmpdir(), `${path.basename(file)}_${Date.now()}`);
-        const result = await storageService.downloadFile(storageId, file, tempFile, decrypt, { database });
-        if (!result.success) {
-            await fsPromises.unlink(tempFile).catch(() => {});
-            releaseLinkToken(token);
-            return NextResponse.json({ error: "Download failed" }, { status: 500 });
-        }
-
-        const stat = await fsPromises.stat(tempFile);
-
-        // Determine filename. A dump pulled out of a seekable archive arrives already named.
-        let downloadFilename = path.basename(file);
-        if (result.fileName) {
-            downloadFilename = result.fileName;
-        } else if (result.isZip) {
-            downloadFilename = downloadFilename.replace(/\.enc$/, "") + ".zip";
-            if (!downloadFilename.endsWith(".zip")) downloadFilename += ".zip";
-        } else if (decrypt && downloadFilename.endsWith(".enc")) {
-            downloadFilename = downloadFilename.slice(0, -4);
-        }
-
-        const localFile = tempFile;
-        const fileStream = fs.createReadStream(localFile);
-        settleWhenDone(fileStream, token, fetched);
-        fileStream.on("close", () => { fsPromises.unlink(localFile).catch(() => {}); });
-
-        return new NextResponse(Readable.toWeb(fileStream) as ReadableStream, {
-            headers: {
-                "Content-Disposition": attachmentDisposition(downloadFilename),
-                "Content-Type": result.isZip ? "application/zip" : "application/octet-stream",
-                "Content-Length": String(stat.size),
-            }
         });
     } catch (error: unknown) {
         if (tempFile) await fsPromises.unlink(tempFile).catch(() => {});

@@ -60,8 +60,19 @@ export function trashActions(row: TrashRow, handlers: TrashHandlers): BackupActi
     ];
 }
 
-/** The columns of Recently deleted. */
-export function trashColumns(renderActions: (row: TrashRow) => React.ReactNode): ColumnDef<TrashRow>[] {
+/**
+ * The columns of Recently deleted. `tenantOf` adds the tenant of each entry after its name, for All
+ * tenants, which lists the entries of every tenant.
+ */
+export function trashColumns(renderActions: (row: TrashRow) => React.ReactNode, tenantOf?: (row: TrashRow) => string | null): ColumnDef<TrashRow>[] {
+    const tenant: ColumnDef<TrashRow>[] = tenantOf
+        ? [{
+            id: "tenant",
+            header: "Tenant",
+            accessorFn: (row) => tenantOf(row) ?? "",
+            cell: ({ row }) => <span className="block max-w-48 truncate text-sm">{tenantOf(row.original) ?? "Unknown tenant"}</span>,
+        }]
+        : [];
     return [
         {
             accessorKey: "name",
@@ -80,6 +91,7 @@ export function trashColumns(renderActions: (row: TrashRow) => React.ReactNode):
                 </div>
             ),
         },
+        ...tenant,
         {
             accessorKey: "kind",
             header: "Kind",

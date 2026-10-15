@@ -28,12 +28,21 @@ function includeValues(include: unknown): unknown[] {
     return Object.entries(include).flatMap(([key, value]) => [[key, value], ...includeValues(value)]);
 }
 
+
+/** Every record a job links to is one of the tenant, see assertOwnRecords. A test of a foreign one overrides a count. */
+function linksAreOwn() {
+    for (const model of ["adapterConfig", "job", "encryptionProfile", "namingTemplate", "schedulePreset", "notificationTemplate", "retentionPolicy", "excludePatternPreset"] as const) {
+        (prismaMock[model].count as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (args?: { where?: { id?: { in?: string[] } } }) => args?.where?.id?.in?.length ?? 0);
+    }
+}
+
 describe('JobService', () => {
     let service: JobService;
 
     beforeEach(() => {
         service = new JobService();
         vi.clearAllMocks();
+        linksAreOwn();
         // Every create/update validates its destinations against the adapter table. Tests
         // that care about the role override this; the rest just need a valid destination.
         prismaMock.adapterConfig.findMany.mockResolvedValue([
@@ -43,6 +52,19 @@ describe('JobService', () => {
     });
 
     describe('createJob', () => {
+
+        it('refuses a source of another tenant, which the filtered count leaves out', async () => {
+            prismaMock.adapterConfig.count.mockResolvedValue(1);
+
+            await expect(service.createJob({
+                name: 'Sneaky',
+                schedule: '0 0 * * *',
+                sourceId: 'source-of-another-tenant',
+                destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }],
+                notificationIds: ['notif-1'],
+            })).rejects.toThrow('A linked connection does not exist.');
+            expect(prismaMock.job.create).not.toHaveBeenCalled();
+        });
         it('should create a job and refresh the scheduler', async () => {
             // Arrange
             const input: CreateJobInput = {

@@ -11,6 +11,8 @@ const connectionFields = { id: true, name: true, adapterId: true, lastStatus: tr
 const jobListSelect = {
     id: true,
     name: true,
+    // The tenant of the job, which the list shows and opens it in while it holds every tenant.
+    tenantId: true,
     schedule: true,
     enabled: true,
     sourceId: true,

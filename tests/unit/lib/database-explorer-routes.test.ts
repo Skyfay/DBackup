@@ -35,7 +35,7 @@ import { GET as getOverview } from "@/app/api/databases/route";
 import { POST as readNow } from "@/app/api/databases/read/route";
 import { GET as getRuns } from "@/app/api/databases/runs/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 const read = (body: unknown) => readNow(new NextRequest("http://localhost/api/databases/read", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }));
 const runs = (query = "from=2026-09-20T00:00:00Z&until=2026-09-28T00:00:00Z") => getRuns(new NextRequest(`http://localhost/api/databases/runs?${query}`));
 

@@ -69,7 +69,7 @@ const request = (body: unknown) =>
 
 const storageParams = { params: Promise.resolve({ id: "dest-1" }) };
 
-const authed = (permissions: string[] = []) => ({ userId: "u1", permissions, isSuperAdmin: false });
+const authed = (permissions: string[] = []) => ({ userId: "u1", permissions, isPlatformAdmin: false });
 
 describe("POST /api/jobs/bulk", () => {
     beforeEach(() => {
@@ -93,7 +93,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("rejects a caller without job write permission without touching the service", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [], isPlatformAdmin: false });
         mocks.checkPermissionWithContext.mockImplementation(() => {
             throw new PermissionError("jobs:write");
         });
@@ -105,7 +105,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("checks job write permission before doing anything", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
 
         await bulkJobs(request({ action: "delete", ids: ["a"] }));
 
@@ -121,7 +121,7 @@ describe("POST /api/jobs/bulk", () => {
         ["a missing id list", { action: "delete" }],
         ["a batch over the limit", { action: "delete", ids: Array.from({ length: 201 }, (_, i) => `id-${i}`) }],
     ])("rejects %s", async (_label, body) => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
 
         const res = await bulkJobs(request(body));
 
@@ -131,7 +131,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("maps enable and disable onto an absolute enabled state", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
 
         await bulkJobs(request({ action: "enable", ids: ["a"] }));
         expect(mocks.setJobsEnabled).toHaveBeenCalledWith(["a"], true);
@@ -143,7 +143,7 @@ describe("POST /api/jobs/bulk", () => {
     // A row that could not be deleted is not a failed request. Answering 4xx here would
     // make the client discard the rows that did succeed.
     it("answers 200 with the per-row outcomes when only some rows failed", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
         mocks.deleteJobs.mockResolvedValue({
             succeeded: ["a", "b"],
             failed: [{ id: "c", name: "Nightly", error: "still running" }],
@@ -160,7 +160,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("writes one audit entry for the batch rather than one per job", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
         mocks.deleteJobs.mockResolvedValue({ succeeded: ["a", "b", "c"], failed: [] });
 
         await bulkJobs(request({ action: "delete", ids: ["a", "b", "c"] }));

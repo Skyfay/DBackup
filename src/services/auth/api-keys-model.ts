@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { capToOwner, groupPermissions, type OwnerGroup } from "@/lib/auth/owner-permissions";
+import { capToOwner, ownerPermissionsIn, type OwnerGroup } from "@/lib/auth/owner-permissions";
 import { runsOutSoon, type ApiKeyRow, type ApiKeysModel, type ApiKeyState } from "./api-keys-types";
 
 /** The trigger a run started with an API key stores, with the name of the key as its label. */
@@ -14,10 +14,19 @@ export interface ListedKey {
     expiresAt: Date | null;
     lastUsedAt: Date | null;
     createdAt: Date;
-    user: { id: string; name: string; email: string; image: string | null; group: OwnerGroup | null };
+    tenantId: string;
+    user: {
+        id: string;
+        name: string;
+        email: string;
+        image: string | null;
+        platformRole: string | null;
+        memberships: { tenantId: string; group: OwnerGroup & { name: string } }[];
+    };
 }
 
 export interface ListedRun {
+    tenantId: string;
     triggerLabel: string | null;
     startedAt: Date;
     status: string;
@@ -51,14 +60,23 @@ interface BuildInput {
 
 /** The API keys tab: every key with what it may do now, and the numbers above the list. */
 export function buildApiKeysModel({ keys, runs, viewer, now = Date.now() }: BuildInput): ApiKeysModel {
-    const lastRuns = new Map(runs.flatMap((run) => (run.triggerLabel ? [[run.triggerLabel, run] as const] : [])));
+    // By tenant and name, since All tenants lists the keys of every tenant and two may share a name.
+    const runKey = (tenantId: string, name: string) => `${tenantId}|${name}`;
+    const lastRuns = new Map<string, ListedRun>();
+    for (const run of runs) {
+        if (!run.triggerLabel) continue;
+        const key = runKey(run.tenantId, run.triggerLabel);
+        if (!lastRuns.has(key)) lastRuns.set(key, run);
+    }
 
     const rows: ApiKeyRow[] = keys
         .map((key) => {
             const permissions = parse(key.permissions);
-            const effective = capToOwner(permissions, key.user.group);
+            const ownerPermissions = ownerPermissionsIn(key.user, key.tenantId);
+            const effective = capToOwner(permissions, ownerPermissions);
+            const role = key.user.memberships.find((membership) => membership.tenantId === key.tenantId)?.group;
             // A deleted key may have had the same name, its runs are older than this key.
-            const named = lastRuns.get(key.name);
+            const named = lastRuns.get(runKey(key.tenantId, key.name));
             const run = named && named.startedAt >= key.createdAt ? named : undefined;
             return {
                 id: key.id,
@@ -67,14 +85,15 @@ export function buildApiKeysModel({ keys, runs, viewer, now = Date.now() }: Buil
                 permissions,
                 effective,
                 paused: permissions.filter((permission) => !effective.includes(permission)),
-                ownerPermissions: groupPermissions(key.user.group),
-                owner: { id: key.user.id, name: key.user.name, email: key.user.email, image: key.user.image, groupName: key.user.group?.name ?? null },
+                ownerPermissions,
+                owner: { id: key.user.id, name: key.user.name, email: key.user.email, image: key.user.image, groupName: role?.name ?? null },
                 state: stateOf(key, now),
                 expiresAt: key.expiresAt?.toISOString() ?? null,
                 lastUsedAt: key.lastUsedAt?.toISOString() ?? null,
                 createdAt: key.createdAt.toISOString(),
                 lastRun: run ? { job: run.job?.name ?? null, at: run.startedAt.toISOString(), status: run.status } : null,
                 isMine: key.user.id === viewer.id,
+                tenantId: key.tenantId,
             };
         })
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -108,17 +127,28 @@ export async function getApiKeysModel(viewer: { id: string; superAdmin: boolean;
             expiresAt: true,
             lastUsedAt: true,
             createdAt: true,
-            user: { select: { id: true, name: true, email: true, image: true, group: { select: { name: true, permissions: true } } } },
+            tenantId: true,
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    image: true,
+                    platformRole: true,
+                    memberships: { select: { tenantId: true, group: { select: { name: true, permissions: true, fullAccess: true } } } },
+                    platformGroup: { select: { platformPermissions: true, tenantPermissions: true, allTenants: true, tenants: { select: { tenantId: true } } } },
+                },
+            },
         },
     });
-    // One run per key, the newest, since the rows come newest first.
+    // One run per key, the newest, since the rows come newest first. In All tenants one per tenant and name.
     const runs = keys.length === 0
         ? []
         : await prisma.execution.findMany({
               where: { triggerType: API_TRIGGER, triggerLabel: { in: keys.map((key) => key.name) } },
               orderBy: { startedAt: "desc" },
-              distinct: ["triggerLabel"],
-              select: { triggerLabel: true, startedAt: true, status: true, job: { select: { name: true } } },
+              distinct: ["tenantId", "triggerLabel"],
+              select: { tenantId: true, triggerLabel: true, startedAt: true, status: true, job: { select: { name: true } } },
           });
     return buildApiKeysModel({ keys, runs, viewer });
 }

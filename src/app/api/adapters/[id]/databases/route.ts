@@ -2,12 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { registry } from "@/lib/core/registry";
-import { withHost } from "@/lib/transport";
-import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import { registerAdapters } from "@/lib/adapters";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import prisma from "@/lib/prisma";
+import { getSavedConnection } from "@/services/adapters/adapter-list";
+import { listSourceDatabases } from "@/services/databases/database-read-service";
 
 registerAdapters();
 
@@ -28,23 +25,14 @@ export async function GET(
 
     const params = await props.params;
 
-    const adapterConfig = await prisma.adapterConfig.findUnique({
-        where: { id: params.id },
-    });
-
-    if (!adapterConfig || adapterConfig.type !== "database") {
+    const source = await getSavedConnection(params.id, "database");
+    if (!source) {
         return NextResponse.json({ error: "Database source not found" }, { status: 404 });
     }
 
-    const adapter = registry.get(adapterConfig.adapterId) as DatabaseAdapter | undefined;
-    if (!adapter?.getDatabases) {
-        return NextResponse.json({ success: true, databases: [] });
-    }
-    const listDatabases = adapter.getDatabases;
-
     try {
-        const config = await resolveAdapterConfig(adapterConfig);
-        const databases = await withHost(adapter, config, (host) => listDatabases(config, host));
+        // An adapter that cannot list its databases answers with none.
+        const databases = await listSourceDatabases(source);
         return NextResponse.json({ success: true, databases });
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";

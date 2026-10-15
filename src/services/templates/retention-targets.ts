@@ -65,6 +65,8 @@ export async function getRetentionTargets(scope: RetentionScope, now = new Date(
     for (const run of runs) {
         for (const copy of run.copies) {
             if (copy.state !== "stored" || !copy.file) continue;
+            // A backup of single databases is judged apart and never counts with the whole ones.
+            if (copy.file.onlyDatabases?.length) continue;
             const backups = held.get(key(run.jobKey, copy.destinationId)) ?? [];
             backups.push({ at: copy.file.createdAt ?? copy.file.lastModified, locked: copy.file.locked === true, chainId: copy.file.chain?.id ?? null });
             held.set(key(run.jobKey, copy.destinationId), backups);

@@ -2,10 +2,24 @@
 
 import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { normalizePath } from "@/services/storage/explorer-model";
 import type { ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
 import type { BackupScope } from "./backups-list";
 
-export type ExplorerTab = "backups" | "destinations";
+/** The lists of the Backups page. Shared with you only shows while another tenant shares a database with this one. */
+export type ExplorerTab = "backups" | "destinations" | "shared";
+
+/** The address parameter that opens the details of a backup by its path. */
+export const BACKUP_PARAM = "backup";
+
+/** The Backups page with the details of one backup open, by its path as the list holds it. */
+export const backupHref = (path: string) => `/dashboard/backups?${BACKUP_PARAM}=${encodeURIComponent(normalizePath(path))}`;
+
+/** The tab Shared with you, the backups of the databases another tenant's server gives to this one. */
+export const SHARED_HREF = "/dashboard/backups?tab=shared";
+
+/** The Destinations tab with the details of one destination open. */
+export const destinationHref = (destinationId: string) => `/dashboard/backups?tab=destinations&destination=${encodeURIComponent(destinationId)}`;
 
 /** Values to set in the address, null removes one. */
 export type AddressUpdate = Record<string, string | string[] | null>;
@@ -23,7 +37,8 @@ export function useExplorerAddress(jobs: ExplorerJob[], jobsByKey: Map<string, E
     const atParams = searchParams.getAll("at").join("\n");
     const byParams = searchParams.getAll("by").join("\n");
     const destinationParam = searchParams.get("destination");
-    const tab: ExplorerTab = searchParams.get("tab") === "destinations" || (!jobParams && destinationParam) ? "destinations" : "backups";
+    const tabParam = searchParams.get("tab");
+    const tab: ExplorerTab = tabParam === "shared" ? "shared" : tabParam === "destinations" || (!jobParams && destinationParam) ? "destinations" : "backups";
 
     const scope = useMemo<BackupScope>(() => {
         const named = jobParams ? jobParams.split("\n") : [];
@@ -51,5 +66,5 @@ export function useExplorerAddress(jobs: ExplorerJob[], jobsByKey: Map<string, E
     // A new entry in the history, so Back returns to the destination.
     const showBackupsAt = useCallback((destinationId: string) => router.push(`/dashboard/backups?at=${encodeURIComponent(destinationId)}`), [router]);
 
-    return { tab, scope, picked, setParams, showBackupsAt };
+    return { tab, tabParam, scope, picked, setParams, showBackupsAt };
 }

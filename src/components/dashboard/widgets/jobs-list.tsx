@@ -11,6 +11,7 @@ import { RUN_SLOTS, RunBars } from "./run-bars";
 import { RelativeTime } from "./relative-time";
 import { useRunJob } from "./use-run-job";
 import { runHref } from "@/components/dashboard/history/run-links";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 
 interface JobsListProps {
     rows: DashboardJobRow[];
@@ -54,6 +55,9 @@ function rowHref(row: DashboardJobRow, canViewHistory: boolean, canViewJobs: boo
 /** Jobs with their state, recent runs and next run, live runs first. */
 export function JobsList({ rows, canViewHistory, canViewJobs, canExecute }: JobsListProps) {
     const { runJob, startingJobId } = useRunJob("overview");
+    // In All tenants the list holds the jobs of every tenant, so each names its tenant.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
 
     if (rows.length === 0) {
         return <p className="px-4 py-10 text-center text-sm text-muted-foreground md:px-5">No jobs configured yet.</p>;
@@ -97,6 +101,7 @@ export function JobsList({ rows, canViewHistory, canViewJobs, canExecute }: Jobs
                                     )}
                                 </p>
                                 <p className="truncate text-xs text-muted-foreground">
+                                    {allTenants && tenantName(row.tenantId) && <>{tenantName(row.tenantId)} · </>}
                                     {row.sourceLabel} → {row.destinationLabel}
                                 </p>
                                 <p className="truncate text-xs text-muted-foreground md:hidden">

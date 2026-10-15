@@ -3,12 +3,16 @@
  * in the transaction that deletes it. Secrets stay as they were stored, encrypted with ENCRYPTION_KEY.
  */
 
-import type { Account, AdapterConfig, ApiKey, CredentialProfile, DbVersionHistory, EncryptionProfile, Job, JobDestination, JobNotificationTemplate, JobSource, Passkey, TwoFactor, User, UserPreference } from "@prisma/client";
+import type { Account, AdapterConfig, ApiKey, CredentialProfile, DatabaseAssignment, DatabaseAssignmentRule, DbVersionHistory, EncryptionProfile, Job, JobDestination, JobNotificationTemplate, JobSource, Passkey, TwoFactor, User, UserPreference } from "@prisma/client";
 import { decrypt } from "@/lib/crypto";
 import { PERMISSIONS, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import type { Tx } from "@/lib/prisma-tx";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { keyIdOf } from "@/services/vault/key-id";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { runAsSystem } from "@/lib/tenant/context";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { TrashKind } from "./trash-types";
 
 export interface KeySnapshot { record: EncryptionProfile }
@@ -17,6 +21,13 @@ export interface ConnectionSnapshot {
     record: AdapterConfig;
     /** The versions a database server had, which the Database Explorer shows. Health checks start again. */
     versionHistory?: DbVersionHistory[];
+    /**
+     * The customers its databases were given to, and the rules that gave them. Only in a snapshot of
+     * an earlier version, which deleted them with the connection. They stay with a SharedServer
+     * now, so its customers keep their backups to download, and come back with the connection.
+     */
+    assignments?: DatabaseAssignment[];
+    assignmentRules?: DatabaseAssignmentRule[];
 }
 export interface JobSnapshot {
     record: Job;
@@ -29,7 +40,10 @@ export interface JobSnapshot {
     executionIds: string[];
 }
 export interface UserSnapshot {
-    record: User;
+    /** Earlier versions kept the group on the record, a restore turns it into a membership. */
+    record: User & { groupId?: string | null };
+    /** Its groups in the tenants it worked in. Missing in a snapshot of an earlier version. */
+    memberships?: { tenantId: string; groupId: string }[];
     accounts: Account[];
     twoFactor: TwoFactor | null;
     passkeys: Passkey[];
@@ -86,6 +100,7 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
 
     async connection(tx, id) {
         const record = await tx.adapterConfig.findUniqueOrThrow({ where: { id } });
+        // The assignments of its databases stay where they are, see shared-servers.ts.
         const versionHistory = await tx.dbVersionHistory.findMany({ where: { adapterConfigId: id } });
         const data: ConnectionSnapshot = { record, versionHistory };
         return { name: record.name, detail: `${connectionKind(record)} · ${record.adapterId}`, data, permission: getWritePermissionForAdapterType(record.type) };
@@ -118,18 +133,25 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
     async user(tx, id) {
         const found = await tx.user.findUniqueOrThrow({
             where: { id },
-            include: { accounts: true, twoFactor: true, passkeys: true, apiKeys: true, preferences: true, avatar: true, group: { select: { name: true } } },
+            include: { accounts: true, twoFactor: true, passkeys: true, preferences: true, avatar: true, memberships: { select: { tenantId: true, groupId: true } } },
         });
-        const { accounts, twoFactor, passkeys, apiKeys, preferences, avatar, group, ...record } = found;
+        // The keys of the account in every tenant, which the delete takes along.
+        const apiKeys = await runAsSystem(() => tx.apiKey.findMany({ where: { userId: id } }));
+        const { accounts, twoFactor, passkeys, preferences, avatar, memberships, ...record } = found;
         const picture = avatar && { mimeType: avatar.mimeType, size: avatar.size, data: Buffer.from(avatar.data).toString("base64"), updatedAt: avatar.updatedAt };
-        const data: UserSnapshot = { record, accounts, twoFactor, passkeys, apiKeys, preferences, avatar: picture };
+        const data: UserSnapshot = { record, memberships, accounts, twoFactor, passkeys, apiKeys, preferences, avatar: picture };
+        const platformAdmin = record.platformRole === PLATFORM_ADMIN_ROLE;
+        // Bringing back a platform admin makes someone a platform admin, and bringing back an
+        // account that also worked in another tenant puts it back there. Only a platform admin
+        // decides either, like the change of such an account while it lives.
+        const here = await currentTenantId();
+        const elsewhere = memberships.some((membership) => membership.tenantId !== here);
         return {
             name: record.name || record.email,
-            detail: [record.email, group?.name ?? "no group"].join(" · "),
+            detail: [record.email, platformAdmin ? "platform admin" : plural(memberships.length, "tenant", "tenants")].join(" · "),
             data,
             permission: PERMISSIONS.USERS.WRITE,
-            // Bringing back a SuperAdmin makes someone a SuperAdmin, which only a SuperAdmin decides.
-            superAdminOnly: group?.name === "SuperAdmin",
+            superAdminOnly: platformAdmin || elsewhere,
         };
     },
 };
@@ -141,18 +163,23 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
 export async function keepInTrash(tx: Tx, kind: TrashKind, id: string, by?: string | null): Promise<string> {
     const snapshot = await SNAPSHOTS[kind](tx, id);
     const actor = by ? await tx.user.findUnique({ where: { id: by }, select: { name: true, email: true } }) : null;
-    const row = await tx.deletedRecord.create({
-        data: {
-            kind,
-            recordId: id,
-            name: snapshot.name,
-            detail: snapshot.detail,
-            data: JSON.stringify(snapshot.data),
-            permission: snapshot.permission,
-            superAdminOnly: snapshot.superAdminOnly ?? false,
-            deletedById: by ?? null,
-            deletedByName: actor ? actor.name || actor.email : null,
-        },
-    });
+    const data = {
+        kind,
+        recordId: id,
+        name: snapshot.name,
+        detail: snapshot.detail,
+        data: JSON.stringify(snapshot.data),
+        permission: snapshot.permission,
+        superAdminOnly: snapshot.superAdminOnly ?? false,
+        deletedById: by ?? null,
+        deletedByName: actor ? actor.name || actor.email : null,
+    };
+    // An account belongs to no tenant. One only a platform admin brings back, a platform admin or an
+    // account of other tenants too, is kept in the home tenant, and so is one deleted outside a
+    // tenant, like in All tenants. An account of one tenant stays with that tenant's admins.
+    if (kind === "user" && (snapshot.superAdminOnly || !(await currentTenantId()))) {
+        return (await runAsSystem(() => tx.deletedRecord.create({ data: { ...data, tenantId: HOME_TENANT_ID } }))).id;
+    }
+    const row = await tx.deletedRecord.create({ data });
     return row.id;
 }

@@ -3,8 +3,11 @@
  *
  * The aggregates behind the cards and charts scan weeks of executions, and the page re-renders
  * every few seconds while a job runs. They are computed once and shared until they expire or a
- * backup finishes, which calls invalidateDashboardCache().
+ * backup finishes, which calls invalidateDashboardCache(). Each tenant has its own entries, since
+ * the same key names the numbers of whoever asks.
  */
+
+import { currentTenantId } from "@/lib/tenant/current";
 
 interface CacheEntry<T> {
     value: T;
@@ -52,6 +55,10 @@ export async function cached<T>(
     load: () => Promise<T>,
     options: CacheOptions = {},
 ): Promise<T> {
+    // Taken before the tenant is known, so an invalidation from then on keeps this load out too.
+    const generation = state.generation;
+    // The system scope, like the runner, sees every tenant at once and gets entries of its own.
+    key = `${(await currentTenantId()) ?? "*"}:${key}`;
     const entry = state.entries.get(key) as CacheEntry<T> | undefined;
     if (entry && entry.expiresAt > Date.now()) return entry.value;
 
@@ -59,7 +66,6 @@ export async function cached<T>(
     if (inFlight) return inFlight;
 
     const survivesInvalidation = options.survivesInvalidation === true;
-    const generation = state.generation;
     const promise = load()
         .then((value) => {
             if (survivesInvalidation || state.generation === generation) {

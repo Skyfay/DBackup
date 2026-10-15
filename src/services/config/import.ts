@@ -1,4 +1,6 @@
 import prisma from "@/lib/prisma";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { AppConfigurationBackup, RestoreOptions } from "@/lib/types/config-backup";
 import { logger } from "@/lib/logging/logger";
 import { createImportContext, type ImportResult } from "./import-context";
@@ -45,7 +47,8 @@ export async function importConfiguration(
   const opts = options || EVERY_PART;
   svcLog.info("Restoring configuration", { version: data.metadata.version });
 
-  return prisma.$transaction(async (tx) => {
+  // A file of an earlier version holds one installation, which is the home tenant here.
+  return runAsTenant(HOME_TENANT_ID, () => prisma.$transaction(async (tx) => {
     const ctx = createImportContext(tx, data, opts);
     if (opts.settings) await importSettings(ctx);
     if (opts.profiles) await importCredentialProfiles(ctx);
@@ -58,5 +61,5 @@ export async function importConfiguration(
 
     if (ctx.notes.length > 0) svcLog.warn("Configuration restored with notes", { notes: ctx.notes });
     return { notes: ctx.notes };
-  });
+  }));
 }

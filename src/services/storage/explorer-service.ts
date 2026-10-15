@@ -5,7 +5,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { isListingStale, storageService } from "./storage-service";
 import { checksNatively } from "./verification-service";
 import { defaultAlertConfig, defaultAlertStates, getAlertConfig, getAlertStates } from "./storage-alert-service";
-import { retentionConfigOf } from "./explorer-plan";
+import { defaultRetentionOf, retentionConfigOf } from "./explorer-plan";
 import { buildExplorer, normalizePath, type DestinationListing, type ExplorerModel, type JobRecord } from "./explorer-model";
 import type { DestinationAlerts, ExplorerBackup, ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex, HealthStatus, RunExecution } from "./explorer-types";
 import { isAirGapped, isNotConnected } from "@/lib/core/air-gap";
@@ -37,11 +37,12 @@ interface Loaded {
  */
 export class StorageExplorerService {
     private async loadJobs(): Promise<JobRecord[]> {
-        const [jobs, fallback] = await Promise.all([
+        const [jobs, defaults] = await Promise.all([
             prisma.job.findMany({
                 select: {
                     id: true,
                     name: true,
+                    tenantId: true,
                     backupMode: true,
                     source: { select: { adapterId: true, name: true } },
                     sources: { select: { id: true } },
@@ -51,18 +52,20 @@ export class StorageExplorerService {
                     },
                 },
             }),
-            prisma.retentionPolicy.findFirst({ where: { isDefault: true }, select: { config: true } }),
+            // One default per tenant, every tenant's in All tenants.
+            prisma.retentionPolicy.findMany({ where: { isDefault: true }, select: { tenantId: true, config: true } }),
         ]);
         return jobs.map((job) => ({
             id: job.id,
             name: job.name,
+            tenantId: job.tenantId,
             incremental: job.backupMode === "INCREMENTAL",
             sourceType: job.source?.adapterId ?? null,
             sourceName: job.source?.name ?? null,
             hasFolders: job.sources.length > 0,
             destinationIds: job.destinations.map((destination) => destination.configId),
             retention: Object.fromEntries(job.destinations.flatMap((destination) => {
-                const config = retentionConfigOf(destination, fallback?.config ?? null);
+                const config = retentionConfigOf(destination, defaultRetentionOf(defaults, job.tenantId));
                 return config ? [[destination.configId, config]] : [];
             })),
         }));
@@ -72,7 +75,7 @@ export class StorageExplorerService {
         const [configs, jobs] = await Promise.all([
             prisma.adapterConfig.findMany({
                 where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-                select: { id: true, name: true, adapterId: true, type: true, storageRole: true, metadata: true, lastStatus: true, lastHealthCheck: true, lastError: true },
+                select: { id: true, name: true, tenantId: true, adapterId: true, type: true, storageRole: true, metadata: true, lastStatus: true, lastHealthCheck: true, lastError: true },
                 orderBy: { name: "asc" },
             }),
             this.loadJobs(),
@@ -114,6 +117,7 @@ export class StorageExplorerService {
             return {
                 id: config.id,
                 name: config.name,
+                tenantId: config.tenantId,
                 adapterId: config.adapterId,
                 airGapped: isAirGapped(config),
                 checksNatively: checksNatively(config.adapterId),
@@ -128,7 +132,7 @@ export class StorageExplorerService {
             };
         });
 
-        const listings: DestinationListing[] = configs.map((config, index) => ({ destinationId: config.id, files: listed[index].files }));
+        const listings: DestinationListing[] = configs.map((config, index) => ({ destinationId: config.id, tenantId: config.tenantId, files: listed[index].files }));
         const airGapped = new Set(destinations.filter((destination) => destination.airGapped).map((destination) => destination.id));
         return { destinations, model: buildExplorer(jobs, listings, airGapped) };
     }

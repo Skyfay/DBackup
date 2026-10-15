@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { subDays, subMonths, addDays, startOfDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
@@ -297,15 +298,25 @@ const STORAGE_CACHE_UPDATED_KEY = "cache.storageVolume.updatedAt";
  */
 export async function getStorageVolume(): Promise<StorageVolumeEntry[]> {
   const cached = await readStorageCache();
-  if (cached) return cached;
+  if (cached) return visibleEntries(cached);
 
   // No cache yet or a corrupted one - do a live refresh to populate it (first load only)
   try {
-    return await refreshStorageStatsCache();
+    return visibleEntries(await refreshStorageStatsCache());
   } catch {
     // If the live refresh fails entirely, show what every destination held at its last scan.
     return getLastScannedStorageVolume();
   }
+}
+
+/**
+ * The entries of the destinations the code that runs now may see. The cache holds every tenant,
+ * the read of the connections keeps the destinations of the others out.
+ */
+async function visibleEntries(entries: StorageVolumeEntry[]): Promise<StorageVolumeEntry[]> {
+  const ids = entries.flatMap((entry) => (entry.configId ? [entry.configId] : []));
+  const visible = new Set((await prisma.adapterConfig.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((config) => config.id));
+  return entries.filter((entry) => entry.configId && visible.has(entry.configId));
 }
 
 /**
@@ -355,8 +366,14 @@ export interface StorageRefreshScope {
  * Refreshes the storage volume cache by querying storage adapters live.
  * Called by the "Refresh Storage Statistics" system task (default: every hour) for every
  * destination, and after backups, retention and deleted files for the destinations they touched.
+ * The cache holds the destinations of every tenant, so the refresh reads all of them, also when a
+ * run of one tenant asks for it, and answers with all of them.
  */
-export async function refreshStorageStatsCache(scope: StorageRefreshScope = {}): Promise<StorageVolumeEntry[]> {
+export function refreshStorageStatsCache(scope: StorageRefreshScope = {}): Promise<StorageVolumeEntry[]> {
+  return runAsSystem(() => refreshEveryTenant(scope));
+}
+
+async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVolumeEntry[]> {
   const log = logger.child({ service: "StorageStatsCache" });
   log.info("Refreshing storage statistics cache", { destinations: scope.configIds?.length ?? "all" });
 
@@ -603,7 +620,15 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
       log.warn("Skipping snapshots for adapters with scan errors", { skipped });
     }
 
-    const data = validEntries.map((entry) => ({
+    // A snapshot belongs to the tenant of its destination, also when the system task measures them all.
+    const owners = new Map(
+      (await prisma.adapterConfig.findMany({ where: { id: { in: validEntries.map((entry) => entry.configId!) } }, select: { id: true, tenantId: true } }))
+        .map((config) => [config.id, config.tenantId])
+    );
+    // A destination deleted during the refresh drops out here, from the snapshots and the alerts.
+    const owned = validEntries.filter((entry) => owners.has(entry.configId!));
+    const data = owned.map((entry) => ({
+      tenantId: owners.get(entry.configId!)!,
       adapterConfigId: entry.configId!,
       adapterName: entry.name,
       adapterId: entry.adapterId,
@@ -619,7 +644,7 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
 
     // Check storage alert conditions only for entries with valid live scan data
     try {
-      await checkStorageAlerts(validEntries);
+      await checkStorageAlerts(owned);
     } catch (alertError) {
       log.warn("Failed to check storage alerts", {}, wrapError(alertError));
     }

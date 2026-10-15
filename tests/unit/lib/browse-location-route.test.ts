@@ -24,7 +24,7 @@ vi.mock("@/lib/logging/logger", () => ({
 
 import { POST } from "@/app/api/adapters/browse-location/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 const request = (body: unknown) => new NextRequest("http://localhost/api/adapters/browse-location", { method: "POST", body: JSON.stringify(body) });
 const SFTP = { adapterId: "sftp", config: { host: "nas.local" }, primaryCredentialId: "login", path: "srv" };
 

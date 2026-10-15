@@ -1,7 +1,10 @@
 import prisma from "@/lib/prisma";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { parsePermissions, SUPER_ADMIN_GROUP } from "./users-model";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { peopleOf, roleIn } from "@/services/tenant/membership-service";
+import { runAsSystem } from "@/lib/tenant/context";
+import { parsePermissions } from "./users-model";
 import type { GroupActor, GroupRow, GroupsModel } from "./groups-types";
 
 /** The newest entries of the audit log read at most, so a log with years of changes stays quick. */
@@ -11,7 +14,11 @@ export interface ListedGroup {
     id: string;
     name: string;
     permissions: string;
+    fullAccess: boolean;
     createdAt: Date;
+    /** The tenant it belongs to, for the list of every tenant on the Platform. */
+    tenantId?: string;
+    /** Its members, who hold it in its tenant. */
     users: { id: string; name: string; email: string; image: string | null }[];
 }
 
@@ -19,8 +26,9 @@ export interface ListedPerson {
     id: string;
     name: string;
     email: string;
+    /** Their group in the tenant the list is for. */
     groupId: string | null;
-    group: { name: string } | null;
+    platformAdmin: boolean;
 }
 
 export interface GroupAuditRow {
@@ -38,15 +46,17 @@ interface BuildInput {
     /** Newest first. */
     audit: GroupAuditRow[];
     viewerId: string | null;
-    viewerSuperAdmin: boolean;
+    viewerPlatformAdmin: boolean;
     /** Whether the viewer may see the users, which decides if the model names people outside the groups. */
     withPeople: boolean;
+    /** The groups of every tenant, read only on the Platform. People move between groups inside a tenant only, so the model lists nobody to move. */
+    allTenants?: boolean;
 }
 
 const actorOf = (row: GroupAuditRow): GroupActor => ({ at: row.createdAt.toISOString(), by: row.user?.name ?? row.actorName ?? null });
 
 /** The Groups tab: every group with its members and what the audit log knows, and the numbers above the list. */
-export function buildGroupsModel({ groups, people, audit, viewerId, viewerSuperAdmin, withPeople }: BuildInput): GroupsModel {
+export function buildGroupsModel({ groups, people, audit, viewerId, viewerPlatformAdmin, withPeople, allTenants = false }: BuildInput): GroupsModel {
     const made = new Map<string, GroupActor>();
     const changed = new Map<string, GroupActor>();
     for (const row of audit) {
@@ -60,7 +70,8 @@ export function buildGroupsModel({ groups, people, audit, viewerId, viewerSuperA
         .map((group) => ({
             id: group.id,
             name: group.name,
-            superAdmin: group.name === SUPER_ADMIN_GROUP,
+            ...(group.tenantId ? { tenantId: group.tenantId } : {}),
+            superAdmin: group.fullAccess,
             permissions: parsePermissions(group.permissions),
             members: group.users.map((user) => ({ ...user, isYou: user.id === viewerId })).sort((a, b) => a.name.localeCompare(b.name)),
             createdAt: group.createdAt.toISOString(),
@@ -84,33 +95,81 @@ export function buildGroupsModel({ groups, people, audit, viewerId, viewerSuperA
             canReveal: rows.filter((row) => may(row, PERMISSIONS.CREDENTIALS.REVEAL)).map((row) => row.name),
             empty: rows.filter((row) => row.members.length === 0).map((row) => row.name),
         },
-        people: withPeople
+        people: withPeople && !allTenants
             ? people.map((person) => ({
                   id: person.id,
                   name: person.name,
                   email: person.email,
                   groupId: person.groupId,
-                  superAdmin: person.group?.name === SUPER_ADMIN_GROUP,
+                  superAdmin: person.platformAdmin,
                   isYou: person.id === viewerId,
               }))
             : null,
-        viewerSuperAdmin,
+        viewerPlatformAdmin,
+        allTenants,
     };
 }
 
-/** Loads the Groups tab. */
-export async function getGroupsModel(viewerId: string | null, viewerSuperAdmin: boolean, withPeople: boolean): Promise<GroupsModel> {
-    const [groups, people, audit] = await Promise.all([
+/** The entries of the audit log that made or changed a group, newest first, wherever they were written. */
+function groupAudit() {
+    return runAsSystem(() => prisma.auditLog.findMany({
+        where: { resource: AUDIT_RESOURCES.GROUP, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] } },
+        orderBy: { createdAt: "desc" },
+        take: AUDIT_LIMIT,
+        select: { resourceId: true, action: true, createdAt: true, actorName: true, user: { select: { name: true } } },
+    }));
+}
+
+/**
+ * The groups of every tenant for Users & Groups of the Platform, each with its tenant and its
+ * members, read only. A platform admin opens it from any tenant, so it reads every tenant.
+ */
+export async function getPlatformGroupsModel(viewerId: string | null): Promise<GroupsModel> {
+    const [listed, audit] = await runAsSystem(() => Promise.all([
         prisma.group.findMany({
-            select: { id: true, name: true, permissions: true, createdAt: true, users: { select: { id: true, name: true, email: true, image: true } } },
+            select: {
+                id: true,
+                name: true,
+                permissions: true,
+                fullAccess: true,
+                createdAt: true,
+                tenantId: true,
+                memberships: { select: { user: { select: { id: true, name: true, email: true, image: true } } } },
+            },
         }),
-        prisma.user.findMany({ select: { id: true, name: true, email: true, groupId: true, group: { select: { name: true } } }, orderBy: { name: "asc" } }),
-        prisma.auditLog.findMany({
-            where: { resource: AUDIT_RESOURCES.GROUP, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] } },
-            orderBy: { createdAt: "desc" },
-            take: AUDIT_LIMIT,
-            select: { resourceId: true, action: true, createdAt: true, actorName: true, user: { select: { name: true } } },
+        groupAudit(),
+    ]));
+    const groups = listed.map(({ memberships, ...group }) => ({ ...group, users: memberships.map((membership) => membership.user) }));
+    // The people of a tenant move between its groups in that tenant, so none are listed here.
+    return buildGroupsModel({ groups, people: [], audit, viewerId, viewerPlatformAdmin: true, withPeople: false, allTenants: true });
+}
+
+/** Loads the Groups tab with the groups of a tenant and their members, read in that tenant. */
+export async function getGroupsModel(viewerId: string | null, viewerPlatformAdmin: boolean, withPeople: boolean, tenantId: string): Promise<GroupsModel> {
+    const [listed, people, audit] = await Promise.all([
+        prisma.group.findMany({
+            where: { tenantId },
+            select: {
+                id: true,
+                name: true,
+                permissions: true,
+                fullAccess: true,
+                createdAt: true,
+                memberships: { where: { tenantId }, select: { user: { select: { id: true, name: true, email: true, image: true } } } },
+            },
         }),
+        prisma.user
+            .findMany({ where: peopleOf(tenantId), select: { id: true, name: true, email: true, platformRole: true, memberships: roleIn(tenantId) }, orderBy: { name: "asc" } })
+            .then((users) => users.map((user): ListedPerson => ({
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                groupId: user.memberships[0]?.group.id ?? null,
+                platformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE,
+            }))),
+        // A group belongs to its tenant, whose log holds its entries, read for every tenant at once.
+        groupAudit(),
     ]);
-    return buildGroupsModel({ groups, people, audit, viewerId, viewerSuperAdmin, withPeople });
+    const groups = listed.map(({ memberships, ...group }) => ({ ...group, users: memberships.map((membership) => membership.user) }));
+    return buildGroupsModel({ groups, people, audit, viewerId, viewerPlatformAdmin, withPeople });
 }

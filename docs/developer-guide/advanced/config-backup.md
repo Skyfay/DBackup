@@ -44,9 +44,9 @@ A new table needs nothing here. A table that can never hold a secret may join th
 
 | Route | Who | What |
 |-------|-----|------|
-| `POST /api/settings/config-backup/restore` | SuperAdmin session | Checks an uploaded file, up to the 10 MB the middleware passes |
-| `POST /api/settings/config-backup/restore/destination` | SuperAdmin session | Checks a backup at a destination, read on the server |
-| `POST /api/settings/config-backup/restore/apply` | SuperAdmin session | Restores a checked backup by its token |
+| `POST /api/settings/config-backup/restore` | Platform admin session | Checks an uploaded file, up to the 10 MB the middleware passes |
+| `POST /api/settings/config-backup/restore/destination` | Platform admin session | Checks a backup at a destination, read on the server |
+| `POST /api/settings/config-backup/restore/apply` | Platform admin session | Restores a checked backup by its token |
 | `POST /api/setup/restore`, `/api/setup/restore/apply` | Anyone while no account exists | The same on the sign-up page of a new instance |
 
 `requireConfigRestorer()` in `src/lib/server/config-restore-guard.ts` guards the routes in Settings. A 413 answers an upload over `CONFIG_UPLOAD_MAX_BYTES` before its body is read, and a missing key the usual 422 of `keyRequiredResponse()`.
@@ -65,6 +65,8 @@ Configuration backups of versions before the copy are JSON files, `config_backup
 | `import-history.ts` | Runs, audit log, notifications and storage history |
 
 `import-context.ts` holds what they share: the transaction, the maps from an ID of the file to the ID here, the IDs known to exist and the notes.
+
+A file of an earlier version holds one installation, so the import runs in `runAsTenant(HOME_TENANT_ID)` and everything lands in the home tenant. The group of each user becomes a membership there. The `SuperAdmin` group of a file maps to the group with every permission (`ensureFullAccessGroup`) and its people become platform admins, and an ordinary group of the file whose name the group with every permission has here comes in as `<name> (imported)`.
 
 ### Matching and Links
 
@@ -104,7 +106,7 @@ class ConfigService {
 
 ### Who Restores
 
-A restore writes users, groups, API keys and sign-in providers, so it could make anyone a SuperAdmin. The routes in Settings and `restoreFromStorageAction` check `settings:write` first and then refuse anyone who is no SuperAdmin, the routes also every API key. The routes of the sign-up page answer only while no account exists, the moment anyone who reaches the page may create the first account too. Taking a config backup stays with `settings:write`.
+A restore writes the whole database, every tenant with its users, groups, API keys and sign-in providers, so it could make anyone a platform admin. The routes in Settings and `restoreFromStorageAction` check `settings:write` first and then refuse anyone who is no platform admin, the routes also every API key. The routes of the sign-up page answer only while no account exists, the moment anyone who reaches the page may create the first account too. Taking a config backup stays with `settings:write`, which counts from the group in the home tenant.
 
 ### The File
 

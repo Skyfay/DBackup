@@ -101,7 +101,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: [],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "apikey",
     });
     mockCheckPermissionWithContext.mockImplementation(() => {
@@ -119,7 +119,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -137,7 +137,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "apikey",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -163,7 +163,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -187,7 +187,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -213,7 +213,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -243,7 +243,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -259,7 +259,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -284,7 +284,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -308,7 +308,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -328,7 +328,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
@@ -348,7 +348,7 @@ describe("GET /api/executions/[id]", () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",
       permissions: ["history:read"],
-      isSuperAdmin: false,
+      isPlatformAdmin: false,
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);

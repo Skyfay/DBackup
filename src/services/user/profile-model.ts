@@ -27,7 +27,10 @@ export interface ProfileUser {
 
 export interface ProfileModel {
     user: ProfileUser;
+    /** The group in the tenant the viewer works in, none in All tenants. */
     group: { id: string; name: string } | null;
+    /** Opens every tenant, so no group there is no lack of rights. */
+    platformAdmin: boolean;
     /** What the group lets the user do, in up to three sentences. */
     access: string[];
     /** Signs in with a password, so the password and the authenticator app apply. */
@@ -51,14 +54,19 @@ export interface ProfileModel {
     };
 }
 
-export async function getProfileModel(userId: string, viewer: { permissions: string[]; isSuperAdmin: boolean }): Promise<ProfileModel> {
-    const { permissions, isSuperAdmin } = viewer;
+/** What a platform admin may do in All tenants, after what that view lets them do. */
+const ALL_TENANTS_NOTE = "Changes the connections, jobs and backups of a tenant after opening it, with every permission there.";
+
+export async function getProfileModel(userId: string, viewer: { permissions: string[]; isPlatformAdmin: boolean; tenantId: string | null; allTenants: boolean }): Promise<ProfileModel> {
+    const { permissions, isPlatformAdmin, allTenants } = viewer;
     const [user, hasPassword, providers, linked, sessions, colors, passwordPolicy] = await Promise.all([
         prisma.user.findUniqueOrThrow({
             where: { id: userId },
             select: {
                 id: true, name: true, email: true, image: true, timezone: true, dateFormat: true, timeFormat: true,
-                autoRedirectOnJobStart: true, twoFactorEnabled: true, passkeyTwoFactor: true, group: { select: { id: true, name: true } },
+                autoRedirectOnJobStart: true, twoFactorEnabled: true, passkeyTwoFactor: true,
+                // The group in the tenant the viewer works in, none in All tenants, which is no tenant.
+                memberships: { where: { tenantId: viewer.tenantId ?? "" }, select: { group: { select: { id: true, name: true } } } },
             },
         }),
         prisma.account.count({ where: { userId, providerId: "credential" } }).then((count) => count > 0),
@@ -68,13 +76,20 @@ export async function getProfileModel(userId: string, viewer: { permissions: str
         getTaskColors(userId),
         getPasswordPolicy(),
     ]);
-    const has = (permission: string) => isSuperAdmin || permissions.includes(permission);
-    const { group, ...rest } = user;
+    const has = (permission: string) => isPlatformAdmin || permissions.includes(permission);
+    const { memberships, ...rest } = user;
+    const group = memberships[0]?.group ?? null;
+    // All tenants reads every tenant and changes none, so a platform admin there holds what that
+    // view allows, not everything.
+    const access = allTenants
+        ? [...accessSentences(summarizeAccess(permissions, false)), ALL_TENANTS_NOTE]
+        : accessSentences(summarizeAccess(permissions, isPlatformAdmin));
 
     return {
         user: { ...rest, twoFactorEnabled: !!rest.twoFactorEnabled, passkeyTwoFactor: !!rest.passkeyTwoFactor },
         group,
-        access: accessSentences(summarizeAccess(permissions, isSuperAdmin)),
+        platformAdmin: isPlatformAdmin,
+        access,
         hasPassword,
         passwordPolicy,
         showSignInProviders: providers > 0 || linked > 0,

@@ -4,6 +4,7 @@ import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
 import { NotFoundError, ServiceError } from "@/lib/logging/errors";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { assertOwnRecords } from "@/lib/tenant/references";
 
 const log = logger.child({ service: "NotificationTemplateService" });
 
@@ -53,7 +54,7 @@ export async function createNotificationTemplate(input: {
   channels: NotificationTemplateChannelInput[];
   isDefault?: boolean;
 }) {
-  const existing = await prisma.notificationTemplate.findUnique({
+  const existing = await prisma.notificationTemplate.findFirst({
     where: { name: input.name },
   });
   if (existing) {
@@ -63,6 +64,7 @@ export async function createNotificationTemplate(input: {
       `A notification template named "${input.name}" already exists.`
     );
   }
+  await assertOwnRecords(prisma, { adapterConfig: input.channels.map((channel) => channel.configId) });
 
   if (input.isDefault) {
     await prisma.notificationTemplate.updateMany({
@@ -110,9 +112,10 @@ export async function updateNotificationTemplate(
       "Cannot modify a system template."
     );
   }
+  await assertOwnRecords(prisma, { adapterConfig: (input.channels ?? []).map((channel) => channel.configId) });
 
   if (input.name && input.name !== template.name) {
-    const existing = await prisma.notificationTemplate.findUnique({
+    const existing = await prisma.notificationTemplate.findFirst({
       where: { name: input.name },
     });
     if (existing) {

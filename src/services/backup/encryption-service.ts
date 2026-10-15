@@ -9,7 +9,7 @@ import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 
 /** A profile as it may leave this service: everything but its key and the ids it stands for. */
-export type EncryptionProfileSummary = Omit<EncryptionProfile, 'secretKey' | 'aliases'>;
+export type EncryptionProfileSummary = Omit<EncryptionProfile, 'secretKey' | 'aliases' | 'tenantId'>;
 
 /**
  * The fields of every profile this service returns. The results reach the browser through the

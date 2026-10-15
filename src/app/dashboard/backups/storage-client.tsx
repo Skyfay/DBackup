@@ -1,31 +1,26 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Archive, HardDrive } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
+import { SharedTab } from "@/components/dashboard/shared/shared-tab";
 import { BackupDetailsSheet } from "@/components/dashboard/storage/explorer/backup-details";
 import { targetsOf } from "@/components/dashboard/storage/explorer/backup-filters";
-import { BACKUPS_PAGE_ID, BACKUPS_TABLE_ID, DESTINATIONS_PAGE_ID } from "@/components/dashboard/storage/explorer/backup-tables";
+import { BACKUPS_PAGE_ID, BACKUPS_TABLE_ID, DESTINATIONS_PAGE_ID, SHARED_PAGE_ID, SHARED_TABLE_ID } from "@/components/dashboard/storage/explorer/backup-tables";
 import { BackupsList } from "@/components/dashboard/storage/explorer/backups-list";
-import { backupsAttention, destinationsAttention } from "@/components/dashboard/storage/explorer/destination-model";
+import { BackupsPageHead } from "@/components/dashboard/storage/explorer/backups-page-head";
 import { DestinationsView } from "@/components/dashboard/storage/explorer/destinations-view";
 import { checkNow, destinationsOf, useExplorerData, useListingPoll } from "@/components/dashboard/storage/explorer/explorer-data";
-import { ExplorerEmpty, ExplorerSkeleton } from "@/components/dashboard/storage/explorer/explorer-page-states";
-import { FreshnessButton } from "@/components/dashboard/storage/explorer/freshness-button";
+import { ExplorerEmpty, ExplorerPageSkeleton, ExplorerSkeleton } from "@/components/dashboard/storage/explorer/explorer-page-states";
 import { useBackupActions, type BackupTarget } from "@/components/dashboard/storage/explorer/use-backup-actions";
 import { useBackupDetails } from "@/components/dashboard/storage/explorer/use-backup-details";
-import { useExplorerAddress, type ExplorerTab } from "@/components/dashboard/storage/explorer/use-explorer-address";
+import { BACKUP_PARAM, useExplorerAddress, type ExplorerTab } from "@/components/dashboard/storage/explorer/use-explorer-address";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { PageHead } from "@/components/ui/page-head";
-import { PageTabs } from "@/components/ui/page-tabs";
-import { Tabs } from "@/components/ui/tabs";
-import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
-import type { ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex, ExplorerPlan } from "@/services/storage/explorer-types";
+import type { BackupRun, ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex, ExplorerPlan } from "@/services/storage/explorer-types";
 
 /**
  * The views of both lists above a phone: the table and the timeline of days above it. A card only
@@ -33,7 +28,7 @@ import type { ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex,
  */
 const VIEWS: ViewMode[] = ["table", "timeline"];
 
-const PAGE_IDS: Record<ExplorerTab, string> = { backups: BACKUPS_PAGE_ID, destinations: DESTINATIONS_PAGE_ID };
+const PAGE_IDS: Record<ExplorerTab, string> = { backups: BACKUPS_PAGE_ID, destinations: DESTINATIONS_PAGE_ID, shared: SHARED_PAGE_ID };
 
 interface StorageClientProps {
     canDownload: boolean;
@@ -44,17 +39,24 @@ interface StorageClientProps {
     canViewHistory?: boolean;
     /** Whether this user may change the alerts of a destination, which are settings. */
     canEditAlerts?: boolean;
+    /** Whether another tenant's server shares a database with this tenant, which adds the tab Shared with you. */
+    hasShared?: boolean;
+    /** Whether this user may start a backup of a shared database its provider allows, which Run now of a job allows. */
+    canBackUpShared?: boolean;
     /** The column layout of the list of backups this user saved, null for the defaults. */
     initialLayout: TablePreferences | null;
-    /** The views of the list of backups and of the destinations this user picked last. */
-    initialViews: Record<ExplorerTab, ViewMode>;
+    /** The column layout of the shared backups this user saved, null for the defaults. */
+    initialSharedLayout?: TablePreferences | null;
+    /** The views of the list of backups, of the destinations and of the shared backups this user picked last. */
+    initialViews: Pick<Record<ExplorerTab, ViewMode>, "backups" | "destinations"> & { shared?: ViewMode };
 }
 
 /**
  * The Backups page: every backup of every job in one list, with the job and the destination as
  * its filters, and every destination with how it is doing and its details under the list. Both come
- * from the lists DBackup keeps of every destination. The filters, the tab and the picked destination
- * live in the address.
+ * from the lists DBackup keeps of every destination. A third tab, Shared with you, lists the backups
+ * of the databases another tenant's server gives to this one. The filters, the tab and the picked
+ * destination live in the address.
  */
 export function StorageClient({
     canDownload,
@@ -63,21 +65,28 @@ export function StorageClient({
     canManageVault = false,
     canViewHistory = false,
     canEditAlerts = false,
+    hasShared = false,
+    canBackUpShared = false,
     initialLayout,
+    initialSharedLayout = null,
     initialViews,
 }: StorageClientProps) {
     const index = useExplorerData<ExplorerIndex>("/api/storage/explorer");
     const columnLayout = useTableLayout(BACKUPS_TABLE_ID, initialLayout);
-    const [views, setViews] = useState<Record<ExplorerTab, ViewMode>>(() => ({
-        backups: VIEWS.includes(initialViews.backups) ? initialViews.backups : "table",
-        destinations: VIEWS.includes(initialViews.destinations) ? initialViews.destinations : "table",
-    }));
+    const sharedLayout = useTableLayout(SHARED_TABLE_ID, initialSharedLayout);
+    const [views, setViews] = useState<Record<ExplorerTab, ViewMode>>(() => {
+        const valid = (view: ViewMode | undefined) => (view && VIEWS.includes(view) ? view : "table");
+        return { backups: valid(initialViews.backups), destinations: valid(initialViews.destinations), shared: valid(initialViews.shared) };
+    });
 
     const jobs = useMemo(() => index.data?.jobs ?? [], [index.data]);
     const destinations = useMemo(() => index.data?.destinations ?? [], [index.data]);
     const jobsByKey = useMemo(() => new Map(jobs.map((job) => [job.key, job])), [jobs]);
     const destinationsById = useMemo(() => new Map(destinations.map((destination) => [destination.id, destination])), [destinations]);
-    const { tab: pageTab, scope, picked, setParams, showBackupsAt } = useExplorerAddress(jobs, jobsByKey, destinationsById);
+    const { tab, tabParam, scope, picked, setParams, showBackupsAt } = useExplorerAddress(jobs, jobsByKey, destinationsById);
+    // A tenant with nothing of its own but databases shared with it opens on those.
+    const ownEmpty = jobs.length === 0 && destinations.length === 0;
+    const pageTab: ExplorerTab = tab === "shared" ? (hasShared ? "shared" : "backups") : hasShared && ownEmpty && !tabParam ? "shared" : tab;
 
     // A phone has no room for the table, so it always gets the cards and no switch. The list
     // waits until the screen is measured, so a phone never flashes the table first.
@@ -107,6 +116,11 @@ export function StorageClient({
     const { handlersFor: handlersForTarget, askDelete } = actions;
     const handlersFor = useCallback((file: ExplorerFile, destinationId: string) => handlersForTarget({ file, destinationId }), [handlersForTarget]);
     const details = useBackupDetails({ runs: pageTab === "backups" ? backups.data?.runs ?? null : null, at: scope.at, jobsByKey, destinationsById });
+    // A link names a backup by its path with `?backup=`, like Open in a tenant from All tenants.
+    const linkable = useMemo(() => (pageTab === "backups" && runs ? runs.map((run) => ({ id: run.path, run })) : null), [pageTab, runs]);
+    const { openRun } = details;
+    const openLinked = useCallback((entry: { run: BackupRun }) => openRun(entry.run), [openRun]);
+    useOpenFromLink(linkable, openLinked, BACKUP_PARAM);
 
     const changeView = useCallback((next: ViewMode) => {
         setViews((current) => ({ ...current, [pageTab]: next }));
@@ -154,21 +168,11 @@ export function StorageClient({
     const changeTab = (next: string) => {
         details.reset();
         setParams(next === "backups"
-            ? { tab: null, destination: null }
-            : { tab: "destinations", destination: null, job: null, at: null, by: null });
+            ? { tab: ownEmpty && hasShared ? "backups" : null, destination: null }
+            : { tab: next === "shared" ? "shared" : "destinations", destination: null, job: null, at: null, by: null });
     };
 
-    if (index.loading) {
-        return (
-            <div className="space-y-4 md:space-y-6">
-                <div className="flex flex-wrap items-center gap-2 md:gap-3">
-                    <Skeleton className="h-9 w-56" />
-                    <Skeleton className="ml-auto h-9 w-40" />
-                </div>
-                <ExplorerSkeleton />
-            </div>
-        );
-    }
+    if (index.loading) return <ExplorerPageSkeleton />;
 
     if (!index.data) {
         return (
@@ -179,7 +183,7 @@ export function StorageClient({
         );
     }
 
-    if (jobs.length === 0 && destinations.length === 0) {
+    if (ownEmpty && !hasShared) {
         return (
             <ExplorerEmpty title="No destinations yet">
                 Backups appear here once a job has written to a destination. Add a destination on the Connections page and a job that uses it.
@@ -189,28 +193,32 @@ export function StorageClient({
 
     return (
         <div className="space-y-4 md:space-y-0">
-            <PageHead>
-                <Tabs value={pageTab} onValueChange={changeTab} className="min-w-0 flex-1">
-                    <PageTabs
-                        tabs={[
-                            { value: "backups", label: "Backups", icon: Archive, attention: backupsAttention(jobs) },
-                            { value: "destinations", label: "Destinations", icon: HardDrive, attention: destinationsAttention(destinations) },
-                        ]}
-                        value={pageTab}
-                        onValueChange={changeTab}
-                        label="Backup list"
-                    />
-                </Tabs>
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                    <FreshnessButton destinations={freshnessList} onCheckNow={() => check(freshnessList, "The destinations could not be checked")} />
-                    {/* Hidden by CSS rather than by the measured screen, so it does not pop in after loading. */}
-                    <div className="hidden md:block">
-                        <ViewSwitch value={views[pageTab]} onChange={changeView} views={VIEWS} />
-                    </div>
-                </div>
-            </PageHead>
+            <BackupsPageHead
+                tab={pageTab}
+                onTab={changeTab}
+                jobs={jobs}
+                destinations={destinations}
+                hasShared={hasShared}
+                freshness={freshnessList}
+                onCheckNow={() => check(freshnessList, "The destinations could not be checked")}
+                view={views[pageTab]}
+                views={VIEWS}
+                onView={changeView}
+            />
 
-            {pageTab === "backups" && (
+            {pageTab === "shared" && (
+                shownView ? (
+                    <SharedTab view={shownView} columnLayout={sharedLayout} canDownload={canDownload} canRestore={canRestore} canViewHistory={canViewHistory} canBackUp={canBackUpShared} />
+                ) : <ExplorerSkeleton joined />
+            )}
+
+            {pageTab === "backups" && ownEmpty && (
+                <ExplorerEmpty joined title="No backups of your own yet">
+                    Backups of your own appear here once a job has written to a destination. The databases another tenant backs up for you are under Shared with you.
+                </ExplorerEmpty>
+            )}
+
+            {pageTab === "backups" && !ownEmpty && (
                 backups.loading || !backups.data || !shownView ? (
                     backups.error ? <ExplorerEmpty joined title="The backups could not be loaded">{backups.error}</ExplorerEmpty> : <ExplorerSkeleton joined />
                 ) : (

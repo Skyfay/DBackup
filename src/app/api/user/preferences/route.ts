@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { getAuthContext } from "@/lib/auth/access-control";
-import prisma from "@/lib/prisma";
+import { getAutoRedirectOnJobStart } from "@/services/user/preference-service";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -12,13 +12,8 @@ export async function GET() {
     }
 
     try {
-        const user = await prisma.user.findUnique({
-            where: { id: ctx.userId },
-            select: { autoRedirectOnJobStart: true },
-        });
-
         return NextResponse.json({
-            autoRedirectOnJobStart: user?.autoRedirectOnJobStart ?? true,
+            autoRedirectOnJobStart: await getAutoRedirectOnJobStart(ctx.userId),
         });
     } catch {
         return NextResponse.json({ autoRedirectOnJobStart: true }, { status: 200 });

@@ -72,6 +72,13 @@ describe("job actions", () => {
         expect(groups.map((group) => group.label)).toEqual(["Run", "Manage", undefined]);
     });
 
+    it("offers to open a job in its tenant in All tenants, without running or changing it there", () => {
+        const groups = jobActions({ onOpenLastRun: vi.fn(), openInTenant: { label: "Open in Acme GmbH", onSelect: vi.fn() } });
+
+        expect(groups.map((group) => [group.label, group.actions.map((action) => action.id)])).toEqual([["Run", ["last-run"]], ["Manage", ["open-in-tenant"]]]);
+        expect(groups[1].actions[0]).toMatchObject({ label: "Open in Acme GmbH", tone: "neutral" });
+    });
+
     it("leaves out what the user may not do and offers Resume for a paused job", () => {
         const groups = jobActions({ toggle: { paused: true, onSelect: vi.fn() } });
         expect(groups).toHaveLength(1);

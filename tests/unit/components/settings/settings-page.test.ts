@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { searchSettings, settingsIndex } from "@/components/dashboard/settings/settings-index";
-import { partFromAddress } from "@/components/dashboard/settings/settings-parts";
+import { SETTINGS_PARTS, isTenantPart, partFromAddress, settingsGroups } from "@/components/dashboard/settings/settings-parts";
 import { partStates } from "@/components/dashboard/settings/settings-states";
 import { changesOf, minutesText, offsetLabel, secondsText, withSaved, zoneExample } from "@/components/dashboard/settings/settings-values";
 import { triggerSample } from "@/components/dashboard/settings/privacy-part";
@@ -39,7 +39,8 @@ function notificationEvent(overrides: Partial<SettingsModel["notifications"]["ev
 function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     return {
         canManage: true,
-        isSuperAdmin: true,
+        isPlatformAdmin: true,
+        allTenants: false,
         general: { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, checkForUpdates: true, showQuickSetup: false },
         signIn: { sessionDuration: 604800, passkeyLogin: true, loginLook: "logos", emailLoginDisabledByEnv: false, providers: [], passkeyIsLastWayIn: false, loginImage: null },
         passwords: policyOf("standard"),
@@ -69,7 +70,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
                 notificationEvent({ id: "user_login", enabled: false }),
             ],
         },
-        trash: [],
+        trash: null,
         ...overrides,
     };
 }
@@ -80,6 +81,11 @@ describe("the address of the Settings page", () => {
         expect(partFromAddress(null, "config")).toBe("config-backup");
         expect(partFromAddress(null, "certificate")).toBe("https");
         expect(partFromAddress("nothing", "nothing")).toBeNull();
+    });
+
+    it("opens no Tenants part any more, which became a page of its own", () => {
+        expect(partFromAddress("tenants", null)).toBeNull();
+        expect(SETTINGS_PARTS.map((part) => part.id)).not.toContain("tenants");
     });
 });
 
@@ -147,10 +153,23 @@ describe("the state of each part in the navigation", () => {
         expect(partStates(model({ certificate: null })).https).toEqual({ text: "Unreadable", tone: "warning" });
     });
 
-    it("counts what waits in Recently deleted, and says nothing while it is empty", () => {
-        const row = { id: "t1", kind: "job" as const, recordId: "j1", name: "Shop nightly", detail: null, deletedAt: "2026-09-29T10:00:00.000Z", deletedByName: "Manu", expiresAt: "2026-10-29T10:00:00.000Z" };
-        expect(partStates(model({ trash: [row, { ...row, id: "t2" }] }))["recently-deleted"]).toEqual({ text: "2" });
-        expect(partStates(model())["recently-deleted"]).toBeUndefined();
+    it("holds Recently deleted among the data again with one tenant, counted while something waits there", () => {
+        expect(SETTINGS_PARTS.map((part) => part.id)).toContain("recently-deleted");
+        expect(partFromAddress("recently-deleted", null)).toBe("recently-deleted");
+        expect(settingsGroups(true).find((group) => group.label === "Data")?.parts.map((part) => part.id)).toEqual(["retention", "database", "recently-deleted", "config-backup"]);
+
+        const row = { id: "d-1", kind: "job" as const, recordId: "j-1", name: "Nightly", detail: null, deletedAt: "x", deletedByName: null, expiresAt: "y", tenantId: "default" };
+        expect(partStates(model({ trash: { rows: [row], canManage: true } }))["recently-deleted"]).toEqual({ text: "1" });
+        expect(partStates(model({ trash: { rows: [], canManage: true } }))["recently-deleted"]).toBeUndefined();
+    });
+
+    it("leaves Recently deleted out of the settings of the instance with several tenants, where it is the tenant's", () => {
+        expect(settingsGroups(false).flatMap((group) => group.parts).map((part) => part.id)).not.toContain("recently-deleted");
+        expect(isTenantPart("recently-deleted")).toBe(true);
+        expect(isTenantPart("database")).toBe(false);
+        // How long Data retention keeps it stays a setting of the instance.
+        expect(searchSettings(settingsIndex([]), "recently deleted").hits.map((hit) => hit.id)).toEqual(["retention.deletedItems"]);
+        expect(searchSettings(settingsIndex([], [], true), "recently deleted").hits.map((hit) => hit.id)).toEqual(["retention.deletedItems", "recently-deleted"]);
     });
 
     it("counts the tasks, or the ones whose last run needs a look", () => {

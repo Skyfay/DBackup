@@ -7,8 +7,10 @@ import { KpiCards } from "@/components/dashboard/widgets/kpi-cards";
 import { StatsStrip } from "@/components/dashboard/widgets/stats-strip";
 import { StatusBanner } from "@/components/dashboard/widgets/status-banner";
 import { StorageDestinations } from "@/components/dashboard/widgets/storage-destinations";
+import { TenantsCard } from "@/components/dashboard/widgets/tenants-card";
 import { UpcomingRuns } from "@/components/dashboard/widgets/upcoming-runs";
-import { getUserPermissions } from "@/lib/auth/access-control";
+import { getTenantSummaries } from "@/app/actions/tenant/tenant";
+import { getUserPermissions, getViewer, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canUseQuickSetup } from "@/lib/auth/sign-in-target";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";
@@ -27,7 +29,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         redirect(canUseQuickSetup(permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
     }
 
-    const [overview, permissions] = await Promise.all([getDashboardOverview(), getUserPermissions()]);
+    const viewer = await getViewer();
+    // In All tenants whoever may see the tenants sees each with how it is doing, the failed ones first.
+    const showsTenants = Boolean(viewer?.allTenants && hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_READ));
+    const [overview, permissions, summaries] = await Promise.all([
+        getDashboardOverview(),
+        getUserPermissions(),
+        showsTenants ? getTenantSummaries() : null,
+    ]);
 
     const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);
     const canViewStorage = permissions.includes(PERMISSIONS.STORAGE.READ);
@@ -45,6 +54,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     canViewHistory={canViewHistory}
                     canManageJobs={permissions.includes(PERMISSIONS.JOBS.WRITE)}
                 />
+                {summaries?.success && <TenantsCard summaries={summaries.data} />}
                 <KpiCards
                     kpis={overview.kpis}
                     historyHref={canViewHistory ? "/dashboard/history" : undefined}

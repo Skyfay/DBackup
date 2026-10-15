@@ -45,7 +45,7 @@ import { GET as getBackup } from "@/app/api/storage/explorer/backup/route";
 import { POST as refresh } from "@/app/api/storage/explorer/refresh/route";
 import { GET as getPlan } from "@/app/api/storage/explorer/plan/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 const backups = () => getBackups(new NextRequest("http://localhost/api/storage/explorer/runs"));
 const plan = () => getPlan(new NextRequest("http://localhost/api/storage/explorer/plan"));
 const execution = (path?: string) =>

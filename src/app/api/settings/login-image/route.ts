@@ -6,8 +6,10 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ValidationError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
 import { SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { platformLogFor } from "@/services/system/settings-save";
 import { getLoginImageInfo, LOGIN_IMAGE_MAX_BYTES, readLoginImage, removeLoginImage, saveLoginImage } from "@/services/system/login-image-service";
 import { getSignInSettings } from "@/services/system/system-settings-service";
+import { bodyTooLarge } from "@/lib/server/upload-size";
 
 const FIELD = "Login image";
 
@@ -30,6 +32,7 @@ export async function POST(req: NextRequest) {
     if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
 
+    if (bodyTooLarge(req.headers, LOGIN_IMAGE_MAX_BYTES)) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "Pick a picture to upload." }, { status: 400 });
@@ -38,10 +41,10 @@ export async function POST(req: NextRequest) {
     const before = await getLoginImageInfo();
     try {
         const saved = await saveLoginImage(file.name, new Uint8Array(await file.arrayBuffer()));
-        await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
+        await auditService.log(ctx.userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
             area: SETTINGS_AREAS.SIGN_IN,
             changes: [{ field: FIELD, from: before?.fileName ?? null, to: saved.fileName }],
-        });
+        }, undefined, platformLogFor(ctx));
         return NextResponse.json({ success: true, data: saved });
     } catch (error: unknown) {
         if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
@@ -58,12 +61,12 @@ export async function DELETE() {
     const [before, { loginLook }] = await Promise.all([getLoginImageInfo(), getSignInSettings()]);
     if (!before) return NextResponse.json({ success: true });
     await removeLoginImage();
-    await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
+    await auditService.log(ctx.userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
         area: SETTINGS_AREAS.SIGN_IN,
         changes: [
             { field: FIELD, from: before.fileName, to: null },
             ...(loginLook === "image" ? [{ field: "Login page", from: "Your own image", to: "DBackup logos" }] : []),
         ],
-    });
+    }, undefined, platformLogFor(ctx));
     return NextResponse.json({ success: true });
 }

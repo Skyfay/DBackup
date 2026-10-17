@@ -3,6 +3,7 @@ import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { logger } from "@/lib/logging/logger";
 import { isShutdownRequested } from "@/lib/server/shutdown";
 import { isDatabaseMaintenanceActive, isRunHoldActive } from "@/lib/server/database-maintenance";
+import { LEADING_RUNS } from "./follower-runs";
 
 const log = logger.child({ module: "Queue" });
 
@@ -45,8 +46,9 @@ async function processAllTenants() {
     // concurrent call claims after this read is still in this list as the first of its job, so
     // this call picks that one, and its claim in performExecution fails. A run claimed before
     // this read shows up as running below. Either way no second run of a job starts beside it.
+    // A run that follows another one waits for that one, never for a slot of its own.
     const pending = await prisma.execution.findMany({
-        where: { status: "Pending" },
+        where: { status: "Pending", AND: [LEADING_RUNS] },
         orderBy: { startedAt: 'asc' }, // Creation time
         select: { id: true, jobId: true, tenantId: true },
     });
@@ -56,9 +58,9 @@ async function processAllTenants() {
         return;
     }
 
-    // 3. Running runs fill slots, and their jobs are busy
+    // 3. Running runs fill slots, and their jobs are busy. A run that follows another fills none.
     const running = await prisma.execution.findMany({
-        where: { status: "Running" },
+        where: { status: "Running", AND: [LEADING_RUNS] },
         select: { jobId: true },
     });
 

@@ -1,19 +1,22 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import { DumpSizeCell, ProviderChip } from "@/components/dashboard/shared/shared-cells";
 import { cn } from "@/lib/utils";
-import type { BackupRun, ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
+import type { ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
 import { copiesIn, isLocked, verificationOf } from "./backup-filters";
 import { BackupFlags, CopyChips, IntegrityBadge, JobTile, MadeAt, SizeCell, StartedBy, TypeChip } from "./explorer-cells";
 import { contentsOf, snapshotBytes } from "./explorer-format";
+import { SharedJobCell, SharedStartedBy, SharedTypeChip } from "./shared-run-cells";
+import { isSharedRun, type ListRun } from "./shared-runs";
 
 interface BackupColumnOptions {
     jobs: Map<string, ExplorerJob>;
     destinations: Map<string, ExplorerDestination>;
     /** The destinations of the filter, which the copies, the check and the lock are counted at. */
     at: string[];
-    onOpen: (run: BackupRun) => void;
-    renderActions: (run: BackupRun) => React.ReactNode;
+    onOpen: (run: ListRun) => void;
+    renderActions: (run: ListRun) => React.ReactNode;
 }
 
 /** The job of a backup, dimmed with a chip when the job was deleted. */
@@ -27,8 +30,11 @@ function JobCell({ job }: { job: ExplorerJob | undefined }) {
     );
 }
 
-/** The columns of the list of every backup. The Columns menu decides which of them show. */
-export function backupColumns({ jobs, destinations, at, onOpen, renderActions }: BackupColumnOptions): ColumnDef<BackupRun>[] {
+/**
+ * The columns of the list of every backup. The Columns menu decides which of them show. A backup of
+ * a shared database fills them with its database, its provider and the size of its dump.
+ */
+export function backupColumns({ jobs, destinations, at, onOpen, renderActions }: BackupColumnOptions): ColumnDef<ListRun>[] {
     return [
         {
             id: "backup",
@@ -45,31 +51,44 @@ export function backupColumns({ jobs, destinations, at, onOpen, renderActions }:
         },
         {
             id: "job",
-            accessorFn: (run) => jobs.get(run.jobKey)?.name ?? "",
+            accessorFn: (run) => (isSharedRun(run) ? run.shared.database.databaseName : jobs.get(run.jobKey)?.name ?? ""),
             header: "Job",
             meta: { label: "Job" },
-            cell: ({ row }) => <JobCell job={jobs.get(row.original.jobKey)} />,
+            cell: ({ row }) => {
+                const run = row.original;
+                return isSharedRun(run) ? <SharedJobCell row={run.shared} /> : <JobCell job={jobs.get(run.jobKey)} />;
+            },
         },
-        { id: "type", header: "Type", meta: { label: "Type" }, cell: ({ row }) => <TypeChip file={row.original.file} /> },
-        { id: "startedBy", header: "Started by", meta: { label: "Started by" }, cell: ({ row }) => <StartedBy file={row.original.file} /> },
+        { id: "type", header: "Type", meta: { label: "Type" }, cell: ({ row }) => (isSharedRun(row.original) ? <SharedTypeChip /> : <TypeChip file={row.original.file} />) },
+        {
+            id: "startedBy",
+            header: "Started by",
+            meta: { label: "Started by" },
+            cell: ({ row }) => (isSharedRun(row.original) ? <SharedStartedBy row={row.original.shared} /> : <StartedBy file={row.original.file} />),
+        },
         {
             id: "inside",
             header: "What is inside",
             meta: { label: "What is inside", defaultHidden: true },
-            cell: ({ row }) => <span className="block max-w-56 truncate text-sm">{contentsOf(row.original.file)}</span>,
+            cell: ({ row }) => (
+                <span className="block max-w-56 truncate text-sm">{isSharedRun(row.original) ? row.original.shared.databaseName : contentsOf(row.original.file)}</span>
+            ),
         },
         {
             id: "size",
-            accessorFn: (run) => snapshotBytes(run.file),
+            // A shared backup without a size read yet sorts below every other.
+            accessorFn: (run) => (isSharedRun(run) ? run.shared.dump?.stored ?? -1 : snapshotBytes(run.file)),
             header: () => <div className="text-right">Size</div>,
             meta: { label: "Size" },
-            cell: ({ row }) => <SizeCell file={row.original.file} />,
+            cell: ({ row }) => (isSharedRun(row.original) ? <DumpSizeCell row={row.original.shared} /> : <SizeCell file={row.original.file} />),
         },
         {
             id: "at",
             header: "Stored at",
             meta: { label: "Stored at" },
-            cell: ({ row }) => <CopyChips copies={copiesIn(row.original, at)} destinations={destinations} />,
+            cell: ({ row }) => (isSharedRun(row.original)
+                ? <ProviderChip name={row.original.shared.database.providerName} />
+                : <CopyChips copies={copiesIn(row.original, at)} destinations={destinations} />),
         },
         {
             id: "integrity",

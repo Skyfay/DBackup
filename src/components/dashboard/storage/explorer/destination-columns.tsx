@@ -94,6 +94,7 @@ export function destinationColumns({ jobs, renderActions }: ColumnsInput): Colum
                         <p className="truncate text-xs text-muted-foreground">
                             {kindNames.get(row.original.adapterId) ?? row.original.adapterId}
                             {row.original.airGapped && " · air-gapped"}
+                            {row.original.provider && ` · provided by ${row.original.provider}`}
                         </p>
                     </div>
                 </div>

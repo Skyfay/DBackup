@@ -5,8 +5,17 @@ import { logger } from "@/lib/logging/logger";
 import { NotFoundError, ServiceError } from "@/lib/logging/errors";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import { assertOwnRecords } from "@/lib/tenant/references";
+import { currentTenantId } from "@/lib/tenant/current";
+import { providedTo } from "@/services/sharing/provided";
 
 const log = logger.child({ service: "NotificationTemplateService" });
+
+/** Refuses a channel of another tenant, unless that tenant shares it with the tenant that runs now. */
+async function assertUsableChannels(configIds: string[]): Promise<void> {
+  const tenantId = await currentTenantId();
+  const shared = tenantId && configIds.length > 0 ? new Set((await providedTo(tenantId, { kind: "channel", ids: configIds })).map((channel) => channel.id)) : new Set<string>();
+  await assertOwnRecords(prisma, { adapterConfig: configIds.filter((id) => !shared.has(id)) });
+}
 
 export interface NotificationTemplateChannelInput {
   configId: string;
@@ -18,6 +27,8 @@ export interface TemplateChannelConnection {
   id: string;
   name: string;
   adapterId: string;
+  /** The tenant that shares the channel with this one, absent for an own channel. */
+  provider?: string;
 }
 
 /**
@@ -64,7 +75,7 @@ export async function createNotificationTemplate(input: {
       `A notification template named "${input.name}" already exists.`
     );
   }
-  await assertOwnRecords(prisma, { adapterConfig: input.channels.map((channel) => channel.configId) });
+  await assertUsableChannels(input.channels.map((channel) => channel.configId));
 
   if (input.isDefault) {
     await prisma.notificationTemplate.updateMany({
@@ -112,7 +123,7 @@ export async function updateNotificationTemplate(
       "Cannot modify a system template."
     );
   }
-  await assertOwnRecords(prisma, { adapterConfig: (input.channels ?? []).map((channel) => channel.configId) });
+  await assertUsableChannels((input.channels ?? []).map((channel) => channel.configId));
 
   if (input.name && input.name !== template.name) {
     const existing = await prisma.notificationTemplate.findFirst({

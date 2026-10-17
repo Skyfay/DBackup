@@ -110,6 +110,22 @@ describe("download links for a pick", () => {
         expect(servedIn).toEqual({ kind: "tenant", tenantId: "acme" });
     });
 
+    it("serves no token another download hands to its own session, which is no link", async () => {
+        const { generateDownloadToken, generateFileDownloadToken, generateSelectionDownloadToken } = await import("@/lib/auth/download-tokens");
+        const { storageService } = await import("@/services/storage/storage-service");
+        const tokens = [
+            generateSelectionDownloadToken({ storageId: "nas", file: "Shop/backup.tar", userId: "u1", fileName: "pick.tar.gz", databases: ["billing"] }),
+            generateFileDownloadToken({ storageId: "nas", file: "Shop/backup.tar", userId: "u1", tempFile: "/nonexistent/dbackup-test/never-written", fileName: "billing.sql", contentType: "application/sql" }),
+            generateDownloadToken("nas", "Shop/backup.tar"),
+        ];
+
+        for (const token of tokens) {
+            expect((await fetchLink(`http://dbackup.test/api/storage/public-download?token=${token}`)).status).toBe(401);
+        }
+        expect(storageService.downloadFile).not.toHaveBeenCalled();
+        expect(mocks.openArchiveDownload).not.toHaveBeenCalled();
+    });
+
     it("lets the command run again after a transfer that broke off", async () => {
         mocks.openArchiveDownload.mockImplementationOnce(async () => {
             const stream = new Readable({ read() { this.destroy(new Error("connection reset")); } });

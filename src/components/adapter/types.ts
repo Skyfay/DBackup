@@ -1,6 +1,9 @@
 import type { StorageRole } from "@/lib/core/storage-roles";
 import type { TablePreferences } from "@/lib/core/table-preferences";
 import type { ConnectionOverview } from "@/services/adapters/connection-overview";
+import type { ProvidedTerms, SharedTerms } from "@/lib/adapters/dto";
+import type { ListedDatabases } from "@/services/adapters/connection-databases";
+import type { SharedServerTerms } from "@/services/sharing/shared-server-rows";
 
 export interface AdapterConfig {
     id: string;
@@ -25,6 +28,17 @@ export interface AdapterConfig {
     storageRole?: StorageRole;
     /** The tenant of the connection, which a list in All tenants shows and opens it in. */
     tenantId?: string;
+    /** Set when another tenant shares the connection with this one, which uses it and never changes it. */
+    provided?: ProvidedTerms;
+    /** Set on a connection this tenant shares with others, for whoever may see what is shared. */
+    share?: SharedTerms;
+    /** A database connection on the Connections page: the databases it held at its last read, null before the first one. */
+    listedDatabases?: ListedDatabases | null;
+    /**
+     * Set on a server of another tenant whose databases this tenant holds, which only the
+     * Connections page lists. The server stays with that tenant: no address, no health check, no edit.
+     */
+    sharedServer?: SharedServerTerms;
 }
 
 export interface AdapterManagerProps {
@@ -49,4 +63,9 @@ export interface AdapterManagerProps {
      * first asks for the tenant. The form of this list when left out, while the viewer may add.
      */
     onCreate?: () => void;
+    /**
+     * Whether the tenant may add connections of this kind itself, which the platform decides. A
+     * clone is a new one too. As `canManage` when left out.
+     */
+    canAdd?: boolean;
 }

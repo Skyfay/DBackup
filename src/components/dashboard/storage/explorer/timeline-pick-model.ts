@@ -1,5 +1,6 @@
-import type { BackupRun, ExplorerJob } from "@/services/storage/explorer-types";
+import type { ExplorerJob } from "@/services/storage/explorer-types";
 import { copiesIn, failedCheck } from "./backup-filters";
+import { isSharedJobKey, type ListRun } from "./shared-runs";
 import type { DayKey, TimelinePick, TimelineRow } from "./timeline-model";
 
 /**
@@ -12,7 +13,7 @@ import type { DayKey, TimelinePick, TimelineRow } from "./timeline-model";
 export type PickProblem = { kind: "failed" } | { kind: "missing"; destinationIds: string[] };
 
 export type PickItem =
-    | { kind: "backup"; job: ExplorerJob; day: DayKey; at: string; run: BackupRun; problem: PickProblem | null }
+    | { kind: "backup"; job: ExplorerJob; day: DayKey; at: string; run: ListRun; problem: PickProblem | null }
     | { kind: "missed"; job: ExplorerJob; day: DayKey; at: string; runs: number };
 
 export interface PickItems {
@@ -23,10 +24,12 @@ export interface PickItems {
     backups: number;
     /** The jobs with a backup among them. */
     jobs: number;
+    /** The shared databases with a backup among them. */
+    databases: number;
 }
 
 /** The problem of a backup within the destinations of the filter, a failed check before a missing copy. */
-export function problemOf(run: BackupRun, at: string[]): PickProblem | null {
+export function problemOf(run: ListRun, at: string[]): PickProblem | null {
     if (failedCheck(run, at)) return { kind: "failed" };
     const missing = copiesIn(run, at).filter((copy) => copy.state === "missing").map((copy) => copy.destinationId);
     return missing.length > 0 ? { kind: "missing", destinationIds: missing } : null;
@@ -47,10 +50,13 @@ export function itemsOfPick(rows: TimelineRow[], days: DayKey[], pick: TimelineP
     const direction = pick.from === pick.to ? 1 : -1;
     items.sort((a, b) => direction * (Date.parse(a.at) - Date.parse(b.at)));
     const backups = items.filter((item) => item.kind === "backup");
+    const keys = new Set(backups.map((item) => item.job.key));
+    const shared = [...keys].filter(isSharedJobKey).length;
     return {
         look: items.filter((item) => item.kind === "missed" || item.problem !== null),
         rest: items.filter((item) => item.kind === "backup" && item.problem === null),
         backups: backups.length,
-        jobs: new Set(backups.map((item) => item.job.key)).size,
+        jobs: keys.size - shared,
+        databases: shared,
     };
 }

@@ -206,6 +206,7 @@ export default defineConfig({
             { text: 'Groups & Permissions', link: '/user-guide/admin/permissions' },
             { text: 'Tenants', link: '/user-guide/admin/tenants' },
             { text: 'Shared Databases', link: '/user-guide/admin/shared-databases' },
+            { text: 'Shared Destinations and Channels', link: '/user-guide/admin/shared-connections' },
             { text: 'Audit Log', link: '/user-guide/admin/audit-log' },
             { text: 'SSO / OIDC', link: '/user-guide/admin/sso' },
             { text: 'Settings & System Tasks', link: '/user-guide/admin/settings' },

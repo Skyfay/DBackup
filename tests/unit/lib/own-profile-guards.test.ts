@@ -4,7 +4,7 @@ import { PermissionError } from "@/lib/logging/errors";
 const mocks = vi.hoisted(() => ({
     viewer: { id: "u1", name: "Lena Graf", email: "lena@example.ch", group: { name: "Operators" } },
     held: new Set<string>(),
-    service: { updateUser: vi.fn(), togglePasskeyTwoFactor: vi.fn() },
+    service: { updateUser: vi.fn(), togglePasskeyTwoFactor: vi.fn(), ownEmailRefusal: vi.fn(async () => null) },
     audit: vi.fn(),
 }));
 
@@ -47,12 +47,15 @@ describe("what a group lets someone change of the own profile", () => {
         expect(await togglePasskeyTwoFactor("u1", true)).toEqual({ success: true });
     });
 
-    it("changes the own name and email only as far as the group allows, unless it may change users", async () => {
+    it("changes the own name and email only as far as the group allows, also for someone who may change users", async () => {
         expect(await updateUser("u1", { name: "Someone Else" })).toEqual({ success: false, error: "Your group may not change your name." });
         expect(await updateUser("u1", { email: "boss@example.ch" })).toEqual({ success: false, error: "Your group may not change your email." });
-        expect(mocks.service.updateUser).not.toHaveBeenCalled();
 
         mocks.held = new Set(["users:write"]);
+        expect(await updateUser("u1", { name: "Someone Else" })).toEqual({ success: false, error: "Your group may not change your name." });
+        expect(mocks.service.updateUser).not.toHaveBeenCalled();
+
+        mocks.held = new Set(["profile:update_name"]);
         expect(await updateUser("u1", { name: "Someone Else" })).toEqual({ success: true });
     });
 

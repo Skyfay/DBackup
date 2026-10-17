@@ -247,7 +247,7 @@ describe('StorageService', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.listFiles('missing-id'))
-                .rejects.toThrow('Storage configuration with ID missing-id not found');
+                .rejects.toThrow('Storage adapter not found: missing-id');
         });
 
         it('should throw error if adapter type is not storage', async () => {
@@ -272,7 +272,7 @@ describe('StorageService', () => {
             });
 
             await expect(service.listFiles('db-conf'))
-                .rejects.toThrow('Adapter configuration db-conf is not a storage adapter');
+                .rejects.toThrow('Storage adapter not found: db-conf');
         });
 
         it('should throw error if adapter implementation is missing from registry', async () => {
@@ -299,7 +299,7 @@ describe('StorageService', () => {
             vi.mocked(registry.get).mockReturnValue(undefined);
 
             await expect(service.listFiles('conf-123'))
-                .rejects.toThrow("Storage adapter implementation 'unknown-adapter' not found in registry");
+                .rejects.toThrow('Storage adapter implementation not found: unknown-adapter');
         });
     });
 
@@ -338,7 +338,7 @@ describe('StorageService', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.toggleLock('missing', 'backup.sql'))
-                .rejects.toThrow('Storage not found');
+                .rejects.toThrow('Storage adapter not found: missing');
         });
 
         it('should throw when adapter does not support read', async () => {
@@ -388,14 +388,14 @@ describe('StorageService', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.listFiles('missing-id'))
-                .rejects.toThrow('Storage configuration with ID missing-id not found');
+                .rejects.toThrow('Storage adapter not found: missing-id');
         });
 
         it('should throw error if adapter type is not storage', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ type: 'database' }));
 
             await expect(service.listFiles('conf-123'))
-                .rejects.toThrow('Adapter configuration conf-123 is not a storage adapter');
+                .rejects.toThrow('Storage adapter not found: conf-123');
         });
 
         it('should throw error if adapter implementation is missing from registry', async () => {
@@ -403,7 +403,7 @@ describe('StorageService', () => {
             vi.mocked(registry.get).mockReturnValue(undefined);
 
             await expect(service.listFiles('conf-123'))
-                .rejects.toThrow("Storage adapter implementation 'unknown-adapter' not found in registry");
+                .rejects.toThrow('Storage adapter implementation not found: unknown-adapter');
         });
 
         it('should throw when resolveAdapterConfig fails', async () => {
@@ -412,7 +412,7 @@ describe('StorageService', () => {
             mockResolveAdapterConfig.mockRejectedValueOnce(new Error('Bad decrypt'));
 
             await expect(service.listFiles('conf-123'))
-                .rejects.toThrow('Failed to decrypt configuration for conf-123');
+                .rejects.toThrow('Bad decrypt');
         });
     });
 
@@ -659,20 +659,20 @@ describe('StorageService', () => {
 
         it('should throw when adapter is not storage type in listFilesWithMetadata', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ type: 'database' }));
-            await expect(service.listFilesWithMetadata('conf-123')).rejects.toThrow('not a storage adapter');
+            await expect(service.listFilesWithMetadata('conf-123')).rejects.toThrow('Storage adapter not found: conf-123');
         });
 
         it('should throw when adapter implementation not found in listFilesWithMetadata', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
             vi.mocked(registry.get).mockReturnValue(undefined as any);
-            await expect(service.listFilesWithMetadata('conf-123')).rejects.toThrow('not found in registry');
+            await expect(service.listFilesWithMetadata('conf-123')).rejects.toThrow('Storage adapter implementation not found: local-filesystem');
         });
 
         it('should throw when resolveAdapterConfig fails in listFilesWithMetadata', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
             vi.mocked(registry.get).mockReturnValue(makeAdapter());
             mockResolveAdapterConfig.mockRejectedValueOnce(new Error('decrypt error'));
-            await expect(service.listFilesWithMetadata('conf-123')).rejects.toThrow('Failed to decrypt');
+            await expect(service.listFilesWithMetadata('conf-123')).rejects.toThrow('decrypt error');
         });
 
         it('should handle execution path starting with slash', async () => {
@@ -766,14 +766,14 @@ describe('StorageService', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.deleteFile('missing', 'test.sql'))
-                .rejects.toThrow('Storage configuration with ID missing not found');
+                .rejects.toThrow('Storage adapter not found: missing');
         });
 
         it('should throw when adapter type is not storage', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ type: 'database' }));
 
             await expect(service.deleteFile('conf-123', 'test.sql'))
-                .rejects.toThrow('Adapter configuration conf-123 is not a storage adapter');
+                .rejects.toThrow('Storage adapter not found: conf-123');
         });
 
         it('should throw when adapter not found in registry', async () => {
@@ -781,7 +781,7 @@ describe('StorageService', () => {
             vi.mocked(registry.get).mockReturnValue(undefined);
 
             await expect(service.deleteFile('conf-123', 'test.sql'))
-                .rejects.toThrow("Storage adapter implementation 'ghost' not found in registry");
+                .rejects.toThrow('Storage adapter implementation not found: ghost');
         });
 
         it('should throw when config decrypt fails', async () => {
@@ -790,7 +790,7 @@ describe('StorageService', () => {
             mockResolveAdapterConfig.mockRejectedValueOnce(new Error('Bad key'));
 
             await expect(service.deleteFile('conf-123', 'test.sql'))
-                .rejects.toThrow('Failed to decrypt configuration for conf-123');
+                .rejects.toThrow('Bad key');
         });
 
         it('deletes every sidecar alongside the backup', async () => {
@@ -842,14 +842,14 @@ describe('StorageService', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.downloadFile('missing', 'remote.sql', '/local/path.sql'))
-                .rejects.toThrow('Storage configuration with ID missing not found');
+                .rejects.toThrow('Storage adapter not found: missing');
         });
 
         it('should throw when adapter type is not storage', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ type: 'database' }));
 
             await expect(service.downloadFile('conf-123', 'remote.sql', '/local/path.sql'))
-                .rejects.toThrow('Adapter configuration conf-123 is not a storage adapter');
+                .rejects.toThrow('Storage adapter not found: conf-123');
         });
 
         it('should throw when adapter not found in registry', async () => {
@@ -857,7 +857,7 @@ describe('StorageService', () => {
             vi.mocked(registry.get).mockReturnValue(undefined);
 
             await expect(service.downloadFile('conf-123', 'remote.sql', '/local/path.sql'))
-                .rejects.toThrow("Storage adapter implementation 'ghost' not found in registry");
+                .rejects.toThrow('Storage adapter implementation not found: ghost');
         });
 
         it('should throw when config decrypt fails', async () => {
@@ -866,7 +866,7 @@ describe('StorageService', () => {
             mockResolveAdapterConfig.mockRejectedValueOnce(new Error('Bad key'));
 
             await expect(service.downloadFile('conf-123', 'remote.sql', '/local/path.sql'))
-                .rejects.toThrow('Failed to decrypt configuration for conf-123');
+                .rejects.toThrow('Bad key');
         });
 
         describe('decrypt=true', () => {

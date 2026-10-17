@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { PermissionError, ApiKeyError } from "@/lib/logging/errors";
+import { PermissionError, ApiKeyError, NotFoundError } from "@/lib/logging/errors";
 
 // Mock logger
 vi.mock("@/lib/logging/logger", () => ({
@@ -256,5 +256,22 @@ describe("POST /api/jobs/[id]/run", () => {
     expect(response.status).toBe(500);
     expect(body.success).toBe(false);
     expect(body.error).toBe("Job not found");
+  });
+
+  it("answers 404 for a job the tenant does not hold, like for one that does not exist", async () => {
+    mockGetAuthContext.mockResolvedValue({
+      userId: "user-1",
+      permissions: ["jobs:execute"],
+      isPlatformAdmin: false,
+      authMethod: "session",
+    });
+    mockCheckPermissionWithContext.mockReturnValue(undefined);
+    mockExecuteJob.mockRejectedValue(new NotFoundError("Job", "job-of-another-tenant"));
+
+    const response = await POST(createRequest(), createProps("job-of-another-tenant"));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ success: false, error: "Job not found" });
+    expect(mockAuditLogFor).not.toHaveBeenCalled();
   });
 });

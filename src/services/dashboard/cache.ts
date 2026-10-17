@@ -7,7 +7,8 @@
  * the same key names the numbers of whoever asks.
  */
 
-import { currentTenantId } from "@/lib/tenant/current";
+import { explicitScope } from "@/lib/tenant/context";
+import { requestScope } from "@/lib/tenant/current";
 
 interface CacheEntry<T> {
     value: T;
@@ -28,6 +29,17 @@ export interface CacheOptions {
      * change, like the counts of past calendar days.
      */
     survivesInvalidation?: boolean;
+}
+
+/**
+ * Whose entries a caller reads: its tenant, `*` for every tenant at once, which the system scope
+ * and All tenants read alike, unfiltered, and `-` for code of no tenant, like a request of an
+ * account that works in none, which must never be served the numbers of every tenant.
+ */
+async function cacheScope(): Promise<string> {
+    const scope = explicitScope() ?? (await requestScope());
+    if (!scope) return "-";
+    return scope.kind === "tenant" ? scope.tenantId : "*";
 }
 
 // Stored on globalThis so the runner and the pages share one cache, even across module reloads.
@@ -57,8 +69,7 @@ export async function cached<T>(
 ): Promise<T> {
     // Taken before the tenant is known, so an invalidation from then on keeps this load out too.
     const generation = state.generation;
-    // The system scope, like the runner, sees every tenant at once and gets entries of its own.
-    key = `${(await currentTenantId()) ?? "*"}:${key}`;
+    key = `${await cacheScope()}:${key}`;
     const entry = state.entries.get(key) as CacheEntry<T> | undefined;
     if (entry && entry.expiresAt > Date.now()) return entry.value;
 

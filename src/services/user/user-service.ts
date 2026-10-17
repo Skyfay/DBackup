@@ -3,10 +3,12 @@ import { runAsTenant } from "@/lib/tenant/context";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { ValidationError } from "@/lib/logging/errors";
 import { authService } from "@/services/auth/auth-service";
-import type { AccountTarget } from "@/lib/auth/account-access";
+import { accountRefusal, type AccountActor, type AccountTarget } from "@/lib/auth/account-access";
 import { EVERY_PERMISSION, PLATFORM_ADMIN_ROLE, permissionsIn } from "@/lib/auth/owner-permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
+import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
+import { platformGroupService } from "./platform-group-service";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 
 export const userService = {
@@ -71,9 +73,35 @@ export const userService = {
 
   /** Whom an account belongs to, which decides who may change it, see `accountRefusal`. */
   async accountOf(userId: string): Promise<AccountTarget | null> {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, memberships: { select: { tenantId: true } } } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
     if (!user) return null;
-    return { isPlatformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE, tenantIds: user.memberships.map((membership) => membership.tenantId) };
+    const platformGroup = user.platformGroupId ? (await platformGroupService.shapeOf(userId))?.shape ?? null : null;
+    return { isPlatformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE, tenantIds: user.memberships.map((membership) => membership.tenantId), platformGroup };
+  },
+
+  /**
+   * Why someone may not change their own email to this one, null when they may: an email of a
+   * domain the provider of a tenant they do not work in claims, see `claimedEmailRefusal`. The
+   * people of the platform count as people of the home tenant.
+   */
+  async ownEmailRefusal(userId: string, email: string): Promise<string | null> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
+    if (!user) return null;
+    const tenantIds = user.memberships.map((membership) => membership.tenantId);
+    if (user.platformGroupId || tenantIds.length === 0) tenantIds.push(HOME_TENANT_ID);
+    return claimedEmailRefusal(email, tenantIds, user.platformRole === PLATFORM_ADMIN_ROLE);
+  },
+
+  /**
+   * Why the caller may not change an account, its password, second factor, sessions, name, email
+   * or the account itself, null when they may or the account is gone. See `accountRefusal`.
+   */
+  async accountRefusalFor(caller: AccountActor & { id: string }, userId: string): Promise<string | null> {
+    const target = await this.accountOf(userId);
+    if (!target) return null;
+    // Only an account of a platform group needs the caller's own platform group to compare.
+    const platformGroupShape = target.platformGroup && !caller.isPlatformAdmin ? (await platformGroupService.shapeOf(caller.id))?.shape ?? null : null;
+    return accountRefusal({ ...caller, platformGroupShape }, target);
   },
 
   /** Ends one session of a user. False when the user holds no such session. */

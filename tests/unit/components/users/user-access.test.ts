@@ -31,7 +31,7 @@ describe("what a tenant admin may change of an account", () => {
     });
 
     it("leaves an account that works in other tenants to a platform admin", () => {
-        expect(accountLock(person({ elsewhere: true }), false)).toBe("This account also works in other tenants. Only a platform admin can change it.");
+        expect(accountLock(person({ elsewhere: true }), false)).toBe("This account also works in other tenants. Only someone who manages the accounts of the platform can change it.");
         expect(accountLock(person({ elsewhere: true }), true)).toBeNull();
     });
 

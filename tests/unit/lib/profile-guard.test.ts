@@ -61,4 +61,13 @@ describe("what a user holds through the group", () => {
 
         expect(await userHolds("u1", "profile:manage_passkeys")).toBe(true);
     });
+
+    it("lets someone of a platform group change their own profile, also without a group in any tenant", async () => {
+        const platformGroup = { platformPermissions: '["platform-accounts:read"]', tenantPermissions: "[]", allTenants: false, tenants: [] };
+        prismaMock.user.findUnique.mockResolvedValueOnce({ ...account(null), platformGroup } as never);
+        expect(await userHolds("support", "profile:manage_2fa")).toBe(true);
+
+        prismaMock.user.findUnique.mockResolvedValueOnce({ ...account(null), platformGroup: null } as never);
+        expect(await userHolds("nobody", "profile:manage_2fa")).toBe(false);
+    });
 });

@@ -31,6 +31,8 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: mocks.listing } }));
 vi.mock("@/services/restore/archive-download", () => ({ writeDatabaseDump: mocks.writeDump }));
+// A restore opens the copy first, to know it answers and to find its key.
+vi.mock("@/services/restore/file-restore", () => ({ openArchiveForRestore: async () => ({ masterKey: undefined, dispose: async () => undefined }) }));
 vi.mock("@/services/restore/restore-service", () => ({ restoreService: { restoreShared: mocks.restoreShared } }));
 vi.mock("@/services/tenant/shared-dump-sizes", () => ({ dumpSizes: mocks.dumpSizes }));
 vi.mock("@/services/backup/backup-service", () => ({ backupService: { executeJob: mocks.executeJob } }));
@@ -164,12 +166,17 @@ describe("a database that moves to another server", () => {
 
     it("restores a backup of the old server into the database at its new place, under its new name", async () => {
         const ref = await refOf("acme", "old-mysql", "shop", "2026-03-10");
-        expect(await restoreSharedBackup("acme", ref, "Ana", NOW)).toEqual({ executionId: "restore-1", target: { sourceId: "new-mysql", databaseName: "shop2" } });
+        expect(await restoreSharedBackup("acme", ref, "Ana", NOW)).toEqual({
+            executionId: "restore-1",
+            target: { sourceId: "new-mysql", databaseName: "shop2" },
+            // The tenant of the server it goes into sees the restore.
+            provider: { tenantId: "default", executionId: null, serverName: "New MySQL", customerName: "Acme" },
+        });
         expect(mocks.restoreShared).toHaveBeenCalledWith(expect.objectContaining({
             file: "Backups/o-mar.tar",
             targetSourceId: "new-mysql",
             databaseMapping: [{ originalName: "shop", targetName: "shop2", selected: true }],
-            shared: { databaseName: "shop2" },
+            shared: { databaseName: "shop2", provider: { tenantId: "default", name: "Default", customer: "Acme" } },
         }), "acme");
     });
 
@@ -243,7 +250,8 @@ describe("a server whose connection is deleted", () => {
 
     it("downloads its backups and restores none of them", async () => {
         const ref = await refOf("acme", "gone-mysql", "crm", "2026-02-10");
-        await expect(prepareSharedDownload("acme", "u-acme", ref)).resolves.toEqual(expect.objectContaining({ storageId: "nas" }));
+        await expect(prepareSharedDownload("acme", "u-acme", ref)).resolves.toEqual(expect.objectContaining({ token: expect.any(String) }));
+        expect(mocks.writeDump).toHaveBeenCalledWith(expect.objectContaining({ storageConfigId: "nas" }), expect.any(String));
         await expect(restoreSharedBackup("acme", ref, "Ana", NOW)).rejects.toThrow(/deleted/);
         expect(mocks.restoreShared).not.toHaveBeenCalled();
     });
@@ -284,8 +292,18 @@ describe("backups a customer starts on demand", () => {
             return { success: true, executionId: `run-${++runs}` };
         });
         const started = await requestSharedBackup("acme", lena, shop2, NOW);
-        expect(mocks.executeJob).toHaveBeenCalledWith("new-job", { type: "Manual", label: "Acme · Lena Graf" }, { databases: ["shop2"] });
+        expect(mocks.executeJob).toHaveBeenCalledWith("new-job", { type: "Manual", label: "Acme · Lena Graf" }, { databases: ["shop2"], executionId: expect.any(String) });
         expect(scope).toEqual({ kind: "tenant", tenantId: HOME });
+        // The customer gets a run of its own that follows the real one, waiting until the queue takes that.
+        const leaderId = mocks.executeJob.mock.calls[0][2].executionId;
+        const own = await base.execution.findUnique({ where: { id: started.customerExecutionId } });
+        expect(own).toEqual(expect.objectContaining({ tenantId: "acme", type: "Backup", status: "Pending", jobId: null, triggerType: "Manual", triggerLabel: "Lena Graf" }));
+        expect(JSON.parse(own!.metadata!)).toEqual(expect.objectContaining({
+            target: { name: "New MySQL", adapterId: "mysql" },
+            backupOf: { database: "shop2", provider: "Default" },
+            onlyDatabases: ["shop2"],
+            followsRun: leaderId,
+        }));
         expect(started).toEqual(expect.objectContaining({ jobId: "new-job", serverTenantId: HOME, customerName: "Acme", databaseName: "shop2" }));
         expect(await base.sharedBackupRequest.findUnique({ where: { id: started.requestId } })).toEqual(expect.objectContaining({ tenantId: "acme", executionId: started.executionId }));
     });
@@ -339,6 +357,31 @@ describe("backups a customer starts on demand", () => {
 
         await base.execution.update({ where: { id: started.executionId }, data: { status: "Success", endedAt: day("2026-09-04") } });
         expect((await sharedBackupRun("acme", started.requestId)).state).toBe("done");
+    });
+
+    it("never lets two requests at once both take the last backup of the day, when the one that started first goes in last", async () => {
+        const at = (time: string) => new Date(`2026-09-05T${time}:00.000Z`);
+        // The morning took one of the two backups of the day.
+        await requestSharedBackup("acme", lena, shop2, at("09:00"));
+
+        // The request of 10:00 stops right before it goes in, the one of 11:00 goes in and starts meanwhile.
+        let reached!: () => void;
+        let release!: () => void;
+        const waiting = new Promise<void>((resolve) => { reached = resolve; });
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        mocks.timezone.mockImplementationOnce(async () => {
+            reached();
+            await gate;
+            return "UTC";
+        });
+        const earlier = requestSharedBackup("acme", lena, shop2, at("10:00")).then(() => "started", (error: Error) => error.message);
+        await waiting;
+        const later = await requestSharedBackup("acme", lena, shop2, at("11:00")).then(() => "started", (error: Error) => error.message);
+        release();
+
+        expect(later).toBe("started");
+        expect(await earlier).toMatch(/2 backups of shop2 started today/);
+        expect(await base.sharedBackupRequest.count({ where: { tenantId: "acme", databaseName: "shop2", createdAt: { gte: at("00:00"), lt: day("2026-09-06") } } })).toBe(2);
     });
 
     it("lets only the tenant of the server switch backups on demand, within the limits", async () => {

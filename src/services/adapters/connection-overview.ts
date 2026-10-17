@@ -5,12 +5,19 @@
  * Kept apart from the adapter list itself because every value here is an aggregate over
  * other tables. The list is polled every few seconds for its live status, while these
  * values change far more slowly and come from a short cache.
+ *
+ * A destination or channel another tenant shares with the tenant that runs now gets what this
+ * tenant does with it: its own jobs, templates, backups and messages, which the tenant filter
+ * narrows every query to. Its health checks, credential and retention stay with the tenant that
+ * shares it, so its overview has none.
  */
 
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { currentTenantId } from "@/lib/tenant/current";
 import { cached } from "@/services/dashboard/cache";
 import { getStorageVolume } from "@/services/dashboard-service";
+import { providedTo } from "@/services/sharing/provided";
 
 /** A finished backup, with the execution id to link it. */
 export interface FinishedRun {
@@ -90,10 +97,40 @@ export async function getConnectionOverview(ids: string[]): Promise<Map<string, 
     return new Map(entries);
 }
 
+/** A connection the overview describes, its own or one another tenant shares with this one. */
+interface OverviewConfig {
+    id: string;
+    type: string;
+    storageRole: string;
+    primaryCredential: { name: string } | null;
+    defaultRetentionPolicy: { name: string } | null;
+    /** Another tenant shares it with the tenant that runs now. */
+    provided?: boolean;
+}
+
+/**
+ * The connections among `ids` other tenants share with the tenant that runs now, which the tenant
+ * filter keeps out of its own read. None outside a tenant.
+ */
+async function providedConfigs(ids: string[]): Promise<OverviewConfig[]> {
+    if (ids.length === 0) return [];
+    const tenantId = await currentTenantId();
+    if (!tenantId) return [];
+    const provided = await providedTo(tenantId, { ids });
+    return provided.map((connection) => ({
+        id: connection.id,
+        type: connection.type,
+        storageRole: connection.storageRole,
+        primaryCredential: null,
+        defaultRetentionPolicy: null,
+        provided: true,
+    }));
+}
+
 async function loadOverview(ids: string[], now: Date): Promise<[string, ConnectionOverview][]> {
     const since = new Date(now.getTime() - HEALTH_HOURS * HOUR_MS);
 
-    const [configs, sourceJobs, destinationJobs, directoryJobs, notifyingJobs, templateChannels, checks] = await Promise.all([
+    const [own, sourceJobs, destinationJobs, directoryJobs, notifyingJobs, templateChannels, checks] = await Promise.all([
         prisma.adapterConfig.findMany({
             where: { id: { in: ids } },
             select: {
@@ -118,6 +155,8 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
             orderBy: { createdAt: "asc" },
         }),
     ]);
+    const found = new Set(own.map((config) => config.id));
+    const configs: OverviewConfig[] = [...own, ...(await providedConfigs(ids.filter((id) => !found.has(id))))];
 
     // A job can reach one connection through several paths, so each config collects job ids once.
     const jobsByConfig = new Map<string, Set<string>>(ids.map((id) => [id, new Set()]));
@@ -152,7 +191,8 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
 
     return configs.map((config): [string, ConnectionOverview] => {
         const jobs = jobsByConfig.get(config.id) ?? new Set<string>();
-        const configChecks = checksByConfig.get(config.id) ?? [];
+        // How the checks of a provided connection went stays with its tenant, the list shows its status.
+        const configChecks = config.provided ? [] : checksByConfig.get(config.id) ?? [];
         const lastPassed = [...configChecks].reverse().find((check) => check.status === "ONLINE");
         const isDestination = config.type === "storage" && config.storageRole === STORAGE_ROLES.DESTINATION;
         const volume = isDestination ? storageById.get(config.id) : undefined;

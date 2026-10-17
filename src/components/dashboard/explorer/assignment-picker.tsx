@@ -48,7 +48,8 @@ interface OwnerPickerProps {
 /**
  * Who sees the backups of a database, picked in its row in the turquoise of picking: Nobody else
  * first, then every tenant with what it holds of the server, and when the tenant's backups start
- * in the foot, now or from a day. A database a rule gives is taken back by removing the rule.
+ * in the foot, now or from a day. Nobody else takes back a database a rule gives as well, and no
+ * rule gives it again until it is given by name.
  */
 export function OwnerPicker({ row, data, tenantName, onChange }: OwnerPickerProps) {
     const { timezone } = useDateFormatter();
@@ -110,8 +111,7 @@ export function OwnerPicker({ row, data, tenantName, onChange }: OwnerPickerProp
                     title={`Who sees ${row.name}`}
                     note="Its backups show there from the start on"
                     groups={[
-                        // A rule gives it, which only removing the rule undoes, so there is no Nobody else to pick.
-                        { entries: owner?.via === "rule" ? [] : [nobody] },
+                        { entries: [nobody] },
                         { heading: "Tenants", entries: tenants },
                     ]}
                     value={ownerKey(row)}
@@ -128,8 +128,8 @@ export function OwnerPicker({ row, data, tenantName, onChange }: OwnerPickerProp
                                 isAllowed={(candidate) => dayAllowed(candidate, timezone, now, from)}
                                 earlierDisabled={limit.kind === "current"}
                             />
-                            {owner?.via === "rule" && <p className="text-xs text-muted-foreground">A rule gives it to {owner.tenantName}. Remove the rule to take it back.</p>}
-                            {limit.kind === "current" && <p className="text-xs text-muted-foreground">{limit.holder} holds it by name, so a new tenant starts now.</p>}
+                            {owner?.via === "rule" && <p className="text-xs text-muted-foreground">A rule gives it to {owner.tenantName}. Nobody else takes it back from the rule.</p>}
+                            {limit.kind === "current" && <p className="text-xs text-muted-foreground">{limit.holder ? `${limit.holder} holds it by name` : "It was taken back"}, so a new tenant starts now.</p>}
                         </div>
                     }
                 />

@@ -16,7 +16,6 @@ import { clientAddress } from "@/lib/core/client-address";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { runAsTenant } from "@/lib/tenant/context";
-import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ route: "storage/public-download" });
 registerAdapters();
@@ -46,8 +45,9 @@ function settleWhenDone(stream: NodeJS.ReadableStream, token: string, onFetched:
  * Public download endpoint using temporary tokens
  *
  * This endpoint does NOT require authentication. It is public on purpose, for wget, curl or
- * PowerShell on a host without a session, and serves only what a single-use token from the
- * download-url endpoint names, which an authenticated user with the download right made.
+ * PowerShell on a host without a session, and serves only what a single-use link from the
+ * download-url endpoint names, which an authenticated user with the download right made. The
+ * tokens other downloads hand to their own session are refused, see `claimLinkToken`.
  *
  * Tokens expire after 5 minutes and work for one complete download.
  */
@@ -66,8 +66,10 @@ export async function GET(req: NextRequest) {
         }
         claimed = token;
 
-        // A link has no session, so it carries the tenant it was made in and is served there.
-        const tenantId = tokenData.tenantId ?? HOME_TENANT_ID;
+        // A link has no session, so it carries the tenant it was made in and is served there. Links
+        // live five minutes in the memory of this process, so none made before an update, which
+        // restarts it, is still open, and none goes without a tenant to the home tenant.
+        const tenantId = tokenData.tenantId;
         return await runAsTenant(tenantId, async () => {
             const from = requesterOf(req);
             const userAgent = req.headers.get("user-agent");

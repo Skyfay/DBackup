@@ -5,7 +5,7 @@ import { registerAdapters } from "@/lib/adapters";
 import { locationBrowseOf } from "@/lib/adapters/location-browse";
 import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
 import { getManagePermissionForAdapter } from "@/lib/auth/adapter-permissions";
-import { PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { PermissionError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { browseLocation } from "@/services/adapters/location-browse-service";
 
@@ -49,6 +49,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, data: { path, entries } });
     } catch (error: unknown) {
         if (error instanceof PermissionError) return NextResponse.json({ success: false, error: error.message }, { status: 403 });
+        // A shared destination or a connection that reaches the server DBackup runs on, refused before it ran.
+        if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
         log.warn("Browsing the folders of a connection failed", { adapterId, path }, wrapError(error));
         return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 502 });
     }

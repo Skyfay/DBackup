@@ -100,6 +100,12 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
         STORAGE_ROLES.DESTINATION,
     );
 
+    // The picked destinations whose provider takes only encrypted backups.
+    const strict = values.destinations
+        .map((destination) => destinationOptions.find((option) => option.id === destination.configId))
+        .filter((option) => option?.provided?.encryptedOnly)
+        .map((option) => option!.name);
+
     const submit = form.handleSubmit(state.save, (invalid) => {
         const target = firstPartWithError(jobErrorKeys(invalid), jobParts(form.getValues("sourceMode")));
         if (target) setPicked(target);
@@ -122,7 +128,7 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
             case "compression":
                 return <CompressionPart isPostgres={state.isPostgres} pgMajorVersion={state.pgMajorVersion} />;
             case "encryption":
-                return <EncryptionPart encryptionProfiles={encryptionProfiles} />;
+                return <EncryptionPart encryptionProfiles={encryptionProfiles} strict={strict} />;
             case "notifications":
                 return <NotificationsPart channels={notificationChannels} />;
             case "advanced":

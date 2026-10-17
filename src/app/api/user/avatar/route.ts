@@ -5,6 +5,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ValidationError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
 import { AVATAR_MAX_BYTES, removeAvatar, saveAvatar } from "@/services/user/avatar-service";
+import { bodyTooLarge } from "@/lib/server/upload-size";
 
 const FIELD = "Picture";
 
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
     const user = await getViewer();
     if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
+    if (bodyTooLarge(req.headers, AVATAR_MAX_BYTES)) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "Pick a picture to upload." }, { status: 400 });

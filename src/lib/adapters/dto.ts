@@ -45,6 +45,34 @@ export interface AdapterListItemDTO {
     supportsBrowse: boolean;
     /** The tenant the connection belongs to, which a list in All tenants shows and opens it in. */
     tenantId?: string;
+    /**
+     * Set when another tenant shares the connection with the tenant that lists it, see
+     * src/services/sharing/. Its address, login and settings stay with that tenant, so `config`
+     * holds nothing of them and the tenant that lists it never changes it.
+     */
+    provided?: ProvidedTerms;
+    /** Set on a connection the listing tenant shares with others, for whoever may see what is shared. */
+    share?: SharedTerms;
+}
+
+/** Who shares a provided connection and on what terms. */
+export interface ProvidedTerms {
+    providerId: string;
+    providerName: string;
+    /** A destination: a job writes to it only with a key of its Vault. */
+    encryptedOnly: boolean;
+    /** An email channel: the tenant names the recipients itself. */
+    ownRecipients: boolean;
+    /** The recipients the tenant named, for an email channel that lets it. */
+    recipients?: string[];
+}
+
+/** Who gets a connection the listing tenant shares. */
+export interface SharedTerms {
+    allTenants: boolean;
+    tenants: { id: string; name: string }[];
+    encryptedOnly: boolean;
+    ownRecipients: boolean;
 }
 
 /**

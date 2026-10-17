@@ -13,6 +13,9 @@ import { checkStorageAlerts } from "@/services/storage/storage-alert-service";
 import { isBackupFile } from "@/lib/core/backup-files";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import { isNotConnected } from "@/lib/core/air-gap";
+import { currentTenantId } from "@/lib/tenant/current";
+import { TENANTS_FOLDER } from "@/lib/tenant/storage-view";
+import { providedIds } from "@/services/sharing/provided";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -36,6 +39,12 @@ export interface ActivityDataPoint {
 
 export interface StorageVolumeEntry {
   configId?: string;
+  /**
+   * The tenant whose backups the entry counts: the tenant of the destination, or on a destination it
+   * shares with customers one of them, whose backups sit under tenants/<id>/. Entries of an older
+   * version lack it and count for the tenant of their destination.
+   */
+  tenantId?: string;
   name: string;
   adapterId: string;
   size: number;
@@ -310,13 +319,80 @@ export async function getStorageVolume(): Promise<StorageVolumeEntry[]> {
 }
 
 /**
- * The entries of the destinations the code that runs now may see. The cache holds every tenant,
- * the read of the connections keeps the destinations of the others out.
+ * The entries the code that runs now may see. The cache holds every tenant: a tenant sees what its
+ * own destinations hold of its own backups, and what the destinations other tenants share with it
+ * hold of its backups. All tenants sees each destination once, with every tenant's backups on it.
  */
 async function visibleEntries(entries: StorageVolumeEntry[]): Promise<StorageVolumeEntry[]> {
-  const ids = entries.flatMap((entry) => (entry.configId ? [entry.configId] : []));
-  const visible = new Set((await prisma.adapterConfig.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((config) => config.id));
-  return entries.filter((entry) => entry.configId && visible.has(entry.configId));
+  const ids = [...new Set(entries.flatMap((entry) => (entry.configId ? [entry.configId] : [])))];
+  const own = new Map((await prisma.adapterConfig.findMany({ where: { id: { in: ids } }, select: { id: true, tenantId: true } })).map((config) => [config.id, config.tenantId]));
+  const tenantId = await currentTenantId();
+  if (!tenantId) return combined(entries.filter((entry) => entry.configId && own.has(entry.configId)));
+  const provided = await providedIds(tenantId, ids.filter((id) => !own.has(id)));
+  return entries.filter((entry) => {
+    if (!entry.configId) return false;
+    const holder = entry.tenantId ?? own.get(entry.configId);
+    return own.has(entry.configId) ? holder === tenantId : provided.has(entry.configId) && entry.tenantId === tenantId;
+  });
+}
+
+/**
+ * What the last refresh measured of one destination for each tenant, unfiltered. For the tenant
+ * that shares the destination, which sees the space of every customer on it and never their backups.
+ */
+export async function storageEntriesOf(configId: string): Promise<StorageVolumeEntry[]> {
+  return (await readStorageCache() ?? []).filter((entry) => entry.configId === configId);
+}
+
+/** One entry per destination with the backups of every tenant on it, named for the tenant of the destination. */
+function destinationTotals(entries: StorageVolumeEntry[], owners: Map<string, string>): StorageVolumeEntry[] {
+  return combined(entries).map((entry) => ({ ...entry, tenantId: owners.get(entry.configId!) }));
+}
+
+/** One entry per destination, with the backups of every tenant on it. */
+function combined(entries: StorageVolumeEntry[]): StorageVolumeEntry[] {
+  const byDestination = new Map<string, StorageVolumeEntry>();
+  for (const entry of entries) {
+    const known = byDestination.get(entry.configId!);
+    if (!known) {
+      byDestination.set(entry.configId!, { ...entry, tenantId: undefined });
+      continue;
+    }
+    known.size += entry.size;
+    known.count += entry.count;
+    if (entry.scanError) known.scanError = true;
+  }
+  return [...byDestination.values()];
+}
+
+/**
+ * What a destination holds for each tenant. A destination its tenant shares with customers keeps
+ * the backups of each of them under tenants/<id>/, which count for that customer, everything else
+ * for the tenant of the destination. A destination nobody shares counts for its tenant alone.
+ */
+function entriesOf(
+  destination: { id: string; name: string; adapterId: string; tenantId: string },
+  files: { path: string; size?: number }[],
+  shared: boolean,
+): StorageVolumeEntry[] {
+  const totals = new Map<string, { size: number; count: number }>([[destination.tenantId, { size: 0, count: 0 }]]);
+  for (const file of files) {
+    const clean = file.path.replace(/\\/g, "/").replace(/^\/+/, "");
+    const customer = shared ? new RegExp(`^${TENANTS_FOLDER}/([^/]+)/`).exec(clean)?.[1] : undefined;
+    const holder = customer ?? destination.tenantId;
+    const total = totals.get(holder) ?? { size: 0, count: 0 };
+    total.size += file.size || 0;
+    total.count += 1;
+    totals.set(holder, total);
+  }
+  return [...totals].map(([tenantId, total]) => ({
+    configId: destination.id,
+    tenantId,
+    name: destination.name,
+    adapterId: destination.adapterId,
+    size: total.size,
+    count: total.count,
+  }));
 }
 
 /**
@@ -388,6 +464,8 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
     return [];
   }
 
+  const shared = new Set((await prisma.connectionShare.findMany({ where: { id: { in: storageAdapters.map((config) => config.id) } }, select: { id: true } })).map((share) => share.id));
+
   // Listing every destination after every backup made a busy instance write a snapshot of each
   // destination a few times an hour, and the dashboard read hundreds of thousands of them.
   const partial = scope.configIds ? new Set(scope.configIds) : null;
@@ -399,7 +477,7 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
   // Query the adapters in parallel for maximum speed
   const promises = listed.map(async (adapterConfig) => {
     // An air-gapped destination that is not connected keeps the values of its last scan, without a warning.
-    if (isNotConnected(adapterConfig)) return lastScannedEntry(adapterConfig);
+    if (isNotConnected(adapterConfig)) return lastScannedEntries(adapterConfig);
     try {
       const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
       if (!adapter) return null;
@@ -412,25 +490,17 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
 
       // Sidecars (.meta.json, .index) are not backup data and must not be counted.
       const backupFiles = files.filter((f) => isBackupFile(f.name));
-      const totalSize = backupFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-
-      return {
-        configId: adapterConfig.id,
-        name: adapterConfig.name,
-        adapterId: adapterConfig.adapterId,
-        size: totalSize,
-        count: backupFiles.length,
-      };
+      return entriesOf(adapterConfig, backupFiles, shared.has(adapterConfig.id));
     } catch (error) {
       log.warn("Failed to query storage adapter, keeping its last scanned values", {
         adapter: adapterConfig.name,
         adapterId: adapterConfig.adapterId,
       }, wrapError(error));
-      return lastScannedEntry(adapterConfig);
+      return lastScannedEntries(adapterConfig);
     }
   });
 
-  const scanned = (await Promise.all(promises)).filter((entry): entry is StorageVolumeEntry => !!entry);
+  const scanned = (await Promise.all(promises)).flatMap((entries) => entries ?? []);
 
   const results = await oneWriteAtATime(async () => {
     // Read again right before the write, another refresh may have saved in the meantime.
@@ -466,12 +536,8 @@ function keepUnlisted(
   cached: StorageVolumeEntry[],
 ): StorageVolumeEntry[] {
   const listedIds = new Set(listed.map((destination) => destination.id));
-  const fresh = new Map(scanned.map((entry) => [entry.configId, entry]));
-  const kept = new Map(cached.map((entry) => [entry.configId, entry]));
-  return destinations.flatMap((destination) => {
-    const entry = listedIds.has(destination.id) ? fresh.get(destination.id) : kept.get(destination.id);
-    return entry ? [entry] : [];
-  });
+  return destinations.flatMap((destination) =>
+    (listedIds.has(destination.id) ? scanned : cached).filter((entry) => entry.configId === destination.id));
 }
 
 /**
@@ -481,15 +547,16 @@ function keepUnlisted(
  * was last reachable. A sum over the run history would count backups that retention deleted long
  * ago. A destination without any snapshot reports zero and no scan date.
  */
-async function lastScannedEntry(adapterConfig: { id: string; name: string; adapterId: string }): Promise<StorageVolumeEntry> {
+async function lastScannedEntry(adapterConfig: { id: string; name: string; adapterId: string }, tenantId: string): Promise<StorageVolumeEntry> {
   const snapshot = await prisma.storageSnapshot.findFirst({
-    where: { adapterConfigId: adapterConfig.id },
+    where: { adapterConfigId: adapterConfig.id, tenantId },
     orderBy: { createdAt: "desc" },
     select: { size: true, count: true, createdAt: true },
   });
 
   return {
     configId: adapterConfig.id,
+    tenantId,
     name: adapterConfig.name,
     adapterId: adapterConfig.adapterId,
     size: snapshot ? Number(snapshot.size) : 0,
@@ -499,12 +566,19 @@ async function lastScannedEntry(adapterConfig: { id: string; name: string; adapt
   };
 }
 
+/** The last scan of a destination for its tenant and for every customer measured on it before. */
+async function lastScannedEntries(adapterConfig: { id: string; name: string; adapterId: string; tenantId: string }): Promise<StorageVolumeEntry[]> {
+  const measured = await prisma.storageSnapshot.findMany({ where: { adapterConfigId: adapterConfig.id }, select: { tenantId: true }, distinct: ["tenantId"] });
+  const tenants = new Set([adapterConfig.tenantId, ...measured.map((row) => row.tenantId)]);
+  return Promise.all([...tenants].map((tenantId) => lastScannedEntry(adapterConfig, tenantId)));
+}
+
 /** Used when no cache exists yet and the live refresh failed as a whole. */
 async function getLastScannedStorageVolume(): Promise<StorageVolumeEntry[]> {
   const storageAdapters = await prisma.adapterConfig.findMany({
     where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
   });
-  return Promise.all(storageAdapters.map(lastScannedEntry));
+  return Promise.all(storageAdapters.map((config) => lastScannedEntry(config, config.tenantId)));
 }
 
 /**
@@ -620,20 +694,25 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
       log.warn("Skipping snapshots for adapters with scan errors", { skipped });
     }
 
-    // A snapshot belongs to the tenant of its destination, also when the system task measures them all.
+    // A snapshot belongs to the tenant whose backups it counts, the tenant of its destination or a
+    // customer of a shared one, also when the system task measures them all.
     const owners = new Map(
       (await prisma.adapterConfig.findMany({ where: { id: { in: validEntries.map((entry) => entry.configId!) } }, select: { id: true, tenantId: true } }))
         .map((config) => [config.id, config.tenantId])
     );
     // A destination deleted during the refresh drops out here, from the snapshots and the alerts.
     const owned = validEntries.filter((entry) => owners.has(entry.configId!));
+    // One time for every snapshot of the refresh, so the snapshots of the tenants on one destination
+    // read back as one measurement, for the history of All tenants and the usage spike.
+    const measuredAt = new Date();
     const data = owned.map((entry) => ({
-      tenantId: owners.get(entry.configId!)!,
+      tenantId: entry.tenantId ?? owners.get(entry.configId!)!,
       adapterConfigId: entry.configId!,
       adapterName: entry.name,
       adapterId: entry.adapterId,
       size: BigInt(Math.round(entry.size)),
       count: entry.count,
+      createdAt: measuredAt,
     }));
 
     if (data.length === 0) return;
@@ -644,7 +723,10 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
 
     // Check storage alert conditions only for entries with valid live scan data
     try {
-      await checkStorageAlerts(owned);
+      // The alerts of a destination are its tenant's. The storage limit and the usage spike watch all
+      // it holds, the backups of the customers on a shared one too, which fill the same storage. The
+      // missing backup alert watches the backups of its own tenant, named by the entry.
+      await checkStorageAlerts(destinationTotals(owned, owners));
     } catch (alertError) {
       log.warn("Failed to check storage alerts", {}, wrapError(alertError));
     }
@@ -654,19 +736,26 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
 }
 
 /**
- * Returns historical storage usage data for a specific adapter config.
- * Used for the storage history chart modal on the dashboard.
+ * What a destination held over the last `days`, oldest first, for the storage history of the
+ * dashboard and of a destination on the Backups page.
+ *
+ * A tenant sees its own backups on it, also on a destination another tenant shares with it, never
+ * those of the tenant that shares it or of another customer. All tenants and the system scope see
+ * everything the destination held: one point per refresh with the backups of every tenant summed,
+ * like the one entry per destination of `getStorageVolume`.
  */
 export async function getStorageHistory(
   configId: string,
   days: number = 30
 ): Promise<StorageSnapshotEntry[]> {
   const since = subDays(new Date(), days);
+  const tenantId = await currentTenantId();
 
   const snapshots = await prisma.storageSnapshot.findMany({
     where: {
       adapterConfigId: configId,
       createdAt: { gte: since },
+      ...(tenantId ? { tenantId } : {}),
     },
     orderBy: { createdAt: "asc" },
     select: {
@@ -676,11 +765,26 @@ export async function getStorageHistory(
     },
   });
 
-  return snapshots.map((s) => ({
-    date: s.createdAt.toISOString(),
-    size: Number(s.size),
-    count: s.count,
+  const points = tenantId ? snapshots.map((snapshot) => [snapshot]) : perRefresh(snapshots);
+  return points.map((point) => ({
+    date: point[0].createdAt.toISOString(),
+    size: point.reduce((sum, snapshot) => sum + Number(snapshot.size), 0),
+    count: point.reduce((sum, snapshot) => sum + snapshot.count, 0),
   }));
+}
+
+/**
+ * The snapshots of one destination, oldest first, grouped by the refresh that wrote them. A refresh
+ * writes one snapshot for each tenant whose backups the destination holds, all with one time.
+ */
+function perRefresh<T extends { createdAt: Date }>(snapshots: T[]): T[][] {
+  const refreshes: T[][] = [];
+  for (const snapshot of snapshots) {
+    const last = refreshes[refreshes.length - 1];
+    if (last && last[0].createdAt.getTime() === snapshot.createdAt.getTime()) last.push(snapshot);
+    else refreshes.push([snapshot]);
+  }
+  return refreshes;
 }
 
 /**

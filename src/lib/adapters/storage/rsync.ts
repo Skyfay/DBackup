@@ -316,9 +316,14 @@ async function findRemoteEntries(
 
         const safeStartDir = shellEscapeSingleQuote(startDir);
         const selector = includeSymlinks ? `\\( -type f -o -type l \\)` : `-type f`;
+        const listing = `find '${safeStartDir}' ${selector} -printf '%p\\t%s\\t%T@\\t%y\\t%l\\n' 2>/dev/null || find '${safeStartDir}' -type f -exec stat -f '%N\\t%z\\t%m' {} \\; 2>/dev/null`;
+        // A subfolder nothing was written to yet is not there, and `find` fails on it. The test in
+        // front ends the command right there with no output, which lists as empty like on the
+        // other destinations. A missing root has no test in front, so its `find` still fails.
+        const command = dir !== "" ? `[ ! -e '${safeStartDir}' ] || ${listing}` : listing;
         const output = await execSSH(
             config,
-            `find '${safeStartDir}' ${selector} -printf '%p\\t%s\\t%T@\\t%y\\t%l\\n' 2>/dev/null || find '${safeStartDir}' -type f -exec stat -f '%N\\t%z\\t%m' {} \\; 2>/dev/null`,
+            command,
             keyFile,
             undefined,
             LISTING_LIMITS

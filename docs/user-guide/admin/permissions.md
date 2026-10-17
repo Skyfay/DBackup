@@ -8,26 +8,28 @@ Decide what people may see and do in DBackup through the group they are in.
 - Every **user** is in one group per [tenant](/user-guide/admin/tenants) they work in, or in none
 - A user may do exactly what the permissions of their group allow, there are no deny rules
 
-Groups are the same in every tenant, and a change of a group applies in all of them. With only one tenant, everyone has exactly one group or none, as before.
+Every tenant has groups of its own, and a change of a group applies in its tenant alone. With only one tenant, everyone has exactly one group or none, as before.
 
-The group with every permission, named **Admin** after the update and the SuperAdmin group of earlier versions, holds each permission DBackup has, also the ones a new version adds. It cannot be edited or deleted.
+Every tenant has a group with every permission, named **Admin**, which in the home tenant is the SuperAdmin group of earlier versions. It holds each permission of a tenant, also the ones a new version adds, and cannot be edited or deleted.
 
 ### Settings Count in the Home Tenant
 
-The **Settings** area acts on the whole instance. It counts only from the group someone holds in the home tenant, so the admin of a customer never reaches it through a group in the customer's tenant. Groups belong to their tenant, so `groups:read` and `groups:write` count in each tenant like every other permission, and so do the **Tenant settings**. The **Own profile** permissions count from any group someone holds.
+The **Settings** area acts on the whole instance. It counts only from the group someone holds in the home tenant or from a [platform group](/user-guide/admin/tenants#platform-groups), so the admin of a customer never reaches it through a group in the customer's tenant. Groups belong to their tenant, so `groups:read` and `groups:write` count in each tenant like every other permission, and so do the **Tenant settings**. The **Own profile** permissions count from any group someone holds.
 
 A group never gets a permission its maker does not hold in that tenant, and a group of a customer never holds the settings of the instance.
 
 ### The Rights of the Platform
 
-The tenants, the accounts of every tenant, the sign-in providers and the shared databases belong to the platform. A [platform group](/user-guide/admin/tenants#platform-groups) gives them, never the group of a tenant, not even one with every permission:
+The tenants, the accounts of every tenant, the sign-in providers and the sharing with customers belong to the platform. A [platform group](/user-guide/admin/tenants#platform-groups) gives them, never the group of a tenant, not even one with every permission:
 
 | Area | See | Change |
 | :--- | :--- | :--- |
-| **Tenants** | `platform-tenants:read`: every tenant and All tenants | `platform-tenants:write`: create, rename and delete tenants and decide who works in them |
-| **Accounts** | `platform-accounts:read`: every account and the platform groups | `platform-accounts:write`: change any account but a platform admin's, and give platform groups |
+| **Tenants** | `platform-tenants:read`: every tenant and All tenants | `platform-tenants:write`: create, rename and delete tenants, decide who works in them, which of them share with customers and what each adds itself |
+| **Accounts** | `platform-accounts:read`: every account and the platform groups | `platform-accounts:write`: change any account but a platform admin's, the account of a platform group only when you may give that platform group, give platform groups, and give an account an email whose domain another tenant's sign-in provider claims |
 | **Sign-in providers** | `platform-sign-in:read`, also given by `settings:read` | A platform admin only, since a provider signs in as anyone of its emails |
-| **Shared databases** | `platform-sharing:read`: who holds which database | `platform-sharing:write`: give databases away, move them, allow backups on demand |
+| **Sharing** | `platform-sharing:read`, **See what is shared**: who holds which database, and which tenants get a destination or a channel with the space each takes | `platform-sharing:write`, **Share with customers**: give databases away, move them, allow backups on demand, share destinations and channels and delete the backups of a tenant on a shared destination, in a tenant that shares with customers |
+
+An API key never carries these rights, the settings of the instance from a platform group included. The one exception is **Sharing** in a key made in a tenant that [shares with customers](/user-guide/admin/shared-databases#tenants-that-share), while its owner holds it, for a hosting panel, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api).
 
 ### What Only a Platform Admin Does
 
@@ -38,6 +40,7 @@ A platform admin passes every check in every tenant. A few tasks are for a platf
 - Add, change and delete sign-in providers
 - Restore a configuration backup, which brings back every tenant, user and group
 - Download the database
+- Restore or delete for good, from Recently deleted, the account of a platform admin, of a platform group or of someone who also worked in another tenant
 
 Nobody changes or deletes a group they hold in any tenant, since that would hand them any permission. Nobody gives a group that may do more than they may, or takes one away from someone whose group may do more than they may.
 
@@ -47,11 +50,11 @@ A user without a group signs in but sees and does nothing until someone picks a 
 
 ## The Groups Tab
 
-Go to **Users & Groups → Groups**. Each group shows what its members may do in one sentence, its members in the open tenant, how many of the 39 permissions it holds and when it last changed. The numbers above the list name the groups that may delete backups or reveal secrets and the groups nobody is in.
+Go to **Users & Groups → Groups**. Each group shows what its members may do in one sentence, its members in the open tenant, how many of the 41 permissions it holds and when it last changed. The numbers above the list name the groups that may delete backups or reveal secrets and the groups nobody is in.
 
 The switch beside the tabs shows the groups as a table or as cards with a bar of the level of every area. Phones always get the cards.
 
-A click on a group opens its details: what its members may do in words, the level of every area, its members in the open tenant, and its changes from the audit log. With the right to change users, **Move** sends a member to another group and **Add people** moves people into this one, both in the open tenant.
+A click on a group opens its details: what its members may do in words, the level of every area, its members in the open tenant, and its changes from the audit log. With the right to change users, **Move** sends a member to another group and **Add people** moves people into this one, both in the open tenant and only for its people: its members, and in the home tenant the accounts of no tenant. Someone of another tenant joins with an [invitation](/user-guide/admin/tenants#invitations).
 
 ## Areas and Levels
 
@@ -121,9 +124,9 @@ The foot names every area whose level changes. Members get a change with their n
 
 ## Delete a Group
 
-**Delete** asks first. A group with members asks which group they move to, or **No group**, and the button waits for the pick. The members move in every tenant they hold the group in, and only into a group that may do no more than you may. **No group** works only while nobody outside the open tenant holds the group, and takes its members out of the tenant. Nobody loses access by surprise, and the audit log keeps the group and who was in it.
+**Delete** asks first. A group with members asks which group of the tenant they move to, only one that may do no more than you may, or **No group**, which takes them out of the tenant. The button waits for the pick. Nobody loses access by surprise, and the audit log of the tenant keeps the group and who was in it. A [sign-in provider](/user-guide/admin/sso#new-people) that adds new people to the group adds them where its members go. With **No group**, a provider of the platform adds them without a group, and a provider of a tenant stops adding people.
 
-Several empty groups can be ticked and deleted together. A group with members in any tenant is left out of that and deleted on its own. You cannot delete a group you hold.
+Several empty groups can be ticked and deleted together. A group with members is left out of that and deleted on its own. You cannot delete a group you hold.
 
 ::: tip Keep groups small
 Start from the template closest to the work, lower what it does not need, and name the group after the work, like "Backup Operators". The **Can delete backups** and **Can reveal secrets** numbers above the list show where the sensitive permissions are.
@@ -137,7 +140,7 @@ The user has no group in the open tenant. Open the user on the Users tab and cli
 
 ### A Button Is Missing
 
-The group of the user lacks the permission in the open tenant. Open the group and check the level of the area in its details. The settings of the instance count only from the group in the home tenant, see [Settings Count in the Home Tenant](#settings-count-in-the-home-tenant), and some tasks are for a platform admin only whatever the group holds, see [What Only a Platform Admin Does](#what-only-a-platform-admin-does).
+The group of the user lacks the permission in the open tenant. Open the group and check the level of the area in its details. The settings of the instance count only from the group in the home tenant or a platform group, see [Settings Count in the Home Tenant](#settings-count-in-the-home-tenant), and some tasks are for a platform admin only whatever the group holds, see [What Only a Platform Admin Does](#what-only-a-platform-admin-does).
 
 ### An Area Shows Custom
 

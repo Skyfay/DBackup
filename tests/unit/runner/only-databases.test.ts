@@ -12,10 +12,12 @@ const mocks = vi.hoisted(() => ({
     update: vi.fn(),
     initialize: vi.fn(),
     calculate: vi.fn(),
+    follower: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
     default: {
+        job: { findFirst: vi.fn().mockResolvedValue({ id: "job-1" }) },
         execution: { create: mocks.create, updateMany: mocks.updateMany, findUnique: mocks.findUnique, update: mocks.update },
         systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     },
@@ -31,6 +33,7 @@ vi.mock("@/lib/runner/steps/03-upload", () => ({ stepUpload: vi.fn() }));
 vi.mock("@/lib/runner/steps/04-completion", () => ({ stepCleanup: vi.fn(), stepFinalize: vi.fn() }));
 vi.mock("@/services/backup/retention-service", () => ({ RetentionService: { calculateRetention: mocks.calculate } }));
 vi.mock("@/services/dashboard-service", () => ({ refreshStorageStatsCache: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/services/tenant/shared-backup-runs", () => ({ customerBackupFollower: mocks.follower }));
 vi.mock("@/services/storage/storage-service", () => ({
     storageService: { removeStorageListCacheEntry: vi.fn().mockResolvedValue(undefined), readCachedListing: vi.fn().mockResolvedValue(null) },
 }));
@@ -47,6 +50,7 @@ beforeEach(() => {
     mocks.updateMany.mockResolvedValue({ count: 1 });
     mocks.update.mockResolvedValue({});
     mocks.calculate.mockReturnValue({ keep: [], delete: [], keptForChain: [] });
+    mocks.follower.mockResolvedValue(null);
 });
 
 describe("queueing a run of single databases", () => {
@@ -77,6 +81,33 @@ describe("queueing a run of single databases", () => {
         await performExecution("run-1", "job-1");
         expect(seen?.onlyDatabases).toEqual(["shop"]);
         expect(seen?.metadata).toEqual(expect.objectContaining({ onlyDatabases: ["shop"] }));
+    });
+
+    it("queues the run under the id its caller picked, for the customer's run made before it", async () => {
+        await runJob("job-1", { type: "Manual", label: "Acme GmbH · Lena Graf" }, { databases: ["shop"], executionId: "picked-id" });
+        expect(mocks.create.mock.calls[0][0].data.id).toBe("picked-id");
+    });
+
+    it("tells the customer's run that follows it when it starts and moves on, and hands it to the last step", async () => {
+        mocks.findUnique.mockResolvedValue({ id: "run-1", jobId: "job-1", logs: "[]", metadata: JSON.stringify({ progress: 0, onlyDatabases: ["shop"] }), job: { id: "job-1" } });
+        const follower = { start: vi.fn(), stage: vi.fn(), end: vi.fn() };
+        mocks.follower.mockResolvedValue(follower);
+        let seen: RunnerContext | undefined;
+        mocks.initialize.mockImplementation(async (ctx: RunnerContext) => {
+            seen = ctx;
+        });
+        await performExecution("run-1", "job-1");
+        expect(mocks.follower).toHaveBeenCalledWith("run-1");
+        expect(follower.start).toHaveBeenCalledTimes(1);
+        expect(follower.stage).toHaveBeenCalledWith("Initializing");
+        expect(follower.stage).toHaveBeenCalledWith("Applying Retention");
+        expect(seen?.follower).toBe(follower);
+    });
+
+    it("never looks for a follower of a whole run", async () => {
+        mocks.findUnique.mockResolvedValue({ id: "run-1", jobId: "job-1", logs: "[]", metadata: JSON.stringify({ progress: 0 }), job: { id: "job-1" } });
+        await performExecution("run-1", "job-1");
+        expect(mocks.follower).not.toHaveBeenCalled();
     });
 });
 

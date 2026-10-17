@@ -23,6 +23,10 @@ vi.mock('@/lib/prisma', () => ({
             findUnique: vi.fn().mockResolvedValue(null),
             findFirst: vi.fn().mockResolvedValue(null),
         },
+        // Whether the tenant of a destination shares it with customers.
+        connectionShare: {
+            count: vi.fn().mockResolvedValue(0),
+        },
     },
 }));
 
@@ -87,11 +91,12 @@ describe('Backup Pipeline Integration', () => {
         // Setup Prisma Data
         const mockJob = {
             id: jobId,
+            tenantId: 'tenant-1',
             name: 'Integration Test Job',
-            source: { id: 's1', adapterId: 'mysql', config: '{}', name: 'Mock Source', type: 'database' },
+            source: { id: 's1', adapterId: 'mysql', config: '{}', name: 'Mock Source', type: 'database', tenantId: 'tenant-1' },
             databases: '["appdb"]',
             destinations: [
-                { id: 'jd1', configId: 'd1', priority: 0, retention: '{}', config: { id: 'd1', adapterId: 'mock-storage', config: '{}', name: 'Mock Dest', type: 'storage' } }
+                { id: 'jd1', configId: 'd1', priority: 0, retention: '{}', config: { id: 'd1', adapterId: 'mock-storage', config: '{}', name: 'Mock Dest', type: 'storage', tenantId: 'tenant-1' } }
             ],
             sources: [],
             notifications: [],

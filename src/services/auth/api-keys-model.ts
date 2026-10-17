@@ -55,11 +55,13 @@ interface BuildInput {
     /** The newest run per key name, started through the API. */
     runs: ListedRun[];
     viewer: { id: string; superAdmin: boolean; permissions: string[] };
+    /** The tenants that share databases, where a key may carry their sharing. */
+    sharingTenants?: ReadonlySet<string>;
     now?: number;
 }
 
 /** The API keys tab: every key with what it may do now, and the numbers above the list. */
-export function buildApiKeysModel({ keys, runs, viewer, now = Date.now() }: BuildInput): ApiKeysModel {
+export function buildApiKeysModel({ keys, runs, viewer, sharingTenants = new Set(), now = Date.now() }: BuildInput): ApiKeysModel {
     // By tenant and name, since All tenants lists the keys of every tenant and two may share a name.
     const runKey = (tenantId: string, name: string) => `${tenantId}|${name}`;
     const lastRuns = new Map<string, ListedRun>();
@@ -72,7 +74,7 @@ export function buildApiKeysModel({ keys, runs, viewer, now = Date.now() }: Buil
     const rows: ApiKeyRow[] = keys
         .map((key) => {
             const permissions = parse(key.permissions);
-            const ownerPermissions = ownerPermissionsIn(key.user, key.tenantId);
+            const ownerPermissions = ownerPermissionsIn(key.user, key.tenantId, sharingTenants.has(key.tenantId));
             const effective = capToOwner(permissions, ownerPermissions);
             const role = key.user.memberships.find((membership) => membership.tenantId === key.tenantId)?.group;
             // A deleted key may have had the same name, its runs are older than this key.
@@ -150,5 +152,6 @@ export async function getApiKeysModel(viewer: { id: string; superAdmin: boolean;
               distinct: ["tenantId", "triggerLabel"],
               select: { tenantId: true, triggerLabel: true, startedAt: true, status: true, job: { select: { name: true } } },
           });
-    return buildApiKeysModel({ keys, runs, viewer });
+    const sharing = await prisma.tenant.findMany({ where: { sharesWithCustomers: true }, select: { id: true } });
+    return buildApiKeysModel({ keys, runs, viewer, sharingTenants: new Set(sharing.map((tenant) => tenant.id)) });
 }

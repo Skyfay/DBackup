@@ -9,7 +9,11 @@ const WRONG_KEY = crypto.randomBytes(32);
 const KDF_SALT = crypto.randomBytes(32);
 const NONCE_PREFIX = crypto.randomBytes(4);
 
-const prismaMock = { adapterConfig: { findUnique: vi.fn() } };
+const prismaMock = {
+    adapterConfig: { findUnique: vi.fn() },
+    // Whether the tenant of the destination shares it with customers.
+    connectionShare: { count: vi.fn().mockResolvedValue(0) },
+};
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
 const registryGet = vi.fn();
@@ -57,7 +61,7 @@ async function sealedIndex(masterKey: Buffer): Promise<Buffer> {
 
 function setupArchiveBackup() {
     prismaMock.adapterConfig.findUnique.mockResolvedValue({
-        id: "dest-1", type: "storage", adapterId: "local-filesystem", config: "{}",
+        id: "dest-1", type: "storage", adapterId: "local-filesystem", config: "{}", tenantId: "tenant-1",
     });
     registryGet.mockReturnValue({
         id: "local-filesystem",

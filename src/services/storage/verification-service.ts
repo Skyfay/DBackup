@@ -1,7 +1,5 @@
-import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { StorageAdapter, BackupMetadata } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { getTempDir } from "@/lib/temp-dir";
 import { registerAdapters } from "@/lib/adapters";
@@ -10,6 +8,7 @@ import { wrapError } from "@/lib/logging/errors";
 import path from "path";
 import fs from "fs/promises";
 import crypto from "crypto";
+import { openDestination } from "@/services/sharing/destination-access";
 
 const log = logger.child({ service: "VerificationService" });
 
@@ -50,13 +49,7 @@ export class VerificationService {
     ): Promise<FileVerificationResult> {
         const verifiedAt = new Date().toISOString();
 
-        const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
-        if (!adapterConfig) throw new Error("Storage configuration not found");
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        if (!adapter) throw new Error(`Adapter '${adapterConfig.adapterId}' not found`);
-
-        const config = await resolveAdapterConfig(adapterConfig);
+        const { adapter, config } = await openDestination(adapterConfigId);
 
         // 1. Read .meta.json sidecar
         const metaPath = remotePath + ".meta.json";

@@ -1,11 +1,11 @@
-import type { DayKey, DayTotal } from "@/components/dashboard/storage/explorer/timeline-model";
+import type { DayKey } from "@/components/dashboard/storage/explorer/timeline-model";
 import type { SharedDatabase } from "@/services/tenant/shared-databases";
 import { isFormer, sharedKey, type SharedRow } from "./shared-model";
 
 /**
- * The grid of the timeline of the tab Shared with you: a row per database and a column per day,
- * with the backups of each day. Days the database was not the tenant's are a bar of their own.
- * Plain functions without React, so the rules can be tested.
+ * The lines of the shared databases in the timeline of the Backups page, after the jobs: a column
+ * per day with the backups of each day. Days the database was not the tenant's are a bar of their
+ * own. Plain functions without React, so the rules can be tested.
  */
 
 export type SharedCellKind = "none" | "ok" | "failed";
@@ -65,35 +65,4 @@ export function buildSharedRow(database: SharedDatabase, rows: readonly SharedRo
         cells.push({ day, kind: dayRows.length === 0 ? "none" : dayRows.some((row) => row.verification?.passed === false) ? "failed" : "ok", rows: dayRows });
     });
     return { database, cells, spans };
-}
-
-/** The row of every database: how many backups each day holds, red where a check failed. */
-export function sharedTotals(rows: readonly SharedTimelineRow[], days: readonly DayKey[]): DayTotal[] {
-    return days.map((day, index) => {
-        let count = 0;
-        let worst: DayTotal["worst"] = "ok";
-        for (const row of rows) {
-            const cell = row.cells[index];
-            if (!cell) continue;
-            count += cell.rows.length;
-            if (cell.kind === "failed") worst = "destructive";
-        }
-        return { day, count, worst, planned: false };
-    });
-}
-
-/** What a click on the timeline lists: a day of every database, or a day of one. */
-export interface SharedPick {
-    key?: string;
-    day: DayKey;
-}
-
-/** The backups of a pick, by the time of day. */
-export function pickedRows(rows: readonly SharedTimelineRow[], days: readonly DayKey[], pick: SharedPick): SharedRow[] {
-    const index = days.indexOf(pick.day);
-    if (index < 0) return [];
-    return rows
-        .filter((row) => !pick.key || sharedKey(row.database) === pick.key)
-        .flatMap((row) => row.cells[index]?.rows ?? [])
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }

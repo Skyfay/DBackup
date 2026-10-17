@@ -9,7 +9,10 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { connectionName } from "@/services/adapters/adapter-audit";
 import { auditService } from "@/services/audit-service";
+import { PLATFORM_LOG } from "@/services/system/settings-save";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ action: "config-management" });
 const configService = new ConfigService();
@@ -30,7 +33,7 @@ export async function triggerManualConfigBackupAction() {
         // Trigger the runner async (fire & forget from UI perspective, but we await completion to inform user)
         // Actually, runConfigBackup is async.
         await runConfigBackup();
-        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { action: "config_backup" });
+        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { action: "config_backup" }, undefined, PLATFORM_LOG);
         return { success: true };
     } catch (e: unknown) {
         log.error("Manual config backup failed", {}, wrapError(e));
@@ -52,12 +55,13 @@ export async function restoreFromStorageAction(
 
     try {
         const executionId = await configService.restoreFromStorage(storageConfigId, file, decryptionProfileId, options);
-        // Written once the restore started, it runs on in the background.
+        // Written once the restore started, it runs on in the background. The configuration backups
+        // lie on a destination of the home tenant, which names it.
         await auditService.log(user.id, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.SYSTEM, {
             action: "config_restore",
             file,
-            destination: await connectionName(storageConfigId),
-        });
+            destination: await runAsTenant(HOME_TENANT_ID, () => connectionName(storageConfigId)),
+        }, undefined, PLATFORM_LOG);
         return { success: true, executionId };
     } catch (error: unknown) {
         log.error("Restore from storage error", {}, wrapError(error));

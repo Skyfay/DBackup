@@ -182,6 +182,7 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
                 profileIdHint={keyDialog.profileId}
                 backup={{ storageConfigId: destinationId, file: file.path }}
                 canManageVault={canManageVault}
+                platformKeys
                 onConfirm={withKey}
                 loading={reading}
                 error={keyDialog.error}

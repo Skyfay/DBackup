@@ -28,8 +28,12 @@ vi.mock("@/lib/prisma", () => ({
         adapterConfig: {
             findUnique: (...args: any[]) => mockFindUnique(...args),
         },
+        // Nobody shares the destination, so its tenant sees it as it is.
+        connectionShare: { count: async () => 0 },
     },
 }));
+
+vi.mock("@/services/sharing/provided", () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 
 const mockResolveAdapterConfig = vi.fn();
 vi.mock("@/lib/adapters/config-resolver", () => ({
@@ -58,10 +62,10 @@ function createProps(id = "dest-1") {
 describe("POST /api/storage/[id]/check-path", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockGetAuthContext.mockResolvedValue({ userId: "user-1" });
+        mockGetAuthContext.mockResolvedValue({ userId: "user-1", tenantId: "acme" });
         mockResolveAdapterConfig.mockImplementation(async (config: unknown) => config);
         mockRegistryGet.mockReturnValue({ id: "local-filesystem", type: "storage", list: mockList });
-        mockFindUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local-filesystem", config: "{}" });
+        mockFindUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local-filesystem", config: "{}", tenantId: "acme" });
     });
 
     it("returns 401 when not authenticated", async () => {
@@ -76,7 +80,7 @@ describe("POST /api/storage/[id]/check-path", () => {
     });
 
     it("returns 404 when the adapter config is not a storage adapter", async () => {
-        mockFindUnique.mockResolvedValue({ id: "dest-1", type: "database", adapterId: "mysql", config: "{}" });
+        mockFindUnique.mockResolvedValue({ id: "dest-1", type: "database", adapterId: "mysql", config: "{}", tenantId: "acme" });
         const res = await POST(createRequest({ path: "/restore" }), createProps());
         expect(res.status).toBe(404);
     });

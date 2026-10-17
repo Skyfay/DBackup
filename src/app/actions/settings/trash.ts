@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, getViewer, getUserPermissions } from "@/lib/auth/access-control";
-import { TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
+import { checkPermission, getViewer, getUserPermissions, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES, type AuditResource } from "@/lib/core/audit-types";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { AuthenticationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
+import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 import { latestTrashIds, mayHandle, purgeFromTrash, restoreFromTrash, trashEntries, type TrashViewer } from "@/services/trash/trash-service";
 import { TRASH_KINDS, isTrashKind, type TrashKind, type TrashRestoreResult } from "@/services/trash/trash-types";
 
@@ -97,8 +98,11 @@ export async function restoreDeletedAction(ids: string[], newName?: string): Pro
 
     try {
         const entries = await allowed(viewer, parsed.data.ids);
-        if (parsed.data.newName && entries.length === 1 && entries[0].kind === "user" && !z.string().email().safeParse(parsed.data.newName).success) {
-            return { success: false, error: "An account needs a valid email." };
+        if (parsed.data.newName && entries.length === 1 && entries[0].kind === "user") {
+            if (!z.string().email().safeParse(parsed.data.newName).success) return { success: false, error: "An account needs a valid email." };
+            const platformLevel = user.isPlatformAdmin || hasPermissionWithContext(user, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
+            const claimed = await claimedEmailRefusal(parsed.data.newName, user.tenantId ? [user.tenantId] : [], platformLevel);
+            if (claimed) return { success: false, error: claimed };
         }
         const result = entries.length > 0
             ? await restoreFromTrash(entries.map((entry) => entry.id), { newName: parsed.data.newName })

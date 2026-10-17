@@ -1,7 +1,5 @@
 import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
 import { StorageAdapter, FileInfo, BackupMetadata } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { pipeline } from "stream/promises";
 import { createReadStream, createWriteStream, promises as fs } from "fs";
 import { resolveDecryptionKey } from "@/services/restore/smart-recovery";
@@ -15,6 +13,8 @@ import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
 import { EncryptionKeyRequiredError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
+import { currentTenantId } from "@/lib/tenant/current";
+import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
 import { isBackupFile, sidecarPathsFor, chainFolderOf, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 import { dependentsOf, fileNameOf } from "./bulk-delete-order";
 
@@ -114,8 +114,16 @@ const LISTING_RETRY_MS = 5 * 60_000;
 /** Background refreshes at once. After an upgrade every destination may need one, and they queue up. */
 const BACKGROUND_CONCURRENCY = 4;
 
+/**
+ * A listing belongs to a destination as one tenant sees it: a destination its tenant shares holds
+ * the backups of each customer apart, and each tenant has a listing of its own, see
+ * `src/lib/tenant/storage-view.ts`. The in-process state is keyed the same way.
+ */
+const keyOf = (adapterConfigId: string, tenantId: string) => `${adapterConfigId}\n${tenantId}`;
+const partsOf = (key: string): [string, string] => key.split("\n") as [string, string];
+
 interface ListingState {
-    /** Live listings under way, one per destination, so a page, Check now and the warmup task share one. */
+    /** Live listings under way, one per destination and tenant, so a page, Check now and the warmup task share one. */
     listings: Map<string, Promise<{ files: RichFileInfo[]; listedAt: Date }>>;
     /** Reconciliations under way, one per destination. */
     reconciliations: Map<string, Promise<void>>;
@@ -176,14 +184,7 @@ export function isListingStale(listedAt: Date, now = Date.now()): boolean {
 
 export class StorageService {
     async toggleLock(adapterConfigId: string, filePath: string) {
-        const adapterConfig = await prisma.adapterConfig.findUnique({
-            where: { id: adapterConfigId }
-        });
-
-        if (!adapterConfig) throw new Error("Storage not found");
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        const config = await resolveAdapterConfig(adapterConfig);
+        const { adapter, config } = await openDestination(adapterConfigId);
 
         const metadata = await this.readLockMetadata(adapter, config, filePath);
         return this.writeLockState(adapterConfigId, adapter, config, filePath, metadata, !metadata.locked);
@@ -196,14 +197,7 @@ export class StorageService {
      * converge on one state instead of flipping each row and staying mixed.
      */
     async setLocked(adapterConfigId: string, filePath: string, locked: boolean): Promise<boolean> {
-        const adapterConfig = await prisma.adapterConfig.findUnique({
-            where: { id: adapterConfigId }
-        });
-
-        if (!adapterConfig) throw new Error("Storage not found");
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        const config = await resolveAdapterConfig(adapterConfig);
+        const { adapter, config } = await openDestination(adapterConfigId);
 
         return this.setLockedWith(adapterConfigId, adapter, config, filePath, locked);
     }
@@ -276,35 +270,38 @@ export class StorageService {
      * Lists files from a specific storage adapter configuration.
      */
     async listFiles(adapterConfigId: string, subPath: string = "", _typeFilter?: string): Promise<FileInfo[]> {
-        const adapterConfig = await prisma.adapterConfig.findUnique({
-            where: { id: adapterConfigId }
-        });
-
-        if (!adapterConfig) {
-            throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
-        }
-
-        if (adapterConfig.type !== "storage") {
-            throw new Error(`Adapter configuration ${adapterConfigId} is not a storage adapter.`);
-        }
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        if (!adapter) {
-            throw new Error(`Storage adapter implementation '${adapterConfig.adapterId}' not found in registry.`);
-        }
-
-        let config: any;
-        try {
-            config = await resolveAdapterConfig(adapterConfig);
-        } catch (e) {
-            throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
-        }
-
+        const { adapter, config } = await openDestination(adapterConfigId);
         return await adapter.list(config, subPath);
     }
 
+    /** Drops the listings of a destination, of every tenant the scope that runs now sees. */
     async invalidateStorageListCache(adapterConfigId: string): Promise<void> {
         await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+    }
+
+    /**
+     * Whose listing a call means: the tenant given, else the one that runs now, else the tenant
+     * of the destination, for the system scope and All tenants, which see it as its tenant does.
+     */
+    async listingTenant(adapterConfigId: string, tenantId?: string | null): Promise<string> {
+        const given = tenantId ?? (await currentTenantId());
+        if (given) return given;
+        const row = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: adapterConfigId }, select: { tenantId: true } }));
+        if (!row) throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
+        return row.tenantId;
+    }
+
+    /** The cached row of one listing, read where its tenant's rows are. */
+    private readListingRow(adapterConfigId: string, tenantId: string) {
+        return runAsTenant(tenantId, () => prisma.storageListCache.findUnique({ where: { adapterConfigId_tenantId: { adapterConfigId, tenantId } } }));
+    }
+
+    private dropListingRow(adapterConfigId: string, tenantId: string) {
+        return runAsTenant(tenantId, () => prisma.storageListCache.deleteMany({ where: { adapterConfigId, tenantId } }));
+    }
+
+    private writeListingRow(adapterConfigId: string, tenantId: string, data: { filesJson?: string; cachedAt: Date }) {
+        return runAsTenant(tenantId, () => prisma.storageListCache.update({ where: { adapterConfigId_tenantId: { adapterConfigId, tenantId } }, data }));
     }
 
     /**
@@ -314,12 +311,12 @@ export class StorageService {
      * keeps its version, so the change shows while the rebuild that brings its other rows up to
      * date still happens.
      */
-    private async loadCurrentCache(adapterConfigId: string): Promise<CachedListing | null> {
-        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+    private async loadCurrentCache(adapterConfigId: string, tenantId: string): Promise<CachedListing | null> {
+        const cached = await this.readListingRow(adapterConfigId, tenantId);
         if (!cached) return null;
         const listing = parseCachedListing(cached.filesJson);
         if (listing.v < CACHE_MIN_READABLE_VERSION) {
-            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+            await this.dropListingRow(adapterConfigId, tenantId);
             return null;
         }
         return listing;
@@ -336,24 +333,23 @@ export class StorageService {
      */
     async mutateStorageListCache(
         adapterConfigId: string,
-        mutate: (files: RichFileInfo[]) => RichFileInfo[] | null
+        mutate: (files: RichFileInfo[]) => RichFileInfo[] | null,
+        tenantId?: string
     ): Promise<void> {
-        const listing = await this.loadCurrentCache(adapterConfigId);
+        const tenant = await this.listingTenant(adapterConfigId, tenantId);
+        const listing = await this.loadCurrentCache(adapterConfigId, tenant);
         if (!listing) return;
 
         const next = mutate(listing.files);
         if (!next) return;
 
-        await prisma.storageListCache.update({
-            where: { adapterConfigId },
-            data: { filesJson: serializeCachedListing(next, listing.v), cachedAt: new Date() },
-        });
+        await this.writeListingRow(adapterConfigId, tenant, { filesJson: serializeCachedListing(next, listing.v), cachedAt: new Date() });
     }
 
-    async appendStorageListCacheEntry(adapterConfigId: string, entry: RichFileInfo): Promise<void> {
+    async appendStorageListCacheEntry(adapterConfigId: string, entry: RichFileInfo, tenantId?: string): Promise<void> {
         await this.mutateStorageListCache(adapterConfigId, (files) =>
             files.some(f => f.path === entry.path) ? null : [...files, entry]
-        );
+        , tenantId);
     }
 
     async removeStorageListCacheEntry(adapterConfigId: string, filePath: string): Promise<void> {
@@ -361,13 +357,13 @@ export class StorageService {
     }
 
     /** Drops several entries in one write. */
-    async removeStorageListCacheEntries(adapterConfigId: string, filePaths: string[]): Promise<void> {
+    async removeStorageListCacheEntries(adapterConfigId: string, filePaths: string[], tenantId?: string): Promise<void> {
         if (filePaths.length === 0) return;
         const removing = new Set(filePaths);
         await this.mutateStorageListCache(adapterConfigId, (files) => {
             const filtered = files.filter(f => !removing.has(f.path));
             return filtered.length === files.length ? null : filtered;
-        });
+        }, tenantId);
     }
 
     async updateStorageListCacheEntry(adapterConfigId: string, filePath: string, updates: Partial<RichFileInfo>): Promise<void> {
@@ -485,47 +481,44 @@ export class StorageService {
      * One reconciliation runs per destination at a time, a second call joins it. A failure is
      * remembered, so the pages can say why and the background refresh waits before trying again.
      */
-    reconcileStorageListCache(adapterConfigId: string): Promise<void> {
-        const running = listingState.reconciliations.get(adapterConfigId);
+    async reconcileStorageListCache(adapterConfigId: string, tenantId?: string): Promise<void> {
+        const tenant = await this.listingTenant(adapterConfigId, tenantId);
+        const key = keyOf(adapterConfigId, tenant);
+        const running = listingState.reconciliations.get(key);
         if (running) return running;
-        const work = this.runReconcile(adapterConfigId)
+        const work = runAsTenant(tenant, () => this.runReconcile(adapterConfigId, tenant))
             .then(() => {
-                listingState.failures.delete(adapterConfigId);
+                listingState.failures.delete(key);
             })
             .catch((error: unknown) => {
-                listingState.failures.set(adapterConfigId, { at: Date.now(), error: getErrorMessage(error) });
+                listingState.failures.set(key, { at: Date.now(), error: getErrorMessage(error) });
                 throw error;
             })
-            .finally(() => listingState.reconciliations.delete(adapterConfigId));
-        listingState.reconciliations.set(adapterConfigId, work);
+            .finally(() => listingState.reconciliations.delete(key));
+        listingState.reconciliations.set(key, work);
         return work;
     }
 
-    private async runReconcile(adapterConfigId: string): Promise<void> {
-        const current = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+    private async runReconcile(adapterConfigId: string, tenantId: string): Promise<void> {
+        const current = await this.readListingRow(adapterConfigId, tenantId);
         if (!current) return;
         const currentListing = parseCachedListing(current.filesJson);
         // Too old to read: drop it and let the next read rebuild it.
         if (currentListing.v < CACHE_MIN_READABLE_VERSION) {
-            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+            await this.dropListingRow(adapterConfigId, tenantId);
             return;
         }
         // Readable but older: only a full listing brings its rows up to date, reconciling would
         // only enrich the files it has not seen before.
         if (currentListing.v !== CACHE_SCHEMA_VERSION) {
-            await this.listLive(adapterConfigId);
+            await this.listLive(adapterConfigId, tenantId);
             return;
         }
 
-        const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
-        if (!adapterConfig || adapterConfig.type !== "storage") return;
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        if (!adapter) return;
-
+        let adapter: StorageAdapter;
         let config: any;
         try {
-            config = await resolveAdapterConfig(adapterConfig);
+            ({ adapter, config } = await openDestination(adapterConfigId, tenantId));
         } catch { return; }
 
         const allRemoteFiles = (await adapter.list(config, "")).filter(f => {
@@ -536,7 +529,7 @@ export class StorageService {
         const remoteMetaFiles = allRemoteFiles.filter(f => f.name.endsWith(METADATA_SIDECAR_SUFFIX));
         const remotePathSet = new Set(remoteBackups.map(f => f.path));
 
-        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+        const cached = await this.readListingRow(adapterConfigId, tenantId);
         if (!cached) return;
 
         const cachedListing = parseCachedListing(cached.filesJson);
@@ -550,10 +543,7 @@ export class StorageService {
         const newFiles = remoteBackups.filter(f => !cachedPathSet.has(f.path));
 
         if (removedPaths.size === 0 && newFiles.length === 0) {
-            await prisma.storageListCache.update({
-                where: { adapterConfigId },
-                data: { cachedAt: new Date() },
-            });
+            await this.writeListingRow(adapterConfigId, tenantId, { cachedAt: new Date() });
             return;
         }
 
@@ -572,8 +562,8 @@ export class StorageService {
                 }));
             }
 
-            // The jobs and runs of the destination's tenant, also where the scope reads every tenant.
-            const allJobs = await prisma.job.findMany({ where: { tenantId: adapterConfig.tenantId }, include: { source: true } });
+            // The jobs and runs of the tenant whose listing it is, also where the scope reads every tenant.
+            const allJobs = await prisma.job.findMany({ where: { tenantId }, include: { source: true } });
             const jobMap = new Map();
             allJobs.forEach(j => {
                 jobMap.set(j.name.replace(/[^a-z0-9]/gi, '_'), j);
@@ -581,7 +571,7 @@ export class StorageService {
             });
 
             const executions = await prisma.execution.findMany({
-                where: { tenantId: adapterConfig.tenantId, status: 'Success', path: { not: null } },
+                where: { tenantId, status: 'Success', path: { not: null } },
                 select: { path: true, metadata: true }
             });
             const executionMap = new Map();
@@ -597,11 +587,8 @@ export class StorageService {
             updatedFiles = [...updatedFiles, ...enrichedNew];
         }
 
-        await prisma.storageListCache.update({
-            where: { adapterConfigId },
-            data: { filesJson: serializeCachedListing(updatedFiles), cachedAt: new Date() },
-        });
-        log.debug("Reconciled storage cache", { adapterConfigId, removed: removedPaths.size, added: newFiles.length });
+        await this.writeListingRow(adapterConfigId, tenantId, { filesJson: serializeCachedListing(updatedFiles), cachedAt: new Date() });
+        log.debug("Reconciled storage cache", { adapterConfigId, tenantId, removed: removedPaths.size, added: newFiles.length });
     }
 
     /**
@@ -621,44 +608,49 @@ export class StorageService {
      * the time of the last live listing or reconciliation, not of this call.
      */
     async listDestinationFiles(adapterConfigId: string, bypassCache = false): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
+        // A running listing is kept per destination and tenant for the whole process, whoever started
+        // it. So the tenant that runs now must see the destination before it reads or joins one.
+        const { tenantId } = await findDestination(adapterConfigId);
         if (!bypassCache) {
-            const cached = await this.readCachedListing(adapterConfigId);
+            const cached = await this.readCachedListing(adapterConfigId, tenantId);
             if (cached) {
-                if (!cached.current) this.refreshInBackground(adapterConfigId, "rebuild");
-                else if (isListingStale(cached.listedAt)) this.refreshInBackground(adapterConfigId, "reconcile");
+                if (!cached.current) this.refreshInBackground(adapterConfigId, tenantId, "rebuild");
+                else if (isListingStale(cached.listedAt)) this.refreshInBackground(adapterConfigId, tenantId, "reconcile");
                 return { files: cached.files, listedAt: cached.listedAt };
             }
         }
-        return this.listLive(adapterConfigId);
+        return this.listLive(adapterConfigId, tenantId);
     }
 
     /**
      * What the cache holds for a destination, without asking the storage. Null when there is no
      * cache or only one too old to read. `current` is false for a payload of an older version.
      */
-    async readCachedListing(adapterConfigId: string): Promise<{ files: RichFileInfo[]; listedAt: Date; current: boolean } | null> {
-        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+    async readCachedListing(adapterConfigId: string, tenantId?: string): Promise<{ files: RichFileInfo[]; listedAt: Date; current: boolean } | null> {
+        const tenant = await this.listingTenant(adapterConfigId, tenantId);
+        const cached = await this.readListingRow(adapterConfigId, tenant);
         if (!cached) return null;
         const listing = parseCachedListing(cached.filesJson);
         if (listing.v < CACHE_MIN_READABLE_VERSION) {
             log.info("Discarding outdated storage listing cache", { adapterConfigId, cachedVersion: listing.v });
-            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+            await this.dropListingRow(adapterConfigId, tenant);
             return null;
         }
         return { files: listing.files, listedAt: cached.cachedAt, current: listing.v === CACHE_SCHEMA_VERSION };
     }
 
-    /** Whether a listing or a reconciliation of the destination runs right now or waits for its turn. */
-    isListing(adapterConfigId: string): boolean {
-        return listingState.listings.has(adapterConfigId)
-            || listingState.reconciliations.has(adapterConfigId)
-            || listingState.queued.has(adapterConfigId)
-            || listingState.starting.has(adapterConfigId);
+    /** Whether a listing or a reconciliation of the destination for a tenant runs right now or waits for its turn. */
+    isListing(adapterConfigId: string, tenantId: string): boolean {
+        const key = keyOf(adapterConfigId, tenantId);
+        return listingState.listings.has(key)
+            || listingState.reconciliations.has(key)
+            || listingState.queued.has(key)
+            || listingState.starting.has(key);
     }
 
-    /** Why the last listing of a destination failed, until one succeeds again. */
-    listingFailure(adapterConfigId: string): { at: Date; error: string } | null {
-        const failure = listingState.failures.get(adapterConfigId);
+    /** Why the last listing of a destination for a tenant failed, until one succeeds again. */
+    listingFailure(adapterConfigId: string, tenantId: string): { at: Date; error: string } | null {
+        const failure = listingState.failures.get(keyOf(adapterConfigId, tenantId));
         return failure ? { at: new Date(failure.at), error: failure.error } : null;
     }
 
@@ -668,37 +660,33 @@ export class StorageService {
      * is only old. A destination that failed a moment ago is left alone unless `force` is set.
      * Returns whether a refresh runs now.
      */
-    refreshInBackground(adapterConfigId: string, mode: "rebuild" | "reconcile", force = false): boolean {
-        if (this.isListing(adapterConfigId)) return true;
-        const failure = listingState.failures.get(adapterConfigId);
+    refreshInBackground(adapterConfigId: string, tenantId: string, mode: "rebuild" | "reconcile", force = false): boolean {
+        const key = keyOf(adapterConfigId, tenantId);
+        if (this.isListing(adapterConfigId, tenantId)) return true;
+        const failure = listingState.failures.get(key);
         if (!force && failure && Date.now() - failure.at < LISTING_RETRY_MS) return false;
-        listingState.queued.set(adapterConfigId, mode);
+        listingState.queued.set(key, mode);
         this.startQueued();
         return true;
-    }
-
-    /** Runs a refresh of a destination in its own tenant, which no request around it decides. */
-    private async inTenantOf<T>(adapterConfigId: string, work: () => Promise<T>): Promise<T> {
-        const destination = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: adapterConfigId }, select: { tenantId: true } }));
-        if (!destination) throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
-        return runAsTenant(destination.tenantId, work);
     }
 
     /** Starts queued background refreshes while slots are free. */
     private startQueued(): void {
         while (listingState.queued.size > 0 && listingState.listings.size + listingState.reconciliations.size + listingState.starting.size < BACKGROUND_CONCURRENCY) {
-            const [adapterConfigId, mode] = listingState.queued.entries().next().value!;
-            listingState.queued.delete(adapterConfigId);
-            listingState.starting.add(adapterConfigId);
-            // It starts in whatever request frees the slot, so it runs in the tenant of its destination.
-            // The listing takes over the place of `starting` in the same tick, so it never looks idle.
-            const work = this.inTenantOf<unknown>(adapterConfigId, () => {
-                listingState.starting.delete(adapterConfigId);
-                return mode === "rebuild" ? this.listLive(adapterConfigId) : this.reconcileStorageListCache(adapterConfigId);
+            const [key, mode] = listingState.queued.entries().next().value!;
+            const [adapterConfigId, tenantId] = partsOf(key);
+            listingState.queued.delete(key);
+            listingState.starting.add(key);
+            // It starts in whatever request frees the slot, so it runs in the tenant whose listing it
+            // is, which no request around it decides. The listing takes over the place of `starting`
+            // in the same tick, so it never looks idle.
+            const work = runAsTenant<Promise<unknown>>(tenantId, () => {
+                listingState.starting.delete(key);
+                return mode === "rebuild" ? this.listLive(adapterConfigId, tenantId) : this.reconcileStorageListCache(adapterConfigId, tenantId);
             });
             // The failure is kept for the pages, nothing else is waiting for it.
             work.catch(() => {}).finally(() => {
-                listingState.starting.delete(adapterConfigId);
+                listingState.starting.delete(key);
                 this.startQueued();
             });
         }
@@ -706,55 +694,37 @@ export class StorageService {
 
     /** Compares a destination with the storage now, for Check now: a reconciliation, or a full listing when that is needed. */
     async checkNow(adapterConfigId: string): Promise<boolean> {
-        const cached = await this.readCachedListing(adapterConfigId);
-        return this.refreshInBackground(adapterConfigId, cached?.current ? "reconcile" : "rebuild", true);
+        const { tenantId } = await findDestination(adapterConfigId);
+        const cached = await this.readCachedListing(adapterConfigId, tenantId);
+        return this.refreshInBackground(adapterConfigId, tenantId, cached?.current ? "reconcile" : "rebuild", true);
     }
 
     /**
      * Lists a destination from the storage and caches the result. One listing runs per destination
-     * at a time, a second call joins it, and a failure is remembered like one of a reconciliation.
+     * and tenant at a time, a second call joins it, and a failure is remembered like one of a
+     * reconciliation.
      */
-    private listLive(adapterConfigId: string): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
-        const running = listingState.listings.get(adapterConfigId);
+    private listLive(adapterConfigId: string, tenantId: string): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
+        const key = keyOf(adapterConfigId, tenantId);
+        const running = listingState.listings.get(key);
         if (running) return running;
-        const work = this.fetchListing(adapterConfigId)
+        const work = runAsTenant(tenantId, () => this.fetchListing(adapterConfigId, tenantId))
             .then((result) => {
-                listingState.failures.delete(adapterConfigId);
+                listingState.failures.delete(key);
                 return result;
             })
             .catch((error: unknown) => {
-                listingState.failures.set(adapterConfigId, { at: Date.now(), error: getErrorMessage(error) });
+                listingState.failures.set(key, { at: Date.now(), error: getErrorMessage(error) });
                 throw error;
             })
-            .finally(() => listingState.listings.delete(adapterConfigId));
-        listingState.listings.set(adapterConfigId, work);
+            .finally(() => listingState.listings.delete(key));
+        listingState.listings.set(key, work);
         return work;
     }
 
-    private async fetchListing(adapterConfigId: string): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
-        const adapterConfig = await prisma.adapterConfig.findUnique({
-            where: { id: adapterConfigId }
-        });
-
-        if (!adapterConfig) {
-            throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
-        }
-
-        if (adapterConfig.type !== "storage") {
-            throw new Error(`Adapter configuration ${adapterConfigId} is not a storage adapter.`);
-        }
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        if (!adapter) {
-            throw new Error(`Storage adapter implementation '${adapterConfig.adapterId}' not found in registry.`);
-        }
-
-        let config: any;
-        try {
-            config = await resolveAdapterConfig(adapterConfig);
-        } catch (e) {
-            throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
-        }
+    private async fetchListing(adapterConfigId: string, tenantId: string): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
+        const found = await findDestination(adapterConfigId, tenantId);
+        const { adapter, config } = await openRow(found.row, found.mode);
 
         const allFiles = (await adapter.list(config, "")).filter(f => {
             const p = f.path.replace(/\\/g, '/');
@@ -781,9 +751,9 @@ export class StorageService {
             await Promise.all(metaReads);
         }
 
-        // The jobs and runs of the destination's tenant, also where the scope reads every tenant.
+        // The jobs and runs of the tenant whose listing it is, also where the scope reads every tenant.
         const allJobs = await prisma.job.findMany({
-             where: { tenantId: adapterConfig.tenantId },
+             where: { tenantId },
              include: { source: true }
         });
 
@@ -796,7 +766,7 @@ export class StorageService {
 
         const executions = await prisma.execution.findMany({
             where: {
-                tenantId: adapterConfig.tenantId,
+                tenantId,
                 status: 'Success',
                 path: { not: null }
             },
@@ -825,11 +795,11 @@ export class StorageService {
         // Persist to cache (full list without typeFilter applied). Awaited, so a page that asks
         // again once the listing is done reads the new list. A failed write never fails the listing.
         const jsonStr = serializeCachedListing(results);
-        await prisma.storageListCache.upsert({
-            where:  { adapterConfigId },
-            create: { adapterConfigId, filesJson: jsonStr, cachedAt: listedAt },
+        await runAsTenant(tenantId, () => prisma.storageListCache.upsert({
+            where:  { adapterConfigId_tenantId: { adapterConfigId, tenantId } },
+            create: { adapterConfigId, tenantId, filesJson: jsonStr, cachedAt: listedAt },
             update: { filesJson: jsonStr, cachedAt: listedAt },
-        }).catch(() => {});
+        })).catch(() => {});
 
         return { files: results, listedAt };
     }
@@ -838,29 +808,7 @@ export class StorageService {
      * Deletes a file via a specific storage adapter configuration.
      */
     async deleteFile(adapterConfigId: string, filePath: string): Promise<boolean> {
-         const adapterConfig = await prisma.adapterConfig.findUnique({
-            where: { id: adapterConfigId }
-        });
-
-        if (!adapterConfig) {
-            throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
-        }
-
-        if (adapterConfig.type !== "storage") {
-             throw new Error(`Adapter configuration ${adapterConfigId} is not a storage adapter.`);
-        }
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        if (!adapter) {
-            throw new Error(`Storage adapter implementation '${adapterConfig.adapterId}' not found in registry.`);
-        }
-
-         let config: any;
-        try {
-            config = await resolveAdapterConfig(adapterConfig);
-        } catch (e) {
-            throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
-        }
+        const { adapter, config } = await openDestination(adapterConfigId);
 
         // Refuse to gut an incremental chain. Later snapshots reference bytes that live in
         // earlier archives, so deleting one member silently makes every snapshot built on
@@ -963,29 +911,7 @@ export class StorageService {
         decrypt: boolean = false,
         options?: { profileIdOverride?: string; rawKeyHex?: string; database?: string }
     ): Promise<{ success: boolean; isZip?: boolean; fileName?: string }> {
-        const adapterConfig = await prisma.adapterConfig.findUnique({
-           where: { id: adapterConfigId }
-       });
-
-       if (!adapterConfig) {
-           throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
-       }
-
-       if (adapterConfig.type !== "storage") {
-            throw new Error(`Adapter configuration ${adapterConfigId} is not a storage adapter.`);
-       }
-
-       const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-       if (!adapter) {
-           throw new Error(`Storage adapter implementation '${adapterConfig.adapterId}' not found in registry.`);
-       }
-
-        let config: any;
-       try {
-           config = await resolveAdapterConfig(adapterConfig);
-       } catch (e) {
-           throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
-       }
+        const { adapter, config } = await openDestination(adapterConfigId);
 
        if (decrypt) {
             // Metadata before bytes: it is what says whether this file has a decrypted form

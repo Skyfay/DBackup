@@ -18,7 +18,7 @@ DBackup implements Role-Based Access Control (RBAC) to control feature access th
 **Key Concepts:**
 
 - **Permissions**: Granular strings (e.g., `sources:read`, `jobs:execute`)
-- **Groups**: Contain a list of permissions and are the same in every tenant
+- **Groups**: Contain a list of permissions and belong to one tenant, whose admins make and change them
 - **Memberships**: A user holds one group per [tenant](./tenants.md) they work in, or none
 - **No Group = No Access**: Users without a group in a tenant have no permissions there
 - **Full access**: A group with `fullAccess` holds every permission, also the ones a new version adds. It cannot be edited or deleted, and nothing checks a group by its name
@@ -47,25 +47,29 @@ model TenantMembership {
 
 model Group {
   id          String   @id @default(uuid())
-  name        String   @unique
+  name        String
   permissions String   // JSON array: ["users:read", "jobs:write"]
   fullAccess  Boolean  @default(false)
+  tenantId    String   @default("default") // The tenant the group belongs to
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, name])
 }
 ```
 
 ## Effective Permissions
 
-`permissionsIn(memberships, tenantId)` in `src/lib/auth/owner-permissions.ts` decides what someone may do while working in a tenant:
+`permissionsIn(memberships, tenantId, platformGroup)` in `src/lib/auth/owner-permissions.ts` decides what someone may do while working in a tenant:
 
 | Permissions | Count from |
 | :--- | :--- |
-| `settings:*` (`PLATFORM_PERMISSIONS`) | The group in the home tenant only, since they act on the whole instance |
+| `settings:*` (`PLATFORM_PERMISSIONS`) | The group in the home tenant only, or a platform group, since they act on the whole instance |
 | `profile:*` (`PROFILE_PERMISSIONS`) | Any group the user holds, since the account belongs to no tenant |
-| Everything else | The group in the tenant the user works in |
+| `platform-*` (`PLATFORM_ONLY_PERMISSIONS`) | A platform group only, never the group of a tenant |
+| Everything else | The group in the tenant the user works in, plus what a platform group gives in a tenant of its scope |
 
-With one tenant this is exactly what the group gives. `getAuthContext` puts the result into `AuthContext.permissions`, every permission for a platform admin. API keys are capped by `ownerPermissionsIn(owner, key.tenantId)`. See [Tenants](./tenants.md#permissions) for the guards on accounts and groups.
+With one tenant this is exactly what the group gives. `getAuthContext` puts the result into `AuthContext.permissions`, every permission for a platform admin. API keys are capped by `ownerPermissionsIn(owner, key.tenantId, tenantShares)`. See [Tenants](./tenants.md#permissions) for the guards on accounts and groups.
 
 ## Permission Definitions
 

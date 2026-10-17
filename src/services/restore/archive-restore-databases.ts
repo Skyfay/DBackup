@@ -24,7 +24,9 @@ import { entryKey } from "@/lib/archive/types";
 import { getTempDir } from "@/lib/temp-dir";
 import type { openArchiveForRestore } from "./file-restore";
 import type { ArchiveRestoreCallbacks } from "./archive-restore";
+import { sharedLogScrubber, type RunLog } from "./shared-restore-log";
 import type { RestoreInput } from "./types";
+import { findDestination } from "@/services/sharing/destination-access";
 
 export type DatabaseMapping = { originalName: string; targetName: string; selected: boolean }[];
 
@@ -48,6 +50,35 @@ export function resolveDatabaseTarget(
 }
 
 /**
+ * The scrubber of a customer's run, from the connection of the server, the archive, its
+ * destination and the databases of both, which are what the adapter and the archive can name.
+ */
+async function sharedScrubber(
+    input: RestoreInput,
+    archive: Awaited<ReturnType<typeof openArchiveForRestore>>,
+    connection: Record<string, unknown>,
+    names: string[]
+) {
+    const destination = await findDestination(input.storageConfigId).then((found) => found.row).catch(() => null);
+    return sharedLogScrubber({
+        keep: [...(input.shared ? [input.shared.databaseName] : []), ...names],
+        archive: input.file,
+        destination: destination?.name,
+        connection,
+        otherDatabases: archive.index.databases.map((database) => database.name),
+    });
+}
+
+/** The log of a customer's restore: the scrubbed line for their run, the whole one for the provider's. */
+function sharedLog(customer: RunLog, provider: RunLog | undefined): RunLog {
+    if (!provider) return customer;
+    return (message, level, type, details) => {
+        provider(message, level, type, details);
+        customer(message, level, type, details);
+    };
+}
+
+/**
  * Restores the selected database entries of an opened archive.
  *
  * Database entries always live in the snapshot's own archive (incrementals never carry them
@@ -61,7 +92,7 @@ export async function restoreDatabases(
     dbMapping: DatabaseMapping | undefined,
     restoredDatabases: string[],
     errors: { entry: string; error: string }[],
-    { log, updateProgress }: ArchiveRestoreCallbacks
+    callbacks: ArchiveRestoreCallbacks
 ): Promise<void> {
     if (!input.targetSourceId) {
         throw new Error("Missing targetSourceId: this archive contains database(s) to restore");
@@ -82,6 +113,18 @@ export async function restoreDatabases(
     dbConf.type = sourceConfig.adapterId;
     if (input.privilegedAuth) dbConf.privilegedAuth = input.privilegedAuth;
 
+    const targetFor = (dbName: string) =>
+        resolveDatabaseTarget(dbName, dbMapping, input.targetDatabaseName, selectedDbNames.length);
+
+    // The run of a customer lands in their History, so every line of it, the adapter's included,
+    // names their database and nothing else of the server or the backup. The provider's run reads
+    // each line in full.
+    const scrubber = input.shared ? await sharedScrubber(input, archive, dbConf, [...selectedDbNames, ...selectedDbNames.map(targetFor)]) : null;
+    const log = scrubber ? sharedLog(scrubber.wrap(callbacks.sharedLogs?.customer ?? callbacks.log), callbacks.sharedLogs?.provider) : callbacks.log;
+    const reason = (message: string) => (scrubber ? scrubber.text(message) : message);
+    const updateProgress = (percent: number, detail?: string) =>
+        (detail === undefined ? callbacks.updateProgress?.(percent) : callbacks.updateProgress?.(percent, reason(detail)));
+
     const hasMapping = !!dbMapping && dbMapping.length > 0;
     if (!hasMapping && input.targetDatabaseName && selectedDbNames.length > 1) {
         log(
@@ -89,8 +132,6 @@ export async function restoreDatabases(
             'warning'
         );
     }
-    const targetFor = (dbName: string) =>
-        resolveDatabaseTarget(dbName, dbMapping, input.targetDatabaseName, selectedDbNames.length);
 
     // One transport for the whole database portion: the version probe, the
     // prepare step and every restoreOne share a single connection.
@@ -113,6 +154,9 @@ export async function restoreDatabases(
                 await sourceAdapter.prepareRestore(dbConf, targetNames, host);
             } catch (e: unknown) {
                 const message = e instanceof Error ? e.message : String(e);
+                // The run of a customer ends on a line that says nothing of the error, so the
+                // reason stands here, in their words.
+                if (scrubber) log(`Failed to prepare ${targetNames.join(', ')}: ${message}`, 'error');
                 throw new Error(`Failed to prepare target database(s): ${message}`);
             }
         }
@@ -161,20 +205,21 @@ export async function restoreDatabases(
                         // Each database gets an equal slice of the bar, so a multi-database
                         // restore moves forward instead of restarting at 0 for every dump.
                         const overall = Math.round(((position + Math.min(100, Math.max(0, percent)) / 100) / total) * 100);
-                        updateProgress?.(overall, `${dbName}: ${detail ?? `${Math.round(percent)}%`}`);
+                        updateProgress(overall, `${dbName}: ${detail ?? `${Math.round(percent)}%`}`);
                     },
                     dbName
                 );
                 restoredDatabases.push(targetName);
                 log(`Database restored: ${targetName}`, 'success');
             } catch (e: unknown) {
+                // The log scrubs the line for a customer's run, the provider's run keeps the error whole.
                 const message = e instanceof Error ? e.message : String(e);
-                errors.push({ entry: `database:${dbName}`, error: message });
+                errors.push({ entry: `database:${dbName}`, error: reason(message) });
                 log(`Failed to restore database '${dbName}': ${message}`, 'error');
             } finally {
                 await fs.unlink(dumpPath).catch(() => { });
             }
-            updateProgress?.(Math.round(((position + 1) / total) * 100));
+            updateProgress(Math.round(((position + 1) / total) * 100));
         }
     } finally {
         await host.dispose().catch(() => {});

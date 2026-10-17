@@ -20,7 +20,8 @@ This document covers the API key authentication system and the webhook trigger m
 - API keys provide stateless, token-based authentication for programmatic access
 - API keys **never** pass the checks only a platform admin passes - only explicitly assigned permissions apply
 - A key belongs to the tenant it was made in (`ApiKey.tenantId`) and acts only there, see [Tenants](./tenants.md)
-- A key never gets more than its owner may do in that tenant. `validate()` cuts its permissions at every request with `capToOwner(key, ownerPermissionsIn(owner, key.tenantId))` from `src/lib/auth/owner-permissions.ts`
+- A key never gets more than its owner may do in that tenant. `validate()` cuts its permissions at every request with `capToOwner(key, ownerPermissionsIn(owner, key.tenantId, tenantShares))` from `src/lib/auth/owner-permissions.ts`, where `tenantShares` is `Tenant.sharesWithCustomers` of the key's tenant
+- A key never carries what a platform group gives on the platform. The one exception is `platform-sharing:*` in a key of a tenant that shares with customers (`keyPlatformPermissions(tenantShares)`), which the key editor offers through `keyAreas(tenantShares)` while there is more than one tenant, and the actions store through `knownKeyPermissions(ids, tenantShares)` in `src/lib/auth/permission-areas.ts`, for a hosting panel that calls `PUT /api/adapters/{id}/database-assignments`
 - The raw key is shown exactly once at creation; only a scrypt hash is stored (SHA-256 is kept as a legacy fallback and is automatically upgraded on next use)
 - All API routes support both session (cookie) and API key (Bearer token) authentication via the unified `getAuthContext()` function
 

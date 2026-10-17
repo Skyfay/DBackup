@@ -455,6 +455,51 @@ describe('JobService', () => {
         });
     });
 
+    describe('updateJob - the links of another tenant', () => {
+        beforeEach(() => {
+            prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+        });
+
+        it('refuses a destination of another tenant in an update that names only its destinations', async () => {
+            // The filtered client does not find a connection of another tenant.
+            prismaMock.adapterConfig.findMany.mockResolvedValue([] as any);
+
+            await expect(service.updateJob('job-1', {
+                destinations: [{ configId: 'nas-of-another-tenant', priority: 0, retention: '{}' }],
+            })).rejects.toThrow('Destination references unknown adapter');
+            expect(prismaMock.jobDestination.createMany).not.toHaveBeenCalled();
+            expect(prismaMock.job.update).not.toHaveBeenCalled();
+        });
+
+        it('counts the destinations among the links it checks', async () => {
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'dest-2', name: 'Offsite', type: 'storage', storageRole: 'DESTINATION' },
+            ] as any);
+            prismaMock.adapterConfig.count.mockResolvedValue(0);
+
+            await expect(service.updateJob('job-1', {
+                destinations: [{ configId: 'dest-2', priority: 0, retention: '{}' }],
+            })).rejects.toThrow('A linked connection does not exist.');
+            expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({ where: { id: { in: ['dest-2'] } } });
+            expect(prismaMock.jobDestination.createMany).not.toHaveBeenCalled();
+        });
+
+        it('counts the directory sources among the links it checks', async () => {
+            prismaMock.job.findUnique.mockResolvedValue({ id: 'job-1', sourceId: null, sources: [] } as any);
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'files-2', name: 'Files', type: 'storage', storageRole: 'SOURCE' },
+            ] as any);
+            prismaMock.adapterConfig.count.mockResolvedValue(0);
+
+            await expect(service.updateJob('job-1', {
+                sources: [{ configId: 'files-2', priority: 0, path: '/srv', excludePatterns: [] }],
+            })).rejects.toThrow('A linked connection does not exist.');
+            expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({ where: { id: { in: ['files-2'] } } });
+            expect(prismaMock.jobSource.create).not.toHaveBeenCalled();
+        });
+    });
+
     describe('createJob - destination validation', () => {
         it('throws when a destination points at a directory source adapter', async () => {
             // The mirror of the source-role check: writing backups into a tree that is
@@ -511,6 +556,9 @@ describe('JobService', () => {
 
         it('should replace destinations when provided', async () => {
             prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'dest-2', name: 'Offsite', type: 'storage', storageRole: 'DESTINATION' },
+            ] as any);
             prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
             prismaMock.jobDestination.deleteMany.mockResolvedValue({ count: 2 } as any);
             prismaMock.jobDestination.createMany.mockResolvedValue({ count: 1 } as any);
@@ -554,6 +602,28 @@ describe('JobService', () => {
                     }),
                 })
             );
+        });
+
+        it('keeps the notification channels when an update leaves them out', async () => {
+            prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+            prismaMock.job.update.mockResolvedValue({ id: 'job-1' } as any);
+
+            await service.updateJob('job-1', { name: 'Renamed' });
+
+            const { data } = prismaMock.job.update.mock.calls[0][0] as { data: Record<string, unknown> };
+            expect(data.notifications).toBeUndefined();
+        });
+
+        it('clears the notification channels when an update names none', async () => {
+            prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+            prismaMock.job.update.mockResolvedValue({ id: 'job-1' } as any);
+
+            await service.updateJob('job-1', { notificationIds: [] });
+
+            const { data } = prismaMock.job.update.mock.calls[0][0] as { data: Record<string, unknown> };
+            expect(data.notifications).toEqual({ set: [], connect: [] });
         });
 
         it('should clear encryptionProfileId when empty string is passed', async () => {
@@ -654,6 +724,7 @@ describe('JobService', () => {
             fullEveryDays: 3,
             verifyByHash: true,
             notifications: [{ id: 'notif-1' }],
+            notificationTemplates: [],
             destinations: [
                 { configId: 'dest-1', priority: 0, retention: '{}', retentionPolicyId: 'policy-1' },
                 { configId: 'dest-2', priority: 1, retention: '{"keep":5}', retentionPolicyId: null },
@@ -667,6 +738,15 @@ describe('JobService', () => {
             prismaMock.job.findUnique.mockResolvedValue(null);
 
             await expect(service.cloneJob('missing')).rejects.toThrow('Job with id "missing" not found.');
+            expect(prismaMock.job.create).not.toHaveBeenCalled();
+        });
+
+        it('refuses to copy a link to a record of another tenant', async () => {
+            prismaMock.job.findUnique.mockResolvedValue(originalJob as any);
+            // The filtered count leaves out one of the destinations of the original.
+            prismaMock.adapterConfig.count.mockResolvedValue(4);
+
+            await expect(service.cloneJob('job-1', 'Copy')).rejects.toThrow('A linked connection does not exist.');
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
 

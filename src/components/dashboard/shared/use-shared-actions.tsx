@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Play, RotateCcw } from "lucide-react";
+import { Building2, Download, Play, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { downloadSharedBackup, restoreSharedDatabase } from "@/app/actions/tenant/shared-databases";
 import { runHref } from "@/components/dashboard/history/run-links";
@@ -10,7 +10,7 @@ import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import type { SharedDatabase } from "@/services/tenant/shared-databases";
-import { backupRef, isFormer, restoreStarted, type SharedRow } from "./shared-model";
+import { backupRef, formerLabel, isFormer, onDemandLine, restoreStarted, type SharedRow } from "./shared-model";
 import { SharedRestoreDialog } from "./shared-restore-dialog";
 import { useBackUpNow } from "./use-back-up-now";
 
@@ -25,6 +25,22 @@ export interface SharedAccess {
     canBackUp: boolean;
 }
 
+/** The line at the foot of the menu of a shared backup: what stays with the provider, or why it only downloads. */
+export function sharedMenuFoot(row: SharedRow): React.ReactNode {
+    const { database } = row;
+    const text = database.serverGone
+        ? `${formerLabel(database)}. ${database.providerName} keeps the archive, its dumps still download.`
+        : isFormer(database)
+            ? `${database.databaseName} is no longer yours, its dumps from your time still download.`
+            : `${database.providerName} keeps the archive. Verify, lock and delete stay with them.`;
+    return (
+        <span className="flex items-start gap-2">
+            <Building2 className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <span>{text}</span>
+        </span>
+    );
+}
+
 /**
  * Download and Restore of a shared backup, and Back up now of its database where its provider allows
  * it. Download hands out the dump of the one database, Restore asks first in a dialog and writes it
@@ -33,7 +49,8 @@ export interface SharedAccess {
  */
 export function useSharedActions({ canDownload, canRestore, canViewHistory, canBackUp, databases, onChanged }: SharedAccess & { databases: SharedDatabase[]; onChanged: () => void }) {
     const router = useRouter();
-    const backups = useBackUpNow({ databases, canBackUp, onChanged });
+    const openRun = useMemo(() => (canViewHistory ? (executionId: string) => router.push(runHref(executionId, "shared")) : undefined), [canViewHistory, router]);
+    const backups = useBackUpNow({ databases, canBackUp, onChanged, openRun });
     const [downloading, setDownloading] = useState<string | null>(null);
     const [restoring, setRestoring] = useState<SharedRow | null>(null);
     const [pending, setPending] = useState(false);
@@ -81,17 +98,32 @@ export function useSharedActions({ canDownload, canRestore, canViewHistory, canB
 
     const restorable = useCallback((row: SharedRow) => canRestore && !isFormer(row.database), [canRestore]);
 
-    const groupsFor = useCallback((row: SharedRow): BackupActionGroup[] => [
-        ...(restorable(row)
-            ? [{ label: "Restore", actions: [{ id: "restore", label: `Restore ${row.database.databaseName}`, icon: RotateCcw, onSelect: () => setRestoring(row), tone: "warning" as const }] }]
-            : []),
-        ...(backups.offered(row.database)
-            ? [{ label: "Back up", actions: [{ id: "back-up", label: `Back up ${row.database.databaseName} now`, icon: Play, onSelect: () => void backups.backUp(row.database), disabled: !backups.ready(row.database), tone: "neutral" as const }] }]
-            : []),
-        ...(canDownload
-            ? [{ label: "Download", actions: [{ id: "download", label: "Download the dump", icon: Download, onSelect: () => void download(row), disabled: downloading !== null, tone: "neutral" as const }] }]
-            : []),
-    ], [restorable, backups, canDownload, download, downloading]);
+    // A shared backup offers what the tenant may do with its database alone. Verify, lock and
+    // delete stay with the provider, whose archive it is.
+    const groupsFor = useCallback((row: SharedRow): BackupActionGroup[] => {
+        const { database } = row;
+        const name = database.databaseName;
+        return [
+            ...(restorable(row)
+                ? [{
+                    label: "Restore",
+                    actions: [{ id: "restore", label: `Restore into ${name}`, note: `on ${database.serverName}, nothing else changes`, icon: RotateCcw, onSelect: () => setRestoring(row), tone: "warning" as const }],
+                }]
+                : []),
+            ...(canDownload
+                ? [{
+                    label: "Download",
+                    actions: [{ id: "download", label: "Download the dump", note: `${row.databaseName} alone, unpacked`, icon: Download, onSelect: () => void download(row), disabled: downloading !== null, tone: "neutral" as const }],
+                }]
+                : []),
+            ...(backups.offered(database) && database.onDemand
+                ? [{
+                    label: "Back up",
+                    actions: [{ id: "back-up", label: `Back up ${name} now`, note: onDemandLine(database.onDemand), icon: Play, onSelect: () => void backups.backUp(database), disabled: !backups.ready(database), tone: "neutral" as const }],
+                }]
+                : []),
+        ];
+    }, [restorable, backups, canDownload, download, downloading]);
 
     const dialogs = restoring ? (
         <SharedRestoreDialog
@@ -105,6 +137,7 @@ export function useSharedActions({ canDownload, canRestore, canViewHistory, canB
 
     return {
         groupsFor,
+        footFor: sharedMenuFoot,
         download: canDownload ? download : undefined,
         askRestore: (row: SharedRow) => (restorable(row) ? () => setRestoring(row) : undefined),
         downloading,

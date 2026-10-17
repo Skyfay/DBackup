@@ -53,7 +53,7 @@ describe("what someone of a platform group may give in a platform group", () => 
 
     it("refuses a group with any right or tenant beyond them, and names the rights", () => {
         expect(platformGroupRefusal(NINA, shape({ platformPermissions: [P.PLATFORM.TENANTS_READ], tenantPermissions: [P.JOBS.READ], tenantIds: ["acme"] }))).toBeNull();
-        expect(platformGroupRefusal(NINA, shape({ platformPermissions: [P.PLATFORM.SHARING_WRITE] }))).toContain("Share databases");
+        expect(platformGroupRefusal(NINA, shape({ platformPermissions: [P.PLATFORM.SHARING_WRITE] }))).toContain("Share with customers");
         expect(platformGroupRefusal(NINA, shape({ tenantPermissions: [P.STORAGE.DELETE], tenantIds: ["acme"] }))).toContain("Delete");
         expect(platformGroupRefusal(NINA, shape({ tenantPermissions: [P.JOBS.READ], tenantIds: ["acme", "praxis"] }))).toBe("A platform group can only reach the tenants your own platform group reaches.");
         expect(platformGroupRefusal(NINA, shape({ tenantPermissions: [P.JOBS.READ], allTenants: true }))).toBe(BEYOND_ALL_TENANTS);
@@ -73,9 +73,9 @@ describe("what someone of a platform group may give in a platform group", () => 
 
 describe("what a platform group lets its members do, in words", () => {
     it("says what members see and change on the platform", () => {
-        expect(platformLine(new Set([P.PLATFORM.TENANTS_READ, P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE]))).toBe("Sees the tenants, shares databases");
+        expect(platformLine(new Set([P.PLATFORM.TENANTS_READ, P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE]))).toBe("Sees the tenants, shares with customers");
         expect(platformLine(new Set())).toBe("Nothing on the platform");
-        expect(platformSentences(new Set([P.PLATFORM.TENANTS_READ])).at(-1)).toEqual({ text: "No accounts, settings, sign-in and shared databases", can: false });
+        expect(platformSentences(new Set([P.PLATFORM.TENANTS_READ])).at(-1)).toEqual({ text: "No accounts, settings, sign-in and sharing", can: false });
     });
 
     it("says what members may do in the tenants, with the levels of the areas", () => {

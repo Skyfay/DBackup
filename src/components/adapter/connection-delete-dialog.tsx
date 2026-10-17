@@ -71,11 +71,11 @@ export function ConnectionDeleteDialog({ config, onClose, onDeleted, onRestored 
             <DialogItemList
                 items={[{ name: config.name, detail: kindNames.get(config.adapterId) ?? config.adapterId, icon: adapterTypeIcon(config.adapterId) }]}
             />
-            {customers.length > 0 && (
+            {customers.count > 0 && (
                 <p className="flex gap-2.5 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5 text-sm">
                     <Building2 className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
                     <span>
-                        {listOf(customers)} {customers.length === 1 ? "keeps" : "keep"} the backups of {customers.length === 1 ? "its" : "their"} databases on this server to download only, a restore needs the server. A database moved to another server first restores there.
+                        {whoKeeps(customers)} the backups of {customers.count === 1 ? "its" : "their"} databases on this server to download only, a restore needs the server. A database moved to another server first restores there.
                     </span>
                 </p>
             )}
@@ -88,10 +88,24 @@ function listOf(names: string[]): string {
     return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
+/** The tenants that hold a database of the server, by name for whoever may see who they are. */
+interface ServerCustomers {
+    count: number;
+    names: string[] | null;
+}
+
+const NO_CUSTOMERS: ServerCustomers = { count: 0, names: null };
+
+/** "Acme keeps", "Acme and Globex keep", or "2 tenants keep" without their names. */
+function whoKeeps({ count, names }: ServerCustomers): string {
+    const subject = names ? listOf(names) : count === 1 ? "1 tenant" : `${count} tenants`;
+    return `${subject} ${count === 1 ? "keeps" : "keep"}`;
+}
+
 /** The tenants that hold a database of a server now, while the servers of this tenant share databases. */
-function useServerCustomers(config: AdapterConfig): string[] {
+function useServerCustomers(config: AdapterConfig): ServerCustomers {
     const sharing = useConnectionSharing();
-    const [customers, setCustomers] = useState<string[]>([]);
+    const [customers, setCustomers] = useState<ServerCustomers>(NO_CUSTOMERS);
     const asks = sharing !== null && config.type === "database";
     useEffect(() => {
         if (!asks) return;
@@ -105,5 +119,5 @@ function useServerCustomers(config: AdapterConfig): string[] {
             ignore = true;
         };
     }, [asks, config.id]);
-    return asks ? customers : [];
+    return asks ? customers : NO_CUSTOMERS;
 }

@@ -47,7 +47,7 @@ await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.JOB, { name
 - `logFor(ctx, ...)` takes the `AuthContext` of the route and records the API key when the request came with one. The key acts as its owner, so `userId` is the owner.
 - The service reads the address and the browser from the request it runs in and snapshots the names of the user and the key. Callers never pass them. Outside a request, like in a scheduled task, they stay empty.
 - `log` never throws. A failed write is logged, the action goes on.
-- The entry goes into the log of `origin.tenantId` when the caller names one, else of `currentTenantId()`, else of the home tenant, and is written in `runAsSystem`. What belongs to the platform names the home tenant itself, like the changes of groups, tenants and platform admins (`{ tenantId: HOME_TENANT_ID }` as the last argument). A sign-in has no tenant in its request yet and lands there as well. See [Tenants](/developer-guide/advanced/tenants).
+- The entry goes into the log of `origin.tenantId` when the caller names one, else of `currentTenantId()`, else of the home tenant, and is written in `runAsSystem`. A group belongs to its tenant, so its changes go into the log of that tenant. What belongs to the platform names the home tenant itself, whichever tenant the admin works in: the tenants, platform admins, platform groups and sign-in providers, and the settings of the instance, the system tasks, data retention, the certificate, the download and optimize of the database, the configuration backup and its restore, the login image and the notification settings. An action passes `PLATFORM_LOG` from `src/services/system/settings-save.ts` as the last argument, a route `platformLogFor(ctx)`, which also names the API key of the request, and `savePart` does it for the parts of the Settings page that save through it. A sign-in has no tenant in its request yet and lands there as well. See [Tenants](/developer-guide/advanced/tenants).
 
 Sign-ins, failed sign-ins and sign-outs are written by the server around the endpoints of better-auth, in `src/lib/auth/sign-in-audit.ts`: the `after` hook turns a new session into `LOGIN` with its method (`password`, `passkey`, `two-factor`, `sso` with the name of the provider in `provider` and its ID in `providerId`) and a turned down password into `LOGIN_FAILED`, the `before` hook of `/sign-out` writes `LOGOUT`. A password sign-in of someone with a second factor is written by the second step. Someone a sign-in provider adds is written as `CREATE USER` with `via: "sso"`, the provider and the group it put them in, by `placeSsoUser` in `src/lib/auth/sso-guard.ts`.
 
@@ -85,6 +85,8 @@ A secret never goes into the details with its value. Mark its field with `secret
 | `audit-export.ts` | The filtered entries as CSV, at most 50,000, with cells that start like a formula quoted |
 
 A sign-in counts as from a new place when the person signed in before, but never from its network: the first three parts of an IPv4 address or the first half of an IPv6 address.
+
+`originShown(record)` in `audit-rows.ts` decides whether a tenant sees where an entry came from. In a customer's tenant the address and the browser of someone who is no member there, like a platform admin or someone of a platform group, stay empty in the rows, the panel and the CSV export. The home tenant sees every one.
 
 ## API Endpoints
 

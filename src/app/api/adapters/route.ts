@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { isStorageRole } from "@/lib/core/storage-roles";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { SEE_SHARING_PERMISSION } from "@/lib/tenant/sharing";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -39,16 +40,31 @@ export async function GET(req: NextRequest) {
              checkPermissionWithContext(ctx, PERMISSIONS.NOTIFICATIONS.READ);
         }
         // Security: Require type parameter to prevent leaking all adapter configs
-        else if (!type) {
+        else {
             return NextResponse.json(
                 { error: "Type parameter is required (database, storage, or notification)" },
                 { status: 400 }
             );
         }
 
+        // The servers of other tenants whose databases the tenant holds, which only the Connections
+        // page asks for with `shared=true`. A tenant has to be open, All tenants lists none of them.
+        // The newest backup of each database comes along for whoever may see, restore or download it.
+        const sharedServers = type === "database" && searchParams.get("shared") === "true" && ctx.tenantId && !ctx.allTenants
+            ? {
+                  tenantId: ctx.tenantId,
+                  backups: [PERMISSIONS.STORAGE.READ, PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD].some((permission) => hasPermissionWithContext(ctx, permission)),
+              }
+            : undefined;
+
         // Every row is the safe DTO, so a decrypted secret never reaches the client whatever the
         // caller may see. The connection tables ask for usage, last backup and health on top.
-        const items = await listAdapters(type, { role, overview: searchParams.get("overview") === "true" });
+        const items = await listAdapters(type, {
+            role,
+            overview: searchParams.get("overview") === "true",
+            shares: hasPermissionWithContext(ctx, SEE_SHARING_PERMISSION),
+            sharedServers,
+        });
         return NextResponse.json(items);
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Failed to fetch adapters";
@@ -73,6 +89,9 @@ export async function POST(req: NextRequest) {
             checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.WRITE);
         } else if (type === 'notification') {
             checkPermissionWithContext(ctx, PERMISSIONS.NOTIFICATIONS.WRITE);
+        } else {
+            // A kind without a permission of its own is no connection, so nothing is created.
+            return NextResponse.json({ success: false, error: "The type must be database, storage or notification" }, { status: 400 });
         }
 
         let newAdapter;

@@ -18,6 +18,8 @@ export interface SsoHookContext {
     path?: string;
     body?: unknown;
     params?: Record<string, string | undefined>;
+    /** The headers of the request, with the session cookie of someone who links a provider to their own account. */
+    headers?: Headers;
 }
 
 /** The login page sends people here when a provider is off, with a message it knows. */
@@ -53,6 +55,18 @@ export async function refuseDisabledProvider(ctx: SsoHookContext, redirect: (url
     throw redirect(DISABLED_PROVIDER_URL);
 }
 
+/**
+ * The endpoints of the SSO plugin that manage providers and their domains. DBackup manages the
+ * providers on its own pages, which only a platform admin changes, see `actions/auth/oidc.ts`, so
+ * no browser reaches these.
+ */
+const SSO_MANAGEMENT_PATHS = ["/sso/register", "/sso/providers", "/sso/get-provider", "/sso/update-provider", "/sso/delete-provider", "/sso/request-domain-verification", "/sso/verify-domain"];
+
+/** Whether a request of the browser goes to an endpoint of the SSO plugin that manages providers. */
+export function isSsoManagementRequest(path: string | undefined, fromBrowser: boolean): boolean {
+    return fromBrowser && !!path && SSO_MANAGEMENT_PATHS.includes(path);
+}
+
 /** What better-auth hands on when a provider of a tenant may not add someone, which the login page turns into its message. */
 export const TENANT_SIGN_UP_REFUSED = "tenant sign-in refused";
 
@@ -65,8 +79,10 @@ export const TENANT_SIGN_UP_REFUSED = "tenant sign-in refused";
 export async function refuseSsoSignUp(context: SsoHookContext | null | undefined, user?: { email?: string | null }): Promise<void> {
     const providerId = ssoProviderIdOf(context);
     if (!providerId) return;
-    const provider = await prisma.ssoProvider.findUnique({ where: { providerId }, select: { enabled: true, allowProvisioning: true, tenantId: true, domain: true } });
+    const provider = await prisma.ssoProvider.findUnique({ where: { providerId }, select: { enabled: true, allowProvisioning: true, tenantId: true, domain: true, defaultGroupId: true } });
     if (!provider?.enabled || !provider.allowProvisioning) throw new APIError("FORBIDDEN", { message: "signup disabled" });
+    // A provider of a tenant adds people only into a group of its tenant, never as accounts of no tenant.
+    if (provider.tenantId && !provider.defaultGroupId) throw new APIError("FORBIDDEN", { message: "signup disabled" });
     if (provider.tenantId && !emailOfDomain(user?.email, provider.domain)) throw new APIError("FORBIDDEN", { message: TENANT_SIGN_UP_REFUSED });
 }
 

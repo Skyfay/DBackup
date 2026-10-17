@@ -16,7 +16,7 @@ vi.mock("@/lib/auth/access-control", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
-vi.mock("@/services/user/user-service", () => ({ userService: { updateUser: mocks.updateUser } }));
+vi.mock("@/services/user/user-service", () => ({ userService: { updateUser: mocks.updateUser, ownEmailRefusal: vi.fn(async () => null) } }));
 vi.mock("@/services/user/preference-service", () => ({ setTaskColors: mocks.setTaskColors }));
 
 const { saveProfileAccountAction, saveProfileDatesAction, saveTaskColorsAction } = await import("@/app/actions/auth/profile");

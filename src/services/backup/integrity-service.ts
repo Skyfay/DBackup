@@ -1,15 +1,17 @@
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
-import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { verificationService } from "@/services/storage/verification-service";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { INTEGRITY_CHECK_STAGES } from "@/lib/core/logs";
 import { isBackupFile } from "@/lib/core/backup-files";
 import { isAirGapped } from "@/lib/core/air-gap";
+import { runAsSystem } from "@/lib/tenant/context";
+import { currentTenantId } from "@/lib/tenant/current";
+import { openDestination, openRow, viewModeOf } from "@/services/sharing/destination-access";
+import { providedTo } from "@/services/sharing/provided";
 
 const log = logger.child({ service: "IntegrityService" });
 
@@ -96,6 +98,32 @@ const SKIP_REASONS: Record<string, string> = {
 };
 
 export class IntegrityService {
+  /**
+   * The tenants with something the check goes through, read across every tenant: an enabled job
+   * in jobs mode, a destination in destinations mode. The system task checks each of them in a
+   * run of its own.
+   */
+  async tenantsToCheck(): Promise<string[]> {
+    const scanMode = await prisma.systemSetting.findUnique({ where: { key: 'integrity.scanMode' } });
+    if (scanMode?.value !== 'destinations') {
+      const rows = await runAsSystem(() => prisma.job.findMany({ where: { enabled: true }, select: { tenantId: true }, distinct: ["tenantId"] }));
+      return rows.map((row) => row.tenantId);
+    }
+    // The tenants with a destination of their own, and those another tenant shares one with.
+    const [own, shares, tenants] = await runAsSystem(() => Promise.all([
+      prisma.adapterConfig.findMany({ where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION }, select: { tenantId: true }, distinct: ["tenantId"] }),
+      prisma.connectionShare.findMany({ where: { config: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION } }, select: { allTenants: true, tenantId: true, tenants: { select: { tenantId: true } } } }),
+      prisma.tenant.findMany({ select: { id: true } }),
+    ]));
+    const ids = new Set(own.map((row) => row.tenantId));
+    for (const share of shares) {
+      const customers = share.allTenants ? tenants.map((tenant) => tenant.id) : share.tenants.map((entry) => entry.tenantId);
+      for (const id of customers) if (id !== share.tenantId) ids.add(id);
+    }
+    return [...ids];
+  }
+
+  /** Checks the copies of every job or destination the code that calls it sees, the tenant of its scope. */
   async runFullIntegrityCheck(callbacks?: IntegrityProgressCallbacks): Promise<IntegrityCheckResult> {
     log.info("Starting full backup integrity check");
 
@@ -159,9 +187,16 @@ export class IntegrityService {
         result.scanFailed++;
       }
     } else {
-      const storageConfigs = await prisma.adapterConfig.findMany({
+      const own = await prisma.adapterConfig.findMany({
         where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
       });
+      // And the destinations other tenants share with this one, where its own backups are.
+      const tenantId = await currentTenantId();
+      const providedIdList = tenantId ? (await providedTo(tenantId, { kind: "destination" })).map((entry) => entry.id) : [];
+      const provided = providedIdList.length > 0
+        ? await runAsSystem(() => prisma.adapterConfig.findMany({ where: { id: { in: providedIdList }, type: "storage", storageRole: STORAGE_ROLES.DESTINATION } }))
+        : [];
+      const storageConfigs = [...own, ...provided];
 
       callbacks?.onLog(`Found ${storageConfigs.length} storage destination${storageConfigs.length !== 1 ? "s" : ""}`);
 
@@ -303,17 +338,18 @@ export class IntegrityService {
       }
     }
 
+    const tenantId = await currentTenantId();
     for (const { dest, jobNames } of destJobMap.values()) {
-      const adapter = registry.get(dest.config.adapterId) as StorageAdapter;
-      if (!adapter) {
-        callbacks?.onLog(`${dest.config.name}: adapter '${dest.config.adapterId}' not found`, "error");
-        scanFailed++;
+      // A destination another tenant shares is read as this tenant sees it, its own folder there.
+      const mode = await viewModeOf(dest.config, tenantId ?? dest.config.tenantId);
+      if (!mode) {
+        callbacks?.onLog(`${dest.config.name}: no longer shared with this tenant - skipping`, "info");
         continue;
       }
-
-      let config: Awaited<ReturnType<typeof resolveAdapterConfig>>;
+      let adapter: StorageAdapter;
+      let config: unknown;
       try {
-        config = await resolveAdapterConfig(dest.config);
+        ({ adapter, config } = await openRow(dest.config, mode));
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         callbacks?.onLog(`${dest.config.name}: config resolution failed - ${msg}`, "error");
@@ -388,13 +424,17 @@ export class IntegrityService {
     }
 
     const workItems: WorkItem[] = [];
-    const adapter = registry.get(storageConfig.adapterId) as StorageAdapter;
-    if (!adapter) {
-      log.warn("Storage adapter not found", { adapterId: storageConfig.adapterId });
+    let adapter: StorageAdapter;
+    let config: unknown;
+    try {
+      ({ adapter, config } = await openDestination(storageConfig.id));
+    } catch (e: unknown) {
+      // A destination no longer shared with the tenant, or an adapter this version lacks, is
+      // skipped. Anything else, like a config that cannot be decrypted, counts as a failed scan.
+      if (!(e instanceof NotFoundError)) throw e;
+      log.warn("Storage destination could not be opened", { adapterId: storageConfig.adapterId }, wrapError(e));
       return [];
     }
-
-    const config = await resolveAdapterConfig(storageConfig);
 
     // Collect all files from storage. Adapters return flat recursive listings where
     // file.name is the basename and file.path is the full relative path — use file.path

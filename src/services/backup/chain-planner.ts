@@ -13,15 +13,14 @@
 import path from "path";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
-import { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { registry } from "@/lib/core/registry";
+import { BackupMetadata } from "@/lib/core/interfaces";
 import { archiveIndexService } from "./archive-index-service";
 import { ArchiveIndex } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { latestChainSnapshotWhere } from "./chain-query";
 import { isAirGapped } from "@/lib/core/air-gap";
+import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
 import { isConnected } from "@/lib/runner/steps/air-gap";
 
 const log = logger.child({ service: "ChainPlanner" });
@@ -83,14 +82,10 @@ async function findPreviousSnapshot(jobId: string): Promise<PreviousSnapshot | n
 
 /** Reads a backup's `.meta.json` from a destination. */
 async function readMeta(configId: string, remotePath: string): Promise<BackupMetadata | null> {
-    const row = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-    if (!row || row.type !== "storage") return null;
-
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter?.read) return null;
-
     try {
-        const content = await adapter.read(await resolveAdapterConfig(row), `${remotePath}.meta.json`);
+        const { adapter, config } = await openDestination(configId);
+        if (!adapter.read) return null;
+        const content = await adapter.read(config, `${remotePath}.meta.json`);
         return content ? (JSON.parse(content) as BackupMetadata) : null;
     } catch {
         return null;
@@ -104,15 +99,16 @@ async function readMeta(configId: string, remotePath: string): Promise<BackupMet
  * it is connected again and lacks part of the chain, that starts one.
  */
 async function chainStateAt(configId: string, chainDir: string, expectedCount: number): Promise<"intact" | "broken" | "away"> {
-    const row = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-    if (!row || row.type !== "storage") return "broken";
-
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter) return "broken";
-
+    let found: Awaited<ReturnType<typeof findDestination>>;
+    try {
+        found = await findDestination(configId);
+    } catch {
+        return "broken";
+    }
+    const { row } = found;
     const airGapped = isAirGapped(row);
     try {
-        const config = await resolveAdapterConfig(row);
+        const { adapter, config } = await openRow(row, found.mode);
         if (airGapped && !(await isConnected({ adapter, config, configName: row.name }))) return "away";
         const files = await adapter.list(config, chainDir);
         const archives = files.filter((f) => f.name.endsWith(".tar"));

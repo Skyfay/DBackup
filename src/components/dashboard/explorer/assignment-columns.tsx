@@ -53,9 +53,9 @@ function HowCell({ how, tenantName, databaseName }: { how: How; tenantName: stri
         : how.kind === "rule"
             ? [<>Rule <span className="font-mono">{how.pattern}</span></>, <>since <DateDisplay date={how.since} format="P" /></>]
             : how.kind === "moved"
-                ? [<>Moved <DateDisplay date={how.at} format="P" /></>, `${movedText(how.to, databaseName)}, with ${how.before}`]
+                ? [<>Moved <DateDisplay date={how.at} format="P" /></>, how.before ? `${movedText(how.to, databaseName)}, with ${how.before}` : movedText(how.to, databaseName)]
                 : how.kind === "taken-back"
-                    ? [<>Taken back <DateDisplay date={how.at} format="P" /></>, `${how.before} before`]
+                    ? [<>Taken back <DateDisplay date={how.at} format="P" /></>, how.before ? `${how.before} before` : "no rule gives it"]
                     : [`Only ${tenantName}`, "never given"];
     const onDemand = how.kind === "assignment" || how.kind === "rule" ? onDemandText(how.onDemandPerDay) : null;
     return (

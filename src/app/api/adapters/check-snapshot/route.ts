@@ -5,8 +5,9 @@ import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
+import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
 import type { StorageAdapter } from "@/lib/core/interfaces";
 
 const log = logger.child({ route: "adapters/check-snapshot" });
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, message: "Unsupported adapter" }, { status: 400 });
         }
         checkPermissionWithContext(ctx, requiredPermission);
+        if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
 
         const adapter = registry.get(adapterId) as StorageAdapter | undefined;
         if (!adapter) {
@@ -70,6 +72,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(result);
     } catch (error: unknown) {
+        if (error instanceof PermissionError) return NextResponse.json({ supported: false, message: error.message }, { status: 403 });
         log.error("Snapshot check failed", {}, wrapError(error));
         const message = error instanceof Error ? error.message : "Snapshot check failed";
         return NextResponse.json({ supported: false, message }, { status: 200 });

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
     backupRef,
     canBackUpNow,
-    databaseOptions,
     formerLabel,
     heldText,
     isFormer,
@@ -12,10 +11,8 @@ import {
     othersOnServer,
     restoreStarted,
     rowsOf,
-    serverOptions,
     sharedKey,
-    stateOf,
-    summarize,
+    starterOf,
 } from "@/components/dashboard/shared/shared-model";
 import type { SharedBackup, SharedDatabase } from "@/services/tenant/shared-databases";
 
@@ -24,7 +21,7 @@ function shared(sourceId: string, serverName: string, databaseName: string, unti
 }
 
 function backup(id: string, database: SharedDatabase, createdAt: string, extra: Partial<SharedBackup> = {}): SharedBackup {
-    return { id, sourceId: database.sourceId, databaseName: database.databaseName, databaseKey: `${database.sourceId}/${database.databaseName}`, createdAt, encrypted: true, verification: { at: createdAt, passed: true }, dump: { stored: 100, unpacked: 400 }, ...extra };
+    return { id, sourceId: database.sourceId, databaseName: database.databaseName, databaseKey: `${database.sourceId}/${database.databaseName}`, createdAt, encrypted: true, verification: { at: createdAt, passed: true }, dump: { stored: 100, unpacked: 400 }, requestedBy: null, ...extra };
 }
 
 const OLD = shared("pg", "Postgres main", "shop_old", "2026-10-08T00:00:00.000Z");
@@ -38,7 +35,7 @@ const BACKUPS = [
     backup("b2", MY_A, "2026-10-14T02:00:00.000Z", { dump: { stored: 300, unpacked: 900 } }),
     backup("b3", PG_A, "2026-10-13T02:00:00.000Z", { dump: null }),
     backup("b4", OLD, "2026-10-05T02:00:00.000Z", { verification: { at: "2026-10-05T03:00:00.000Z", passed: false } }),
-    // Of a database the list no longer has, which the tab leaves out.
+    // Of a database the list no longer has, which the list leaves out.
     backup("b5", shared("my", "MySQL shop", "gone"), "2026-10-15T02:00:00.000Z"),
 ];
 
@@ -59,7 +56,7 @@ describe("the backups shared with a tenant", () => {
         expect(isFormer(OLD)).toBe(true);
         expect(isFormer(MY_A)).toBe(false);
         const rows = rowsOf({ databases: DATABASES, backups: BACKUPS });
-        expect(rows.map(stateOf)).toEqual(["current", "current", "current", "former"]);
+        expect(rows.map((row) => isFormer(row.database))).toEqual([false, false, false, true]);
     });
 
     it("names a backup in an action by its database and its id alone", () => {
@@ -68,32 +65,11 @@ describe("the backups shared with a tenant", () => {
     });
 });
 
-describe("the numbers above the list", () => {
-    it("counts the databases, the backups and the failed checks, and adds up the newest dump of each current database", () => {
-        const rows = rowsOf({ databases: DATABASES, backups: BACKUPS });
-        const summary = summarize(rows, DATABASES);
-        expect(summary).toEqual(expect.objectContaining({ current: 3, former: 1, backups: 4, failed: 1, servers: 2, providers: ["Skyfay Hosting"] }));
-        // The newest of shop_a on MySQL is 300, shop_a on Postgres has no size yet, the former one does not count.
-        expect(summary.newestDumps).toBe(300);
-        expect(summary.sizesMissing).toBe(true);
-        expect(summary.newest?.id).toBe("b2");
-    });
-
-    it("has no sum while no size is read", () => {
-        const rows = rowsOf({ databases: [PG_A], backups: [backup("b3", PG_A, "2026-10-13T02:00:00.000Z", { dump: null })] });
-        expect(summarize(rows, [PG_A]).newestDumps).toBeNull();
-    });
-});
-
-describe("the filters and the words of the tab", () => {
-    it("offers the databases by server, the current ones before the former ones", () => {
-        expect(databaseOptions(DATABASES).map((option) => `${option.group}/${option.label}`)).toEqual([
-            "MySQL shop/shop_a",
-            "MySQL shop/shop_b",
-            "Postgres main/shop_a",
-            "Postgres main/shop_old",
-        ]);
-        expect(serverOptions(DATABASES)).toEqual([{ value: "my", label: "MySQL shop" }, { value: "pg", label: "Postgres main" }]);
+describe("the words of the shared backups", () => {
+    it("says who started a backup: the schedule of the provider, or Back up now of someone of the tenant", () => {
+        expect(starterOf({ database: MY_A, requestedBy: null })).toEqual({ kind: "schedule", label: "Schedule", who: "Skyfay Hosting" });
+        expect(starterOf({ database: MY_A, requestedBy: { name: "Sara Nguyen" } })).toEqual({ kind: "request", label: "Back up now", who: "Sara Nguyen" });
+        expect(starterOf({ database: MY_A, requestedBy: { name: null } }).who).toBe("a removed account");
     });
 
     it("names the other current databases of the server a restore leaves alone", () => {

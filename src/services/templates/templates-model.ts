@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import type { RetentionConfiguration } from "@/lib/core/retention";
 import { currentGroupPattern, parseJsonStringArray } from "@/lib/exclude-groups";
 import { readPolicy } from "@/services/storage/explorer-plan";
+import { providedItems } from "@/services/sharing/connection-options";
 import type {
     ExcludeFolder,
     ExcludeRow,
@@ -278,7 +279,11 @@ export async function getTemplatesModel(): Promise<TemplatesModel> {
             select: { ...STAMPED, patterns: true, groups: true, excludedGroupPatterns: true, isDefault: true, isSystem: true },
         }),
         // Only which connection each channel is. A config holds webhook URLs, tokens and passwords.
-        prisma.adapterConfig.findMany({ where: { type: "notification" }, orderBy: { name: "asc" }, select: { id: true, name: true, adapterId: true } }),
+        // The channels other tenants share with this one follow, marked with who shares them.
+        Promise.all([
+            prisma.adapterConfig.findMany({ where: { type: "notification" }, orderBy: { name: "asc" }, select: { id: true, name: true, adapterId: true } }),
+            providedItems("notification"),
+        ]).then(([own, provided]) => [...own, ...provided.map((channel) => ({ id: channel.id, name: channel.name, adapterId: channel.adapterId, provider: channel.provided?.providerName }))]),
     ]);
 
     return buildTemplatesModel({

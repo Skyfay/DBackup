@@ -1,5 +1,6 @@
 import { matchesTenants } from "@/components/tenant/tenant-rows";
 import type { BackupCopy, BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
+import { isSharedRun, matchesQuick, matchesSharedSearch, sharedStarterKey, sharedStarterLabel, type ListRun, type QuickPick } from "./shared-runs";
 import type { BackupTarget } from "./use-backup-actions";
 
 /**
@@ -8,7 +9,8 @@ import type { BackupTarget } from "./use-backup-actions";
  * React so the rules can be tested.
  *
  * A filter by destination also sets what the rest looks at: the states, the numbers and the actions
- * only count the copies at those destinations.
+ * only count the copies at those destinations. The backups of databases shared with the tenant sit
+ * in the same list, see `shared-runs.ts`: they have no copy, so their destination is their provider.
  */
 
 /** The states a backup can be filtered by. A backup in any of the picked ones stays. */
@@ -29,6 +31,10 @@ export interface BackupFilters {
     states: BackupState[];
     /** Tenants in All tenants, none for every tenant. */
     tenants?: string[];
+    /** The providers of shared databases the Destination filter picked, beside `at`. */
+    providers?: string[];
+    /** Every backup, the own ones or the shared ones. */
+    quick?: QuickPick;
 }
 
 /** What the filters look up: the jobs by key and the destinations that answer right now. */
@@ -48,7 +54,7 @@ export function lookupOf(jobs: Map<string, ExplorerJob>, destinations: Pick<Expl
 }
 
 /** A filter left out, for the counts beside that filter. */
-type Skip = "jobs" | "at" | "by" | "states" | "tenants";
+type Skip = "jobs" | "at" | "by" | "states" | "tenants" | "quick";
 
 /** Who started the run that made a backup: `schedule`, `manual:<person>`, `api:<key name>`, or `none` when the backup does not say. */
 export function startedByKey(file: Pick<ExplorerFile, "trigger">): string {
@@ -62,18 +68,22 @@ export interface StartedByOption {
     value: string;
     label: string;
     /** The heading it is listed under, System for the schedule. */
-    group: "System" | "By hand" | "API keys" | "Other";
+    group: "System" | "By hand" | "API keys" | "Shared with you" | "Other";
 }
 
-const STARTED_BY_ORDER: Record<StartedByOption["group"], number> = { System: 0, "By hand": 1, "API keys": 2, Other: 3 };
+const STARTED_BY_ORDER: Record<StartedByOption["group"], number> = { System: 0, "By hand": 1, "API keys": 2, "Shared with you": 3, Other: 4 };
 
-/** Everyone who started a run of these backups: the schedule, every person by hand and every API key. */
-export function startedByOptions(runs: BackupRun[]): StartedByOption[] {
+/** Who started a backup of the list, as the Started by filter names it, a shared one apart from the own ones. */
+export const starterKeyOf = (run: ListRun): string => (isSharedRun(run) ? sharedStarterKey(run.shared) : startedByKey(run.file));
+
+/** Everyone who started a run of these backups: the schedule, every person by hand, every API key and the starters of the shared backups. */
+export function startedByOptions(runs: ListRun[]): StartedByOption[] {
     const options = new Map<string, StartedByOption>();
     for (const run of runs) {
-        const value = startedByKey(run.file);
+        const value = starterKeyOf(run);
         if (options.has(value)) continue;
-        if (value === "schedule") options.set(value, { value, label: "Schedule", group: "System" });
+        if (isSharedRun(run)) options.set(value, { value, label: sharedStarterLabel(run.shared), group: "Shared with you" });
+        else if (value === "schedule") options.set(value, { value, label: "Schedule", group: "System" });
         else if (value === "none") options.set(value, { value, label: "Not recorded", group: "Other" });
         else {
             const actor = value.slice(value.indexOf(":") + 1);
@@ -119,7 +129,9 @@ export function primaryCopy(run: BackupRun, at: string[] = [], rank?: (destinati
     return pool.reduce((best, target) => (rank(target.destinationId) < rank(best.destinationId) ? target : best));
 }
 
-export const failedCheck = (run: BackupRun, at: string[] = []) => copiesIn(run, at).some((copy) => copy.file?.verification?.passed === false);
+/** A shared backup has no copy, its own check decides. */
+export const failedCheck = (run: ListRun, at: string[] = []) =>
+    isSharedRun(run) ? run.shared.verification?.passed === false : copiesIn(run, at).some((copy) => copy.file?.verification?.passed === false);
 export const hasMissing = (run: BackupRun, at: string[] = []) => copiesIn(run, at).some((copy) => copy.state === "missing");
 export const isLocked = (run: BackupRun, at: string[] = []) => copiesIn(run, at).some((copy) => copy.file?.locked);
 /**
@@ -138,7 +150,9 @@ export function verificationOf(run: BackupRun, at: string[] = []): ExplorerFile[
     return failed?.file?.verification ?? primaryCopy(run, at).file.verification;
 }
 
-function inState(run: BackupRun, state: BackupState, at: string[], lookup: BackupLookup): boolean {
+function inState(run: ListRun, state: BackupState, at: string[], lookup: BackupLookup): boolean {
+    // A shared backup has no copy to miss or to reach, no lock of the tenant and no job of its own.
+    if (isSharedRun(run)) return state === "failed" && failedCheck(run);
     switch (state) {
         case "missing":
             return hasMissing(run, at);
@@ -153,25 +167,31 @@ function inState(run: BackupRun, state: BackupState, at: string[], lookup: Backu
     }
 }
 
-function matchesSearch(run: BackupRun, search: string, jobs: Map<string, ExplorerJob>): boolean {
+function matchesSearch(run: ListRun, search: string, jobs: Map<string, ExplorerJob>): boolean {
     const text = search.trim().toLowerCase();
     if (!text) return true;
+    if (isSharedRun(run)) return matchesSharedSearch(run.shared, text);
     return run.file.name.toLowerCase().includes(text) || (jobs.get(run.jobKey)?.name.toLowerCase().includes(text) ?? false);
 }
 
-function passes(run: BackupRun, filters: BackupFilters, lookup: BackupLookup, skip?: Skip): boolean {
+function passes(run: ListRun, filters: BackupFilters, lookup: BackupLookup, skip?: Skip): boolean {
+    if (skip !== "quick" && !matchesQuick(run, filters.quick)) return false;
     if (skip !== "tenants" && !matchesTenants(run.tenantId, filters.tenants)) return false;
     if (skip !== "jobs" && filters.jobs.length > 0 && !filters.jobs.includes(run.jobKey)) return false;
-    if (skip !== "by" && filters.by.length > 0 && !filters.by.includes(startedByKey(run.file))) return false;
+    if (skip !== "by" && filters.by.length > 0 && !filters.by.includes(starterKeyOf(run))) return false;
     const at = skip === "at" ? [] : filters.at;
+    const providers = skip === "at" ? [] : filters.providers ?? [];
     // A copy that is missing there still belongs to the destination, it is what a filter for it should find.
-    if (at.length > 0 && !run.copies.some((copy) => at.includes(copy.destinationId))) return false;
+    if (at.length + providers.length > 0) {
+        const inScope = isSharedRun(run) ? providers.includes(run.shared.database.providerName) : run.copies.some((copy) => at.includes(copy.destinationId));
+        if (!inScope) return false;
+    }
     if (!matchesSearch(run, filters.search, lookup.jobs)) return false;
     return skip === "states" || filters.states.length === 0 || filters.states.some((state) => inState(run, state, at, lookup));
 }
 
 /** The runs the filters leave, newest first like the runs given. */
-export function filterBackups(runs: BackupRun[], filters: BackupFilters, lookup: BackupLookup, skip?: Skip): BackupRun[] {
+export function filterBackups<T extends ListRun>(runs: T[], filters: BackupFilters, lookup: BackupLookup, skip?: Skip): T[] {
     return runs.filter((run) => passes(run, filters, lookup, skip));
 }
 
@@ -180,6 +200,8 @@ export interface BackupCounts {
     jobs: Map<string, number>;
     /** Backups per destination under every other filter. */
     at: Map<string, number>;
+    /** Shared backups per provider under every other filter, the provider standing in for its destinations. */
+    providers: Map<string, number>;
     /** Backups per `startedByKey` under every other filter. */
     by: Map<string, number>;
     /** Backups per state under every other filter. */
@@ -188,19 +210,23 @@ export interface BackupCounts {
     tenants: Map<string, number>;
     /** Of those, the ones that need a look: with a copy missing, and with a failed check or no copy that answers. */
     attention: { warning: number; destructive: number };
+    /** Every backup, the own ones and the shared ones under every other filter, for the quick filter. */
+    quick: Record<QuickPick, number>;
 }
 
 /** What each option of each filter would leave, with the other filters as they are. */
-export function countBackups(runs: BackupRun[], filters: BackupFilters, lookup: BackupLookup, destinationIds: string[]): BackupCounts {
+export function countBackups(runs: ListRun[], filters: BackupFilters, lookup: BackupLookup, destinationIds: string[], providers: string[] = []): BackupCounts {
     const byJob = new Map<string, number>();
     for (const run of filterBackups(runs, filters, lookup, "jobs")) byJob.set(run.jobKey, (byJob.get(run.jobKey) ?? 0) + 1);
 
     const byDestination = new Map<string, number>();
-    for (const id of destinationIds) byDestination.set(id, filterBackups(runs, { ...filters, at: [id] }, lookup).length);
+    for (const id of destinationIds) byDestination.set(id, filterBackups(runs, { ...filters, at: [id], providers: [] }, lookup).length);
+    const byProvider = new Map<string, number>();
+    for (const name of providers) byProvider.set(name, filterBackups(runs, { ...filters, at: [], providers: [name] }, lookup).length);
 
     const byStarter = new Map<string, number>();
     for (const run of filterBackups(runs, filters, lookup, "by")) {
-        const key = startedByKey(run.file);
+        const key = starterKeyOf(run);
         byStarter.set(key, (byStarter.get(key) ?? 0) + 1);
     }
 
@@ -217,7 +243,11 @@ export function countBackups(runs: BackupRun[], filters: BackupFilters, lookup: 
         if (holds.includes("missing")) attention.warning++;
         if (holds.includes("failed") || holds.includes("unreachable")) attention.destructive++;
     }
-    return { jobs: byJob, at: byDestination, by: byStarter, states, tenants: byTenant, attention };
+
+    const quickBase = filterBackups(runs, filters, lookup, "quick");
+    const shared = quickBase.filter(isSharedRun).length;
+    const quick = { all: quickBase.length, own: quickBase.length - shared, shared };
+    return { jobs: byJob, at: byDestination, providers: byProvider, by: byStarter, states, tenants: byTenant, attention, quick };
 }
 
 export interface BackupSummary {

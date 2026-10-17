@@ -13,8 +13,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/prisma', () => ({
-    default: { adapterConfig: { findUnique: (...a: unknown[]) => mocks.findUnique(...a) } },
+    default: {
+        adapterConfig: { findUnique: (...a: unknown[]) => mocks.findUnique(...a) },
+        // Nobody shares the destination, so its tenant sees it as it is.
+        connectionShare: { count: async () => 0 },
+    },
 }));
+
+vi.mock('@/services/sharing/provided', () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 
 vi.mock('@/lib/core/registry', () => ({
     registry: { get: (...a: unknown[]) => mocks.registryGet(...a) },
@@ -45,7 +51,7 @@ const chain = (name: string) => `backups/nightly/chain-1700/${name}`;
 describe('deleteBackupsBulk', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3' });
+        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3', tenantId: 'acme' });
         mocks.registryGet.mockReturnValue({
             delete: (...a: unknown[]) => mocks.adapterDelete(...a),
             list: (...a: unknown[]) => mocks.adapterList(...a),
@@ -169,7 +175,7 @@ describe('deleteBackupsBulk', () => {
 describe('setBackupsLocked', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3' });
+        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3', tenantId: 'acme' });
         mocks.registryGet.mockReturnValue({ delete: mocks.adapterDelete, list: mocks.adapterList });
         mocks.resolveAdapterConfig.mockResolvedValue({ bucket: 'b' });
         mocks.setLockedWith.mockResolvedValue(true);

@@ -29,6 +29,14 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn().mockResolvedValue({ userId: "user-readonly" }),
     checkPermissionWithContext: vi.fn(),
+    // A read-only caller does not see what the tenant shares.
+    hasPermissionWithContext: vi.fn().mockReturnValue(false),
+}));
+
+// The secrets of the own connections are the case here. A connection another tenant shares carries
+// no config at all, so none is listed beside them.
+vi.mock("@/services/sharing/connection-options", () => ({
+    providedItems: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("next/headers", () => ({
@@ -176,5 +184,12 @@ describe("GET /api/adapters – secret disclosure regression", () => {
         const req = new NextRequest("http://localhost/api/adapters");
         const res = await GET(req);
         expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for a type without a permission of its own, before anything is read", async () => {
+        const req = new NextRequest("http://localhost/api/adapters?type=credentials");
+        const res = await GET(req);
+        expect(res.status).toBe(400);
+        expect(mockFindMany).not.toHaveBeenCalled();
     });
 });

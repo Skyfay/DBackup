@@ -1,18 +1,19 @@
 import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth/access-control";
-import { findAvatar } from "@/services/user/avatar-service";
+import { findVisibleAvatar } from "@/services/user/account-visibility";
 
 /**
- * The picture of a person. Everyone signed in may see it, since the pictures show beside the names
- * in the lists of every page, so the route checks the sign-in and no permission. Its type was read
- * from its bytes when it was stored.
+ * The picture of a person, to whoever sees their name beside it, see `maySeePicture`. It shows in
+ * the lists of every page, so the route checks no permission. Anyone else gets the answer of a
+ * person without a picture, and the page shows initials. Its type was read from its bytes when it
+ * was stored.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return new NextResponse(null, { status: 401 });
 
-    const avatar = await findAvatar((await params).userId);
+    const avatar = await findVisibleAvatar(ctx, (await params).userId);
     if (!avatar) return new NextResponse(null, { status: 404 });
     return new NextResponse(Buffer.from(avatar.data), {
         headers: {

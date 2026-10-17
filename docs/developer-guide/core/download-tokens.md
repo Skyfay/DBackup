@@ -19,7 +19,7 @@ Download dialog, "A server", Make the link
               ↓
 POST /api/storage/[id]/download-url      (a pick is planned first, so a missing key shows in the dialog)
               ↓
-generateLinkToken({ storageId, file, userId, decrypt, pick })
+generateLinkToken({ tenantId, storageId, file, userId, decrypt, pick })
               ↓
 Returns data.url, data.token, data.fileName
               ↓
@@ -40,6 +40,8 @@ All tokens live in `src/lib/auth/download-tokens.ts`, in memory.
 
 ```typescript
 interface DownloadToken {
+    kind?: "link";           // links: the only tokens the public download serves
+    tenantId?: string;       // links and shared dumps: the tenant it was made in and is served in
     storageId: string;
     file: string;
     decrypt: boolean;
@@ -58,18 +60,20 @@ interface DownloadToken {
     };
     selection?: { ... };     // browser downloads of a pick, bound to the session
     localFile?: { ... };     // browser downloads prepared into a temp file, bound to the session
+    shared?: boolean;        // the dump of a shared database, collected through /api/shared/download only
 }
 ```
 
 | Function | Purpose |
 | :--- | :--- |
-| `generateLinkToken(params)` | A public link with its maker. Returns `{ token, expiresAt }` |
-| `claimLinkToken(token)` | Takes a link for one request, `null` when it ran out, is used up or is being served |
+| `generateLinkToken(params)` | A public link with its tenant and its maker, `kind: "link"`. Returns `{ token, expiresAt }` |
+| `claimLinkToken(token)` | Takes a link for one request, `null` when it ran out, is used up or is being served, and for every token that is no link with a tenant and a maker |
 | `markTokenUsed(token, from?)` | Spends it once the last byte left, with the host |
 | `releaseLinkToken(token)` | Hands it back after a transfer that broke off |
 | `linkStatus(token, userId)` | `open`, `fetched` or `expired` for its maker, `null` for anyone else |
 | `generateSelectionDownloadToken` | A browser download of a pick. Not spent on use, since a browser may retry or resume, and bound to the session instead |
 | `generateFileDownloadToken` | A browser download prepared into a temp file first, bound to the session |
+| `generateSharedDownloadToken`, `consumeSharedDownloadToken` | The dump of a shared database a customer collects, bound to the user and the tenant that asked for it. The download of a destination never serves it |
 
 A pick streams the same way as a browser download of it: `openArchiveDownload()` reads each entry by byte range, decrypts it and packs it on the fly, one dump as it is, several as one tar.gz at gzip level 1. Nothing waits on the disk of the DBackup host, and the first byte leaves at once. A link for a whole file, the archive as stored or an older backup decrypted, still goes through a temp file.
 
@@ -114,7 +118,11 @@ Only the user who made the link gets its status. Anyone else, and a link that wa
 
 ### Public download
 
-**GET** `/api/storage/public-download?token=...`, public on purpose. It serves only what a token names, and answers `401` for a link that is used up, ran out or is being served to another request.
+**GET** `/api/storage/public-download?token=...`, public on purpose. It serves only a link, inside `runAsTenant` of the tenant it was made in, and answers `401` for a link that is used up, ran out or is being served to another request, and for any token that is no link. A link without a tenant or a maker is refused as well, it never falls back to the home tenant.
+
+### Shared download
+
+**GET** `/api/shared/download?token=...`, with `storage:download`. A customer collects the dump of a [shared database](/user-guide/admin/shared-databases) here, which `prepareSharedDownload` in `src/services/tenant/shared-databases.ts` pulled out of the backup into a temp file. The address carries the token alone and never names the destination of the server's tenant. The token works once, for five minutes, for the user and the tenant that asked for it, and one that does not fit answers `410`.
 
 ## Security
 

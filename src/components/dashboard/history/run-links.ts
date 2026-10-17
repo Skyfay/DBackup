@@ -16,7 +16,8 @@ const ORIGINS: Record<RunOrigin, { label: string; href: string }> = {
     restore: { label: "Backups", href: "/dashboard/backups" },
     setup: { label: "Quick Setup", href: "/dashboard/setup" },
     apikeys: { label: "API keys", href: "/dashboard/users?tab=apikeys" },
-    shared: { label: "Shared with you", href: "/dashboard/backups?tab=shared" },
+    // The backups of the shared databases, in the list of every backup.
+    shared: { label: "Backups", href: "/dashboard/backups?quick=shared" },
 };
 
 export function runHref(id: string, from: RunOrigin = "history"): string {

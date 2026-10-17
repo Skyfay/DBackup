@@ -8,6 +8,7 @@ import { ChevronsUpDown, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { getTenantSummaries, switchTenant } from "@/app/actions/tenant/tenant"
 import { TenantNameDialog } from "@/components/dashboard/tenants/tenant-dialogs"
+import { announceTenantSwitch, TenantSync } from "@/components/tenant/tenant-sync"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar"
@@ -52,7 +53,9 @@ function HeadFace({ lines, switching }: { lines: HeadLines; switching: boolean }
  * The head of the sidebar: the logo tile and where the viewer works. With a tenant to switch to, or
  * for a platform admin, it opens the menu of the tenants, see `TenantMenu`, and otherwise leads to
  * the Overview. A pick switches the session, says so in a toast and loads the page again, or leads
- * to the Overview from the page of a record the next tenant does not hold.
+ * to the Overview from the page of a record the next tenant does not hold. The other tabs of the
+ * browser follow it, and this one follows theirs. A tenant that is gone meanwhile says so in plain
+ * words and leaves the list.
  */
 export function SidebarHead(input: HeadInput) {
     const { tenants, activeTenantId, allTenants, isPlatformAdmin } = input
@@ -66,6 +69,8 @@ export function SidebarHead(input: HeadInput) {
     const [summaries, setSummaries] = useState<Map<string, TenantSummary> | null>(null)
     const [loading, setLoading] = useState(false)
     const lines = sidebarHead(input)
+    // Every tab follows a switch made in another, see `TenantSync`.
+    const sync = <TenantSync shown={allTenants ? ALL_TENANTS : activeTenantId ?? ""} />
 
     // The numbers and dots of the tenants, read each time the menu opens, for whoever may see the tenants.
     const loadSummaries = useCallback(async () => {
@@ -98,9 +103,16 @@ export function SidebarHead(input: HeadInput) {
             const result = await switchTenant(id)
             if (!result.success) {
                 toast.error(result.error)
+                // A tenant deleted or closed meanwhile leaves the list, which the layout reads again.
+                router.refresh()
                 return
             }
-            toast.success(id === ALL_TENANTS ? "You see every tenant now" : `You work in ${result.data.name} now`)
+            // The tenant that applies, which for All tenants with one tenant left is the home tenant,
+            // by the id of the answer where it names one, else the pick.
+            const applied: { id?: string; name: string } = result.data
+            const appliedId = applied.id ?? id
+            toast.success(appliedId === ALL_TENANTS ? "You see every tenant now" : `You work in ${applied.name} now`)
+            announceTenantSwitch(appliedId, applied.name)
             closeOnPhone()
             const target = pageAfterSwitch(pathname)
             if (target) router.push(target)
@@ -122,6 +134,7 @@ export function SidebarHead(input: HeadInput) {
                             <HeadFace lines={lines} switching={false} />
                         </Link>
                     </SidebarMenuButton>
+                    {sync}
                 </SidebarMenuItem>
             </SidebarMenu>
         )
@@ -186,6 +199,7 @@ export function SidebarHead(input: HeadInput) {
                         }}
                     />
                 )}
+                {sync}
             </SidebarMenuItem>
         </SidebarMenu>
     )

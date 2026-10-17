@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { buildAuditWhere, type AuditFilter } from "./audit-query";
-import { AUDIT_ROW_SELECT, resolveTargets, toRow } from "./audit-rows";
+import { AUDIT_ROW_SELECT, originShown, resolveTargets, toRow } from "./audit-rows";
 
 /** The most entries one export holds, newest first. */
 export const AUDIT_EXPORT_LIMIT = 50_000;
@@ -38,8 +38,8 @@ export async function auditCsv(filter: AuditFilter, now = new Date()): Promise<{
             row.area,
             what,
             record.resourceId,
-            record.ipAddress,
-            record.userAgent,
+            row.ipAddress,
+            originShown(record) ? record.userAgent : null,
             record.details,
         ].map(csvCell).join(","));
     }

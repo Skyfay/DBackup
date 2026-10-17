@@ -16,6 +16,11 @@ export interface DownloadSelection {
 
 interface DownloadToken {
     /**
+     * A link for a command on another host, from `generateLinkToken`. The public download serves
+     * these alone, the other tokens belong to the session that asked for them.
+     */
+    kind?: "link";
+    /**
      * The tenant the token was made in. A link is fetched without a session, so it is served in
      * this tenant, and no other one finds its destination.
      */
@@ -79,6 +84,12 @@ interface DownloadToken {
         fileName: string;
         contentType: string;
     };
+    /**
+     * The dump of a database a customer holds on a shared server. Collected through
+     * `/api/shared/download` alone, whose address names no destination, and only in the tenant
+     * of `tenantId`. The download of a destination never serves it.
+     */
+    shared?: boolean;
 }
 
 // Token validity: 5 minutes
@@ -137,6 +148,7 @@ export function generateLinkToken(params: {
     const now = Date.now();
 
     tokenStore.set(token, {
+        kind: "link",
         tenantId: params.tenantId,
         storageId: params.storageId,
         file: params.file,
@@ -152,13 +164,22 @@ export function generateLinkToken(params: {
     return { token, expiresAt: now + TOKEN_TTL_MS };
 }
 
+/** A link with the tenant it is served in and the user who made it, which every link carries. */
+export type LinkToken = DownloadToken & { kind: "link"; tenantId: string; createdBy: string };
+
+function isLinkToken(data: DownloadToken): data is LinkToken {
+    return data.kind === "link" && typeof data.tenantId === "string" && typeof data.createdBy === "string";
+}
+
 /**
  * Takes a link for one request. It stays taken until that request ends: fetched in full it is
  * spent with `markTokenUsed`, broken off it is released for another try with `releaseLinkToken`.
+ * Any other token, which a download hands to the session that asked for it, reads like one that
+ * ran out.
  */
-export function claimLinkToken(token: string): DownloadToken | null {
+export function claimLinkToken(token: string): LinkToken | null {
     const data = consumeDownloadToken(token);
-    if (!data || data.claimed) return null;
+    if (!data || data.claimed || !isLinkToken(data)) return null;
     data.claimed = true;
     return data;
 }
@@ -311,7 +332,39 @@ export function consumeFileDownloadToken(
     userId: string
 ): (DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> }) | null {
     const data = consumeDownloadToken(token);
-    if (!data?.localFile || data.localFile.userId !== userId) return null;
+    if (!data?.localFile || data.shared || data.localFile.userId !== userId) return null;
+    return data as DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> };
+}
+
+/**
+ * Parks the dump of a shared database, already pulled out of the backup, for the customer to
+ * collect through `/api/shared/download?token=`. The destination stays in the token on the
+ * server, the address carries nothing but the token.
+ */
+export function generateSharedDownloadToken(params: {
+    storageId: string;
+    file: string;
+    tenantId: string;
+    userId: string;
+    tempFile: string;
+    fileName: string;
+    contentType: string;
+}): string {
+    const { tenantId, ...file } = params;
+    const token = generateFileDownloadToken(file);
+    const data = tokenStore.get(token);
+    if (data) Object.assign(data, { tenantId, shared: true });
+    return token;
+}
+
+/** Resolves a shared dump's token for the user and the tenant presenting it, never any other token. */
+export function consumeSharedDownloadToken(
+    token: string,
+    userId: string,
+    tenantId: string
+): (DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> }) | null {
+    const data = consumeDownloadToken(token);
+    if (!data?.shared || !data.localFile || data.localFile.userId !== userId || data.tenantId !== tenantId) return null;
     return data as DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> };
 }
 

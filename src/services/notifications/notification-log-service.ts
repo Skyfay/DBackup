@@ -31,6 +31,11 @@ export interface NotificationLogEntry {
   renderedPayload?: string;
   error?: string;
   executionId?: string;
+  /**
+   * The tenant the message is for, which keeps the entry. Set when it differs from the tenant of the
+   * channel: a customer's run through a channel another tenant shares with it is the customer's.
+   */
+  tenantId?: string;
 }
 
 export interface NotificationLogQuery {
@@ -62,12 +67,12 @@ export async function recordNotificationLog(
   entry: NotificationLogEntry
 ): Promise<void> {
   try {
-    // The entry belongs to the tenant of its channel, else to the code that sends it, else to the
-    // home tenant, like a system event without a channel.
-    const channel = entry.channelId
+    // The entry belongs to the tenant it names, else to the tenant of its channel, else to the code
+    // that sends it, else to the home tenant, like a system event without a channel.
+    const channel = entry.channelId && !entry.tenantId
       ? await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: entry.channelId! }, select: { tenantId: true } }))
       : null;
-    const tenantId = channel?.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
+    const tenantId = entry.tenantId ?? channel?.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
     await runAsSystem(() => prisma.notificationLog.create({
       data: {
         tenantId,

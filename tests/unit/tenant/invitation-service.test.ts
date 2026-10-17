@@ -120,4 +120,35 @@ describe("an invitation link", () => {
         expect(await invitationService.preview(token)).toBeNull();
         expect(mocks.createUser).not.toHaveBeenCalled();
     });
+
+    it("makes one account of two requests at once, and leaves no account without a tenant", async () => {
+        const { token } = await invite();
+        const results = await Promise.allSettled([
+            invitationService.acceptWithNewAccount(token, { name: "Ann", email: "ann@example.ch", password: "Harbor-Lamp-42" }),
+            invitationService.acceptWithNewAccount(token, { name: "Ben", email: "ben@example.ch", password: "Harbor-Lamp-42" }),
+        ]);
+        expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+        expect(mocks.createUser).toHaveBeenCalledTimes(1);
+        const made = await base.user.findMany({ where: { email: { in: ["ann@example.ch", "ben@example.ch"] } }, select: { memberships: { select: { tenantId: true } } } });
+        expect(made).toHaveLength(1);
+        expect(made[0].memberships).toEqual([{ tenantId: "acme" }]);
+    });
+
+    it("opens the link again when the account could not be made", async () => {
+        const { token } = await invite();
+        mocks.createUser.mockRejectedValueOnce(new Error("Password too short"));
+        await expect(invitationService.acceptWithNewAccount(token, { name: "Cleo", email: "cleo@example.ch", password: "x" })).rejects.toThrow("Password too short");
+        expect(await invitationService.preview(token)).not.toBeNull();
+    });
+
+    it("stops working once whoever made it may no longer give its group", async () => {
+        await base.group.create({ data: { id: "g-jobs", name: "Job runners", permissions: JSON.stringify(["jobs:read", "jobs:execute"]), tenantId: "acme" } });
+        const { token } = await invite("g-jobs");
+        // The admin holds no group in Acme, so the link of a group with rights gives nothing.
+        expect(await invitationService.preview(token)).toBeNull();
+
+        await base.group.create({ data: { id: "g-admins", name: "Admins", permissions: "[]", fullAccess: true, tenantId: "acme" } });
+        await base.tenantMembership.create({ data: { userId: "u-admin", tenantId: "acme", groupId: "g-admins" } });
+        expect(await invitationService.preview(token)).not.toBeNull();
+    });
 });

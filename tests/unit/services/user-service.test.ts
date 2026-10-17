@@ -27,6 +27,9 @@ vi.mock('@/lib/prisma', () => ({
     twoFactor: {
       deleteMany: vi.fn(),
     },
+    session: {
+      updateMany: vi.fn(),
+    },
     $transaction: vi.fn((callback) => callback),
   },
 }));

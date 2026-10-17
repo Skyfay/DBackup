@@ -118,7 +118,7 @@ The oldest version is the one the server ran when it was added to DBackup. Reten
 
 **Databases** lists the databases of the server, biggest first, with the jobs that back up each. A click opens the page of a database, and **All in Databases** shows every one of them on the Databases tab. A Redis or Valkey server lists its numbered databases with their keys.
 
-With more than one tenant, the page of a server also says which tenant each of its databases belongs to, and gives single databases to the customers they belong to. See [Shared Databases](/user-guide/admin/shared-databases).
+With more than one tenant, the page of a server in a tenant that shares with customers also says which tenant each of its databases belongs to, and gives single databases to the customers they belong to. See [Shared Databases](/user-guide/admin/shared-databases).
 
 ## Required Permissions
 

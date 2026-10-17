@@ -51,7 +51,8 @@ export class SystemTaskRunner {
 
     const execution = await prisma.execution.create({
       data: {
-        // A check someone starts shows in their tenant, a system task in the home tenant.
+        // The run belongs to the tenant of the code that makes it: a check of copies someone starts
+        // in their tenant, the integrity check of each tenant in `runAsTenant`, else the home tenant.
         tenantId: (await currentTenantId()) ?? HOME_TENANT_ID,
         jobId: null,
         type: taskType,

@@ -47,8 +47,11 @@ model AdapterConfig {
 
   healthLogs              HealthCheckLog[]
   versionHistory          DbVersionHistory[]
-  storageListCache        StorageListCache?
+  storageListCaches       StorageListCache[]
   databaseListCache       DatabaseListCache?
+  // A destination or a channel its tenant shares with other tenants, and the recipients they name.
+  share                   ConnectionShare?
+  channelRecipients       ChannelRecipients[]
   // The tenant the row belongs to, see src/lib/tenant/prisma-scope.ts. The default only fills the
   // rows of the migration, the client names the tenant of every new row itself.
   tenantId                String                   @default("default")
@@ -373,13 +376,22 @@ model PlatformGroupTenant {
 model Tenant {
   id                      String                   @id @default(cuid())
   name                    String                   @unique
+  // A tenant of the MSP, set by the platform: its database servers give single databases to other
+  // tenants, see src/services/tenant/shared-servers.ts, and it shares destinations and notification
+  // channels with them, see src/services/sharing/. It may also get what another tenant shares.
+  sharesWithCustomers     Boolean                  @default(false)
+  // What the tenant may add itself, set by the platform. Off stops new ones, what it has keeps
+  // working, see src/services/tenant/tenant-allowances.ts.
+  addsDatabases           Boolean                  @default(true)
+  addsDirectorySources    Boolean                  @default(true)
+  addsDestinations        Boolean                  @default(true)
+  addsChannels            Boolean                  @default(true)
+  // Whether it makes API keys itself. Off stops new keys, the ones it has keep working.
+  addsApiKeys             Boolean                  @default(true)
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   memberships             TenantMembership[]
   invitations             TenantInvitation[]
-  // The databases of shared servers of other tenants this tenant sees the backups of.
-  databaseAssignments     DatabaseAssignment[]
-  databaseAssignmentRules DatabaseAssignmentRule[]
   logo                    TenantLogo?
   platformGroups          PlatformGroupTenant[]
 }
@@ -459,8 +471,10 @@ model DatabaseAssignment {
   // The connection of the server, kept as it was after the connection is deleted.
   sourceId        String
   databaseName    String
-  // The customer, not the tenant of the server.
-  tenantId        String
+  // The customer, not the tenant of the server. Null when the server's tenant took the database
+  // back, which no rule overrides. No relation: the id of a deleted tenant stays, so the backups of
+  // its time stay with nobody instead of falling to whoever a rule names.
+  tenantId        String?
   // The customer sees the backups made from here on, and up to the end.
   validFrom       DateTime
   validUntil      DateTime?
@@ -473,7 +487,6 @@ model DatabaseAssignment {
   createdAt       DateTime     @default(now())
   createdById     String?
   server          SharedServer @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([sourceId, databaseName])
   @@index([tenantId])
@@ -485,14 +498,16 @@ model DatabaseAssignmentRule {
   id             String       @id @default(cuid())
   sourceId       String
   pattern        String
+  // The customer. No relation, for the same reason as DatabaseAssignment.tenantId.
   tenantId       String
   priority       Int          @default(0)
   validFrom      DateTime
+  // When the rule was removed, or its tenant deleted. It still decides the backups of its time.
+  validUntil     DateTime?
   // How many backups a day the customer may start of each database the rule gives, null for none.
   onDemandPerDay Int?
   createdAt      DateTime     @default(now())
   server         SharedServer @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([sourceId])
   @@index([tenantId])
@@ -785,10 +800,67 @@ model NotificationLog {
 }
 
 model StorageListCache {
-  adapterConfigId String        @id
+  adapterConfigId String
+  // The tenant whose backups the listing holds: the tenant of the destination, or a tenant it is
+  // shared with, whose backups sit under tenants/<id>/ on it. See src/lib/tenant/storage-view.ts.
+  tenantId        String
   filesJson       String
   cachedAt        DateTime      @default(now())
   adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
+
+  @@id([adapterConfigId, tenantId])
+  @@index([tenantId])
+}
+
+// A destination or a notification channel that a tenant of the MSP shares with other tenants. The
+// id is the one of the connection, which stays in the tenant that shares it: a customer uses it in
+// its jobs and templates, never sees its address or login, and never changes it. Who gets it is
+// every other tenant, or the tenants of ConnectionShareTenant. See src/services/sharing/.
+model ConnectionShare {
+  id            String                  @id
+  // Every other tenant, a new one too. Else only the tenants listed.
+  allTenants    Boolean                 @default(false)
+  // A destination: a job of a customer writes to it only with a key of its own Vault.
+  encryptedOnly Boolean                 @default(false)
+  // An email channel: each customer names its own recipients. Else it sends to the recipients of
+  // the channel, like a support desk of the MSP that hears about the runs of its customers.
+  ownRecipients Boolean                 @default(true)
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  config        AdapterConfig           @relation(fields: [id], references: [id], onDelete: Cascade)
+  tenants       ConnectionShareTenant[]
+  // The tenant of the connection, the one that shares it.
+  tenantId      String
+
+  @@index([tenantId])
+}
+
+// A tenant a connection is shared with, when it is not shared with every tenant.
+model ConnectionShareTenant {
+  shareId   String
+  // The customer, not the tenant of the connection. No relation, a deleted tenant is taken out by
+  // tenantService.delete.
+  tenantId  String
+  createdAt DateTime        @default(now())
+  share     ConnectionShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@id([shareId, tenantId])
+  @@index([tenantId])
+}
+
+// The recipients a tenant names for an email channel another tenant shares with it. The server,
+// the login and the sender stay with the tenant that shares it.
+model ChannelRecipients {
+  id         String        @id @default(cuid())
+  configId   String
+  // A JSON array of email addresses.
+  recipients String
+  updatedAt  DateTime      @updatedAt
+  config     AdapterConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  // The tenant that names them, not the tenant of the channel.
+  tenantId   String
+
+  @@unique([tenantId, configId])
 }
 
 // The databases of a database connection as the Database Explorer lists them. Read every hour by

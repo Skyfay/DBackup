@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     send: vi.fn(),
     options: vi.fn(),
     current: vi.fn(),
+    provided: vi.fn(),
 }));
 
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
@@ -19,6 +20,11 @@ vi.mock("@/services/notifications/channel-send", () => ({
     EMAIL_ADAPTER_IDS: ["email"],
     sendThroughChannel: (...args: unknown[]) => mocks.send(...args),
 }));
+// The channels other tenants share with a tenant, which the sharing module reads across tenants.
+vi.mock("@/services/sharing/provided", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/services/sharing/provided")>()),
+    providedTo: (...args: unknown[]) => mocks.provided(...args),
+}));
 
 const { getTenantNotificationConfig, getTenantNotificationsModel, saveTenantDefaultChannels, saveTenantEventSettings, tenantHearsAbout, tenantNotificationKey } =
     await import("@/services/notifications/tenant-notification-settings");
@@ -26,6 +32,13 @@ const { deliverToTenant, eventTenant, sendTenantEventTest } = await import("@/se
 const { notify } = await import("@/services/notifications/system-notification-service");
 
 const ACME = "t-acme";
+/** The tenant of the MSP, which shares a channel of its own with its customers. */
+const MSP = "t-msp";
+
+/** A channel the MSP shares with ACME, as the sharing module reports it. */
+function sharedChannel(id: string) {
+    return { id, name: id, type: "notification", adapterId: "discord", providerId: MSP, providerName: "MSP", allTenants: false, encryptedOnly: false, ownRecipients: false };
+}
 
 /** A notification channel of a tenant, as the database keeps it. */
 function channel(id: string, tenantId = ACME) {
@@ -53,6 +66,7 @@ describe("the notifications a tenant keeps", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         stored({});
+        mocks.provided.mockResolvedValue([]);
     });
 
     it("keeps each tenant apart, under a key of its own", async () => {
@@ -112,6 +126,16 @@ describe("the notifications a tenant keeps", () => {
         expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({ where: { id: { in: ["channel-of-another-tenant"] }, type: "notification", tenantId: ACME } });
     });
 
+    it("takes a channel another tenant shares with it beside its own", async () => {
+        prismaMock.adapterConfig.count.mockResolvedValue(1);
+        mocks.provided.mockResolvedValue([sharedChannel("msp-alerts")]);
+
+        const { after } = await saveTenantDefaultChannels(ACME, ["teams", "msp-alerts"]);
+
+        expect(after.globalChannels).toEqual(["teams", "msp-alerts"]);
+        expect(mocks.provided).toHaveBeenCalledWith(ACME, { kind: "channel", ids: ["teams", "msp-alerts"] });
+    });
+
     it("says whether a tenant hears about an event before anything is gathered for it", async () => {
         stored({ [tenantNotificationKey(ACME)]: { globalChannels: ["teams"], events: { backup_success: { enabled: false, channels: null } } } });
 
@@ -159,6 +183,7 @@ describe("delivering an event to the channels of a tenant", () => {
         vi.clearAllMocks();
         mocks.send.mockResolvedValue(undefined);
         mocks.current.mockResolvedValue(null);
+        mocks.provided.mockResolvedValue([]);
     });
 
     it("sends to the default channels of the tenant, read in that tenant, while the event is on", async () => {
@@ -195,6 +220,24 @@ describe("delivering an event to the channels of a tenant", () => {
         expect(await deliverToTenant(offline, ACME, { skipChannelIds: ["teams", "mail"] })).toBeUndefined();
     });
 
+    it("also sends through a channel another tenant shares with it, for the tenant, so it goes where the tenant named", async () => {
+        stored({ [tenantNotificationKey(ACME)]: { globalChannels: ["teams", "msp-alerts"], events: {} } });
+        mocks.provided.mockResolvedValue([sharedChannel("msp-alerts")]);
+        let sharedScope: unknown = null;
+        prismaMock.adapterConfig.findMany.mockImplementation((async (args: { where: { tenantId?: string } }) => {
+            if (args.where.tenantId === ACME) return [channel("teams")];
+            sharedScope = explicitScope();
+            return [channel("msp-alerts", MSP)];
+        }) as never);
+
+        expect(await deliverToTenant(offline, ACME)).toEqual({ succeeded: 2, failed: 0 });
+        expect(mocks.provided).toHaveBeenCalledWith(ACME, { kind: "channel", ids: ["teams", "msp-alerts"] });
+        // The channel stays in the tenant that shares it, so only the system scope reads it.
+        expect(sharedScope).toEqual({ kind: "system" });
+        expect(prismaMock.adapterConfig.findMany).toHaveBeenCalledWith({ where: { id: { in: ["msp-alerts"] }, type: "notification" } });
+        expect(mocks.send.mock.calls.map((call) => [(call[0] as { id: string }).id, (call[4] as { tenantId?: string }).tenantId])).toEqual([["teams", ACME], ["msp-alerts", ACME]]);
+    });
+
     it("never sends for the home tenant, whose data the notifications of the platform cover", async () => {
         stored({ [tenantNotificationKey(HOME_TENANT_ID)]: { globalChannels: ["teams"], events: {} } });
 
@@ -225,6 +268,7 @@ describe("notify, the platform first and then the tenant", () => {
         vi.clearAllMocks();
         mocks.send.mockResolvedValue(undefined);
         mocks.current.mockResolvedValue(null);
+        mocks.provided.mockResolvedValue([]);
     });
 
     it("sends an event of a customer to the platform's channels and to the customer's own", async () => {

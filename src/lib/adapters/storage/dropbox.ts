@@ -203,20 +203,42 @@ function buildDropboxPath(basePath: string | undefined, relativePath: string): s
 }
 
 /**
- * Recursively lists all files under a Dropbox folder.
+ * Whether a Dropbox call failed because its path does not exist: HTTP 409 with the error
+ * union `path` set to the lookup error `not_found`, as `files/list_folder` answers it.
+ */
+function isDropboxPathNotFound(error: unknown): boolean {
+    const e = error as {
+        status?: number;
+        error?: { error?: { [".tag"]?: string; path?: { [".tag"]?: string } } };
+    } | null;
+    const reason = e?.error?.error;
+    return e?.status === 409 && reason?.[".tag"] === "path" && reason.path?.[".tag"] === "not_found";
+}
+
+/**
+ * Recursively lists all files under a Dropbox folder. With `missingAsEmpty`, a folder that does
+ * not exist lists as empty instead of failing. Only the first request decides that, so a folder
+ * removed halfway through a listing still fails it rather than dropping what was read.
  */
 async function listFilesRecursive(
     dbx: Dropbox,
     folderPath: string,
-    basePrefix: string
+    basePrefix: string,
+    missingAsEmpty = false
 ): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
 
-    let result = await dbx.filesListFolder({
-        path: folderPath,
-        recursive: true,
-        limit: 2000,
-    });
+    let result: Awaited<ReturnType<Dropbox["filesListFolder"]>>;
+    try {
+        result = await dbx.filesListFolder({
+            path: folderPath,
+            recursive: true,
+            limit: 2000,
+        });
+    } catch (error: unknown) {
+        if (missingAsEmpty && isDropboxPathNotFound(error)) return files;
+        throw error;
+    }
 
     const processEntries = (entries: typeof result.result.entries) => {
         for (const entry of entries) {
@@ -442,11 +464,14 @@ export const DropboxAdapter: StorageAdapter = {
         try {
             const dbx = createDropboxClient(config);
             const basePath = stripTrailingSlashes(config.folderPath ?? "");
-            const listPath = dir && dir !== "."
+            const isSubfolder = Boolean(dir && dir !== ".");
+            const listPath = isSubfolder
                 ? buildDropboxPath(config.folderPath, dir)
                 : (basePath || "");
 
-            return await listFilesRecursive(dbx, listPath, basePath);
+            // A subfolder nothing was written to yet is not there. It lists as empty, like on the
+            // other destinations. A missing root still fails.
+            return await listFilesRecursive(dbx, listPath, basePath, isSubfolder);
         } catch (error: unknown) {
             log.error("Dropbox list failed", { dir }, wrapError(error));
             throw error;

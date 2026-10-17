@@ -29,12 +29,12 @@ const NOW = new Date("2026-10-15T12:00:00Z");
 const acme = { id: "t-acme", name: "Acme" };
 const beta = { id: "t-beta", name: "Beta" };
 
-function rule(id: string, pattern: string, tenant: { id: string; name: string }, priority = 0, validFrom = "2026-10-01T00:00:00Z"): RuleRow {
-    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, onDemandPerDay: null };
+function rule(id: string, pattern: string, tenant: { id: string; name: string }, priority = 0, validFrom = "2026-10-01T00:00:00Z", createdAt = validFrom): RuleRow {
+    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, validUntil: null, createdAt, onDemandPerDay: null };
 }
 
 function assignment(id: string, databaseName: string, tenant: { id: string; name: string }, validFrom: string, validUntil: string | null = null, byName: string | null = "Manu"): AssignmentRow {
-    return { id, databaseName, tenantId: tenant.id, tenantName: tenant.name, validFrom, validUntil, byName, movedTo: null, movedFrom: null, onDemandPerDay: null };
+    return { id, databaseName, tenantId: tenant.id, tenantName: tenant.name, validFrom, validUntil, createdAt: validFrom, byName, movedTo: null, movedFrom: null, onDemandPerDay: null };
 }
 
 function database(name: string, owner: DatabaseOwnerRow["owner"] = null): DatabaseOwnerRow {
@@ -99,7 +99,7 @@ describe("who a database of a shared server belongs to", () => {
     });
 
     it("lets the older of two rules of equal priority win, like the service orders them", () => {
-        const rules = [rule("r-old", "a*", acme, 5), rule("r-new", "*", beta, 5)];
+        const rules = [rule("r-old", "a*", acme, 5, "2026-10-01T00:00:00Z"), rule("r-new", "*", beta, 5, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z")];
         expect(ruleFor(rules, "app", NOW)?.id).toBe("r-old");
     });
 

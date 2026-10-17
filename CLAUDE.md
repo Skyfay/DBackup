@@ -53,7 +53,7 @@ Every connection, job, run, key, template, API key and log belongs to one tenant
 - The filter narrows queries, it does not check the ids a write links to. A write that links records checks them with `assertOwnRecords`. Raw SQL skips the filter: select ids only and read the rows through the client.
 - A cache in memory or in a global setting that holds data of tenants is keyed by tenant or filtered on the way out, see `src/services/dashboard/cache.ts` and `getStorageVolume`.
 - A platform admin (`User.platformRole`) passes every check in every tenant. A platform group (`User.platformGroupId`) adds rights on the platform (`PLATFORM_ONLY_PERMISSIONS`, never held by a group of a tenant) and rights in the tenants of its scope, both in `ctx.permissions`. Every tenant has its own groups, and a user holds one of them per tenant through `TenantMembership`. A lookup of a group for another tenant runs in `runAsTenant` of that tenant. Nothing checks a group by its name, the group with every permission of a tenant is `Group.fullAccess`.
-- A platform admin in All tenants (`ctx.allTenants`, no `tenantId`) reads every tenant and writes none, the scope `all` refuses it. A page offers no change there, it opens the record in its tenant first with `useOpenInTenant`, and a new record asks for its tenant with `TenantPickDialog`.
+- Someone in All tenants (`ctx.allTenants`, no `tenantId`), a platform admin or someone of a platform group of all tenants, reads every tenant and writes none, the scope `all` refuses it. A page offers no change there, it opens the record in its tenant first with `useOpenInTenant`, and a new record asks for its tenant with `TenantPickDialog`, which lists only the tenants where the viewer may add it.
 
 ## Commands
 

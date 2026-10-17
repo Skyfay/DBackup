@@ -3,9 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { explicitScope, runAsTenant, type TenantScope } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const mocks = vi.hoisted(() => ({
     running: vi.fn(),
+    destination: vi.fn(),
     userName: vi.fn(),
     users: vi.fn(),
     open: vi.fn(),
@@ -17,7 +20,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({
     default: {
         execution: { count: (...args: unknown[]) => mocks.running(...args) },
-        user: { findUnique: (...args: unknown[]) => mocks.userName(...args), count: () => mocks.users() },
+        adapterConfig: { findUnique: (...args: unknown[]) => mocks.destination(...args) },
+        user:{ findUnique: (...args: unknown[]) => mocks.userName(...args), count: () => mocks.users() },
     },
 }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
@@ -34,7 +38,7 @@ vi.mock("@/services/config/import", () => ({ importConfiguration: (...args: unkn
 const root = mkdtempSync(path.join(os.tmpdir(), "dbackup-flow-"));
 vi.mock("@/lib/temp-dir", () => ({ getTempDir: () => root }));
 
-const { applyCheckedRestore, checkUploadedBackup, hasNoAccountYet } = await import("@/services/config/restore-flow");
+const { applyCheckedRestore, checkStoredBackup, checkUploadedBackup, hasNoAccountYet } = await import("@/services/config/restore-flow");
 
 const PREVIEW = { kind: "database", version: "3.4.0", createdAt: null, counts: { connections: 1, jobs: 1, templates: 0, users: 1, runs: 0 }, otherKeys: false };
 const MANU = { userId: "u-manu" };
@@ -122,5 +126,47 @@ describe("a configuration restore in two steps", () => {
         expect(await hasNoAccountYet()).toBe(true);
         mocks.users.mockResolvedValue(1);
         expect(await hasNoAccountYet()).toBe(false);
+    });
+});
+
+describe("the tenant a configuration restore reads in", () => {
+    const HOME: TenantScope = { kind: "tenant", tenantId: HOME_TENANT_ID };
+
+    it("looks up the key of an upload in the home tenant, also on the sign-up page, which has no session", async () => {
+        const scopes: (TenantScope | undefined)[] = [];
+        mocks.open.mockImplementation(async () => {
+            scopes.push(explicitScope());
+            return opened(sqlite());
+        });
+
+        await checkUploadedBackup(upload(), "setup");
+        // An admin who looks at a customer opens it with the keys of the platform all the same.
+        await runAsTenant("acme", () => checkUploadedBackup(upload(), MANU));
+
+        expect(scopes).toEqual([HOME, HOME]);
+    });
+
+    it("counts the running runs of every tenant before a copy replaces the database on the sign-up page", async () => {
+        mocks.open.mockResolvedValue(opened(sqlite()));
+        const { token } = await checkUploadedBackup(upload(), "setup");
+        let scope: TenantScope | undefined;
+        mocks.running.mockImplementation(async () => {
+            scope = explicitScope();
+            return 0;
+        });
+
+        await expect(applyCheckedRestore(token, "setup")).resolves.toMatchObject({ kind: "database" });
+        expect(scope).toEqual({ kind: "system" });
+    });
+
+    it("reads a configuration backup at a destination only from one of the home tenant", async () => {
+        let scope: TenantScope | undefined;
+        mocks.destination.mockImplementation(async () => {
+            scope = explicitScope();
+            return null;
+        });
+
+        await expect(runAsTenant("acme", () => checkStoredBackup("dest-acme", "config_backup.db.gz.enc", undefined, MANU))).rejects.toThrow("destination of the home tenant");
+        expect(scope).toEqual(HOME);
     });
 });

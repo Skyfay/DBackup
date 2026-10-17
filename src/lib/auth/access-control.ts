@@ -32,7 +32,7 @@ export interface AuthContext {
    */
   allTenants: boolean;
   /** The platform group of a session, none for a platform admin, an API key or someone without one. */
-  platformGroup?: { id: string; name: string } | null;
+  platformGroup?: { id: string; name: string; allTenants: boolean } | null;
   /** Whether the session may open All tenants: a platform admin, or a platform group that opens it. */
   opensAllTenants?: boolean;
 }
@@ -133,7 +133,7 @@ async function sessionContext(userId: string, pickedTenantId: string | null | un
     authMethod: "session",
     tenantId,
     allTenants,
-    platformGroup: platformGroup ? { id: platformGroup.id, name: platformGroup.name } : null,
+    platformGroup: platformGroup ? { id: platformGroup.id, name: platformGroup.name, allTenants: platformGroup.allTenants } : null,
     opensAllTenants: isPlatformAdmin || opensAllTenants(platformGroup),
   };
 }
@@ -263,7 +263,7 @@ export type Viewer = NonNullable<Awaited<ReturnType<typeof loadUser>>> & {
   /** Their group in the tenant, none for a platform admin who is no member there. */
   role: { id: string; name: string } | null;
   /** Their platform group, none for a platform admin or someone without one. */
-  platformGroup: { id: string; name: string } | null;
+  platformGroup: { id: string; name: string; allTenants: boolean } | null;
   /** May open All tenants: a platform admin, or a platform group that reaches every tenant and sees something there. */
   opensAllTenants: boolean;
 };

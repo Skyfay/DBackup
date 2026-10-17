@@ -21,17 +21,19 @@ interface BackUpNowOptions {
     databases: SharedDatabase[];
     /** Whether the viewer may start one, which Run now of a job allows in their tenant. */
     canBackUp: boolean;
-    /** Loads the tab again, once a backup started or ended. */
+    /** Loads the shared databases again, once a backup started or ended. */
     onChanged: () => void;
+    /** Opens a run in History, for a viewer who may see it. */
+    openRun?: (executionId: string) => void;
 }
 
 /**
  * Back up now of a shared database: starts a backup its provider allows, follows it through the
- * state the provider's run hands out and nothing else of it, and loads the tab again once it ended,
+ * state the provider's run hands out and nothing else of it, and loads the page again once it ended,
  * so the new backup shows. A backup started before, in another tab or by a colleague, is followed
- * the same way from the state the tab loaded.
+ * the same way from the state the page loaded.
  */
-export function useBackUpNow({ databases, canBackUp, onChanged }: BackUpNowOptions) {
+export function useBackUpNow({ databases, canBackUp, onChanged, openRun }: BackUpNowOptions) {
     const [starting, setStarting] = useState<string | null>(null);
     const [states, setStates] = useState<Record<string, SharedRunState>>({});
     const told = useRef(new Set<string>());
@@ -52,7 +54,7 @@ export function useBackUpNow({ databases, canBackUp, onChanged }: BackUpNowOptio
                 setStates((current) => ({ ...current, [run.requestId]: state }));
                 if (LIVE.has(state) || told.current.has(run.requestId)) continue;
                 told.current.add(run.requestId);
-                if (state === "done") toast.success(`The backup of ${run.databaseName} is done`, { description: "It shows in the list now." });
+                if (state === "done") toast.success(`The backup of ${run.databaseName} is done`, { description: "It shows in the Backups tab now." });
                 else if (state === "failed") toast.error(`The backup of ${run.databaseName} failed`, { description: `${run.providerName} sees why in its History.` });
                 else toast.warning(`The backup of ${run.databaseName} did not finish`, { description: "It was cancelled or is gone." });
                 onChanged();
@@ -72,7 +74,11 @@ export function useBackUpNow({ databases, canBackUp, onChanged }: BackUpNowOptio
                 toast.error(result.error);
                 return;
             }
-            toast.success(`A backup of ${database.databaseName} starts`, { description: `It runs on the server of ${database.providerName} and shows here once it is done.` });
+            const executionId = result.data.executionId;
+            toast.success(`A backup of ${database.databaseName} starts`, {
+                description: `It runs on the server of ${database.providerName} and shows in the Backups tab once it is done.`,
+                ...(openRun ? { action: { label: "Open the run", onClick: () => openRun(executionId) } } : {}),
+            });
             onChanged();
         } catch (error: unknown) {
             log.warn("Starting a shared backup failed", { sourceId: database.sourceId }, wrapError(error));
@@ -80,7 +86,7 @@ export function useBackUpNow({ databases, canBackUp, onChanged }: BackUpNowOptio
         } finally {
             setStarting(null);
         }
-    }, [onChanged]);
+    }, [onChanged, openRun]);
 
     /** Whether Back up now shows for a database: the viewer may, and the provider allows it for a database that is theirs now. */
     const offered = useCallback((database: SharedDatabase) => canBackUp && !isFormer(database) && database.onDemand !== null, [canBackUp]);

@@ -44,7 +44,7 @@ export interface TenantPlaces {
 
 export const placeKey = (place: DatabasePlace) => `${place.sourceId}/${place.databaseName}`;
 
-const ASSIGNMENT = { sourceId: true, databaseName: true, tenantId: true, validFrom: true, validUntil: true, movedToSourceId: true, movedToDatabase: true, onDemandPerDay: true } as const;
+const ASSIGNMENT = { sourceId: true, databaseName: true, tenantId: true, validFrom: true, validUntil: true, movedToSourceId: true, movedToDatabase: true, onDemandPerDay: true, createdAt: true } as const;
 
 async function serversOf(ids: string[]): Promise<Map<string, PlaceServer>> {
     const [kept, live] = await Promise.all([
@@ -107,12 +107,13 @@ export async function tenantPlaces(tenantId: string, now: Date): Promise<TenantP
     }
 
     // A rule gives the databases the server holds now that match it and nobody else holds. Of a
-    // deleted server, whose list is gone, the ones its backups show it gave.
+    // deleted server, whose list is gone, and of a rule that ended, the ones its backups show it
+    // gave, which stay the customer's like those of an ended assignment.
     const facts = new Map<string, OwnerFacts>();
     for (const rule of rules) {
         const sourceFacts = facts.get(rule.sourceId) ?? (await factsOf(rule.sourceId));
         facts.set(rule.sourceId, sourceFacts);
-        if (servers.get(rule.sourceId)?.live) {
+        if (servers.get(rule.sourceId)?.live && !rule.validUntil) {
             for (const { name } of await listedDatabases(rule.sourceId)) {
                 if (!matchesPattern(rule.pattern, name) || ownerAt(sourceFacts.assignments, sourceFacts.rules, name, now) !== tenantId) continue;
                 // What it allows comes from the holding that wins: the name itself, else the rule of the highest priority.
@@ -122,7 +123,7 @@ export async function tenantPlaces(tenantId: string, now: Date): Promise<TenantP
             }
         } else {
             for (const name of await namesFromBackups(rule.sourceId, rule.pattern, sourceFacts, tenantId)) {
-                hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, null, null);
+                hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, rule.validUntil, null);
             }
         }
     }

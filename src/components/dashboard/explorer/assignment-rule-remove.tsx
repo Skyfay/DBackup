@@ -20,8 +20,8 @@ interface RuleRemoveDialogProps {
 }
 
 /**
- * Asks before a rule goes. The tenant loses every database the rule gives and the backups of
- * them, the older ones too, since nothing else names them for that time.
+ * Asks before a rule ends. The tenant loses every database the rule gives now, and keeps the
+ * backups of them made while the rule gave them, like after an assignment ended.
  */
 export function RuleRemoveDialog({ serverId, rule, data, onClose, onRemoved }: RuleRemoveDialogProps) {
     const [pending, setPending] = useState(false);
@@ -35,7 +35,7 @@ export function RuleRemoveDialog({ serverId, rule, data, onClose, onRemoved }: R
                 toast.error(result.error);
                 return;
             }
-            toast.success(`The rule ${rule.pattern} is removed`, { description: `${rule.tenantName} no longer sees what it gave.` });
+            toast.success(`The rule ${rule.pattern} is removed`, { description: `${rule.tenantName} keeps the backups of its time and gets no new ones.` });
             onRemoved();
         } catch (error: unknown) {
             log.warn("Removing a rule failed", { ruleId: rule.id }, wrapError(error));
@@ -52,7 +52,7 @@ export function RuleRemoveDialog({ serverId, rule, data, onClose, onRemoved }: R
             destructive
             title={`Remove the rule ${rule.pattern}?`}
             note="Cannot be undone"
-            description={`${rule.tenantName} loses the databases this rule gives it and every backup of them it saw through the rule, the older ones too. A database assigned by name stays where it is.`}
+            description={`${rule.tenantName} loses the databases this rule gives it from now on and keeps the backups made while the rule gave them. A database assigned by name stays where it is.`}
             confirmLabel="Remove rule"
             isPending={pending}
             onConfirm={() => void remove()}
@@ -66,7 +66,7 @@ export function RuleRemoveDialog({ serverId, rule, data, onClose, onRemoved }: R
                     }))}
                 />
             ) : (
-                <p className="text-sm text-muted-foreground">It gives no database of the server now. Backups it gave before go all the same.</p>
+                <p className="text-sm text-muted-foreground">It gives no database of the server now. Backups it gave before stay with {rule.tenantName}.</p>
             )}
         </ConfirmDialog>
     );

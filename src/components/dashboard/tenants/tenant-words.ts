@@ -1,10 +1,12 @@
 import type { TenantMembersData } from "@/app/actions/tenant/members";
+import { ALLOWANCE_KINDS, ALLOWANCE_NOUNS, limitsAnything, type AllowanceKind, type TenantAllowances } from "@/lib/tenant/allowances";
 import type { TenantRemoval, TenantRow } from "@/services/tenant/tenant-service";
 import type { TenantHealth, TenantSummary } from "@/services/tenant/tenant-summaries";
 
 /**
  * The words and rules of the Tenants page as plain functions: what a delete loses, why a tenant
- * cannot be deleted, which accounts Add member offers and what the numbers above the list say.
+ * cannot be deleted, which accounts Add member offers, what the numbers above the list say, what
+ * other tenants share with a tenant and what it may not add itself.
  */
 
 /** A tenant as the Tenants page lists it: what it holds, its databases and how its backups went. */
@@ -77,4 +79,50 @@ export function removalText(removal: TenantRemoval): string {
 export function addableAccounts(data: Pick<TenantMembersData, "accounts" | "members">): TenantMembersData["accounts"] {
     const members = new Set(data.members.map((member) => member.id));
     return data.accounts.filter((account) => !members.has(account.id));
+}
+
+/** The destinations and channels shared with a tenant, or by it. */
+type SharedCounts = TenantRow["provided"];
+
+/** "2 destinations" and "1 channel", leaving out a kind with none. */
+export function sharedParts(counts: SharedCounts): string[] {
+    return [
+        counts.destinations > 0 ? countOf(counts.destinations, "destination") : null,
+        counts.channels > 0 ? countOf(counts.channels, "channel") : null,
+    ].filter((part): part is string => part !== null);
+}
+
+/** What other tenants share with a tenant in a sentence, for the dialog of what it may add. */
+export function providedSentence(provided: SharedCounts): string {
+    const parts = sharedParts(provided);
+    return parts.length > 0 ? `${listText(parts)} of other tenants` : "Nothing yet";
+}
+
+/** The short word of each kind in a tag, like "No own destinations, channels". */
+const SHORT_NOUNS: Record<AllowanceKind, string> = {
+    databases: "databases",
+    directorySources: "directory sources",
+    destinations: "destinations",
+    channels: "channels",
+    apiKeys: "API keys",
+};
+
+/**
+ * What a tenant may not add itself, as the tag of its row and the sentence on hover, or null when
+ * it adds everything. The home tenant always does.
+ */
+export function heldBack(row: Pick<TenantRow, "isHome" | "allowances">): { tag: string; sentence: string } | null {
+    if (row.isHome || !limitsAnything(row.allowances)) return null;
+    const off = ALLOWANCE_KINDS.filter((kind) => !row.allowances[kind]);
+    const nouns = off.map((kind) => ALLOWANCE_NOUNS[kind]);
+    const last = nouns.pop();
+    return {
+        tag: off.length === ALLOWANCE_KINDS.length ? "Adds nothing itself" : `No own ${off.map((kind) => SHORT_NOUNS[kind]).join(", ")}`,
+        sentence: `Adds no ${nouns.length > 0 ? `${nouns.join(", ")} or ${last}` : last} of its own.`,
+    };
+}
+
+/** The kinds whose switch differs from what the tenant has, with their new value, which is all Save sends. */
+export function allowancesPatch(before: TenantAllowances, after: TenantAllowances): Partial<TenantAllowances> {
+    return Object.fromEntries(ALLOWANCE_KINDS.filter((kind) => before[kind] !== after[kind]).map((kind) => [kind, after[kind]]));
 }

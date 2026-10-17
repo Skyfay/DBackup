@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
     getDecryptedMasterKey: vi.fn(),
     getEncryptionProfile: vi.fn(),
     findProfileByKey: vi.fn(),
+    getEncryptionProfiles: vi.fn(),
+    getUserPermissions: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -25,7 +27,7 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
     },
     checkPermission: (...args: unknown[]) => mocks.checkPermission(...args),
-    getUserPermissions: vi.fn(async () => []),
+    getUserPermissions: (...args: unknown[]) => mocks.getUserPermissions(...args),
 }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: (...args: unknown[]) => mocks.getSession(...args) } } }));
 vi.mock("@/services/vault/vault-keys", () => ({ getVaultKeys: (...args: unknown[]) => mocks.getVaultKeys(...args) }));
@@ -35,11 +37,12 @@ vi.mock("@/services/backup/encryption-service", () => ({
     getDecryptedMasterKey: (...args: unknown[]) => mocks.getDecryptedMasterKey(...args),
     getEncryptionProfile: (...args: unknown[]) => mocks.getEncryptionProfile(...args),
     findProfileByKey: (...args: unknown[]) => mocks.findProfileByKey(...args),
+    getEncryptionProfiles: (...args: unknown[]) => mocks.getEncryptionProfiles(...args),
 }));
 
 import { GET as getKeys } from "@/app/api/vault/keys/route";
 import { GET as getCredentials } from "@/app/api/vault/credentials/route";
-import { inspectEncryptionKey, revealMasterKey } from "@/app/actions/backup/encryption";
+import { getEncryptionProfiles, inspectEncryptionKey, revealMasterKey } from "@/app/actions/backup/encryption";
 
 const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 
@@ -89,7 +92,7 @@ describe("GET /api/vault/credentials", () => {
 describe("the key actions", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getSession.mockResolvedValue({ user: { id: "u1" } });
+        mocks.checkPermission.mockResolvedValue({ id: "u1" });
     });
 
     it("writes the reveal of a key to the audit log before the key leaves, naming the key", async () => {
@@ -128,5 +131,25 @@ describe("the key actions", () => {
     it("refuses to inspect anything but a key", async () => {
         expect(await inspectEncryptionKey("not a key")).toEqual({ success: false, error: "A key is 64 hex characters." });
         expect(mocks.findProfileByKey).not.toHaveBeenCalled();
+    });
+});
+
+describe("the list of keys", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getEncryptionProfiles.mockResolvedValue([{ id: "production", name: "Production" }]);
+    });
+
+    it("is for the Vault and the job form", async () => {
+        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.JOBS.READ]);
+
+        expect(await getEncryptionProfiles()).toEqual({ success: true, data: [{ id: "production", name: "Production" }] });
+    });
+
+    it("stays closed to someone who holds only the settings of the instance, which carry into every tenant", async () => {
+        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.SETTINGS.READ, PERMISSIONS.SETTINGS.WRITE]);
+
+        expect(await getEncryptionProfiles()).toEqual({ success: false, error: "Insufficient permissions" });
+        expect(mocks.getEncryptionProfiles).not.toHaveBeenCalled();
     });
 });

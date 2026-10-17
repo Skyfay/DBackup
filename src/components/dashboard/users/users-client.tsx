@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, KeyRound, Link2, LogIn, Plus, ScrollText, User, Users, type LucideIcon } from "lucide-react";
+import { Download, KeyRound, Link2, Lock, LogIn, Plus, ScrollText, User, Users, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { ApiKeysTab, type ApiKeysTabHandle } from "@/components/dashboard/api-keys/api-keys-tab";
@@ -14,7 +14,8 @@ import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/g
 import { SignInTab, type SignInTabHandle } from "@/components/dashboard/sign-in/sign-in-tab";
 import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
 import { useNewInTenant } from "@/components/tenant/tenant-actions";
-import { useTenantView } from "@/components/tenant/tenant-view";
+import { useMayAdd, useTenantView } from "@/components/tenant/tenant-view";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { PageHead } from "@/components/ui/page-head";
 import { PageTabs } from "@/components/ui/page-tabs";
@@ -98,7 +99,9 @@ export function UsersClient(props: UsersClientProps) {
     const [signInView, setSignInView] = useState<"table" | "cards">(listView(props.signInView));
     // All tenants changes no tenant, so Invite and New API key ask for the tenant first and open
     // their dialog in it, with `?new=1` on the tab.
-    const { allTenants } = useTenantView();
+    const { allTenants, platformName } = useTenantView();
+    // The platform may not let the tenant make API keys itself. The keys it has keep working.
+    const mayAddKeys = useMayAdd("apiKeys");
     const openInvite = useCallback(() => users.current?.openInvite(), []);
     const openNewKey = useCallback(() => apiKeys.current?.openCreate(), []);
     const invite = useNewInTenant({
@@ -109,7 +112,7 @@ export function UsersClient(props: UsersClientProps) {
         onCreate: openInvite,
     });
     const newKey = useNewInTenant({
-        canCreate: canManageApiKeys,
+        canCreate: canManageApiKeys && mayAddKeys,
         title: "New API key",
         description: "A key acts in one tenant. Pick the tenant it works in.",
         href: "/dashboard/users?tab=apikeys&new=1",
@@ -235,6 +238,20 @@ export function UsersClient(props: UsersClientProps) {
                                     <Plus />
                                     <span className="hidden sm:inline">New API key</span>
                                 </Button>
+                            )}
+                            {!allTenants && canManageApiKeys && !mayAddKeys && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <span tabIndex={0} className="inline-flex h-9 items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground">
+                                            <Lock className="size-4" aria-hidden="true" />
+                                            <span className="hidden sm:inline">API keys are off</span>
+                                        </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-72">
+                                        <p className="font-medium">Set by {platformName ?? "the platform"}</p>
+                                        No key of this tenant works, and nobody makes a new one, until {platformName ?? "the platform"} turns them on again.
+                                    </TooltipContent>
+                                </Tooltip>
                             )}
                         </>
                     )}

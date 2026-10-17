@@ -98,6 +98,10 @@ vi.mock('@/services/storage/verification-service', () => ({
     },
 }));
 
+// Whether the destination another tenant shares is still shared with the tenant of the run.
+const sharing = vi.hoisted(() => ({ providedConnection: vi.fn().mockResolvedValue({ id: 'cfg-2' }) }));
+vi.mock('@/services/sharing/provided', () => sharing);
+
 vi.mock('@/services/storage/storage-service', () => ({
     storageService: {
         appendStorageListCacheEntry: vi.fn().mockResolvedValue(undefined),
@@ -414,6 +418,21 @@ describe('stepUpload', () => {
         const ctx = makeCtx({ destinations: [successDest, failDest] });
         await stepUpload(ctx);
 
+        expect(ctx.status).toBe('Partial');
+    });
+
+    it('writes nothing more into the folder of a tenant whose share ended while the dump ran', async () => {
+        const own = makeDestination({ configId: 'cfg-1', configName: 'Own NAS' });
+        const shared = makeDestination({ configId: 'cfg-2', configName: 'Acme NAS', customer: 'globex' });
+        sharing.providedConnection.mockResolvedValueOnce(null);
+
+        const ctx = makeCtx({ destinations: [own, shared] });
+        await stepUpload(ctx);
+
+        expect(sharing.providedConnection).toHaveBeenCalledWith('cfg-2', 'globex');
+        expect(shared.adapter.upload).not.toHaveBeenCalled();
+        expect(shared.uploadResult).toEqual({ success: false, error: 'Acme NAS is no longer shared with this tenant' });
+        expect(own.uploadResult?.success).toBe(true);
         expect(ctx.status).toBe('Partial');
     });
 

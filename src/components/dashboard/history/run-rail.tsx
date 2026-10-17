@@ -171,7 +171,8 @@ export function RunRail({ run, now, speed, access, onShowProblem, className }: R
                 <RailCard title="What it was">
                     <div className="flex items-center gap-3">
                         <RunTile row={run} />
-                        <p className="min-w-0 text-sm">{run.sub}</p>
+                        {/* The name of an archive is one long word, which breaks rather than runs out of the card. */}
+                        <p className="min-w-0 text-sm wrap-anywhere">{run.sub}</p>
                     </div>
                 </RailCard>
             )}

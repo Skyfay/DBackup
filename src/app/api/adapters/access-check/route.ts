@@ -8,6 +8,8 @@ import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
+import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
+import { PermissionError } from "@/lib/logging/errors";
 
 // Ensure adapters are registered
 registerAdapters();
@@ -32,6 +34,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, message: "Unsupported adapter" }, { status: 400 });
         }
         checkPermissionWithContext(ctx, requiredPermission);
+        if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
 
         const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;
 
@@ -63,6 +66,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, databases });
 
     } catch (error: unknown) {
+        if (error instanceof PermissionError) return NextResponse.json({ success: false, message: error.message }, { status: 403 });
         const message = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json({ success: false, message }, { status: 500 });
     }

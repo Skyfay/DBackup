@@ -1,20 +1,25 @@
 "use client";
 
-import { Clock, KeyRound, Lock, MousePointerClick, Unlink, Unplug } from "lucide-react";
+import { Building2, Clock, KeyRound, Lock, MousePointerClick, Unlink, Unplug } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { TENANT_COLUMN_ID, tenantFilterOptions, type NamedTenant } from "@/components/tenant/tenant-rows";
 import type { DataTableFilterableColumn } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
-import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerJobKind } from "@/services/storage/explorer-types";
+import type { ExplorerDestination, ExplorerJob, ExplorerJobKind } from "@/services/storage/explorer-types";
+import type { SharedDatabase } from "@/services/tenant/shared-databases";
 import type { BackupCounts, BackupState, StartedByOption } from "./backup-filters";
 import { JobIcon } from "./explorer-cells";
 import { count } from "./explorer-format";
+import { providerValue, sharedJobKey, type ListRun } from "./shared-runs";
 
 const GROUPS: Record<ExplorerJobKind, string> = { job: "Jobs", deleted: "Deleted jobs", system: "Not from a job", none: "Not from a job" };
+/** The heading of what the databases another tenant's server gives to this one add to a filter. */
+const SHARED_GROUP = "Shared with you";
 const STARTER_ICONS: Record<StartedByOption["group"], React.ComponentType<{ className?: string }> | null> = {
     System: Clock,
     "By hand": MousePointerClick,
     "API keys": KeyRound,
+    "Shared with you": Building2,
     Other: null,
 };
 const UNAVAILABLE = "No backups with the other filters";
@@ -72,15 +77,18 @@ interface FilterColumnsInput {
      * may have a job of the same name. Null anywhere else.
      */
     tenants?: { all: readonly NamedTenant[]; of: (string | undefined)[]; nameOf: (tenantId: string | undefined) => string | null } | null;
+    /** The databases shared with the tenant and their providers, which the Job and Destination filters offer after the own ones. */
+    shared?: { databases: readonly SharedDatabase[]; providers: readonly string[] } | null;
 }
 
 /**
  * The filters of the list of every backup: job, destination, who started it and state. State holds
  * what used to be quick filters beside the search, so the toolbar keeps to one row, and while
- * nothing is picked it counts what needs a look.
+ * nothing is picked it counts what needs a look. A shared database is a job of its own under
+ * Shared with you, and its provider a destination, since the destinations of the provider stay its own.
  */
-export function backupFilterColumns({ jobs, destinations, starters, counts, shown, tenants = null }: FilterColumnsInput): DataTableFilterableColumn<BackupRun>[] {
-    const shared = { note: "The numbers count the backups", resultLabel: count(shown, "backup"), unavailableLabel: UNAVAILABLE };
+export function backupFilterColumns({ jobs, destinations, starters, counts, shown, tenants = null, shared = null }: FilterColumnsInput): DataTableFilterableColumn<ListRun>[] {
+    const common = { note: "The numbers count the backups", resultLabel: count(shown, "backup"), unavailableLabel: UNAVAILABLE };
     const labelOf = (name: string, tenantId: string | undefined) => {
         const tenant = tenants?.nameOf(tenantId);
         return tenant ? `${name} · ${tenant}` : name;
@@ -89,31 +97,47 @@ export function backupFilterColumns({ jobs, destinations, starters, counts, show
         {
             id: "job",
             title: "Job",
-            ...shared,
+            ...common,
             options: jobs.map((job) => ({
                 value: job.key,
                 label: labelOf(job.name, job.tenantId),
                 group: GROUPS[job.kind],
                 lead: <JobIcon job={job} className="size-4 shrink-0" />,
                 count: counts.jobs.get(job.key) ?? 0,
+            })).concat((shared?.databases ?? []).map((database) => {
+                const key = sharedJobKey(database);
+                return {
+                    value: key,
+                    label: database.databaseName,
+                    group: SHARED_GROUP,
+                    lead: <AdapterIcon adapterId={database.adapterId} className="size-4 shrink-0" />,
+                    count: counts.jobs.get(key) ?? 0,
+                };
             })),
         },
         {
             id: "at",
             title: "Destination",
-            ...shared,
+            ...common,
             options: destinations.map((destination) => ({
                 value: destination.id,
                 label: labelOf(destination.name, destination.tenantId),
                 lead: <AdapterIcon adapterId={destination.adapterId} className="size-4 shrink-0" />,
                 count: counts.at.get(destination.id) ?? 0,
-            })),
+                group: shared?.providers.length ? "Your destinations" : undefined,
+            })).concat((shared?.providers ?? []).map((name) => ({
+                value: providerValue(name),
+                label: name,
+                group: SHARED_GROUP,
+                lead: <Building2 className="size-4 shrink-0 text-muted-foreground" />,
+                count: counts.providers.get(name) ?? 0,
+            }))),
         },
         {
             id: "startedBy",
             title: "Started by",
             heading: "Filter by who started it",
-            ...shared,
+            ...common,
             options: starters.map((starter) => {
                 const Icon = STARTER_ICONS[starter.group];
                 return {
@@ -128,7 +152,7 @@ export function backupFilterColumns({ jobs, destinations, starters, counts, show
         {
             id: "state",
             title: "State",
-            ...shared,
+            ...common,
             note: "Counted under the other filters",
             hint: <NeedsLook {...counts.attention} />,
             options: STATES.map((state) => ({ ...state, count: counts.states[state.value] })),
@@ -137,7 +161,7 @@ export function backupFilterColumns({ jobs, destinations, starters, counts, show
             ? [{
                 id: TENANT_COLUMN_ID,
                 title: "Tenant",
-                ...shared,
+                ...common,
                 options: tenantFilterOptions(tenants.all, tenants.of).map((option) => ({ ...option, count: counts.tenants.get(option.value) ?? 0 })),
             }]
             : []),

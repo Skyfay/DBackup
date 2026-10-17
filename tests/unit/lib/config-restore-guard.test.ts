@@ -44,11 +44,12 @@ describe("restoring the configuration of DBackup", () => {
         expect(mocks.audit).not.toHaveBeenCalled();
     });
 
-    it("starts a restore from a destination for a platform admin and writes it to the audit log", async () => {
-        mocks.caller.mockReturnValue(PLATFORM_ADMIN);
+    it("starts a restore from a destination for a platform admin and writes it to the audit log of the home tenant", async () => {
+        // Working in the tenant of a customer, who must not read it.
+        mocks.caller.mockReturnValue({ ...PLATFORM_ADMIN, tenantId: "acme" });
 
         expect(await restoreFromStorageAction("dest-1", "config_backup.json.gz")).toEqual({ success: true, executionId: "exec-1" });
-        expect(mocks.audit).toHaveBeenCalledWith("root", "RESTORE", "SYSTEM", { action: "config_restore", file: "config_backup.json.gz", destination: "NAS" });
+        expect(mocks.audit).toHaveBeenCalledWith("root", "RESTORE", "SYSTEM", { action: "config_restore", file: "config_backup.json.gz", destination: "NAS" }, undefined, { tenantId: "default" });
     });
 
     it("needs the right to change the settings before anything else", async () => {

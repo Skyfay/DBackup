@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { preflightRestore } from '@/services/restore/preflight';
 import { registry } from '@/lib/core/registry';
@@ -10,6 +10,9 @@ vi.mock('@/lib/core/registry', () => ({
     },
 }));
 
+// A destination whose adapter is not registered yet registers them all first.
+vi.mock('@/lib/adapters', () => ({ registerAdapters: vi.fn() }));
+
 vi.mock('@/lib/adapters/config-resolver', () => ({
     resolveAdapterConfig: vi.fn().mockResolvedValue({ host: 'localhost' }),
 }));
@@ -18,6 +21,7 @@ const mockDbConfig = {
     id: 'target-1',
     adapterId: 'postgres',
     type: 'database',
+    tenantId: 'tenant-1',
     name: 'Target DB',
     config: '{}',
     createdAt: new Date(),
@@ -28,13 +32,28 @@ const mockStorageConfig = {
     id: 'storage-1',
     adapterId: 's3',
     type: 'storage',
+    tenantId: 'tenant-1',
     name: 'S3 Storage',
     config: '{}',
     createdAt: new Date(),
     updatedAt: new Date(),
 };
 
+/**
+ * The registry answers by adapter id, as it does at runtime: the destination's id gets the storage
+ * adapter, any other id the adapter of the target server. Opening a destination asks for its adapter twice.
+ */
+function useAdapters(storageAdapter: unknown, targetAdapter: unknown) {
+    vi.mocked(registry.get).mockImplementation(((id: string) => (id === mockStorageConfig.adapterId ? storageAdapter : targetAdapter)) as any);
+}
+
 describe('preflightRestore()', () => {
+    beforeEach(() => {
+        vi.mocked(registry.get).mockReset();
+        // No destination of these tests is shared with other tenants.
+        prismaMock.connectionShare.count.mockResolvedValue(0);
+    });
+
     it('throws if target source is not found', async () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
@@ -85,10 +104,7 @@ describe('preflightRestore()', () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(undefined as any) // no prepareRestore adapter
-            .mockReturnValueOnce({ read: readFn } as any)
-            .mockReturnValueOnce({ test: testFn } as any);
+        useAdapters({ read: readFn }, { test: testFn });
 
         await expect(
             preflightRestore({
@@ -110,10 +126,7 @@ describe('preflightRestore()', () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(undefined as any)
-            .mockReturnValueOnce({ read: readFn } as any)
-            .mockReturnValueOnce({ test: testFn } as any);
+        useAdapters({ read: readFn }, { test: testFn });
 
         await expect(
             preflightRestore({
@@ -135,10 +148,7 @@ describe('preflightRestore()', () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(undefined as any)
-            .mockReturnValueOnce({ read: readFn } as any)
-            .mockReturnValueOnce({ test: testFn } as any);
+        useAdapters({ read: readFn }, { test: testFn });
 
         await expect(
             preflightRestore({
@@ -156,10 +166,7 @@ describe('preflightRestore()', () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(undefined as any)
-            .mockReturnValueOnce({ read: readFn } as any)
-            .mockReturnValueOnce({ test: vi.fn() } as any);
+        useAdapters({ read: readFn }, { test: vi.fn() });
 
         await expect(
             preflightRestore({
@@ -232,10 +239,7 @@ describe('preflightRestore()', () => {
         } as any);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(undefined as any)
-            .mockReturnValueOnce({ read: readFn } as any)
-            .mockReturnValueOnce({ test: testFn } as any);
+        useAdapters({ read: readFn }, { test: testFn });
 
         await expect(
             preflightRestore({
@@ -264,10 +268,7 @@ describe('preflightRestore()', () => {
         } as any);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(undefined as any)
-            .mockReturnValueOnce({ read: readFn } as any)
-            .mockReturnValueOnce({ test: testFn } as any);
+        useAdapters({ read: readFn }, { test: testFn });
 
         await expect(
             preflightRestore({
@@ -279,8 +280,10 @@ describe('preflightRestore()', () => {
     });
 
     it('ignores non-critical errors during version check (warns and continues)', async () => {
-        // resolveAdapterConfig throws for a non-critical reason
-        vi.mocked(resolveAdapterConfig).mockRejectedValueOnce(new Error('Config parse failed'));
+        // The destination opens, then the config of the target server fails for a non-critical reason.
+        vi.mocked(resolveAdapterConfig)
+            .mockResolvedValueOnce({ bucket: 'backups' })
+            .mockRejectedValueOnce(new Error('Config parse failed'));
 
         const readFn = vi.fn().mockResolvedValue(JSON.stringify({
             sourceType: 'postgres',
@@ -290,10 +293,7 @@ describe('preflightRestore()', () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(undefined as any)
-            .mockReturnValueOnce({ read: readFn } as any)
-            .mockReturnValueOnce({ test: vi.fn() } as any);
+        useAdapters({ read: readFn }, { test: vi.fn() });
 
         // Non-critical errors should be swallowed, not rethrown
         await expect(
@@ -303,6 +303,8 @@ describe('preflightRestore()', () => {
                 targetSourceId: 'target-1',
             })
         ).resolves.toBeUndefined();
+        // The version check ran and read the metadata before the error came.
+        expect(readFn).toHaveBeenCalledWith({ bucket: 'backups' }, '/backup.sql.meta.json');
     });
 
     it('applies privilegedAuth to the resolve config during prepareRestore', async () => {

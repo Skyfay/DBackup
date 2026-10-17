@@ -26,6 +26,8 @@ export interface ExistingEntry {
 
 function toEntry(config: AdapterConfig): ExistingEntry {
     const type = getAdapterDefinition(config.adapterId)?.name ?? config.adapterId;
+    // Where a connection another tenant shares points stays with that tenant.
+    if (config.provided) return { id: config.id, name: config.name, adapterId: config.adapterId, detail: `${type} · provided by ${config.provided.providerName}` };
     const address = connectionAddress(config.adapterId, config.config);
     return { id: config.id, name: config.name, adapterId: config.adapterId, detail: address ? `${type} · ${address}` : type };
 }

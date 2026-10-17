@@ -9,10 +9,8 @@ import { signedBytes } from "@/components/dashboard/widgets/storage-history-data
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { useTenantColumns } from "@/components/tenant/tenant-column";
 import { withTenantColumn } from "@/components/tenant/tenant-rows";
-import { Button } from "@/components/ui/button";
 import { DataTable, type BulkAction, type DataTableFilterableColumn } from "@/components/ui/data-table";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatBytes } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
 import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
 import type { BackupActionGroup } from "./backup-actions";
 import { BackupContextMenu, BackupRowMenu } from "./backup-menus";
@@ -22,9 +20,11 @@ import { DestinationCard } from "./destination-card";
 import { destinationColumns } from "./destination-columns";
 import { DestinationDetails } from "./destination-details";
 import { statesOfDestination, summarizeDestinations, type DestinationState } from "./destination-model";
+import { DestinationSourceFilter, matchesDestinationSource, type DestinationSource } from "./destination-source-filter";
 import { DestinationsTimeline } from "./destinations-timeline";
 import { DestinationTile } from "./explorer-cells";
 import { count } from "./explorer-format";
+import { RunsPending } from "./explorer-page-states";
 import { ExplorerStrip } from "./explorer-strip";
 import type { BackupTarget } from "./use-backup-actions";
 import { destinationHref } from "./use-explorer-address";
@@ -40,20 +40,6 @@ const STATES: { value: DestinationState; label: string; dot?: string }[] = [
 
 /** The tenant of a destination, for the Tenant column in All tenants. */
 const tenantOfDestination = (destination: ExplorerDestination) => destination.tenantId;
-
-/** Holds the place of what needs every backup while they load, or says why they did not. */
-function RunsPending({ error, onRetry, className }: { error: string | null; onRetry: () => void; className: string }) {
-    if (!error) return <Skeleton className={cn("w-full", className)} />;
-    return (
-        <div className={cn("flex w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-4 text-center text-sm", className)}>
-            <p className="font-medium">The backups could not be loaded</p>
-            <p className="text-muted-foreground">
-                {error}{" "}
-                <Button variant="link" className="h-auto p-0" onClick={onRetry}>Try again</Button>
-            </p>
-        </div>
-    );
-}
 
 interface DestinationsViewProps {
     destinations: ExplorerDestination[];
@@ -102,6 +88,10 @@ export function DestinationsView(props: DestinationsViewProps) {
     // a change happens in the tenant of the destination.
     const { allTenants, nameOf: tenantNameOf, column: tenantColumn, filter: tenantFilter } = useTenantColumns(tenantOfDestination, destinations);
     const openRecord = useOpenRecord();
+    // All, Yours and Provided, while another tenant shares a destination with this one.
+    const [source, setSource] = useState<DestinationSource>("all");
+    const hasProvided = destinations.some((destination) => destination.provider);
+    const listed = useMemo(() => (hasProvided ? destinations.filter((destination) => matchesDestinationSource(destination, source)) : destinations), [hasProvided, destinations, source]);
 
     // The details open under the list, so the page moves to them.
     useEffect(() => {
@@ -121,7 +111,8 @@ export function DestinationsView(props: DestinationsViewProps) {
                     : { id: "show", label: "Show details", icon: PanelBottomOpen, onSelect: () => onPick(destination.id), tone: "neutral" },
                 { id: "backups", label: "Open backups", icon: ArrowRight, onSelect: () => onOpenBackups(destination.id), tone: "neutral" },
                 { id: "check", label: "Check now", icon: RefreshCw, onSelect: () => onCheckNow(destination), tone: "neutral" },
-                ...(canEditAlerts ? [{ id: "alerts", label: "Edit alerts", icon: Bell, onSelect: () => setAlertsOf(destination), tone: "edit" as const }] : []),
+                // The alerts of a destination another tenant shares are that tenant's.
+                ...(canEditAlerts && !destination.provider ? [{ id: "alerts", label: "Edit alerts", icon: Bell, onSelect: () => setAlertsOf(destination), tone: "edit" as const }] : []),
             ],
         }];
     }, [picked, onPick, onOpenBackups, onCheckNow, canEditAlerts, allTenants, tenantNameOf, openRecord]);
@@ -137,6 +128,7 @@ export function DestinationsView(props: DestinationsViewProps) {
                 icon: Bell,
                 tone: "edit",
                 itemName: (destination) => destination.name,
+                ineligible: (destination) => (destination.provider ? `${destination.provider} keeps its alerts` : null),
                 dialog: ({ rows, onClose, onDone }) => <BulkAlertsDialog destinations={rows} onClose={onClose} onDone={onDone} />,
             });
         }
@@ -220,10 +212,11 @@ export function DestinationsView(props: DestinationsViewProps) {
             <DataTable
                 joined
                 columns={columns}
-                data={destinations}
+                data={listed}
                 searchKey="destination"
                 searchPlaceholder="Search destinations"
                 filterableColumns={filterableColumns}
+                toolbarExtra={hasProvided ? <DestinationSourceFilter value={source} onChange={setSource} destinations={destinations} /> : undefined}
                 initialColumnVisibility={{ type: false, state: false }}
                 sorting={sorting}
                 onSortingChange={setSorting}
@@ -279,7 +272,7 @@ export function DestinationsView(props: DestinationsViewProps) {
                             jobs={jobs}
                             destinations={destinationsById}
                             canDelete={canDelete}
-                            canEditAlerts={canEditAlerts}
+                            canEditAlerts={canEditAlerts && !pickedDestination.provider}
                             onClose={() => onPick(null)}
                             onCheckNow={() => onCheckNow(pickedDestination)}
                             onDelete={askDelete}

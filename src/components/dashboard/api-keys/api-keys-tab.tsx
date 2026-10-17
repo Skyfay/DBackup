@@ -1,5 +1,6 @@
 "use client";
 
+import { useMayAdd } from "@/components/tenant/tenant-view";
 import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
 import { Power, PowerOff, Trash } from "lucide-react";
@@ -87,7 +88,9 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
 
     useImperativeHandle(ref, () => ({ openCreate: () => setForm({ open: true, mode: { kind: "create" } }) }), []);
     // New API key of All tenants picks the tenant first and lands here with `?new=1`.
-    useNewFromLink(model !== null && canManage, () => setForm({ open: true, mode: { kind: "create" } }));
+    // The platform may not let the tenant make API keys itself.
+    const mayAddKeys = useMayAdd("apiKeys");
+    useNewFromLink(model !== null && canManage && mayAddKeys, () => setForm({ open: true, mode: { kind: "create" } }));
 
     // The counts beside the tabs come from the server, so they are loaded again too.
     const afterChange = useCallback(() => {

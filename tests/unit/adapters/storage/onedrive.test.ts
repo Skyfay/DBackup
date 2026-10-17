@@ -603,6 +603,62 @@ describe("OneDriveAdapter", () => {
     });
 
     // ====================================================================
+    // list() of a subfolder that is not there yet
+    // ====================================================================
+    describe("list() of a subfolder nothing was written to yet", () => {
+        /** How the Graph client rejects: a GraphError with the status and the code of the body. */
+        function graphFailure(statusCode: number, code: string, message: string) {
+            return Object.assign(new Error(message), { name: "GraphError", statusCode, code, body: "{}" });
+        }
+
+        /** Every request of the listing answers with the given pages, one per call, then the error. */
+        function graphAnswers(...answers: Array<object | Error>) {
+            const get = vi.fn();
+            for (const answer of answers) {
+                if (answer instanceof Error) get.mockRejectedValueOnce(answer);
+                else get.mockResolvedValueOnce(answer);
+            }
+            mockClient.api.mockReturnValue({
+                select: vi.fn().mockReturnThis(),
+                top: vi.fn().mockReturnThis(),
+                get,
+            });
+        }
+
+        it("lists it as empty when Graph answers 404 itemNotFound", async () => {
+            mockTokenRefresh();
+            graphAnswers(graphFailure(404, "itemNotFound", "The resource could not be found."));
+
+            await expect(OneDriveAdapter.list(validConfig, "tenants/t1")).resolves.toEqual([]);
+            expect(mockClient.api).toHaveBeenCalledWith("/me/drive/root:/backups/tenants/t1:/children");
+        });
+
+        it("still fails when access to the folder is denied", async () => {
+            mockTokenRefresh();
+            graphAnswers(graphFailure(403, "accessDenied", "Access denied"));
+
+            await expect(OneDriveAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Access denied");
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockTokenRefresh();
+            graphAnswers(graphFailure(404, "itemNotFound", "The resource could not be found."));
+
+            await expect(OneDriveAdapter.list(validConfig, "")).rejects.toThrow("The resource could not be found.");
+        });
+
+        it("still fails when a folder goes away while the listing reads it", async () => {
+            mockTokenRefresh();
+            graphAnswers(
+                { value: [{ name: "Job", folder: { childCount: 1 } }] },
+                graphFailure(404, "itemNotFound", "The resource could not be found."),
+            );
+
+            await expect(OneDriveAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("The resource could not be found.");
+        });
+    });
+
+    // ====================================================================
     // delete()
     // ====================================================================
     describe("delete()", () => {

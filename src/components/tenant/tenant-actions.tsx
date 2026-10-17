@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { newRecordKind, newRecordPermission, tenantsThatCreate } from "./new-record";
 import { TenantPickDialog } from "./tenant-pick";
 import { useOpenInTenant, useTenantView } from "./tenant-view";
 
@@ -18,13 +19,13 @@ export function useOpenRecord(): (tenantId: string | null | undefined, href: str
 }
 
 interface NewInTenantOptions {
-    /** Whether the viewer may add the record here. All tenants offers it to every platform admin. */
+    /** Whether the viewer may add the record here. All tenants asks the rights of each tenant instead. */
     canCreate: boolean;
     /** What the pick is for, like "New job". */
     title: string;
     /** Why it asks, like "A job belongs to one tenant, pick the one it runs in." */
     description: string;
-    /** The form of a new record, which opens in the picked tenant. */
+    /** The form of a new record, which opens in the picked tenant and names the right it needs, see `newRecordPermission`. */
     href: string;
     /** Opens the form here, outside All tenants. */
     onCreate: () => void;
@@ -41,21 +42,26 @@ interface NewInTenant {
 
 /**
  * The New button of a list. A record belongs to one tenant, so in All tenants it first asks which
- * one and opens the form of a new record there, where the platform admin may add it.
+ * one and opens the form of a new record there. It offers only the tenants where the viewer may
+ * add that kind of record, and no button without one.
  */
 export function useNewInTenant({ canCreate, title, description, href, onCreate }: NewInTenantOptions): NewInTenant {
-    const { allTenants } = useTenantView();
+    const { allTenants, tenants, isPlatformAdmin } = useTenantView();
     const [picking, setPicking] = useState(false);
+    const creating = useMemo(
+        () => (allTenants ? tenantsThatCreate(tenants, isPlatformAdmin, newRecordPermission(href), newRecordKind(href)) : []),
+        [allTenants, tenants, isPlatformAdmin, href],
+    );
     const start = useCallback(() => {
         if (allTenants) setPicking(true);
         else onCreate();
     }, [allTenants, onCreate]);
 
     return {
-        available: allTenants || canCreate,
+        available: allTenants ? creating.length > 0 : canCreate,
         start,
         dialog: allTenants
-            ? <TenantPickDialog open={picking} onOpenChange={setPicking} title={title} description={description} href={href} />
+            ? <TenantPickDialog open={picking} onOpenChange={setPicking} title={title} description={description} href={href} tenants={creating} />
             : null,
     };
 }

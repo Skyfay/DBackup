@@ -23,7 +23,7 @@ Click a key to open its panel: what it may do in words and by area, when it was 
 
 ## Create an API Key
 
-1. Open **Users & Groups → API keys** and click **New API key**
+1. Open **Users & Groups → API keys** and click **New API key**. In a tenant whose API keys the platform switched off, it shows **API keys are off** instead and no key of the tenant works, see [What It May Add](/user-guide/admin/tenants#what-it-may-add)
 2. Pick what the key is for (step 1 of 2):
    - **Custom** starts with no permission
    - A **task** starts with exactly the permissions its calls need, see below
@@ -55,6 +55,7 @@ A task the group of your account does not allow shows why and cannot be picked.
 - **It follows the group.** When the group of the owner loses a permission, the key loses it too. The panel lists it as paused, and the key may use it again once the group allows it.
 - **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too. What a key holds already stays when someone else edits its name or end.
 - **No platform admin bypass.** A key only ever uses the permissions it holds, even when its owner is a platform admin, and never does what only a platform admin may, like restoring a configuration backup or downloading the database.
+- **No rights of the platform.** With [tenants](/user-guide/admin/tenants), a key never carries what a platform group gives on the platform, the settings of the instance included. The settings the owner's group in the home tenant gives still count, as before tenants. A key made in a tenant that [shares with customers](/user-guide/admin/shared-databases#tenants-that-share) also offers **Sharing** while there is another tenant, for a hosting panel that gives a customer the database it creates, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api).
 
 ## Manage Keys
 

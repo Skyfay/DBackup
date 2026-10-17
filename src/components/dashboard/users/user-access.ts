@@ -8,7 +8,7 @@ import type { UserRow, UsersGroup } from "@/services/user/users-types";
  */
 
 export const PLATFORM_ADMIN_ACCOUNT = "Only a platform admin can change the account of a platform admin.";
-export const SHARED_ACCOUNT = "This account also works in other tenants. Only a platform admin can change it.";
+export const SHARED_ACCOUNT = "This account also works in other tenants. Only someone who manages the accounts of the platform can change it.";
 export const GROUP_BEYOND_YOU = "This group may do more than you may, so you cannot give it to anyone.";
 export const HELD_GROUP_BEYOND_YOU = "This user's group may do more than you may, so only someone who may do all of it changes it.";
 

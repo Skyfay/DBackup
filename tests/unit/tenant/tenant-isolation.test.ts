@@ -11,13 +11,29 @@ import os from "os";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { TenantScopeError } from "@/lib/logging/errors";
+import { NotFoundError, TenantScopeError, ValidationError } from "@/lib/logging/errors";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { CHILD_MODELS, TENANT_MODELS, tenantScopeExtension } from "@/lib/tenant/prisma-scope";
+import { assertOwnRecords } from "@/lib/tenant/references";
+import { jobService } from "@/services/jobs/job-service";
+import { runJob } from "@/lib/runner";
 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
+
+/** The client the services of the app write with, here the one of the test database. */
+const app = vi.hoisted(() => ({ client: null as unknown as object }));
+vi.mock("@/lib/prisma", () => ({
+    default: new Proxy({}, {
+        get: (_target, key) => {
+            const value = Reflect.get(app.client, key);
+            return typeof value === "function" ? value.bind(app.client) : value;
+        },
+    }),
+}));
+vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: vi.fn(async () => undefined) } }));
+vi.mock("@/lib/execution/queue-manager", () => ({ processQueue: vi.fn(async () => undefined) }));
 
 let root = "";
 let base: PrismaClient;
@@ -65,6 +81,10 @@ async function seedTenant(tenantId: Tenant) {
     await base.sharedServer.create({ data: { tenantId, id: id("source"), name: "Shop", adapterId: "mysql" } });
     await base.databaseAssignment.create({ data: { id: id("assignment"), sourceId: id("source"), databaseName: `${tenantId}_shop`, tenantId, validFrom: now } });
     await base.sharedBackupRequest.create({ data: { tenantId, id: id("request"), sourceId: id("source"), databaseName: `${tenantId}_shop`, executionId: id("execution") } });
+    await base.adapterConfig.create({ data: { tenantId, id: id("mail"), name: "Mail", type: "notification", adapterId: "email", config: "{}" } });
+    await base.connectionShare.create({ data: { tenantId, id: id("nas") } });
+    await base.channelRecipients.create({ data: { tenantId, id: id("recipients"), configId: id("mail"), recipients: "[]" } });
+    await base.storageListCache.create({ data: { tenantId, adapterConfigId: id("nas"), filesJson: "{}" } });
 }
 
 /** The delegate of a model, by the name Prisma gives it, like adapterConfig for AdapterConfig. */
@@ -89,6 +109,7 @@ beforeAll(async () => {
     });
     base = new PrismaClient({ datasources: { db: { url: `file:${file}` } } });
     scoped = extend(base);
+    app.client = scoped;
     for (const tenant of TENANTS) await seedTenant(tenant);
 }, 120_000);
 
@@ -104,15 +125,19 @@ describe("the boundary between tenants", () => {
         // services. The assignments of databases name the customer, they belong to the tenant of
         // their server, see CHILD_MODELS. A sign-in provider names its tenant but the login page reads
         // it before anyone is signed in, and the logo of a tenant is keyed by the tenant itself.
-        const own = withColumn.map((model) => model.name).filter((name) => !["TenantMembership", "TenantInvitation", "DatabaseAssignment", "DatabaseAssignmentRule", "SsoProvider", "TenantLogo", "PlatformGroupTenant"].includes(name));
+        // The customers of a shared connection are the tenant's that shares it, see CHILD_MODELS.
+        const own = withColumn.map((model) => model.name).filter((name) => !["TenantMembership", "TenantInvitation", "DatabaseAssignment", "DatabaseAssignmentRule", "SsoProvider", "TenantLogo", "PlatformGroupTenant", "ConnectionShareTenant"].includes(name));
         expect(own.sort()).toEqual([...TENANT_MODELS].sort());
     });
 
     describe.each([...TENANT_MODELS])("%s", (model) => {
         const own = (tenant: Tenant) => {
-            const name = { AdapterConfig: "source", CredentialProfile: "credential", EncryptionProfile: "key", RetentionPolicy: "retention", NamingTemplate: "naming", SchedulePreset: "schedule", ExcludePatternPreset: "exclude", Job: "job", NotificationTemplate: "template", Execution: "execution", ApiKey: "apikey", AuditLog: "audit", NotificationLog: "notification", StorageSnapshot: "snapshot", DeletedRecord: "trash", Group: "group", SharedServer: "source", SharedBackupRequest: "request" }[model];
+            const name = { AdapterConfig: "source", CredentialProfile: "credential", EncryptionProfile: "key", RetentionPolicy: "retention", NamingTemplate: "naming", SchedulePreset: "schedule", ExcludePatternPreset: "exclude", Job: "job", NotificationTemplate: "template", Execution: "execution", ApiKey: "apikey", AuditLog: "audit", NotificationLog: "notification", StorageSnapshot: "snapshot", DeletedRecord: "trash", Group: "group", SharedServer: "source", SharedBackupRequest: "request", ConnectionShare: "nas", ChannelRecipients: "recipients" }[model];
             return `${tenant}-${name}`;
         };
+        // A listing has no id of its own, it is the one of a destination for a tenant.
+        const unique = (tenant: Tenant) => (model === "StorageListCache" ? { adapterConfigId_tenantId: { adapterConfigId: `${tenant}-nas`, tenantId: tenant } } : { id: own(tenant) });
+        const match = (tenant: Tenant) => (model === "StorageListCache" ? { adapterConfigId: `${tenant}-nas` } : { id: own(tenant) });
 
         it("lists and counts only the rows of the tenant", async () => {
             const rows = await runAsTenant("acme", () => delegate(scoped, model).findMany());
@@ -123,16 +148,16 @@ describe("the boundary between tenants", () => {
         });
 
         it("does not find a row of another tenant by its id", async () => {
-            expect(await runAsTenant("acme", () => delegate(scoped, model).findUnique({ where: { id: own("globex") } }))).toBeNull();
+            expect(await runAsTenant("acme", () => delegate(scoped, model).findUnique({ where: unique("globex") }))).toBeNull();
         });
 
         it("neither changes nor deletes a row of another tenant", async () => {
-            const changed = await runAsTenant("acme", () => delegate(scoped, model).updateMany({ where: { id: own("globex") }, data: {} }));
-            const deleted = await runAsTenant("acme", () => delegate(scoped, model).deleteMany({ where: { id: own("globex") } }));
+            const changed = await runAsTenant("acme", () => delegate(scoped, model).updateMany({ where: match("globex"), data: {} }));
+            const deleted = await runAsTenant("acme", () => delegate(scoped, model).deleteMany({ where: match("globex") }));
             expect(changed.count).toBe(0);
             expect(deleted.count).toBe(0);
-            await expect(runAsTenant("acme", () => delegate(scoped, model).update({ where: { id: own("globex") }, data: {} }))).rejects.toThrow();
-            expect(await delegate(base, model).findUnique({ where: { id: own("globex") } })).not.toBeNull();
+            await expect(runAsTenant("acme", () => delegate(scoped, model).update({ where: unique("globex"), data: {} }))).rejects.toThrow();
+            expect(await delegate(base, model).findUnique({ where: unique("globex") })).not.toBeNull();
         });
 
         it("refuses to be read outside a tenant", async () => {
@@ -198,6 +223,31 @@ describe("the boundary between tenants", () => {
             expect(rows).toEqual([{ adapterConfigId: "acme-source", adapterConfig: { tenantId: "acme" } }]);
         });
 
+        it("leaves the list of who gets a shared connection to the tenant that shares it", async () => {
+            await base.connectionShareTenant.create({ data: { shareId: "acme-nas", tenantId: "globex" } });
+            try {
+                // The customer neither reads nor changes the list it is on, only the tenant of the connection does.
+                expect(await runAsTenant("globex", () => scoped.connectionShareTenant.findMany())).toEqual([]);
+                const deleted = await runAsTenant("globex", () => scoped.connectionShareTenant.deleteMany({ where: { shareId: "acme-nas" } }));
+                expect(deleted.count).toBe(0);
+                expect((await runAsTenant("acme", () => scoped.connectionShareTenant.findMany())).map((row) => row.tenantId)).toEqual(["globex"]);
+            } finally {
+                await base.connectionShareTenant.deleteMany({ where: { shareId: "acme-nas" } });
+            }
+        });
+
+        it("keeps the listing a customer has of a shared destination apart from the one of its tenant", async () => {
+            await base.storageListCache.create({ data: { adapterConfigId: "acme-nas", tenantId: "globex", filesJson: '{"customer":true}' } });
+            try {
+                const ownView = await runAsTenant("acme", () => scoped.storageListCache.findMany({ where: { adapterConfigId: "acme-nas" } }));
+                const customerView = await runAsTenant("globex", () => scoped.storageListCache.findMany({ where: { adapterConfigId: "acme-nas" } }));
+                expect(ownView.map((row) => row.filesJson)).toEqual(["{}"]);
+                expect(customerView.map((row) => row.filesJson)).toEqual(['{"customer":true}']);
+            } finally {
+                await base.storageListCache.delete({ where: { adapterConfigId_tenantId: { adapterConfigId: "acme-nas", tenantId: "globex" } } });
+            }
+        });
+
         it("hides the assignments of another tenant's servers", async () => {
             const rows = await runAsTenant("acme", () => scoped.databaseAssignment.findMany());
             expect(rows.map((row) => row.id)).toEqual(["acme-assignment"]);
@@ -221,10 +271,40 @@ describe("the boundary between tenants", () => {
             expect(await base.databaseAssignment.count({ where: { sourceId: "globex-old" } })).toBe(1);
         });
 
-        it("reads the relation of a tenant's own row through the filter as well", async () => {
-            const job = await runAsTenant("acme", () => scoped.job.findUnique({ where: { id: "acme-job" }, include: { destinations: true, source: true } }));
-            expect(job?.source?.tenantId).toBe("acme");
-            expect(job?.destinations.map((destination) => destination.id)).toEqual(["acme-destination"]);
+        it("does not narrow a nested read, nor read the ids a child row links, so a write checks them itself", async () => {
+            // The create of a child row passes, it names its parent and what it links by id.
+            const linked = await runAsTenant("acme", () => scoped.jobDestination.create({ data: { id: "acme-linked-destination", jobId: "acme-job", configId: "globex-nas" } }));
+            try {
+                const job = await runAsTenant("acme", () => scoped.job.findUnique({ where: { id: "acme-job" }, include: { destinations: { include: { config: true } } } }));
+                // The include hands out the connection of the other tenant as it is.
+                expect(job?.destinations.map((destination) => destination.config.tenantId).sort()).toEqual(["acme", "globex"]);
+            } finally {
+                await base.jobDestination.delete({ where: { id: linked.id } });
+            }
+        });
+    });
+
+    describe("a write that links records", () => {
+        it("checks the ids with assertOwnRecords, which counts a row of another tenant as missing", async () => {
+            await expect(runAsTenant("acme", () => assertOwnRecords(scoped, { adapterConfig: ["acme-nas", "globex-nas"] }))).rejects.toBeInstanceOf(ValidationError);
+            await expect(runAsTenant("acme", () => assertOwnRecords(scoped, { adapterConfig: ["acme-nas", "acme-source"] }))).resolves.toBeUndefined();
+        });
+
+        it("refuses an update of a job that names a destination or a source of another tenant", async () => {
+            await base.adapterConfig.create({ data: { tenantId: "globex", id: "globex-files", name: "Files", type: "storage", adapterId: "local-filesystem", config: "{}", storageRole: "SOURCE" } });
+            try {
+                await expect(runAsTenant("acme", () => jobService.updateJob("acme-job", { destinations: [{ configId: "globex-nas", priority: 0, retention: "{}" }] }))).rejects.toThrow();
+                await expect(runAsTenant("acme", () => jobService.updateJob("acme-job", { sources: [{ configId: "globex-files", priority: 0, path: "/srv" }] }))).rejects.toThrow();
+                expect(await base.jobDestination.findMany({ where: { jobId: "acme-job" }, select: { configId: true } })).toEqual([{ configId: "acme-nas" }]);
+                expect(await base.jobSource.count({ where: { jobId: "acme-job" } })).toBe(0);
+            } finally {
+                await base.adapterConfig.delete({ where: { id: "globex-files" } });
+            }
+        });
+
+        it("queues no run of a job of another tenant", async () => {
+            await expect(runAsTenant("acme", () => runJob("globex-job"))).rejects.toBeInstanceOf(NotFoundError);
+            expect(await base.execution.count({ where: { jobId: "globex-job", status: "Pending" } })).toBe(0);
         });
     });
 

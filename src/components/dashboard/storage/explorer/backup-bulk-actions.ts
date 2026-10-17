@@ -4,6 +4,7 @@ import type { BulkResult } from "@/lib/core/bulk";
 import type { BackupRun } from "@/services/storage/explorer-types";
 import { isLocked, runKey, targetsOf } from "./backup-filters";
 import { count } from "./explorer-format";
+import { isSharedRun, type ListRun } from "./shared-runs";
 import { bulkAcross } from "./use-backup-actions";
 
 /** Turns the results per copy into results per backup, which is what the list selected. */
@@ -21,13 +22,14 @@ function perRun(result: BulkResult, runs: BackupRun[], at: string[]): BulkResult
 
 /**
  * What the selected backups of the list can do together: lock, unlock and delete their copies within
- * the destinations of the filter. `scopeName` names those destinations in the confirmation.
+ * the destinations of the filter. `scopeName` names those destinations in the confirmation. A backup
+ * of a shared database is its provider's, which keeps lock and delete, so none of them takes it.
  */
-export function backupBulkActions(canDelete: boolean, at: string[], scopeName: string): BulkAction<BackupRun>[] {
+export function backupBulkActions(canDelete: boolean, at: string[], scopeName: string): BulkAction<ListRun>[] {
     if (!canDelete) return [];
-    const run = (action: "delete" | "lock" | "unlock") => async (rows: BackupRun[]) =>
+    const run = (action: "delete" | "lock" | "unlock") => async (rows: ListRun[]) =>
         perRun(await bulkAcross(action, rows.flatMap((row) => targetsOf(row, at))), rows, at);
-    const unreachable = (row: BackupRun) => (targetsOf(row, at).length === 0 ? "No copy of it there" : null);
+    const unreachable = (row: ListRun) => (isSharedRun(row) ? `${row.shared.database.providerName} keeps it` : targetsOf(row, at).length === 0 ? "No copy of it there" : null);
     return [
         {
             id: "lock",

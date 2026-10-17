@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { claimLinkToken, generateLinkToken, linkStatus, markTokenUsed, releaseLinkToken } from "@/lib/auth/download-tokens";
+import { claimLinkToken, generateDownloadToken, generateFileDownloadToken, generateLinkToken, generateSelectionDownloadToken, linkStatus, markTokenUsed, releaseLinkToken } from "@/lib/auth/download-tokens";
 
 const link = () => generateLinkToken({ tenantId: "default", storageId: "nas", file: "Shop/backup.tar", userId: "u1", decrypt: true, pick: { databases: ["billing"] } });
 
@@ -40,6 +40,13 @@ describe("links for a command on another host", () => {
         markTokenUsed(token);
         releaseLinkToken(token);
         expect(claimLinkToken(token)).toBeNull();
+    });
+
+    it("claims no other token as a link, since those belong to the session that asked for them", () => {
+        expect(claimLinkToken(generateSelectionDownloadToken({ storageId: "nas", file: "Shop/backup.tar", userId: "u1", fileName: "pick.tar.gz" }))).toBeNull();
+        expect(claimLinkToken(generateFileDownloadToken({ storageId: "nas", file: "Shop/backup.tar", userId: "u1", tempFile: "/nonexistent/dbackup-test/never-written", fileName: "x.sql", contentType: "application/sql" }))).toBeNull();
+        expect(claimLinkToken(generateDownloadToken("nas", "Shop/backup.tar"))).toBeNull();
+        expect(claimLinkToken(link().token)).toMatchObject({ kind: "link", tenantId: "default", createdBy: "u1" });
     });
 
     it("counts a link nobody fetched within five minutes as expired", () => {

@@ -4,7 +4,7 @@ The audit log records who signed in, who changed what, and who revealed secrets,
 
 ## The Audit Log Tab
 
-Open **Users & Groups → Audit log**. It needs the `audit:read` permission. Every [tenant](/user-guide/admin/tenants) has its own log, and the tab shows the one of the open tenant. Sign-ins, sign-outs, failed sign-ins and the changes of groups, tenants and platform admins belong to the platform and go into the log of the home tenant.
+Open **Users & Groups → Audit log**. It needs the `audit:read` permission. Every [tenant](/user-guide/admin/tenants) has its own log, and the tab shows the one of the open tenant. Sign-ins, sign-outs, failed sign-ins, the changes of tenants, platform admins, platform groups and sign-in providers, and every change of the settings of the instance belong to the platform and go into the log of the home tenant, whichever tenant the admin works in. The changes of a group go into the log of its tenant, see [Audit Log](/user-guide/admin/tenants#audit-log) of Tenants.
 
 The strip above the list covers the last 30 days:
 
@@ -16,7 +16,7 @@ The strip above the list covers the last 30 days:
 | **Sensitive** | Revealed secrets and keys, downloads and restores |
 | **Failed sign-ins** | Turned down passwords, with the address of the last one |
 
-Every entry shows as a sentence, like "Changed the group **Operators**", with who did it, the area, and the browser and address the request came from. A second line says what changed, like "Backups See to Use". A sign-in from a network the person never signed in from before is marked **New place**.
+Every entry shows as a sentence, like "Changed the group **Operators**", with who did it, the area, and the browser and address the request came from. In the log of a customer's tenant the browser and address of someone who is no member there, like a platform admin or someone of a platform group, stay empty, also in the details and the CSV export. A second line says what changed, like "Backups See to Use". A sign-in from a network the person never signed in from before is marked **New place**.
 
 ### Filters
 
@@ -33,7 +33,7 @@ A click opens the entry in a panel:
 - **What changed** lists every field before and after. A group or an API key shows the level of each area with the permissions it added or removed. A secret shows that it changed, never its value.
 - **Who** names the person with the sign-in the change came from, or the API key and its owner.
 - **Earlier entries of this record** lists what happened to the same record before, and **Every entry of this record** narrows the list to it.
-- A sign-in shows its address, its browser, when the session ended and everything the person did until then. **Sign out everywhere** ends every session of that person, for someone who may manage users. A platform admin is signed out only by a platform admin, so anyone else gets no button on their sign-ins. Someone who also works in another tenant is signed out only by a platform admin as well.
+- A sign-in shows its address, its browser, when the session ended and everything the person did until then. **Sign out everywhere** ends every session of that person, for someone who may manage users. A platform admin is signed out only by a platform admin, so anyone else gets no button on their sign-ins. Someone who also works in another tenant, or holds a platform group, is signed out only by a platform admin or by someone who manages the accounts of the platform, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant).
 - **Stored details** shows the entry as it was written.
 
 ### The Timeline
@@ -58,7 +58,7 @@ The view switch shows the timeline above the list: a row per person and API key,
 | Tenants | Created, renamed and deleted tenants, members added and removed, platform admins |
 | Settings | Every settings page, system tasks, the configuration backup and its restore, the database download |
 
-A download or restore of a [shared database](/user-guide/admin/shared-databases) goes into the log of the customer, a change of who a database belongs to into the log of the server's tenant. A change keeps what it changed from and to. An entry keeps the name of the person who wrote it, so it still names them after the person is deleted. A request made with an API key names the key and its owner.
+A download or restore of a [shared database](/user-guide/admin/shared-databases) goes into the log of the customer, a change of who a database belongs to into the log of the server's tenant. A tenant that stops sharing a [destination or channel](/user-guide/admin/shared-connections) with a customer writes the stop into the log of that customer too. A change keeps what it changed from and to. An entry keeps the name of the person who wrote it, so it still names them after the person is deleted. A request made with an API key names the key and its owner.
 
 ::: tip
 The address comes from the `X-Forwarded-For` or `X-Real-IP` header of a trusted reverse proxy in front of DBackup, see [The Address of a Client](/user-guide/installation#the-address-of-a-client). A header a client sends itself is not written.

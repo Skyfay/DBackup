@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Globe } from "lucide-react";
 import { saveTenantDefaultChannelsAction, saveTenantNotificationEventsAction, sendTenantTestNotificationAction } from "@/app/actions/tenant/tenant-settings";
@@ -9,13 +10,18 @@ import { PartFrame } from "@/components/dashboard/settings/settings-frame";
 import { Button } from "@/components/ui/button";
 import type { TenantSettingsModel } from "@/services/tenant/tenant-settings-model";
 
-/** The Notifications part saving into the settings of the open tenant. */
-const TENANT_NOTIFICATIONS: NotificationsApi = {
-    // Reminders and mails to a person are the platform's, so only the switch and the channels go along.
-    saveEvents: (eventIds, patch) => saveTenantNotificationEventsAction(eventIds, { enabled: patch.enabled, channels: patch.channels }),
-    saveDefaults: saveTenantDefaultChannelsAction,
-    sendTest: sendTenantTestNotificationAction,
-};
+/**
+ * The Notifications part saving into the settings of the tenant the page shows, which each action
+ * names, so a switch in another tab never saves into the tenant opened there.
+ */
+function tenantNotificationsApi(tenantId: string): NotificationsApi {
+    return {
+        // Reminders and mails to a person are the platform's, so only the switch and the channels go along.
+        saveEvents: (eventIds, patch) => saveTenantNotificationEventsAction(tenantId, eventIds, { enabled: patch.enabled, channels: patch.channels }),
+        saveDefaults: (channelIds) => saveTenantDefaultChannelsAction(tenantId, channelIds),
+        sendTest: (eventId) => sendTenantTestNotificationAction(tenantId, eventId),
+    };
+}
 
 interface TenantNotificationsPartProps {
     model: TenantSettingsModel;
@@ -29,6 +35,7 @@ interface TenantNotificationsPartProps {
  * its data through the notifications of the platform, which this part leads to.
  */
 export function TenantNotificationsPart({ model, openEventId, onOpened }: TenantNotificationsPartProps) {
+    const api = useMemo(() => tenantNotificationsApi(model.tenant.id), [model.tenant.id]);
     if (!model.notifications) {
         return (
             <PartFrame part="tenant-notifications">
@@ -54,7 +61,7 @@ export function TenantNotificationsPart({ model, openEventId, onOpened }: Tenant
     }
 
     return (
-        <NotificationsApiProvider api={TENANT_NOTIFICATIONS}>
+        <NotificationsApiProvider api={api}>
             <NotificationsPart model={model.notifications} openEventId={openEventId} onOpened={onOpened} part="tenant-notifications" />
         </NotificationsApiProvider>
     );

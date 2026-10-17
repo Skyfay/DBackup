@@ -10,7 +10,8 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { areaChanges, knownPermissions, permissionPhrase } from "@/lib/auth/permission-areas";
+import { areaChanges, knownKeyPermissions, permissionPhrase } from "@/lib/auth/permission-areas";
+import { sharesWithCustomers } from "@/services/tenant/shared-servers";
 import { listWords } from "@/lib/auth/access-summary";
 
 const log = logger.child({ action: "api-key" });
@@ -61,9 +62,11 @@ export async function createApiKey(data: CreateApiKeyFormValues) {
 
   const parsed = CreateApiKeySchema.safeParse(data);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
-  const permissions = knownPermissions(parsed.data.permissions);
+  if (!currentUser.tenantId) return { success: false, error: "Open a tenant, a key works in the tenant it was made in." };
+  const permissions = knownKeyPermissions(parsed.data.permissions, await sharesWithCustomers(currentUser.tenantId));
   if (permissions.length === 0) return { success: false, error: "Give the key at least one permission." };
-  const refused = beyond(permissions, currentUser.permissions);
+  // What a key of the caller may do there, which leaves out the rights of their platform group on the platform.
+  const refused = beyond(permissions, await apiKeyService.ceilingFor(currentUser.id, currentUser.tenantId));
   if (refused.length > 0) {
     return { success: false, error: `Your group may not ${listWords(refused)}, so no key of yours may.` };
   }
@@ -118,7 +121,7 @@ export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
   const currentUser = await getViewer();
   if (!currentUser) return { success: false, error: "Not authenticated" };
 
-  const permissions = knownPermissions(parsed.data.permissions);
+  const permissions = knownKeyPermissions(parsed.data.permissions, await sharesWithCustomers(currentUser.tenantId));
   if (permissions.length === 0) return { success: false, error: "Give the key at least one permission." };
 
   try {

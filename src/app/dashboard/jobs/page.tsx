@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getAdapterOptions } from "@/lib/adapters/dto";
+import { connectionOptions } from "@/services/sharing/connection-options";
 import { getEncryptionProfiles } from "@/app/actions/backup/encryption";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 import { JOBS_PAGE_ID, JOBS_TABLE_ID } from "@/components/dashboard/jobs/job-tables";
@@ -17,8 +18,9 @@ export default async function JobsPage() {
     // The key list goes through its Server Action, which checks who may read the Vault.
     const [sources, destinations, notificationChannels, keys, layouts, savedView] = await Promise.all([
         getAdapterOptions("database"),
-        getAdapterOptions("storage"),
-        getAdapterOptions("notification"),
+        // The destinations and channels other tenants share with this one too.
+        connectionOptions("storage"),
+        connectionOptions("notification"),
         getEncryptionProfiles(),
         user ? getTablePreferences(user.id, [JOBS_TABLE_ID]) : Promise.resolve({} as Awaited<ReturnType<typeof getTablePreferences>>),
         user ? getViewMode(user.id, JOBS_PAGE_ID) : Promise.resolve(null),

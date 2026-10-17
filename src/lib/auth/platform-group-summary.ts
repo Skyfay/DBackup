@@ -45,11 +45,11 @@ const PLATFORM_WORDS: Record<string, { noun: string; short: string; change: stri
         write: P.PLATFORM.SIGN_IN_WRITE,
     },
     "platform-sharing": {
-        noun: "the shared databases",
-        short: "shared databases",
-        change: "shares databases",
-        sees: "Sees which tenant holds which shared database",
-        changes: "Shares databases of the shared servers with tenants",
+        noun: "what is shared with customers",
+        short: "sharing",
+        change: "shares with customers",
+        sees: "Sees what is shared with which tenant",
+        changes: "Shares databases, destinations and channels with tenants",
         write: P.PLATFORM.SHARING_WRITE,
     },
 };
@@ -77,7 +77,7 @@ export const platformLevelsText = (held: ReadonlySet<string>) => levelsText(PLAT
 /** The levels in the tenants in one line. */
 export const tenantLevelsText = (held: ReadonlySet<string>) => levelsText(PLATFORM_GROUP_TENANT_AREAS, held);
 
-/** What members may do on the platform in one line, like "Sees the tenants, shares databases". */
+/** What members may do on the platform in one line, like "Sees the tenants, shares with customers". */
 export function platformLine(held: ReadonlySet<string>): string {
     const sees: string[] = [];
     const changes: string[] = [];

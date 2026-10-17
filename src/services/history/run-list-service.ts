@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { WHOLE_JOB_RUNS, isSingleDatabaseRun } from "./whole-runs";
 import prisma from "@/lib/prisma";
 import { cached } from "@/services/dashboard/cache";
 import { extractLastError } from "@/services/dashboard/health";
@@ -88,11 +89,14 @@ export function buildRunWhere(query: RunQuery, omit?: "types" | "statuses" | "jo
     return and.length > 0 ? { AND: and } : {};
 }
 
-/** How long a run of a job usually takes, the median of its last 10 successful runs. */
+/**
+ * How long a run of a job usually takes, the median of its last 10 successful runs of the whole
+ * job. A run of single databases, like one a customer started, would pull it down.
+ */
 export function usualOf(jobId: string): Promise<number | null> {
     return cached(`run-usual:${jobId}`, USUAL_TTL_MS, async () => {
         const runs = await prisma.execution.findMany({
-            where: { jobId, status: "Success", endedAt: { not: null } },
+            where: { jobId, status: "Success", endedAt: { not: null }, AND: [WHOLE_JOB_RUNS] },
             orderBy: { startedAt: "desc" },
             take: 10,
             select: { startedAt: true, endedAt: true },
@@ -120,7 +124,9 @@ export async function toRows(records: RunRecord[]): Promise<RunRow[]> {
     const usual = new Map(await Promise.all(jobIds.map(async (jobId) => [jobId, await usualOf(jobId)] as const)));
     const notes = new Map(await Promise.all(records.filter((record) => record.status === "Failed")
         .map(async (record) => [record.id, await noteOf(record.id)] as const)));
-    return records.map((record) => runRow(record, record.jobId ? usual.get(record.jobId) ?? null : null, notes.get(record.id) ?? null));
+    // A run of single databases has no usual length, the one of the whole job says nothing about it.
+    const usualFor = (record: RunRecord) => (record.jobId && !isSingleDatabaseRun(record.metadata) ? usual.get(record.jobId) ?? null : null);
+    return records.map((record) => runRow(record, usualFor(record), notes.get(record.id) ?? null));
 }
 
 /** One run as a row, for a panel that only names it. */

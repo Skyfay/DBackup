@@ -6,6 +6,8 @@ import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { AddConnectionDialogs } from "@/components/adapter/add-connection-dialogs";
 import { connectionAddress } from "@/lib/adapters/connection-summary";
 import { useCan } from "@/components/permissions/permissions-context";
+import { useMayAdd } from "@/components/tenant/tenant-view";
+import type { AllowanceKind } from "@/lib/tenant/allowances";
 import { Button } from "@/components/ui/button";
 import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -18,13 +20,31 @@ import { isAirGapped } from "@/lib/core/air-gap";
 
 export type ConnectionKind = "database" | "destination" | "directory" | "notification";
 
-/** What each kind is called, where it comes from and who may add one. */
-const KINDS: Record<ConnectionKind, { icon: LucideIcon; note: string; noun: string; type: "database" | "storage" | "notification"; role?: StorageRole; write: Permission }> = {
-    database: { icon: Database, note: "Databases", noun: "database", type: "database", write: PERMISSIONS.SOURCES.WRITE },
-    destination: { icon: HardDrive, note: "Destinations", noun: "destination", type: "storage", role: STORAGE_ROLES.DESTINATION, write: PERMISSIONS.DESTINATIONS.WRITE },
-    directory: { icon: FolderOpen, note: "Directory sources", noun: "directory source", type: "storage", role: STORAGE_ROLES.SOURCE, write: PERMISSIONS.DESTINATIONS.WRITE },
-    notification: { icon: Bell, note: "Notification channels", noun: "notification channel", type: "notification", write: PERMISSIONS.NOTIFICATIONS.WRITE },
+/** What each kind is called, where it comes from, who may add one and which limit of the platform holds it. */
+const KINDS: Record<ConnectionKind, { icon: LucideIcon; note: string; noun: string; type: "database" | "storage" | "notification"; role?: StorageRole; write: Permission; allowance: AllowanceKind }> = {
+    database: { icon: Database, note: "Databases", noun: "database", type: "database", write: PERMISSIONS.SOURCES.WRITE, allowance: "databases" },
+    destination: { icon: HardDrive, note: "Destinations", noun: "destination", type: "storage", role: STORAGE_ROLES.DESTINATION, write: PERMISSIONS.DESTINATIONS.WRITE, allowance: "destinations" },
+    directory: { icon: FolderOpen, note: "Directory sources", noun: "directory source", type: "storage", role: STORAGE_ROLES.SOURCE, write: PERMISSIONS.DESTINATIONS.WRITE, allowance: "directorySources" },
+    notification: { icon: Bell, note: "Notification channels", noun: "notification channel", type: "notification", write: PERMISSIONS.NOTIFICATIONS.WRITE, allowance: "channels" },
 };
+
+/** The tenant that shares a connection with this one, null for an own connection. */
+const providerOf = (option: AdapterOption) => option.provided?.providerName ?? option.provider ?? null;
+
+/**
+ * The connections of the list, in groups once another tenant shares some with this one: the own
+ * ones first under Yours, then those of each tenant that shares them.
+ */
+function groupsOf(options: AdapterOption[]) {
+    const shared = options.filter((option) => providerOf(option));
+    if (shared.length === 0) return [{ entries: options.map(entryOf) }];
+    const own = options.filter((option) => !providerOf(option));
+    const providers = [...new Set(shared.map((option) => providerOf(option)!))];
+    return [
+        ...(own.length > 0 ? [{ heading: "Yours", entries: own.map(entryOf) }] : []),
+        ...providers.map((name) => ({ heading: `Provided by ${name}`, entries: shared.filter((option) => providerOf(option) === name).map(entryOf) })),
+    ];
+}
 
 /** Tells the form about a connection added from one of its fields, so every field offers it. */
 export const ConnectionAddedContext = createContext<((option: AdapterOption) => void) | null>(null);
@@ -38,12 +58,16 @@ const STATUS: Record<string, PickEntry["alert"]> = { OFFLINE: { text: "Offline",
  */
 function entryOf(option: AdapterOption): PickEntry {
     const type = getAdapterDefinition(option.adapterId)?.name ?? option.adapterId;
-    const address = option.config ? connectionAddress(option.adapterId, option.config) : null;
+    // Where a connection another tenant shares points stays with that tenant.
+    const shared = Boolean(providerOf(option));
+    const address = option.config && !shared ? connectionAddress(option.adapterId, option.config) : null;
     const away = Boolean(option.lastStatus && option.lastStatus !== "ONLINE") && isAirGapped(option);
     return {
         id: option.id,
         name: option.name,
-        meta: [type, address, away ? "air-gapped, not connected" : null].filter(Boolean).join(" · "),
+        meta: [type, address, shared ? "address hidden" : null, option.provided?.encryptedOnly ? "only encrypted backups" : null, away ? "air-gapped, not connected" : null]
+            .filter(Boolean)
+            .join(" · "),
         keywords: [type, ...(address ? [address] : [])],
         icon: <AdapterIcon adapterId={option.adapterId} className="size-4" />,
         alert: !away && option.lastStatus ? STATUS[option.lastStatus] : undefined,
@@ -74,7 +98,10 @@ export function ConnectionPicker({ options, value, onChange, placeholder, kind, 
     const [added, setAdded] = useState<AdapterOption[]>([]);
     const report = useContext(ConnectionAddedContext);
     const setup = KINDS[kind];
-    const canCreate = useCan(setup.write);
+    // New only where the viewer may add the kind, and the platform lets the tenant add it itself.
+    const mayWrite = useCan(setup.write);
+    const mayAdd = useMayAdd(setup.allowance);
+    const canCreate = mayWrite && mayAdd;
     const all = [...options, ...added.filter((option) => !options.some((known) => known.id === option.id))];
     const current = all.find((option) => option.id === value);
     const available = all.filter((option) => option.id === value || !taken.includes(option.id));
@@ -103,7 +130,7 @@ export function ConnectionPicker({ options, value, onChange, placeholder, kind, 
                         icon={setup.icon}
                         title="Pick from Connections"
                         note={setup.note}
-                        groups={[{ entries: available.map(entryOf) }]}
+                        groups={groupsOf(available)}
                         value={value}
                         emptyText={available.length === 0 ? `There is no ${setup.noun} yet.` : "Nothing matches."}
                         onPick={(id) => {

@@ -1,10 +1,14 @@
 import { decryptConfig, mergeSecrets } from "@/lib/crypto";
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
-import { ConfigurationError, NotFoundError, wrapError } from "@/lib/logging/errors";
+import { ConfigurationError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import { usesPrefixedSshKeys } from "@/lib/adapters/ssh-key-convention";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { hostLocalReason } from "@/lib/adapters/host-local";
+import { currentTenantId } from "@/lib/tenant/current";
 import type {
     CredentialData,
     CredentialType,
@@ -31,6 +35,11 @@ export interface AdapterConfigInput {
     config: string;
     primaryCredentialId: string | null;
     sshCredentialId: string | null;
+    /**
+     * The tenant of the connection. Its saved logins are read there, so a destination or a channel
+     * another tenant shares works in the run of a customer, whose own scope never sees them.
+     */
+    tenantId?: string;
 }
 
 /**
@@ -48,6 +57,17 @@ export interface AdapterConfigInput {
  * `clientSecret`, `refreshToken` for OAuth adapters) live there.
  */
 export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise<unknown> {
+    const resolved = await resolveConfig(adapter);
+    // A connection of a customer never reaches the server DBackup runs on, also when a login it
+    // names changed since it was saved, or the row came from an import, see `host-local.ts`.
+    if (adapter.tenantId && adapter.tenantId !== HOME_TENANT_ID) {
+        const reason = hostLocalReason(adapter.adapterId, resolved as Record<string, unknown>);
+        if (reason) throw new ConfigurationError(adapter.adapterId, reason);
+    }
+    return resolved;
+}
+
+async function resolveConfig(adapter: AdapterConfigInput): Promise<Record<string, unknown>> {
     const adapterDef = registry.get(adapter.adapterId);
     if (!adapterDef) {
         throw new NotFoundError("Adapter", adapter.adapterId);
@@ -85,28 +105,40 @@ export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise
             }
             // Optional and no profile assigned - use structural config fields as-is
         } else {
-            const profile = await loadAndValidate(
-                adapter.primaryCredentialId,
-                requirements.primary,
+            const profile = await inTenantOf(adapter, () => loadAndValidate(
+                adapter.primaryCredentialId!,
+                requirements.primary!,
                 adapter.adapterId,
                 "primary"
-            );
+            ));
             applyPrimaryOverlay(parsed, profile, requirements.primary);
         }
     }
 
     // --- SSH slot (always optional at runtime - SSH mode is opt-in per adapter) ---
     if (requirements.ssh && adapter.sshCredentialId) {
-        const profile = await loadAndValidate(
-            adapter.sshCredentialId,
-            requirements.ssh,
+        const profile = await inTenantOf(adapter, () => loadAndValidate(
+            adapter.sshCredentialId!,
+            requirements.ssh!,
             adapter.adapterId,
             "ssh"
-        );
+        ));
         applySshOverlay(parsed, profile as SshKeyData, usesPrefixedSshKeys(adapterDef.configSchema));
     }
 
     return parsed;
+}
+
+/**
+ * Refuses a config of a form that reaches the server DBackup runs on, while a customer runs it.
+ * Every way to try a config before it is saved, like a test or a read of its databases, goes
+ * through `overlayCredentialsOnConfig` or calls this, see `host-local.ts`.
+ */
+export async function assertConfigOffHost(adapterId: string, config: Record<string, unknown>): Promise<void> {
+    const tenantId = await currentTenantId();
+    if (!tenantId || tenantId === HOME_TENANT_ID) return;
+    const reason = hostLocalReason(adapterId, config);
+    if (reason) throw new ValidationError(reason, { field: "config" });
 }
 
 /**
@@ -130,7 +162,10 @@ export async function overlayCredentialsOnConfig(
     }
 
     const requirements = adapterDef.credentials;
-    if (!requirements) return config;
+    if (!requirements) {
+        await assertConfigOffHost(adapterId, config);
+        return config;
+    }
 
     if (requirements.primary && primaryCredentialId) {
         const profile = await loadAndValidate(
@@ -152,6 +187,7 @@ export async function overlayCredentialsOnConfig(
         applySshOverlay(config, profile as SshKeyData, usesPrefixedSshKeys(adapterDef.configSchema));
     }
 
+    await assertConfigOffHost(adapterId, config);
     return config;
 }
 
@@ -192,6 +228,11 @@ export async function applyStoredSecrets(
         log.error("Failed to merge stored secrets into config", { adapterId, configId }, wrapError(e));
         return config;
     }
+}
+
+/** Runs a read of a saved login in the tenant of its connection, when the row names it. */
+function inTenantOf<T>(adapter: AdapterConfigInput, read: () => Promise<T>): Promise<T> {
+    return adapter.tenantId ? runAsTenant(adapter.tenantId, read) : read();
 }
 
 async function loadAndValidate(

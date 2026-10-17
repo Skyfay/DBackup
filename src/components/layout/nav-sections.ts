@@ -69,14 +69,17 @@ const HISTORY: NavItem = { icon: History, label: "History", href: "/dashboard/hi
 const VAULT: NavItem = { icon: Lock, label: "Vault", href: "/dashboard/vault", permission: P.VAULT.READ };
 const TEMPLATES: NavItem = { icon: LayoutTemplate, label: "Templates", href: "/dashboard/templates", permission: P.TEMPLATES.READ };
 const USERS: NavItem = { icon: Users, label: "Users & Groups", href: "/dashboard/users", permission: [P.USERS.READ, P.GROUPS.READ, P.AUDIT.READ, P.API_KEYS.READ] };
+/** With one tenant the sign-in providers are a tab of Users & Groups, which the settings of the instance show too. */
+const USERS_WITH_SIGN_IN: NavItem = { ...USERS, permission: [P.USERS.READ, P.GROUPS.READ, P.AUDIT.READ, P.API_KEYS.READ, P.PLATFORM.SIGN_IN_READ, P.SETTINGS.READ] };
 /** With one tenant Settings is the Settings of the instance, as before tenants, with Recently deleted among its parts. */
 const SETTINGS: NavItem = { icon: Settings, label: "Settings", href: "/dashboard/settings", permission: P.SETTINGS.READ };
 /** With several, Settings under Administration is the one of the open tenant: its name, logo, notifications and Recently deleted. */
 const TENANT_SETTINGS: NavItem = { icon: Settings, label: "Settings", href: "/dashboard/settings", permission: P.TENANT_SETTINGS.READ };
 
 export const PLATFORM_TENANTS: NavItem = { icon: Building2, label: "Tenants", href: "/dashboard/platform/tenants", permission: P.PLATFORM.TENANTS_READ };
-// The accounts and platform groups, and the sign-in providers on a tab of their own.
-export const PLATFORM_USERS: NavItem = { icon: UserCog, label: "Users & Groups", href: "/dashboard/platform/users", permission: [P.PLATFORM.ACCOUNTS_READ, P.PLATFORM.SIGN_IN_READ] };
+// The accounts and platform groups, and the sign-in providers on a tab of their own, which the
+// settings of the instance show too.
+export const PLATFORM_USERS: NavItem = { icon: UserCog, label: "Users & Groups", href: "/dashboard/platform/users", permission: [P.PLATFORM.ACCOUNTS_READ, P.PLATFORM.SIGN_IN_READ, P.SETTINGS.READ] };
 // The settings of the instance, from a platform group or the group in the home tenant.
 export const PLATFORM_SETTINGS: NavItem = { icon: SlidersHorizontal, label: "Settings", href: "/dashboard/platform/settings", permission: P.SETTINGS.READ };
 
@@ -88,7 +91,7 @@ function allSections(several: boolean): NavGroup[] {
         { label: "General", items: [OVERVIEW, QUICK_SETUP] },
         { label: "Backup", items: [CONNECTIONS, JOBS, BACKUPS] },
         { label: "Explorer", items: [EXPLORER, HISTORY] },
-        { label: "Administration", items: [VAULT, TEMPLATES, USERS, several ? TENANT_SETTINGS : SETTINGS] },
+        { label: "Administration", items: [VAULT, TEMPLATES, several ? USERS : USERS_WITH_SIGN_IN, several ? TENANT_SETTINGS : SETTINGS] },
         ...(several ? [{ label: PLATFORM_LABEL, items: [PLATFORM_TENANTS, PLATFORM_USERS, PLATFORM_SETTINGS], platform: true }] : []),
     ];
 }

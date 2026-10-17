@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
     ctx: { userId: "u1", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "session" },
     settings: new Map<string, { schedule: string; runOnStartup: boolean; enabled: boolean }>(),
-    logFor: vi.fn(),
+    log: vi.fn(),
     runTask: vi.fn(),
     getKey: vi.fn(),
 }));
@@ -19,7 +19,7 @@ vi.mock("@/lib/auth/access-control", () => ({
 }));
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers()) }));
 vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: vi.fn().mockResolvedValue(undefined) } }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.log(...args) } }));
 vi.mock("@/lib/prisma", () => ({ default: { user: { findUnique: vi.fn().mockResolvedValue({ name: "Ada" }) } } }));
 vi.mock("@/services/auth/api-key-service", () => ({ apiKeyService: { getById: (...args: unknown[]) => mocks.getKey(...args) } }));
 // A task stored in memory, so a change is what the next read returns.
@@ -43,6 +43,9 @@ vi.mock("@/services/system/system-task-service", () => {
 
 const { POST, PUT } = await import("@/app/api/settings/system-tasks/route");
 
+/** A task belongs to the platform, so its entries go to the log of the home tenant. */
+const PLATFORM = { tenantId: "default", apiKeyId: null };
+
 const request = (method: string, body: unknown) => new NextRequest("http://localhost/api/settings/system-tasks", { method, body: JSON.stringify(body) });
 
 describe("the audit entries of system tasks", () => {
@@ -55,17 +58,17 @@ describe("the audit entries of system tasks", () => {
     it("writes a new schedule by the name of the task with the schedule before and after", async () => {
         await POST(request("POST", { taskId: "system.clean_audit_logs", schedule: "0 4 * * *" }));
 
-        expect(mocks.logFor).toHaveBeenCalledWith(mocks.ctx, "UPDATE", "SYSTEM", {
+        expect(mocks.log).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", {
             task: "Clean Old Data",
             name: "Clean Old Data",
             changes: [{ field: "Schedule", from: "0 0 * * *", to: "0 4 * * *" }],
-        }, "system.clean_audit_logs");
+        }, "system.clean_audit_logs", PLATFORM);
     });
 
     it("writes switching a task off as that", async () => {
         await POST(request("POST", { taskId: "system.clean_audit_logs", enabled: false }));
 
-        expect(mocks.logFor).toHaveBeenCalledWith(mocks.ctx, "UPDATE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data", enabled: false }, "system.clean_audit_logs");
+        expect(mocks.log).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data", enabled: false }, "system.clean_audit_logs", PLATFORM);
     });
 
     it("names a task that was started by hand", async () => {
@@ -73,7 +76,7 @@ describe("the audit entries of system tasks", () => {
 
         await PUT(request("PUT", { taskId: "system.clean_audit_logs" }));
 
-        expect(mocks.logFor).toHaveBeenCalledWith(mocks.ctx, "EXECUTE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data" }, "system.clean_audit_logs");
+        expect(mocks.log).toHaveBeenCalledWith("u1", "EXECUTE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data" }, "system.clean_audit_logs", PLATFORM);
         expect(mocks.runTask).toHaveBeenCalledWith("system.clean_audit_logs", "Manual", "Ada");
     });
 
@@ -86,5 +89,6 @@ describe("the audit entries of system tasks", () => {
 
         expect(mocks.getKey).toHaveBeenCalledWith("k1");
         expect(mocks.runTask).toHaveBeenCalledWith("system.clean_audit_logs", "Api", "CI deploy");
+        expect(mocks.log).toHaveBeenCalledWith("u1", "EXECUTE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data" }, "system.clean_audit_logs", { tenantId: "default", apiKeyId: "k1" });
     });
 });

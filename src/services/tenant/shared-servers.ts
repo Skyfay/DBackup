@@ -1,7 +1,6 @@
 import prisma from "@/lib/prisma";
 import type { Tx } from "@/lib/prisma-tx";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
-import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { ON_DEMAND_MAX, ON_DEMAND_MIN } from "@/lib/tenant/sharing";
 
 /**
@@ -23,8 +22,17 @@ export interface ServerFacts {
 
 type Client = typeof prisma | Tx;
 
-/** Whether the servers of a tenant can give databases to other tenants. Only the home tenant, the MSP, shares. */
-export const sharesDatabases = (tenantId: string | null | undefined) => tenantId === HOME_TENANT_ID;
+/**
+ * Whether the servers of a tenant give databases to other tenants: a tenant of the MSP the platform
+ * switched on, the home tenant from the start. A customer's own servers never do, so its data
+ * stays its own whoever holds the right to share.
+ */
+export async function sharesWithCustomers(tenantId: string | null | undefined): Promise<boolean> {
+    if (!tenantId) return false;
+    return (await prisma.tenant.findUnique({ where: { id: tenantId }, select: { sharesWithCustomers: true } }))?.sharesWithCustomers ?? false;
+}
+
+export const NOT_SHARING = "The servers of this tenant give no databases to other tenants. The platform switches it on for a tenant of the MSP.";
 
 /** The database server of the tenant that runs now, or a NotFoundError. */
 export async function ownSource(sourceId: string): Promise<ServerFacts> {
@@ -33,9 +41,12 @@ export async function ownSource(sourceId: string): Promise<ServerFacts> {
     return source;
 }
 
-/** A tenant a database of the server can be given to: another one, which still exists. */
+/**
+ * A tenant a database of the server can be given to: another one, which still exists. It may share
+ * databases itself, a database it gets is no server of its own, so it never passes it on.
+ */
 export async function assertCustomer(tenantId: string, serverTenantId: string): Promise<void> {
-    if (!sharesDatabases(serverTenantId)) throw new ValidationError("Only the servers of the home tenant give databases to other tenants.");
+    if (!(await sharesWithCustomers(serverTenantId))) throw new ValidationError(NOT_SHARING);
     if (tenantId === serverTenantId) throw new ValidationError("A database of this server belongs to this tenant already. Pick another tenant.");
     if (!(await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }))) throw new ValidationError("The tenant no longer exists.");
 }
@@ -110,8 +121,11 @@ export async function serverNames(ids: readonly string[]): Promise<Map<string, s
  */
 export async function customersOfServer(sourceId: string): Promise<string[]> {
     const [assignments, rules] = await Promise.all([
-        prisma.databaseAssignment.findMany({ where: { sourceId, validUntil: null }, select: { tenant: { select: { name: true } } } }),
-        prisma.databaseAssignmentRule.findMany({ where: { sourceId }, select: { tenant: { select: { name: true } } } }),
+        prisma.databaseAssignment.findMany({ where: { sourceId, validUntil: null, tenantId: { not: null } }, select: { tenantId: true } }),
+        prisma.databaseAssignmentRule.findMany({ where: { sourceId, validUntil: null }, select: { tenantId: true } }),
     ]);
-    return [...new Set([...assignments, ...rules].map((entry) => entry.tenant.name))].sort((a, b) => a.localeCompare(b));
+    const ids = [...new Set([...assignments, ...rules].flatMap((entry) => (entry.tenantId ? [entry.tenantId] : [])))];
+    // A tenant deleted since holds nothing any more.
+    const tenants = await prisma.tenant.findMany({ where: { id: { in: ids } }, select: { name: true } });
+    return tenants.map((tenant) => tenant.name).sort((a, b) => a.localeCompare(b));
 }

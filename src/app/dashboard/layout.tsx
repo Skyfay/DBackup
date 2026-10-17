@@ -22,6 +22,7 @@ import { showsQuickSetup } from "@/services/dashboard/start-page"
 import { getInstanceName } from "@/services/system/system-settings-service"
 import { usesAppleKeys } from "@/lib/core/keyboard"
 import { tenantService } from "@/services/tenant/tenant-service"
+import { HOME_TENANT_ID } from "@/lib/tenant/home"
 import { breadcrumbTenant } from "@/components/layout/tenant-switch"
 
 const log = logger.child({ component: "dashboard-layout" });
@@ -47,6 +48,9 @@ export default async function DashboardLayout({
 
     // Run all queries in parallel to avoid sequential blocking
     const viewerLoad = getViewer();
+    // An account that works in no tenant yet, and is not in All tenants, reads nothing of a tenant:
+    // every such query would refuse it and take each page down with it.
+    const inTenantLoad = viewerLoad.then((user) => Boolean(user && (user.tenantId || user.allTenants)));
     const [permissions, viewer, tenants, tenantCount, updateInfo, showQuickSetup, cookieStore, tableDefaults, trashDays, taskColors, instanceName] = await Promise.all([
         getUserPermissions(),
         viewerLoad,
@@ -56,13 +60,15 @@ export default async function DashboardLayout({
         tenantService.count(),
         // The last answer of GitHub, so a page never waits for it.
         updateService.getUpdateInfo(),
-        showsQuickSetup(),
+        inTenantLoad.then((inTenant) => (inTenant ? showsQuickSetup() : false)),
         cookies(),
         getTableDefaults(session.user.id),
         getTrashDays(),
         getTaskColors(session.user.id),
         getInstanceName(),
     ]);
+    // The platform names itself where a tenant may not add something itself.
+    const platform = tenantCount > 1 ? await tenantService.find(HOME_TENANT_ID) : null;
 
     // Written by SidebarProvider in ui/sidebar.tsx. Reading it here renders a collapsed sidebar collapsed from the first paint.
     const sidebarOpen = cookieStore.get("dbackup_sidebar_state")?.value !== "false";
@@ -72,10 +78,13 @@ export default async function DashboardLayout({
     const allTenants = viewer?.allTenants ?? false;
     // What the head of the sidebar offers of the tenants: All tenants for whoever may open it, the
     // numbers and Manage tenants for whoever may see them, New tenant for whoever may create them.
+    // A platform group that reaches only some tenants would create one it can never open.
     const tenantAccess = {
         opensAll: viewer?.opensAllTenants ?? false,
         see: viewer ? hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_READ) : false,
-        create: viewer ? hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_WRITE) : false,
+        create: viewer
+            ? viewer.isPlatformAdmin || (hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_WRITE) && viewer.platformGroup?.allTenants === true)
+            : false,
     };
     // The group in the tenant and the platform group, like "Viewer + Support", or Platform admin.
     const groupName = [viewer?.role?.name, viewer?.platformGroup?.name].filter(Boolean).join(" + ") || (viewer?.isPlatformAdmin ? "Platform admin" : undefined);
@@ -87,7 +96,7 @@ export default async function DashboardLayout({
                 table start with the rows per page and the row height of the viewer's profile, and every
                 delete say how long Recently deleted keeps what it deletes. */}
             <PermissionsProvider permissions={permissions}>
-                <TenantViewProvider value={{ tenants, activeTenantId, allTenants, isPlatformAdmin: viewer?.isPlatformAdmin ?? false, tenantCount }}>
+                <TenantViewProvider value={{ tenants, activeTenantId, allTenants, isPlatformAdmin: viewer?.isPlatformAdmin ?? false, tenantCount, platformName: platform?.name }}>
                 <TableDefaultsProvider defaults={tableDefaults}>
                     <TrashDaysProvider days={trashDays}>
                         {/* Clip, not hidden: a hidden box can still be scrolled by code. A screen-reader text, which is

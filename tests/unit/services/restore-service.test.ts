@@ -51,6 +51,7 @@ describe('RestoreService', () => {
     const mockStorageConfig = {
         id: 'storage-1',
         type: 'storage',
+        tenantId: 'tenant-1',
         adapterId: 'local-fs',
         config: JSON.stringify({ basePath: '/tmp/backups' }),
         name: 'Local',
@@ -61,6 +62,7 @@ describe('RestoreService', () => {
     const mockSourceConfig = {
         id: 'source-1',
         type: 'database',
+        tenantId: 'tenant-1',
         adapterId: 'postgres',
         config: JSON.stringify({ host: 'localhost' }),
         name: 'PG',
@@ -68,9 +70,27 @@ describe('RestoreService', () => {
         updatedAt: new Date(),
     };
 
+    /**
+     * The registry and the database answer by id, as they do at runtime: the destination's adapter
+     * id gets the storage adapter, any other id the database adapter, and each connection its row.
+     */
+    function useAdapters(storageAdapter: unknown, dbAdapter: unknown) {
+        vi.mocked(registry.get).mockImplementation(((id: string) => (id === mockStorageConfig.adapterId ? storageAdapter : dbAdapter)) as any);
+        // @ts-expect-error -- Mock return type mismatch
+        prismaMock.adapterConfig.findUnique.mockImplementation(async (args: any) => {
+            if (args.where.id === mockStorageConfig.id) return mockStorageConfig as any;
+            if (args.where.id === mockSourceConfig.id) return mockSourceConfig as any;
+            return null;
+        });
+    }
+
     beforeEach(() => {
         service = new RestoreService();
         vi.clearAllMocks();
+        vi.mocked(registry.get).mockReset();
+        prismaMock.adapterConfig.findUnique.mockReset();
+        // No destination of these tests is shared with other tenants.
+        prismaMock.connectionShare.count.mockResolvedValue(0);
 
         // Spy on FS methods instead of full module mock to avoid import issues
         vi.spyOn(fs, 'existsSync').mockReturnValue(true);
@@ -103,24 +123,7 @@ describe('RestoreService', () => {
         prismaMock.execution.create.mockResolvedValue({ id: executionId } as any);
         prismaMock.execution.update.mockResolvedValue({} as any);
 
-        // Mocks for findUnique calls in order:
-        // 1. Pre-flight Target Check (line 37)
-        // 2. Version Check Storage Config (line 70)
-        // 3. runRestoreProcess Storage Config (line 192)
-        // 4. runRestoreProcess Source Config (line 201)
-        prismaMock.adapterConfig.findUnique
-            .mockResolvedValueOnce(mockSourceConfig as any)  // 1. Pre-flight
-            .mockResolvedValueOnce(mockStorageConfig as any) // 2. Version check
-            .mockResolvedValueOnce(mockStorageConfig as any) // 3. Run Storage
-            .mockResolvedValueOnce(mockSourceConfig as any);  // 4. Run Source
-
-        // Registry Mocks - multiple calls for different adapters
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(mockDbAdapter)      // 1. Pre-flight prepareRestore check
-            .mockReturnValueOnce(mockStorageAdapter) // 2. Version check
-            .mockReturnValueOnce(mockDbAdapter)      // 3. Version check target
-            .mockReturnValueOnce(mockStorageAdapter) // 4. Run Storage
-            .mockReturnValueOnce(mockDbAdapter);     // 5. Run Source
+        useAdapters(mockStorageAdapter, mockDbAdapter);
 
         // Act
         const result = await service.restore({
@@ -156,16 +159,7 @@ describe('RestoreService', () => {
 
         prismaMock.execution.create.mockResolvedValue({ id: executionId } as any);
 
-        // Mocks: 1. Target, 2. Storage, 3. Source
-        prismaMock.adapterConfig.findUnique
-            .mockResolvedValueOnce(mockSourceConfig as any)
-            .mockResolvedValueOnce(mockStorageConfig as any)
-            .mockResolvedValueOnce(mockSourceConfig as any);
-
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(mockDbAdapter)
-            .mockReturnValueOnce(mockStorageAdapter)
-            .mockReturnValueOnce(mockDbAdapter);
+        useAdapters(mockStorageAdapter, mockDbAdapter);
 
         await service.restore({
             storageConfigId: 'storage-1',
@@ -175,6 +169,7 @@ describe('RestoreService', () => {
 
         await flushPromises();
 
+        expect(mockStorageAdapter.download).toHaveBeenCalled();
         expect(prismaMock.execution.update).toHaveBeenCalledWith(expect.objectContaining({
             where: { id: executionId },
             data: expect.objectContaining({ status: 'Failed' })
@@ -197,19 +192,7 @@ describe('RestoreService', () => {
 
         prismaMock.execution.create.mockResolvedValue({ id: executionId } as any);
 
-        prismaMock.adapterConfig.findUnique
-            .mockResolvedValueOnce(mockSourceConfig as any)  // Pre-flight
-            .mockResolvedValueOnce(mockStorageConfig as any) // Version check
-            .mockResolvedValueOnce(mockStorageConfig as any) // Run Storage
-            .mockResolvedValueOnce(mockSourceConfig as any);  // Run Source
-
-        // Registry Mocks
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(mockDbAdapter)      // Pre-flight
-            .mockReturnValueOnce(mockStorageAdapter) // Version check storage
-            .mockReturnValueOnce(mockDbAdapter)      // Version check target
-            .mockReturnValueOnce(mockStorageAdapter) // Run Storage
-            .mockReturnValueOnce(mockDbAdapter);     // Run Source
+        useAdapters(mockStorageAdapter, mockDbAdapter);
 
         const result = await service.restore({
             storageConfigId: 'storage-1',
@@ -418,18 +401,7 @@ describe('RestoreService', () => {
             prismaMock.execution.create.mockResolvedValue({ id: executionId } as any);
             prismaMock.execution.update.mockResolvedValue({} as any);
 
-            prismaMock.adapterConfig.findUnique
-                .mockResolvedValueOnce(mockSourceConfig as any)
-                .mockResolvedValueOnce(mockStorageConfig as any)
-                .mockResolvedValueOnce(mockStorageConfig as any)
-                .mockResolvedValueOnce(mockSourceConfig as any);
-
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(mockDbAdapter)
-                .mockReturnValueOnce(mockStorageAdapter)
-                .mockReturnValueOnce(mockDbAdapter)
-                .mockReturnValueOnce(mockStorageAdapter)
-                .mockReturnValueOnce(mockDbAdapter);
+            useAdapters(mockStorageAdapter, mockDbAdapter);
 
             await service.restore({
                 storageConfigId: 'storage-1',
@@ -451,15 +423,7 @@ describe('RestoreService', () => {
             prismaMock.execution.create.mockResolvedValue({ id: executionId } as any);
             prismaMock.execution.update.mockResolvedValue({} as any);
 
-            prismaMock.adapterConfig.findUnique
-                .mockResolvedValueOnce(mockSourceConfig as any)
-                .mockResolvedValueOnce(mockStorageConfig as any)
-                .mockResolvedValueOnce(mockSourceConfig as any);
-
-            vi.mocked(registry.get)
-                .mockReturnValueOnce({} as any)
-                .mockReturnValueOnce(mockStorageAdapter)
-                .mockReturnValueOnce({} as any);
+            useAdapters(mockStorageAdapter, {});
 
             await service.restore({
                 storageConfigId: 'storage-1',

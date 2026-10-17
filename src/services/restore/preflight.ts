@@ -6,8 +6,9 @@ import { StorageAdapter, DatabaseAdapter, BackupMetadata } from "@/lib/core/inte
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { compareVersions } from "@/lib/utils";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
 import type { RestoreInput } from "./types";
+import { findDestination, openDestination } from "@/services/sharing/destination-access";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -68,15 +69,22 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
         )];
 
         for (const targetConfigId of selectedTargetConfigIds) {
-            const dirTargetConfig = await prisma.adapterConfig.findUnique({ where: { id: targetConfigId } });
-            if (!dirTargetConfig || dirTargetConfig.type !== 'storage') {
-                throw new Error(`Invalid restore target for a directory entry: adapter '${targetConfigId}' not found`);
-            }
+            // Found the way the restore opens it, see `openDirectoryTarget`: a storage of another
+            // tenant only when that tenant shares it with this one.
+            const found = await findDestination(targetConfigId).catch((error: unknown) => {
+                if (error instanceof NotFoundError) {
+                    throw new Error(`Invalid restore target for a directory entry: adapter '${targetConfigId}' not found`);
+                }
+                throw error;
+            });
+            const dirTargetConfig = found.row;
             const dirTargetAdapter = registry.get(dirTargetConfig.adapterId) as StorageAdapter;
             if (!dirTargetAdapter) {
                 throw new Error(`Restore target adapter implementation missing: '${dirTargetConfig.adapterId}'`);
             }
-            if (dirTargetAdapter.test) {
+            // The probe writes a file at the top of the storage, which belongs to the tenant that
+            // shares it and not to a customer, so a customer's restore finds out while it writes.
+            if (dirTargetAdapter.test && found.mode.kind !== "customer") {
                 const conf = await resolveAdapterConfig(dirTargetConfig) as any;
                 const testResult = (await runAdapterTest(dirTargetAdapter, conf))!;
                 if (!testResult.success) {
@@ -87,14 +95,18 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
     }
 
     // Version Compatibility Check
-    const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
-    if (storageConfig && targetConfig && targetConfig.type === 'database') {
-        const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
+    // A destination that cannot be opened skips the check, the restore itself reports why.
+    const storage = await openDestination(storageConfigId).catch((error: unknown) => {
+        svcLog.warn("Version check skipped, the destination could not be opened", { storageConfigId }, wrapError(error));
+        return null;
+    });
+    if (storage && targetConfig && targetConfig.type === 'database') {
+        const storageAdapter = storage.adapter;
         const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
 
-        if (storageAdapter && storageAdapter.read && targetAdapter && targetAdapter.test) {
+        if (storageAdapter.read && targetAdapter && targetAdapter.test) {
             try {
-                const storageConf = await resolveAdapterConfig(storageConfig) as any;
+                const storageConf = storage.config as any;
                 const metaPath = file + ".meta.json";
                 const metadataContent = await storageAdapter.read(storageConf, metaPath);
 

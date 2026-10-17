@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PermissionError } from "@/lib/logging/errors";
 import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
 
-type Viewer = { id: string; name: string; isPlatformAdmin: boolean; permissions: string[] };
+type Viewer = { id: string; name: string; isPlatformAdmin: boolean; permissions: string[]; tenantId: string | null };
 
 const mocks = vi.hoisted(() => ({
     denied: new Set<string>(),
     viewer: null as Viewer | null,
-    keys: { create: vi.fn(), update: vi.fn(), rotate: vi.fn(), ownerOf: vi.fn(), nameTaken: vi.fn() },
+    keys: { create: vi.fn(), update: vi.fn(), rotate: vi.fn(), ownerOf: vi.fn(), nameTaken: vi.fn(), ceilingFor: vi.fn() },
     audit: vi.fn(),
 }));
 
@@ -21,11 +21,12 @@ vi.mock("@/lib/auth/access-control", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/services/auth/api-key-service", () => ({ apiKeyService: mocks.keys }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
+vi.mock("@/services/tenant/shared-servers", () => ({ sharesWithCustomers: vi.fn(async () => false) }));
 
 const { createApiKey, rotateApiKey, updateApiKey } = await import("@/app/actions/auth/api-key");
 
 /** Someone who may do what their group in the tenant gives, as `getViewer` hands them on. */
-const viewer = (id: string, name: string, permissions: string[], isPlatformAdmin = false): Viewer => ({ id, name, isPlatformAdmin, permissions });
+const viewer = (id: string, name: string, permissions: string[], isPlatformAdmin = false): Viewer => ({ id, name, isPlatformAdmin, permissions, tenantId: "default" });
 const OPERATORS = ["jobs:read", "jobs:execute", "history:read"];
 const IN_90_DAYS = "2026-12-28T10:00:00.000Z";
 
@@ -35,6 +36,8 @@ describe("what an API key may get", () => {
         mocks.denied = new Set();
         mocks.viewer = viewer("lena", "Lena Graf", OPERATORS);
         mocks.keys.nameTaken.mockResolvedValue(false);
+        // A key of the viewer may do what their groups give in the tenant, never the platform's own.
+        mocks.keys.ceilingFor.mockImplementation(async () => mocks.viewer?.permissions ?? []);
         mocks.keys.create.mockResolvedValue({ apiKey: { id: "key-new" }, rawKey: "dbackup_secret" });
         mocks.keys.update.mockResolvedValue({ before: { name: "CI pipeline", permissions: ["jobs:execute"], expiresAt: null }, after: {} });
         mocks.keys.rotate.mockResolvedValue({ apiKey: { id: "key-1", name: "CI pipeline" }, rawKey: "dbackup_new" });
@@ -134,5 +137,14 @@ describe("what an API key may get", () => {
         expect(mocks.keys.create).not.toHaveBeenCalled();
         expect(mocks.keys.update).not.toHaveBeenCalled();
         expect(mocks.keys.rotate).not.toHaveBeenCalled();
+    });
+
+    it("caps a new key by what a key of the viewer may do, which leaves out the rights of their platform group on the platform", async () => {
+        mocks.viewer = viewer("lena", "Lena Graf", [...OPERATORS, "settings:write"]);
+        mocks.keys.ceilingFor.mockResolvedValue(OPERATORS);
+        const result = await createApiKey({ name: "Settings bot", permissions: ["settings:write"], expiresAt: IN_90_DAYS });
+        expect(result.success).toBe(false);
+        expect(mocks.keys.ceilingFor).toHaveBeenCalledWith("lena", "default");
+        expect(mocks.keys.create).not.toHaveBeenCalled();
     });
 });

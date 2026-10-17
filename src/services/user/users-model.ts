@@ -36,6 +36,8 @@ export interface ListedUser {
     twoFactorEnabled: boolean | null;
     passkeyTwoFactor: boolean | null;
     platformRole: string | null;
+    /** The platform group of the account, which only someone of the platform changes. */
+    platformGroupId?: string | null;
     /** The membership in the tenant the list is for, none or one. In All tenants every one, with its tenant. */
     memberships: { tenantId?: string; group: { id: string; name: string } }[];
     accounts: { providerId: string }[];
@@ -160,7 +162,8 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
             group: group ? { id: group.id, name: group.name } : null,
             ...(tenants ? { tenants } : {}),
             superAdmin: user.platformRole === PLATFORM_ADMIN_ROLE,
-            elsewhere: tenants ? tenants.length > 1 : (user._count.memberships ?? 0) > 0,
+            // An account of a platform group belongs to the platform as well, see `accountRefusal`.
+            elsewhere: (tenants ? tenants.length > 1 : (user._count.memberships ?? 0) > 0) || !!user.platformGroupId,
             methods,
             secondFactor: secondFactorOf(user, methods),
             lastSignIn: lastSignInOf(logins.get(user.id), user.sessions),
@@ -234,6 +237,7 @@ export async function getUsersModel(viewerId: string | null, viewerPlatformAdmin
                 twoFactorEnabled: true,
                 passkeyTwoFactor: true,
                 platformRole: true,
+                platformGroupId: true,
                 memberships: roleIn(tenantId),
                 accounts: { select: { providerId: true } },
                 sessions: { select: { createdAt: true, expiresAt: true, userAgent: true, ipAddress: true } },

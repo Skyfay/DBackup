@@ -1,9 +1,9 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { Building2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Building2, Loader2, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { createTenant, deleteTenant, renameTenant } from "@/app/actions/tenant/tenant";
+import { createTenant, deleteTenant, renameTenant, setTenantSharing } from "@/app/actions/tenant/tenant";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog, DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, DialogItemList, dialogNoteClass } from "@/components/ui/confirm-dialog";
@@ -38,8 +38,10 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
     const [name, setName] = useState(tenant?.name ?? "");
     const [error, setError] = useState<string | null>(null);
     const [pending, setPending] = useState(false);
+    const [shares, setShares] = useState(false);
     const field = useRef<HTMLInputElement>(null);
     const nameId = useId();
+    const sharesId = useId();
     const trimmed = name.trim();
 
     const submit = async (event: React.FormEvent) => {
@@ -61,7 +63,7 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
                 onSaved({ id: tenant.id, name: trimmed });
                 return;
             }
-            const result = await createTenant(trimmed);
+            const result = await createTenant(trimmed, shares);
             if (!result.success) {
                 setError(result.error);
                 return;
@@ -119,6 +121,15 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
                                 {error ?? (tenant ? "Every tenant has a name of its own." : "It starts with the built-in templates and without members. Add them under Members.")}
                             </p>
                         </div>
+                        {!tenant && (
+                            <div className="flex items-start gap-3 rounded-lg border p-3">
+                                <Checkbox id={sharesId} checked={shares} onCheckedChange={(value) => setShares(value === true)} className="mt-0.5" disabled={pending} />
+                                <div className="space-y-0.5">
+                                    <Label htmlFor={sharesId} className="text-sm leading-snug font-medium">Shares with customers</Label>
+                                    <p className="text-xs text-muted-foreground">A tenant of the MSP. It can give single databases, destinations and notification channels to other tenants.</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className={cn(DIALOG_FOOTER, "flex items-center justify-end gap-2")}>
@@ -136,6 +147,57 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
     );
 }
 
+interface TenantSharingDialogProps {
+    tenant: TenantRow;
+    onClose: () => void;
+    onChanged: () => void;
+}
+
+/**
+ * Switches whether a tenant shares with customers: gives single databases, destinations and
+ * notification channels to other tenants. The server refuses to switch it off while the tenant
+ * gives anything away, and says why.
+ */
+export function TenantSharingDialog({ tenant, onClose, onChanged }: TenantSharingDialogProps) {
+    const [pending, setPending] = useState(false);
+    const on = !tenant.sharesWithCustomers;
+
+    const save = async () => {
+        setPending(true);
+        try {
+            const result = await setTenantSharing(tenant.id, on);
+            if (!result.success) {
+                toast.error(result.error);
+                return;
+            }
+            toast.success(on ? `${tenant.name} shares with customers now` : `${tenant.name} shares nothing with customers now`);
+            onChanged();
+        } catch (error: unknown) {
+            log.warn("Switching the sharing of a tenant failed", { tenantId: tenant.id }, wrapError(error));
+            toast.error("The tenant could not be changed.");
+        } finally {
+            setPending(false);
+        }
+    };
+
+    return (
+        <ConfirmDialog
+            open
+            onOpenChange={(open) => !open && onClose()}
+            icon={Share2}
+            tone="edit"
+            title={on ? `Let ${tenant.name} share with customers?` : `Stop ${tenant.name} sharing with customers?`}
+            note={on ? "A tenant of the MSP" : "Only once it gives nothing away"}
+            description={on
+                ? "It can give single databases, destinations and notification channels to other tenants, by whoever holds Share with customers."
+                : "It gives no databases, destinations or notification channels to other tenants from then on. It has to take back what it gives first."}
+            confirmLabel={on ? "Share with customers" : "Stop sharing with customers"}
+            isPending={pending}
+            onConfirm={() => void save()}
+        />
+    );
+}
+
 interface TenantDeleteDialogProps {
     tenant: TenantRow;
     onClose: () => void;
@@ -143,8 +205,9 @@ interface TenantDeleteDialogProps {
 }
 
 /**
- * Deletes a tenant with everything it holds. The backups stay at the destinations, but its keys
+ * Deletes a tenant with everything it holds. The backups stay at its own destinations, but its keys
  * go with it, so the dialog waits for a tick that says those backups need a recovery kit from now on.
+ * Its backups on destinations other tenants share with it go with it.
  */
 export function TenantDeleteDialog({ tenant, onClose, onDeleted }: TenantDeleteDialogProps) {
     const [understood, setUnderstood] = useState(false);
@@ -186,7 +249,12 @@ export function TenantDeleteDialog({ tenant, onClose, onDeleted }: TenantDeleteD
         >
             <DialogItemList items={deletionLoss(tenant)} />
             <ul className="grid gap-1.5 text-sm text-muted-foreground">
-                <li>The backups stay at its destinations, DBackup does not touch them.</li>
+                <li>The backups stay at its own destinations, DBackup does not touch them.</li>
+                {tenant.provided.destinations > 0 && (
+                    <li>
+                        Its backups on the {tenant.provided.destinations === 1 ? "destination" : `${tenant.provided.destinations} destinations`} other tenants share with it are deleted.
+                    </li>
+                )}
                 <li>Its encryption keys are gone with it, so those backups only open with a recovery kit.</li>
                 <li>The accounts stay. They only lose their place in {tenant.name}.</li>
             </ul>

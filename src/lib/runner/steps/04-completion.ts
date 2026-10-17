@@ -14,6 +14,8 @@ import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import { jobReason } from "@/services/notifications/notification-reason";
 import { loadNotificationBrand } from "@/lib/notifications/brand";
 import { backupEventData } from "./notification-data";
+import { channelTarget } from "@/services/sharing/channel-recipients";
+import { SHARED_FAILURE } from "@/services/notifications/channel-send";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -139,6 +141,11 @@ export async function stepFinalize(ctx: RunnerContext) {
         }
     });
 
+    // The run that follows this one ends with it, before the notifications, which can take a while.
+    await ctx.follower?.end({ status: ctx.status, dumps: ctx.metadata?.dumps }).catch((error: unknown) => {
+        log.error("Ending the run that follows this one failed", { executionId: ctx.execution?.id }, wrapError(error));
+    });
+
     // The dashboard caches its charts and counts. This run changes them, whatever its outcome.
     invalidateDashboardCache();
 
@@ -231,7 +238,10 @@ export async function stepFinalize(ctx: RunnerContext) {
                 const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
 
                 if (notifyAdapter) {
-                    const channelConfig = await resolveAdapterConfig(channel) as any;
+                    // A channel another tenant shares sends where the tenant of the job named, or nowhere.
+                    const target = await channelTarget(channel, tenantId);
+                    if (target.refusal) throw new Error(target.refusal);
+                    const channelConfig = { ...(await resolveAdapterConfig(channel) as any), ...(target.to ? { to: target.to } : {}) };
                     const payload = { ...basePayload, reason: jobReason(channel.name, ctx.job.name, events) };
 
                     let renderedPayload: string | undefined;
@@ -296,6 +306,7 @@ export async function stepFinalize(ctx: RunnerContext) {
                         renderedHtml,
                         renderedPayload,
                         executionId: ctx.execution?.id,
+                        tenantId,
                     });
                 }
             } catch (e) {
@@ -310,8 +321,10 @@ export async function stepFinalize(ctx: RunnerContext) {
                     status: "Failed",
                     title: "Backup Notification",
                     message: "",
-                    error: getErrorMessage(e),
+                    // Why the server of the tenant that shares the channel refused it stays with that tenant.
+                    error: channel.tenantId !== tenantId && !(e instanceof Error && /shared with this tenant|No recipients/.test(e.message)) ? SHARED_FAILURE : getErrorMessage(e),
                     executionId: ctx.execution?.id,
+                    tenantId,
                 });
             }
         }

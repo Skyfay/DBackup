@@ -145,6 +145,18 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
             return { parts: [plain("Ran "), ...it], glyph: "play" };
         }
         case A.RESTORE: {
+            // A customer's restore of a database on a shared server, in the log of the server's tenant.
+            if (kind === "shared_restore") {
+                const server = text(details.server);
+                const customer = text(details.tenant);
+                return {
+                    parts: [
+                        plain("Restored "), ...(name ? [strong(name)] : [plain("a shared database")]),
+                        ...(server ? [plain(" on "), strong(server)] : []), ...(customer ? [plain(" for "), strong(customer)] : []),
+                    ],
+                    glyph: "restore",
+                };
+            }
             if (kind === "trash_restore") return { parts: [plain("Restored "), ...it, plain(" from Recently deleted")], glyph: "restore" };
             if (kind === "config_restore") return { parts: [plain("Restored the configuration"), ...(file ? [plain(" from "), strong(fileName(file))] : [])], glyph: "restore" };
             const into = text(details.target);
@@ -195,6 +207,11 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
                 return { parts: [plain(`${lead} `), ...(target ? [strong(target)] : [plain("a user")]), ...(tail ? [plain(tail)] : [])], glyph: change === "Password Set" ? "key" : "pencil" };
             }
             if (change === "SSO account connected") return { parts: [plain("Linked a single sign-on account")], glyph: "link" };
+            // A destination or a channel shared with other tenants, see src/services/sharing/.
+            const tenants = text(details.tenants);
+            if (kind === "share") return { parts: [plain("Shared "), ...it, plain(tenants ? ` with ${tenants}` : " with other tenants")], glyph: "link" };
+            if (kind === "unshare") return { parts: [plain("Stopped sharing "), ...it, ...(tenants ? [plain(` with ${tenants}`)] : [])], glyph: "link" };
+            if (kind === "recipients") return { parts: [plain("Changed the recipients of "), ...it], glyph: "pencil" };
             if (details.bulk === true) return { parts: [plain(`Changed ${count(details.succeeded) ?? "several"} ${plural(noun[0])}`)], glyph: "pencil" };
             if (kind === "rotate") return { parts: [plain("Rotated "), ...it], glyph: "rotate" };
             if (kind === "lock" || kind === "unlock") return { parts: [plain(kind === "lock" ? "Locked " : "Unlocked "), ...it], glyph: kind === "lock" ? "lock" : "unlock" };
@@ -213,6 +230,9 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
             // Without `permanently` a record went to Recently deleted, where it can still come back.
             const forGood = details.permanently === true ? [plain(" permanently")] : [];
             if (details.bulk === true) return { parts: [plain(`Deleted ${count(details.succeeded) ?? "several"} ${plural(noun[0])}`), ...forGood], glyph: "trash" };
+            // The backups of a customer on a destination its tenant shares with it.
+            const customer = text(details.tenant);
+            if (kind === "tenantBackups") return { parts: [plain("Deleted the backups of "), ...(customer ? [strong(customer)] : [plain("a tenant")]), plain(" on "), ...it], glyph: "trash" };
             return { parts: [plain("Deleted "), ...it, ...forGood], glyph: "trash" };
         }
         default:

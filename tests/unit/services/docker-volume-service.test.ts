@@ -51,6 +51,16 @@ describe("the volumes of a Docker connection", () => {
         expect(mocks.readVolumeSizes).toHaveBeenCalledTimes(2);
     });
 
+    it("answers nobody who no longer finds the connection from the sizes kept for it, like someone of another tenant", async () => {
+        const id = mocks.config!.id;
+        expect(await measureDockerVolumes(id)).toEqual({ immich_pgdata: 1_800_000_000 });
+
+        // The tenant filter hides the connection from a request of another tenant.
+        mocks.config = null;
+        await expect(measureDockerVolumes(id)).rejects.toBeInstanceOf(NotFoundError);
+        expect(mocks.readVolumeSizes).toHaveBeenCalledTimes(1);
+    });
+
     it("does not keep a measurement that failed", async () => {
         const id = mocks.config!.id;
         mocks.readVolumeSizes.mockRejectedValueOnce(new Error("The Docker socket was not found"));

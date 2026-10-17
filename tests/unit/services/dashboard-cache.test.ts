@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { runAsSystem, runAsTenant, type TenantScope } from "@/lib/tenant/context";
 import { cached, invalidateDashboardCache } from "@/services/dashboard/cache";
+
+// The scope the request being handled names through its session, none outside a request.
+const request = vi.hoisted(() => ({ scope: null as TenantScope | null }));
+vi.mock("@/lib/tenant/current", () => ({ requestScope: async () => request.scope }));
 
 describe("dashboard cache", () => {
     beforeEach(() => {
         invalidateDashboardCache();
+        request.scope = null;
     });
 
     afterEach(() => {
@@ -64,6 +70,27 @@ describe("dashboard cache", () => {
 
         expect(await cached("calendar-history:survives", 60_000, load, { survivesInvalidation: true })).toBe("past days");
         expect(load).toHaveBeenCalledTimes(1);
+    });
+
+    it("never serves a request of an account of no tenant what was cached for every tenant", async () => {
+        await runAsSystem(() => cached("aggregates", 60_000, async () => "every tenant"));
+
+        const ownLoad = vi.fn().mockResolvedValue("nothing");
+        expect(await cached("aggregates", 60_000, ownLoad)).toBe("nothing");
+        expect(ownLoad).toHaveBeenCalledTimes(1);
+    });
+
+    it("shares the entries of every tenant between the system scope and All tenants, and keeps each tenant apart", async () => {
+        await runAsSystem(() => cached("aggregates", 60_000, async () => "every tenant"));
+
+        request.scope = { kind: "all" };
+        const allLoad = vi.fn().mockResolvedValue("loaded again");
+        expect(await cached("aggregates", 60_000, allLoad)).toBe("every tenant");
+        expect(allLoad).not.toHaveBeenCalled();
+
+        expect(await runAsTenant("acme", () => cached("aggregates", 60_000, async () => "acme"))).toBe("acme");
+        request.scope = { kind: "tenant", tenantId: "acme" };
+        expect(await cached("aggregates", 60_000, async () => "loaded again")).toBe("acme");
     });
 
     it("does not cache a failed load", async () => {

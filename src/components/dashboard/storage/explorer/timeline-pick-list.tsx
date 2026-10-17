@@ -4,10 +4,11 @@ import { Archive, CalendarDays, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PickList, type PickEntry, type PickGroup } from "@/components/ui/pick-list";
 import { formatBytes } from "@/lib/utils";
-import type { BackupRun, ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
+import type { ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
 import { copiesIn, runKey } from "./backup-filters";
 import { JobIcon } from "./explorer-cells";
 import { count, typeLabel } from "./explorer-format";
+import { isSharedRun, type ListRun } from "./shared-runs";
 import type { TimelineFormat } from "./timeline-cells";
 import type { DayKey, TimelinePick, TimelineRow } from "./timeline-model";
 import { itemsOfPick, type PickItem } from "./timeline-pick-model";
@@ -22,7 +23,7 @@ interface TimelinePickListProps {
     at: string[];
     /** The backup opened from the list last, ticked. */
     value: string | null;
-    onOpenRun: (run: BackupRun) => void;
+    onOpenRun: (run: ListRun) => void;
     /** A run that did not start leads to its job. */
     onOpenJob: (job: ExplorerJob) => void;
     onShowInList: () => void;
@@ -36,7 +37,7 @@ const idOf = (item: PickItem) => (item.kind === "backup" ? runKey(item.run) : `m
  * that did not start on top. A backup opens in its details, Show in the list moves to the list view.
  */
 export function TimelinePickList({ pick, rows, days, today, destinations, format, at, value, onOpenRun, onOpenJob, onShowInList }: TimelinePickListProps) {
-    const { look, rest, backups, jobs } = itemsOfPick(rows, days, pick, at);
+    const { look, rest, backups, jobs, databases } = itemsOfPick(rows, days, pick, at);
     const scope = !pick.jobKey ? "day" : pick.from === pick.to ? "cell" : "job";
     const job = pick.jobKey ? rows.find((row) => row.job.key === pick.jobKey)?.job : undefined;
     const names = (ids: string[]) => ids.map((id) => destinations.get(id)?.name ?? "a removed destination").join(", ");
@@ -53,12 +54,15 @@ export function TimelinePickList({ pick, rows, days, today, destinations, format
         }
         const { run, problem } = item;
         const stored = copiesIn(run, at).filter((copy) => copy.state === "stored").map((copy) => copy.destinationId);
-        const meta = [
-            scope === "day" ? format.time(item.at) : null,
-            run.file.chain ? typeLabel(run.file) : null,
-            formatBytes(run.file.size, 1),
-            stored.length > 0 ? names(stored) : "No copy stored",
-        ].filter((part) => part !== null).join(" · ");
+        // A shared backup lies in the archive of its provider, whose destinations stay its own.
+        const meta = (isSharedRun(run)
+            ? [scope === "day" ? format.time(item.at) : null, run.shared.dump ? formatBytes(run.shared.dump.stored, 1) : null, `Shared by ${run.shared.database.providerName}`]
+            : [
+                scope === "day" ? format.time(item.at) : null,
+                run.file.chain ? typeLabel(run.file) : null,
+                formatBytes(run.file.size, 1),
+                stored.length > 0 ? names(stored) : "No copy stored",
+            ]).filter((part) => part !== null).join(" · ");
         const alert = problem?.kind === "failed"
             ? { text: "Check failed", tone: "destructive" as const }
             : problem?.kind === "missing"
@@ -73,8 +77,9 @@ export function TimelinePickList({ pick, rows, days, today, destinations, format
     const byId = new Map([...look, ...rest].map((item) => [idOf(item), item]));
 
     const title = scope === "day" ? format.long(pick.from) : scope === "job" ? job?.name ?? "Backups" : `${job?.name ?? "Backups"} · ${format.date(pick.from)}`;
+    const holders = [jobs > 0 ? count(jobs, "job") : null, databases > 0 ? count(databases, "shared database") : null].filter(Boolean).join(" and ");
     const note = scope === "day"
-        ? backups === 0 ? "No backups that day" : `${count(backups, "backup")} of ${count(jobs, "job")}`
+        ? backups === 0 ? "No backups that day" : `${count(backups, "backup")} of ${holders}`
         : scope === "job"
             ? `${count(backups, "backup")} from ${format.short(pick.from)} to ${pick.to === today ? "today" : format.short(pick.to)}`
             : count(backups, "backup");

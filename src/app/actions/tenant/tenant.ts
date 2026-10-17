@@ -11,7 +11,10 @@ import { logger } from "@/lib/logging/logger";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { tenantService } from "@/services/tenant/tenant-service";
+import { platformGroupService } from "@/services/user/platform-group-service";
 import { tenantSummaries } from "@/services/tenant/tenant-summaries";
+import { setAllowances } from "@/services/tenant/tenant-allowances";
+import { ALLOWANCE_KINDS, ALLOWANCE_NOUNS, type TenantAllowances } from "@/lib/tenant/allowances";
 
 const log = logger.child({ action: "tenant" });
 
@@ -26,12 +29,12 @@ const messageOf = (error: unknown, fallback: string) =>
 const PLATFORM = { tenantId: HOME_TENANT_ID };
 
 /**
- * Whether the viewer may manage this tenant: a platform admin every tenant, anyone else of a
- * platform group the tenants they may open. One they may not reads as gone.
+ * Whether the viewer may manage this tenant: a platform admin every tenant, anyone else the
+ * tenants their platform group reaches. Being a member of a tenant gives no right on the platform.
+ * One they may not reads as gone.
  */
 async function managesTenant(viewer: { id: string; isPlatformAdmin: boolean }, tenantId: string): Promise<boolean> {
-    if (viewer.isPlatformAdmin) return true;
-    return (await tenantService.switchable(viewer.id, false)).some((tenant) => tenant.id === tenantId);
+    return viewer.isPlatformAdmin || platformGroupService.reaches(viewer.id, tenantId);
 }
 
 /**
@@ -50,7 +53,7 @@ export async function switchTenant(tenantId: string) {
         const tenant = await tenantService.setActive(sessionId, viewer.id, id.data, viewer.isPlatformAdmin);
         forgetAuthContext(await headers());
         revalidatePath("/dashboard", "layout");
-        return { success: true as const, data: { name: tenant.name } };
+        return { success: true as const, data: { id: tenant.id, name: tenant.name } };
     } catch (error: unknown) {
         return { success: false as const, error: messageOf(error, "The tenant could not be opened.") };
     }
@@ -71,20 +74,87 @@ export async function getTenantSummaries() {
     }
 }
 
-/** Creates a tenant with the built-in templates, for whoever may manage the tenants. */
-export async function createTenant(name: string) {
+/**
+ * Creates a tenant with the built-in templates, for whoever may manage the tenants. A tenant of the
+ * MSP whose servers give databases to customers says so with `sharesWithCustomers`.
+ */
+export async function createTenant(name: string, sharesWithCustomers = false) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
     const parsed = NameSchema.safeParse(name);
     if (!parsed.success) return { success: false as const, error: parsed.error.issues[0]?.message ?? "Invalid request" };
+    if (typeof sharesWithCustomers !== "boolean") return { success: false as const, error: "Invalid request" };
+    // A platform group of some tenants would never reach the tenant it made.
+    if (!viewer.isPlatformAdmin && !(await platformGroupService.reachesAll(viewer.id))) {
+        return { success: false as const, error: "Your platform group reaches some tenants only, so a new one would be out of your reach. A platform admin creates it." };
+    }
 
     try {
-        const tenant = await tenantService.create(parsed.data);
-        await auditService.log(viewer.id, AUDIT_ACTIONS.CREATE, AUDIT_RESOURCES.TENANT, { name: tenant.name }, tenant.id, PLATFORM);
+        const tenant = await tenantService.create(parsed.data, sharesWithCustomers);
+        await auditService.log(viewer.id, AUDIT_ACTIONS.CREATE, AUDIT_RESOURCES.TENANT, { name: tenant.name, ...(sharesWithCustomers ? { sharesWithCustomers } : {}) }, tenant.id, PLATFORM);
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: tenant };
     } catch (error: unknown) {
         log.error("Creating a tenant failed", {}, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be created.") };
+    }
+}
+
+/**
+ * Switches whether a tenant shares with customers, its databases, destinations and channels, for
+ * whoever may manage the tenants and reaches this one. Who shares is the right Share with customers.
+ */
+export async function setTenantSharing(id: string, on: boolean) {
+    const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
+    const tenantId = IdSchema.safeParse(id);
+    if (!tenantId.success || typeof on !== "boolean") return { success: false as const, error: "Invalid request" };
+    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
+
+    try {
+        const change = await tenantService.setSharing(tenantId.data, on);
+        if (change.changed) {
+            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, change: on ? "Shares with customers" : "Shares nothing with customers" }, tenantId.data, PLATFORM);
+        }
+        revalidatePath("/dashboard", "layout");
+        return { success: true as const };
+    } catch (error: unknown) {
+        if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Switching the sharing of a tenant failed", { tenantId: tenantId.data }, wrapError(error));
+        return { success: false as const, error: messageOf(error, "The tenant could not be changed.") };
+    }
+}
+
+const AllowancesSchema = z.object({
+    databases: z.boolean(),
+    directorySources: z.boolean(),
+    destinations: z.boolean(),
+    channels: z.boolean(),
+    apiKeys: z.boolean(),
+}).partial();
+
+/**
+ * Sets what a tenant may add itself: database connections, directory sources, destinations and
+ * channels, for whoever may manage the tenants and reaches this one. What it has keeps working.
+ */
+export async function setTenantAllowances(id: string, allowances: Partial<TenantAllowances>) {
+    const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
+    const tenantId = IdSchema.safeParse(id);
+    const patch = AllowancesSchema.safeParse(allowances);
+    if (!tenantId.success || !patch.success) return { success: false as const, error: "Invalid request" };
+    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
+
+    try {
+        const change = await setAllowances(tenantId.data, patch.data);
+        const changes = ALLOWANCE_KINDS.filter((kind) => change.before[kind] !== change.after[kind])
+            .map((kind) => ({ field: `Adds ${ALLOWANCE_NOUNS[kind]}`, from: change.before[kind] ? "Yes" : "No", to: change.after[kind] ? "Yes" : "No" }));
+        if (changes.length > 0) {
+            // The platform's change, and one the tenant learns of in its own log.
+            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, PLATFORM);
+            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, { tenantId: tenantId.data });
+        }
+        revalidatePath("/dashboard", "layout");
+        return { success: true as const };
+    } catch (error: unknown) {
+        if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Changing what a tenant may add failed", { tenantId: tenantId.data }, wrapError(error));
+        return { success: false as const, error: messageOf(error, "The tenant could not be changed.") };
     }
 }
 
@@ -120,8 +190,17 @@ export async function deleteTenant(id: string) {
     if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
 
     try {
-        const removal = await tenantService.delete(tenantId.data);
+        const { withdrawn = [], ...removal } = await tenantService.delete(tenantId.data);
         await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.TENANT, { ...removal }, tenantId.data, PLATFORM);
+        // Each customer of what it shared learns in its own log what it lost with it.
+        for (const loss of withdrawn) {
+            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, loss.kind === "destination" ? AUDIT_RESOURCES.DESTINATION : AUDIT_RESOURCES.ADAPTER, {
+                name: loss.name,
+                action: "unshare",
+                ...(loss.jobs.length > 0 ? { jobs: loss.jobs } : {}),
+                ...(loss.templates.length > 0 ? { templates: loss.templates } : {}),
+            }, loss.configId, { tenantId: loss.tenantId });
+        }
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: removal };
     } catch (error: unknown) {

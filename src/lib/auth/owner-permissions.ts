@@ -180,14 +180,28 @@ export function permissionsIn(memberships: readonly OwnerMembership[], tenantId:
 }
 
 /**
- * What the owner of an API key may do in the tenant of the key, the ceiling of the key: every
- * permission for a platform admin, else what their roles and their platform group give there. A
- * key never acts on the platform, so the rights only a platform group gives are left out, and the
- * key itself never passes the checks only a platform admin passes.
+ * The rights of the platform a key may carry in the tenant of the key: sharing the databases of its
+ * servers, for a hosting panel that gives a customer the database it creates. Only a key made in a
+ * tenant that shares databases, see `Tenant.sharesWithCustomers`.
  */
-export function ownerPermissionsIn(owner: { platformRole: string | null; memberships: readonly OwnerMembership[]; platformGroup?: PlatformGroupGrant | null }, tenantId: string): string[] {
-    if (owner.platformRole === PLATFORM_ADMIN_ROLE) return [...ALL];
-    return permissionsIn(owner.memberships, tenantId, owner.platformGroup).filter((permission) => !PLATFORM_ONLY.includes(permission));
+export function keyPlatformPermissions(tenantShares: boolean): string[] {
+    return tenantShares ? [PERMISSIONS.PLATFORM.SHARING_READ, PERMISSIONS.PLATFORM.SHARING_WRITE] : [];
+}
+
+/**
+ * What the owner of an API key may do in the tenant of the key, the ceiling of the key: every
+ * permission of a tenant for a platform admin, else what their roles and the tenant part of their
+ * platform group give there. A key never acts on the platform, so what a platform group gives on
+ * it, the settings of the instance included, is left out, but for the sharing of databases in a
+ * tenant that shares them, see `keyPlatformPermissions`. The key itself never passes the checks
+ * only a platform admin passes.
+ */
+export function ownerPermissionsIn(owner: { platformRole: string | null; memberships: readonly OwnerMembership[]; platformGroup?: PlatformGroupGrant | null }, tenantId: string, tenantShares = false): string[] {
+    const keyable = keyPlatformPermissions(tenantShares);
+    if (owner.platformRole === PLATFORM_ADMIN_ROLE) return [...ALL, ...keyable];
+    const tenantPart = owner.platformGroup ? { ...owner.platformGroup, platformPermissions: "[]" } : null;
+    const sharing = platformRightsOf(owner.platformGroup).filter((permission) => keyable.includes(permission));
+    return [...permissionsIn(owner.memberships, tenantId, tenantPart).filter((permission) => !PLATFORM_ONLY.includes(permission)), ...sharing];
 }
 
 /** The permissions of a key its owner may use right now. What the owner lost stays stored but does nothing. */

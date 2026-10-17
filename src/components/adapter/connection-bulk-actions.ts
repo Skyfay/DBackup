@@ -30,6 +30,10 @@ const ITEM = {
  * The server checks again, so a use added meanwhile still shows up in the failure list.
  */
 export function deleteBlocker(config: AdapterConfig): string | null {
+    // Another tenant shares it, so only that tenant deletes it.
+    if (config.provided) return `${config.provided.providerName} shares it with this tenant`;
+    // Its customers name it in their jobs and templates, which they lose when sharing stops.
+    if (config.share) return "It is shared with other tenants. Stop sharing it first";
     const usedBy = config.overview?.usedBy;
     if (!usedBy) return null;
     const jobs = config.type === "notification" ? 0 : usedBy.jobs;

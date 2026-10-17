@@ -7,7 +7,9 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import type { SaveResult } from "@/services/system/settings-save";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { PLATFORM_LOG, type SaveResult } from "@/services/system/settings-save";
 import type { SystemNotificationConfig } from "@/lib/notifications/types";
 import { auditService } from "@/services/audit-service";
 import { notificationSettingsChanges } from "@/services/notifications/notification-settings-audit";
@@ -24,13 +26,16 @@ const patchSchema = z.object({
     reminderHours: z.number().int().min(0).max(MAX_REMINDER_HOURS).nullable().optional(),
 });
 
-/** Writes what a save changed and answers the part, or hands back why it was refused. */
+/**
+ * Writes what a save changed into the log of the platform and answers the part, or hands back why
+ * it was refused. The channels are connections of the home tenant, so their names are read there.
+ */
 async function saved(userId: string, save: () => Promise<{ before: SystemNotificationConfig; after: SystemNotificationConfig }>): Promise<SaveResult> {
     try {
         const { before, after } = await save();
-        const changes = await notificationSettingsChanges(before, after);
+        const changes = await runAsTenant(HOME_TENANT_ID, () => notificationSettingsChanges(before, after));
         if (changes.length > 0) {
-            await auditService.log(userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.NOTIFICATIONS, changes });
+            await auditService.log(userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.NOTIFICATIONS, changes }, undefined, PLATFORM_LOG);
         }
         revalidatePath("/dashboard/settings");
         return { success: true };

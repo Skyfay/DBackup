@@ -8,9 +8,6 @@
  * fifty cache writes to reach one outcome.
  */
 
-import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { StorageAdapter } from "@/lib/core/interfaces";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
@@ -18,6 +15,7 @@ import { sidecarPathsFor, chainFolderOf } from "@/lib/core/backup-files";
 import { emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { storageService, type RichFileInfo } from "./storage-service";
 import { orderPathsForDelete, dependentsOf, fileNameOf } from "./bulk-delete-order";
+import { openDestination } from "@/services/sharing/destination-access";
 
 const log = logger.child({ service: "StorageBulkDelete" });
 
@@ -28,14 +26,8 @@ interface ResolvedDestination {
 
 /** Resolves the adapter and its decrypted config once for the whole batch. */
 async function resolveDestination(adapterConfigId: string): Promise<ResolvedDestination> {
-    const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
-    if (!adapterConfig) throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
-    if (adapterConfig.type !== "storage") throw new Error(`Adapter configuration ${adapterConfigId} is not a storage adapter.`);
-
-    const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-    if (!adapter) throw new Error(`Storage adapter implementation '${adapterConfig.adapterId}' not found in registry.`);
-
-    return { adapter, config: await resolveAdapterConfig(adapterConfig) };
+    const { adapter, config } = await openDestination(adapterConfigId);
+    return { adapter, config };
 }
 
 /** Indexes the destination's listing by path, for the lock check. */

@@ -512,7 +512,7 @@ Authorization: Bearer dbackup_your_api_key
 | :--- | :--- | :--- |
 | 401 | `{ "error": "..." }` | Invalid/disabled/expired API key |
 | 403 | `{ "error": "..." }` | Missing `jobs:execute` permission |
-| 404 | `{ "error": "Job not found" }` | Invalid job ID |
+| 404 | `{ "error": "Job not found" }` | Invalid job ID, or a job of another tenant |
 
 ### GET /api/executions/:id
 

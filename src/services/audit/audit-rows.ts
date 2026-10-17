@@ -6,6 +6,7 @@ import { describeEntry } from "@/lib/core/audit-sentence";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { describeAgent, parseUserAgent } from "@/lib/core/user-agent";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { AuditActor, AuditLine, AuditRow } from "./audit-types";
 
 /** What a row reads of the person who wrote an entry: the group they hold in each tenant. */
@@ -44,6 +45,16 @@ export function parseDetails(details: string | null): Record<string, unknown> {
     } catch {
         return {};
     }
+}
+
+/**
+ * Whether the tenant of an entry sees where it came from, the address and the browser. Someone of
+ * the platform who works in a customer's tenant without being a member there, through a platform
+ * group or as a platform admin, keeps them to the platform.
+ */
+export function originShown(record: Pick<AuditRecord, "tenantId" | "userId" | "user">): boolean {
+    if (record.tenantId === HOME_TENANT_ID || !record.userId || !record.user) return true;
+    return record.user.memberships.some((membership) => membership.tenantId === record.tenantId);
 }
 
 /** Who wrote an entry. A key acts as its owner, so the owner is the line under its name. */
@@ -166,8 +177,8 @@ export function toRow(record: AuditRecord, targets: Map<string, string>, newPlac
         summary: changeSummary(record.action, parseDetails(record.details)),
         glyph: description.glyph,
         kind: description.kind,
-        device: deviceOf(record.userAgent),
-        ipAddress: record.ipAddress,
+        device: originShown(record) ? deviceOf(record.userAgent) : null,
+        ipAddress: originShown(record) ? record.ipAddress : null,
         newPlace: newPlaces.has(record.id),
     };
 }

@@ -16,6 +16,8 @@ interface SharedRestoreDialogProps {
     pending: boolean;
     onClose: () => void;
     onConfirm: () => void;
+    /** The line under the backup, like which one was picked where the dialog opened. A neutral one when left out. */
+    backupNote?: string;
 }
 
 function Part({ title, children }: { title: string; children: React.ReactNode }) {
@@ -41,10 +43,11 @@ function Change({ icon: Icon, tone, title, line }: { icon: typeof Check; tone?: 
 
 /**
  * Asks before a shared backup goes back into its database, in the amber of a warning. The backup
- * is the row picked in the list, so there is no date to pick, and the target is fixed: a shared
- * database restores only into itself. It says what is overwritten and what stays as it is.
+ * is picked where the dialog opened, a row of the Backups page or the newest of a database, so
+ * there is no date to pick, and the target is fixed: a shared database restores only into itself.
+ * It says what is overwritten and what stays as it is.
  */
-export function SharedRestoreDialog({ row, databases, pending, onClose, onConfirm }: SharedRestoreDialogProps) {
+export function SharedRestoreDialog({ row, databases, pending, onClose, onConfirm, backupNote }: SharedRestoreDialogProps) {
     const { formatDate } = useDateFormatter();
     const { database } = row;
     const when = formatDate(row.createdAt, "Pp");
@@ -53,6 +56,7 @@ export function SharedRestoreDialog({ row, databases, pending, onClose, onConfir
     const others = othersOnServer(databases, row);
     const made = madeAt(row);
     const name = database.databaseName;
+    const note = backupNote ?? (made ? `This backup was ${madeAtText(made, name)} before the database moved.` : null);
 
     return (
         <ConfirmDialog
@@ -73,9 +77,7 @@ export function SharedRestoreDialog({ row, databases, pending, onClose, onConfir
                     <span className="min-w-0 flex-1 truncate text-sm font-medium tabular-nums">{when}</span>
                     {facts && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{facts}</span>}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                    The backup picked in the list{made ? `, ${madeAtText(made, name)} before the database moved` : ""}. Another one restores from its own row.
-                </p>
+                {note && <p className="text-xs text-muted-foreground">{note}</p>}
             </Part>
 
             <Part title="Restores into">

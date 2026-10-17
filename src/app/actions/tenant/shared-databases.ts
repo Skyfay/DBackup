@@ -39,7 +39,10 @@ export async function getSharedOverview(): Promise<{ success: true; data: Shared
     }
 }
 
-/** Pulls the dump of the database out of a backup, for the browser to collect with the token. */
+/**
+ * Pulls the dump of the database out of a backup, for the browser to collect with the token. The
+ * address carries the token alone, never the destination of the server's tenant.
+ */
 export async function downloadSharedBackup(input: z.input<typeof RefSchema>) {
     const viewer = await checkPermission(PERMISSIONS.STORAGE.DOWNLOAD);
     const parsed = RefSchema.safeParse(input);
@@ -50,7 +53,7 @@ export async function downloadSharedBackup(input: z.input<typeof RefSchema>) {
         await auditService.log(viewer.id, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP, {
             action: "download", shared: true, name: parsed.data.databaseName, file: prepared.fileName, databases: [parsed.data.databaseName],
         });
-        return { success: true as const, data: { url: `/api/storage/${prepared.storageId}/download?token=${prepared.token}`, fileName: prepared.fileName } };
+        return { success: true as const, data: { url: `/api/shared/download?token=${prepared.token}`, fileName: prepared.fileName } };
     } catch (error: unknown) {
         if (error instanceof NotFoundError) return { success: false as const, error: GONE };
         log.error("Preparing a shared download failed", { sourceId: parsed.data.sourceId }, wrapError(error));
@@ -58,19 +61,27 @@ export async function downloadSharedBackup(input: z.input<typeof RefSchema>) {
     }
 }
 
-/** Restores the database out of a backup into itself on its server. */
+/**
+ * Restores the database out of a backup into itself on its server. The server belongs to another
+ * tenant, so both audit logs keep it: the customer's names the database, the provider's the
+ * database, the server and the customer, with the provider's run of the restore.
+ */
 export async function restoreSharedDatabase(input: z.input<typeof RefSchema>) {
     const viewer = await checkPermission(PERMISSIONS.STORAGE.RESTORE);
     const parsed = RefSchema.safeParse(input);
     if (!viewer.tenantId || !parsed.success) return { success: false as const, error: "Invalid request" };
 
     try {
-        const { executionId, target } = await restoreSharedBackup(viewer.tenantId, parsed.data, viewer.name);
+        const { executionId, target, provider } = await restoreSharedBackup(viewer.tenantId, parsed.data, viewer.name);
         await auditService.log(viewer.id, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, {
             shared: true, name: parsed.data.databaseName, databases: [parsed.data.databaseName], executionId,
             // A backup of a database that moved since goes into it at its new place.
             ...(target.databaseName !== parsed.data.databaseName ? { target: target.databaseName } : {}),
         });
+        await auditService.log(viewer.id, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, {
+            action: "shared_restore", name: target.databaseName, databases: [target.databaseName], server: provider.serverName, tenant: provider.customerName,
+            ...(provider.executionId ? { executionId: provider.executionId } : {}),
+        }, undefined, { tenantId: provider.tenantId });
         return { success: true as const, data: { executionId } };
     } catch (error: unknown) {
         if (error instanceof NotFoundError) return { success: false as const, error: GONE };
@@ -88,7 +99,7 @@ const PlaceSchema = z.object({
 /**
  * Starts a backup of a database given to the viewer's tenant, where its provider allows backups on
  * demand. The run belongs to the provider, so both audit logs keep it: the customer's names the
- * database, the provider's the job and who asked.
+ * database and the customer's run of it, the provider's the job and who asked.
  */
 export async function backUpSharedDatabase(input: z.input<typeof PlaceSchema>) {
     const viewer = await checkPermission(PERMISSIONS.JOBS.EXECUTE);
@@ -98,12 +109,12 @@ export async function backUpSharedDatabase(input: z.input<typeof PlaceSchema>) {
     try {
         const started = await requestSharedBackup(viewer.tenantId, { id: viewer.id, name: viewer.name }, parsed.data);
         await auditService.log(viewer.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.BACKUP, {
-            action: "backup_on_demand", shared: true, name: started.databaseName, databases: [started.databaseName],
+            action: "backup_on_demand", shared: true, name: started.databaseName, databases: [started.databaseName], executionId: started.customerExecutionId,
         });
         await auditService.log(viewer.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.JOB, {
             action: "backup_on_demand", name: started.jobName, database: started.databaseName, tenant: started.customerName, executionId: started.executionId,
         }, started.jobId, { tenantId: started.serverTenantId });
-        return { success: true as const, data: { requestId: started.requestId } };
+        return { success: true as const, data: { requestId: started.requestId, executionId: started.customerExecutionId } };
     } catch (error: unknown) {
         if (error instanceof ValidationError) return { success: false as const, error: error.message };
         log.error("Starting a shared backup failed", { sourceId: parsed.data.sourceId }, wrapError(error));

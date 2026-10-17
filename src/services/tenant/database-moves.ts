@@ -1,9 +1,9 @@
 import prisma from "@/lib/prisma";
 import { ValidationError } from "@/lib/logging/errors";
-import { assignmentAt, ownerAt, ruleAt } from "@/lib/tenant/database-owner";
+import { ownerAt, ruleAt } from "@/lib/tenant/database-owner";
 import type { AssignmentWithTenant, MovePlace } from "./database-assignments";
 import { factsOf } from "./shared-backups";
-import { listedDatabases, ownSource, rememberServer, serverNames, sharesDatabases } from "./shared-servers";
+import { listedDatabases, NOT_SHARING, ownSource, rememberServer, serverNames, sharesWithCustomers } from "./shared-servers";
 
 /**
  * A database of a shared server that moved to another server of the same tenant, under the same
@@ -78,7 +78,7 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
     const databaseName = input.databaseName.trim();
     const toDatabase = (input.toDatabase ?? databaseName).trim();
     if (!databaseName || !toDatabase) throw new ValidationError("Name the database.");
-    if (!sharesDatabases(from.tenantId)) throw new ValidationError("Only the servers of the home tenant give databases to other tenants.");
+    if (!(await sharesWithCustomers(from.tenantId))) throw new ValidationError(NOT_SHARING);
     if (from.id === to.id && databaseName === toDatabase) throw new ValidationError("Pick another server or another name, the database is there already.");
     if (from.adapterId !== to.adapterId) throw new ValidationError(`${to.name} runs another engine. A database moves only to a server of the same engine, so its backups restore there.`);
 
@@ -115,18 +115,20 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
             });
             const start = rule?.validFrom ?? now;
             const validFrom = previous?.validUntil && previous.validUntil.getTime() > start.getTime() ? previous.validUntil : start;
-            await tx.databaseAssignment.create({ data: { sourceId: from.id, databaseName, tenantId: holder, validFrom, createdById: by, ...moved } });
+            await tx.databaseAssignment.create({ data: { sourceId: from.id, databaseName, tenantId: holder, validFrom, createdById: by, createdAt: now, ...moved } });
         }
 
-        // The customer holds it on the new server from the move on.
-        const arrived = assignmentAt(await tx.databaseAssignment.findMany({ where: { sourceId: to.id, databaseName: toDatabase } }), toDatabase, now);
-        if (arrived?.tenantId === holder && arrived.validUntil === null) {
+        // The customer holds it on the new server from the move on. A name the server's tenant took
+        // back there ends that, since nobody else holds it.
+        const arrived = await tx.databaseAssignment.findFirst({ where: { sourceId: to.id, databaseName: toDatabase, validUntil: null } });
+        if (arrived?.tenantId === holder) {
             if (arrived.onDemandPerDay === null && onDemandPerDay !== null) {
                 await tx.databaseAssignment.update({ where: { id: arrived.id }, data: { onDemandPerDay } });
             }
             return;
         }
-        await tx.databaseAssignment.create({ data: { sourceId: to.id, databaseName: toDatabase, tenantId: holder, validFrom: now, onDemandPerDay, createdById: by } });
+        if (arrived) await tx.databaseAssignment.update({ where: { id: arrived.id }, data: { validUntil: now } });
+        await tx.databaseAssignment.create({ data: { sourceId: to.id, databaseName: toDatabase, tenantId: holder, validFrom: now, onDemandPerDay, createdById: by, createdAt: now } });
     });
 
     return { tenantName: tenant?.name ?? "The tenant", toServerName: to.name, toDatabase };

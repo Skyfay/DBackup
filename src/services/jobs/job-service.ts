@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { scheduler } from "@/lib/server/scheduler";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { registry } from "@/lib/core/registry";
 import { isCombinableWithDirectories } from "@/lib/adapters/combinable";
 import { registerAdapters } from "@/lib/adapters";
@@ -12,6 +12,9 @@ import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 import { assertOwnRecords } from "@/lib/tenant/references";
+import { currentTenantId } from "@/lib/tenant/current";
+import { providedTo } from "@/services/sharing/provided";
+import { TENANTS_FOLDER, isTenantsFolderName } from "@/lib/tenant/storage-view";
 
 registerAdapters();
 
@@ -219,20 +222,20 @@ export class JobService {
     }
 
     /**
-     * Rejects destinations that are not storage adapters in the DESTINATION role.
-     *
-     * The counterpart to the directory-source check above, which existed on its own for a
-     * while: without this, a directory source could be picked as a backup target and the
-     * runner would write `<root>/<jobName>/` into the very tree the job reads from.
-     */
-    /**
-     * Refuses a link to a record of another tenant. The sources and destinations are checked by
-     * their own validation, which reads them through the filtered client as well.
+     * Refuses a link to a record of another tenant. Every connection is named here, the sources and
+     * destinations too, so the check does not hang on which fields an update carries.
      */
     private async assertOwnReferences(input: CreateJobInput | UpdateJobInput, jobId?: string) {
+        // A destination another tenant shares with this one is no record of its own, and fine to name.
+        const shared = await this.providedDestinations((input.destinations ?? []).map((destination) => destination.configId));
         await assertOwnRecords(prisma, {
             job: jobId ? [jobId] : [],
-            adapterConfig: [input.sourceId, ...(input.notificationIds ?? [])],
+            adapterConfig: [
+                input.sourceId,
+                ...(input.notificationIds ?? []),
+                ...(input.destinations ?? []).map((destination) => destination.configId).filter((id) => !shared.has(id)),
+                ...(input.sources ?? []).map((source) => source.configId),
+            ],
             encryptionProfile: [input.encryptionProfileId],
             namingTemplate: [input.namingTemplateId],
             schedulePreset: [input.schedulePresetId],
@@ -242,20 +245,71 @@ export class JobService {
         });
     }
 
+    /**
+     * Rejects destinations that are not storage adapters in the DESTINATION role.
+     *
+     * The counterpart to the directory-source check above, which existed on its own for a
+     * while: without this, a directory source could be picked as a backup target and the
+     * runner would write `<root>/<jobName>/` into the very tree the job reads from.
+     */
     private async validateJobDestinations(destinations: DestinationInput[] | undefined) {
         if (!destinations || destinations.length === 0) return;
 
         const configIds = [...new Set(destinations.map((d) => d.configId))];
-        const configs = await prisma.adapterConfig.findMany({ where: { id: { in: configIds } } });
+        const [configs, shared] = await Promise.all([
+            prisma.adapterConfig.findMany({ where: { id: { in: configIds } } }),
+            this.providedDestinations(configIds),
+        ]);
         for (const configId of configIds) {
             const config = configs.find((c) => c.id === configId);
             if (!config) {
+                if (shared.has(configId)) continue;
                 throw new Error(`Destination references unknown adapter "${configId}".`);
             }
             if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.DESTINATION) {
                 throw new Error(`Adapter "${config.name}" is not a backup destination.`);
             }
         }
+    }
+
+    /** The destinations among `configIds` that other tenants share with the tenant that runs now, with their terms. */
+    private async providedDestinations(configIds: string[]): Promise<Map<string, { name: string; encryptedOnly: boolean }>> {
+        const tenantId = await currentTenantId();
+        if (!tenantId || configIds.length === 0) return new Map();
+        const provided = await providedTo(tenantId, { kind: "destination", ids: configIds });
+        return new Map(provided.map((connection) => [connection.id, { name: connection.name, encryptedOnly: connection.encryptedOnly }]));
+    }
+
+    /**
+     * Refuses a job called like the folder a shared destination keeps for the customers, while it
+     * writes to a destination this tenant shares. Its backups would land among theirs. An update
+     * counts the name and the destinations it keeps too.
+     */
+    private async assertNotTenantsFolder(jobId: string | null, name: string | undefined, destinations: DestinationInput[] | undefined) {
+        const kept = jobId && (name === undefined || destinations === undefined)
+            ? await prisma.job.findUnique({ where: { id: jobId }, select: { name: true, destinations: { select: { configId: true } } } })
+            : null;
+        const finalName = name ?? kept?.name;
+        if (!finalName || !isTenantsFolderName(finalName)) return;
+        const configIds = (destinations ?? kept?.destinations ?? []).map((destination) => destination.configId);
+        if (configIds.length === 0) return;
+        const shared = await prisma.connectionShare.count({ where: { id: { in: configIds } } });
+        if (shared > 0) throw new ValidationError(`A job writing to a destination this tenant shares cannot be called ${TENANTS_FOLDER}, that folder holds the backups of its customers.`);
+    }
+
+    /**
+     * Refuses a job without a key that writes to a destination whose tenant takes only encrypted
+     * backups from its customers. An update counts the destinations and the key it keeps too.
+     */
+    private async assertEncryptionAsked(jobId: string | null, destinations: DestinationInput[] | undefined, encryptionProfileId: string | undefined) {
+        const kept = jobId && (destinations === undefined || encryptionProfileId === undefined)
+            ? await prisma.job.findUnique({ where: { id: jobId }, select: { encryptionProfileId: true, destinations: { select: { configId: true } } } })
+            : null;
+        const configIds = (destinations ?? kept?.destinations ?? []).map((destination) => destination.configId);
+        const key = encryptionProfileId === undefined ? kept?.encryptionProfileId ?? null : encryptionProfileId || null;
+        if (key || configIds.length === 0) return;
+        const asking = [...(await this.providedDestinations(configIds)).values()].find((destination) => destination.encryptedOnly);
+        if (asking) throw new ValidationError(`${asking.name} takes only encrypted backups. Pick a key under Encryption.`);
     }
 
     async createJob(input: CreateJobInput) {
@@ -270,6 +324,8 @@ export class JobService {
         await this.validateJobSources(null, sourceId || null, sources);
         await this.validateJobDestinations(destinations);
         await this.assertOwnReferences(input);
+        await this.assertEncryptionAsked(null, destinations, encryptionProfileId);
+        await this.assertNotTenantsFolder(null, name, destinations);
 
         const newJob = await prisma.job.create({
             data: {
@@ -343,9 +399,12 @@ export class JobService {
 
         if (sourceId !== undefined || sources !== undefined) {
             await this.validateJobSources(id, sourceId !== undefined ? (sourceId || null) : undefined, sources);
-            await this.validateJobDestinations(destinations);
         }
+        // Checked whenever they are given, an update may name its destinations alone.
+        await this.validateJobDestinations(destinations);
         await this.assertOwnReferences(input, id);
+        await this.assertEncryptionAsked(id, destinations, encryptionProfileId);
+        await this.assertNotTenantsFolder(id, name, destinations);
 
         const updatedJob = await prisma.$transaction(async (tx) => {
             // Update destinations if provided
@@ -446,10 +505,10 @@ export class JobService {
                     backupMode: backupMode !== undefined ? backupMode : undefined,
                     fullEveryDays: fullEveryDays !== undefined ? fullEveryDays : undefined,
                     verifyByHash: verifyByHash !== undefined ? verifyByHash : undefined,
-                    notifications: {
-                        set: [],
-                        connect: notificationIds?.map((id) => ({ id })) || []
-                    }
+                    // Replaced only when the update names them, so a partial update keeps the channels.
+                    notifications: notificationIds !== undefined
+                        ? { set: [], connect: notificationIds.map((channelId) => ({ id: channelId })) }
+                        : undefined,
                 },
                 include: jobInclude
             });
@@ -546,6 +605,28 @@ export class JobService {
             throw new Error(`Job with id "${id}" not found.`);
         }
 
+        // The copy links what the original links, read through relations the tenant filter leaves
+        // alone. A link to a record of another tenant is refused rather than copied.
+        const shared = await this.providedDestinations(original.destinations.map((destination) => destination.configId));
+        await assertOwnRecords(prisma, {
+            adapterConfig: [
+                original.sourceId,
+                ...original.notifications.map((channel) => channel.id),
+                ...original.destinations.map((destination) => destination.configId).filter((id) => !shared.has(id)),
+                ...original.sources.map((source) => source.configId),
+            ],
+            encryptionProfile: [original.encryptionProfileId],
+            namingTemplate: [original.namingTemplateId],
+            schedulePreset: [original.schedulePresetId],
+            notificationTemplate: original.notificationTemplates.map((template) => template.templateId),
+            retentionPolicy: original.destinations.map((destination) => destination.retentionPolicyId),
+            excludePatternPreset: original.sources.flatMap((source) => source.excludePatternPresets.map((preset) => preset.id)),
+        });
+
+        // The terms of a shared destination may have changed since the original was saved, so the
+        // copy passes the checks of a new job: a key where only encrypted backups are taken.
+        await this.assertEncryptionAsked(null, original.destinations, original.encryptionProfileId ?? "");
+
         // Use provided name or generate a unique one: "X (Copy)", then "X (Copy 2)", etc.
         let uniqueName: string;
         if (name) {
@@ -559,6 +640,7 @@ export class JobService {
                 counter++;
             }
         }
+        await this.assertNotTenantsFolder(null, uniqueName, original.destinations);
 
         // The copy has every setting of the original and only starts paused, so it does not run
         // beside it before it is checked. Its incremental chain starts over, since chains are kept

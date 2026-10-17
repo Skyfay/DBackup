@@ -2,22 +2,34 @@ import { describe, expect, it } from "vitest";
 import { tenantActions, tenantNote, type TenantHandlers } from "@/components/dashboard/tenants/tenant-columns";
 import {
     addableAccounts,
+    allowancesPatch,
     countOf,
     deleteRefusal,
     deletionLoss,
+    heldBack,
     listText,
+    providedSentence,
     removalText,
+    sharedParts,
     troubledTenants,
     withSummaries,
     type TenantListRow,
 } from "@/components/dashboard/tenants/tenant-words";
+import { ALL_ALLOWED } from "@/lib/tenant/allowances";
 
-const HOME: TenantListRow = { id: "default", name: "Platform", isHome: true, logo: null, members: 2, connections: 3, jobs: 4, createdAt: "2026-01-01T00:00:00.000Z", databases: 6, health: null };
-const ACME: TenantListRow = { id: "t-acme", name: "Acme", isHome: false, logo: null, members: 1, connections: 0, jobs: 1, createdAt: "2026-10-01T00:00:00.000Z", databases: 0, health: null };
+const HOME: TenantListRow = {
+    id: "default", name: "Platform", isHome: true, sharesWithCustomers: true, logo: null, members: 2, connections: 3, jobs: 4, createdAt: "2026-01-01T00:00:00.000Z", databases: 6, health: null,
+    allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 2, channels: 1 },
+};
+const ACME: TenantListRow = {
+    id: "t-acme", name: "Acme", isHome: false, sharesWithCustomers: false, logo: null, members: 1, connections: 0, jobs: 1, createdAt: "2026-10-01T00:00:00.000Z", databases: 0, health: null,
+    allowances: ALL_ALLOWED, provided: { destinations: 2, channels: 2 }, gives: { destinations: 0, channels: 0 },
+};
 
 const noop = () => undefined;
-const HANDLERS: TenantHandlers = { onOpen: noop, onRename: noop, onMembers: noop, onDelete: noop };
-const idsOf = (row: TenantListRow, active: string | null) => tenantActions(row, active, HANDLERS).flatMap((group) => group.actions.map((action) => action.id));
+const HANDLERS: TenantHandlers = { onOpen: noop, onRename: noop, onMembers: noop, onDelete: noop, onSharing: noop, onAllowances: noop };
+const actionsOf = (row: TenantListRow, active: string | null, handlers = HANDLERS) => tenantActions(row, active, handlers).flatMap((group) => group.actions);
+const idsOf = (row: TenantListRow, active: string | null) => actionsOf(row, active).map((action) => action.id);
 
 describe("deleting a tenant on the Tenants page", () => {
     it("keeps the home tenant, which holds what the platform owns", () => {
@@ -74,8 +86,73 @@ describe("the menu of a tenant", () => {
     });
 
     it("names the facts of a tenant in its head", () => {
-        expect(tenantNote(HOME)).toBe("Home · 2 members · 4 jobs");
+        expect(tenantNote(HOME)).toBe("Home · Shares with customers · 2 members · 4 jobs");
         expect(tenantNote(ACME)).toBe("1 member · 1 job");
+    });
+});
+
+describe("sharing with customers from the menu of a tenant", () => {
+    it("offers to share with customers, or to stop it for a tenant that does", () => {
+        expect(actionsOf(ACME, "default").find((action) => action.id === "sharing")?.label).toBe("Share with customers");
+        expect(actionsOf(HOME, "default").find((action) => action.id === "sharing")?.label).toBe("Stop sharing with customers");
+    });
+});
+
+describe("what a tenant may add itself", () => {
+    it("is decided from the menu of a customer, after the sharing entry", () => {
+        const allowances = actionsOf(ACME, "default").find((action) => action.id === "allowances");
+
+        expect(allowances).toMatchObject({ label: "What it may add", tone: "edit" });
+        expect(idsOf(ACME, "default").indexOf("allowances")).toBe(idsOf(ACME, "default").indexOf("sharing") + 1);
+    });
+
+    it("is never limited for the home tenant, which adds what the platform needs", () => {
+        expect(idsOf(HOME, "default")).not.toContain("allowances");
+        expect(idsOf(HOME, null)).not.toContain("allowances");
+    });
+
+    it("is not offered to someone who may only see the tenants", () => {
+        const viewer: TenantHandlers = { onOpen: noop, onMembers: noop };
+
+        expect(actionsOf(ACME, "default", viewer).map((action) => action.id)).not.toContain("allowances");
+    });
+
+    it("names nothing for a tenant that adds everything, and for the home tenant whatever it holds", () => {
+        expect(heldBack(ACME)).toBeNull();
+        expect(heldBack({ ...HOME, allowances: { ...ALL_ALLOWED, destinations: false } })).toBeNull();
+    });
+
+    it("names what a customer does not add, in short words on its tag and in full on hover", () => {
+        expect(heldBack({ ...ACME, allowances: { ...ALL_ALLOWED, destinations: false } })).toEqual({ tag: "No own destinations", sentence: "Adds no destinations of its own." });
+        expect(heldBack({ ...ACME, allowances: { ...ALL_ALLOWED, destinations: false, channels: false } })).toEqual({
+            tag: "No own destinations, channels",
+            sentence: "Adds no destinations or notification channels of its own.",
+        });
+    });
+
+    it("says it adds nothing itself once every kind is off", () => {
+        const none = { databases: false, directorySources: false, destinations: false, channels: false, apiKeys: false };
+
+        expect(heldBack({ ...ACME, allowances: none })?.tag).toBe("Adds nothing itself");
+    });
+
+    it("saves only the kinds whose switch changed", () => {
+        expect(allowancesPatch(ALL_ALLOWED, ALL_ALLOWED)).toEqual({});
+        expect(allowancesPatch({ ...ALL_ALLOWED, channels: false }, { ...ALL_ALLOWED, destinations: false })).toEqual({ destinations: false, channels: true });
+    });
+});
+
+describe("what other tenants share with a tenant", () => {
+    it("counts the destinations and channels, leaving out a kind with none", () => {
+        expect(sharedParts({ destinations: 2, channels: 1 })).toEqual(["2 destinations", "1 channel"]);
+        expect(sharedParts({ destinations: 0, channels: 3 })).toEqual(["3 channels"]);
+        expect(sharedParts({ destinations: 0, channels: 0 })).toEqual([]);
+    });
+
+    it("says it in a sentence in the dialog of what it may add, or that nothing is shared yet", () => {
+        expect(providedSentence(ACME.provided)).toBe("2 destinations and 2 channels of other tenants");
+        expect(providedSentence({ destinations: 1, channels: 0 })).toBe("1 destination of other tenants");
+        expect(providedSentence(HOME.provided)).toBe("Nothing yet");
     });
 });
 

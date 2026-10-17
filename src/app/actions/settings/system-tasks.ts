@@ -12,7 +12,7 @@ import { isSystemTaskId, SYSTEM_TASKS } from "@/services/system/system-task-defi
 import { saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
 import { integritySettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
-import type { SaveResult } from "@/services/system/settings-save";
+import { PLATFORM_LOG, type SaveResult } from "@/services/system/settings-save";
 
 const log = logger.child({ action: "system-tasks" });
 
@@ -53,12 +53,12 @@ export async function saveSystemTaskAction(id: string, input: z.infer<typeof tas
                 name: after.name,
                 ...(parsed.data.enabled !== undefined ? { enabled: parsed.data.enabled } : {}),
                 ...(switchedOnly ? {} : { changes }),
-            }, task);
+            }, task, PLATFORM_LOG);
         }
         if (task === SYSTEM_TASKS.INTEGRITY_CHECK && parsed.data.integrity) {
             const integrityChanges = settingsChanges(integrityBefore, await integritySettings());
             if (integrityChanges.length > 0) {
-                await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.INTEGRITY, changes: integrityChanges });
+                await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.INTEGRITY, changes: integrityChanges }, undefined, PLATFORM_LOG);
             }
         }
         revalidatePath("/dashboard/settings");
@@ -82,7 +82,7 @@ export async function runSystemTaskAction(id: string): Promise<{ success: boolea
         const started = await startSystemTask(task, user.name ?? "Manual");
         if (!started.started) return { success: false, error: started.reason };
         const name = taskName(task);
-        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { task: name, name }, task);
+        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { task: name, name }, task, PLATFORM_LOG);
         revalidatePath("/dashboard/settings");
         return { success: true, ...(started.executionId ? { executionId: started.executionId } : {}) };
     } catch (error: unknown) {

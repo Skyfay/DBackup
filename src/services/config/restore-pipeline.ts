@@ -1,9 +1,8 @@
 import prisma from "@/lib/prisma";
 import { AppConfigurationBackup, RestoreOptions } from "@/lib/types/config-backup";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import { StorageAdapter } from "@/lib/core/interfaces";
+import { isShared, openRow } from "@/services/sharing/destination-access";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { createGunzip } from "zlib";
 import { createReadStream, promises as fs } from "fs";
@@ -17,6 +16,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { importConfiguration } from "./import";
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const svcLog = logger.child({ service: "ConfigService" });
 
@@ -34,6 +35,17 @@ export async function restoreFromStorage(
 
   assertNoDatabaseMaintenance("systemRestore");
 
+  // A configuration backup lies at a destination of the home tenant and restores the platform, so
+  // the run is recorded there and the destination is read there, whichever tenant the admin looks at.
+  return runAsTenant(HOME_TENANT_ID, () => startRestore(storageConfigId, file, decryptionProfileId, options));
+}
+
+async function startRestore(
+  storageConfigId: string,
+  file: string,
+  decryptionProfileId?: string,
+  options?: RestoreOptions
+): Promise<string> {
   // 1. Create Execution Record
   const execution = await prisma.execution.create({
     data: {
@@ -49,7 +61,7 @@ export async function restoreFromStorage(
     }
   });
 
-  // 2. Start Background Process
+  // 2. Start Background Process. Started here, it keeps the scope of the home tenant for all it awaits.
   runRestorePipeline(execution.id, storageConfigId, file, decryptionProfileId, options)
     .catch(err => svcLog.error("Restore pipeline logic error (uncaught)", {}, wrapError(err)));
 
@@ -91,11 +103,11 @@ async function runRestorePipeline(
 
     // Fetch Storage Config
     const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
-    if (!storageConfig) throw new Error("Storage adapter not found");
+    if (!storageConfig) throw new Error("The destination no longer exists, or it belongs to a customer. A configuration backup is only restored from a destination of the home tenant.");
 
-    const adapter = registry.get(storageConfig.adapterId) as StorageAdapter;
-    if (!adapter) throw new Error(`Storage adapter '${storageConfig.adapterId}' not found in registry`);
-    const config = await resolveAdapterConfig(storageConfig);
+    if (!registry.get(storageConfig.adapterId)) throw new Error(`Storage adapter '${storageConfig.adapterId}' not found in registry`);
+    // Shared with customers, the destination holds their folder too, which their jobs filled. No file of it is taken.
+    const { adapter, config } = await openRow(storageConfig, (await isShared(storageConfig.id)) ? { kind: "provider" } : { kind: "own" });
 
     // Download
     log("Downloading backup file...");

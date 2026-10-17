@@ -19,6 +19,7 @@ import { withStorageSession } from "./upload-helpers";
 import { verificationService } from "@/services/storage/verification-service";
 import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
 import { isConnected, reportSkippedAirGaps } from "./air-gap";
+import { providedConnection } from "@/services/sharing/provided";
 
 export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0 || !ctx.tempFile) throw new Error("Context not ready for upload");
@@ -242,6 +243,16 @@ export async function stepUpload(ctx: RunnerContext) {
     for (let i = 0; i < totalDests; i++) {
         const dest = ctx.destinations[i];
         const destLabel = `[${dest.configName}]`;
+        // A share that ended while the dump ran writes nothing more into the folder of the tenant.
+        if (!dest.refusal && dest.customer && !(await providedConnection(dest.configId, dest.customer))) {
+            dest.refusal = `${dest.configName} is no longer shared with this tenant`;
+        }
+        if (dest.refusal) {
+            dest.uploadResult = { success: false, error: dest.refusal };
+            reportUpload(i, { state: "failed", error: dest.refusal, endedAt: new Date().toISOString() });
+            ctx.log(`${destLabel} ${dest.refusal}`, "error");
+            continue;
+        }
         // An air-gapped destination that is not connected is left out, which is no failure.
         if (dest.airGapped && !(await isConnected(dest))) {
             dest.uploadResult = { success: false, skipped: true, error: AIR_GAP_SKIP };

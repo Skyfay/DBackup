@@ -7,6 +7,7 @@ type Viewer = { id: string; isPlatformAdmin: boolean; tenantId: string | null; p
 const mocks = vi.hoisted(() => ({
     viewer: null as unknown as Viewer,
     tenants: { switchable: vi.fn(), create: vi.fn(), rename: vi.fn(), delete: vi.fn() },
+    platformGroups: { reaches: vi.fn(), reachesAll: vi.fn() },
     summaries: vi.fn(),
     audit: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock("@/lib/prisma", () => ({ default: {} }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: mocks.tenants }));
 vi.mock("@/services/tenant/tenant-summaries", () => ({ tenantSummaries: mocks.summaries }));
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: mocks.platformGroups }));
 
 const { createTenant, deleteTenant, getTenantSummaries, renameTenant } = await import("@/app/actions/tenant/tenant");
 
@@ -38,6 +40,9 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.viewer = SUPPORT;
     mocks.tenants.switchable.mockResolvedValue([{ id: "acme", name: "Acme GmbH" }, { id: "shop", name: "Shop" }]);
+    // The platform group reaches every tenant, Acme and Shop among the ones it may open.
+    mocks.platformGroups.reaches.mockImplementation(async (_userId: string, tenantId: string) => ["acme", "shop"].includes(tenantId));
+    mocks.platformGroups.reachesAll.mockResolvedValue(true);
     mocks.summaries.mockImplementation(async (ids: string[]) => ids.map((id) => ({ id, jobs: 1, databases: 2, health: null })));
     mocks.tenants.create.mockResolvedValue({ id: "new", name: "New" });
     mocks.tenants.rename.mockResolvedValue({ name: "Acme AG", renamedFrom: "Acme GmbH" });
@@ -78,6 +83,18 @@ describe("the tenants through a platform group", () => {
         expect(await renameTenant("praxis", "Praxis AG")).toEqual({ success: false, error: "The tenant no longer exists." });
         expect(await deleteTenant("praxis")).toEqual({ success: false, error: "The tenant no longer exists." });
         expect(mocks.tenants.rename).not.toHaveBeenCalled();
+        expect(mocks.tenants.delete).not.toHaveBeenCalled();
+    });
+
+    it("creates no tenant for a group of some tenants, and manages no tenant through a membership alone", async () => {
+        mocks.viewer = { ...SUPPORT, permissions: [P.PLATFORM.TENANTS_READ, P.PLATFORM.TENANTS_WRITE] };
+        mocks.platformGroups.reachesAll.mockResolvedValue(false);
+        expect(await createTenant("New")).toEqual(expect.objectContaining({ success: false }));
+        expect(mocks.tenants.create).not.toHaveBeenCalled();
+
+        // Shop is a tenant the person is a member of, out of the reach of the platform group.
+        mocks.platformGroups.reaches.mockImplementation(async (_userId: string, tenantId: string) => tenantId === "acme");
+        expect(await deleteTenant("shop")).toEqual({ success: false, error: "The tenant no longer exists." });
         expect(mocks.tenants.delete).not.toHaveBeenCalled();
     });
 

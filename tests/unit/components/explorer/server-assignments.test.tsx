@@ -35,10 +35,10 @@ function data(overrides: Partial<SourceAssignments> = {}): SourceAssignments {
             { name: "shop_b", sizeInBytes: null, owner: { tenantId: beta.id, tenantName: beta.name, via: "assignment", since: "2026-10-05T00:00:00.000Z", onDemandPerDay: 3 }, backups: 30 },
         ],
         assignments: [
-            { id: "a-2", databaseName: "shop_b", tenantId: beta.id, tenantName: beta.name, validFrom: "2026-10-05T00:00:00.000Z", validUntil: null, byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: 3 },
-            { id: "a-1", databaseName: "shop_b", tenantId: acme.id, tenantName: acme.name, validFrom: "2026-09-01T00:00:00.000Z", validUntil: "2026-10-05T00:00:00.000Z", byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: null },
+            { id: "a-2", databaseName: "shop_b", tenantId: beta.id, tenantName: beta.name, validFrom: "2026-10-05T00:00:00.000Z", validUntil: null, createdAt: "2026-10-05T00:00:00.000Z", byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: 3 },
+            { id: "a-1", databaseName: "shop_b", tenantId: acme.id, tenantName: acme.name, validFrom: "2026-09-01T00:00:00.000Z", validUntil: "2026-10-05T00:00:00.000Z", createdAt: "2026-09-01T00:00:00.000Z", byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: null },
         ],
-        rules: [{ id: "r-shop", pattern: "shop_*", tenantId: acme.id, tenantName: acme.name, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", onDemandPerDay: null }],
+        rules: [{ id: "r-shop", pattern: "shop_*", tenantId: acme.id, tenantName: acme.name, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", validUntil: null, createdAt: "2026-10-01T00:00:00.000Z", onDemandPerDay: null }],
         customers: [acme, beta],
         backupDates: { shop_b: ["2026-09-10T02:00:00.000Z", "2026-10-10T02:00:00.000Z"] },
         ...overrides,
@@ -101,15 +101,16 @@ describe("the databases of a shared server and their tenants", () => {
         await waitFor(() => expect(actions.getSourceAssignments).toHaveBeenCalledTimes(2));
     });
 
-    it("takes a database given by name back, and offers no Nobody else for one a rule gives", async () => {
+    it("takes a database back, the one a rule gives as well", async () => {
         const user = userEvent.setup();
         actions.assignDatabases.mockResolvedValue({ success: true, data: { changed: 1 } });
         card();
 
         await user.click(await screen.findByRole("combobox", { name: "Who sees shop_a" }));
-        expect(await screen.findByText(/Remove the rule to take it back/)).toBeInTheDocument();
-        expect(screen.queryByRole("option", { name: /Nobody else/ })).not.toBeInTheDocument();
-        await user.keyboard("{Escape}");
+        expect(await screen.findByText(/Nobody else takes it back from the rule/)).toBeInTheDocument();
+        await user.click(await screen.findByRole("option", { name: /Nobody else/ }));
+        await waitFor(() => expect(actions.assignDatabases).toHaveBeenCalledWith("s1", [{ databaseName: "shop_a", tenantId: null }]));
+        actions.assignDatabases.mockClear();
 
         await user.click(screen.getByRole("combobox", { name: "Who sees shop_b" }));
         await user.click(await screen.findByRole("option", { name: /Nobody else/ }));
@@ -154,7 +155,7 @@ describe("the databases of a shared server and their tenants", () => {
 
     it("adds a rule in the panel and shows what it would give while the pattern is typed", async () => {
         const user = userEvent.setup();
-        actions.addAssignmentRule.mockResolvedValue({ success: true, data: { id: "r-new", pattern: "*", tenantId: beta.id, tenantName: beta.name, priority: 0, validFrom: "2026-10-15T00:00:00.000Z" } });
+        actions.addAssignmentRule.mockResolvedValue({ success: true, data: { id: "r-new", pattern: "*", tenantId: beta.id, tenantName: beta.name, priority: 0, validFrom: "2026-10-15T00:00:00.000Z", validUntil: null, createdAt: "2026-10-15T00:00:00.000Z" } });
         card();
 
         await user.click(await screen.findByRole("button", { name: "New rule" }));

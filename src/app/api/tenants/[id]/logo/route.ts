@@ -16,6 +16,12 @@ const log = logger.child({ route: "tenants/[id]/logo" });
 const FIELD = "Logo";
 const TOO_LARGE = "The logo is larger than 1 MB.";
 
+/** The room a form takes beside the file, its boundaries and headers, so a body above it holds a file too large. */
+const FORM_OVERHEAD_BYTES = 64 * 1024;
+
+/** The types an upload is stored with, read from its bytes. A stored row of any other type is never served. */
+const SERVED_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
 /**
  * The logo of a tenant, for its people and for platform admins, who see every tenant. Anyone else
  * gets the answer of a tenant without a logo. Its type was read from its bytes when it was stored.
@@ -26,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { id } = await params;
     const logo = (await mayViewTenantLogo(ctx, id)) ? await findTenantLogo(id) : null;
-    if (!logo) return new NextResponse(null, { status: 404 });
+    if (!logo || !SERVED_TYPES.has(logo.mimeType)) return new NextResponse(null, { status: 404 });
     return new NextResponse(Buffer.from(logo.data), {
         headers: {
             "Content-Type": logo.mimeType,
@@ -63,6 +69,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const refused = guardChange(ctx, id);
     if (refused) return refused;
+    // Refused before the form is read, which would hold the whole body in memory.
+    if (Number(req.headers.get("content-length") ?? 0) > TENANT_LOGO_MAX_BYTES + FORM_OVERHEAD_BYTES) {
+        return NextResponse.json({ success: false, error: TOO_LARGE }, { status: 413 });
+    }
 
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");

@@ -5,6 +5,7 @@ import { logger } from "@/lib/logging/logger";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { checksNatively, verificationService, type FileVerificationResult } from "./verification-service";
+import { findDestination } from "@/services/sharing/destination-access";
 
 const log = logger.child({ service: "CopyVerification" });
 
@@ -71,10 +72,9 @@ function settle(check: CopyCheck, result: FileVerificationResult): CopyCheckStat
  * to be downloaded and hashed after them. Returns at once, the run goes on in the background.
  */
 export async function startCopyVerification(targets: CopyTarget[], triggeredBy: string): Promise<{ executionId: string }> {
-    const configs = await prisma.adapterConfig.findMany({
-        where: { id: { in: [...new Set(targets.map((target) => target.destinationId))] } },
-        select: { id: true, name: true, adapterId: true },
-    });
+    // Own destinations and those other tenants share with this one, as `verifyFile` opens them.
+    const configs = (await Promise.all([...new Set(targets.map((target) => target.destinationId))].map((id) =>
+        findDestination(id).then(({ row }) => [{ id: row.id, name: row.name, adapterId: row.adapterId }]).catch(() => [])))).flat();
     const byId = new Map(configs.map((config) => [config.id, config]));
     const native = (target: CopyTarget) => checksNatively(byId.get(target.destinationId)?.adapterId ?? "");
     // A stable sort, so the copies keep their order within each kind.

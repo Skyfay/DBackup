@@ -3,12 +3,28 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Plus, Search } from "lucide-react";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
+import { isAlwaysHostLocal } from "@/lib/adapters/host-local";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { DialogClose, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useTenantView } from "@/components/tenant/tenant-view";
 import { AdapterIcon } from "./adapter-icon";
+
+/**
+ * The types a tenant may add. One that always reaches the server DBackup runs on, like Local
+ * Filesystem, is the platform's alone, so a customer's tenant does not offer it. All tenants keeps
+ * it, since New asks for the tenant there first, and the server refuses it for a customer anyway.
+ */
+function useAddableAdapters(adapters: AdapterDefinition[]): AdapterDefinition[] {
+    const { activeTenantId } = useTenantView();
+    return useMemo(
+        () => (activeTenantId && activeTenantId !== HOME_TENANT_ID ? adapters.filter((adapter) => !isAlwaysHostLocal(adapter.id)) : adapters),
+        [adapters, activeTenantId]
+    );
+}
 
 interface AdapterGroup {
     label: string;
@@ -119,7 +135,8 @@ interface AdapterPickerProps {
  * The types as tiles, for a page with room for all of them, like the Quick Setup. A search joins
  * them once there are more than fit at a glance.
  */
-export function AdapterTiles({ adapters, onSelect }: AdapterPickerProps) {
+export function AdapterTiles({ adapters: offered, onSelect }: AdapterPickerProps) {
+    const adapters = useAddableAdapters(offered);
     const [search, setSearch] = useState("");
     const term = search.trim().toLowerCase();
     const shown = term ? adapters.filter((adapter) => adapter.name.toLowerCase().includes(term) || (adapter.group ?? "").toLowerCase().includes(term)) : adapters;
@@ -158,13 +175,14 @@ export function AdapterTiles({ adapters, onSelect }: AdapterPickerProps) {
  * Only the list scrolls, so the search and the buttons stay put however many types there are.
  */
 export function AdapterPickerDialog({
-    adapters,
+    adapters: offered,
     title,
     onSelect,
 }: AdapterPickerProps & {
     /** Names what is being created, like "New database". */
     title: string;
 }) {
+    const adapters = useAddableAdapters(offered);
     const [search, setSearch] = useState("");
     const groups = useAdapterGroups(adapters, search);
 

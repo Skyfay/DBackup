@@ -61,16 +61,20 @@ Where the people of customers sign in through the provider too, give it **No gro
 
 Without it only people who already have an account in DBackup sign in through the provider. Their account is linked by its email on their first sign-in, when the provider marks the email as verified, and someone new is turned away.
 
-Deleting a group moves the new people of its providers where its members go, or leaves them without a group.
+Deleting a group moves the new people of its providers where its members go. With **No group** a provider of the platform adds them without a group, and a provider of a tenant stops adding people, since it adds them into a group of its tenant only.
+
+A provider of the platform links an account that works only in customer tenants just for someone signed in to that account already, who clicks **Link** beside the provider under **Profile**. A first sign-in through it never takes over such an account by its email.
 
 ## Providers of a Tenant
 
 A provider belongs to the platform or to one [tenant](/user-guide/admin/tenants), set under **Belongs to**. A customer that brings its own identity provider, like Microsoft Entra ID, gets a provider of its tenant:
 
 - It never shows as a button. Someone types an email of its domain, the login page says "acme.ch signs in with Acme Entra ID" and offers **Continue with Acme Entra ID**. The page asks the server about the one domain typed, so it never lists the domains of the customers.
-- It needs an **Email domain**, and while it adds new people, a group of its tenant. One domain belongs to one provider, also among the providers of the platform.
-- It signs in only emails of exactly its domain, never a subdomain and never a platform admin.
-- New people land in its tenant with its group. An existing account of its domain joins the tenant with that group on its first sign-in through it, while the provider adds new people. Without that, only members of the tenant sign in through it.
+- It needs an **Email domain**, and while it adds new people, a group of its tenant. Without a group it adds nobody. One domain belongs to one provider, also among the providers of the platform.
+- It signs in only emails of exactly its domain, never a subdomain, a platform admin or an account of a platform group.
+- New people land in its tenant with its group. An existing account of its domain that works in no tenant yet joins the tenant with that group on its first sign-in through it, while the provider adds new people. Without that, only members of the tenant sign in through it.
+- It never links an account that works in other tenants but not in its own, since another tenant made that account.
+- An account outside its tenant gets an email of its domain only from a platform admin or someone who manages the accounts of the platform, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant), so the admin of another tenant never makes an account it would sign in to.
 - Deleting the tenant deletes its providers and the links to them. The accounts stay.
 
 Only a platform admin adds and changes either kind, and every change goes into the audit log of the home tenant. DBackup does not check that a tenant owns its domain, so never give a tenant a domain like `gmail.com`.

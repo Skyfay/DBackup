@@ -1,8 +1,10 @@
+import { getSessionCookie } from "better-auth/cookies";
 import prisma from "@/lib/prisma";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { emailOfDomain } from "@/lib/auth/sso-domain";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { ssoProviderIdOf, type SsoHookContext } from "./sso-guard";
 
@@ -16,6 +18,11 @@ import { ssoProviderIdOf, type SsoHookContext } from "./sso-guard";
  * provider's group, while the provider adds people. That mirrors the link itself: the provider
  * vouches for the email in both, and someone new of the same email would land there too. A
  * provider that adds nobody signs in only the members of its tenant.
+ *
+ * Neither kind of provider links an account that another tenant made: its maker chose its password,
+ * and the person of the email would sign in to an account someone else can sign in to as well. A
+ * provider of a tenant never links one, a provider of the platform only for whoever signs in to the
+ * account already and links the provider from their profile.
  */
 
 /** The login page says why when a provider of a tenant may not sign someone in. */
@@ -26,7 +33,7 @@ export const TENANT_NOT_MEMBER_URL = "/?error=sso_tenant_not_member";
 
 export const JOINED_THROUGH_SSO = "Joined through single sign-on";
 
-export type TenantRefusal = "platform-admin" | "other-domain" | "not-member";
+export type TenantRefusal = "platform-admin" | "platform-group" | "other-domain" | "not-member";
 
 interface RefusalProvider {
     tenantId: string | null;
@@ -38,6 +45,8 @@ interface RefusalProvider {
 interface RefusalAccount {
     email: string;
     platformRole?: string | null;
+    /** An account of a platform group works across tenants, which a provider of one tenant never vouches for. */
+    platformGroupId?: string | null;
     /** The tenants the account works in, left out where membership is not checked. */
     memberships?: { tenantId: string }[];
 }
@@ -49,35 +58,59 @@ interface RefusalAccount {
 export function tenantSignInRefusal(provider: RefusalProvider, user: RefusalAccount): TenantRefusal | null {
     if (!provider.tenantId) return null;
     if (user.platformRole === PLATFORM_ADMIN_ROLE) return "platform-admin";
+    if (user.platformGroupId) return "platform-group";
     if (!emailOfDomain(user.email, provider.domain)) return "other-domain";
     if (provider.allowProvisioning === false && user.memberships && !user.memberships.some((membership) => membership.tenantId === provider.tenantId)) return "not-member";
     return null;
 }
 
-/** The provider of a tenant a callback signs in through, null for any other request. */
-async function tenantProviderOf(context: SsoHookContext | null | undefined) {
+/** The provider a callback signs in through, of a tenant or of the platform, null for any other request. */
+async function providerOf(context: SsoHookContext | null | undefined) {
     const providerId = ssoProviderIdOf(context);
     if (!providerId) return null;
-    const provider = await prisma.ssoProvider.findUnique({
+    return prisma.ssoProvider.findUnique({
         where: { providerId },
         select: { providerId: true, name: true, tenantId: true, domain: true, allowProvisioning: true, defaultGroupId: true },
     });
+}
+
+/** The provider of a tenant a callback signs in through, null for any other request. */
+async function tenantProviderOf(context: SsoHookContext | null | undefined) {
+    const provider = await providerOf(context);
     return provider?.tenantId ? { ...provider, tenantId: provider.tenantId } : null;
 }
 
 const accountOf = (userId: string) =>
-    prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, platformRole: true, memberships: { select: { tenantId: true } } } });
+    prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
+
+/** Whether another tenant made the account: it works in tenants, none of them this one. */
+const madeElsewhere = (user: { memberships: { tenantId: string }[] }, tenantId: string) =>
+    user.memberships.length > 0 && !user.memberships.some((membership) => membership.tenantId === tenantId);
+
+/** The account whose session the request carries, of someone who links a provider to their own account. */
+async function signedInUserOf(context: SsoHookContext | null | undefined): Promise<string | null> {
+    const cookie = context?.headers ? getSessionCookie(context.headers) : null;
+    if (!cookie) return null;
+    // The cookie holds the token and its signature, the session is found by the token.
+    const token = decodeURIComponent(cookie).split(".")[0];
+    const session = token ? await prisma.session.findUnique({ where: { token }, select: { userId: true, expiresAt: true } }) : null;
+    return session && session.expiresAt.getTime() > Date.now() ? session.userId : null;
+}
 
 /**
- * Runs before better-auth links an account to a provider. False keeps a provider of a tenant from
- * linking an account it may not sign in, and the session hook then sends the person back to the
- * login page with the reason. A new account was checked when it was added, it is not visible yet.
+ * Runs before better-auth links an account to a provider. False keeps a provider from linking an
+ * account it may not sign in, and the session hook then sends the person back to the login page
+ * with the reason. A new account was checked when it was added, it is not visible yet.
  */
 export async function allowTenantSsoLink(account: { userId: string }, context: SsoHookContext | null | undefined): Promise<boolean> {
-    const provider = await tenantProviderOf(context);
+    const provider = await providerOf(context);
     if (!provider) return true;
     const user = await accountOf(account.userId);
-    return !user || tenantSignInRefusal(provider, user) === null;
+    if (!user) return true;
+    if (provider.tenantId) return tenantSignInRefusal(provider, user) === null && !madeElsewhere(user, provider.tenantId);
+    // The people of the platform and of the home tenant are the platform's own.
+    if (user.platformRole || user.platformGroupId || !madeElsewhere(user, HOME_TENANT_ID)) return true;
+    return (await signedInUserOf(context)) === account.userId;
 }
 
 /**

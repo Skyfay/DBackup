@@ -6,6 +6,7 @@ import { logger } from "@/lib/logging/logger";
 import { getErrorMessage, PermissionError, wrapError } from "@/lib/logging/errors";
 import { getAdapterTypes } from "@/services/adapters/adapter-service";
 import { getConnectionDetails } from "@/services/adapters/connection-details";
+import { providedConnection } from "@/services/sharing/provided";
 
 const log = logger.child({ route: "adapters/details" });
 
@@ -22,8 +23,10 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 
     const { id } = await props.params;
     try {
-        // The permission depends on the kind of connection, so only its type is read first.
-        const [type] = await getAdapterTypes([id]);
+        // The permission depends on the kind of connection, so only its type is read first. A
+        // connection another tenant shares with this one shows with what this tenant does with it.
+        const [own] = await getAdapterTypes([id]);
+        const type = own ?? (ctx.tenantId ? (await providedConnection(id, ctx.tenantId))?.type : undefined);
         if (!type) {
             return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
         }

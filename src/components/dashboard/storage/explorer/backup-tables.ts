@@ -5,6 +5,3 @@
 export const BACKUPS_TABLE_ID = "storage.backups";
 export const BACKUPS_PAGE_ID = "storage.backups";
 export const DESTINATIONS_PAGE_ID = "storage.destinations";
-/** The list of the tab Shared with you, its columns and its view. */
-export const SHARED_TABLE_ID = "storage.shared";
-export const SHARED_PAGE_ID = "storage.shared";

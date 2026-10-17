@@ -8,7 +8,14 @@ vi.mock('@/lib/prisma', () => ({
     default: {
         job: { findUnique: vi.fn() },
         execution: { create: vi.fn() },
+        // Whether the tenant of a destination shares it with customers.
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
     },
+}));
+
+// A destination of another tenant counts only while that tenant shares it with the job's tenant.
+vi.mock('@/services/sharing/provided', () => ({
+    providedConnection: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/lib/core/registry', () => ({
@@ -49,12 +56,15 @@ function makeJob(overrides: Record<string, unknown> = {}) {
     return {
         id: 'job-1',
         name: 'Test Job',
+        tenantId: 'tenant-1',
+        encryptionProfileId: null,
         source: {
             id: 'src-1',
             adapterId: 'mysql',
             config: '{}',
             name: 'My MySQL',
             type: 'database',
+            tenantId: 'tenant-1',
             primaryCredentialId: null,
             sshCredentialId: null,
         },
@@ -70,6 +80,7 @@ function makeJob(overrides: Record<string, unknown> = {}) {
                     config: '{}',
                     name: 'Local',
                     type: 'storage',
+                    tenantId: 'tenant-1',
                 },
             },
         ],
@@ -160,11 +171,11 @@ describe('stepInitialize', () => {
             destinations: [
                 {
                     id: 'dest-1', configId: 'cfg-1', priority: 0, retention: '{}',
-                    config: { id: 'cfg-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage' },
+                    config: { id: 'cfg-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage', tenantId: 'tenant-1' },
                 },
                 {
                     id: 'dest-2', configId: 'cfg-2', priority: 1, retention: '{}',
-                    config: { id: 'cfg-2', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage' },
+                    config: { id: 'cfg-2', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage', tenantId: 'tenant-1' },
                 },
             ],
         }));
@@ -203,7 +214,7 @@ describe('stepInitialize', () => {
                 {
                     id: 'dest-1', configId: 'cfg-1', priority: 0,
                     retention: 'NOT_VALID_JSON',
-                    config: { id: 'cfg-1', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage' },
+                    config: { id: 'cfg-1', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage', tenantId: 'tenant-1' },
                 },
             ],
         }));
@@ -252,7 +263,7 @@ describe('stepInitialize', () => {
                     {
                         id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '["*.tmp"]',
                         excludePatternPresets: [],
-                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage', tenantId: 'tenant-1' },
                     },
                 ],
             }));
@@ -288,12 +299,12 @@ describe('stepInitialize', () => {
                     {
                         id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/v-live', excludePatterns: '[]',
                         excludePatternPresets: [], stopContainers: false,
-                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'Docker Host', type: 'storage' },
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'Docker Host', type: 'storage', tenantId: 'tenant-1' },
                     },
                     {
                         id: 'jsrc-2', configId: 'storage-1', priority: 1, path: '/v-db', excludePatterns: '[]',
                         excludePatternPresets: [], stopContainers: true,
-                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'Docker Host', type: 'storage' },
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'Docker Host', type: 'storage', tenantId: 'tenant-1' },
                     },
                 ],
             }));
@@ -318,12 +329,12 @@ describe('stepInitialize', () => {
                     {
                         id: 'jsrc-1', configId: 'ghost-1', priority: 0, path: '/data', excludePatterns: '[]',
                         excludePatternPresets: [],
-                        config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage' },
+                        config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage', tenantId: 'tenant-1' },
                     },
                     {
                         id: 'jsrc-2', configId: 'storage-1', priority: 1, path: '/other', excludePatterns: '[]',
                         excludePatternPresets: [],
-                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage', tenantId: 'tenant-1' },
                     },
                 ],
             }));
@@ -350,7 +361,7 @@ describe('stepInitialize', () => {
                     {
                         id: 'jsrc-1', configId: 'ghost-1', priority: 0, path: '/data', excludePatterns: '[]',
                         excludePatternPresets: [],
-                        config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage' },
+                        config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage', tenantId: 'tenant-1' },
                     },
                 ],
             }));
@@ -373,7 +384,7 @@ describe('stepInitialize', () => {
                     {
                         id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '[]',
                         excludePatternPresets: [],
-                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage', tenantId: 'tenant-1' },
                     },
                 ],
             }));
@@ -388,6 +399,74 @@ describe('stepInitialize', () => {
 
             expect(ctx.sourceAdapter).toBeUndefined();
             expect(ctx.sources).toHaveLength(1);
+        });
+    });
+
+    describe('destinations another tenant shares', () => {
+        const providerDest = {
+            id: 'dest-1', configId: 'cfg-msp', priority: 0, retention: '{}',
+            config: { id: 'cfg-msp', adapterId: 'local-filesystem', config: '{}', name: 'MSP Storage', type: 'storage', tenantId: 'tenant-msp' },
+        };
+        const provided = (encryptedOnly: boolean) => ({
+            id: 'cfg-msp', name: 'MSP Storage', type: 'storage', adapterId: 'local-filesystem', storageRole: 'destination',
+            metadata: null, lastStatus: 'Online', lastHealthCheck: null, createdAt: new Date(), updatedAt: new Date(),
+            providerId: 'tenant-msp', providerName: 'MSP', allTenants: false, encryptedOnly, ownRecipients: false,
+        });
+
+        async function setup(job: Record<string, unknown>) {
+            const prisma = (await import('@/lib/prisma')).default;
+            const { registry } = await import('@/lib/core/registry');
+            (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob(job));
+            (registry.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+                if (id === 'mysql') return { type: 'database', dump: vi.fn() };
+                if (id === 'local-filesystem') return { type: 'storage', upload: vi.fn() };
+                return null;
+            });
+        }
+
+        it('refuses a destination the other tenant no longer shares and never reads its login', async () => {
+            const { providedConnection } = await import('@/services/sharing/provided');
+            const { resolveAdapterConfig } = await import('@/lib/adapters/config-resolver');
+            (providedConnection as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+            await setup({ destinations: [providerDest] });
+
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await stepInitialize(ctx);
+
+            expect(ctx.destinations).toHaveLength(1);
+            expect(ctx.destinations[0].refusal).toBe('MSP Storage is no longer shared with this tenant');
+            expect(ctx.destinations[0].config).toEqual({});
+            expect(resolveAdapterConfig).not.toHaveBeenCalledWith(providerDest.config);
+        });
+
+        it('refuses a destination that takes only encrypted backups when the job has no key', async () => {
+            const { providedConnection } = await import('@/services/sharing/provided');
+            (providedConnection as ReturnType<typeof vi.fn>).mockResolvedValueOnce(provided(true));
+            await setup({ destinations: [providerDest], encryptionProfileId: null });
+
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await stepInitialize(ctx);
+
+            expect(ctx.destinations[0].refusal).toContain('takes only encrypted backups');
+            expect(ctx.destinations[0].config).toEqual({});
+        });
+
+        it('writes an encrypted job into its own folder on a destination that takes only encrypted backups', async () => {
+            const { providedConnection } = await import('@/services/sharing/provided');
+            (providedConnection as ReturnType<typeof vi.fn>).mockResolvedValueOnce(provided(true));
+            await setup({ destinations: [providerDest], encryptionProfileId: 'key-1' });
+
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await stepInitialize(ctx);
+
+            const dest = ctx.destinations[0];
+            expect(dest.refusal).toBeUndefined();
+            expect(dest.config).toEqual({ host: 'localhost' });
+            await dest.adapter.upload({} as any, '/tmp/local.sql', 'Job/backup.sql');
+            const plain = Object.getPrototypeOf(dest.adapter);
+            // The view passes the progress, a log it keeps from the customer and the options along.
+            expect(plain.upload).toHaveBeenCalledWith({}, '/tmp/local.sql', 'tenants/tenant-1/Job/backup.sql', undefined, undefined, undefined);
+            expect(dest.customer).toBe('tenant-1');
         });
     });
 });

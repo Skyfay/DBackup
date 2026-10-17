@@ -2,13 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { checkPermission, currentSessionId, getViewer, hasPermission, hasPermissionWithContext, type Viewer } from "@/lib/auth/access-control";
-import { ACCOUNT_CHANGE, accountRefusal, roleRefusal } from "@/lib/auth/account-access";
+import { ACCOUNT_CHANGE, roleRefusal } from "@/lib/auth/account-access";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { authService } from "@/services/auth/auth-service";
 import { userService } from "@/services/user/user-service";
 import { groupService } from "@/services/user/group-service";
 import { membershipService } from "@/services/tenant/membership-service";
+import { tenantService } from "@/services/tenant/tenant-service";
+import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
@@ -23,13 +25,14 @@ import { z } from "zod";
 
 const log = logger.child({ action: "user" });
 
+const OUTSIDER = "This account works in another tenant. Add people to this tenant with an invitation.";
+
 /**
  * Why the caller may not change this account, null when they may: the account of a platform admin,
  * and one that also works in another tenant, is for a platform admin alone. See `accountRefusal`.
  */
 async function accountRefused(userId: string, caller: Viewer): Promise<string | null> {
-    const target = await userService.accountOf(userId);
-    return target ? accountRefusal(caller, target) : null;
+    return userService.accountRefusalFor(caller, userId);
 }
 
 /** Why the caller may not give this group to anyone in their tenant, null when they may. Nobody hands out more than they hold. */
@@ -67,6 +70,12 @@ export async function createUser(input: CreateUserInput) {
     const tenantId = currentUser?.allTenants || (names && picked) ? picked : currentUser?.tenantId;
     if (!currentUser || (!currentUser.allTenants && !tenantId)) return { success: false, error: "Unauthorized" };
     if (!tenantId) return { success: false, error: "Pick the tenant the person works in." };
+    // Someone of a platform group names only a tenant they may open.
+    if (!currentUser.isPlatformAdmin && tenantId !== currentUser.tenantId && !(await tenantService.switchable(currentUser.id, false)).some((tenant) => tenant.id === tenantId)) {
+        return { success: false, error: "The tenant no longer exists." };
+    }
+    const claimed = await claimedEmailRefusal(data.email, [tenantId], !!names);
+    if (claimed) return { success: false, error: claimed };
 
     // A group belongs to its tenant, so it is looked up there, and nobody gives one that may do more
     // than they may in that tenant, which may be another than the one they work in.
@@ -121,7 +130,7 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
         return { success: false, error: "You cannot change your own group assignment." };
     }
 
-    const refused = (await groupRefused(groupId, currentUser)) ?? (await roleTakenRefused(userId, currentUser));
+    const refused = (await outsiderRefused(userId, currentUser)) ?? (await groupRefused(groupId, currentUser)) ?? (await roleTakenRefused(userId, currentUser));
     if (refused) return { success: false, error: refused };
 
     try {
@@ -143,6 +152,18 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
         log.error("Failed to update user group", { userId }, wrapError(error));
         return { success: false, error: getErrorMessage(error) || "Failed to update user group" };
     }
+}
+
+/**
+ * Why the caller may not give a group of their tenant to an account, null when they may: only to
+ * the people of the tenant, see `peopleOf`, so nobody pulls an account of another tenant into theirs.
+ * Others join through an invitation, or by whoever manages the tenants. A platform admin may.
+ */
+async function outsiderRefused(userId: string, caller: Viewer): Promise<string | null> {
+    if (caller.isPlatformAdmin || !caller.tenantId) return null;
+    if (!(await membershipService.isPersonOf(userId, caller.tenantId))) return OUTSIDER;
+    // An account of no tenant shows in the home tenant, and one of the platform keeps its own rules.
+    return (await membershipService.isPlatformAdmin(userId)) ? "Only a platform admin changes the memberships of a platform admin." : null;
 }
 
 /**
@@ -270,18 +291,24 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
     if (!currentUser) throw new Error("Unauthorized");
 
     // Allow user to edit their own profile, otherwise require permission
+    const emailChanges = data.email !== undefined && data.email !== currentUser.email;
     if (currentUser.id !== userId) {
         await checkPermission(ACCOUNT_CHANGE);
         const refused = await accountRefused(userId, currentUser);
         if (refused) return { success: false, error: refused };
-    } else if (!(await hasPermission(PERMISSIONS.USERS.WRITE))) {
-        // Someone who may not change users changes their own name and email only as far as their group allows.
+        const platformLevel = currentUser.isPlatformAdmin || hasPermissionWithContext(currentUser, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
+        const claimed = emailChanges ? await claimedEmailRefusal(data.email!, currentUser.tenantId ? [currentUser.tenantId] : [], platformLevel) : null;
+        if (claimed) return { success: false, error: claimed };
+    } else {
+        // The own name and email change only as far as the profile permissions allow, whatever else the group gives.
         if (data.name !== undefined && data.name !== currentUser.name && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_NAME))) {
             return { success: false, error: "Your group may not change your name." };
         }
-        if (data.email !== undefined && data.email !== currentUser.email && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_EMAIL))) {
+        if (emailChanges && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_EMAIL))) {
             return { success: false, error: "Your group may not change your email." };
         }
+        const claimed = emailChanges ? await userService.ownEmailRefusal(currentUser.id, data.email!) : null;
+        if (claimed) return { success: false, error: claimed };
     }
 
     try {

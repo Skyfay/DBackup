@@ -30,8 +30,8 @@ A restore always replaces the whole database, including what was added since the
 1. Go to **Settings → Configuration backup**
 2. Switch on **Back up the configuration**
 3. Pick:
-   - **Destination**: where the file goes, into its folder `config-backups`
-   - **Encryption key**: the file holds every login, so it is always encrypted
+   - **Destination**: where the file goes, into its folder `config-backups`. With [tenants](/user-guide/admin/tenants) only a destination of the home tenant
+   - **Encryption key**: the file holds every login, so it is always encrypted, with a key of the home tenant
    - **Schedule**: when it runs, every day at 03:00 by default, picked like the schedule of a job
    - **Keeps**: how many files stay at the destination, 10 by default
    - **Include the history**: runs, logs, the audit log and the storage history, on by default
@@ -62,7 +62,7 @@ A restore brings back the whole instance, every [tenant](/user-guide/admin/tenan
 
 ### What Happens
 
-1. DBackup opens the file with the key its metadata names, or any key of the Vault that fits, and asks for one when none does
+1. DBackup opens the file with the key its metadata names, or any key of the home tenant's Vault that fits, and asks for one when none does
 2. It checks the file: a database of DBackup, not damaged, and not from a newer version
 3. It shows what the backup holds, then **Replace and restart** starts the restore
 4. DBackup ends, and its container starts it again. The restored copy replaces the database before the migrations run, which bring an older copy up to date
@@ -74,9 +74,11 @@ A backup made by a DBackup with another `ENCRYPTION_KEY` or `BETTER_AUTH_SECRET`
 
 ### From a Destination
 
-1. Open **Backups** and find the backup under **Config backups**
+1. Open **Backups** in the home tenant and find the backup under **Config backups**
 2. Open it. DBackup reads it on the server, so its size does not matter
 3. Check what it holds and click **Replace and restart**
+
+A configuration backup restores only from a destination of the home tenant, whichever tenant you have open, since whoever owns the destination of a customer could have put a file there.
 
 ### From a File
 
@@ -98,7 +100,7 @@ This works only while nobody has an account yet. For a file over 10 MB, create a
 
 ### Files of Older Versions
 
-Files named `config_backup_*.json.gz.enc` come from DBackup versions before the copy of the database. They still restore, in parts from the **Backups** page or as a whole from a file. Restoring in parts exists for these files only and gets no new parts, since keeping it in step with every table cost more than it was worth. Such a restore adds and overwrites and never deletes: a record with the same ID, or the same name, is overwritten and keeps its ID here, and everything that links to it follows.
+Files named `config_backup_*.json.gz.enc` come from DBackup versions before the copy of the database. They still restore, in parts from the **Backups** page of the home tenant or as a whole from a file, and their records land in the home tenant. Restoring in parts exists for these files only and gets no new parts, since keeping it in step with every table cost more than it was worth. Such a restore adds and overwrites and never deletes: a record with the same ID, or the same name, is overwritten and keeps its ID here, and everything that links to it follows.
 
 These files hold no templates, no folders of file jobs and no second factors. A restore drops what links to them, says so afterwards, and does this:
 

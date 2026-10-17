@@ -1,3 +1,4 @@
+import { keyPlatformPermissions } from "@/lib/auth/owner-permissions";
 import { AVAILABLE_PERMISSIONS, PERMISSIONS, PLATFORM_ONLY_PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 
 /**
@@ -204,7 +205,7 @@ export const SUMMARY_AREAS = PERMISSION_AREAS.filter((area) => area.id !== "prof
 
 /**
  * The areas of the rights on the platform a platform group gives: the tenants, the accounts, the
- * settings of the instance, the sign-in providers and the shared databases. A group of a tenant
+ * settings of the instance, the sign-in providers and what is shared with customers. A group of a tenant
  * holds none of them but the settings, see `PLATFORM_ONLY_PERMISSIONS`.
  */
 export const PLATFORM_AREAS: PermissionArea[] = [
@@ -214,7 +215,7 @@ export const PLATFORM_AREAS: PermissionArea[] = [
         summary: "See: the tenants · Change: create, rename and delete them, and their members",
         permissions: [
             { id: P.PLATFORM.TENANTS_READ, label: "See the tenants", description: "Every tenant with its members, connections and jobs, and All tenants" },
-            { id: P.PLATFORM.TENANTS_WRITE, label: "Manage the tenants", description: "Create, rename and delete tenants and decide who works in them", needs: [P.PLATFORM.TENANTS_READ] },
+            { id: P.PLATFORM.TENANTS_WRITE, label: "Manage the tenants", description: "Create, rename and delete tenants, decide who works in them, which of them share with customers and what each adds itself", needs: [P.PLATFORM.TENANTS_READ] },
         ],
         levels: { see: [P.PLATFORM.TENANTS_READ], change: [P.PLATFORM.TENANTS_READ, P.PLATFORM.TENANTS_WRITE] },
     },
@@ -240,15 +241,38 @@ export const PLATFORM_AREAS: PermissionArea[] = [
     },
     {
         id: "platform-sharing",
-        label: "Shared databases",
-        summary: "See: who holds which · Change: give databases to tenants",
+        label: "Sharing",
+        summary: "See: what goes to whom · Change: share databases, destinations and channels",
         permissions: [
-            { id: P.PLATFORM.SHARING_READ, label: "See the shared databases", description: "Which tenant holds which database of a shared server, and since when" },
-            { id: P.PLATFORM.SHARING_WRITE, label: "Share databases", description: "Give databases to tenants, by hand or by rules, move them and allow backups on demand", needs: [P.PLATFORM.SHARING_READ] },
+            {
+                id: P.PLATFORM.SHARING_READ,
+                label: "See what is shared",
+                description: "Which tenant holds which database of a shared server, and which tenants get a destination or a channel, with the space each takes",
+            },
+            {
+                id: P.PLATFORM.SHARING_WRITE,
+                label: "Share with customers",
+                description: "Give databases to tenants, by hand or by rules, move them and allow backups on demand, share destinations and channels, and delete the backups of a tenant on a shared destination",
+                needs: [P.PLATFORM.SHARING_READ],
+            },
         ],
         levels: { see: [P.PLATFORM.SHARING_READ], change: [P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE] },
     },
 ];
+
+/** The areas a key offers in a tenant: those of a group, and in a tenant that shares databases their sharing, see `keyPlatformPermissions`. */
+export function keyAreas(tenantShares: boolean): PermissionArea[] {
+    const keyable = new Set(keyPlatformPermissions(tenantShares));
+    const platform = PLATFORM_AREAS.filter((area) => area.permissions.some((permission) => keyable.has(permission.id)));
+    return [...PERMISSION_AREAS, ...platform];
+}
+
+/** The permissions a key may store in a tenant: those of a group DBackup knows, and in a tenant that shares databases their sharing. */
+export function knownKeyPermissions(ids: Iterable<string>, tenantShares: boolean): Permission[] {
+    const held = new Set(ids);
+    const keyable = keyPlatformPermissions(tenantShares).filter((permission) => held.has(permission)) as Permission[];
+    return [...knownPermissions(held), ...keyable];
+}
 
 /**
  * The areas of the rights a platform group gives in the tenants of its scope: those of a group of

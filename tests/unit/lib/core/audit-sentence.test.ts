@@ -63,6 +63,13 @@ describe("an entry of the audit log as a sentence", () => {
         expect(auditSentence(entry("RESTORE", "SYSTEM", { action: "config_restore", file: "config/2026-09-28.tar.gz.enc" }))).toBe("Restored the configuration from 2026-09-28.tar.gz.enc");
     });
 
+    it("names the database, the server and the customer of a customer's restore in the log of the server's tenant", () => {
+        const restore = describeEntry(entry("RESTORE", "BACKUP", { action: "shared_restore", name: "shop2", server: "Shared MySQL", tenant: "Acme" }));
+        expect(restore.parts.map((part) => part.text).join("")).toBe("Restored shop2 on Shared MySQL for Acme");
+        expect(restore.kind).toBe("sensitive");
+        expect(auditSentence(entry("RESTORE", "BACKUP", { action: "shared_restore" }))).toBe("Restored a shared database");
+    });
+
     it("says what a change of state was", () => {
         expect(auditSentence(entry("UPDATE", "API_KEY", { name: "CI pipeline", action: "rotate" }))).toBe("Rotated the API key CI pipeline");
         expect(auditSentence(entry("UPDATE", "API_KEY", { name: "CI pipeline", enabled: false }))).toBe("Disabled the API key CI pipeline");

@@ -29,6 +29,13 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set<Prisma.ModelName>([
     "SharedServer",
     // The backups a customer started of a database given to it, the customer's own.
     "SharedBackupRequest",
+    // A destination or a channel the tenant shares with others, see src/services/sharing/.
+    "ConnectionShare",
+    // The recipients a tenant names for an email channel another tenant shares with it.
+    "ChannelRecipients",
+    // The listing of a destination as one tenant sees it. A destination shared with customers has
+    // one per tenant, each with the backups of that tenant alone.
+    "StorageListCache",
 ]);
 
 /**
@@ -43,8 +50,9 @@ export const CHILD_MODELS: Readonly<Record<string, string>> = {
     NotificationTemplateChannel: "template",
     HealthCheckLog: "adapterConfig",
     DbVersionHistory: "adapterConfig",
-    StorageListCache: "adapterConfig",
     DatabaseListCache: "adapterConfig",
+    // The tenants a connection is shared with, managed by the tenant that shares it.
+    ConnectionShareTenant: "share",
     // Managed by the tenant of the shared server, through the SharedServer that outlives its
     // connection. The customer reads them through shared-databases.ts, which looks across tenants
     // on purpose and nowhere else.

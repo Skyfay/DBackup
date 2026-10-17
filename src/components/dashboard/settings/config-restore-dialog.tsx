@@ -251,6 +251,7 @@ export function ConfigRestoreDialog({ open, onOpenChange }: ConfigRestoreDialogP
                     if (!next) pending.current = null;
                 }}
                 profileIdHint={keyDialog.profileId}
+                platformKeys
                 onConfirm={(result) => void withKey(result)}
                 loading={busy}
                 error={keyDialog.error}

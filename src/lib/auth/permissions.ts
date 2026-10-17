@@ -248,6 +248,6 @@ export const PLATFORM_ONLY_PERMISSIONS = [
   { id: PERMISSIONS.PLATFORM.ACCOUNTS_READ, label: "View Accounts", category: "Platform" },
   { id: PERMISSIONS.PLATFORM.ACCOUNTS_WRITE, label: "Manage Accounts", category: "Platform" },
   { id: PERMISSIONS.PLATFORM.SIGN_IN_READ, label: "View Sign-in Providers", category: "Platform" },
-  { id: PERMISSIONS.PLATFORM.SHARING_READ, label: "View Shared Databases", category: "Platform" },
-  { id: PERMISSIONS.PLATFORM.SHARING_WRITE, label: "Share Databases", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.SHARING_READ, label: "View Sharing", category: "Platform" },
+  { id: PERMISSIONS.PLATFORM.SHARING_WRITE, label: "Share with Customers", category: "Platform" },
 ] as const;

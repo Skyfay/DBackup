@@ -278,6 +278,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /jobs/{id}/clone:
     post:
@@ -1018,10 +1020,15 @@ paths:
       tags: [Adapters]
       summary: List Adapters
       description: |
-        List all adapter configurations of a given type. Config fields are automatically decrypted in the response.
+        List all adapter configurations of a given type. Secret fields are left out of the response.
+
+        After the own connections come the destinations and notification channels other tenants share
+        with the tenant of the caller, each with `provided`. Their `config` is empty, the address, login
+        and settings stay with the tenant that shares them. A caller with `platform-sharing:read` also
+        gets `share` on each own connection the tenant shares with other tenants.
 
         **Permission depends on type:**
-        - `database` → `sources:read`
+        - `database` → `sources:view`
         - `storage` → `destinations:read`
         - `notification` → `notifications:read`
       operationId: listAdapters
@@ -1053,6 +1060,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AdapterConfig"
+        "400":
+          description: The type is missing or not database, storage or notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1083,6 +1096,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdapterConfig"
+        "400":
+          description: >-
+            The type is not database, storage or notification, the adapter is not one of that type,
+            a required field is missing or invalid, or the platform lets the tenant add no connection
+            of this kind itself
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Adapter with this name and type already exists
           content:
@@ -1204,7 +1226,7 @@ paths:
     delete:
       tags: [Adapters]
       summary: Delete Adapter
-      description: Deletes an adapter configuration. Returns error 400 if the adapter is still referenced by active jobs.
+      description: Deletes an adapter configuration. Returns error 400 if the adapter is still referenced by active jobs, or while its tenant shares it with other tenants.
       operationId: deleteAdapter
       security:
         - BearerAuth: []
@@ -1218,7 +1240,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
         "400":
-          description: Adapter is still in use by jobs
+          description: Adapter is still in use by jobs, or shared with other tenants
           content:
             application/json:
               schema:
@@ -1250,6 +1272,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdapterConfig"
+        "400":
+          description: The role does not fit the adapter, or the platform lets the tenant add no connection of this kind itself
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
@@ -1398,8 +1426,8 @@ paths:
         assignment with its start and end, the rules that give databases away by their name, and
         the tenants a database can be given to. The databases are the ones DBackup last read from
         the server. Requires `platform-sharing:read` or `platform-sharing:write`, rights on the
-        platform that only a platform group gives and an API key never holds, so it answers a
-        signed-in session only.
+        platform that a platform group gives. An API key holds them only when it was made in a
+        tenant that shares with customers, by someone who holds them.
       operationId: getDatabaseAssignments
       security:
         - BearerAuth: []
@@ -1437,8 +1465,9 @@ paths:
         the tenant of the server. A database that changes hands ends its current assignment, so the
         backups made before stay with the tenant that had it then. A start never lies in the future,
         and a backdated one never before the end of the previous assignment of the name. Requires
-        `platform-sharing:write`, a right on the platform that only a platform group gives and an
-        API key never holds, so it answers a signed-in session only.
+        `platform-sharing:write`, a right on the platform that a platform group gives. An API key
+        holds it only when it was made in a tenant that shares with customers by someone who holds it,
+        like the key of a hosting panel. The server belongs to a tenant that shares with customers.
       operationId: assignDatabases
       security:
         - BearerAuth: []
@@ -4193,6 +4222,52 @@ components:
             provides folders to back up (SOURCE) - never both, because a destination writes
             job and chain folders into its configured path while a source reads folders out
             of it. Ignored for database and notification adapters.
+        provided:
+          type: object
+          description: >-
+            Set on a destination or notification channel another tenant shares with the tenant
+            of the caller. The caller names it in its jobs and templates but never changes it.
+          properties:
+            providerId:
+              type: string
+              description: The tenant that shares it
+            providerName:
+              type: string
+            encryptedOnly:
+              type: boolean
+              description: A destination that takes only backups encrypted with a key of the caller's Vault
+            ownRecipients:
+              type: boolean
+              description: An email channel whose recipients the tenant of the caller names itself
+            recipients:
+              type: array
+              items:
+                type: string
+                format: email
+              description: The recipients the tenant of the caller named, only when ownRecipients is true
+        share:
+          type: object
+          description: >-
+            Set on a connection the tenant of the caller shares with other tenants, for a caller with
+            platform-sharing:read.
+          properties:
+            allTenants:
+              type: boolean
+              description: Shared with every other tenant, a new one too
+            tenants:
+              type: array
+              description: The tenants that get it now
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+            encryptedOnly:
+              type: boolean
+            ownRecipients:
+              type: boolean
 
     CreateAdapterRequest:
       type: object

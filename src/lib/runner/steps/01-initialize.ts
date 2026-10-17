@@ -7,6 +7,8 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { resolveExcludePatterns, parseJsonStringArray } from "@/lib/exclude-groups";
 import { RetentionConfiguration } from "@/lib/core/retention";
 import { isAirGapped } from "@/lib/core/air-gap";
+import { storageView } from "@/lib/tenant/storage-view";
+import { destinationAccess } from "@/services/sharing/destination-access";
 
 // Ensure adapters are loaded
 registerAdapters();
@@ -129,8 +131,8 @@ export async function stepInitialize(ctx: RunnerContext) {
     // 4. Resolve Destination Adapters
     ctx.destinations = [];
     for (const dest of job.destinations) {
-        const adapter = registry.get(dest.config.adapterId) as StorageAdapter;
-        if (!adapter) {
+        const plain = registry.get(dest.config.adapterId) as StorageAdapter;
+        if (!plain) {
             ctx.log(`Warning: Destination adapter '${dest.config.adapterId}' for '${dest.config.name}' not found. Skipping.`, 'warning');
             continue;
         }
@@ -163,11 +165,24 @@ export async function stepInitialize(ctx: RunnerContext) {
             ctx.log(`Warning: Failed to parse retention config for destination '${dest.config.name}'. Using NONE.`, 'warning');
         }
 
+        // A destination another tenant shares takes the backups of this tenant into its folder there,
+        // and only while it is shared with it. Without a key a run writes nothing to one that asks for it.
+        const { mode, provided } = await destinationAccess(dest.config, job.tenantId);
+        const refusal = !mode
+            ? `${dest.config.name} is no longer shared with this tenant`
+            : provided?.encryptedOnly && !job.encryptionProfileId
+                ? `${dest.config.name} takes only encrypted backups. Pick a key under Encryption`
+                : undefined;
+        const adapter = storageView(plain, mode ?? { kind: "own" });
+
         const destCtx: DestinationContext = {
             configId: dest.config.id,
             configName: dest.config.name,
             adapter,
-            config: await resolveAdapterConfig(dest.config) as any,
+            refusal,
+            ...(mode?.kind === "customer" ? { customer: mode.tenantId } : {}),
+            // The login of a destination the run may not use is never read.
+            config: refusal ? {} : await resolveAdapterConfig(dest.config) as any,
             retention,
             retentionPolicyName,
             retentionPolicySource,

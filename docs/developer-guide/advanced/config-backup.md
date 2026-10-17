@@ -30,8 +30,8 @@ Live database ──VACUUM INTO──▶ Copy ──▶ without sign-ins, caches
 
 A restore has two steps, `src/services/config/restore-flow.ts`:
 
-1. **Check**: `checkUploadedBackup()` or `checkStoredBackup()` decrypt and unpack the file into a temp file with `openBackupFile()`. `isDatabaseCopy()` reads the SQLite header, and `inspectDatabaseCopy()` runs `PRAGMA integrity_check`, compares `_prisma_migrations` with `prisma/migrations` so a copy of a newer version is refused, reads the keys row and counts what the copy holds. A copy without keys row, like a download of the database, is refused when its secrets do not open with the key of this instance. The checked file waits in `pending-restores.ts` for 30 minutes under a token bound to the user who checked it
-2. **Apply**: `applyCheckedRestore()` refuses while a run is `Running`. `stageDatabaseRestore()` drops triggers and views, encrypts the secrets again when the keys row names other keys, removes the keys row and the sign-ins, writes an audit entry into the copy, lays it beside the live database as `restore-pending.db` and calls `restartSoon()`, which ends the process after the answer went out
+1. **Check**: `checkUploadedBackup()` or `checkStoredBackup()` decrypt and unpack the file into a temp file with `openBackupFile()`. Both run in `runAsTenant(HOME_TENANT_ID)`, so the key is looked up among the keys of the home tenant, also on the sign-up page, and `checkStoredBackup()` reads only a destination of the home tenant, never the one of a customer, who could have put a file there. The key dialog of a restore lists the same keys through `getPlatformEncryptionProfiles`. `isDatabaseCopy()` reads the SQLite header, and `inspectDatabaseCopy()` runs `PRAGMA integrity_check`, compares `_prisma_migrations` with `prisma/migrations` so a copy of a newer version is refused, reads the keys row and counts what the copy holds. A copy without keys row, like a download of the database, is refused when its secrets do not open with the key of this instance. The checked file waits in `pending-restores.ts` for 30 minutes under a token bound to the user who checked it
+2. **Apply**: `applyCheckedRestore()` refuses while a run of any tenant is `Running`. `stageDatabaseRestore()` drops triggers and views, encrypts the secrets again when the keys row names other keys, removes the keys row and the sign-ins, writes an audit entry into the copy with raw SQL and only the columns its `AuditLog` has, so a copy of an older version like v4.0.x restores too, lays it beside the live database as `restore-pending.db` and calls `restartSoon()`, which ends the process after the answer went out
 3. **Swap**: `scripts/apply-pending-restore.js` runs before `prisma migrate deploy`, in `docker-entrypoint.sh` and in `pnpm dev`. It moves the live database with its `-wal`, `-shm` and `-journal` files aside as `dbackup.db.before-restore*` and renames the copy into place. On a failure it puts everything back and keeps the copy as `restore-failed-<time>.db`, so the next start does not try again
 
 ### Encrypting Again
@@ -53,7 +53,7 @@ A new table needs nothing here. A table that can never hold a secret may join th
 
 ## Import of Older Files
 
-Configuration backups of versions before the copy are JSON files, `config_backup_*.json.gz.enc`. A check recognises them by their content and the same two steps restore them, as a whole, without a restart. The Backups page still restores them in parts through `restoreFromStorageAction`.
+Configuration backups of versions before the copy are JSON files, `config_backup_*.json.gz.enc`. A check recognises them by their content and the same two steps restore them, as a whole, without a restart. The Backups page still restores them in parts through `restoreFromStorageAction`, which reads the destination and records the run in the home tenant. `importConfiguration()` writes their records there too.
 
 `importConfiguration()` in `src/services/config/import.ts` restores the parts the caller picked in one transaction, in the order the links need. Each part lives in a module of its own:
 
@@ -106,7 +106,7 @@ class ConfigService {
 
 ### Who Restores
 
-A restore writes the whole database, every tenant with its users, groups, API keys and sign-in providers, so it could make anyone a platform admin. The routes in Settings and `restoreFromStorageAction` check `settings:write` first and then refuse anyone who is no platform admin, the routes also every API key. The routes of the sign-up page answer only while no account exists, the moment anyone who reaches the page may create the first account too. Taking a config backup stays with `settings:write`, which counts from the group in the home tenant.
+A restore writes the whole database, every tenant with its users, groups, API keys and sign-in providers, so it could make anyone a platform admin. The routes in Settings and `restoreFromStorageAction` check `settings:write` first and then refuse anyone who is no platform admin, the routes also every API key. The routes of the sign-up page answer only while no account exists, the moment anyone who reaches the page may create the first account too. Taking a config backup stays with `settings:write`, which counts from the group in the home tenant or a platform group. Every entry of a backup or restore goes into the log of the home tenant through `PLATFORM_LOG` or `platformLogFor(ctx)`.
 
 ### The File
 

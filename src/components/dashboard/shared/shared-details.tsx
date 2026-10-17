@@ -10,8 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DateDisplay } from "@/components/utils/date-display";
 import { formatBytes } from "@/lib/utils";
-import { checkOf, FormerTag, ProviderChip } from "./shared-columns";
-import { formerLabel, isFormer, madeAt, madeAtText, onDemandLine, type SharedRow } from "./shared-model";
+import { checkOf, FormerTag, ProviderChip } from "./shared-cells";
+import { formerLabel, isFormer, madeAt, madeAtText, onDemandLine, starterOf, type SharedRow } from "./shared-model";
 
 interface SharedDetailsProps {
     row: SharedRow;
@@ -45,6 +45,7 @@ function SharedDetails({ row, onDownload, onRestore, downloading, onBackUp, back
     const size = row.dump
         ? `${formatBytes(row.dump.stored, 1)}${row.dump.unpacked > row.dump.stored ? `, ${formatBytes(row.dump.unpacked, 1)} unpacked` : ""}`
         : "Not read yet";
+    const starter = starterOf(row);
 
     return (
         <>
@@ -75,7 +76,7 @@ function SharedDetails({ row, onDownload, onRestore, downloading, onBackUp, back
                         {onRestore && (
                             <Button variant="outline" size="sm" onClick={onRestore}>
                                 <RotateCcw />
-                                Restore
+                                Restore into {database.databaseName}
                             </Button>
                         )}
                         {onBackUp && (
@@ -125,6 +126,7 @@ function SharedDetails({ row, onDownload, onRestore, downloading, onBackUp, back
                             columns={1}
                             facts={[
                                 { label: "Made", value: <DateDisplay date={row.createdAt} format="Pp" /> },
+                                { label: "Started by", value: `${starter.label} · ${starter.who}` },
                                 { label: "Size", value: size },
                                 { label: "Encryption", value: row.encrypted ? "Encrypted" : "Not encrypted" },
                                 {
@@ -163,13 +165,15 @@ interface SharedDetailsSheetProps extends Omit<SharedDetailsProps, "row"> {
     /** Stays set while the panel slides out, so its content does not vanish halfway. */
     row: SharedRow | null;
     onClose: () => void;
+    /** Once the panel is gone, like the timeline, which opens its list again. */
+    onCloseAutoFocus?: (event: Event) => void;
 }
 
-/** The details of one shared backup in a panel from the right, like a backup of the Backups tab. */
-export function SharedDetailsSheet({ open, row, onClose, ...props }: SharedDetailsSheetProps) {
+/** The details of one shared backup in a panel from the right, like the details of an own backup. */
+export function SharedDetailsSheet({ open, row, onClose, onCloseAutoFocus, ...props }: SharedDetailsSheetProps) {
     return (
         <Sheet open={open && row !== null} onOpenChange={(next) => !next && onClose()}>
-            <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-xl">
+            <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-xl" onCloseAutoFocus={onCloseAutoFocus}>
                 {row && <SharedDetails row={row} {...props} />}
             </SheetContent>
         </Sheet>

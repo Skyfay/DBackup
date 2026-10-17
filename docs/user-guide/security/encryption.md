@@ -104,7 +104,7 @@ A key that a job or the config backup still encrypts with cannot be deleted. The
 
 Any other key moves to [Recently deleted](/user-guide/admin/recently-deleted) for 30 days. Its backups cannot be opened while it is there, and a restore opens them again.
 
-With the right to change the settings, tick **Delete it permanently now** for a key that leaked. The dialog then lists the backups that still need the key, and a key that was never in a kit can get its kit right there. After a permanent delete nobody can open those backups without a recovery kit, DBackup neither.
+With the right to change the tenant settings, tick **Delete it permanently now** for a key that leaked. The dialog then lists the backups that still need the key, and a key that was never in a kit can get its kit right there. After a permanent delete nobody can open those backups without a recovery kit, DBackup neither.
 
 ## Using Encryption
 

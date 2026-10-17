@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     membership: vi.fn(),
     group: vi.fn(),
     createMembership: vi.fn(),
+    session: vi.fn(),
     log: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock("@/lib/prisma", () => ({
             create: (...args: unknown[]) => mocks.createMembership(...args),
         },
         group: { findUnique: (...args: unknown[]) => mocks.group(...args) },
+        session: { findUnique: (...args: unknown[]) => mocks.session(...args) },
     },
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.log(...args) } }));
@@ -29,8 +31,8 @@ const { allowTenantSsoLink, joinSsoTenant, refuseTenantSsoSession, tenantSignInR
 const CALLBACK = { path: "/sso/callback/:providerId", params: { providerId: "entra-acme" } };
 const ACME = { providerId: "entra-acme", name: "Acme Entra ID", tenantId: "acme", domain: "acme.ch", allowProvisioning: true, defaultGroupId: "group-acme", enabled: true };
 const AUTHENTIK = { ...ACME, providerId: "authentik", name: "Authentik", tenantId: null, domain: "skyfay.ch", defaultGroupId: "group-ops" };
-const LENA = { name: "Lena Graf", email: "lena.graf@acme.ch", platformRole: null };
-const MANU = { name: "Manu", email: "manu@acme.ch", platformRole: "ADMIN" };
+const LENA = { name: "Lena Graf", email: "lena.graf@acme.ch", platformRole: null, platformGroupId: null as string | null, memberships: [] as { tenantId: string }[] };
+const MANU = { name: "Manu", email: "manu@acme.ch", platformRole: "ADMIN", platformGroupId: null as string | null, memberships: [] as { tenantId: string }[] };
 const redirect = (url: string) => new Error(`redirect ${url}`);
 
 describe("sign-ins through the provider of a tenant", () => {
@@ -69,6 +71,33 @@ describe("sign-ins through the provider of a tenant", () => {
 
         mocks.user.mockResolvedValue({ ...LENA, email: "lena@globex.ch" });
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+    });
+
+    it("links no account another tenant made and no account of a platform group to a tenant's provider", async () => {
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "globex" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "globex" }, { tenantId: "acme" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
+
+        mocks.user.mockResolvedValue({ ...LENA, platformGroupId: "pg-support" });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+    });
+
+    it("links a provider of the platform to an account a customer made only for whoever signs in to it already", async () => {
+        mocks.provider.mockResolvedValue(AUTHENTIK);
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+
+        // Lena links it from her profile, signed in as herself.
+        mocks.session.mockResolvedValue({ userId: "lena", expiresAt: new Date(Date.now() + 60_000) });
+        const signedIn = { ...CALLBACK, headers: new Headers({ cookie: "better-auth.session_token=tok-lena.sig" }) };
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(true);
+        expect(mocks.session).toHaveBeenCalledWith(expect.objectContaining({ where: { token: "tok-lena" } }));
+
+        // The people of the home tenant are the platform's own.
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "default" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
     });
 
     it("leaves links outside a sign-in through a provider of a tenant alone", async () => {
@@ -200,5 +229,16 @@ describe("an account that signs in through the provider of a tenant for the firs
 
         expect(mocks.membership).not.toHaveBeenCalled();
         expect(mocks.createMembership).not.toHaveBeenCalled();
+    });
+});
+
+describe("the endpoints of the SSO plugin that manage providers", () => {
+    it("are closed to the browser, the providers are managed on the pages of DBackup", async () => {
+        const { isSsoManagementRequest } = await import("@/lib/auth/sso-guard");
+        expect(isSsoManagementRequest("/sso/register", true)).toBe(true);
+        expect(isSsoManagementRequest("/sso/get-provider", true)).toBe(true);
+        expect(isSsoManagementRequest("/sso/callback/entra-acme", true)).toBe(false);
+        expect(isSsoManagementRequest("/sign-in/sso", true)).toBe(false);
+        expect(isSsoManagementRequest("/sso/register", false)).toBe(false);
     });
 });

@@ -1,12 +1,6 @@
-import type { AdapterConfig } from "@prisma/client";
-import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
-import { registerAdapters } from "@/lib/adapters";
 import type { StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { NotFoundError, ServiceError } from "@/lib/logging/errors";
-
-registerAdapters();
+import { NotFoundError } from "@/lib/logging/errors";
+import { openDestination } from "@/services/sharing/destination-access";
 
 const STORAGE = "Storage adapter";
 
@@ -14,13 +8,6 @@ const STORAGE = "Storage adapter";
 export interface OpenStorage {
     adapter: StorageAdapter;
     config: unknown;
-}
-
-/** The row of a storage destination. Throws `NotFoundError` when no storage has this id. */
-export async function findStorageConfig(id: string): Promise<AdapterConfig> {
-    const row = await prisma.adapterConfig.findUnique({ where: { id } });
-    if (!row || row.type !== "storage") throw new NotFoundError(STORAGE, id);
-    return row;
 }
 
 /**
@@ -31,10 +18,11 @@ export function isMissingStorage(error: unknown): boolean {
     return error instanceof NotFoundError && error.resource === STORAGE;
 }
 
-/** Opens a storage destination for reading. Throws `NotFoundError` when no storage has this id. */
+/**
+ * Opens a storage connection for I/O as the tenant that runs now sees it, see
+ * `src/services/sharing/destination-access.ts`. Throws `NotFoundError` for one it may not use.
+ */
 export async function openStorage(id: string): Promise<OpenStorage> {
-    const row = await findStorageConfig(id);
-    const adapter = registry.get(row.adapterId) as StorageAdapter;
-    if (!adapter) throw new ServiceError("StorageLookup", "open", "Storage impl missing");
-    return { adapter, config: await resolveAdapterConfig(row) };
+    const { adapter, config } = await openDestination(id);
+    return { adapter, config };
 }

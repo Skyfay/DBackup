@@ -1,4 +1,5 @@
 import type { TriggerInfo } from "@/lib/runner";
+import type { KeyOverride } from "@/services/backup/key-resolution";
 import type { DatabaseMappingEntry } from "./database-mapping";
 
 /** Selects a directory entry (from a seekable v2 archive) to restore, and where to. */
@@ -27,6 +28,16 @@ export interface DirectoryRestoreMapping {
  */
 export type RestoreScope = 'all' | 'databases' | 'files';
 
+/** A customer's restore of a database of a shared server, see `RestoreInput.shared`. */
+export interface SharedRestore {
+    databaseName: string;
+    /**
+     * The tenant of the server, which gets a run of the same restore in its own History with the
+     * whole log, and the names of both tenants. Left out, only the customer's run is written.
+     */
+    provider?: { tenantId: string; name: string; customer: string };
+}
+
 export interface RestoreInput {
     storageConfigId: string;
     file: string;
@@ -35,7 +46,7 @@ export interface RestoreInput {
      * customer's History, so it names that database alone: never the archive, its path, the
      * destination or the other databases of the server. Only an archive with an index is read.
      */
-    shared?: { databaseName: string };
+    shared?: SharedRestore;
     /** Defaults to 'all', which is what every request written before scopes existed means. */
     scope?: RestoreScope;
     /** Optional - a directory-only archive has no database target. Required whenever the
@@ -63,8 +74,10 @@ export interface RestoreInput {
     };
     /**
      * Vault profile to open the backup with, when the one its metadata names does not fit
-     * and the user picked another. Absent for the ordinary case.
+     * and the user picked another. Absent for the ordinary case. A restore of a shared
+     * database hands over the key it found among the keys of the server's tenant, so the
+     * restore searches no other tenant's.
      */
-    keyOverride?: { profileId?: string };
+    keyOverride?: KeyOverride;
     triggerInfo?: TriggerInfo;
 }

@@ -1,7 +1,7 @@
 import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
 import { FTPSchema } from "@/lib/adapters/definitions";
 import { createConnectionPool } from "@/lib/adapters/storage/common/connection-pool";
-import { Client, FileInfo as FTPFileInfo } from "basic-ftp";
+import { Client, FileInfo as FTPFileInfo, FTPError } from "basic-ftp";
 import { createReadStream, createWriteStream } from "fs";
 import { PassThrough, Readable, Writable } from "stream";
 import fs from "fs/promises";
@@ -170,6 +170,24 @@ async function performFtpUpload(
 }
 
 /**
+ * Whether a folder whose listing the server refused is not there.
+ *
+ * Servers answer a LIST of a missing folder differently: most with 550, ProFTPD with 450, and
+ * vsftpd with an empty listing. A CWD into the folder settles it, which every server refuses
+ * with 550 (RFC 959 "file unavailable") when the folder does not exist. Only a refusal of the
+ * server gets that far, a timeout or a dropped connection is no FTPError and still fails.
+ */
+async function isMissingFtpFolder(client: Client, error: unknown, folder: string): Promise<boolean> {
+    if (!(error instanceof FTPError)) return false;
+    try {
+        await client.cd(folder);
+        return false;
+    } catch (cdError: unknown) {
+        return cdError instanceof FTPError && cdError.code === 550;
+    }
+}
+
+/**
  * Recursively lists an FTP tree, separating out the symbolic links it cannot describe.
  *
  * One walker behind both `list()` and `listTree()`, so retention and collection can never
@@ -209,8 +227,13 @@ async function walkFtpTree(
             try {
                 items = await client!.list(currentDir);
             } catch (error: unknown) {
-                // Root directory listing failure: propagate so the stats cache uses DB fallback.
-                if (currentDir === startDir) throw error;
+                if (currentDir === startDir) {
+                    // A subfolder nothing was written to yet is not there. It lists as empty,
+                    // like on the other destinations.
+                    if (dir !== "" && await isMissingFtpFolder(client!, error, currentDir)) return;
+                    // Root directory listing failure: propagate so the stats cache uses DB fallback.
+                    throw error;
+                }
                 // Sub-directory listing failure: skip silently and continue the walk.
                 return;
             }

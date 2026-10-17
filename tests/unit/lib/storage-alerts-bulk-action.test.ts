@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/lib/testing/prisma-mock";
 import { PermissionError } from "@/lib/logging/errors";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 
-const mocks = vi.hoisted(() => ({ allowed: true, apply: vi.fn(), audit: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    allowed: true,
+    viewer: { id: "admin", tenantId: "acme" as string | null, allTenants: false },
+    checkPermission: vi.fn(),
+    apply: vi.fn(),
+    audit: vi.fn(),
+}));
 
 vi.mock("@/lib/auth/access-control", () => ({
     checkPermission: vi.fn(async (permission: string) => {
+        mocks.checkPermission(permission);
         if (!mocks.allowed) throw new PermissionError(permission);
-        return { id: "admin" };
+        return mocks.viewer;
     }),
 }));
 vi.mock("@/services/storage/storage-alert-service", () => ({ saveAlertConfig: vi.fn(), getAlertConfig: vi.fn() }));
-vi.mock("@/services/storage/storage-alert-changes", () => ({ applyAlertChanges: mocks.apply }));
+vi.mock("@/services/storage/storage-alert-changes", () => ({ applyAlertChanges: mocks.apply, saveDestinationAlerts: vi.fn() }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 
 const { updateStorageAlertsOfMany } = await import("@/app/actions/storage/storage-alerts");
@@ -20,6 +28,7 @@ describe("changing the alerts of several destinations in one step", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.allowed = true;
+        mocks.viewer = { id: "admin", tenantId: "acme", allTenants: false };
         mocks.apply.mockResolvedValue({ succeeded: ["nas", "r2"], failed: [] });
     });
 
@@ -46,10 +55,19 @@ describe("changing the alerts of several destinations in one step", () => {
         expect(mocks.audit).not.toHaveBeenCalled();
     });
 
-    it("needs the permission to change settings", async () => {
+    it("needs the permission to change destinations, not the one of the instance settings", async () => {
         mocks.allowed = false;
 
         await expect(updateStorageAlertsOfMany(["nas"], { usageSpike: { enabled: false } })).rejects.toBeInstanceOf(PermissionError);
+        expect(mocks.checkPermission).toHaveBeenCalledWith(PERMISSIONS.DESTINATIONS.WRITE);
         expect(mocks.apply).not.toHaveBeenCalled();
+    });
+
+    it("changes nothing in All tenants, where the destinations of every tenant show", async () => {
+        mocks.viewer = { id: "admin", tenantId: null, allTenants: true };
+
+        expect(await updateStorageAlertsOfMany(["nas"], { usageSpike: { enabled: false } })).toEqual({ success: false, error: "Open the tenant of the destination to change its alerts." });
+        expect(mocks.apply).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 });

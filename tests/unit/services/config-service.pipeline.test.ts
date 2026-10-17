@@ -78,6 +78,8 @@ import { restoreFromStorage } from '@/services/config/restore-pipeline';
 import { registry } from '@/lib/core/registry';
 import * as encryptionService from '@/services/backup/encryption-service';
 import { importConfiguration } from '@/services/config/import';
+import { explicitScope, runAsTenant, type TenantScope } from '@/lib/tenant/context';
+import { HOME_TENANT_ID } from '@/lib/tenant/home';
 
 // Utility: wait for all micro and macro tasks to settle
 const flushAsync = () => new Promise(resolve => setTimeout(resolve, 30));
@@ -261,6 +263,28 @@ describe('restoreFromStorage', () => {
     expect(prismaMock.execution.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
     );
+  });
+
+  it('records the run and reads the destination in the home tenant, whichever tenant the admin looks at', async () => {
+    const scopes: (TenantScope | undefined)[] = [];
+    const noted = <T>(value: T) => async () => {
+      scopes.push(explicitScope());
+      return value;
+    };
+    prismaMock.execution.create.mockImplementation(noted({ id: executionId }) as any);
+    prismaMock.execution.update.mockImplementation(noted({}) as any);
+    prismaMock.adapterConfig.findUnique.mockImplementation(noted(mockStorageConfig) as any);
+    (registry.get as any).mockReturnValue(makeStorageAdapter());
+
+    // A customer's tenant, where the run would land in its history and the destination not be found.
+    await runAsTenant('acme', () => restoreFromStorage(storageConfigId, filePath));
+    await flushAsync();
+
+    expect(prismaMock.execution.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'Success' }) }),
+    );
+    expect(scopes.length).toBeGreaterThan(3);
+    expect(scopes.every((scope) => scope?.kind === 'tenant' && scope.tenantId === HOME_TENANT_ID)).toBe(true);
   });
 
   it('accepts optional RestoreOptions parameter and returns executionId', async () => {

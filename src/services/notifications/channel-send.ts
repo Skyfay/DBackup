@@ -12,10 +12,15 @@ import { getErrorMessage } from "@/lib/logging/errors";
 import { renderTemplate } from "@/lib/notifications/templates";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import type { NotificationBrand } from "@/lib/notifications/brand";
+import { EMAIL_ADAPTER_IDS } from "@/services/sharing/provided";
+import { channelTarget } from "@/services/sharing/channel-recipients";
 
 const log = logger.child({ service: "NotificationChannelSend" });
 
 const NOTIFICATION_TIMEOUT_MS = 30_000;
+
+/** What a customer reads when a channel another tenant shares fails, the cause stays with that tenant. */
+export const SHARED_FAILURE = "The channel of the tenant that shares it did not take the message.";
 
 function notifyWithTimeout(send: () => Promise<unknown>): Promise<unknown> {
     return Promise.race([
@@ -30,7 +35,7 @@ function notifyWithTimeout(send: () => Promise<unknown>): Promise<unknown> {
 }
 
 /** Email adapter IDs that support per-user `to` override */
-export const EMAIL_ADAPTER_IDS = ["email"];
+export { EMAIL_ADAPTER_IDS };
 
 /**
  * Send a notification payload through a single adapter channel.
@@ -38,11 +43,11 @@ export const EMAIL_ADAPTER_IDS = ["email"];
  * replaced (used for user-targeted delivery).
  */
 export async function sendThroughChannel(
-  channel: { id: string; name: string; adapterId: string; config: string; primaryCredentialId: string | null; sshCredentialId: string | null },
+  channel: { id: string; name: string; adapterId: string; config: string; primaryCredentialId: string | null; sshCredentialId: string | null; tenantId?: string },
   payload: ReturnType<typeof renderTemplate>,
   eventType: string,
   toOverride?: string,
-  opts?: { executionId?: string; brand?: NotificationBrand }
+  opts?: { executionId?: string; brand?: NotificationBrand; tenantId?: string }
 ): Promise<void> {
   const adapter = registry.get(channel.adapterId) as
     | NotificationAdapter
@@ -56,7 +61,27 @@ export async function sendThroughChannel(
     return;
   }
 
+  // A message of a tenant through a channel another tenant shares goes where the tenant named, or nowhere.
+  const target = await channelTarget(channel, opts?.tenantId);
+  const logTenant = opts?.tenantId && channel.tenantId && opts.tenantId !== channel.tenantId ? opts.tenantId : undefined;
+  if (target.refusal) {
+    await recordNotificationLog({
+      eventType,
+      channelId: channel.id,
+      channelName: channel.name,
+      adapterId: channel.adapterId,
+      status: "Failed",
+      title: payload.title,
+      message: payload.message,
+      error: target.refusal,
+      executionId: opts?.executionId,
+      tenantId: logTenant,
+    });
+    throw new Error(target.refusal);
+  }
+
   let channelConfig = await resolveAdapterConfig(channel) as Record<string, unknown>;
+  if (target.to) channelConfig = { ...channelConfig, to: target.to };
 
   // Override the recipient for user-targeted emails
   if (toOverride && EMAIL_ADAPTER_IDS.includes(channel.adapterId)) {
@@ -128,6 +153,7 @@ export async function sendThroughChannel(
       renderedHtml,
       renderedPayload,
       executionId: opts?.executionId,
+      tenantId: logTenant,
     });
   } catch (err) {
     // Record failed send
@@ -141,9 +167,15 @@ export async function sendThroughChannel(
       message: payload.message,
       fields: payload.fields,
       color: payload.color,
-      error: getErrorMessage(err),
+      // Why the server of the tenant that shares the channel refused it stays with that tenant.
+      error: logTenant ? SHARED_FAILURE : getErrorMessage(err),
       executionId: opts?.executionId,
+      tenantId: logTenant,
     });
+    if (logTenant) {
+      log.warn("A shared channel did not take a message of a customer", { channelId: channel.id, tenantId: logTenant, error: getErrorMessage(err) });
+      throw new Error(SHARED_FAILURE);
+    }
     throw err; // Re-throw so the caller handles it
   }
 

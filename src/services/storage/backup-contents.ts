@@ -2,14 +2,13 @@ import path from "path";
 import fs from "fs";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import type { BackupMetadata, DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import type { BackupMetadata, DatabaseAdapter } from "@/lib/core/interfaces";
 import { getTempDir } from "@/lib/temp-dir";
 import type { BrowseEntry } from "@/lib/archive/browse";
 import { EncryptionKeyRequiredError, NotFoundError, ServiceError, ValidationError } from "@/lib/logging/errors";
 import { archiveIndexService, type ArchiveSummary } from "@/services/backup/archive-index-service";
 import type { KeyOverride } from "@/services/backup/key-resolution";
-import { findStorageConfig, openStorage } from "./storage-lookup";
+import { openStorage } from "./storage-lookup";
 
 registerAdapters();
 
@@ -163,13 +162,11 @@ export async function browseArchive(
     file: string,
     options: { jobSourceId?: string; prefix?: string; keyOverride?: KeyOverride }
 ): Promise<ArchiveListing | null> {
-    const row = await findStorageConfig(storageId);
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter?.read) {
+    const { adapter, config } = await openStorage(storageId);
+    if (!adapter.read) {
         throw new ValidationError("This storage adapter cannot read backup metadata");
     }
 
-    const config = await resolveAdapterConfig(row);
     const metaContent = await adapter.read(config, `${file}.meta.json`);
     if (!metaContent) throw new NotFoundError("Backup metadata", `${file}.meta.json`);
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { headers } from "next/headers";
-import { getAuthContext } from "@/lib/auth/access-control";
+import { getAuthContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!ctx.isPlatformAdmin && !ctx.permissions.includes(PERMISSIONS.CREDENTIALS.READ)) {
+    if (!hasPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ)) {
         return NextResponse.json(
             { valid: false, message: "Permission denied: credentials:read required" },
             { status: 403 }

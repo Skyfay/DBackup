@@ -8,7 +8,11 @@ import prisma from "@/lib/prisma";
 import { isStorageRole } from "@/lib/core/storage-roles";
 import { registerAdapters } from "@/lib/adapters";
 import { validateStorageRole } from "@/lib/adapters/role-validation";
+import { decryptConfig } from "@/lib/crypto";
 import { ValidationError } from "@/lib/logging/errors";
+import { isShared } from "@/services/sharing/destination-access";
+import { assertMayAdd } from "@/services/tenant/tenant-allowances";
+import { assertMayReachHost } from "./adapter-create";
 
 registerAdapters();
 
@@ -27,7 +31,9 @@ export interface AdapterCloneResult {
 /**
  * Creates a copy of a connection. Null when the original does not exist.
  *
- * @throws ValidationError for an unknown role or a role the adapter cannot serve.
+ * @throws ValidationError for an unknown role, a role the adapter cannot serve, a destination
+ *   shared with other tenants, a kind the tenant may not add or a connection that reaches the
+ *   server DBackup runs on outside the platform.
  */
 export async function cloneAdapter(id: string, input: CloneAdapterInput): Promise<AdapterCloneResult | null> {
     const original = await prisma.adapterConfig.findUnique({ where: { id } });
@@ -47,6 +53,18 @@ export async function cloneAdapter(id: string, input: CloneAdapterInput): Promis
     if (original.type === "storage" && isStorageRole(storageRole)) {
         validateStorageRole(original.adapterId, storageRole);
     }
+    // A copy of a destination shared with other tenants is one nobody shares, which shows its
+    // tenant the folders of the customers that the shared one hides.
+    if (original.type === "storage" && (await isShared(original.id))) {
+        throw new ValidationError("It is shared with other tenants, so it is not copied. Stop sharing it first.");
+    }
+    // A copy is a new connection, which the platform may not let the tenant add itself.
+    await assertMayAdd(original.type, storageRole);
+    // Nor one that reaches the server DBackup runs on, wherever the original came from.
+    await assertMayReachHost(original.adapterId, () => decryptConfig(JSON.parse(original.config)) as Record<string, unknown>, {
+        primaryCredentialId: original.primaryCredentialId,
+        sshCredentialId: original.sshCredentialId,
+    });
 
     const clone = await prisma.adapterConfig.create({
         data: {

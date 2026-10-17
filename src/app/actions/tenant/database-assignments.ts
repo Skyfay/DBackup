@@ -2,13 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission } from "@/lib/auth/access-control";
+import { checkPermission, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { diffFields } from "@/lib/core/audit-diff";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { ON_DEMAND_MAX, ON_DEMAND_MIN, SEE_SHARED_DATABASES_PERMISSION, SHARE_DATABASES_PERMISSION } from "@/lib/tenant/sharing";
+import { ON_DEMAND_MAX, ON_DEMAND_MIN, SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { auditService } from "@/services/audit-service";
 import { databaseAssignmentService, type SourceAssignments } from "@/services/tenant/database-assignments";
 import { moveDatabase, moveTargets, type MoveTarget } from "@/services/tenant/database-moves";
@@ -18,7 +18,7 @@ import { customersOfServer } from "@/services/tenant/shared-servers";
  * Who the databases of a shared server belong to, as the tenant of the server decides it on the
  * page of the server: assignments, rules, moves to another server and backups on demand. The same
  * assignments come through `PUT /api/adapters/[id]/database-assignments`. Every change needs
- * `SHARE_DATABASES_PERMISSION`, read in one place.
+ * `SHARE_PERMISSION`, read in one place.
  */
 
 const log = logger.child({ action: "database-assignments" });
@@ -53,7 +53,7 @@ const onDemandChanges = (before: number | null, after: number | null) =>
 
 /** The databases of a shared server with who holds each, the rules and their history, for whoever may see the shared databases. */
 export async function getSourceAssignments(sourceId: string): Promise<{ success: true; data: SourceAssignments } | { success: false; error: string }> {
-    await checkPermission([SEE_SHARED_DATABASES_PERMISSION, SHARE_DATABASES_PERMISSION]);
+    await checkPermission([SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {
@@ -66,7 +66,7 @@ export async function getSourceAssignments(sourceId: string): Promise<{ success:
 
 /** Gives databases of the server to customers, or takes them back with a null tenant. */
 export async function assignDatabases(sourceId: string, changes: z.input<typeof ChangeSchema>[]) {
-    const viewer = await checkPermission(SHARE_DATABASES_PERMISSION);
+    const viewer = await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);
     const parsed = z.array(ChangeSchema).min(1).max(500).safeParse(changes);
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
@@ -88,7 +88,7 @@ export async function assignDatabases(sourceId: string, changes: z.input<typeof 
 }
 
 export async function addAssignmentRule(sourceId: string, input: z.input<typeof RuleSchema>) {
-    const viewer = await checkPermission(SHARE_DATABASES_PERMISSION);
+    const viewer = await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);
     const parsed = RuleSchema.safeParse(input);
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
@@ -108,7 +108,7 @@ export async function addAssignmentRule(sourceId: string, input: z.input<typeof 
 }
 
 export async function removeAssignmentRule(sourceId: string, ruleId: string) {
-    const viewer = await checkPermission(SHARE_DATABASES_PERMISSION);
+    const viewer = await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);
     const rule = IdSchema.safeParse(ruleId);
     if (!id.success || !rule.success) return { success: false as const, error: "Invalid request" };
@@ -126,7 +126,7 @@ export async function removeAssignmentRule(sourceId: string, ruleId: string) {
 
 /** The servers of the same engine a database of the server can move to, with the databases each holds. */
 export async function getMoveTargets(sourceId: string): Promise<{ success: true; data: MoveTarget[] } | { success: false; error: string }> {
-    await checkPermission(SHARE_DATABASES_PERMISSION);
+    await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {
@@ -139,7 +139,7 @@ export async function getMoveTargets(sourceId: string): Promise<{ success: true;
 
 /** Marks a database of a customer as moved to another server, where its assignment goes on. */
 export async function moveSharedDatabase(sourceId: string, input: z.input<typeof MoveSchema>) {
-    const viewer = await checkPermission(SHARE_DATABASES_PERMISSION);
+    const viewer = await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);
     const parsed = MoveSchema.safeParse(input);
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
@@ -163,7 +163,7 @@ export async function moveSharedDatabase(sourceId: string, input: z.input<typeof
 
 /** Lets the customer who holds a database by name start backups of it, up to a number a day, or none with null. */
 export async function setDatabaseOnDemand(sourceId: string, databaseName: string, perDay: number | null) {
-    const viewer = await checkPermission(SHARE_DATABASES_PERMISSION);
+    const viewer = await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);
     const name = NameSchema.safeParse(databaseName);
     const value = PerDaySchema.safeParse(perDay);
@@ -185,7 +185,7 @@ export async function setDatabaseOnDemand(sourceId: string, databaseName: string
 
 /** The same for every database a rule gives. */
 export async function setRuleOnDemand(sourceId: string, ruleId: string, perDay: number | null) {
-    const viewer = await checkPermission(SHARE_DATABASES_PERMISSION);
+    const viewer = await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);
     const rule = IdSchema.safeParse(ruleId);
     const value = PerDaySchema.safeParse(perDay);
@@ -205,13 +205,19 @@ export async function setRuleOnDemand(sourceId: string, ruleId: string, perDay: 
     }
 }
 
-/** The customers who hold a database of a server now, for the warning before it is deleted. */
-export async function getServerCustomers(sourceId: string): Promise<{ success: true; data: string[] } | { success: false; error: string }> {
-    await checkPermission(PERMISSIONS.SOURCES.VIEW);
+/**
+ * The customers who hold a database of a server now, for the warning before it is deleted, which
+ * only someone who may delete it sees. Their names go to whoever may see or share the databases of
+ * shared servers, everyone else learns how many there are.
+ */
+export async function getServerCustomers(sourceId: string): Promise<{ success: true; data: { count: number; names: string[] | null } } | { success: false; error: string }> {
+    const viewer = await checkPermission(PERMISSIONS.SOURCES.WRITE);
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {
-        return { success: true, data: await customersOfServer(id.data) };
+        const names = await customersOfServer(id.data);
+        const named = hasPermissionWithContext(viewer, SEE_SHARING_PERMISSION) || hasPermissionWithContext(viewer, SHARE_PERMISSION);
+        return { success: true, data: { count: names.length, names: named ? names : null } };
     } catch (error: unknown) {
         log.warn("Reading the customers of a server failed", { sourceId: id.data }, wrapError(error));
         return { success: false, error: "The customers of the server could not be read." };

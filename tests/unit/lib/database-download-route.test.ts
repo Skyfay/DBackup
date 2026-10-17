@@ -20,7 +20,7 @@ vi.mock("@/services/system/database-service", () => ({
 
 const mockAuditLog = vi.fn();
 vi.mock("@/services/audit-service", () => ({
-    auditService: { logFor: (...args: unknown[]) => mockAuditLog(...args) },
+    auditService: { log: (...args: unknown[]) => mockAuditLog(...args) },
 }));
 
 const mockStream = vi.fn();
@@ -31,7 +31,8 @@ vi.mock("@/lib/server/temp-file-response", () => ({
 const { POST, GET } = await import("@/app/api/settings/database/download/route");
 const { DATABASE_BUSY } = await import("@/lib/server/database-maintenance");
 
-const platformAdmin = { userId: "admin-1", permissions: [], isPlatformAdmin: true, authMethod: "session", tenantId: "default" };
+// Working in the tenant of a customer, the entry still goes to the log of the home tenant.
+const platformAdmin = { userId: "admin-1", permissions: [], isPlatformAdmin: true, authMethod: "session", tenantId: "acme" };
 
 function getRequest(token?: string) {
     const url = new URL("http://localhost:3000/api/settings/database/download");
@@ -123,7 +124,7 @@ describe("Database download route", () => {
 
         expect(prepared.status).toBe(200);
         expect(data.fileName).toBe("dbackup-database_2026-09-16_12-00-00.db");
-        expect(mockAuditLog).toHaveBeenCalledWith(platformAdmin, "EXPORT", "SYSTEM", expect.objectContaining({ action: "database_download" }));
+        expect(mockAuditLog).toHaveBeenCalledWith("admin-1", "EXPORT", "SYSTEM", expect.objectContaining({ action: "database_download" }), undefined, { tenantId: "default", apiKeyId: null });
 
         // Another platform admin cannot redeem the token.
         mockGetAuthContext.mockResolvedValue({ ...platformAdmin, userId: "admin-3" });

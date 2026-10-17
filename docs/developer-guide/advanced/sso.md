@@ -44,7 +44,7 @@ model SsoProvider {
 }
 ```
 
-`defaultGroupId` has no foreign key. Deleting a group moves it to the group its members move to, or clears it, in `group-service.ts`, and a group that is gone anyway leaves new people without one.
+`defaultGroupId` has no foreign key. Deleting a group moves it to the group its members move to, or clears it, in `group-service.ts`, and a group that is gone anyway leaves new people without one. A provider of a tenant adds people only into a group, so clearing its group also switches `allowProvisioning` off.
 
 ### The client secret
 
@@ -63,16 +63,27 @@ The hooks in `sso-guard.ts` decide what the browser cannot:
 | Hook | Refuses or does |
 | :--- | :--- |
 | `refuseDisabledProvider`, before every endpoint | Starting a sign-in through a provider that is off, and its callback, which goes back to the login page. Hiding it on the login page is not enough, the endpoints are public |
-| `refuseSsoSignUp`, before a user is created | Someone new through a provider that is off or does not add new people, whatever `requestSignUp` said |
-| `placeSsoUser`, after a user is created | Gives them a membership of the home tenant with `defaultGroupId`, none without one, and writes `CREATE USER` with `via: "sso"` to the audit log |
+| `refuseSsoSignUp`, before a user is created | Someone new through a provider that is off or does not add new people, whatever `requestSignUp` said, through a provider of a tenant without a group, and an email outside the domain of a provider of a tenant |
+| `placeSsoUser`, after a user is created | Gives them a membership of the provider's tenant, the home tenant for a provider of the platform, with `defaultGroupId`, none without one, and writes `CREATE USER` with `via: "sso"` to the audit log of that tenant |
+| `isSsoManagementRequest`, before every endpoint | The endpoints of the SSO plugin that manage providers and domains, like `/sso/register` or `/sso/update-provider`, answer `NOT_FOUND` to the browser. Providers change only through the actions below |
 
 The sign-in itself is written as `LOGIN` with `method: "sso"`, the provider name and its ID, see [Audit Log](/developer-guide/advanced/audit).
 
+### Links and Providers of a Tenant
+
+better-auth links an account by its email, so `src/lib/auth/sso-tenant-guard.ts` decides which link and which session go on:
+
+- `tenantSignInRefusal`: a provider of a tenant never signs in a platform admin or an account of a platform group, only emails of exactly its domain, and while it adds nobody only the members of its tenant.
+- `allowTenantSsoLink`: a provider of a tenant never links an account that works in tenants but not in its own, which another tenant made. A provider of the platform links an account that works only in customer tenants just for someone whose session belongs to that account already, which is **Link** of a provider under Profile.
+- `refuseTenantSsoSession` sends a refused sign-in back to the login page with its reason, and `joinSsoTenant` adds an account that signs in through a provider of a tenant for the first time to that tenant with its group, while the provider adds people.
+
+`claimedEmailRefusal` in `src/services/sso/email-domain-claims.ts` keeps the other side closed: an account gets an email of a domain that a provider of another tenant claims, a provider of the platform counting as the home tenant, only from a platform admin or someone with `platform-accounts:write`.
+
 ## Changing Providers
 
-`GET /api/sso-providers` needs `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for a platform admin the groups new people can start in.
+`GET /api/sso-providers` needs `platform-sign-in:read` or `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for a platform admin the groups new people can start in.
 
-The Server Actions in `src/app/actions/auth/oidc.ts` check `settings:write` first and then refuse anyone who is no platform admin:
+The Server Actions in `src/app/actions/auth/oidc.ts` check `platform-sign-in:write`, which no group gives, so only a platform admin passes:
 
 | Action | Does |
 | :--- | :--- |

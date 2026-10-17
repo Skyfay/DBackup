@@ -26,6 +26,8 @@ vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 
 vi.mock("@/lib/adapters/config-resolver", () => ({
     overlayCredentialsOnConfig: vi.fn(),
+    // Every test here is about the SSH login of a server of its own, not about the server DBackup runs on.
+    assertConfigOffHost: vi.fn(),
 }));
 
 vi.mock("@/lib/adapters/database/mssql/preflight", () => ({

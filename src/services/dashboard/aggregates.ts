@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { WHOLE_JOB_RUNS } from "@/services/history/whole-runs";
 import { subDays, subHours } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import {
@@ -9,6 +10,7 @@ import {
     type StorageVolumeEntry,
 } from "@/services/dashboard-service";
 import { cached } from "./cache";
+import { currentTenantId } from "@/lib/tenant/current";
 import { successShare } from "@/lib/core/success-share";
 import { dailyStorageTotals, dayBuckets, type SnapshotPoint } from "./trends";
 import type { CalendarDay, RunSummary } from "./types";
@@ -188,7 +190,7 @@ async function loadRunStats(now: Date) {
                 select: { startedAt: true },
             }),
             prisma.execution.findMany({
-                where: { type: "Backup", status: "Success", endedAt: { not: null } },
+                where: { type: "Backup", status: "Success", endedAt: { not: null }, AND: [WHOLE_JOB_RUNS] },
                 orderBy: { startedAt: "desc" },
                 take: DURATION_SAMPLE,
                 select: { startedAt: true, endedAt: true },
@@ -215,49 +217,94 @@ async function loadRunStats(now: Date) {
 }
 
 /**
- * The newest snapshot of each destination in each span, oldest first. They are the only ones
- * `dailyStorageTotals` keeps, so its totals stay the same as over every snapshot.
+ * The ids of the newest snapshot of each destination and tenant in each span. A refresh writes one
+ * snapshot per destination for each tenant whose backups it holds, so on a destination its tenant
+ * shares with customers the newest of the span may belong to any of them, and each tenant is
+ * picked on its own. With `tenantId` only the snapshots of that tenant, otherwise of every tenant
+ * a destination held backups of in the window.
  *
  * Raw SQL for a measured reason: a busy instance holds hundreds of thousands of snapshots for 30
  * days, and loading them all took the overview 1.7 s, plus as long again to sort them into days.
- * One lookup per destination and day on the index of both reads 750 rows at most. `createdAt` is
- * stored in epoch milliseconds, as Prisma writes every DateTime in SQLite. The raw query skips the
- * tenant filter, so it only picks ids, and the rows are read through the client, which keeps the
- * snapshots of other tenants out.
+ * One lookup per destination, tenant and day on the index of destination and time reads a few
+ * rows each. `createdAt` is stored in epoch milliseconds, as Prisma writes every DateTime in SQLite.
+ * The raw query skips the tenant filter, so it only picks ids and names the tenant itself.
  */
-async function latestSnapshotPerDay(destinationIds: string[], buckets: [number, number][]): Promise<SnapshotPoint[]> {
-    if (destinationIds.length === 0 || buckets.length === 0) return [];
-
-    const picked = await prisma.$queryRaw<{ id: string | null }[]>`
+function pickNewestPerDay(destinations: string, days: string, windowStart: number, tenantId: string | null) {
+    if (tenantId) {
+        return prisma.$queryRaw<{ id: string | null }[]>`
+            SELECT (
+                SELECT s.id FROM StorageSnapshot s
+                WHERE s.adapterConfigId = d.value
+                  AND s.tenantId = ${tenantId}
+                  AND s.createdAt >= json_extract(b.value, '$[0]')
+                  AND s.createdAt < json_extract(b.value, '$[1]')
+                ORDER BY s.createdAt DESC
+                LIMIT 1
+            ) AS id
+            FROM json_each(${destinations}) d, json_each(${days}) b`;
+    }
+    // Every tenant measured on a destination in the window, the tenant of the destination and the
+    // customers of a shared one.
+    return prisma.$queryRaw<{ id: string | null }[]>`
+        WITH holders AS (
+            SELECT DISTINCT s.adapterConfigId AS configId, s.tenantId AS tenantId
+            FROM StorageSnapshot s, json_each(${destinations}) d
+            WHERE s.adapterConfigId = d.value AND s.createdAt >= ${windowStart}
+        )
         SELECT (
             SELECT s.id FROM StorageSnapshot s
-            WHERE s.adapterConfigId = d.value
+            WHERE s.adapterConfigId = h.configId
+              AND s.tenantId = h.tenantId
               AND s.createdAt >= json_extract(b.value, '$[0]')
               AND s.createdAt < json_extract(b.value, '$[1]')
             ORDER BY s.createdAt DESC
             LIMIT 1
         ) AS id
-        FROM json_each(${JSON.stringify(destinationIds)}) d, json_each(${JSON.stringify(buckets)}) b`;
+        FROM holders h, json_each(${days}) b`;
+}
+
+/**
+ * The newest snapshot of each destination and tenant in each span, oldest first, with the
+ * destination and tenant as the key `dailyStorageTotals` sums by. They are the only ones it keeps,
+ * so its totals stay the same as over every snapshot.
+ *
+ * A tenant sees its own backups, on its own destinations and on those other tenants share with it,
+ * never what the tenant of a shared destination or another customer keeps there. All tenants sees
+ * what each destination holds, the backups of every tenant on it summed per day.
+ */
+async function latestSnapshotPerDay(destinationIds: string[], buckets: [number, number][], tenantId: string | null): Promise<SnapshotPoint[]> {
+    if (destinationIds.length === 0 || buckets.length === 0) return [];
+
+    const picked = await pickNewestPerDay(JSON.stringify(destinationIds), JSON.stringify(buckets), buckets[0][0], tenantId);
     const ids = picked.map((row) => row.id).filter((id): id is string => id !== null);
     if (ids.length === 0) return [];
 
-    return prisma.storageSnapshot.findMany({
-        where: { id: { in: ids } },
+    // Read through the client, whose tenant filter keeps the snapshots of other tenants out of a tenant.
+    const snapshots = await prisma.storageSnapshot.findMany({
+        where: { id: { in: ids }, ...(tenantId ? { tenantId } : {}) },
         orderBy: { createdAt: "asc" },
-        select: { adapterConfigId: true, size: true, count: true, createdAt: true },
+        select: { adapterConfigId: true, tenantId: true, size: true, count: true, createdAt: true },
     });
+    return snapshots.map(({ tenantId: holder, ...snapshot }) => ({ ...snapshot, adapterConfigId: holderKey(snapshot.adapterConfigId, holder) }));
+}
+
+/** The key of what one destination holds for one tenant. */
+function holderKey(configId: string, tenantId: string): string {
+    return `${configId}\n${tenantId}`;
 }
 
 async function loadStorage(timezone: string, now: Date): Promise<Aggregates["storage"]> {
-    const [entries, updatedAt] = await Promise.all([getStorageVolume(), getStorageVolumeCacheAge()]);
+    const [entries, updatedAt, tenantId] = await Promise.all([getStorageVolume(), getStorageVolumeCacheAge(), currentTenantId()]);
 
     const dayKeys = Array.from({ length: STORAGE_TREND_DAYS }, (_, i) =>
         dayKey(subDays(now, STORAGE_TREND_DAYS - 1 - i), timezone));
-    const destinationIds = new Set(entries.map((entry) => entry.configId).filter((id): id is string => !!id));
+    // The destinations the scope sees now. A deleted one would inflate the totals.
+    const destinationIds = [...new Set(entries.map((entry) => entry.configId).filter((id): id is string => !!id))];
     const buckets = dayBuckets(dayKeys, subDays(now, STORAGE_TREND_DAYS).getTime(),
         (day) => fromZonedTime(`${day}T00:00:00`, timezone).getTime());
-    const snapshots = await latestSnapshotPerDay([...destinationIds], buckets);
-    const totals = dailyStorageTotals(snapshots, dayKeys, (date) => dayKey(date, timezone), destinationIds);
+    const snapshots = await latestSnapshotPerDay(destinationIds, buckets, tenantId);
+    const holders = new Set(snapshots.map((snapshot) => snapshot.adapterConfigId));
+    const totals = dailyStorageTotals(snapshots, dayKeys, (date) => dayKey(date, timezone), holders);
 
     return { entries, updatedAt, ...totals };
 }
@@ -274,8 +321,9 @@ async function loadRunsByJob(): Promise<Record<string, RunSummary[]>> {
     const jobs = await prisma.job.findMany({ select: { id: true } });
     // One indexed lookup per job keeps the cost flat no matter how long the history is.
     const entries = await Promise.all(jobs.map(async (job) => {
+        // The runs of the whole job: a run of single databases says nothing of its length or its health.
         const runs = await prisma.execution.findMany({
-            where: { jobId: job.id, type: "Backup" },
+            where: { jobId: job.id, type: "Backup", AND: [WHOLE_JOB_RUNS] },
             orderBy: { startedAt: "desc" },
             take: RUNS_PER_JOB,
             select: { id: true, status: true, startedAt: true, endedAt: true },

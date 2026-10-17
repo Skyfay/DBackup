@@ -186,6 +186,20 @@ describe('stepFinalize', () => {
         expect(prisma.execution.update).not.toHaveBeenCalled();
     });
 
+    it("ends the customer's run that follows this one right after its own status, with the dumps", async () => {
+        const prisma = (await import('@/lib/prisma')).default;
+        const order: string[] = [];
+        (prisma.execution.update as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => { order.push('update'); return {}; });
+        const follower = { start: vi.fn(), stage: vi.fn(), end: vi.fn(async () => { order.push('follower'); }) };
+        const dumps = [{ name: 'shop', state: 'done', bytes: 5632, startedAt: null, endedAt: null }];
+        const ctx = makeCtx({ status: 'Partial', follower, metadata: { onlyDatabases: ['shop'], dumps } } as Partial<RunnerContext>);
+
+        await stepFinalize(ctx);
+
+        expect(follower.end).toHaveBeenCalledWith({ status: 'Partial', dumps });
+        expect(order).toEqual(['update', 'follower']);
+    });
+
     it('updates the execution record with final status and metadata', async () => {
         const prisma = (await import('@/lib/prisma')).default;
         const ctx = makeCtx();

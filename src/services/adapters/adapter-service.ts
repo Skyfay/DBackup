@@ -141,6 +141,10 @@ export async function deleteAdapter(id: string, options: DeleteOptions = {}): Pr
 
 /** The delete itself, into Recently deleted unless `permanently`. Its storage history goes either way. */
 async function removeAdapter(id: string, options: DeleteOptions) {
+    // Its customers name it in their jobs and templates, which they lose only when sharing stops.
+    if ((await prisma.connectionShare.count({ where: { id } })) > 0) {
+        throw new ConflictError("It is shared with other tenants. Stop sharing it first.");
+    }
     // StorageSnapshot has no foreign key to AdapterConfig, so it needs clearing by hand.
     await prisma.storageSnapshot.deleteMany({ where: { adapterConfigId: id } });
     return prisma.$transaction(async (tx) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { HardDrive } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { JOIN_END, JOIN_MIDDLE } from "@/components/ui/page-head";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,51 @@ export function ExplorerPageSkeleton() {
                 <Skeleton className="ml-auto h-9 w-40" />
             </div>
             <ExplorerSkeleton />
+        </div>
+    );
+}
+
+interface BackupsPendingProps {
+    /** Why the own backups could not be loaded. */
+    error: string | null;
+    /** Why the shared backups could not be loaded, for a tenant with nothing of its own. */
+    sharedError: string | null;
+    onRetryShared: () => void;
+    /** Everything loaded and there is no backup at all. */
+    empty: boolean;
+}
+
+/** The Backups tab before its list shows: why the backups could not load, that there is none yet, or a skeleton. */
+export function BackupsPending({ error, sharedError, onRetryShared, empty }: BackupsPendingProps) {
+    if (error) return <ExplorerEmpty joined title="The backups could not be loaded">{error}</ExplorerEmpty>;
+    if (sharedError) {
+        return (
+            <ExplorerEmpty joined title="The backups shared with you could not be loaded">
+                {sharedError}{" "}
+                <Button variant="link" className="h-auto p-0" onClick={onRetryShared}>Try again</Button>
+            </ExplorerEmpty>
+        );
+    }
+    if (empty) {
+        return (
+            <ExplorerEmpty joined title="No backups yet">
+                The backups of the databases shared with you appear here once their provider backed them up, and your own once a job has written to a destination.
+            </ExplorerEmpty>
+        );
+    }
+    return <ExplorerSkeleton joined />;
+}
+
+/** Holds the place of what needs every backup while they load, or says why they did not. */
+export function RunsPending({ error, onRetry, className }: { error: string | null; onRetry: () => void; className: string }) {
+    if (!error) return <Skeleton className={cn("w-full", className)} />;
+    return (
+        <div className={cn("flex w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-4 text-center text-sm", className)}>
+            <p className="font-medium">The backups could not be loaded</p>
+            <p className="text-muted-foreground">
+                {error}{" "}
+                <Button variant="link" className="h-auto p-0" onClick={onRetry}>Try again</Button>
+            </p>
         </div>
     );
 }

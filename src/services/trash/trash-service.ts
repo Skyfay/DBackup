@@ -6,9 +6,10 @@
 
 import prisma from "@/lib/prisma";
 import { getDataRetentionSetting, parseRetentionDays } from "@/lib/core/data-retention";
-import { ConflictError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ConflictError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { runAsTenant } from "@/lib/tenant/context";
+import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { restoreSnapshot } from "./trash-restore";
 import { isTrashKind, type TrashKind, type TrashPart, type TrashRestoreResult, type TrashRow } from "./trash-types";
 
@@ -107,6 +108,12 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
             return done;
         });
         try {
+            // A connection that comes back is one more of its kind, which the platform may not let
+            // the tenant add itself. Asked before the transaction, which holds the one connection to SQLite.
+            if (kind === "connection") {
+                const { record } = JSON.parse(entry.data) as { record: { type: string; storageRole?: string | null } };
+                await assertMayAdd(record.type, record.storageRole);
+            }
             // An account belongs to no tenant, so its Undo also works in All tenants, which changes
             // no tenant. Its entry lives in the tenant that keeps it, the home tenant from there.
             const restored = kind === "user" ? await runAsTenant(entry.tenantId, restore) : await restore();
@@ -115,7 +122,7 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
             if (error instanceof ConflictError) {
                 result.conflicts.push({ id, kind, name: entry.name, message: error.message });
             } else {
-                log.error("Restoring a deleted record failed", { id, kind }, wrapError(error));
+                if (!(error instanceof ValidationError)) log.error("Restoring a deleted record failed", { id, kind }, wrapError(error));
                 result.failed.push({ id, name: entry.name, error: getErrorMessage(error) || "It could not be restored." });
             }
         }

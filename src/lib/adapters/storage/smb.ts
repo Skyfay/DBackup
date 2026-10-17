@@ -20,6 +20,24 @@ function sanitizeSmbError(error: unknown, password?: string): Error {
     return out;
 }
 
+/**
+ * What smbclient prints when the folder of a `dir` is not there: OBJECT_NAME_NOT_FOUND for a
+ * missing last folder, OBJECT_PATH_NOT_FOUND for a missing folder above it, and NO_SUCH_FILE
+ * when the pattern matches nothing. Each starts a line of the output, followed by "listing".
+ */
+const SMB_NOT_FOUND = /^NT_STATUS_(?:OBJECT_NAME_NOT_FOUND|OBJECT_PATH_NOT_FOUND|NO_SUCH_FILE)\b/m;
+
+/**
+ * Whether smbclient failed because the folder it listed does not exist. Read from what
+ * smbclient printed, never from the message, which also holds the command and the path in it.
+ * A refused login, a missing share or an unreachable server prints other codes.
+ */
+function isSmbNotFound(error: unknown): boolean {
+    const output = error as { all?: unknown; stdout?: unknown; stderr?: unknown } | null;
+    return [output?.all, output?.stdout, output?.stderr]
+        .some((text) => typeof text === "string" && SMB_NOT_FOUND.test(text));
+}
+
 interface SMBConfig {
     address: string;
     username: string;
@@ -220,9 +238,14 @@ export const SMBAdapter: StorageAdapter = {
                     const listPath = currentDir ? currentDir + "/*" : "*";
                     items = await client.list(listPath);
                 } catch (error: unknown) {
-                    // Root directory listing failure means the share is unreachable or inaccessible.
-                    // Propagate to trigger the DB fallback in the stats cache.
-                    if (currentDir === startDir) throw sanitizeSmbError(error, config.password);
+                    if (currentDir === startDir) {
+                        // A subfolder nothing was written to yet is not there. It lists as empty,
+                        // like on the other destinations.
+                        if (dir !== "" && isSmbNotFound(error)) return;
+                        // Any other failure, and every failure of the root, means the share is
+                        // unreachable or inaccessible. Propagate to trigger the DB fallback in the stats cache.
+                        throw sanitizeSmbError(error, config.password);
+                    }
                     // Sub-directory listing failure (e.g. permission denied on one folder): skip silently.
                     return;
                 }

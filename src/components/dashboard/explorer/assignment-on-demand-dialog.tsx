@@ -76,7 +76,7 @@ export function OnDemandDialog({ serverId, serverName, target, onClose, onSaved 
                     <SwitchList>
                         <SwitchRow
                             title={`${target.tenantName} backs up ${target.kind === "database" ? target.name : "each of them"} itself`}
-                            description="With Back up now on its tab Shared with you."
+                            description="With Back up now on its Backups page."
                             checked={on}
                             onCheckedChange={setOn}
                             disabled={pending}

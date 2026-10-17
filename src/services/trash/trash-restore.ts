@@ -10,6 +10,7 @@ import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { rememberServer, serverRestored } from "@/services/tenant/shared-servers";
+import { sharedKindOf, type SharedKind } from "@/services/sharing/provided";
 import type { ConnectionSnapshot, CredentialSnapshot, JobSnapshot, KeySnapshot, UserSnapshot } from "./trash-snapshot";
 import type { TrashKind } from "./trash-types";
 
@@ -69,22 +70,55 @@ async function restoreConnection(tx: Tx, snapshot: ConnectionSnapshot, newName?:
 
 /**
  * A snapshot of an earlier version holds the assignments the delete took along. They come back under
- * a SharedServer, unless they are back already. A customer deleted meanwhile takes its databases along.
+ * a SharedServer, unless they are back already. Those of a customer deleted meanwhile come back
+ * ended, so the backups of its time stay with nobody, like after the delete of a tenant.
  */
-async function restoreOldAssignments(tx: Tx, snapshot: ConnectionSnapshot, record: ConnectionSnapshot["record"]): Promise<void> {
+async function restoreOldAssignments(tx: Tx, snapshot: ConnectionSnapshot, record: ConnectionSnapshot["record"], now = new Date()): Promise<void> {
     const assignments = snapshot.assignments ?? [];
     const rules = snapshot.assignmentRules ?? [];
     if (assignments.length === 0 && rules.length === 0) return;
     await rememberServer(tx, record);
-    const customerHere = async (tenantId: string) => !!(await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }));
+    const customerGone = async (tenantId: string | null) => !!tenantId && !(await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }));
     for (const assignment of assignments) {
-        if (!(await customerHere(assignment.tenantId))) continue;
-        if (!(await tx.databaseAssignment.findUnique({ where: { id: assignment.id }, select: { id: true } }))) await tx.databaseAssignment.create({ data: assignment });
+        if (await tx.databaseAssignment.findUnique({ where: { id: assignment.id }, select: { id: true } })) continue;
+        const validUntil = assignment.validUntil ?? ((await customerGone(assignment.tenantId)) ? now : null);
+        await tx.databaseAssignment.create({ data: { ...assignment, validUntil } });
     }
     for (const rule of rules) {
-        if (!(await customerHere(rule.tenantId))) continue;
-        if (!(await tx.databaseAssignmentRule.findUnique({ where: { id: rule.id }, select: { id: true } }))) await tx.databaseAssignmentRule.create({ data: rule });
+        if (await tx.databaseAssignmentRule.findUnique({ where: { id: rule.id }, select: { id: true } })) continue;
+        const validUntil = rule.validUntil ?? ((await customerGone(rule.tenantId)) ? now : null);
+        await tx.databaseAssignmentRule.create({ data: { ...rule, validUntil } });
     }
+}
+
+/**
+ * The connections among `ids` that other tenants share with `tenantId`, with their kind and whether
+ * a destination takes only encrypted backups. It asks what `providedTo` in `provided.ts` asks, but
+ * through the transaction: the client outside it would wait for the one connection to SQLite, which
+ * the transaction holds until it ends.
+ */
+async function providedThrough(tx: Tx, tenantId: string, ids: string[]): Promise<Map<string, { kind: SharedKind; encryptedOnly: boolean }>> {
+    if (ids.length === 0) return new Map();
+    return runAsSystem(async () => {
+        const rows = await tx.adapterConfig.findMany({
+            where: {
+                id: { in: ids },
+                tenantId: { not: tenantId },
+                share: { is: { OR: [{ allTenants: true }, { tenants: { some: { tenantId } } }] } },
+            },
+            select: { id: true, type: true, storageRole: true, tenantId: true, share: { select: { encryptedOnly: true } } },
+        });
+        if (rows.length === 0) return new Map();
+        const providers = await tx.tenant.findMany({
+            where: { id: { in: [...new Set(rows.map((row) => row.tenantId))] }, sharesWithCustomers: true },
+            select: { id: true },
+        });
+        const sharing = new Set(providers.map((provider) => provider.id));
+        return new Map(rows.flatMap((row) => {
+            const kind = sharedKindOf(row);
+            return kind && row.share && sharing.has(row.tenantId) ? [[row.id, { kind, encryptedOnly: row.share.encryptedOnly }] as const] : [];
+        }));
+    });
 }
 
 async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Promise<RestoredRecord> {
@@ -94,6 +128,16 @@ async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Prom
     }
     const notes: string[] = [];
     const adapterHere = async (id: string) => !!(await tx.adapterConfig.findUnique({ where: { id }, select: { id: true } }));
+    // A destination or channel another tenant shares with the job's tenant is no row of it, and still
+    // there while it is shared. A snapshot of a version before tenants names no tenant and nothing shared.
+    const tenantId = (job as { tenantId?: string }).tenantId;
+    const provided = tenantId
+        ? await providedThrough(tx, tenantId, [...snapshot.destinations.map((destination) => destination.configId), ...snapshot.channelIds])
+        : new Map<string, { kind: SharedKind; encryptedOnly: boolean }>();
+    const providedAs = (id: string, kind: SharedKind) => {
+        const connection = provided.get(id);
+        return connection?.kind === kind ? connection : null;
+    };
 
     if (job.sourceId && !(await adapterHere(job.sourceId))) {
         job.sourceId = null;
@@ -116,10 +160,17 @@ async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Prom
     await tx.job.create({ data: job });
 
     let destinationsGone = 0;
+    let needKey = 0;
     let keptEverything = 0;
     for (const destination of snapshot.destinations) {
-        if (!(await adapterHere(destination.configId))) {
+        const shared = providedAs(destination.configId, "destination");
+        if (!shared && !(await adapterHere(destination.configId))) {
             destinationsGone++;
+            continue;
+        }
+        // Like a save of the job, a destination that takes only encrypted backups wants a key.
+        if (shared?.encryptedOnly && !job.encryptionProfileId) {
+            needKey++;
             continue;
         }
         const row = { ...destination };
@@ -147,7 +198,8 @@ async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Prom
             await tx.jobNotificationTemplate.create({ data: link });
         }
     }
-    const channels = await tx.adapterConfig.findMany({ where: { id: { in: snapshot.channelIds } }, select: { id: true } });
+    const own = new Set((await tx.adapterConfig.findMany({ where: { id: { in: snapshot.channelIds } }, select: { id: true } })).map((channel) => channel.id));
+    const channels = snapshot.channelIds.filter((id) => own.has(id) || providedAs(id, "channel")).map((id) => ({ id }));
     if (channels.length > 0) await tx.job.update({ where: { id: job.id }, data: { notifications: { connect: channels } } });
 
     // Its runs in History point at it again.
@@ -156,6 +208,9 @@ async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Prom
     }
 
     if (destinationsGone > 0) notes.push(`${plural(destinationsGone, "destination is", "destinations are")} left out, its connection is gone.`);
+    if (needKey > 0) notes.push(needKey === 1
+        ? "1 destination is left out, it takes only encrypted backups and the job has no key."
+        : `${needKey} destinations are left out, they take only encrypted backups and the job has no key.`);
     if (foldersGone > 0) notes.push(`${plural(foldersGone, "folder source is", "folder sources are")} left out, its connection is gone.`);
     if (keptEverything > 0) notes.push(`${plural(keptEverything, "destination keeps", "destinations keep")} every backup until a retention policy is picked again, its policy is gone.`);
     return { name: job.name, notes };
@@ -174,6 +229,11 @@ async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): P
     const memberships = snapshot.memberships ?? (legacyGroupId ? [{ tenantId: HOME_TENANT_ID, groupId: legacyGroupId }] : []);
     if (!snapshot.memberships && legacyGroupId && (await runAsTenant(HOME_TENANT_ID, () => tx.group.findUnique({ where: { id: legacyGroupId }, select: { fullAccess: true } })))?.fullAccess) {
         record.platformRole = PLATFORM_ADMIN_ROLE;
+    }
+    // A platform group deleted since does not come back with it.
+    if (record.platformGroupId && !(await tx.platformGroup.findUnique({ where: { id: record.platformGroupId }, select: { id: true } }))) {
+        record.platformGroupId = null;
+        notes.push("Its platform group was deleted since, so it comes back without one.");
     }
     await tx.user.create({ data: record });
     let lost = 0;

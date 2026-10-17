@@ -75,14 +75,17 @@ interface TenantPickDialogProps {
     description: string;
     /** The page that opens in the picked tenant, like the form of a new job. */
     href: string;
+    /** The tenants to offer, like the ones where the viewer may add the record. Every tenant of the view when left out. */
+    tenants?: ViewTenant[];
 }
 
 /**
  * Asks which tenant a new record belongs to, in All tenants, then opens its form in that tenant.
  * A record is made in its tenant, where everything it links to is checked against that tenant.
  */
-export function TenantPickDialog({ open, onOpenChange, title, description, href }: TenantPickDialogProps) {
-    const { tenants } = useTenantView();
+export function TenantPickDialog({ open, onOpenChange, title, description, href, tenants: offered }: TenantPickDialogProps) {
+    const view = useTenantView();
+    const tenants = offered ?? view.tenants;
     const openInTenant = useOpenInTenant();
     const [busyId, setBusyId] = useState<string | null>(null);
 

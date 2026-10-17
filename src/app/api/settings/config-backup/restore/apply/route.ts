@@ -6,6 +6,7 @@ import { logger } from "@/lib/logging/logger";
 import { requireConfigRestorer } from "@/lib/server/config-restore-guard";
 import { auditService } from "@/services/audit-service";
 import { applyCheckedRestore } from "@/services/config/restore-flow";
+import { platformLogFor } from "@/services/system/settings-save";
 
 const log = logger.child({ route: "settings/config-backup/restore/apply" });
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
     try {
         const applied = await applyCheckedRestore(parsed.data.token, { userId: ctx.userId });
         // A copy of the database carries its own entry of this, the one here goes with the database of now.
-        await auditService.logFor(ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.SYSTEM, { action: "config_restore", file: applied.fileName, kind: applied.kind });
+        await auditService.log(ctx.userId, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.SYSTEM, { action: "config_restore", file: applied.fileName, kind: applied.kind }, undefined, platformLogFor(ctx));
         return NextResponse.json({
             success: true,
             data: applied.kind === "database" ? { restarting: true } : { notes: applied.notes },

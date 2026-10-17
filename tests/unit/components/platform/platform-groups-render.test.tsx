@@ -72,7 +72,7 @@ describe("the platform groups under Platform, Users & Groups", () => {
         expect(within(support).getByText("3 today, new ones too")).toBeInTheDocument();
         const technicians = screen.getByRole("row", { name: /Technicians/ });
         expect(within(technicians).getByText("2 tenants")).toBeInTheDocument();
-        expect(within(technicians).getByText("Sees the tenants, shares databases")).toBeInTheDocument();
+        expect(within(technicians).getByText("Sees the tenants, shares with customers")).toBeInTheDocument();
     });
 
     it("opens Platform admin read only, with Duplicate as a new group", async () => {

@@ -44,6 +44,8 @@ export async function saveProfileAccountAction(input: { name: string; email: str
     if (email !== user.email && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_EMAIL))) {
         return { success: false, error: "Your group may not change your email.", field: "email" };
     }
+    const claimed = email !== user.email ? await userService.ownEmailRefusal(user.id, email) : null;
+    if (claimed) return { success: false, error: claimed, field: "email" };
 
     try {
         await userService.updateUser(user.id, { name, email });

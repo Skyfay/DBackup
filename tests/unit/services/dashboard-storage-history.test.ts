@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { runAsTenant } from "@/lib/tenant/context";
 
 // Mock logger to prevent output during tests
 vi.mock("@/lib/logging/logger", () => ({
@@ -160,6 +161,47 @@ describe("Storage History (dashboard-service)", () => {
 
       expect(typeof result[0].size).toBe("number");
       expect(result[0].size).toBe(5 * 1024 * 1024 * 1024);
+    });
+  });
+
+  describe("of a destination its tenant shares with customers", () => {
+    /** A snapshot as the history reads it, of the tenant named in the comment beside it. */
+    const snapshot = (size: number, at: string) => ({ size: BigInt(size), count: 1, createdAt: new Date(at) });
+
+    it("shows a tenant its own backups only", async () => {
+      prismaMock.storageSnapshot.findMany.mockResolvedValue([snapshot(300, "2026-02-14T10:00:00.000Z")] as any);
+
+      const result = await runAsTenant("acme", () => getStorageHistory("msp-s3", 30));
+
+      expect(prismaMock.storageSnapshot.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ adapterConfigId: "msp-s3", tenantId: "acme" }),
+      }));
+      expect(result).toEqual([{ date: "2026-02-14T10:00:00.000Z", size: 300, count: 1 }]);
+    });
+
+    it("shows All tenants one point per refresh with the backups of every tenant summed", async () => {
+      prismaMock.storageSnapshot.findMany.mockResolvedValue([
+        // One refresh writes the MSP and each customer at one time.
+        snapshot(100, "2026-02-13T10:00:00.000Z"), // msp
+        snapshot(300, "2026-02-13T10:00:00.000Z"), // acme
+        snapshot(50, "2026-02-13T10:00:00.000Z"), // shop
+        snapshot(120, "2026-02-14T10:00:00.000Z"), // msp
+        snapshot(310, "2026-02-14T10:00:00.000Z"), // acme
+        // A refresh a moment later, after a backup, is a point of its own.
+        snapshot(130, "2026-02-14T10:00:20.000Z"), // msp
+        snapshot(320, "2026-02-14T10:00:20.000Z"), // acme
+      ] as any);
+
+      const result = await getStorageHistory("msp-s3", 30);
+
+      expect(prismaMock.storageSnapshot.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { adapterConfigId: "msp-s3", createdAt: { gte: new Date("2026-01-16T12:00:00.000Z") } },
+      }));
+      expect(result).toEqual([
+        { date: "2026-02-13T10:00:00.000Z", size: 450, count: 3 },
+        { date: "2026-02-14T10:00:00.000Z", size: 430, count: 2 },
+        { date: "2026-02-14T10:00:20.000Z", size: 450, count: 2 },
+      ]);
     });
   });
 

@@ -7,8 +7,11 @@
 
 import { promises as fs } from "fs";
 import path from "path";
+import { randomUUID } from "crypto";
+import type { PrismaClient } from "@prisma/client";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { restartSoon } from "@/lib/server/restart";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { getDatabaseFilePath } from "@/services/system/database-service";
 import { COPY_KEYS_SETTING, DROPPED_TABLES, openCopy, type CopyKeys } from "./database-copy";
 import { rekeyCopy } from "./copy-rekey";
@@ -22,6 +25,31 @@ export interface RestoreRecord {
     fileName: string;
 }
 
+/**
+ * Notes the restore in the audit log of the copy. The copy may come from an older version whose
+ * tables lack columns of this one, like `tenantId` before tenants, which a write of the client
+ * would name. So the entry is written raw with the columns the copy has, and the migrations at
+ * the next start fill in the rest. Prisma keeps a date in SQLite as milliseconds, so the entry does too.
+ */
+async function noteRestore(copy: PrismaClient, record: RestoreRecord): Promise<void> {
+    const present = new Set((await copy.$queryRawUnsafe<{ name: string }[]>(`PRAGMA table_info("AuditLog")`)).map((column) => column.name));
+    const entry: Record<string, string | number | null> = {
+        id: randomUUID(),
+        action: AUDIT_ACTIONS.RESTORE,
+        resource: AUDIT_RESOURCES.SYSTEM,
+        actorName: record.actorName,
+        details: JSON.stringify({ action: "config_restore", file: record.fileName, kind: "database" }),
+        createdAt: Date.now(),
+        // A restore concerns the platform, whose entries belong to the home tenant.
+        tenantId: HOME_TENANT_ID,
+    };
+    const columns = Object.keys(entry).filter((column) => present.has(column));
+    await copy.$executeRawUnsafe(
+        `INSERT INTO "AuditLog" (${columns.map((column) => `"${column}"`).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+        ...columns.map((column) => entry[column])
+    );
+}
+
 /** Makes a copy ready to be the database here: encrypted for this DBackup, without sign-ins and without anything that runs by itself. */
 async function prepareCopy(file: string, keys: CopyKeys | null, record: RestoreRecord): Promise<void> {
     const copy = openCopy(file);
@@ -33,14 +61,7 @@ async function prepareCopy(file: string, keys: CopyKeys | null, record: RestoreR
         if (keys) await rekeyCopy(copy, keys);
         await copy.$executeRawUnsafe(`DELETE FROM "SystemSetting" WHERE "key" = ?`, COPY_KEYS_SETTING);
         for (const table of DROPPED_TABLES) await copy.$executeRawUnsafe(`DELETE FROM "${table}"`);
-        await copy.auditLog.create({
-            data: {
-                action: AUDIT_ACTIONS.RESTORE,
-                resource: AUDIT_RESOURCES.SYSTEM,
-                actorName: record.actorName,
-                details: JSON.stringify({ action: "config_restore", file: record.fileName, kind: "database" }),
-            },
-        });
+        await noteRestore(copy, record);
     } finally {
         await copy.$disconnect();
     }

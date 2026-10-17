@@ -46,6 +46,8 @@ The filters beside the search narrow the list. Each opens a list with a search, 
 
 The filters narrow each other. Entries without backups under the other filters wait at the end of a list under **No backups with the other filters** and cannot be picked.
 
+In a tenant that another tenant gives databases of its server, the backups of those databases sit in the same list, marked **Shared**, and the quick filters **All**, **Yours** and **Shared with you** follow the filters. A shared backup offers only a restore into its own database, the download of its dump and **Back up now**, see [Shared Databases](/user-guide/admin/shared-databases#what-the-customer-sees).
+
 A **Destination** filter also decides what the rest counts: the strip, the states, **Stored at** and the actions only look at the copies at the picked destinations. **A copy is missing** with **NAS Backups** picked lists the backups NAS Backups lacks.
 
 ### Timeline
@@ -74,7 +76,7 @@ Pick **Job deleted**, select the backups with the box in the head of the table a
 
 The strip shows how many destinations answer right now, what they store together, how much that grew in the last 7 days, their backups and the alerts that fire.
 
-The table lists every destination with its status, what it stores, the share of its storage limit when that alert is on, the growth of the last 7 days, its backups, the jobs that write to it, how old its list is and its active alerts. **Type** and **State** filter it, the state being whether it answers, whether its list is old and whether an alert fires. The menu of a row and its right click offer **Show details**, **Open backups**, which lists its backups in the **Backups** tab, **Check now**, and **Edit alerts** for someone who may change settings. Phones get a card per destination.
+The table lists every destination with its status, what it stores, the share of its storage limit when that alert is on, the growth of the last 7 days, its backups, the jobs that write to it, how old its list is and its active alerts. **Type** and **State** filter it, the state being whether it answers, whether its list is old and whether an alert fires. The menu of a row and its right click offer **Show details**, **Open backups**, which lists its backups in the **Backups** tab, **Check now**, and **Edit alerts** for someone who may change the destinations (`destinations:write`) of the open tenant, never in All tenants. A destination another tenant shares with yours says **provided by** and the name of that tenant, and its alerts stay with that tenant, see [Shared Destinations and Channels](/user-guide/admin/shared-connections). Phones get a card per destination.
 
 Destinations can be ticked to use **Check now** or **Edit alerts** on all of them, from the bar over the table or the right click on a ticked one. **Edit alerts** keeps every alert as each destination has it until it is set **On** or **Off** for all of them. A list under each alert shows how each destination has it now, or what changes at each once it is set, and a storage limit below what a destination stores is marked as firing right away. Only the destinations that change are saved.
 
@@ -85,7 +87,7 @@ A click on a destination shows its details under the list, as wide as the page, 
 - whether it answers, with **Open backups**, **Check now**, **Edit alerts** and **Open connection**, and a banner with the error when it does not
 - what it stores, how that changed in the last 7 days, its backups, the newest one and how old its list is
 - its size over the last 30 days, 90 days or year, measured with every storage refresh
-- its **Alerts** for a usage spike, a storage limit and a missing backup, each off, all well or active. **Edit alerts** changes them and needs the permission to change settings
+- its **Alerts** for a usage spike, a storage limit and a missing backup, each off, all well or active. **Edit alerts** changes them and needs the permission to change the destinations of its tenant
 
 **Jobs with backups here** lists every job with backups at the destination: how many and how big, the newest, the other destinations that hold copies and what the retention there keeps. Its search and its **Type** and **State** filters find a job among many, the states being a deleted job, a missing copy, a failed check and locked backups. **Show backups** lists the backups of a job at this destination in the **Backups** tab.
 

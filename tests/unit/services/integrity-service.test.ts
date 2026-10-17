@@ -6,7 +6,9 @@ import { verificationService } from '@/services/storage/verification-service';
 
 vi.mock('@/lib/prisma', () => ({
     default: {
-        adapterConfig: { findMany: vi.fn() },
+        adapterConfig: { findMany: vi.fn(), findUnique: vi.fn() },
+        // Nobody shares these destinations, so their tenant sees them as they are.
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
         job: { findMany: vi.fn() },
         systemSetting: {
             findUnique: vi.fn().mockImplementation(({ where }: { where: { key: string } }) =>
@@ -45,9 +47,23 @@ vi.mock('@/lib/logging/logger', () => ({
     },
 }));
 
-vi.mock('@/lib/logging/errors', () => ({
+vi.mock('@/lib/logging/errors', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/lib/logging/errors')>()),
     wrapError: vi.fn((e) => e),
 }));
+
+vi.mock('@/services/sharing/provided', () => ({
+    providedConnection: vi.fn().mockResolvedValue(null),
+    providedTo: vi.fn().mockResolvedValue([]),
+}));
+
+/** The destinations of the tenant, as the scan lists them and as each one is opened by its id. */
+function givenDestinations(rows: ({ id: string } & Record<string, unknown>)[]) {
+    const stored = rows.map((row) => ({ type: 'storage', storageRole: 'DESTINATION', tenantId: 'acme', ...row }));
+    (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue(stored);
+    (prisma.adapterConfig.findUnique as ReturnType<typeof vi.fn>).mockImplementation(async ({ where }: { where: { id: string } }) =>
+        stored.find((row) => row.id === where.id) ?? null);
+}
 
 describe('IntegrityService', () => {
     beforeEach(() => {
@@ -71,7 +87,7 @@ describe('IntegrityService', () => {
     }
 
     it('returns zero counts when no storage destinations exist', async () => {
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+        givenDestinations([]);
 
         const result = await integrityService.runFullIntegrityCheck();
 
@@ -86,7 +102,7 @@ describe('IntegrityService', () => {
             list: vi.fn().mockResolvedValue([{ name: 'backup.sql', path: 'backup.sql' }]),
         });
 
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'local', name: 'Local', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
         (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
@@ -107,7 +123,7 @@ describe('IntegrityService', () => {
             list: vi.fn().mockResolvedValue([{ name: 'backup.sql', path: 'backup.sql' }]),
         });
 
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'local', name: 'Local', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
         (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
@@ -130,7 +146,7 @@ describe('IntegrityService', () => {
             list: vi.fn().mockResolvedValue([{ name: 'backup.sql', path: 'backup.sql' }]),
         });
 
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'local', name: 'Storage1', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
         (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
@@ -159,7 +175,7 @@ describe('IntegrityService', () => {
                 .mockResolvedValueOnce([{ name: 'backup.sql', path: 'backup.sql' }]),
         });
 
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'local', name: 'Local', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
         (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -176,7 +192,7 @@ describe('IntegrityService', () => {
 
     it('skips an air-gapped destination that cannot be listed, without the job fallback or a scan failure', async () => {
         const adapter = makeStorageAdapter({ list: vi.fn().mockRejectedValue(new Error('No such directory')) });
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             {
                 id: 'usb', adapterId: 'local', name: 'USB rotation', config: '{}', type: 'storage', storageRole: 'DESTINATION',
                 metadata: JSON.stringify({ airGapped: true }), primaryCredentialId: null, sshCredentialId: null,
@@ -192,7 +208,7 @@ describe('IntegrityService', () => {
     });
 
     it('skips unknown storage adapter (not in registry)', async () => {
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's2', adapterId: 'unknown-adapter', name: 'Unknown', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
         (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(null);
@@ -210,13 +226,12 @@ describe('IntegrityService', () => {
             list: vi.fn().mockResolvedValue([{ name: 'backup.sql', path: 'backup.sql' }]),
         });
 
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'bad', name: 'Bad Storage', config: '{}', primaryCredentialId: null, sshCredentialId: null },
             { id: 's2', adapterId: 'good', name: 'Good Storage', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
-        (registry.get as ReturnType<typeof vi.fn>)
-            .mockReturnValueOnce(failingAdapter)
-            .mockReturnValueOnce(passingAdapter);
+        const adapters: Record<string, unknown> = { bad: failingAdapter, good: passingAdapter };
+        (registry.get as ReturnType<typeof vi.fn>).mockImplementation((adapterId: string) => adapters[adapterId]);
 
         await expect(integrityService.runFullIntegrityCheck()).resolves.not.toThrow();
     });
@@ -227,7 +242,7 @@ describe('IntegrityService', () => {
             list: vi.fn().mockResolvedValue([{ name: 'backup.sql', path: 'backup.sql' }]),
         });
 
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'local', name: 'Local', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
         (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
@@ -248,13 +263,12 @@ describe('IntegrityService', () => {
             });
         }
 
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'local', name: 'Dest1', config: '{}', primaryCredentialId: null, sshCredentialId: null },
-            { id: 's2', adapterId: 'local', name: 'Dest2', config: '{}', primaryCredentialId: null, sshCredentialId: null },
+            { id: 's2', adapterId: 's3', name: 'Dest2', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
-        (registry.get as ReturnType<typeof vi.fn>)
-            .mockReturnValueOnce(makePassingAdapter())
-            .mockReturnValueOnce(makePassingAdapter());
+        const adapters: Record<string, unknown> = { local: makePassingAdapter(), s3: makePassingAdapter() };
+        (registry.get as ReturnType<typeof vi.fn>).mockImplementation((adapterId: string) => adapters[adapterId]);
         vi.mocked(verificationService.verifyFile).mockResolvedValue({
             status: 'passed',
             verifiedAt: new Date().toISOString(),
@@ -278,6 +292,8 @@ describe('IntegrityService', () => {
                         configId: destConfigId,
                         config: {
                             id: destConfigId,
+                            type: 'storage',
+                            tenantId: 'acme',
                             adapterId: 'local',
                             name: `Storage for ${jobName}`,
                             config: '{}',
@@ -423,6 +439,8 @@ describe('IntegrityService', () => {
                         configId: 'dest-1',
                         config: {
                             id: 'dest-1',
+                            type: 'storage',
+                            tenantId: 'acme',
                             adapterId: 'local',
                             name: 'Skipped Storage',
                             config: '{}',
@@ -487,7 +505,7 @@ describe('IntegrityService', () => {
                 { name: 'b.tar', path: 'Shop/b.tar', size: 61 },
             ]),
         });
-        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        givenDestinations([
             { id: 's1', adapterId: 'sftp', name: 'NAS', config: '{}', primaryCredentialId: null, sshCredentialId: null },
         ]);
         (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);

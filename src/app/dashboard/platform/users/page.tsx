@@ -4,8 +4,10 @@ import { redirect } from "next/navigation";
 import { PlatformUsersClient } from "@/components/dashboard/platform/platform-users-client";
 import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
 import { USERS_TABLE_ID } from "@/components/dashboard/users/users-tables";
+import { TenantNamesProvider } from "@/components/tenant/tenant-view";
 import { getViewer, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
+import { platformTenantNames } from "@/services/user/groups-model";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
@@ -27,9 +29,11 @@ export default async function PlatformUsersPage() {
     const canReadSignIn = can(PERMISSIONS.PLATFORM.SIGN_IN_READ) || can(PERMISSIONS.SETTINGS.READ);
     if (!canReadAccounts && !canReadSignIn) redirect("/dashboard");
 
-    const [layouts, signInView] = await Promise.all([
+    const [layouts, signInView, tenantNames] = await Promise.all([
         getTablePreferences(viewer.id, [USERS_TABLE_ID, SIGN_IN_TABLE_ID]),
         getViewMode(viewer.id, SIGN_IN_PAGE_ID),
+        // The accounts and groups of every tenant name their tenants, also the ones the viewer may not open.
+        canReadAccounts ? platformTenantNames() : [],
     ]);
 
     return (
@@ -37,14 +41,16 @@ export default async function PlatformUsersPage() {
             {/* The header bar already names the page in its breadcrumb. */}
             <h1 className="sr-only">Users & Groups of the platform</h1>
             <Suspense fallback={null}>
-                <PlatformUsersClient
-                    canReadAccounts={canReadAccounts}
-                    canManageAccounts={can(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE)}
-                    canReadSignIn={canReadSignIn}
-                    canManageSignIn={can(PERMISSIONS.PLATFORM.SIGN_IN_WRITE)}
-                    layouts={layouts}
-                    signInView={signInView ?? "table"}
-                />
+                <TenantNamesProvider names={tenantNames}>
+                    <PlatformUsersClient
+                        canReadAccounts={canReadAccounts}
+                        canManageAccounts={can(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE)}
+                        canReadSignIn={canReadSignIn}
+                        canManageSignIn={can(PERMISSIONS.PLATFORM.SIGN_IN_WRITE)}
+                        layouts={layouts}
+                        signInView={signInView ?? "table"}
+                    />
+                </TenantNamesProvider>
             </Suspense>
         </div>
     );

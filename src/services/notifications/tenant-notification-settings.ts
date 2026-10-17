@@ -8,7 +8,8 @@
 import prisma from "@/lib/prisma";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
-import { getAdapterOptions } from "@/lib/adapters/dto";
+import { connectionOptions } from "@/services/sharing/connection-options";
+import { providedTo } from "@/services/sharing/provided";
 import { ValidationError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { TENANT_EVENT_DEFINITIONS, getTenantEventDefinition, type TenantEventDefinition } from "@/lib/notifications/tenant-events";
@@ -103,7 +104,8 @@ function rowOf(definition: TenantEventDefinition, config: TenantNotificationConf
 export async function getTenantNotificationsModel(tenantId: string): Promise<NotificationsModel> {
     const [config, channels] = await Promise.all([
         getTenantNotificationConfig(tenantId),
-        runAsTenant(tenantId, () => getAdapterOptions("notification")),
+        // Its own channels, and those other tenants share with it.
+        runAsTenant(tenantId, () => connectionOptions("notification")),
     ]);
     return {
         channels,
@@ -116,8 +118,11 @@ export async function getTenantNotificationsModel(tenantId: string): Promise<Not
 async function checkChannels(tenantId: string, channelIds: string[]): Promise<void> {
     const unique = [...new Set(channelIds)];
     if (unique.length === 0) return;
-    const found = await runAsTenant(tenantId, () => prisma.adapterConfig.count({ where: { id: { in: unique }, type: "notification", tenantId } }));
-    if (found !== unique.length) throw new ValidationError("A picked channel no longer exists.", { field: "channels" });
+    const [found, shared] = await Promise.all([
+        runAsTenant(tenantId, () => prisma.adapterConfig.count({ where: { id: { in: unique }, type: "notification", tenantId } })),
+        providedTo(tenantId, { kind: "channel", ids: unique }),
+    ]);
+    if (found + shared.length !== unique.length) throw new ValidationError("A picked channel no longer exists.", { field: "channels" });
 }
 
 /**

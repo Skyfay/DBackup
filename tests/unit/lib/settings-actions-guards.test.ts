@@ -129,6 +129,7 @@ describe("the actions of the Settings page", () => {
         expect(await runSystemTaskAction("system.health_check")).toEqual({ success: true });
 
         expect(mocks.startTask).toHaveBeenCalledWith("system.health_check", "Ada");
-        expect(mocks.audit).toHaveBeenCalledWith("admin", "EXECUTE", "SYSTEM", { task: "Health checks", name: "Health checks" }, "system.health_check");
+        // A task of the platform, so the entry goes to the log of the home tenant.
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "EXECUTE", "SYSTEM", { task: "Health checks", name: "Health checks" }, "system.health_check", { tenantId: "default" });
     });
 });

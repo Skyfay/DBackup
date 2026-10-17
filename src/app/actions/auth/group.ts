@@ -209,15 +209,21 @@ export async function moveUsersToGroup(userIds: string[], groupId: string | null
     if (refused) return { success: false as const, error: refused };
 
     try {
-        // Nobody takes a group from someone that may do more than they may.
+        // Nobody takes a group from someone that may do more than they may, and only the people of
+        // the tenant get one of its groups here, see `outsiderRefused` in user.ts.
         const guarded: string[] = [];
+        const outsiders: string[] = [];
         if (!viewer.isPlatformAdmin) {
             for (const id of ids.data) {
+                if (!(await membershipService.isPersonOf(id, tenantId)) || (await membershipService.isPlatformAdmin(id))) {
+                    outsiders.push(id);
+                    continue;
+                }
                 const current = await membershipService.roleOf(id, tenantId);
                 if (current && roleRefusal(viewer, current)) guarded.push(id);
             }
         }
-        const movable = ids.data.filter((id) => id !== viewer.id && !guarded.includes(id));
+        const movable = ids.data.filter((id) => id !== viewer.id && !guarded.includes(id) && !outsiders.includes(id));
         const result = await membershipService.setRoles(movable, tenantId, target.data, { platformAdmin: viewer.isPlatformAdmin });
 
         if (ids.data.includes(viewer.id)) {
@@ -225,6 +231,9 @@ export async function moveUsersToGroup(userIds: string[], groupId: string | null
         }
         for (const user of await userService.namesOf(guarded)) {
             result.failed.push({ id: user.id, name: user.name, error: "This user's group may do more than you may, so only someone who may do all of it changes it." });
+        }
+        for (const user of await userService.namesOf(outsiders)) {
+            result.failed.push({ id: user.id, name: user.name, error: "This account works in another tenant. Add people to this tenant with an invitation." });
         }
 
         for (const id of result.succeeded) {

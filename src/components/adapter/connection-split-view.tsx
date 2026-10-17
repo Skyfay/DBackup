@@ -9,6 +9,7 @@ import type { AdapterConfig } from "./types";
 import { healthOf } from "./connection-columns";
 import { connectionAddress } from "@/lib/adapters/connection-summary";
 import { resolveSelection, splitGroups } from "./connection-split";
+import { databasesYours } from "./connection-shared-cells";
 
 const DOTS = { ONLINE: "bg-success", DEGRADED: "bg-warning", OFFLINE: "bg-destructive", AWAY: "bg-muted-foreground/40", PENDING: "bg-muted-foreground/40" };
 const LABELS = { ONLINE: "Online", DEGRADED: "Degraded", OFFLINE: "Offline", AWAY: "Air-gapped, not connected", PENDING: "Not checked" };
@@ -28,6 +29,8 @@ interface ConnectionSplitViewProps {
 }
 
 function subline(config: AdapterConfig, tenant: string | null): string {
+    // A server of another tenant has no address here, it names its provider and the databases of this tenant.
+    if (config.sharedServer) return `from ${config.sharedServer.providerName} · ${databasesYours(config.sharedServer.databases.length)}`;
     const address = connectionAddress(config.adapterId, config.config) ?? "";
     const used = config.overview?.usedBy;
     const unused = used !== undefined && used.jobs + used.templates === 0;
@@ -98,7 +101,7 @@ export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect,
                                                             <span className="block truncate text-sm font-medium">{config.name}</span>
                                                             <span className="block truncate text-xs text-muted-foreground">{subline(config, tenantName?.(config.tenantId) ?? null)}</span>
                                                         </span>
-                                                        {withHealth && (
+                                                        {withHealth && !config.sharedServer && (
                                                             <span className={cn("size-2 shrink-0 rounded-full", DOTS[health])}>
                                                                 <span className="sr-only">{LABELS[health]}</span>
                                                             </span>

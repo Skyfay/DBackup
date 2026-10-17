@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { withHost } from "@/lib/transport";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
-import { StorageAdapter, DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
+import { DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { formatDuration, formatBytes } from "@/lib/utils";
 import { getTempDir } from "@/lib/temp-dir";
@@ -21,34 +21,45 @@ import { verifyFileChecksum } from "@/lib/crypto/checksum";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { registerExecution, unregisterExecution } from "@/lib/execution/abort";
-import { createLogFlusher } from "@/lib/execution/log-flusher";
 import { processQueue } from "@/lib/execution/queue-manager";
 import type { RestoreInput } from "./types";
 import { resolveDecryptionKey } from "./smart-recovery";
 import { restoreArchiveSnapshot } from "./archive-restore";
+import { openDestination } from "@/services/sharing/destination-access";
+import { createRestoreLogs, type ProviderRun } from "./run-logs";
+import { FOLLOWS_KEY } from "@/lib/execution/follower-runs";
 
 const svcLog = logger.child({ service: "RestoreService" });
+
+/**
+ * What a restore notification says of the backup. A customer's restore names their database
+ * alone, since it reaches the customer's channels too: never the archive or the destination of
+ * the server.
+ */
+function backupFacts(input: RestoreInput, storageName: string | undefined) {
+    return input.shared
+        ? { targetDatabase: input.shared.databaseName, backupFile: input.shared.databaseName }
+        : { targetDatabase: input.targetDatabaseName, backupFile: path.basename(input.file), storageName };
+}
+
+/** What a customer's run and notification say of an error, whose text can name the archive or the server. */
+const sharedFailure = (databaseName: string) => `The restore of ${databaseName} stopped with an error.`;
 
 /**
  * The full restore pipeline run as a background task.
  * Handles: download → checksum → decrypt → decompress → multi-db detect → adapter restore.
  *
  * State (executionId, log buffer, stage, progress) is shared across all phases via closures.
+ * A customer's restore of a shared database also writes the provider's run, with the whole log.
  */
-export async function runRestorePipeline(executionId: string, input: RestoreInput): Promise<void> {
+export async function runRestorePipeline(executionId: string, input: RestoreInput, providerRun: ProviderRun | null = null): Promise<void> {
     const { storageConfigId, file, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
     let tempFile: string | null = null;
     const restoreStartTime = Date.now();
     const abortController = registerExecution(executionId);
+    // Cancel in the provider's History stops the same restore.
+    if (providerRun) registerExecution(providerRun.id, abortController);
 
-    // Log Buffer
-    const internalLogs: LogEntry[] = [{
-        timestamp: new Date().toISOString(),
-        message: input.shared ? `Starting restore of ${input.shared.databaseName}` : `Starting restore for ${path.basename(file)}`,
-        level: 'info',
-        type: 'general',
-        stage: 'Initializing'
-    }];
     // What the log calls the backup. A customer's run names its database, never the archive.
     const shownFile = input.shared ? `the backup of ${input.shared.databaseName}` : file;
 
@@ -61,32 +72,34 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
     // The server the backup goes to, so the History page names the restore after it.
     let target: { id: string; name: string; adapterId: string } | null = null;
 
-    const flusher = createLogFlusher({
+    const progress = () => ({ progress: currentProgress, stage: currentStage, detail: currentDetail });
+    const logs = createRestoreLogs({
         executionId,
-        getLogs: () => internalLogs,
-        getMetadata: () => ({ progress: currentProgress, stage: currentStage, detail: currentDetail, ...(target ? { target } : {}) }),
+        shared: Boolean(input.shared),
+        providerRun,
+        stage: () => currentStage,
+        // A customer's run keeps the name of the server they see, never the id of its connection.
+        metadata: () => ({
+            ...progress(),
+            ...(target ? { target: input.shared ? { name: target.name, adapterId: target.adapterId } : target } : {}),
+            ...(input.shared ? { restoreOf: { database: input.shared.databaseName } } : {}),
+        }),
+        providerMetadata: () => ({
+            ...progress(),
+            ...(target ? { target } : {}),
+            restoreOf: { database: input.shared?.databaseName, customer: providerRun?.customer },
+            [FOLLOWS_KEY]: executionId,
+        }),
     });
-
-    const flushLogs = async (force = false) => {
-        if (force) {
-            await flusher.flush();
-            return;
-        }
-        flusher.schedule();
-    };
-
-    const log = (msg: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
-        const entry: LogEntry = {
-            timestamp: new Date().toISOString(),
-            message: msg,
-            level: level,
-            type: type,
-            stage: currentStage,
-            details: details
-        };
-        internalLogs.push(entry);
-        flushLogs(level === 'error');
-    };
+    const { log } = logs;
+    if (input.shared) {
+        logs.split(
+            `Starting restore of ${input.shared.databaseName}`,
+            `Starting restore of ${input.shared.databaseName} for ${providerRun?.customer ?? "a customer"} out of ${path.basename(file)}`
+        );
+    } else {
+        log(`Starting restore for ${path.basename(file)}`);
+    }
 
     const setStage = (stage: string) => {
         // Log duration of previous stage
@@ -104,19 +117,19 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 stage: currentStage,
                 durationMs
             };
-            internalLogs.push(durationEntry);
+            logs.add(durationEntry);
         }
 
         currentStage = stage;
         currentDetail = null;
         currentProgress = 0;
         stageStartTimes.set(stage, Date.now());
-        flushLogs(true);
+        void logs.flush(true);
     };
 
     const updateDetail = (detail: string) => {
         currentDetail = detail;
-        flushLogs();
+        void logs.flush();
     };
 
     // Pre-resolve names for notification context (available in catch)
@@ -132,16 +145,12 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         log(`Initiating restore process...`, 'info');
 
         // 1. Get Storage Adapter
-        const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
-        if (!storageConfig || storageConfig.type !== "storage") {
-            throw new Error("Storage adapter not found");
-        }
+        // Says which part is missing, or why the destination cannot be opened.
+        const storage = await openDestination(storageConfigId);
+        const storageConfig = storage.row;
         resolvedStorageName = storageConfig.name;
 
-        const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
-        if (!storageAdapter) {
-            throw new Error("Storage impl missing");
-        }
+        const storageAdapter = storage.adapter;
 
         // 2. Get Source Adapter (optional - a directory-only archive has no database target;
         // the v2 archive path resolves its own target when the archive turns out to contain
@@ -169,7 +178,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         //    read itself fetches the sidecar - but the message waits until we know which
         //    path this is, so it never claims a download that will not happen.
         setStage(RESTORE_STAGES.DOWNLOADING);
-        log(`Reading backup metadata: ${shownFile}...`, 'info');
+        logs.split(`Reading backup metadata: ${shownFile}...`, `Reading backup metadata: ${file}...`);
         const tempDir = getTempDir();
         tempFile = path.join(tempDir, path.basename(file));
 
@@ -241,7 +250,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             }
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
-            log(`Warning: Failed to check sidecar metadata: ${message}`, 'warning');
+            logs.split("Warning: The metadata of the backup could not be read.", `Warning: Failed to check sidecar metadata: ${message}`, 'warning');
 
             // LEGACY-FORMAT(read): Guessing from the extension only helps an older backup whose metadata
             // could not be read.
@@ -272,17 +281,19 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 updateProgress: (percent, detail) => {
                     currentProgress = percent;
                     if (detail !== undefined) currentDetail = detail;
-                    flushLogs();
+                    void logs.flush();
                 },
+                ...(logs.sinks ? { sharedLogs: logs.sinks } : {}),
             });
 
             if (result.status === "Failed") {
-                log(`Restore failed: no entries could be restored (${result.errors.map(e => e.error).join('; ')})`, 'error');
+                logs.split(
+                    input.shared ? `Restore failed: ${input.shared.databaseName} could not be restored.` : null,
+                    `Restore failed: no entries could be restored (${result.errors.map(e => e.error).join('; ')})`,
+                    'error'
+                );
                 setStage(RESTORE_STAGES.FAILED);
-                await prisma.execution.update({
-                    where: { id: executionId },
-                    data: { status: 'Failed', endedAt: new Date(), logs: JSON.stringify(internalLogs) }
-                });
+                await logs.finish('Failed');
             } else {
                 if (result.status === "Partial") {
                     // "not restored" rather than "failed": the list holds anything missing from
@@ -298,19 +309,14 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     log(`Restore completed successfully.`, 'success');
                 }
                 setStage(RESTORE_STAGES.COMPLETED);
-                await prisma.execution.update({
-                    where: { id: executionId },
-                    data: { status: result.status, endedAt: new Date(), logs: JSON.stringify(internalLogs) }
-                });
+                await logs.finish(result.status);
 
                 notify({
                     eventType: NOTIFICATION_EVENTS.RESTORE_COMPLETE,
                     data: {
                         sourceName: resolvedSourceName ?? "Combined archive",
                         databaseType: resolvedSourceType,
-                        targetDatabase: targetDatabaseName,
-                        backupFile: input.shared ? input.shared.databaseName : path.basename(file),
-                        storageName: resolvedStorageName,
+                        ...backupFacts(input, resolvedStorageName),
                         duration: Date.now() - restoreStartTime,
                         executionId,
                         timestamp: new Date().toISOString(),
@@ -598,7 +604,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         }, (p, detail) => {
             currentProgress = p;
             currentDetail = detail || null;
-            flushLogs();
+            void logs.flush();
         }));
 
         if (!restoreResult.success) {
@@ -608,26 +614,11 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
             log(`Restore adapter reported failure. Check logs above.`, 'error');
             setStage(RESTORE_STAGES.FAILED);
-
-            await prisma.execution.update({
-                where: { id: executionId },
-                data: {
-                    status: 'Failed',
-                    endedAt: new Date(),
-                    logs: JSON.stringify(internalLogs)
-                }
-            });
+            await logs.finish('Failed');
         } else {
             log(`Restore completed successfully.`, 'success');
             setStage(RESTORE_STAGES.COMPLETED);
-            await prisma.execution.update({
-                where: { id: executionId },
-                data: {
-                    status: 'Success',
-                    endedAt: new Date(),
-                    logs: JSON.stringify(internalLogs)
-                }
-            });
+            await logs.finish('Success');
 
             // System notification (fire-and-forget)
             notify({
@@ -635,9 +626,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 data: {
                     sourceName: resolvedSourceName ?? targetSourceId,
                     databaseType: resolvedSourceType,
-                    targetDatabase: targetDatabaseName,
-                    backupFile: path.basename(file),
-                    storageName: resolvedStorageName,
+                    ...backupFacts(input, resolvedStorageName),
                     duration: Date.now() - restoreStartTime,
                     executionId,
                     timestamp: new Date().toISOString(),
@@ -650,20 +639,19 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             svcLog.info("Restore cancelled by user", { executionId });
             setStage(RESTORE_STAGES.CANCELLED);
             log("Restore was cancelled by user", 'warning');
-
-            await prisma.execution.update({
-                where: { id: executionId },
-                data: { status: 'Cancelled', endedAt: new Date(), logs: JSON.stringify(internalLogs) }
-            });
+            await logs.finish('Cancelled');
         } else {
-            svcLog.error("Restore service error", {}, wrapError(error));
+            // The whole error stays in the log of the service and the provider's run. A customer's
+            // run gets a line that names nothing of the server, since the error can name its
+            // archive or another one.
+            svcLog.error("Restore service error", { executionId }, wrapError(error));
             setStage(RESTORE_STAGES.FAILED);
-            log(`Fatal Error: ${getErrorMessage(error)}`, 'error');
-
-            await prisma.execution.update({
-                where: { id: executionId },
-                data: { status: 'Failed', endedAt: new Date(), logs: JSON.stringify(internalLogs) }
-            });
+            logs.split(
+                input.shared ? `Fatal Error: ${sharedFailure(input.shared.databaseName)}` : null,
+                `Fatal Error: ${getErrorMessage(error)}`,
+                'error'
+            );
+            await logs.finish('Failed');
 
             // System notification (fire-and-forget)
             notify({
@@ -671,10 +659,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 data: {
                     sourceName: resolvedSourceName ?? targetSourceId,
                     databaseType: resolvedSourceType,
-                    targetDatabase: targetDatabaseName,
-                    backupFile: path.basename(file),
-                    storageName: resolvedStorageName,
-                    error: getErrorMessage(error),
+                    ...backupFacts(input, resolvedStorageName),
+                    error: input.shared ? sharedFailure(input.shared.databaseName) : getErrorMessage(error),
                     duration: Date.now() - restoreStartTime,
                     executionId,
                     timestamp: new Date().toISOString(),
@@ -685,9 +671,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         if (tempFile) {
             await fs.promises.unlink(tempFile).catch(() => {});
         }
-        await flushLogs(true);
-        flusher.dispose();
+        await logs.flush(true);
+        logs.dispose();
         unregisterExecution(executionId);
+        if (providerRun) unregisterExecution(providerRun.id);
         // Trigger queue so any backup jobs pending during this restore can start.
         processQueue().catch((e) => svcLog.error("Post-restore queue trigger failed", {}, wrapError(e)));
     }

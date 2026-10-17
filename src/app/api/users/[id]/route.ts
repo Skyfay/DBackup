@@ -5,11 +5,15 @@ import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { maySeeAccount } from "@/services/user/account-visibility";
 import { getUserDetails } from "@/services/user/user-details";
 
 const log = logger.child({ route: "users/[id]" });
 
-/** The panel of one user: sign-in methods, open sessions, API keys and their latest activity. */
+/**
+ * The panel of one user: sign-in methods, open sessions, API keys and their latest activity. Only
+ * of an account the caller may see, see `maySeeAccount`.
+ */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id } = await props.params;
     const requestHeaders = await headers();
@@ -18,6 +22,8 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.USERS.READ);
+        // An account the caller may not see reads like one that does not exist.
+        if (!(await maySeeAccount(ctx, id))) return NextResponse.json({ success: false, error: "The user no longer exists" }, { status: 404 });
         // The session of the viewer is marked in the list, so the panel never offers to end it.
         const session = ctx.authMethod === "session" ? await auth.api.getSession({ headers: requestHeaders }).catch(() => null) : null;
         const details = await getUserDetails(id, session?.session.id ?? null);

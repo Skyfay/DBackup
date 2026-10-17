@@ -1,4 +1,5 @@
 import { randomBytes, createHash, scryptSync } from "crypto";
+import { assertMayAddKind } from "@/services/tenant/tenant-allowances";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { ApiKeyError, NotFoundError, wrapError } from "@/lib/logging/errors";
@@ -70,11 +71,18 @@ export interface ValidatedApiKey {
 /** The roles of the owner of a key, which decide the most the key may do in its tenant. */
 const OWNER_ROLES = { select: { platformRole: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } }, platformGroup: { select: { platformPermissions: true, tenantPermissions: true, allTenants: true, tenants: { select: { tenantId: true } } } } } } as const;
 
+/** Whether a tenant shares databases, so its keys may carry their sharing, see `keyPlatformPermissions`. */
+async function tenantShares(tenantId: string): Promise<boolean> {
+  return (await prisma.tenant.findUnique({ where: { id: tenantId }, select: { sharesWithCustomers: true } }))?.sharesWithCustomers ?? false;
+}
+
 export class ApiKeyService {
   /**
    * Create a new API key. Returns the raw key ONCE - it cannot be retrieved again.
    */
   async create(input: CreateApiKeyInput): Promise<{ apiKey: ApiKeyListItem; rawKey: string }> {
+    // The platform decides whether the tenant makes API keys itself.
+    await assertMayAddKind("apiKeys");
     const rawKey = generateRawKey();
     const hashed = hashKey(rawKey);
     const prefix = rawKey.substring(0, PREFIX_LENGTH);
@@ -294,6 +302,12 @@ export class ApiKeyService {
     return keys.some((key) => key.name.trim().toLowerCase() === wanted);
   }
 
+  /** What a key this account makes in a tenant may do at most, see `ownerPermissionsIn`. */
+  async ceilingFor(userId: string, tenantId: string): Promise<string[]> {
+    const [user, shares] = await Promise.all([prisma.user.findUnique({ where: { id: userId }, select: OWNER_ROLES.select }), tenantShares(tenantId)]);
+    return user ? ownerPermissionsIn(user, tenantId, shares) : [];
+  }
+
   /** The owner of a key with what they may do in its tenant, which is the most the key may get, and what the key holds. */
   async ownerOf(id: string) {
     const record = await prisma.apiKey.findUnique({
@@ -307,7 +321,7 @@ export class ApiKeyService {
       ownerId: record.userId,
       name: record.name,
       permissions: JSON.parse(record.permissions) as string[],
-      ownerPermissions: ownerPermissionsIn(record.user, record.tenantId),
+      ownerPermissions: ownerPermissionsIn(record.user, record.tenantId, await tenantShares(record.tenantId)),
     };
   }
 
@@ -384,6 +398,13 @@ export class ApiKeyService {
       throw new ApiKeyError("expired", "API key has expired");
     }
 
+    // The platform may switch the API keys of the tenant off, which stops the keys it has too.
+    const tenant = await prisma.tenant.findUnique({ where: { id: record.tenantId }, select: { addsApiKeys: true, sharesWithCustomers: true } });
+    if (tenant && !tenant.addsApiKeys) {
+      log.warn("API key validation failed: API keys are off for its tenant", { apiKeyId: record.id });
+      throw new ApiKeyError("blocked", "API keys are switched off for this tenant");
+    }
+
     // Update lastUsedAt (fire-and-forget for performance)
     prisma.apiKey
       .update({
@@ -398,7 +419,7 @@ export class ApiKeyService {
     return {
       id: record.id,
       userId: record.userId,
-      permissions: capToOwner(JSON.parse(record.permissions) as string[], ownerPermissionsIn(record.user, record.tenantId)),
+      permissions: capToOwner(JSON.parse(record.permissions) as string[], ownerPermissionsIn(record.user, record.tenantId, tenant?.sharesWithCustomers ?? false)),
       tenantId: record.tenantId,
     };
   }

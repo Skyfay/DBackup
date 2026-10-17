@@ -28,17 +28,22 @@ export function profilePermissionFor(path: string | undefined, fromBrowser: bool
 }
 
 /**
- * Whether a user may change this part of their own profile, which any of their groups gives, a
- * platform admin every part. The profile belongs to no tenant, see `permissionsIn`.
+ * Whether a user may change this part of their own profile, which any of their groups gives, and
+ * a platform group also without a group in any tenant, a platform admin every part. The profile
+ * belongs to no tenant, see `permissionsIn`.
  */
 export async function userHolds(userId: string, permission: Permission): Promise<boolean> {
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { platformRole: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } } },
+        select: {
+            platformRole: true,
+            memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } },
+            platformGroup: { select: { platformPermissions: true, tenantPermissions: true, allTenants: true, tenants: { select: { tenantId: true } } } },
+        },
     });
     if (!user) return false;
     if (user.platformRole === PLATFORM_ADMIN_ROLE) return true;
-    return permissionsIn(user.memberships, null).includes(permission);
+    return permissionsIn(user.memberships, null, user.platformGroup).includes(permission);
 }
 
 export const PROFILE_CHANGE_REFUSED = "Your group may not change this part of your profile.";

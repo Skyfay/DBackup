@@ -452,6 +452,46 @@ describe("RsyncAdapter", () => {
         });
     });
 
+    describe("list() of a subfolder nothing was written to yet", () => {
+        /** The command the last SSH call ran on the server, the last argument of ssh. */
+        const lastRemoteCommand = () => {
+            const args = mockExecFileCb.mock.calls.at(-1)![1] as string[];
+            return args[args.length - 1];
+        };
+
+        it("ends the command before find when the folder is not there, which lists it as empty", async () => {
+            // A missing folder makes the test in front succeed, so the server prints nothing.
+            sshSucceeds("");
+
+            const result = await RsyncAdapter.list!(agentConfig, "tenants/t1");
+
+            expect(result).toEqual([]);
+            expect(lastRemoteCommand()).toMatch(/^\[ ! -e '\/backups\/tenants\/t1' \] \|\| find '\/backups\/tenants\/t1' /);
+        });
+
+        it("quotes the folder in the test like in the find", async () => {
+            sshSucceeds("");
+
+            await RsyncAdapter.list!(agentConfig, "it's");
+
+            expect(lastRemoteCommand()).toMatch(/^\[ ! -e '\/backups\/it'\\''s' \] \|\| find '\/backups\/it'\\''s' /);
+        });
+
+        it("still fails when the server cannot be reached or refuses the login", async () => {
+            sshFails("Permission denied (publickey).");
+
+            await expect(RsyncAdapter.list!(agentConfig, "tenants/t1")).rejects.toThrow("Permission denied (publickey).");
+        });
+
+        it("puts no test in front of the root, so a missing root still fails the find", async () => {
+            sshSucceeds("");
+
+            await RsyncAdapter.list!(agentConfig, "");
+
+            expect(lastRemoteCommand()).toMatch(/^find '\/backups' /);
+        });
+    });
+
     // ===== delete() =====
 
     describe("delete()", () => {

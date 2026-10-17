@@ -16,9 +16,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
-import { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { BackupMetadata } from "@/lib/core/interfaces";
 import { getTempDir } from "@/lib/temp-dir";
 import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { parseIndex } from "@/lib/archive/index-file";
@@ -29,6 +27,8 @@ import { ArchiveIndex, DumpFormat } from "@/lib/archive/types";
 import { archiveIndexVerifier, KeyOverride, resolveBackupKey } from "./key-resolution";
 import { logger } from "@/lib/logging/logger";
 import { EncryptionKeyRequiredError, wrapError } from "@/lib/logging/errors";
+import { openDestination } from "@/services/sharing/destination-access";
+import { currentTenantId } from "@/lib/tenant/current";
 
 const log = logger.child({ service: "ArchiveIndexService" });
 
@@ -96,7 +96,8 @@ export class ArchiveIndexService {
         // else supplied, so its result is not the one a plain caller asked for.
         if (override) return this.read(configId, file, meta.archive, override);
 
-        const cacheKey = `${configId}::${file}`;
+        // A shared destination holds a path once per tenant, so the tenant is part of the key.
+        const cacheKey = `${configId}::${(await currentTenantId()) ?? "*"}::${file}`;
         const cached = this.cache.get(cacheKey);
         if (cached && cached.expiresAt > Date.now()) return cached.index;
 
@@ -290,13 +291,13 @@ export class ArchiveIndexService {
      * @returns The raw sidecar bytes, or null when it is missing or unreadable
      */
     async fetchSidecar(configId: string, file: string, suffix: string): Promise<Buffer | null> {
-        const config = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-        if (!config || config.type !== "storage") return null;
-
-        const adapter = registry.get(config.adapterId) as StorageAdapter | undefined;
-        if (!adapter) return null;
-
-        const resolved = await resolveAdapterConfig(config);
+        let opened: Awaited<ReturnType<typeof openDestination>>;
+        try {
+            opened = await openDestination(configId);
+        } catch {
+            return null;
+        }
+        const { adapter, config: resolved } = opened;
         const remotePath = file + suffix;
 
         let tempFile: string | null = null;

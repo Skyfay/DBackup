@@ -81,6 +81,28 @@ export const platformGroupService = {
         return user?.platformGroup ? { id: user.platformGroup.id, shape: shapeOf(user.platformGroup) } : null;
     },
 
+    /** Whether the platform group of an account reaches a tenant, which decides the tenants it looks after on the platform. */
+    async reaches(userId: string, tenantId: string): Promise<boolean> {
+        const own = await this.shapeOf(userId);
+        return !!own && (own.shape.allTenants || own.shape.tenantIds.includes(tenantId));
+    },
+
+    /** Whether the platform group of an account reaches every tenant, the ones made later too. */
+    async reachesAll(userId: string): Promise<boolean> {
+        return (await this.shapeOf(userId))?.shape.allTenants ?? false;
+    },
+
+    /** The accounts that work in a tenant the platform group of an account reaches. */
+    async peopleReached(userId: string): Promise<string[]> {
+        const own = await this.shapeOf(userId);
+        if (!own) return [];
+        const users = await prisma.user.findMany({
+            where: own.shape.allTenants ? {} : { memberships: { some: { tenantId: { in: [...own.shape.tenantIds] } } } },
+            select: { id: true },
+        });
+        return users.map((user) => user.id);
+    },
+
     /** One platform group as the caps read it, with its name, null when it is gone. */
     async find(id: string): Promise<{ id: string; name: string; shape: PlatformGroupShape } | null> {
         const group = await prisma.platformGroup.findUnique({ where: { id }, select: { id: true, name: true, ...SHAPE } });

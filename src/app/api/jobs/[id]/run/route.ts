@@ -7,7 +7,7 @@ import { getAuthContext, checkPermissionWithContext, AuthContext } from "@/lib/a
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { ApiKeyError } from "@/lib/logging/errors";
+import { ApiKeyError, NotFoundError } from "@/lib/logging/errors";
 import { apiKeyService } from "@/services/auth/api-key-service";
 import { jobAuditName } from "@/services/jobs/job-audit";
 import { userService } from "@/services/user/user-service";
@@ -88,6 +88,10 @@ export async function POST(
 
         return NextResponse.json(result);
     } catch (error: unknown) {
+        // A job of another tenant is answered like one that does not exist.
+        if (error instanceof NotFoundError) {
+            return NextResponse.json({ success: false, error: "Job not found" }, { status: 404 });
+        }
         const message = error instanceof Error ? error.message : "Unknown error";
         const status = error instanceof Error && error.message.includes("Permission") ? 403 : 500;
         return NextResponse.json(

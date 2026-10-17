@@ -20,6 +20,7 @@ import { sendThroughChannel } from "./channel-send";
 import { buildTestData } from "./notification-test-data";
 import { tenantReason } from "./notification-reason";
 import { getTenantNotificationConfig, tenantEventEnabled } from "./tenant-notification-settings";
+import { providedTo } from "@/services/sharing/provided";
 
 const log = logger.child({ service: "TenantNotificationDelivery" });
 
@@ -91,7 +92,12 @@ export async function deliverToTenant(event: NotificationEventData, tenantId: st
     if (channelIds.length === 0) return undefined;
 
     return runAsTenant(tenantId, async () => {
-        const channels = await prisma.adapterConfig.findMany({ where: { id: { in: channelIds }, type: "notification", tenantId } });
+        // Its own channels and those other tenants share with it, which go where it named.
+        const shared = (await providedTo(tenantId, { kind: "channel", ids: channelIds })).map((channel) => channel.id);
+        const channels = [
+            ...(await prisma.adapterConfig.findMany({ where: { id: { in: channelIds }, type: "notification", tenantId } })),
+            ...(shared.length > 0 ? await runAsSystem(() => prisma.adapterConfig.findMany({ where: { id: { in: shared }, type: "notification" } })) : []),
+        ];
         if (channels.length === 0) return undefined;
         registerAdapters();
         const brand = await loadNotificationBrand();
@@ -101,7 +107,7 @@ export async function deliverToTenant(event: NotificationEventData, tenantId: st
         let failed = 0;
         for (const channel of channels) {
             try {
-                await sendThroughChannel(channel, payload, event.eventType, undefined, { executionId: opts.executionId, brand });
+                await sendThroughChannel(channel, payload, event.eventType, undefined, { executionId: opts.executionId, brand, tenantId });
                 succeeded++;
             } catch (error: unknown) {
                 log.error("Failed to send a tenant notification through a channel", { channelName: channel.name, eventType: event.eventType, tenantId }, wrapError(error));

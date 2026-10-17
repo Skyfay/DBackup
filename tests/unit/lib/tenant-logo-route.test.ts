@@ -85,6 +85,18 @@ describe("who sees the logo of a tenant", () => {
         mocks.ctx = null;
         expect((await get("t-acme")).status).toBe(401);
     });
+
+    it("serves no stored type but the four pictures an upload is kept as", async () => {
+        mocks.ctx = member("t-acme");
+        for (const mimeType of ["image/svg+xml", "text/html", "application/octet-stream"]) {
+            prismaMock.tenantLogo.findUnique.mockResolvedValue({ data: Buffer.from(SVG), mimeType } as never);
+            expect((await get("t-acme")).status).toBe(404);
+        }
+        for (const mimeType of ["image/jpeg", "image/gif", "image/webp"]) {
+            prismaMock.tenantLogo.findUnique.mockResolvedValue({ data: Buffer.from(PNG), mimeType } as never);
+            expect((await get("t-acme")).headers.get("Content-Type")).toBe(mimeType);
+        }
+    });
 });
 
 describe("who changes the logo of a tenant", () => {
@@ -116,6 +128,18 @@ describe("who changes the logo of a tenant", () => {
         mocks.ctx = { ...member(null), isPlatformAdmin: true, allTenants: true };
         expect((await upload("t-acme", PNG)).status).toBe(403);
         expect(prismaMock.tenantLogo.upsert).not.toHaveBeenCalled();
+    });
+
+    it("refuses a body clearly above the limit before it reads the form", async () => {
+        mocks.ctx = member("t-acme", PERMISSIONS.TENANT_SETTINGS.WRITE);
+        const formData = vi.fn();
+        const huge = { headers: new Headers({ "content-length": String(50 * 1024 * 1024) }), formData } as unknown as NextRequest;
+
+        const response = await route.POST(huge, params("t-acme"));
+
+        expect(response.status).toBe(413);
+        expect(await response.json()).toEqual({ success: false, error: "The logo is larger than 1 MB." });
+        expect(formData).not.toHaveBeenCalled();
     });
 
     it("refuses an SVG and anything that is no picture by its bytes, whatever the file claims", async () => {

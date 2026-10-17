@@ -1,11 +1,11 @@
 import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
-import { assignmentAt, matchesPattern, movedAwayAt, ruleAt } from "@/lib/tenant/database-owner";
+import { holderAt, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
 import { movesOf } from "./database-moves";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
-import { assertCustomer, listedDatabases, onDemandValue, ownSource, rememberServer, sharesDatabases } from "./shared-servers";
+import { assertCustomer, listedDatabases, onDemandValue, ownSource, rememberServer, sharesWithCustomers } from "./shared-servers";
 
-export { listedDatabases, sharesDatabases };
+export { listedDatabases, sharesWithCustomers };
 
 /**
  * Which customer the databases of a shared server belong to, as the tenant of the server decides
@@ -13,8 +13,8 @@ export { listedDatabases, sharesDatabases };
  * of the server, whose filter keeps the assignments of other tenants' servers out. The customer
  * reads them through `shared-databases.ts`.
  *
- * Only a server of the home tenant, the MSP's own, is shared. A customer keeps their servers to
- * themselves and never learns which other tenants exist.
+ * Only a server of a tenant that shares databases, one of the MSP's own, is shared. A customer
+ * keeps their servers to themselves and never learns which other tenants exist.
  */
 
 /** A database on a server, the other end of a move. */
@@ -27,10 +27,14 @@ export interface MovePlace {
 export interface AssignmentRow {
     id: string;
     databaseName: string;
-    tenantId: string;
-    tenantName: string;
+    /** Null when the tenant of the server took the database back. */
+    tenantId: string | null;
+    /** Null with the tenant, `DELETED_TENANT` for a tenant deleted since. */
+    tenantName: string | null;
     validFrom: string;
     validUntil: string | null;
+    /** When it was given, which decides whether its start reaches back over another holder. */
+    createdAt: string;
     /** Who gave it, null when the person is gone or it came through the API without a user. */
     byName: string | null;
     /** Where the database went, on the assignment its move ended. */
@@ -45,9 +49,13 @@ export interface RuleRow {
     id: string;
     pattern: string;
     tenantId: string;
+    /** `DELETED_TENANT` for a tenant deleted since. */
     tenantName: string;
     priority: number;
     validFrom: string;
+    /** When the rule was removed or its tenant deleted, null while it gives. */
+    validUntil: string | null;
+    createdAt: string;
     /** The backups a day the customer may start of each database the rule gives, null for none. */
     onDemandPerDay: number | null;
 }
@@ -65,6 +73,7 @@ export interface SourceAssignments {
     databases: DatabaseOwnerRow[];
     /** Every assignment, the ended ones too, newest first. */
     assignments: AssignmentRow[];
+    /** Every rule, the ended ones too, which still decide the backups of their time. */
     rules: RuleRow[];
     /** The tenants a database can be given to: every tenant but the one of the server. */
     customers: { id: string; name: string }[];
@@ -82,10 +91,21 @@ export interface AssignmentChange {
 
 const PATTERN_MAX = 100;
 
+/** The name a tenant deleted since goes by in the history of a server. */
+export const DELETED_TENANT = "A deleted tenant";
+
 export type AssignmentWithTenant = Awaited<ReturnType<typeof readAssignments>>[number];
 
 function readAssignments(sourceId: string) {
-    return prisma.databaseAssignment.findMany({ where: { sourceId }, orderBy: { validFrom: "desc" }, include: { tenant: { select: { name: true } } } });
+    return prisma.databaseAssignment.findMany({ where: { sourceId }, orderBy: { validFrom: "desc" } });
+}
+
+/** The names of tenants by id. An assignment or a rule keeps the id of a tenant deleted since, which has none. */
+async function tenantNames(ids: readonly (string | null)[]): Promise<(id: string) => string> {
+    const wanted = [...new Set(ids.filter((id): id is string => !!id))];
+    const tenants = wanted.length > 0 ? await prisma.tenant.findMany({ where: { id: { in: wanted } }, select: { id: true, name: true } }) : [];
+    const names = new Map(tenants.map((tenant) => [tenant.id, tenant.name]));
+    return (id) => names.get(id) ?? DELETED_TENANT;
 }
 
 export const databaseAssignmentService = {
@@ -95,39 +115,36 @@ export const databaseAssignmentService = {
         const [listed, assignments, rules, tenants, files] = await Promise.all([
             listedDatabases(sourceId),
             readAssignments(sourceId),
-            prisma.databaseAssignmentRule.findMany({ where: { sourceId }, orderBy: [{ priority: "desc" }, { createdAt: "asc" }], include: { tenant: { select: { name: true } } } }),
-            // Nobody but the home tenant shares, and nobody else sees the names of the other tenants.
-            sharesDatabases(source.tenantId)
+            prisma.databaseAssignmentRule.findMany({ where: { sourceId }, orderBy: [{ priority: "desc" }, { createdAt: "asc" }] }),
+            // Only a tenant that shares sees the names of the others.
+            sharesWithCustomers(source.tenantId).then((shares) => shares
                 ? prisma.tenant.findMany({ where: { id: { not: source.tenantId } }, select: { id: true, name: true }, orderBy: { name: "asc" } })
-                : [],
+                : []),
             serverBackupFiles(sourceId),
         ]);
         const dates = backupDatesByDatabase(files);
-        const [givers, moves] = await Promise.all([
+        const [givers, moves, nameOf] = await Promise.all([
             prisma.user.findMany({
                 where: { id: { in: [...new Set(assignments.flatMap((assignment) => (assignment.createdById ? [assignment.createdById] : [])))] } },
                 select: { id: true, name: true },
             }).then((users) => new Map(users.map((user) => [user.id, user.name]))),
             movesOf(sourceId, assignments),
+            tenantNames([...assignments.map((assignment) => assignment.tenantId), ...rules.map((rule) => rule.tenantId)]),
         ]);
 
         const databases = listed
             .map(({ name, sizeInBytes }): DatabaseOwnerRow => {
                 const backups = dates.get(name)?.length ?? 0;
-                const assignment = assignmentAt(assignments, name, now);
-                if (assignment) {
-                    return {
-                        name, sizeInBytes, backups,
-                        owner: { tenantId: assignment.tenantId, tenantName: assignment.tenant.name, via: "assignment", since: assignment.validFrom.toISOString(), onDemandPerDay: assignment.onDemandPerDay },
-                    };
-                }
-                // A database that moved away belongs to nobody here, whatever a rule matches.
-                const rule = movedAwayAt(assignments, name, now) ? null : ruleAt(rules, name, now);
+                // A database that moved away or was taken back belongs to nobody here, whatever a rule matches.
+                const holder = holderAt(assignments, rules, name, now);
+                if (!holder || holder.via === "moved" || !holder.fact.tenantId) return { name, sizeInBytes, backups, owner: null };
+                const { fact } = holder;
+                const tenantId = fact.tenantId as string;
                 return {
                     name,
                     sizeInBytes,
                     backups,
-                    owner: rule ? { tenantId: rule.tenantId, tenantName: rule.tenant.name, via: "rule", since: rule.validFrom.toISOString(), onDemandPerDay: rule.onDemandPerDay } : null,
+                    owner: { tenantId, tenantName: nameOf(tenantId), via: holder.via, since: fact.validFrom.toISOString(), onDemandPerDay: fact.onDemandPerDay },
                 };
             })
             .sort((a, b) => a.name.localeCompare(b.name));
@@ -138,15 +155,16 @@ export const databaseAssignmentService = {
                 id: assignment.id,
                 databaseName: assignment.databaseName,
                 tenantId: assignment.tenantId,
-                tenantName: assignment.tenant.name,
+                tenantName: assignment.tenantId ? nameOf(assignment.tenantId) : null,
                 validFrom: assignment.validFrom.toISOString(),
                 validUntil: assignment.validUntil?.toISOString() ?? null,
+                createdAt: assignment.createdAt.toISOString(),
                 byName: assignment.createdById ? givers.get(assignment.createdById) ?? null : null,
                 movedTo: moves.to(assignment),
                 movedFrom: moves.from(assignment),
                 onDemandPerDay: assignment.onDemandPerDay,
             })),
-            rules: rules.map(ruleRow),
+            rules: rules.map((rule) => ruleRow(rule, nameOf(rule.tenantId))),
             customers: tenants,
             // Only of the databases a tenant ever held, whose timeline counts the backups of each time.
             backupDates: Object.fromEntries([...dates].filter(([name]) =>
@@ -157,7 +175,10 @@ export const databaseAssignmentService = {
     /**
      * Gives databases of a server to customers, or takes them back with a null tenant. An
      * assignment that changes ends rather than being deleted, so the backups made before stay with
-     * the customer they belonged to then. Returns how many changed.
+     * the customer they belonged to then. Taking a database back is recorded too, so it belongs to
+     * the server's tenant alone from then on, also when a rule matches its name. A start in the past
+     * shows older backups, but only of times no other customer held the database, see `holderAt`.
+     * Returns how many changed.
      */
     async assign(sourceId: string, changes: AssignmentChange[], by: string | null, now = new Date()): Promise<{ changed: number }> {
         const source = await ownSource(sourceId);
@@ -169,26 +190,25 @@ export const databaseAssignmentService = {
 
         let changed = 0;
         await prisma.$transaction(async (tx) => {
-            if (changes.some((change) => change.tenantId)) await rememberServer(tx, source);
+            if (changes.length > 0) await rememberServer(tx, source);
+            const rules = await tx.databaseAssignmentRule.findMany({ where: { sourceId } });
             for (const change of changes) {
-                const current = await tx.databaseAssignment.findFirst({ where: { sourceId, databaseName: change.databaseName, validUntil: null } });
-                // Taking back what no assignment gives changes nothing, a rule keeps giving it.
-                if (!current && !change.tenantId) continue;
-                if (current?.tenantId === change.tenantId) continue;
+                const assignments = await tx.databaseAssignment.findMany({ where: { sourceId, databaseName: change.databaseName } });
+                const current = assignments.find((assignment) => assignment.validUntil === null) ?? null;
+                if (current && current.tenantId === change.tenantId) continue;
+                // Taking back what nobody holds changes nothing.
+                if (!change.tenantId && !current && ownerAt(assignments, rules, change.databaseName, now) === null) continue;
                 if (current) await tx.databaseAssignment.update({ where: { id: current.id }, data: { validUntil: now } });
-                if (change.tenantId) {
-                    // Never earlier than the end of the one before, or a backup would belong to two customers.
-                    const previous = await tx.databaseAssignment.findFirst({
-                        where: { sourceId, databaseName: change.databaseName, validUntil: { not: null } },
-                        orderBy: { validUntil: "desc" },
-                        select: { validUntil: true },
-                    });
-                    const wanted = change.validFrom ?? now;
-                    const validFrom = previous?.validUntil && previous.validUntil.getTime() > wanted.getTime() ? previous.validUntil : wanted;
-                    await tx.databaseAssignment.create({
-                        data: { sourceId, databaseName: change.databaseName, tenantId: change.tenantId, validFrom, createdById: by },
-                    });
-                }
+                // Never earlier than the end of the one before, or a backup would belong to two customers.
+                const ended = assignments.reduce<Date | null>((latest, assignment) => {
+                    const end = assignment.id === current?.id ? now : assignment.validUntil;
+                    return end && (!latest || end.getTime() > latest.getTime()) ? end : latest;
+                }, null);
+                const wanted = change.tenantId ? change.validFrom ?? now : now;
+                const validFrom = ended && ended.getTime() > wanted.getTime() ? ended : wanted;
+                await tx.databaseAssignment.create({
+                    data: { sourceId, databaseName: change.databaseName, tenantId: change.tenantId, validFrom, createdById: by, createdAt: now },
+                });
                 changed++;
             }
         });
@@ -207,23 +227,23 @@ export const databaseAssignmentService = {
         const rule = await prisma.$transaction(async (tx) => {
             await rememberServer(tx, source);
             return tx.databaseAssignmentRule.create({
-                data: { sourceId, pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now, onDemandPerDay },
-                include: { tenant: { select: { name: true } } },
+                data: { sourceId, pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now, onDemandPerDay, createdAt: now },
             });
         });
-        return ruleRow(rule);
+        return ruleRow(rule, (await tenantNames([rule.tenantId]))(rule.tenantId));
     },
 
     /**
-     * Removes a rule. The databases it gave belong to nobody else from now on, unless another rule
-     * takes them, and their backups from the time of the rule leave the customer with it.
+     * Ends a rule. The databases it gave belong to nobody else from now on, unless another rule
+     * takes them. The rule stays for the backups of its time, which stay with the customer it gave
+     * them to, like those of an ended assignment.
      */
-    async removeRule(sourceId: string, ruleId: string): Promise<{ pattern: string; tenantName: string }> {
+    async removeRule(sourceId: string, ruleId: string, now = new Date()): Promise<{ pattern: string; tenantName: string }> {
         await ownSource(sourceId);
-        const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId }, include: { tenant: { select: { name: true } } } });
+        const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId, validUntil: null } });
         if (!rule) throw new NotFoundError("Rule", ruleId);
-        await prisma.databaseAssignmentRule.delete({ where: { id: ruleId } });
-        return { pattern: rule.pattern, tenantName: rule.tenant.name };
+        await prisma.databaseAssignmentRule.update({ where: { id: ruleId }, data: { validUntil: now } });
+        return { pattern: rule.pattern, tenantName: (await tenantNames([rule.tenantId]))(rule.tenantId) };
     },
 
     /**
@@ -233,31 +253,33 @@ export const databaseAssignmentService = {
     async setOnDemand(sourceId: string, databaseName: string, perDay: number | null): Promise<{ tenantName: string; before: number | null }> {
         await ownSource(sourceId);
         const value = onDemandValue(perDay);
-        const current = await prisma.databaseAssignment.findFirst({ where: { sourceId, databaseName, validUntil: null }, include: { tenant: { select: { name: true } } } });
-        if (!current) throw new ValidationError(`${databaseName} is given to no tenant by name. Switch backups on demand on for the rule that gives it, or give it by name first.`);
+        const current = await prisma.databaseAssignment.findFirst({ where: { sourceId, databaseName, validUntil: null, tenantId: { not: null } } });
+        if (!current?.tenantId) throw new ValidationError(`${databaseName} is given to no tenant by name. Switch backups on demand on for the rule that gives it, or give it by name first.`);
         await prisma.databaseAssignment.update({ where: { id: current.id }, data: { onDemandPerDay: value } });
-        return { tenantName: current.tenant.name, before: current.onDemandPerDay };
+        return { tenantName: (await tenantNames([current.tenantId]))(current.tenantId), before: current.onDemandPerDay };
     },
 
     /** The same for every database a rule gives: up to `perDay` backups a day of each, or none with null. */
     async setRuleOnDemand(sourceId: string, ruleId: string, perDay: number | null): Promise<{ pattern: string; tenantName: string; before: number | null }> {
         await ownSource(sourceId);
         const value = onDemandValue(perDay);
-        const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId }, include: { tenant: { select: { name: true } } } });
+        const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId, validUntil: null } });
         if (!rule) throw new NotFoundError("Rule", ruleId);
         await prisma.databaseAssignmentRule.update({ where: { id: ruleId }, data: { onDemandPerDay: value } });
-        return { pattern: rule.pattern, tenantName: rule.tenant.name, before: rule.onDemandPerDay };
+        return { pattern: rule.pattern, tenantName: (await tenantNames([rule.tenantId]))(rule.tenantId), before: rule.onDemandPerDay };
     },
 };
 
-export function ruleRow(rule: { id: string; pattern: string; tenantId: string; tenant: { name: string }; priority: number; validFrom: Date; onDemandPerDay: number | null }): RuleRow {
+export function ruleRow(rule: { id: string; pattern: string; tenantId: string; priority: number; validFrom: Date; validUntil: Date | null; createdAt: Date; onDemandPerDay: number | null }, tenantName: string): RuleRow {
     return {
         id: rule.id,
         pattern: rule.pattern,
         tenantId: rule.tenantId,
-        tenantName: rule.tenant.name,
+        tenantName,
         priority: rule.priority,
         validFrom: rule.validFrom.toISOString(),
+        validUntil: rule.validUntil?.toISOString() ?? null,
+        createdAt: rule.createdAt.toISOString(),
         onDemandPerDay: rule.onDemandPerDay,
     };
 }

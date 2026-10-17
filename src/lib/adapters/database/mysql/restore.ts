@@ -166,6 +166,27 @@ async function logPostFailureDiagnostics(
 }
 
 /**
+ * Options that keep the client from acting on the machine it runs on while it reads a dump: no
+ * shell command like `\!` or `system`, no file of that machine sent by `LOAD DATA LOCAL INFILE`.
+ * A dump comes from the storage of its tenant, which may have written it itself, and in direct
+ * mode the client runs where DBackup runs. MariaDB has `--sandbox` since 10.5.25, MySQL
+ * `--system-command` since 8.0.40, so the help of the client says which one it knows.
+ */
+export async function lockedDownClientArgs(host: ExecutionHost, mysqlBin: string): Promise<string[]> {
+    const args = ["--local-infile=0"];
+    try {
+        const help = await host.exec([mysqlBin, "--help"]);
+        if (help.code === 0) {
+            if (/^\s*--sandbox\b/m.test(help.stdout)) args.push("--sandbox");
+            else if (/^\s*--system-command\b/m.test(help.stdout)) args.push("--skip-system-command");
+        }
+    } catch {
+        // A client that cannot describe itself restores without the lock, as before.
+    }
+    return args;
+}
+
+/**
  * Restore a single SQL file to a specific database.
  *
  * Pass `originalDb` when the target name differs from the name embedded in the
@@ -189,6 +210,7 @@ async function restoreSingleFile(
     const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
     const client = await connectionClientOf(config, host, mysqlBin);
     const args = dialect.getRestoreArgs(config, targetDb, host, client);
+    const locked = await lockedDownClientArgs(host, mysqlBin);
 
     await withAuthArgs(host, config.password, async (authArgs) => {
         // Best effort: server limits explain most restore failures after the fact.
@@ -232,7 +254,8 @@ async function restoreSingleFile(
                     const secrets = [config.password, config.privilegedAuth?.password].filter(Boolean) as string[];
                     const stderr = createStderrHandler(onLog, secrets);
 
-                    const proc = await host.spawn([mysqlBin, ...authArgs, ...args], { stdinFile: stagedPath });
+                    // The login file has to come first, the lock right after it.
+                    const proc = await host.spawn([mysqlBin, ...authArgs, ...locked, ...args], { stdinFile: stagedPath });
                     proc.stdout.on('data', () => { /* mysql writes nothing useful here */ });
                     proc.stderr.on('data', (data: Buffer) => stderr.handle(data.toString()));
 

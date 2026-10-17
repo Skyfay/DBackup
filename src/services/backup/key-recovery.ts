@@ -19,8 +19,6 @@
 import crypto from "crypto";
 import path from "path";
 import fs from "fs/promises";
-import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
 import { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { getTempDir } from "@/lib/temp-dir";
@@ -31,6 +29,7 @@ import { HEAD_PROBE_SIZE, legacyHeadVerifier } from "@/services/restore/smart-re
 import { archiveIndexService } from "./archive-index-service";
 import { archiveIndexVerifier, KeyVerifier } from "./key-resolution";
 import { rememberKeyFor } from "@/services/vault/key-aliases";
+import { openDestination } from "@/services/sharing/destination-access";
 import {
     findProfileByKey,
     getEncryptionProfiles,
@@ -103,17 +102,7 @@ export async function recoverEncryptionKey(
 
 /** Resolves the adapter and reads the backup's metadata sidecar. */
 async function readBackup(storageConfigId: string, file: string) {
-    const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
-    if (!storageConfig || storageConfig.type !== "storage") {
-        throw new NotFoundError("Storage adapter", storageConfigId);
-    }
-
-    const adapter = registry.get(storageConfig.adapterId) as StorageAdapter | undefined;
-    if (!adapter) {
-        throw new NotFoundError("Storage adapter implementation", storageConfig.adapterId);
-    }
-
-    const config = await resolveAdapterConfig(storageConfig);
+    const { adapter, config } = await openDestination(storageConfigId);
     const meta = await readMeta(adapter, config, file);
     if (!meta) {
         throw new NotFoundError("Backup metadata", `${file}.meta.json`);

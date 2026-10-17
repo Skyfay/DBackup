@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { AlertTriangle, KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { getEncryptionProfiles, recoverEncryptionKeyAction } from "@/app/actions/backup/encryption";
+import { getEncryptionProfiles, getPlatformEncryptionProfiles, recoverEncryptionKeyAction } from "@/app/actions/backup/encryption";
 import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
@@ -54,6 +54,8 @@ interface EncryptionKeyResolutionDialogProps {
     backup?: RecoverableBackup;
     /** Whether this user may create vault profiles. Without it, only picking one is offered. */
     canManageVault?: boolean;
+    /** The keys of the home tenant, for a configuration backup, instead of those of the open tenant. */
+    platformKeys?: boolean;
     /** Called when the user confirms a key selection. */
     onConfirm: (result: KeyResolutionResult) => void;
     /** Shows a spinner on the confirm button while the parent is processing. */
@@ -68,6 +70,7 @@ export function EncryptionKeyResolutionDialog({
     profileIdHint,
     backup,
     canManageVault = true,
+    platformKeys = false,
     onConfirm,
     loading = false,
     error,
@@ -89,7 +92,7 @@ export function EncryptionKeyResolutionDialog({
     // Fetch profiles when dialog opens; auto-switch to raw key tab if vault is empty
     useEffect(() => {
         if (!open) return;
-        getEncryptionProfiles().then((res) => {
+        (platformKeys ? getPlatformEncryptionProfiles() : getEncryptionProfiles()).then((res) => {
             if (res.success && res.data) {
                 const mapped = res.data.map((p: { id: string; name: string; description?: string | null; _count?: { jobs: number } }) => ({
                     id: p.id,
@@ -103,7 +106,7 @@ export function EncryptionKeyResolutionDialog({
                 setActiveTab("rawKey");
             }
         }).catch(() => { if (canUseRawKey) setActiveTab("rawKey"); });
-    }, [open, canUseRawKey]);
+    }, [open, canUseRawKey, platformKeys]);
 
     const handleConfirm = async () => {
         if (activeTab === "profile") {

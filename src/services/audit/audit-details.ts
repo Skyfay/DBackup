@@ -3,7 +3,7 @@ import { changesOf } from "@/lib/core/audit-changes";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getDataRetentionValues } from "@/services/system/data-retention-service";
 import { TENANT_SETTINGS_AREA } from "@/services/tenant/tenant-settings-audit";
-import { AUDIT_ROW_SELECT, deviceOf, networkOf, newPlacesOf, parseDetails, resolveTargets, targetOf, toLine, type AuditRecord } from "./audit-rows";
+import { AUDIT_ROW_SELECT, deviceOf, networkOf, newPlacesOf, originShown, parseDetails, resolveTargets, targetOf, toLine, type AuditRecord } from "./audit-rows";
 import type { AuditDetails } from "./audit-types";
 
 /** The earlier entries of a record the panel lists, and the entries of a session at most. */
@@ -115,6 +115,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
 
     const targets = await resolveTargets([record, ...earlier, ...sessionRecords]);
     const name = typeof details.name === "string" ? details.name : targetOf(targets, record);
+    const shown = originShown(record);
 
     return {
         id: record.id,
@@ -123,8 +124,8 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
             ? {
                   at: signIn.createdAt.toISOString(),
                   method: typeof parseDetails(signIn.details).method === "string" ? String(parseDetails(signIn.details).method) : null,
-                  device: deviceOf(signIn.userAgent),
-                  ipAddress: signIn.ipAddress,
+                  device: shown ? deviceOf(signIn.userAgent) : null,
+                  ipAddress: shown ? signIn.ipAddress : null,
               }
             : null,
         session: isSignIn
@@ -139,7 +140,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
             : [],
         earlier: earlier.map((entry) => toLine(entry, targets)),
         record: recordLink(record, name),
-        browser: record.userAgent && record.userAgent !== "unknown" ? record.userAgent : null,
+        browser: shown && record.userAgent && record.userAgent !== "unknown" ? record.userAgent : null,
         stored: record.details ? JSON.stringify(details, null, 2) : null,
         keptDays: retention.auditLog,
     };

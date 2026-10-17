@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { logger } from "@/lib/logging/logger";
 import { AuthenticationError, NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { BlockedPathError, listLocalDirectory } from "@/services/system/filesystem-service";
@@ -10,11 +11,13 @@ const log = logger.child({ route: "system/filesystem" });
 /**
  * Lists a directory on the machine DBackup runs on, for the file browser of a path field.
  * An authenticated admin-only endpoint (settings:read) that returns listings only, never file
- * contents. The blocklist of system paths lives in the service.
+ * contents. The blocklist of system paths lives in the service. Only in the home tenant, since
+ * only the platform adds a connection that reaches that machine, see `host-local.ts`.
  */
 export async function GET(req: NextRequest) {
     try {
-        await checkPermission(PERMISSIONS.SETTINGS.READ);
+        const viewer = await checkPermission(PERMISSIONS.SETTINGS.READ);
+        if (viewer.tenantId !== HOME_TENANT_ID) return NextResponse.json({ success: false, error: "Access denied" }, { status: 403 });
         const requestedPath = req.nextUrl.searchParams.get("path") || "/";
         const data = await listLocalDirectory(requestedPath);
         return NextResponse.json({ success: true, data });

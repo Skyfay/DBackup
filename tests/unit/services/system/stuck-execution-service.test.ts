@@ -9,6 +9,7 @@ import {
 } from '@/services/system/stuck-execution-service';
 import { HEARTBEAT_KEY } from '@/lib/execution/log-flusher';
 import { LogEntry } from '@/lib/core/logs';
+import { endFollowers } from '@/lib/execution/follower-runs';
 
 vi.mock('@/lib/prisma', () => ({
     default: {
@@ -18,6 +19,7 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 vi.mock('@/lib/execution/abort', () => ({ abortExecution: vi.fn() }));
+vi.mock('@/lib/execution/follower-runs', () => ({ LEADING_RUNS: { leading: true }, endFollowers: vi.fn() }));
 vi.mock('@/lib/execution/queue-manager', () => ({ processQueue: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock('@/lib/logging/logger', () => ({
@@ -76,6 +78,15 @@ describe('sweepStuckExecutions', () => {
             where: { id: 'exec-1', status: 'Running' },
             data: expect.objectContaining({ status: 'Failed' }),
         }));
+    });
+
+    it('watches the runs that work, never one that follows another, and ends the followers of a run it stops', async () => {
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1000 })]);
+
+        await sweepStuckExecutions();
+
+        expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'Running', AND: [{ leading: true }] } }));
+        expect(endFollowers).toHaveBeenCalledWith('exec-1', 'Failed');
     });
 
     it('signals the run before writing it off, so it can unwind on its own', async () => {

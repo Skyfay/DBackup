@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-    configs: [] as { id: string; name: string; adapterId: string }[],
+    configs: [] as { id: string; name: string; adapterId: string; type: string; tenantId: string }[],
     native: new Set<string>(),
     verifyFile: vi.fn(),
     notify: vi.fn(),
@@ -17,10 +17,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
     default: {
-        adapterConfig: { findMany: vi.fn(async () => mocks.configs) },
+        adapterConfig: { findUnique: vi.fn(async ({ where }: { where: { id: string } }) => mocks.configs.find((config) => config.id === where.id) ?? null) },
+        // Nobody shares these destinations, so their tenant sees them as they are.
+        connectionShare: { count: vi.fn(async () => 0) },
         execution: { findUnique: vi.fn(async () => mocks.execution) },
     },
 }));
+vi.mock("@/services/sharing/provided", () => ({ providedConnection: vi.fn(async () => null) }));
 vi.mock("@/lib/runner/system-task-runner", () => ({
     SystemTaskRunner: {
         create: vi.fn(async () => ({
@@ -52,9 +55,9 @@ describe("checking the copies of a backup", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.configs = [
-            { id: "sftp", name: "Hetzner Box", adapterId: "sftp" },
-            { id: "nas", name: "NAS Backups", adapterId: "local-filesystem" },
-            { id: "drive", name: "Google Drive", adapterId: "google-drive" },
+            { id: "sftp", name: "Hetzner Box", adapterId: "sftp", type: "storage", tenantId: "acme" },
+            { id: "nas", name: "NAS Backups", adapterId: "local-filesystem", type: "storage", tenantId: "acme" },
+            { id: "drive", name: "Google Drive", adapterId: "google-drive", type: "storage", tenantId: "acme" },
         ];
         mocks.native = new Set(["local-filesystem", "google-drive"]);
         mocks.runner.extras = [];

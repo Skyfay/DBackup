@@ -7,7 +7,7 @@
 import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { registerAdapters } from "@/lib/adapters";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { assertConfigOffHost, resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import type { DatabaseAdapter, DatabaseInfo, TableDataOptions, TableDataResult, TableInfo } from "@/lib/core/interfaces";
 import { registry } from "@/lib/core/registry";
 import { withHost } from "@/lib/transport";
@@ -63,6 +63,8 @@ export async function readDatabaseStats(input: DatabaseStatsInput): Promise<Read
         config = await resolveAdapterConfig(source);
     }
     if (!adapterId || !config) return refused("incomplete");
+    // A config of a form is run as it is, so a customer's never reaches the server DBackup runs on.
+    if (input.config) await assertConfigOffHost(adapterId, input.config as Record<string, unknown>);
 
     const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;
     if (!adapter) return refused("adapter-missing");
@@ -138,6 +140,8 @@ async function resolveTarget(target: DatabaseTarget): Promise<ReadOutcome<{ adap
     } else {
         adapterId = target.adapterId;
         config = target.config;
+        // A config of a form is run as it is, so a customer's never reaches the server DBackup runs on.
+        await assertConfigOffHost(adapterId, (config ?? {}) as Record<string, unknown>);
     }
 
     const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;

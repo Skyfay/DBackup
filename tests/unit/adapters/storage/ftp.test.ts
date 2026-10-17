@@ -2,7 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FTPAdapter } from "@/lib/adapters/storage/ftp";
 
 // --- Hoisted mocks ---
-const { mockAccess, mockClose, mockUploadFrom, mockDownloadTo, mockList, mockRemove, mockSize, mockEnsureDir, mockCd, mockTrackProgress, mockConstructed } = vi.hoisted(() => ({
+const { mockAccess, mockClose, mockUploadFrom, mockDownloadTo, mockList, mockRemove, mockSize, mockEnsureDir, mockCd, mockTrackProgress, mockConstructed, MockFTPError } = vi.hoisted(() => ({
+    // basic-ftp's FTPError, a refusal of the server that carries its reply code.
+    MockFTPError: class extends Error {
+        constructor(public code: number, message: string) {
+            super(message);
+            this.name = "FTPError";
+        }
+    },
     mockAccess: vi.fn(),
     mockClose: vi.fn(),
     mockUploadFrom: vi.fn().mockResolvedValue(undefined),
@@ -34,7 +41,7 @@ vi.mock("basic-ftp", () => {
         cd = mockCd;
         trackProgress = mockTrackProgress;
     }
-    return { Client: MockClient };
+    return { Client: MockClient, FTPError: MockFTPError };
 });
 
 vi.mock("fs", () => ({
@@ -401,6 +408,56 @@ describe("FTPAdapter", () => {
             progressCb?.({ bytesOverall: 100 });
             expect(onProgress).toHaveBeenCalledWith(100, 100);
             expect(result).toBe(true);
+        });
+    });
+
+    // ===== list() - a subfolder that is not there yet =====
+
+    describe("list() of a subfolder nothing was written to yet", () => {
+        it("lists it as empty when the server answers 550 and the folder cannot be entered either", async () => {
+            mockList.mockRejectedValue(new MockFTPError(550, "550 /backups/tenants/t1: No such file or directory"));
+            mockCd.mockRejectedValue(new MockFTPError(550, "550 Failed to change directory."));
+
+            const result = await FTPAdapter.list(config, "tenants/t1");
+
+            expect(result).toEqual([]);
+            expect(mockCd).toHaveBeenCalledWith("/backups/tenants/t1");
+        });
+
+        it("lists it as empty on ProFTPD, which answers the LIST of a missing folder with 450", async () => {
+            mockList.mockRejectedValue(new MockFTPError(450, "450 /backups/tenants/t1: No such file or directory"));
+            mockCd.mockRejectedValue(new MockFTPError(550, "550 /backups/tenants/t1: No such file or directory"));
+
+            await expect(FTPAdapter.list(config, "tenants/t1")).resolves.toEqual([]);
+        });
+
+        it("still fails when the folder is there and only its listing was refused", async () => {
+            mockList.mockRejectedValue(new MockFTPError(550, "550 Permission denied"));
+            mockCd.mockResolvedValue(undefined);
+
+            await expect(FTPAdapter.list(config, "tenants/t1")).rejects.toThrow("550 Permission denied");
+        });
+
+        it("still fails when the folder cannot be entered for another reason than a missing folder", async () => {
+            mockList.mockRejectedValue(new MockFTPError(550, "550 Requested action not taken"));
+            mockCd.mockRejectedValue(new MockFTPError(421, "421 Service not available"));
+
+            await expect(FTPAdapter.list(config, "tenants/t1")).rejects.toThrow("550 Requested action not taken");
+        });
+
+        it("still fails on a timeout, without asking the server about the folder", async () => {
+            mockList.mockRejectedValue(new Error("Timeout (control socket)"));
+
+            await expect(FTPAdapter.list(config, "tenants/t1")).rejects.toThrow("Timeout (control socket)");
+            expect(mockCd).not.toHaveBeenCalled();
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockList.mockRejectedValue(new MockFTPError(550, "550 /backups: No such file or directory"));
+            mockCd.mockRejectedValue(new MockFTPError(550, "550 Failed to change directory."));
+
+            await expect(FTPAdapter.list(config, "")).rejects.toThrow("550 /backups: No such file or directory");
+            expect(mockCd).not.toHaveBeenCalled();
         });
     });
 

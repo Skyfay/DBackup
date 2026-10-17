@@ -96,8 +96,8 @@ describe("creating a user and ending their sessions", () => {
             .mockResolvedValueOnce({ platformRole: "ADMIN", memberships: [] })
             .mockResolvedValueOnce(null);
 
-        expect(await userService.accountOf("tech")).toEqual({ isPlatformAdmin: false, tenantIds: ["default", "tenant-a"] });
-        expect(await userService.accountOf("root")).toEqual({ isPlatformAdmin: true, tenantIds: [] });
+        expect(await userService.accountOf("tech")).toEqual({ isPlatformAdmin: false, tenantIds: ["default", "tenant-a"], platformGroup: null });
+        expect(await userService.accountOf("root")).toEqual({ isPlatformAdmin: true, tenantIds: [], platformGroup: null });
         expect(await userService.accountOf("gone")).toBeNull();
     });
 });

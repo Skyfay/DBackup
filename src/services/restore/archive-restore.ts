@@ -20,11 +20,10 @@ import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import crypto from "crypto";
 import { pipeline } from "stream/promises";
-import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
 import { StorageAdapter, AdapterConfig } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
+import { NotFoundError } from "@/lib/logging/errors";
+import { findDestination, openRow, type OpenDestination } from "@/services/sharing/destination-access";
 import { shouldRestoreDatabase } from "@/lib/adapters/database/common/tar-utils";
 import { createDestinationSessions } from "./destination-sessions";
 import { forEachSnapshotFile } from "@/lib/archive/chain-source";
@@ -39,6 +38,7 @@ import { stripTrailingSlashes } from "@/lib/paths";
 import { openArchiveForRestore } from "./file-restore";
 import { restoreDatabases, type DatabaseMapping } from "./archive-restore-databases";
 import type { RestoreInput } from "./types";
+import type { SharedRunLogs } from "./run-logs";
 
 /**
  * Names one entry for the error list, as "<source label>/<path>".
@@ -58,6 +58,11 @@ export interface ArchiveRestoreCallbacks {
     setStage: (stage: string) => void;
     /** Moves the stage's progress bar, with an optional detail line. */
     updateProgress?: (percent: number, detail?: string) => void;
+    /**
+     * The customer's run and the provider's run of a customer's restore of a shared database, for
+     * the lines they read apart. `log` writes to both.
+     */
+    sharedLogs?: SharedRunLogs;
 }
 
 export interface ArchiveRestoreResult {
@@ -75,6 +80,22 @@ interface DirectoryTarget {
 }
 
 /**
+ * The storage a directory is restored into, opened as the tenant that runs the restore sees it,
+ * like every destination it reads or writes. The tenant of a shared destination never writes into
+ * the folders of its customers, a customer only into its own, and nobody into a storage of another
+ * tenant, whatever id and path the request names. A storage nobody shares is its plain adapter.
+ *
+ * @throws Error "Restore target adapter not found" for an id the tenant may not use.
+ */
+export async function openDirectoryTarget(id: string): Promise<OpenDestination> {
+    const found = await findDestination(id).catch((error: unknown) => {
+        if (error instanceof NotFoundError) throw new Error("Restore target adapter not found");
+        throw error;
+    });
+    return { ...found, ...(await openRow(found.row, found.mode)) };
+}
+
+/**
  * Restores selected databases and/or directory content from a v2 archive.
  *
  * Invoked by the restore pipeline as soon as the backup's metadata identifies a seekable
@@ -87,6 +108,8 @@ export async function restoreArchiveSnapshot(
     callbacks: ArchiveRestoreCallbacks
 ): Promise<ArchiveRestoreResult> {
     const { log, updateDetail, setStage } = callbacks;
+    // The lines of the whole archive, which the run of a customer leaves out and the provider's run reads.
+    const logFull = input.shared ? callbacks.sharedLogs?.provider : log;
 
     // Opens the archive remotely, reads the index (sidecar first), and verifies the chain
     // is complete - a missing sibling archive fails here, by name, before anything runs.
@@ -101,11 +124,11 @@ export async function restoreArchiveSnapshot(
             'info'
         );
         // The run of a customer says nothing about the rest of the archive of the server.
-        if (!input.shared) {
+        if (logFull) {
             if (index.deps.length > 0) {
-                log(`Incremental snapshot - restore reads from ${index.deps.length + 1} archives of its chain.`, 'info');
+                logFull(`Incremental snapshot - restore reads from ${index.deps.length + 1} archives of its chain.`, 'info');
             }
-            log(`Archive contains ${index.databases.length} database(s) and ${index.directories.length} directory source(s).`, 'info');
+            logFull(`Archive contains ${index.databases.length} database(s) and ${index.directories.length} directory source(s).`, 'info');
         }
 
         // ── Selection (identical conventions to the old path) ────────────────
@@ -139,8 +162,9 @@ export async function restoreArchiveSnapshot(
             throw new Error("No entries selected for restore");
         }
 
-        if (scope !== 'all') {
-            log(
+        // A customer's run never hints at what else the archive of the server holds.
+        if (scope !== 'all' && logFull) {
+            logFull(
                 scope === 'databases'
                     ? "Scope: databases only - the archive's directory sources are left untouched."
                     : "Scope: files only - the archive's databases are left untouched.",
@@ -180,21 +204,13 @@ export async function restoreArchiveSnapshot(
                 }
 
                 try {
-                    const targetConfig = await prisma.adapterConfig.findUnique({ where: { id: mappingEntry.targetConfigId } });
-                    if (!targetConfig || targetConfig.type !== "storage") {
-                        throw new Error("Restore target adapter not found");
-                    }
-                    const targetAdapter = registry.get(targetConfig.adapterId) as StorageAdapter | undefined;
-                    if (!targetAdapter) {
-                        throw new Error("Restore target adapter implementation missing");
-                    }
-
+                    const target = await openDirectoryTarget(mappingEntry.targetConfigId);
                     const basePath = mappingEntry.targetPath || dir.label;
                     targets.set(dir.src, {
-                        adapter: targetAdapter,
-                        config: await resolveAdapterConfig(targetConfig),
+                        adapter: target.adapter,
+                        config: target.config,
                         basePath,
-                        label: `${targetConfig.name}:${basePath}`,
+                        label: `${target.row.name}:${basePath}`,
                     });
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : String(e);

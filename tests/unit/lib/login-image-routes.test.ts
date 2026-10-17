@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-    ctx: null as null | { userId: string; permissions: string[] },
+    ctx: null as null | { userId: string; permissions: string[]; authMethod?: string; apiKeyId?: string; tenantId?: string },
     readPublic: vi.fn(),
     read: vi.fn(),
     info: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!ctx.permissions.includes(permission)) throw new Error(`Missing ${permission}`);
     },
 }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/services/system/system-settings-service", () => ({ getSignInSettings: () => mocks.look() }));
 vi.mock("@/services/system/login-image-service", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/system/login-image-service")>()),
@@ -82,7 +82,7 @@ describe("the routes of the login picture", () => {
         const response = await settingsRoute.POST(upload(new File([new Uint8Array([0xff, 0xd8, 0xff])], "alps.jpg")));
 
         expect(response.status).toBe(200);
-        expect(mocks.audit).toHaveBeenCalledWith(mocks.ctx, "UPDATE", "SYSTEM", { area: "Sign-in", changes: [{ field: "Login image", from: "old.png", to: "alps.jpg" }] });
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", { area: "Sign-in", changes: [{ field: "Login image", from: "old.png", to: "alps.jpg" }] }, undefined, { tenantId: "default", apiKeyId: null });
     });
 
     it("says why a file is refused", async () => {
@@ -103,9 +103,19 @@ describe("the routes of the login picture", () => {
         await settingsRoute.DELETE();
 
         expect(mocks.remove).toHaveBeenCalled();
-        expect(mocks.audit).toHaveBeenCalledWith(mocks.ctx, "UPDATE", "SYSTEM", {
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", {
             area: "Sign-in",
             changes: [{ field: "Login image", from: "alps.jpg", to: null }, { field: "Login page", from: "Your own image", to: "DBackup logos" }],
-        });
+        }, undefined, { tenantId: "default", apiKeyId: null });
+    });
+
+    it("writes a change through an API key of a customer's tenant into the log of the platform, naming the key", async () => {
+        mocks.ctx = { userId: "u1", permissions: ["settings:write"], authMethod: "apikey", apiKeyId: "k1", tenantId: "acme" };
+        mocks.info.mockResolvedValue({ fileName: "alps.jpg" });
+        mocks.look.mockResolvedValue({ loginLook: "logos" });
+
+        await settingsRoute.DELETE();
+
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", expect.anything(), undefined, { tenantId: "default", apiKeyId: "k1" });
     });
 });

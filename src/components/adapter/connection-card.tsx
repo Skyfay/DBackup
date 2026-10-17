@@ -5,7 +5,7 @@ import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { isPlainClick } from "@/components/ui/row-click";
 import { cn } from "@/lib/utils";
 import type { AdapterConfig } from "./types";
-import { kindNames } from "./connection-columns";
+import { kindLine, kindNames } from "./connection-columns";
 import { connectionVersion } from "@/lib/adapters/connection-summary";
 import { TenantLine } from "@/components/tenant/tenant-column";
 import { TENANT_COLUMN_ID } from "@/components/tenant/tenant-rows";
@@ -59,8 +59,8 @@ export function ConnectionCard({ row, onOpen, tenantName = null }: ConnectionCar
                         {config.name}
                     </button>
                     <p className="truncate text-xs text-muted-foreground">
-                        {kindNames.get(config.adapterId) ?? config.adapterId}
-                        {version && ` ${version}`}
+                        {/* A server of another tenant says how many of its databases are this tenant's. */}
+                        {config.sharedServer ? kindLine(config) : <>{kindNames.get(config.adapterId) ?? config.adapterId}{version && ` ${version}`}</>}
                     </p>
                     <TenantLine name={tenantName} className="mt-0.5" />
                 </div>

@@ -5,6 +5,7 @@ import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } fr
 import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
 import { DATABASE_BUSY } from "@/lib/server/database-maintenance";
 import { createDatabaseSnapshot } from "@/services/system/database-service";
+import { platformLogFor } from "@/services/system/settings-save";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ServiceError, wrapError } from "@/lib/logging/errors";
@@ -51,11 +52,13 @@ export async function POST() {
     try {
         const snapshot = await createDatabaseSnapshot();
 
-        await auditService.logFor(
-            ctx,
+        await auditService.log(
+            ctx.userId,
             AUDIT_ACTIONS.EXPORT,
             AUDIT_RESOURCES.SYSTEM,
-            { action: "database_download", sizeBytes: snapshot.sizeBytes }
+            { action: "database_download", sizeBytes: snapshot.sizeBytes },
+            undefined,
+            platformLogFor(ctx)
         );
 
         const token = generateFileDownloadToken({

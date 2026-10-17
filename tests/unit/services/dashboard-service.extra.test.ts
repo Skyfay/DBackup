@@ -44,6 +44,7 @@ import {
   refreshStorageStatsCache,
 } from "@/services/dashboard-service";
 import { registry } from "@/lib/core/registry";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 // ---------------------------------------------------------------------------
 // getCalendarDataForYear - full year iteration
@@ -269,6 +270,9 @@ describe("getStorageVolume - cache miss behavior", () => {
     prismaMock.$transaction.mockResolvedValue([]);
     prismaMock.storageSnapshot.createMany.mockResolvedValue({ count: 0 } as any);
     prismaMock.storageSnapshot.deleteMany.mockResolvedValue({ count: 0 } as any);
+    // No destination is shared with customers, and none was measured for a customer before.
+    prismaMock.connectionShare.findMany.mockResolvedValue([]);
+    prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
   });
 
   it("calls refreshStorageStatsCache when no cache entry is present", async () => {
@@ -292,7 +296,7 @@ describe("getStorageVolume - cache miss behavior", () => {
 
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-live", name: "Live S3", adapterId: "s3", type: "storage", config: "{}" } as any,
+      { id: "cfg-live", name: "Live S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
 
     const result = await getStorageVolume();
@@ -309,7 +313,7 @@ describe("getStorageVolume - cache miss behavior", () => {
     prismaMock.adapterConfig.findMany
       .mockRejectedValueOnce(new Error("DB connection error"))
       .mockResolvedValueOnce([
-        { id: "cfg-db", name: "DB Only", adapterId: "local", type: "storage" } as any,
+        { id: "cfg-db", name: "DB Only", adapterId: "local", type: "storage", tenantId: HOME_TENANT_ID } as any,
       ]);
     prismaMock.storageSnapshot.findFirst.mockResolvedValue({
       size: BigInt(999),
@@ -406,6 +410,9 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     prismaMock.storageSnapshot.createMany.mockResolvedValue({ count: 0 } as any);
     prismaMock.storageSnapshot.deleteMany.mockResolvedValue({ count: 0 } as any);
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+    // No destination is shared with customers, and none was measured for a customer before.
+    prismaMock.connectionShare.findMany.mockResolvedValue([]);
+    prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
   });
 
   it("marks scanError true and keeps the last scanned values when adapter.list throws", async () => {
@@ -414,7 +421,7 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     } as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-err", name: "Broken S3", adapterId: "s3", type: "storage", config: "{}" } as any,
+      { id: "cfg-err", name: "Broken S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
     prismaMock.storageSnapshot.findFirst.mockResolvedValue({
       size: BigInt(300),
@@ -437,7 +444,7 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     } as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-new", name: "New NAS", adapterId: "smb", type: "storage", config: "{}" } as any,
+      { id: "cfg-new", name: "New NAS", adapterId: "smb", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
     prismaMock.storageSnapshot.findFirst.mockResolvedValue(null);
 
@@ -452,7 +459,7 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     } as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-scan-err", name: "Faulty", adapterId: "local", type: "storage", config: "{}" } as any,
+      { id: "cfg-scan-err", name: "Faulty", adapterId: "local", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
     prismaMock.execution.findMany.mockResolvedValue([] as any);
 
@@ -472,7 +479,7 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     } as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-filter", name: "S3", adapterId: "s3", type: "storage", config: "{}" } as any,
+      { id: "cfg-filter", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
 
     const result = await refreshStorageStatsCache();

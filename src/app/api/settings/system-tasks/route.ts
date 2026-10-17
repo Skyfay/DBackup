@@ -13,6 +13,7 @@ import { isSystemTaskId } from "@/services/system/system-task-definitions";
 import { getSystemTaskRows, saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { getGeneralSettings } from "@/services/system/system-settings-service";
 import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
+import { platformLogFor } from "@/services/system/settings-save";
 
 const log = logger.child({ route: "system-tasks" });
 
@@ -65,8 +66,8 @@ export async function POST(req: NextRequest) {
     const after = await taskSnapshot(task);
     // Switching a task on or off alone reads as that, anything else as a change with its values.
     const switchedOnly = input.enabled !== undefined && input.schedule === undefined && input.runOnStartup === undefined;
-    await auditService.logFor(
-        ctx,
+    await auditService.log(
+        ctx.userId,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.SYSTEM,
         {
@@ -75,7 +76,8 @@ export async function POST(req: NextRequest) {
             ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
             ...(switchedOnly ? {} : { changes: taskChanges(before, after) }),
         },
-        task
+        task,
+        platformLogFor(ctx)
     );
 
     return NextResponse.json({ success: true });
@@ -104,12 +106,13 @@ export async function PUT(req: NextRequest) {
     if (!started.started) return NextResponse.json({ error: started.reason }, { status: 409 });
 
     const name = taskName(task);
-    await auditService.logFor(
-        ctx,
+    await auditService.log(
+        ctx.userId,
         AUDIT_ACTIONS.EXECUTE,
         AUDIT_RESOURCES.SYSTEM,
         { task: name, name },
-        task
+        task,
+        platformLogFor(ctx)
     );
 
     return NextResponse.json({ success: true, ...(started.executionId ? { executionId: started.executionId } : {}) });

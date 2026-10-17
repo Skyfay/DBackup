@@ -45,7 +45,7 @@ export function SummaryPane({ name, platform, tenant, scope, tenants, members, b
               { text: "Creates, renames and deletes tenants", can: true },
               { text: "Gives every platform group, this one too", can: true },
               { text: "Changes the settings and the sign-in of the instance", can: true },
-              { text: "Shares databases with tenants", can: true },
+              { text: "Shares databases, destinations and channels with tenants", can: true },
           ]
         : platformSentences(platform);
     const tenantLines: SummaryLine[] = builtIn

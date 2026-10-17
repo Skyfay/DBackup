@@ -27,7 +27,8 @@ vi.mock("@/app/actions/tenant/tenant", () => ({
     renameTenant: vi.fn(),
     deleteTenant: vi.fn(),
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toastError = vi.fn();
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: (message: string) => toastError(message), info: vi.fn() } }));
 
 // cmdk scrolls the highlighted entry into view, which jsdom does not draw.
 Element.prototype.scrollIntoView = vi.fn();
@@ -104,6 +105,31 @@ describe("the head of the sidebar as the tenant switcher", () => {
         await waitFor(() => expect(refresh).toHaveBeenCalled());
         expect(switchTenant).toHaveBeenCalledWith("t-acme");
         expect(push).not.toHaveBeenCalled();
+    });
+
+    it("says in plain words that a tenant is gone meanwhile, and loads the list of the tenants again", async () => {
+        switchTenant.mockResolvedValue({ success: false, error: "The tenant no longer exists, or you may not open it." });
+        sidebar({ tenants: [HOME, ACME] });
+
+        await userEvent.click(headButton());
+        await userEvent.click(await screen.findByRole("option", { name: /Acme Corp/ }));
+
+        await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+        expect(toastError).toHaveBeenCalledWith("The tenant no longer exists, or you may not open it.");
+    });
+
+    it("tells the other tabs of the browser which tenant the session works in now", async () => {
+        switchTenant.mockResolvedValue({ success: true, data: { name: "Acme Corp" } });
+        const heard: unknown[] = [];
+        const otherTab = new BroadcastChannel("dbackup:tenant");
+        otherTab.onmessage = (event) => heard.push(event.data);
+        sidebar({ tenants: [HOME, ACME] });
+
+        await userEvent.click(headButton());
+        await userEvent.click(await screen.findByRole("option", { name: /Acme Corp/ }));
+
+        await waitFor(() => expect(heard).toEqual([expect.objectContaining({ tenantId: "t-acme", name: "Acme Corp" })]));
+        otherTab.close();
     });
 
     it("leads from the page of a run to the Overview", async () => {

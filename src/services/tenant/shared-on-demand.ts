@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
@@ -5,19 +6,22 @@ import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import type { DatabasePlace } from "@/lib/tenant/database-owner";
 import { backupService } from "@/services/backup/backup-service";
 import { getTimezone } from "@/services/system/system-settings-service";
+import { backupKeyOf } from "./shared-backups";
+import { createCustomerBackupRun, dropCustomerBackupRun } from "./shared-backup-runs";
 import { holdingNow, placeKey } from "./shared-places";
 
 /**
  * Backups a customer starts of a database given to them, where the tenant of the server allows it
  * with a number a day. Such a backup runs the job of that tenant that backs the server up, for this
  * one database alone, and the run belongs to that tenant like every run of the job. The customer
- * follows it through `sharedBackupRun`, which tells its state and nothing else of the run.
+ * gets a short run of their own in their History that follows it, see `shared-backup-runs.ts`, and
+ * the Backups page follows it through `sharedBackupRun`, which tells its state and nothing else.
  *
  * A day is a day in the time zone of the instance, the one its schedules run in, so the count starts
  * again at midnight there.
  */
 
-/** What the tab Shared with you shows of backups on demand for one database. */
+/** What the Backups page shows of backups on demand for one shared database. */
 export interface SharedOnDemand {
     perDay: number;
     usedToday: number;
@@ -38,6 +42,8 @@ export interface SharedRunStatus {
 export interface StartedSharedBackup {
     requestId: string;
     executionId: string;
+    /** The run in the customer's History that follows it. */
+    customerExecutionId: string;
     databaseName: string;
     jobId: string;
     jobName: string;
@@ -46,10 +52,18 @@ export interface StartedSharedBackup {
     customerName: string;
 }
 
+/** Midnight of the day of `now` and of the day after, in the time zone of the instance. */
+async function dayOf(now: Date): Promise<{ start: Date; end: Date }> {
+    const timezone = await getTimezone().catch(() => "UTC");
+    const midnight = (date: Date) => fromZonedTime(`${formatInTimeZone(date, timezone, "yyyy-MM-dd")}T00:00:00`, timezone);
+    const start = midnight(now);
+    // Noon of the day after, which a switch of the clock never moves into another day.
+    return { start, end: midnight(new Date(start.getTime() + 36 * 3_600_000)) };
+}
+
 /** Midnight of the day of `now` in the time zone of the instance. */
 export async function dayStart(now: Date): Promise<Date> {
-    const timezone = await getTimezone().catch(() => "UTC");
-    return fromZonedTime(`${formatInTimeZone(now, timezone, "yyyy-MM-dd")}T00:00:00`, timezone);
+    return (await dayOf(now)).start;
 }
 
 const RUN_STATES: Record<string, SharedRunState> = { Pending: "queued", Running: "running", Success: "done", Partial: "done", Failed: "failed", Cancelled: "cancelled" };
@@ -82,6 +96,29 @@ export async function onDemandStates(tenantId: string, places: readonly (Databas
     return states;
 }
 
+/**
+ * Who of the tenant started a backup with Back up now, by the key of the backup its run wrote,
+ * `backupKeyOf` of its path. The name is null once that account is gone. A backup missing here was
+ * made by the tenant of the server. Runs in the system scope, since the run is that tenant's.
+ */
+export async function requestersByBackup(tenantId: string): Promise<Map<string, string | null>> {
+    const requests = await prisma.sharedBackupRequest.findMany({ where: { tenantId, executionId: { not: "" } }, select: { executionId: true, requestedById: true } });
+    if (requests.length === 0) return new Map();
+    const people = [...new Set(requests.flatMap((request) => (request.requestedById ? [request.requestedById] : [])))];
+    const [runs, users] = await Promise.all([
+        prisma.execution.findMany({ where: { id: { in: requests.map((request) => request.executionId) }, path: { not: null } }, select: { id: true, path: true } }),
+        prisma.user.findMany({ where: { id: { in: people } }, select: { id: true, name: true } }),
+    ]);
+    const paths = new Map(runs.map((run) => [run.id, run.path]));
+    const names = new Map(users.map((user) => [user.id, user.name]));
+    const found = new Map<string, string | null>();
+    for (const request of requests) {
+        const path = paths.get(request.executionId);
+        if (path) found.set(backupKeyOf(path), (request.requestedById && names.get(request.requestedById)) || null);
+    }
+    return found;
+}
+
 /** The job of the server that backs the database up: one that names it or backs up every database, an enabled one first, the oldest of them. */
 async function jobFor(sourceId: string, databaseName: string) {
     const jobs = await prisma.job.findMany({ where: { sourceId }, select: { id: true, name: true, enabled: true, databases: true, tenantId: true }, orderBy: { createdAt: "asc" } });
@@ -106,7 +143,7 @@ export async function requestSharedBackup(tenantId: string, user: { id: string; 
     const checked = await runAsSystem(async () => {
         const [customer, server] = await Promise.all([
             prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
-            prisma.sharedServer.findUnique({ where: { id: place.sourceId }, select: { tenantId: true } }),
+            prisma.sharedServer.findUnique({ where: { id: place.sourceId }, select: { tenantId: true, name: true, adapterId: true } }),
         ]);
         const holding = await holdingNow(tenantId, place, now);
         if (!server || !holding.owner) throw new ValidationError(`${place.databaseName} is no longer yours, so you cannot back it up.`);
@@ -123,30 +160,45 @@ export async function requestSharedBackup(tenantId: string, user: { id: string; 
         const running = await prisma.execution.findFirst({ where: { jobId: job.id, status: { in: ["Pending", "Running"] } }, select: { id: true } });
         if (running) throw new ValidationError(`A backup of the server of ${place.databaseName} runs right now. Try again once it is done.`);
 
-        // Counted with its own request, so two clicks at once cannot both take the last one of the day.
-        const since = await dayStart(now);
+        // The request goes in first and then counts every other one of its day, whenever that one
+        // started. Of two at once the one that counts later always sees the other, so they never
+        // both take the last backup of the day. Counting at the very same moment, both can be refused.
+        const day = await dayOf(now);
         const request = await prisma.sharedBackupRequest.create({
             data: { tenantId, sourceId: place.sourceId, databaseName: place.databaseName, executionId: "", requestedById: user.id, createdAt: now },
         });
         const used = await prisma.sharedBackupRequest.count({
-            where: { tenantId, sourceId: place.sourceId, databaseName: place.databaseName, createdAt: { gte: since, lte: now }, id: { not: request.id } },
+            where: { tenantId, sourceId: place.sourceId, databaseName: place.databaseName, createdAt: { gte: day.start, lt: day.end }, id: { not: request.id } },
         });
         if (used >= holding.perDay) {
             await prisma.sharedBackupRequest.delete({ where: { id: request.id } });
             throw new ValidationError(`${used} ${used === 1 ? "backup" : "backups"} of ${place.databaseName} started today, the most ${provider} allows a day. The next one is possible tomorrow.`);
         }
-        return { request, job, customerName: customer?.name ?? "A tenant", serverTenantId: job.tenantId };
+        return { request, job, customerName: customer?.name ?? "A tenant", serverTenantId: job.tenantId, server, provider };
     });
 
     const label = `${checked.customerName} · ${user.name}`;
+    // The customer's run goes in first, so the real run finds it however fast the queue takes it.
+    const leaderId = randomUUID();
+    let customerExecutionId: string | null = null;
     try {
+        customerExecutionId = await createCustomerBackupRun({
+            tenantId,
+            leaderId,
+            databaseName: place.databaseName,
+            serverName: checked.server.name,
+            adapterId: checked.server.adapterId,
+            providerName: checked.provider,
+            person: user.name,
+        });
         // A run of the job's own tenant, for this one database, the job itself stays as it is.
         const run = await runAsTenant(checked.serverTenantId, () =>
-            backupService.executeJob(checked.job.id, { type: "Manual", label }, { databases: [place.databaseName] }));
+            backupService.executeJob(checked.job.id, { type: "Manual", label }, { databases: [place.databaseName], executionId: leaderId }));
         await runAsSystem(() => prisma.sharedBackupRequest.update({ where: { id: checked.request.id }, data: { executionId: run.executionId } }));
         return {
             requestId: checked.request.id,
             executionId: run.executionId,
+            customerExecutionId,
             databaseName: place.databaseName,
             jobId: checked.job.id,
             jobName: checked.job.name,
@@ -155,6 +207,7 @@ export async function requestSharedBackup(tenantId: string, user: { id: string; 
         };
     } catch (error: unknown) {
         await runAsSystem(() => prisma.sharedBackupRequest.delete({ where: { id: checked.request.id } })).catch(() => undefined);
+        if (customerExecutionId) await dropCustomerBackupRun(customerExecutionId).catch(() => undefined);
         throw error;
     }
 }

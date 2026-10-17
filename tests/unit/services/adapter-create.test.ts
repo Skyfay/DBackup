@@ -14,6 +14,7 @@ import { validateCredentialAssignments } from "@/lib/adapters/credential-validat
 
 describe("creating a connection", () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
         prismaMock.adapterConfig.create.mockImplementation((async (args: { data: Record<string, unknown> }) => ({ id: "new", ...args.data })) as never);
     });
@@ -47,6 +48,14 @@ describe("creating a connection", () => {
     it("refuses a connection without a name", async () => {
         await expect(createAdapter({ name: "", type: "storage", adapterId: "local-filesystem", config: {} }))
             .rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("refuses an adapter of another kind than the one whose permission was checked", async () => {
+        await expect(createAdapter({ name: "Sneaky", type: "notification", adapterId: "mysql", config: { host: "db" } }))
+            .rejects.toThrow("Unknown adapter for this kind of connection");
+        await expect(createAdapter({ name: "Sneaky", type: "Storage", adapterId: "local-filesystem", config: { basePath: "/" } }))
+            .rejects.toBeInstanceOf(ValidationError);
+        expect(prismaMock.adapterConfig.create).not.toHaveBeenCalled();
     });
 
     it("keeps the role of a storage source and ignores a role on any other kind", async () => {

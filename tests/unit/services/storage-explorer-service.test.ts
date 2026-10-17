@@ -20,7 +20,7 @@ vi.mock('@/lib/logging/logger', () => ({
 
 import { StorageExplorerService } from '@/services/storage/explorer-service';
 
-const destination = (id: string, lastStatus = 'ONLINE') => ({ id, name: id.toUpperCase(), adapterId: 'sftp', lastStatus, lastHealthCheck: new Date(), lastError: null });
+const destination = (id: string, lastStatus = 'ONLINE') => ({ id, name: id.toUpperCase(), tenantId: 'acme', adapterId: 'sftp', lastStatus, lastHealthCheck: new Date(), lastError: null });
 const file = { name: 'a.tar', path: 'Shop/a.tar', size: 10, lastModified: new Date(), jobId: 'job-1', jobName: 'Shop', createdAt: new Date().toISOString() };
 
 // No default retention template unless a test names one.
@@ -34,7 +34,7 @@ describe('the Backups page never waits for a storage', () => {
     beforeEach(() => {
         service = new StorageExplorerService();
         prismaMock.job.findMany.mockResolvedValue([
-            { id: 'job-1', name: 'Shop', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }] },
+            { id: 'job-1', name: 'Shop', tenantId: 'acme', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }] },
         ] as never);
         storage.isListing.mockReturnValue(false);
         storage.listingFailure.mockReturnValue(null);
@@ -51,7 +51,7 @@ describe('the Backups page never waits for a storage', () => {
 
         expect(storage.listDestinationFiles).not.toHaveBeenCalled();
         expect(storage.refreshInBackground).toHaveBeenCalledTimes(1);
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('sftp', 'rebuild');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('sftp', 'acme', 'rebuild');
         expect(index.destinations.find((entry) => entry.id === 'nas')).toMatchObject({ count: 1, listing: false });
         expect(index.destinations.find((entry) => entry.id === 'sftp')).toMatchObject({ count: 0, listedAt: null, listing: true });
     });
@@ -64,8 +64,8 @@ describe('the Backups page never waits for a storage', () => {
 
         const index = await service.getIndex();
 
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'rebuild');
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('r2', 'reconcile');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'acme', 'rebuild');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('r2', 'acme', 'reconcile');
         expect(index.destinations.map((entry) => entry.count)).toEqual([1, 1]);
     });
 
@@ -90,7 +90,7 @@ describe('the Backups page never waits for a storage', () => {
         const index = await service.getIndex();
 
         expect(storage.refreshInBackground).toHaveBeenCalledTimes(1);
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'rebuild');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'acme', 'rebuild');
         expect(index.destinations.map((entry) => [entry.id, entry.airGapped])).toEqual([['usb', true], ['nas', false]]);
     });
 
@@ -125,8 +125,8 @@ describe('every backup in one list', () => {
     beforeEach(() => {
         service = new StorageExplorerService();
         prismaMock.job.findMany.mockResolvedValue([
-            { id: 'job-1', name: 'Shop', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }, { configId: 'r2' }] },
-            { id: 'job-2', name: 'CRM', backupMode: 'FULL', source: { adapterId: 'mysql', name: 'CRM' }, sources: [], destinations: [{ configId: 'nas' }] },
+            { id: 'job-1', name: 'Shop', tenantId: 'acme', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }, { configId: 'r2' }] },
+            { id: 'job-2', name: 'CRM', tenantId: 'acme', backupMode: 'FULL', source: { adapterId: 'mysql', name: 'CRM' }, sources: [], destinations: [{ configId: 'nas' }] },
         ] as never);
         prismaMock.adapterConfig.findMany.mockResolvedValue([destination('nas'), destination('r2')] as never);
         storage.isListing.mockReturnValue(false);

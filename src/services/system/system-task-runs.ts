@@ -13,13 +13,16 @@ import { updateService } from "./update-service";
 import { notify, getNotificationConfig } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
 import { getEventDefinition } from "@/lib/notifications/events";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { recordVersionIfChanged } from "./db-version-service";
 import { databaseListService } from "@/services/databases/database-list-service";
-import type { IntegrityCopy } from "@/services/backup/integrity-service";
+import type { IntegrityCheckResult, IntegrityCopy } from "@/services/backup/integrity-service";
+import type { SystemTaskRunner } from "@/lib/runner/system-task-runner";
 import { isAirGapped, isNotConnected } from "@/lib/core/air-gap";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ service: "SystemTaskService" });
 
@@ -272,21 +275,42 @@ export async function updateDbVersions(): Promise<TaskOutcome> {
 export async function warmupStorageCache(): Promise<TaskOutcome> {
     const rows = await prisma.adapterConfig.findMany({
         where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-        select: { id: true, name: true, type: true, storageRole: true, metadata: true, lastStatus: true },
+        select: { id: true, name: true, type: true, storageRole: true, metadata: true, lastStatus: true, tenantId: true },
     });
     // An air-gapped destination that is not connected is compared the next hour it is.
     const adapters = rows.filter((row) => !isNotConnected(row));
-    log.info("Pre-warming storage cache", { count: adapters.length });
+    // A shared destination has a listing for each customer that has one, besides the one of its tenant.
+    const listings = await prisma.storageListCache.findMany({
+        where: { adapterConfigId: { in: adapters.map((adapter) => adapter.id) } },
+        select: { adapterConfigId: true, tenantId: true },
+    });
+    const cachedFor = new Set(listings.map((listing) => `${listing.adapterConfigId}\n${listing.tenantId}`));
+    const places = [
+        ...adapters.map((adapter) => ({ adapter, tenantId: adapter.tenantId })),
+        ...listings.flatMap((listing) => {
+            const adapter = adapters.find((entry) => entry.id === listing.adapterConfigId);
+            return adapter && listing.tenantId !== adapter.tenantId ? [{ adapter, tenantId: listing.tenantId }] : [];
+        }),
+    ];
+    log.info("Pre-warming storage cache", { count: adapters.length, listings: places.length });
     const { storageService } = await import("@/services/storage/storage-service");
-    let failed = 0;
-    for (const adapter of adapters) {
+    const { viewModeOf } = await import("@/services/sharing/destination-access");
+    // A destination counts once, however many listings of it failed.
+    const failed = new Set<string>();
+    for (const { adapter, tenantId } of places) {
         try {
+            // A customer the destination is no longer shared with keeps nothing of it. Asked before
+            // the listing, since a listing that fails says nothing about who may use the destination.
+            if (tenantId !== adapter.tenantId && !(await viewModeOf(adapter, tenantId))) {
+                await prisma.storageListCache.deleteMany({ where: { adapterConfigId: adapter.id, tenantId } });
+                log.debug("Dropped the listing of a tenant the destination is no longer shared with", { adapterId: adapter.id, tenantId });
+                continue;
+            }
             // If a cache row already exists: reconcile against remote to detect external changes.
             // If no cache row: do a full fetch to populate it.
-            const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId: adapter.id } });
-            if (cached) {
-                await storageService.reconcileStorageListCache(adapter.id);
-                log.debug("Reconciled storage cache", { adapterId: adapter.id, name: adapter.name });
+            if (cachedFor.has(`${adapter.id}\n${tenantId}`)) {
+                await storageService.reconcileStorageListCache(adapter.id, tenantId);
+                log.debug("Reconciled storage cache", { adapterId: adapter.id, name: adapter.name, tenantId });
             } else {
                 await storageService.listFilesWithMetadata(adapter.id);
                 log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name });
@@ -294,11 +318,11 @@ export async function warmupStorageCache(): Promise<TaskOutcome> {
         } catch (e: unknown) {
             // Unplugged between its last check and now, which is no failure for an air-gapped one.
             if (isAirGapped(adapter)) continue;
-            failed++;
-            log.warn("Failed to warm/reconcile cache for adapter", { adapterId: adapter.id, name: adapter.name }, wrapError(e));
+            failed.add(adapter.id);
+            log.warn("Failed to warm/reconcile cache for adapter", { adapterId: adapter.id, name: adapter.name, tenantId }, wrapError(e));
         }
     }
-    if (failed > 0) return { ok: false, summary: `${failed} of ${plural(adapters.length, "destination", "destinations")} failed` };
+    if (failed.size > 0) return { ok: false, summary: `${failed.size} of ${plural(adapters.length, "destination", "destinations")} failed` };
     return { summary: plural(adapters.length, "destination", "destinations") };
 }
 
@@ -306,8 +330,9 @@ export async function syncPermissions(): Promise<TaskOutcome> {
     try {
         log.debug("Syncing permissions for the groups with every permission");
 
-        // Flatten all permissions from the source of truth
-        const allPerms = Object.values(PERMISSIONS).flatMap(group => Object.values(group));
+        // Every permission a group of a tenant can hold. The rights of the platform stay out, no
+        // group of a tenant ever stores one.
+        const allPerms = AVAILABLE_PERMISSIONS.map((permission) => permission.id);
 
         // The checks give such a group every permission anyway. The stored list keeps the pages
         // that show it right, and a configuration backup of it complete.
@@ -328,9 +353,110 @@ export async function syncPermissions(): Promise<TaskOutcome> {
     }
 }
 
+type CheckedCopy = Omit<IntegrityCopy, "index">;
+
+/** How the check of the copies of one tenant went. No result when it failed as a whole. */
+interface TenantCheck {
+    result: IntegrityCheckResult | null;
+    copies: CheckedCopy[];
+    error?: string;
+}
+
+/**
+ * Checks the copies of the tenant of the scope it runs in and records them in `runner`, a run of
+ * that tenant: the plan, every copy with the last state it reached, the logs and the outcome.
+ * Never throws, a check that fails as a whole fails its run.
+ */
+async function checkCopiesOfTenant(runner: SystemTaskRunner, note?: string): Promise<TenantCheck> {
+    const { integrityService } = await import("@/services/backup/integrity-service");
+    const { INTEGRITY_CHECK_STAGES } = await import("@/lib/core/logs");
+
+    // Every copy it checked, kept in the metadata for the page of the run. The one it
+    // checks now is the last entry, and each copy is written once, however often it changes.
+    const copies: CheckedCopy[] = [];
+    try {
+        await runner.start();
+        if (note) runner.logEntry(note);
+        const result = await integrityService.runFullIntegrityCheck({
+            onLog: (msg, level, details) => runner.logEntry(msg, level ?? "info", "general", details),
+            onStage: (stage) => runner.setStage(stage),
+            onFileProgress: (done, total) => {
+                if (total > 0) runner.updateStageProgress((done / total) * 100);
+            },
+            onPlan: (plan) => runner.setExtra({ plan }),
+            onCopy: ({ index, ...copy }) => {
+                copies[index] = copy;
+                runner.setExtra({ copies });
+            },
+        });
+        runner.setStage(INTEGRITY_CHECK_STAGES.COMPLETED);
+        runner.logEntry(
+            `${result.passed} passed, ${result.failed} failed, ${result.skipped} skipped of ${result.totalFiles} total${result.scanFailed > 0 ? `, ${result.scanFailed} destination${result.scanFailed !== 1 ? "s" : ""} unreachable` : ""}`,
+            result.failed > 0 || result.scanFailed > 0 ? "warning" : "success"
+        );
+        await runner.finish(result.failed > 0 || result.scanFailed > 0 ? "Partial" : "Success");
+        log.info("Integrity check completed", {
+            executionId: runner.id,
+            total: result.totalFiles,
+            passed: result.passed,
+            failed: result.failed,
+            skipped: result.skipped,
+        });
+        return { result, copies };
+    } catch (e: unknown) {
+        runner.logEntry(getErrorMessage(e), "error");
+        runner.setStage(INTEGRITY_CHECK_STAGES.FAILED);
+        await runner.finish("Failed");
+        log.error("Integrity check failed", { executionId: runner.id }, wrapError(e));
+        return { result: null, copies, error: getErrorMessage(e) };
+    }
+}
+
+/** The outcome of the whole check for the Settings page, in numbers that name no tenant. */
+function integrityOutcome(checks: TenantCheck[], unread: boolean): TaskOutcome {
+    const sum = (pick: (result: IntegrityCheckResult) => number) => checks.reduce((total, check) => total + (check.result ? pick(check.result) : 0), 0);
+    const failed = sum((result) => result.failed);
+    const checked = sum((result) => result.passed) + failed;
+    const scanFailed = sum((result) => result.scanFailed);
+    const broken = checks.filter((check) => check.error);
+    if (failed > 0) return { ok: false, summary: `${failed} of ${checked.toLocaleString("en-US")} failed` };
+    if (broken.length > 0) return { ok: false, summary: checks.length === 1 ? broken[0].error : `Failed in ${plural(broken.length, "tenant", "tenants")}` };
+    if (unread) return { ok: false, summary: "The other tenants could not be read" };
+    if (scanFailed > 0) return { ok: false, summary: `${plural(scanFailed, "destination", "destinations")} unreachable` };
+    return { summary: `${plural(checked, "backup", "backups")} passed` };
+}
+
+/** Tells the platform about every copy that failed, and each tenant about the copies at its own destinations. */
+async function reportIntegrityFailures(checks: TenantCheck[], triggerType: "Manual" | "Scheduler" | "Api", homeRunId: string): Promise<void> {
+    const results = checks.flatMap((check) => (check.result ? [check.result] : []));
+    const failed = results.reduce((total, result) => total + result.failed, 0);
+    if (failed === 0) return;
+    await notify({
+        eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
+        data: {
+            totalFiles: results.reduce((total, result) => total + result.totalFiles, 0),
+            failed,
+            passed: results.reduce((total, result) => total + result.passed, 0),
+            skipped: results.reduce((total, result) => total + result.skipped, 0),
+            triggerType,
+            errors: results.flatMap((result) => result.errors),
+        },
+    }, { executionId: homeRunId });
+    // Each tenant hears about the copies at its own destinations too, on its own channels.
+    const { notifyTenantsOfIntegrity } = await import("@/services/notifications/tenant-integrity");
+    await notifyTenantsOfIntegrity(checks.flatMap((check) => check.copies), triggerType).catch((error: unknown) => {
+        log.warn("Telling the tenants about the integrity check failed", { executionId: homeRunId }, wrapError(error));
+    });
+}
+
 /**
  * Starts the integrity check in the background and hands back its run at once. `onDone` gets
- * the outcome when the check ends.
+ * the outcome of the whole check when it ends.
+ *
+ * The copies of each tenant are checked in a run of that tenant, with its own copies, logs and
+ * outcome, so the History of a tenant never names the backups, destinations or jobs of another.
+ * The run of the home tenant comes first and is the one handed back, then each other tenant with
+ * something to check, one after the other, so only one run of the check is ever running.
  */
 export async function startIntegrityCheck(
     triggerType: "Manual" | "Scheduler" | "Api" | undefined,
@@ -338,81 +464,43 @@ export async function startIntegrityCheck(
     onDone: (outcome: TaskOutcome) => Promise<void>
 ): Promise<TaskOutcome> {
     const { integrityService } = await import("@/services/backup/integrity-service");
-    const { SystemTaskRunner } = await import("@/lib/runner/system-task-runner");
-    const { INTEGRITY_CHECK_STAGES } = await import("@/lib/core/logs");
+    const runners = await import("@/lib/runner/system-task-runner");
+    const trigger = triggerType ?? "Scheduler";
+    const newRun = () => runners.SystemTaskRunner.create("IntegrityCheck", trigger, triggerLabel ?? "Scheduler");
 
-    const runner = await SystemTaskRunner.create(
-        "IntegrityCheck",
-        triggerType ?? "Scheduler",
-        triggerLabel ?? "Scheduler"
-    );
-
-    // Every copy it checked, kept in the metadata for the page of the run. The one it
-    // checks now is the last entry, and each copy is written once, however often it changes.
-    const copies: Omit<IntegrityCopy, "index">[] = [];
+    const home = await runAsTenant(HOME_TENANT_ID, newRun);
 
     // Run async without blocking so callers receive the executionId immediately.
     (async () => {
         let outcome: TaskOutcome;
         try {
-            await runner.start();
-            const result = await integrityService.runFullIntegrityCheck({
-                onLog: (msg, level, details) => runner.logEntry(msg, level ?? "info", "general", details),
-                onStage: (stage) => runner.setStage(stage),
-                onFileProgress: (done, total) => {
-                    if (total > 0) runner.updateStageProgress((done / total) * 100);
-                },
-                onPlan: (plan) => runner.setExtra({ plan }),
-                onCopy: ({ index, ...copy }) => {
-                    copies[index] = copy;
-                    runner.setExtra({ copies });
-                },
-            });
-            runner.setStage(INTEGRITY_CHECK_STAGES.COMPLETED);
-            runner.logEntry(
-                `${result.passed} passed, ${result.failed} failed, ${result.skipped} skipped of ${result.totalFiles} total${result.scanFailed > 0 ? `, ${result.scanFailed} destination${result.scanFailed !== 1 ? "s" : ""} unreachable` : ""}`,
-                result.failed > 0 || result.scanFailed > 0 ? "warning" : "success"
-            );
-            await runner.finish(result.failed > 0 || result.scanFailed > 0 ? "Partial" : "Success");
-            log.info("Integrity check completed", {
-                total: result.totalFiles,
-                passed: result.passed,
-                failed: result.failed,
-                skipped: result.skipped,
-            });
-            if (result.failed > 0) {
-                await notify({
-                    eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
-                    data: {
-                        totalFiles: result.totalFiles,
-                        failed: result.failed,
-                        passed: result.passed,
-                        skipped: result.skipped,
-                        triggerType: triggerType ?? "Scheduler",
-                        errors: result.errors,
-                    },
-                }, { executionId: runner.id });
-                // Each tenant hears about the copies at its own destinations too, on its own channels.
-                const { notifyTenantsOfIntegrity } = await import("@/services/notifications/tenant-integrity");
-                await notifyTenantsOfIntegrity(copies, triggerType ?? "Scheduler").catch((error: unknown) => {
-                    log.warn("Telling the tenants about the integrity check failed", { executionId: runner.id }, wrapError(error));
-                });
+            let others: string[] = [];
+            let unread = false;
+            try {
+                others = (await integrityService.tenantsToCheck()).filter((tenantId) => tenantId !== HOME_TENANT_ID);
+            } catch (e: unknown) {
+                unread = true;
+                log.error("Reading the tenants to check failed", {}, wrapError(e));
             }
-            const checked = result.passed + result.failed;
-            outcome = result.failed > 0
-                ? { ok: false, summary: `${result.failed} of ${checked.toLocaleString("en-US")} failed` }
-                : result.scanFailed > 0
-                    ? { ok: false, summary: `${plural(result.scanFailed, "destination", "destinations")} unreachable` }
-                    : { summary: `${plural(checked, "backup", "backups")} passed` };
+            // The other runs are made when their turn comes, a waiting run would be taken for a queued backup.
+            const note = others.length > 0 ? `The copies of ${plural(others.length, "other tenant", "other tenants")} are checked in runs of their own` : undefined;
+            const checks = [await runAsTenant(HOME_TENANT_ID, () => checkCopiesOfTenant(home, note))];
+            for (const tenantId of others) {
+                const check = await runAsTenant(tenantId, async () => checkCopiesOfTenant(await newRun())).catch((e: unknown) => {
+                    log.error("Starting the integrity check of a tenant failed", { tenantId }, wrapError(e));
+                    const failed: TenantCheck = { result: null, copies: [], error: getErrorMessage(e) };
+                    return failed;
+                });
+                checks.push(check);
+            }
+            await reportIntegrityFailures(checks, trigger, home.id);
+            outcome = integrityOutcome(checks, unread);
         } catch (e: unknown) {
-            runner.logEntry(getErrorMessage(e), "error");
-            runner.setStage(INTEGRITY_CHECK_STAGES.FAILED);
-            await runner.finish("Failed");
             log.error("Integrity check failed", {}, wrapError(e));
             outcome = { ok: false, summary: getErrorMessage(e) };
         }
-        await onDone({ ...outcome, executionId: runner.id }).catch((e: unknown) => log.error("Recording the integrity check failed", {}, wrapError(e)));
+        await onDone({ ...outcome, executionId: home.id }).catch((e: unknown) => log.error("Recording the integrity check failed", {}, wrapError(e)));
     })();
 
-    return { executionId: runner.id, pending: true };
+    return { executionId: home.id, pending: true };
 }

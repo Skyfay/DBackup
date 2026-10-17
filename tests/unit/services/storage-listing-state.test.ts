@@ -10,11 +10,13 @@ vi.mock('@/lib/core/registry', () => ({ registry: { get: vi.fn() } }));
 vi.mock('@/lib/adapters', () => ({ registerAdapters: vi.fn() }));
 vi.mock('@/lib/adapters/config-resolver', () => ({ resolveAdapterConfig: vi.fn().mockResolvedValue({}) }));
 vi.mock('@/services/restore/smart-recovery', () => ({ resolveDecryptionKey: vi.fn() }));
+// No tenant shares the destination with another, see tests/unit/sharing/ for the shared ones.
+vi.mock('@/services/sharing/provided', () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 vi.mock('@/lib/logging/logger', () => ({
     logger: { child: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
 
-const destination = { id: 'nas', name: 'NAS', type: 'storage', adapterId: 'sftp', config: '{}', storageRole: 'DESTINATION' };
+const destination = { id: 'nas', name: 'NAS', type: 'storage', adapterId: 'sftp', config: '{}', storageRole: 'DESTINATION', tenantId: 'acme' };
 
 function adapterWith(list: StorageAdapter['list']): StorageAdapter {
     return { id: 'sftp', type: 'storage', name: 'SFTP', list, read: vi.fn().mockResolvedValue(null) } as unknown as StorageAdapter;
@@ -34,6 +36,7 @@ describe('listings of a destination that does not always answer', () => {
         prismaMock.job.findMany.mockResolvedValue([]);
         prismaMock.execution.findMany.mockResolvedValue([]);
         prismaMock.storageListCache.upsert.mockResolvedValue({} as never);
+        prismaMock.connectionShare.count.mockResolvedValue(0);
     });
 
     it('asks the storage once when a page, Check now and the warmup task want the same listing', async () => {
@@ -51,8 +54,26 @@ describe('listings of a destination that does not always answer', () => {
         expect(list).toHaveBeenCalledTimes(1);
     });
 
+    it('lets no request of another tenant join a listing that runs, or record a failure for it', async () => {
+        let finish!: (files: FileInfo[]) => void;
+        const list = vi.fn(() => new Promise<FileInfo[]>((resolve) => { finish = resolve; }));
+        vi.mocked(registry.get).mockReturnValue(adapterWith(list));
+        prismaMock.storageListCache.findUnique.mockResolvedValue(null);
+
+        const own = service.listDestinationFiles('nas', true);
+        await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+
+        // The destination is not shared with the other tenant, so it does not exist there.
+        await expect(runAsTenant('globex', () => service.listDestinationFiles('nas'))).rejects.toThrow(/not found/);
+        expect(service.listingFailure('nas', 'acme')).toBeNull();
+        expect(service.listingFailure('nas', 'globex')).toBeNull();
+
+        finish([{ name: 'shop.tar', path: 'shop.tar', size: 1, lastModified: new Date() }]);
+        await expect(own).resolves.toMatchObject({ files: [expect.objectContaining({ name: 'shop.tar' })] });
+        expect(list).toHaveBeenCalledTimes(1);
+    });
+
     it('lists a queued destination in its own tenant, whichever request frees the slot', async () => {
-        prismaMock.adapterConfig.findUnique.mockResolvedValue({ ...destination, tenantId: 'acme' } as never);
         prismaMock.storageListCache.findUnique.mockResolvedValue(null);
         const scopes: unknown[] = [];
         const list = vi.fn(async () => {
@@ -62,7 +83,7 @@ describe('listings of a destination that does not always answer', () => {
         vi.mocked(registry.get).mockReturnValue(adapterWith(list));
 
         // Asked for from a request of another tenant, like a page of Globex that freed the slot.
-        runAsTenant('globex', () => service.refreshInBackground('nas', 'rebuild'));
+        runAsTenant('globex', () => service.refreshInBackground('nas', 'acme', 'rebuild'));
         await vi.waitFor(() => expect(list).toHaveBeenCalled());
 
         expect(scopes).toEqual([{ kind: 'tenant', tenantId: 'acme' }]);
@@ -74,12 +95,12 @@ describe('listings of a destination that does not always answer', () => {
         vi.mocked(registry.get).mockReturnValue(adapterWith(list));
         prismaMock.storageListCache.findUnique.mockResolvedValue(null);
 
-        expect(service.refreshInBackground('nas', 'rebuild')).toBe(true);
-        await vi.waitFor(() => expect(service.isListing('nas')).toBe(false));
-        expect(service.listingFailure('nas')?.error).toBe('Timed out while waiting for handshake');
+        expect(service.refreshInBackground('nas', 'acme', 'rebuild')).toBe(true);
+        await vi.waitFor(() => expect(service.isListing('nas', 'acme')).toBe(false));
+        expect(service.listingFailure('nas', 'acme')?.error).toBe('Timed out while waiting for handshake');
 
         // A page load right after does not ask the storage again.
-        expect(service.refreshInBackground('nas', 'rebuild')).toBe(false);
+        expect(service.refreshInBackground('nas', 'acme', 'rebuild')).toBe(false);
         expect(list).toHaveBeenCalledTimes(1);
 
         // Check now does.
@@ -93,10 +114,10 @@ describe('listings of a destination that does not always answer', () => {
         prismaMock.storageListCache.findUnique.mockResolvedValue(null);
 
         await expect(service.listDestinationFiles('nas', true)).rejects.toThrow('offline');
-        expect(service.listingFailure('nas')).not.toBeNull();
+        expect(service.listingFailure('nas', 'acme')).not.toBeNull();
 
         await service.listDestinationFiles('nas', true);
-        expect(service.listingFailure('nas')).toBeNull();
+        expect(service.listingFailure('nas', 'acme')).toBeNull();
     });
 
     it('serves the list of an older version at once and replaces it in the background', async () => {
@@ -115,10 +136,10 @@ describe('listings of a destination that does not always answer', () => {
         prismaMock.storageListCache.findUnique.mockResolvedValue(cacheRow(CACHE_SCHEMA_VERSION - 1));
 
         await service.listDestinationFiles('nas');
-        await vi.waitFor(() => expect(service.listingFailure('nas')).not.toBeNull());
+        await vi.waitFor(() => expect(service.listingFailure('nas', 'acme')).not.toBeNull());
 
         expect(prismaMock.storageListCache.deleteMany).not.toHaveBeenCalled();
-        await expect(service.readCachedListing('nas')).resolves.toMatchObject({ current: false, files: [expect.objectContaining({ name: 'old.tar' })] });
+        await expect(service.readCachedListing('nas', 'acme')).resolves.toMatchObject({ current: false, files: [expect.objectContaining({ name: 'old.tar' })] });
     });
 
     it('drops a list too old to read and lists the destination again', async () => {
@@ -136,7 +157,7 @@ describe('listings of a destination that does not always answer', () => {
         prismaMock.storageListCache.findUnique.mockResolvedValue(cacheRow(CACHE_SCHEMA_VERSION - 1));
         prismaMock.storageListCache.update.mockResolvedValue({} as never);
 
-        await service.appendStorageListCacheEntry('nas', { name: 'new.tar', path: 'new.tar', size: 2, lastModified: new Date() });
+        await service.appendStorageListCacheEntry('nas', { name: 'new.tar', path: 'new.tar', size: 2, lastModified: new Date() }, 'acme');
 
         const written = JSON.parse(prismaMock.storageListCache.update.mock.calls[0][0].data.filesJson as string);
         expect(written.v).toBe(CACHE_SCHEMA_VERSION - 1);
@@ -149,10 +170,10 @@ describe('listings of a destination that does not always answer', () => {
         vi.mocked(registry.get).mockReturnValue(adapterWith(list));
         prismaMock.storageListCache.findUnique.mockResolvedValue(null);
 
-        for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) service.refreshInBackground(id, 'rebuild');
+        for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) service.refreshInBackground(id, 'acme', 'rebuild');
 
         await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(4));
-        expect(service.isListing('f')).toBe(true);
+        expect(service.isListing('f', 'acme')).toBe(true);
 
         finishers.shift()!();
         await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(5));

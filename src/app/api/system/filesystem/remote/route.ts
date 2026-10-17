@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { assertMayApplySavedLogin } from "@/lib/auth/saved-login-access";
 import { logger } from "@/lib/logging/logger";
 import { AuthenticationError, PermissionError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
@@ -13,8 +14,9 @@ const log = logger.child({ route: "filesystem/remote" });
 /** Lists a directory on a server over SFTP, for a path field whose file lives there. */
 export async function POST(req: NextRequest) {
     try {
-        await checkPermission(PERMISSIONS.SETTINGS.READ);
+        const viewer = await checkPermission(PERMISSIONS.SETTINGS.READ);
         const { config, path, adapterId, sshCredentialId } = await req.json();
+        if (adapterId && sshCredentialId) assertMayApplySavedLogin(viewer, adapterId);
         const data = await listRemoteDirectory({ config, path, adapterId, sshCredentialId });
         return NextResponse.json({ success: true, data });
     } catch (error: unknown) {

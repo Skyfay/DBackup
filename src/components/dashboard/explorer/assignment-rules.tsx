@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DateDisplay } from "@/components/utils/date-display";
 import type { RuleRow, SourceAssignments } from "@/services/tenant/database-assignments";
-import { countOf, onDemandText, ruleGives } from "./assignment-model";
+import { activeRules, countOf, onDemandText, ruleGives } from "./assignment-model";
 import { OnDemandDialog } from "./assignment-on-demand-dialog";
 import { RuleForm } from "./assignment-rule-form";
 import { RuleRemoveDialog } from "./assignment-rule-remove";
@@ -86,6 +86,8 @@ export function AssignmentRules({ serverId, serverName, data, canAssign, now, ch
     const [removing, setRemoving] = useState<RuleRow | null>(null);
     const [onDemand, setOnDemand] = useState<RuleRow | null>(null);
     const gives = useMemo(() => ruleGives(data, now), [data, now]);
+    // An ended rule only decides the backups of its time, the timeline shows it.
+    const rules = useMemo(() => activeRules(data.rules), [data.rules]);
 
     return (
         <section aria-label="Rules" className="min-w-0 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
@@ -115,11 +117,11 @@ export function AssignmentRules({ serverId, serverName, data, canAssign, now, ch
                     />
                 </div>
             )}
-            {data.rules.length === 0 ? (
+            {rules.length === 0 ? (
                 <p className="border-t px-5 py-5 text-sm text-muted-foreground">No rule yet. A rule like shop_* gives every database whose name starts with shop_ to one tenant.</p>
             ) : (
                 <ul>
-                    {data.rules.map((rule) => (
+                    {rules.map((rule) => (
                         <RuleItem key={rule.id} rule={rule} gives={gives.get(rule.id) ?? []} canAssign={canAssign} onRemove={() => setRemoving(rule)} onOnDemand={() => setOnDemand(rule)} />
                     ))}
                 </ul>

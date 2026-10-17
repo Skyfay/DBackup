@@ -235,6 +235,57 @@ describe("SMBAdapter", () => {
         });
     });
 
+    // ===== list() of a subfolder that is not there yet =====
+
+    describe("list() of a subfolder nothing was written to yet", () => {
+        /** How samba-client rejects: the error of execa, with what smbclient printed beside the command. */
+        function smbclientFailure(printed: string, command = 'smbclient -U admin -c dir "backups\\tenants\\t1\\*"') {
+            const output = `${printed}\n`;
+            return Object.assign(new Error(`Command failed with exit code 1: ${command}\n${output}`), {
+                exitCode: 1,
+                stdout: output,
+                stderr: "",
+                all: output,
+            });
+        }
+
+        it.each([
+            ["the folder itself is missing", "NT_STATUS_OBJECT_NAME_NOT_FOUND listing \\backups\\tenants\\t1\\*"],
+            ["a folder above it is missing", "NT_STATUS_OBJECT_PATH_NOT_FOUND listing \\backups\\tenants\\t1\\*"],
+            ["the pattern matches nothing", "NT_STATUS_NO_SUCH_FILE listing \\backups\\tenants\\t1\\*"],
+        ])("lists it as empty when %s", async (_case, printed) => {
+            mockList.mockRejectedValue(smbclientFailure(printed));
+
+            await expect(SMBAdapter.list(config, "tenants/t1")).resolves.toEqual([]);
+            expect(mockList).toHaveBeenCalledWith("backups/tenants/t1/*");
+        });
+
+        it.each([
+            ["a refused login", "session setup failed: NT_STATUS_LOGON_FAILURE"],
+            ["a refused folder", "NT_STATUS_ACCESS_DENIED listing \\backups\\tenants\\t1\\*"],
+            ["an unreachable server", "do_connect: Connection to 192.168.1.100 failed (Error NT_STATUS_HOST_UNREACHABLE)"],
+        ])("still fails on %s", async (_case, printed) => {
+            mockList.mockRejectedValue(smbclientFailure(printed));
+
+            await expect(SMBAdapter.list(config, "tenants/t1")).rejects.toThrow(printed);
+        });
+
+        it("reads the status from the output of smbclient, not from a path in its command", async () => {
+            mockList.mockRejectedValue(smbclientFailure(
+                "NT_STATUS_ACCESS_DENIED listing \\backups\\NT_STATUS_NO_SUCH_FILE\\*",
+                'smbclient -U admin -c dir "backups\\NT_STATUS_OBJECT_NAME_NOT_FOUND\\*"',
+            ));
+
+            await expect(SMBAdapter.list(config, "NT_STATUS_OBJECT_NAME_NOT_FOUND")).rejects.toThrow("NT_STATUS_ACCESS_DENIED");
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockList.mockRejectedValue(smbclientFailure("NT_STATUS_OBJECT_NAME_NOT_FOUND listing \\backups\\*"));
+
+            await expect(SMBAdapter.list(config, "")).rejects.toThrow("NT_STATUS_OBJECT_NAME_NOT_FOUND");
+        });
+    });
+
     // ===== delete() =====
 
     describe("delete()", () => {

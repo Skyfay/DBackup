@@ -31,6 +31,7 @@ vi.mock('@/lib/notifications/events', () => ({
 }));
 vi.mock('@/lib/auth/permissions', () => ({
     PERMISSIONS: { SYSTEM: { ADMIN: 'system.admin' } },
+    AVAILABLE_PERMISSIONS: [{ id: 'system.admin', label: 'Admin', category: 'System' }],
 }));
 
 // Dynamic-import mocks (used inside runTask() switch branches)
@@ -40,6 +41,7 @@ vi.mock('@/lib/runner/config-runner', () => ({
 vi.mock('@/services/backup/integrity-service', () => ({
     integrityService: {
         runFullIntegrityCheck: vi.fn().mockResolvedValue({ totalFiles: 5, passed: 5, failed: 0, skipped: 0 }),
+        tenantsToCheck: vi.fn().mockResolvedValue(['default']),
     },
 }));
 vi.mock('@/lib/runner/system-task-runner', () => ({
@@ -280,7 +282,8 @@ describe('SystemTaskService', () => {
 
             await service.runTask(SYSTEM_TASKS.INTEGRITY_CHECK);
 
-            expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1);
+            // The check goes on in the background once the run is handed back.
+            await vi.waitFor(() => expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1));
         });
 
         it('keeps the plan and every copy an integrity check checked in the metadata of its run', async () => {

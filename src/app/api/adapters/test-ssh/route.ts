@@ -7,10 +7,11 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { checkBackupPath, checkBackupPathShared } from "@/lib/adapters/database/mssql/preflight";
 import { MSSQLConfig } from "@/lib/adapters/definitions";
-import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { assertConfigOffHost, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { registerAdapters } from "@/lib/adapters";
+import { assertMayApplySavedLogin } from "@/lib/auth/saved-login-access";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 
 registerAdapters();
 
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
         // profile do not need to include these fields inline.
         let resolvedConfig = { ...config };
         if (adapterId && sshCredentialId) {
+            assertMayApplySavedLogin(ctx, adapterId);
             try {
                 resolvedConfig = await overlayCredentialsOnConfig(
                     adapterId,
@@ -71,6 +73,14 @@ export async function POST(req: NextRequest) {
                     { status: 400 }
                 );
             }
+        }
+
+        // A customer never logs in with the keys or the agent of the server DBackup runs on.
+        try {
+            await assertConfigOffHost(adapterId ?? "ssh", { ...resolvedConfig, connectionMode: "ssh" });
+        } catch (refusal: unknown) {
+            if (refusal instanceof ValidationError) return NextResponse.json({ success: false, message: refusal.message }, { status: 400 });
+            throw refusal;
         }
 
         // Which SSH parameters a config carries is the adapter's own business:
@@ -126,6 +136,7 @@ export async function POST(req: NextRequest) {
         // Generic SSH connection test for all other adapters
         return testGenericSsh(spec.ssh, sshHost, sshPort);
     } catch (error: unknown) {
+        if (error instanceof PermissionError) return NextResponse.json({ success: false, message: error.message }, { status: 403 });
         log.error("SSH test route error", {}, wrapError(error));
         const message =
             error instanceof Error ? error.message : "Unknown error";

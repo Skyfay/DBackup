@@ -43,6 +43,9 @@ vi.mock('@/lib/core/registry', () => ({
     registry: { get: vi.fn() },
 }));
 
+// A destination whose adapter is not registered yet registers them all first.
+vi.mock('@/lib/adapters', () => ({ registerAdapters: vi.fn() }));
+
 vi.mock('@/lib/adapters/config-resolver', () => ({
     resolveAdapterConfig: vi.fn(async (adapter: any) => {
         try { return JSON.parse(adapter.config); } catch { return {}; }
@@ -97,6 +100,7 @@ vi.mock('@/lib/crypto/checksum', () => ({
 const mockStorageConfig = {
     id: 'storage-1',
     type: 'storage',
+    tenantId: 'tenant-1',
     adapterId: 'local-fs',
     config: JSON.stringify({ basePath: '/tmp/backups' }),
     name: 'Local FS',
@@ -107,6 +111,7 @@ const mockStorageConfig = {
 const mockSourceConfig = {
     id: 'source-1',
     type: 'database',
+    tenantId: 'tenant-1',
     adapterId: 'postgres',
     config: JSON.stringify({ host: 'localhost', database: 'mydb' }),
     name: 'Postgres DB',
@@ -138,11 +143,23 @@ function makeDbAdapter(overrides = {}) {
     };
 }
 
+/**
+ * The registry answers by adapter id, as it does at runtime: the destination's id gets the storage
+ * adapter, any other id the database adapter. Opening a destination asks for its adapter twice.
+ */
+function useAdapters(storageAdapter: unknown, dbAdapter: unknown) {
+    vi.mocked(registry.get).mockImplementation(((id: string) => (id === mockStorageConfig.adapterId ? storageAdapter : dbAdapter)) as any);
+}
+
 // --- Tests ---
 
 describe('runRestorePipeline (extra coverage)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Nothing answers from the registry until a test says so with useAdapters.
+        vi.mocked(registry.get).mockReset();
+        // No destination of these tests is shared with other tenants.
+        prismaMock.connectionShare.count.mockResolvedValue(0);
         prismaMock.execution.update.mockResolvedValue({} as any);
         vi.mocked(abortModule.registerExecution).mockReturnValue(new AbortController());
 
@@ -180,9 +197,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         vi.mocked(decomp.getDecompressionStream).mockReturnValueOnce(new PassThrough() as any);
 
@@ -203,9 +218,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         vi.mocked(decomp.getDecompressionStream).mockReturnValueOnce(new PassThrough() as any);
 
@@ -226,9 +239,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         await runRestorePipeline('exec-enc-no-meta', makeInput({ file: 'backup.sql.enc' }));
 
@@ -250,9 +261,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         // Plain .sql file - no extension-based clue, no .enc so no throw.
         await runRestorePipeline('exec-meta-throw', makeInput({ file: 'backup.sql' }));
@@ -276,9 +285,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         // Provide encryption metadata so the decryption branch executes.
         fsMocks.readFile.mockResolvedValueOnce(JSON.stringify({
@@ -315,9 +322,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         fsMocks.readFile.mockResolvedValueOnce(JSON.stringify({
             encryption: {
@@ -352,9 +357,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         fsMocks.readFile.mockResolvedValueOnce(JSON.stringify({ compression: 'GZIP' }));
 
@@ -375,9 +378,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         fsMocks.readFile.mockResolvedValueOnce(JSON.stringify({ compression: 'GZIP' }));
 
@@ -400,9 +401,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         // Compression is set in metadata but the file itself has no .gz extension.
         fsMocks.readFile.mockResolvedValueOnce(JSON.stringify({ compression: 'GZIP' }));
@@ -432,9 +431,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(sqliteConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         const mapping = [
             { originalName: 'mydb.sqlite', targetName: 'newdb.sqlite', selected: true },
@@ -458,9 +455,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(sqliteConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         const mapping = [
             { originalName: 'mydb.sqlite', targetName: 'mydb.sqlite', selected: false },
@@ -494,9 +489,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         await runRestorePipeline('exec-cb-error', makeInput());
 
@@ -519,9 +512,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         await runRestorePipeline('exec-cb-warn', makeInput());
 
@@ -544,9 +535,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         await runRestorePipeline('exec-cb-zero-errors', makeInput());
 
@@ -569,9 +558,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         await runRestorePipeline('exec-cb-explicit-level', makeInput());
 
@@ -593,9 +580,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         await runRestorePipeline('exec-restore-error-field', makeInput());
 
@@ -615,9 +600,7 @@ describe('runRestorePipeline (extra coverage)', () => {
         prismaMock.adapterConfig.findUnique
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
-        vi.mocked(registry.get)
-            .mockReturnValueOnce(storageAdapter as any)
-            .mockReturnValueOnce(dbAdapter as any);
+        useAdapters(storageAdapter, dbAdapter);
 
         await runRestorePipeline('exec-pg-rename', makeInput({ targetDatabaseName: 'renamed_db' }));
 

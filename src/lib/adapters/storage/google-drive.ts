@@ -72,6 +72,29 @@ function createDriveClient(config: GoogleDriveConfig): drive_v3.Drive {
  */
 const folderResolutions = new Map<string, Promise<string>>();
 
+/**
+ * The id of the folder called `segment` under a parent, or null when there is none. Looks up
+ * only and creates nothing.
+ */
+async function findFolder(
+    drive: drive_v3.Drive,
+    parentId: string,
+    segment: string
+): Promise<string | null> {
+    // Escape \ before ' to prevent query injection
+    const query = `name='${segment.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const res = await drive.files.list({
+        q: query,
+        fields: "files(id, name)",
+        spaces: "drive",
+    });
+
+    // Several matches mean duplicates already exist, from an earlier run or made by hand.
+    // Always taking the first keeps a restore landing in one place.
+    const first = res.data.files?.[0];
+    return first ? first.id! : null;
+}
+
 async function resolveSegment(
     drive: drive_v3.Drive,
     parentId: string,
@@ -82,19 +105,8 @@ async function resolveSegment(
     if (inFlight) return inFlight;
 
     const resolution = (async () => {
-        // Search for existing folder (escape \ before ' to prevent query injection)
-        const query = `name='${segment.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        const res = await drive.files.list({
-            q: query,
-            fields: "files(id, name)",
-            spaces: "drive",
-        });
-
-        if (res.data.files && res.data.files.length > 0) {
-            // Several matches mean duplicates already exist, from an earlier run or made by
-            // hand. Always taking the first keeps a restore landing in one place.
-            return res.data.files[0].id!;
-        }
+        const existing = await findFolder(drive, parentId, segment);
+        if (existing) return existing;
 
         const folder = await drive.files.create({
             requestBody: {
@@ -133,6 +145,25 @@ async function resolveOrCreatePath(
         currentParent = await resolveSegment(drive, currentParent, segment);
     }
 
+    return currentParent;
+}
+
+/**
+ * Resolves a folder path like "tenants/abc" below a base folder into the id of its last folder,
+ * or null when any folder on the way is not there. Unlike `resolveOrCreatePath` it creates
+ * nothing, so looking at a folder nobody wrote to leaves the drive as it was.
+ */
+async function findFolderPath(
+    drive: drive_v3.Drive,
+    baseFolderId: string,
+    folderPath: string
+): Promise<string | null> {
+    let currentParent = baseFolderId;
+    for (const segment of folderPath.split("/").filter(Boolean)) {
+        const next = await findFolder(drive, currentParent, segment);
+        if (!next) return null;
+        currentParent = next;
+    }
     return currentParent;
 }
 
@@ -385,9 +416,12 @@ export const GoogleDriveAdapter: StorageAdapter = {
             const drive = createDriveClient(config);
             let rootFolderId = config.folderId || "root";
 
-            // Navigate to subdir if specified
+            // Navigate to subdir if specified. Only looked up, never created: a subfolder nothing
+            // was written to yet is not there and lists as empty, like on the other destinations.
             if (dir && dir !== ".") {
-                rootFolderId = await resolveOrCreatePath(drive, rootFolderId, dir + "/dummy");
+                const folderId = await findFolderPath(drive, rootFolderId, dir);
+                if (!folderId) return [];
+                rootFolderId = folderId;
             }
 
             return await listFilesRecursive(drive, rootFolderId, dir || "");

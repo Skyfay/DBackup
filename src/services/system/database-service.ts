@@ -19,6 +19,7 @@ import { DATABASE_BUSY, beginDatabaseMaintenance, endDatabaseMaintenance } from 
 import { formatBytes } from "@/lib/utils";
 import { ServiceError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { runAsSystem } from "@/lib/tenant/context";
 
 const log = logger.child({ service: "DatabaseService" });
 
@@ -150,7 +151,8 @@ async function withMaintenance<T>(operation: string, fn: (info: DatabaseInfo) =>
     }
 
     try {
-        const running = await prisma.execution.count({ where: { status: "Running" } });
+        // The runs of every tenant use the database, whichever tenant the admin has open.
+        const running = await runAsSystem(() => prisma.execution.count({ where: { status: "Running" } }));
         if (running > 0) {
             throw busy(
                 operation,

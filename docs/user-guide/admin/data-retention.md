@@ -8,7 +8,7 @@ Everything on this page is about DBackup's own records. Backup files on your des
 
 ## Data Retention
 
-Go to **Settings → Data retention**. Each kind of record shows how many there are now. A change waits in the bar at the foot of the part until **Save changes**. Cleanup runs with the **Clean old data** system task, daily at midnight and when DBackup starts. Run it by hand under **Settings → System tasks** to apply a change right away.
+Go to **Settings → Data retention**. Each kind of record shows how many there are now, in every tenant together. A change waits in the bar at the foot of the part until **Save changes**. Cleanup runs with the **Clean old data** system task, daily at midnight and when DBackup starts. Run it by hand under **Settings → System tasks** to apply a change right away.
 
 | Setting | What is removed | Default | Options |
 | :--- | :--- | :--- | :--- |
@@ -25,7 +25,7 @@ The step log is by far the largest part of a run. Keeping the History entries wh
 ### What the Run history cleanup always keeps
 
 - Runs that are still queued or running.
-- The newest 10 runs of every job, however old they are. Runs without a job, such as restores and integrity checks, keep their newest 10 per type.
+- The newest 10 runs of every job, however old they are. Runs without a job, such as restores and integrity checks, keep their newest 10 per type in each tenant.
 - Every run of the incremental chain a job is currently extending, since the next incremental backup builds on it.
 
 ### Effects on the rest of DBackup
@@ -52,8 +52,8 @@ The path of the database file is shown below the figures.
 
 SQLite never shrinks its file on its own. Space from removed records is reused for new data, but the file stays as large as it ever was. **Optimize** asks first, then runs `VACUUM` to rebuild the file without that space and truncates the WAL file.
 
-- Needs the `settings:write` permission and is recorded in the audit log.
-- Is refused while a backup, restore or integrity check is running. Jobs that become due while it runs wait in the queue and start once it has finished.
+- Needs the `settings:write` permission and is recorded in the audit log of the home tenant.
+- Is refused while a backup, restore or integrity check of any tenant is running. Jobs that become due while it runs wait in the queue and start once it has finished.
 - Needs free space on the database volume for the data in use.
 - DBackup may not respond for a moment while it runs on a large database.
 
@@ -68,7 +68,7 @@ After lowering a retention period, run **Clean old data** first and then optimiz
 **Download** hands you a copy of the whole SQLite file after it asked first. DBackup writes the copy with `VACUUM INTO` to its temp directory (`TMPDIR`), so it is consistent, compacted and a single `.db` file with nothing left in a WAL file.
 
 - Only a [platform admin](/user-guide/admin/tenants#platform-admins) sees the button, since the file holds every tenant. API keys cannot download the database.
-- Is refused while a backup, restore or integrity check is running.
+- Is refused while a backup, restore or integrity check of any tenant is running.
 - Needs free space in the temp directory for the data in use.
 - The temp copy is deleted once the download finishes or is cancelled, and a few minutes later if it was never collected.
 - Every download is recorded in the audit log.

@@ -8,6 +8,7 @@ import * as certificateService from "@/services/system/certificate-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { auditService } from "@/services/audit-service";
 import { certificateChanges, certificateSnapshot, SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { PLATFORM_LOG } from "@/services/system/settings-save";
 
 const log = logger.child({ action: "certificate" });
 
@@ -43,7 +44,7 @@ export async function uploadCertificate(formData: FormData) {
     await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
       area: SETTINGS_AREAS.CERTIFICATE,
       changes: certificateChanges(before, certificateSnapshot(certificateService.getCertificateInfo())),
-    });
+    }, undefined, PLATFORM_LOG);
     return {
       success: true,
       message: "Certificate uploaded successfully. Restart DBackup to apply the new certificate.",
@@ -69,7 +70,7 @@ export async function regenerateCertificate() {
     await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, {
       area: SETTINGS_AREAS.CERTIFICATE,
       changes: certificateChanges(before, certificateSnapshot(certificateService.getCertificateInfo())),
-    });
+    }, undefined, PLATFORM_LOG);
     return {
       success: true,
       message: "Self-signed certificate regenerated. Restart DBackup to apply.",

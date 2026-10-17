@@ -4,8 +4,12 @@ import type { BackupMetadata } from '@/lib/core/interfaces';
 vi.mock('@/lib/prisma', () => ({
     default: {
         adapterConfig: { findUnique: vi.fn() },
+        // Nobody shares the destination, so its tenant sees it as it is.
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
     },
 }));
+
+vi.mock('@/services/sharing/provided', () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 
 vi.mock('@/lib/core/registry', () => ({
     registry: { get: vi.fn() },
@@ -50,7 +54,8 @@ vi.mock('@/lib/logging/logger', () => ({
     },
 }));
 
-vi.mock('@/lib/logging/errors', () => ({
+vi.mock('@/lib/logging/errors', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/lib/logging/errors')>()),
     wrapError: vi.fn((e) => e),
 }));
 
@@ -69,8 +74,10 @@ import fsPromises from 'fs/promises';
 function makeAdapterConfig(overrides: Record<string, unknown> = {}) {
     return {
         id: 'config-1',
+        type: 'storage',
         adapterId: 'local',
         name: 'Local Storage',
+        tenantId: 'acme',
         config: '{}',
         primaryCredentialId: null,
         sshCredentialId: null,
@@ -118,7 +125,7 @@ describe('VerificationService', () => {
 
         await expect(
             verificationService.verifyFile('missing-id', 'backup.sql', 'manual')
-        ).rejects.toThrow('Storage configuration not found');
+        ).rejects.toThrow('Storage adapter not found: missing-id');
     });
 
     it('throws when adapter is not in registry', async () => {
@@ -127,7 +134,7 @@ describe('VerificationService', () => {
 
         await expect(
             verificationService.verifyFile('config-1', 'backup.sql', 'manual')
-        ).rejects.toThrow("Adapter 'local' not found");
+        ).rejects.toThrow('Storage adapter implementation not found: local');
     });
 
     it('returns no_metadata when adapter.read returns null and download returns false', async () => {

@@ -27,7 +27,7 @@ vi.mock("@/services/config/restore-flow", () => ({
     hasNoAccountYet: () => mocks.noAccountYet(),
     keyOverride: (keyHex?: string, profileId?: string) => (keyHex ? { rawKeyHex: keyHex } : profileId ? { profileId } : undefined),
 }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -135,13 +135,14 @@ describe("the restore routes in Settings", () => {
     });
 
     it("restore a checked copy, write the audit log and say DBackup restarts", async () => {
-        mocks.context.mockReturnValue(PLATFORM_ADMIN);
+        mocks.context.mockReturnValue({ ...PLATFORM_ADMIN, tenantId: "acme" });
 
         const response = await apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }));
 
         expect(await response.json()).toEqual({ success: true, data: { restarting: true } });
         expect(mocks.apply).toHaveBeenCalledWith("t-1", { userId: "root" });
-        expect(mocks.audit).toHaveBeenCalledWith(PLATFORM_ADMIN, "RESTORE", "SYSTEM", { action: "config_restore", file: "config_backup.db.gz.enc", kind: "database" });
+        // Into the log of the home tenant, whichever tenant the admin has open.
+        expect(mocks.audit).toHaveBeenCalledWith("root", "RESTORE", "SYSTEM", { action: "config_restore", file: "config_backup.db.gz.enc", kind: "database" }, undefined, { tenantId: "default", apiKeyId: null });
     });
 
     it("hand back what a file of an older version could not bring back", async () => {

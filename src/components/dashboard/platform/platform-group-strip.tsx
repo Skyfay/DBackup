@@ -10,7 +10,7 @@ const groupsWord = (count: number) => (count === 1 ? "group" : "groups");
 
 /**
  * The numbers above the platform groups: how many there are, how many accounts hold one, which
- * reach every tenant, which share databases and which change tenants. Platform admin counts as one
+ * reach every tenant, which share with customers and which change tenants. Platform admin counts as one
  * of them, built in.
  */
 export function PlatformGroupStrip({ model }: { model: PlatformGroupsModel | null }) {
@@ -47,7 +47,7 @@ export function PlatformGroupStrip({ model }: { model: PlatformGroupsModel | nul
                     extra: model ? names(everywhere) : " ",
                 },
                 {
-                    label: "Share databases",
+                    label: "Share with customers",
                     icon: Share2,
                     value: model ? sharing.length.toLocaleString() : "-",
                     unit: model ? groupsWord(sharing.length) : undefined,

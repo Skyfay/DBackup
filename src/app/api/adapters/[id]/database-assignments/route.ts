@@ -5,7 +5,7 @@ import { checkAnyPermissionWithContext, checkPermissionWithContext, getAuthConte
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { SEE_SHARED_DATABASES_PERMISSION, SHARE_DATABASES_PERMISSION } from "@/lib/tenant/sharing";
+import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { auditService } from "@/services/audit-service";
 import { databaseAssignmentService } from "@/services/tenant/database-assignments";
 
@@ -32,14 +32,15 @@ function failure(error: unknown, fallback: string) {
 /**
  * GET /api/adapters/[id]/database-assignments
  * The databases of a shared server with the tenant each belongs to, the assignments and the rules,
- * for whoever may see the shared databases. A right on the platform, so never an API key.
+ * for whoever may see the shared databases: a session, or an API key made in a tenant that shares, see
+ * `keyPlatformPermissions`.
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     const { id } = await props.params;
     try {
-        checkAnyPermissionWithContext(ctx, [SEE_SHARED_DATABASES_PERMISSION, SHARE_DATABASES_PERMISSION]);
+        checkAnyPermissionWithContext(ctx, [SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
         return NextResponse.json({ success: true, data: await databaseAssignmentService.forSource(id) });
     } catch (error: unknown) {
         return failure(error, "The assignments could not be read");
@@ -56,7 +57,7 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
     if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     const { id } = await props.params;
     try {
-        checkPermissionWithContext(ctx, SHARE_DATABASES_PERMISSION);
+        checkPermissionWithContext(ctx, SHARE_PERMISSION);
         const parsed = BodySchema.safeParse(await req.json().catch(() => null));
         if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
 

@@ -18,9 +18,11 @@ vi.mock("@/lib/auth/access-control", () => ({
     getViewer: vi.fn(async () => mocks.user),
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/user/account-visibility", () => ({
+    findVisibleAvatar: (...args: unknown[]) => mocks.find(...args),
+}));
 vi.mock("@/services/user/avatar-service", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/user/avatar-service")>()),
-    findAvatar: (...args: unknown[]) => mocks.find(...args),
     saveAvatar: (...args: unknown[]) => mocks.save(...args),
     removeAvatar: (...args: unknown[]) => mocks.remove(...args),
 }));
@@ -43,20 +45,20 @@ describe("the routes of the pictures of the people", () => {
         mocks.user = { id: "u1", name: "Manu", image: null };
     });
 
-    it("shows a picture to anyone signed in, kept for good with its time and with nothing to sniff", async () => {
+    it("shows a picture to whoever may see the person, kept for good with its time and with nothing to sniff", async () => {
         mocks.find.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType: "image/gif" });
 
         const response = await pictureRoute.GET(new NextRequest("http://localhost/api/avatar/u1?v=1790000000000"), params("u1"));
 
         expect(response.status).toBe(200);
-        expect(mocks.find).toHaveBeenCalledWith("u1");
+        expect(mocks.find).toHaveBeenCalledWith({ userId: "u2" }, "u1");
         expect(response.headers.get("Content-Type")).toBe("image/gif");
         expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
         expect(response.headers.get("Cache-Control")).toBe("private, max-age=31536000, immutable");
         expect((await pictureRoute.GET(new NextRequest("http://localhost/api/avatar/u1"), params("u1"))).headers.get("Cache-Control")).toBe("private, max-age=3600");
     });
 
-    it("shows no picture without a sign-in, and answers 404 for a person without one", async () => {
+    it("shows no picture without a sign-in, and answers 404 for a person without one or one the caller may not see", async () => {
         mocks.find.mockResolvedValue(null);
         expect((await pictureRoute.GET(new NextRequest("http://localhost/api/avatar/u9"), params("u9"))).status).toBe(404);
 

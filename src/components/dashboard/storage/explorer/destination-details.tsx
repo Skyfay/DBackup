@@ -72,7 +72,8 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
                     </div>
                     <p className="truncate text-sm text-muted-foreground">
                         {kindNames.get(destination.adapterId) ?? destination.adapterId}
-                        {destination.airGapped && " · air-gapped"} · {count(entries.length, "job")} with backups here
+                        {destination.airGapped && " · air-gapped"}
+                        {destination.provider && ` · provided by ${destination.provider}`} · {count(entries.length, "job")} with backups here
                     </p>
                     <TenantLine name={inTenant?.name ?? null} className="mt-0.5" />
                 </div>

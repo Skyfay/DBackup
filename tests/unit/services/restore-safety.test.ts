@@ -13,7 +13,11 @@ vi.mock('@/lib/prisma', () => ({
         },
         execution: {
             create: vi.fn()
-        }
+        },
+        // Whether the tenant of a destination shares it with customers.
+        connectionShare: {
+            count: vi.fn().mockResolvedValue(0),
+        },
     }
 }));
 
@@ -70,8 +74,8 @@ describe('Restore Service Safety Checks', () => {
         // Default Prisma mocks
         // @ts-expect-error -- Mock setup -- Mock setup
         prisma.adapterConfig.findUnique.mockImplementation(({ where }: any) => {
-            if (where.id === 'storage-1') return { id: 'storage-1', adapterId: 's3', config: '{}', type: 'storage' };
-            if (where.id === 'target-1') return { id: 'target-1', adapterId: 'postgres', config: '{}', type: 'database' };
+            if (where.id === 'storage-1') return { id: 'storage-1', adapterId: 's3', config: '{}', type: 'storage', tenantId: 'tenant-1' };
+            if (where.id === 'target-1') return { id: 'target-1', adapterId: 'postgres', config: '{}', type: 'database', tenantId: 'tenant-1' };
             return null;
         });
 

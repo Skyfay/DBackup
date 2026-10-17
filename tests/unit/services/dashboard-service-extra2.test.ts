@@ -45,6 +45,7 @@ vi.mock("@/services/storage/storage-alert-service", () => ({
 
 import { refreshStorageStatsCache } from "@/services/dashboard-service";
 import { registry } from "@/lib/core/registry";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 // ---------------------------------------------------------------------------
 // Helper to set up a minimal prismaMock for refreshStorageStatsCache
@@ -71,6 +72,10 @@ function setupPrismaMocks() {
 
   // snapshotRetentionDays setting.
   prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+
+  // No destination is shared with customers, and none was measured for a customer before.
+  prismaMock.connectionShare.findMany.mockResolvedValue([]);
+  prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +97,7 @@ describe("refreshStorageStatsCache - checkStorageAlerts error is swallowed", () 
         adapterId: "local",
         type: "storage",
         config: "{}",
+        tenantId: HOME_TENANT_ID,
         createdAt: new Date(),
         updatedAt: new Date(),
       } as any,
@@ -162,6 +168,7 @@ describe("refreshStorageStatsCache - saveStorageSnapshots outer error is swallow
         adapterId: "s3",
         type: "storage",
         config: "{}",
+        tenantId: HOME_TENANT_ID,
         createdAt: new Date(),
         updatedAt: new Date(),
       } as any,

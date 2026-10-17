@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
     templateNames: vi.fn(),
     refresh: vi.fn(),
     audit: vi.fn(),
+    getUserPermissions: vi.fn(),
+    getSchedulePresets: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -23,7 +25,7 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
     },
     checkPermission: (...args: unknown[]) => mocks.checkPermission(...args),
-    getUserPermissions: vi.fn(async () => []),
+    getUserPermissions: (...args: unknown[]) => mocks.getUserPermissions(...args),
 }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: (...args: unknown[]) => mocks.getSession(...args) } } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
@@ -34,11 +36,12 @@ vi.mock("@/services/templates/retention-targets", () => ({ getRetentionTargets: 
 vi.mock("@/services/templates/schedule-preset-service", () => ({
     deleteSchedulePreset: (...args: unknown[]) => mocks.deleteSchedulePreset(...args),
     deleteSchedulePresetMany: (...args: unknown[]) => mocks.deleteSchedulePresetMany(...args),
+    getSchedulePresets: (...args: unknown[]) => mocks.getSchedulePresets(...args),
 }));
 
 import { GET as getTemplates } from "@/app/api/templates/route";
 import { getRetentionPolicyTargets } from "@/app/actions/templates-retention";
-import { deleteSchedulePreset } from "@/app/actions/templates";
+import { deleteSchedulePreset, getSchedulePresets } from "@/app/actions/templates";
 import { bulkDeleteSchedulePresets } from "@/app/actions/templates-bulk";
 
 const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
@@ -92,6 +95,7 @@ describe("deleting schedule presets", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getSession.mockResolvedValue({ user: { id: "u1" } });
+        mocks.checkPermission.mockResolvedValue({ id: "u1" });
         mocks.refresh.mockResolvedValue(undefined);
     });
 
@@ -144,5 +148,32 @@ describe("deleting schedule presets", () => {
         await bulkDeleteSchedulePresets(["3am"]);
 
         expect(mocks.refresh).not.toHaveBeenCalled();
+    });
+});
+
+describe("the lists of templates the job form reads", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getSchedulePresets.mockResolvedValue([{ id: "3am", name: "Daily at 3 AM" }]);
+    });
+
+    it("are for whoever sees the templates or the jobs", async () => {
+        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.JOBS.WRITE]);
+
+        expect(await getSchedulePresets()).toEqual({ success: true, data: [{ id: "3am", name: "Daily at 3 AM" }] });
+    });
+
+    it("stay closed to someone who holds only the settings of the instance, which carry into every tenant", async () => {
+        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.SETTINGS.READ]);
+
+        expect(await getSchedulePresets()).toEqual({ success: false, error: "Insufficient permissions" });
+        expect(mocks.getSchedulePresets).not.toHaveBeenCalled();
+    });
+
+    it("refuse a change of a preset without an id before anything is read", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "u1" });
+
+        expect(await deleteSchedulePreset("")).toEqual({ success: false, error: "Invalid request" });
+        expect(mocks.deleteSchedulePreset).not.toHaveBeenCalled();
     });
 });

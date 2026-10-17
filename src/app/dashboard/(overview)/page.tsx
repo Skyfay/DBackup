@@ -4,6 +4,7 @@ import { ActivityPanel } from "@/components/dashboard/widgets/activity-panel";
 import { BackupCalendar } from "@/components/dashboard/widgets/backup-calendar";
 import { DashboardRefresh } from "@/components/dashboard/widgets/dashboard-refresh";
 import { KpiCards } from "@/components/dashboard/widgets/kpi-cards";
+import { NoTenantNote } from "@/components/dashboard/no-tenant-note";
 import { StatsStrip } from "@/components/dashboard/widgets/stats-strip";
 import { StatusBanner } from "@/components/dashboard/widgets/status-banner";
 import { StorageDestinations } from "@/components/dashboard/widgets/storage-destinations";
@@ -22,16 +23,19 @@ export const metadata: Metadata = { title: "Overview" };
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+    const viewer = await getViewer();
+    // An account that works in no tenant yet reads nothing of one, and every page it may not open
+    // leads here, so it gets a calm note instead of widgets that would fail.
+    if (!viewer || (!viewer.tenantId && !viewer.allTenants)) return <NoTenantNote />;
+
     // Right after signing in, someone who may set DBackup up and has nothing to back up yet
     // starts on the Quick Setup. Only then: the Overview stays reachable from the sidebar.
     if ((await searchParams).from === "sign-in") {
-        const permissions = await getUserPermissions();
-        redirect(canUseQuickSetup(permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
+        redirect(canUseQuickSetup(viewer.permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
     }
 
-    const viewer = await getViewer();
     // In All tenants whoever may see the tenants sees each with how it is doing, the failed ones first.
-    const showsTenants = Boolean(viewer?.allTenants && hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_READ));
+    const showsTenants = Boolean(viewer.allTenants && hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_READ));
     const [overview, permissions, summaries] = await Promise.all([
         getDashboardOverview(),
         getUserPermissions(),

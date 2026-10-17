@@ -141,11 +141,11 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
         const picture = avatar && { mimeType: avatar.mimeType, size: avatar.size, data: Buffer.from(avatar.data).toString("base64"), updatedAt: avatar.updatedAt };
         const data: UserSnapshot = { record, memberships, accounts, twoFactor, passkeys, apiKeys, preferences, avatar: picture };
         const platformAdmin = record.platformRole === PLATFORM_ADMIN_ROLE;
-        // Bringing back a platform admin makes someone a platform admin, and bringing back an
-        // account that also worked in another tenant puts it back there. Only a platform admin
-        // decides either, like the change of such an account while it lives.
+        // Bringing back a platform admin makes someone a platform admin, bringing back an account of
+        // a platform group gives it that group again, and bringing back an account that also worked
+        // in another tenant puts it back there. Only a platform admin decides any of it.
         const here = await currentTenantId();
-        const elsewhere = memberships.some((membership) => membership.tenantId !== here);
+        const elsewhere = !!record.platformGroupId || memberships.some((membership) => membership.tenantId !== here);
         return {
             name: record.name || record.email,
             detail: [record.email, platformAdmin ? "platform admin" : plural(memberships.length, "tenant", "tenants")].join(" · "),

@@ -73,14 +73,14 @@ For the full endpoint documentation with request/response schemas, examples, and
 
 | Section | Endpoints | Description |
 | :--- | :--- | :--- |
-| Jobs | `GET/POST/PUT/DELETE /api/jobs` | CRUD + trigger backups. A delete moves the job to [Recently deleted](/user-guide/admin/recently-deleted), `?permanently=true` deletes it at once with `settings:write` |
+| Jobs | `GET/POST/PUT/DELETE /api/jobs` | CRUD + trigger backups. A delete moves the job to [Recently deleted](/user-guide/admin/recently-deleted), `?permanently=true` deletes it at once with `tenant-settings:write` |
 | Executions | `GET /api/executions/:id` | Poll execution status |
 | History | `GET /api/history` | List execution history, paged with `page`, `pageSize`, `scope`, `type`, `status`, `trigger`, `search` and `facets` |
 | Runs of the History page | `GET /api/history/runs`, `GET /api/history/runs/:id`, `GET /api/history/attention` | A page of runs with `page`, `pageSize` and the repeatable filters `type`, `status`, `job` and `by` (`schedule`, `manual:<person>`, `api:<key name>` or `none`), with the counts beside each filter and the numbers of the last 30 days. One run with its steps, its log, what to look at, its copies and notifications, or only its row with `row=1`. The jobs whose last run failed or missed a copy and the channels whose last message failed, as `runs` and `notifications` with a `tone` and a `note` |
 | Notification logs | `GET /api/notification-logs` | The notifications sent, paged with `page` and `pageSize`, filtered by the repeatable `channel`, `eventType`, `status` and `adapterId`, by `executionId` and `search`. `facets=true` adds the counts beside each filter, `stats=true` the numbers of the last 30 days and the options of the filters |
 | Dashboard | `GET /api/dashboard/stats`, `GET /api/dashboard/calendar` | Overview statistics and calendar heatmap |
-| Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications. A delete moves the connection to [Recently deleted](/user-guide/admin/recently-deleted), `?permanently=true` deletes it at once with `settings:write` |
-| Shared databases | `GET/PUT /api/adapters/:id/database-assignments` | Which tenant each database of a shared server belongs to, and giving many of them to tenants at once, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api). `GET` needs `sources:view`, `PUT` `sources:write` |
+| Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications. The list also holds the destinations and channels other tenants share with the tenant, marked `provided`, see [Shared Destinations and Channels](/user-guide/admin/shared-connections). A delete moves the connection to [Recently deleted](/user-guide/admin/recently-deleted), `?permanently=true` deletes it at once with `tenant-settings:write` |
+| Shared databases | `GET/PUT /api/adapters/:id/database-assignments` | Which tenant each database of a shared server belongs to, and giving many of them to tenants at once, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api). `GET` needs `platform-sharing:read`, `PUT` `platform-sharing:write`, which an API key holds only when it was made in a tenant that shares with customers |
 | Connection Testing | `POST /api/adapters/test-connection` | Test adapter connections |
 | Folder Browsing | `POST /api/adapters/browse-location` | List the folders of a storage connection from the values of its form |
 | Backups page | `GET/POST/DELETE /api/storage/:id/*` | Browse, download, delete, restore backups |

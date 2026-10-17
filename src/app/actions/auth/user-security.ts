@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission, currentSessionId, getViewer, type Viewer } from "@/lib/auth/access-control";
-import { ACCOUNT_CHANGE, accountRefusal } from "@/lib/auth/account-access";
+import { ACCOUNT_CHANGE } from "@/lib/auth/account-access";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { getErrorMessage, ValidationError, wrapError } from "@/lib/logging/errors";
@@ -36,8 +36,7 @@ const PasswordSchema = z.object({
 async function refusal(userId: string, caller: Viewer | null): Promise<string | null> {
     if (!caller) return "Unauthorized";
     if (caller.id === userId) return null;
-    const target = await userService.accountOf(userId);
-    return target ? accountRefusal(caller, target) : null;
+    return userService.accountRefusalFor(caller, userId);
 }
 
 /**
@@ -83,6 +82,8 @@ export async function resetUserTwoFactor(userId: string) {
     const id = IdSchema.safeParse(userId);
     if (!id.success) return { success: false, error: "Invalid request" };
     const currentUser = await getViewer();
+    // The own second factor changes under Profile, as far as the group allows it there.
+    if (currentUser?.id === id.data) return { success: false, error: "Change your own second factor under Profile." };
 
     const refused = await refusal(id.data, currentUser);
     if (refused) return { success: false, error: refused };

@@ -122,7 +122,8 @@ function groupAudit() {
 
 /**
  * The groups of every tenant for Users & Groups of the Platform, each with its tenant and its
- * members, read only. A platform admin opens it from any tenant, so it reads every tenant.
+ * members, read only. Whoever may see the accounts of the platform opens it from any tenant, so it
+ * reads every tenant, also the ones they may not open, which `platformTenantNames` names.
  */
 export async function getPlatformGroupsModel(viewerId: string | null): Promise<GroupsModel> {
     const [listed, audit] = await runAsSystem(() => Promise.all([
@@ -142,6 +143,15 @@ export async function getPlatformGroupsModel(viewerId: string | null): Promise<G
     const groups = listed.map(({ memberships, ...group }) => ({ ...group, users: memberships.map((membership) => membership.user) }));
     // The people of a tenant move between its groups in that tenant, so none are listed here.
     return buildGroupsModel({ groups, people: [], audit, viewerId, viewerPlatformAdmin: true, withPeople: false, allTenants: true });
+}
+
+/**
+ * The name of every tenant, for Users & Groups of the Platform, whose groups and accounts belong to
+ * every tenant. Someone of a platform group of some tenants sees which tenants the others are,
+ * though only the ones they may open lead anywhere.
+ */
+export async function platformTenantNames(): Promise<{ id: string; name: string }[]> {
+    return prisma.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
 }
 
 /** Loads the Groups tab with the groups of a tenant and their members, read in that tenant. */

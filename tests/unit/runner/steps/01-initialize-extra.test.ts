@@ -12,6 +12,8 @@ vi.mock('@/lib/prisma', () => ({
             findUnique: vi.fn(),
             findFirst: vi.fn(),
         },
+        // Whether the tenant of a destination shares it with customers.
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
     },
 }));
 
@@ -54,12 +56,14 @@ function makeJobWithDest(destOverrides: Record<string, unknown> = {}) {
     return {
         id: 'job-1',
         name: 'Test Job',
+        tenantId: 'tenant-1',
         source: {
             id: 'src-1',
             adapterId: 'mysql',
             config: '{}',
             name: 'My MySQL',
             type: 'database',
+            tenantId: 'tenant-1',
             primaryCredentialId: null,
             sshCredentialId: null,
         },
@@ -76,6 +80,7 @@ function makeJobWithDest(destOverrides: Record<string, unknown> = {}) {
                     config: '{}',
                     name: 'Local',
                     type: 'storage',
+                    tenantId: 'tenant-1',
                 },
                 ...destOverrides,
             },

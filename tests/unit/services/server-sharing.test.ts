@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
-const mocks = vi.hoisted(() => ({ count: vi.fn(), find: vi.fn() }));
+const mocks = vi.hoisted(() => ({ count: vi.fn(), find: vi.fn(), sharing: new Set<string>() }));
 
-vi.mock("@/lib/prisma", () => ({ default: {} }));
+// Whether a tenant shares databases, which the platform switches on per tenant.
+vi.mock("@/lib/prisma", () => ({
+    default: { tenant: { findUnique: async ({ where }: { where: { id: string } }) => ({ sharesWithCustomers: mocks.sharing.has(where.id) }) } },
+}));
 vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: { count: mocks.count, find: mocks.find } }));
 
 const { serverSharingOf } = await import("@/services/tenant/server-sharing");
@@ -13,6 +16,7 @@ describe("when a database connection offers its databases to other tenants", () 
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.count.mockResolvedValue(3);
+        mocks.sharing = new Set([HOME_TENANT_ID, "msp-two"]);
         mocks.find.mockImplementation(async (id: string) => ({ id, name: id === HOME_TENANT_ID ? "Skyfay" : "Acme GmbH" }));
     });
 
@@ -29,6 +33,10 @@ describe("when a database connection offers its databases to other tenants", () 
     it("never shows it to a customer, who keeps their servers and never learns the other tenants", async () => {
         expect(await serverSharingOf("tenant-a", { see: true, assign: true })).toBeNull();
         expect(mocks.count).not.toHaveBeenCalled();
+    });
+
+    it("shows it in every tenant the platform lets share databases", async () => {
+        expect(await serverSharingOf("msp-two", { see: true, assign: true })).toEqual({ tenantName: "Acme GmbH", canAssign: true });
     });
 
     it("never shows it in All tenants, where giving a database away would change a tenant", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, DatabaseZap, HardDrive } from "lucide-react";
+import { Archive, HardDrive } from "lucide-react";
 import { PageHead } from "@/components/ui/page-head";
 import { PageTabs, type PageTab } from "@/components/ui/page-tabs";
 import { Tabs } from "@/components/ui/tabs";
@@ -16,8 +16,6 @@ interface BackupsPageHeadProps {
     onTab: (tab: string) => void;
     jobs: ExplorerJob[];
     destinations: ExplorerDestination[];
-    /** Whether another tenant's server shares a database with this tenant, which adds the third tab. */
-    hasShared: boolean;
     /** The destinations whose lists the open list shows, for how fresh they are. */
     freshness: ExplorerDestination[];
     onCheckNow: () => Promise<void>;
@@ -28,14 +26,13 @@ interface BackupsPageHeadProps {
 
 /**
  * The head of the Backups page: its lists as tabs, and on their right how fresh the lists of the
- * destinations are and the switch of the view. The shared backups are another tenant's, whose
- * destinations this tenant never sees, so their tab has no freshness.
+ * destinations are and the switch of the view. The backups of shared databases sit in the list of
+ * the Backups tab, so they have no tab of their own.
  */
-export function BackupsPageHead({ tab, onTab, jobs, destinations, hasShared, freshness, onCheckNow, view, views, onView }: BackupsPageHeadProps) {
+export function BackupsPageHead({ tab, onTab, jobs, destinations, freshness, onCheckNow, view, views, onView }: BackupsPageHeadProps) {
     const tabs: PageTab[] = [
         { value: "backups", label: "Backups", icon: Archive, attention: backupsAttention(jobs) },
         { value: "destinations", label: "Destinations", icon: HardDrive, attention: destinationsAttention(destinations) },
-        ...(hasShared ? [{ value: "shared", label: "Shared with you", icon: DatabaseZap }] : []),
     ];
     return (
         <PageHead>
@@ -43,7 +40,7 @@ export function BackupsPageHead({ tab, onTab, jobs, destinations, hasShared, fre
                 <PageTabs tabs={tabs} value={tab} onValueChange={onTab} label="Backup list" />
             </Tabs>
             <div className="ml-auto flex shrink-0 items-center gap-2">
-                {tab !== "shared" && <FreshnessButton destinations={freshness} onCheckNow={onCheckNow} />}
+                <FreshnessButton destinations={freshness} onCheckNow={onCheckNow} />
                 {/* Hidden by CSS rather than by the measured screen, so it does not pop in after loading. */}
                 <div className="hidden md:block">
                     <ViewSwitch value={view} onChange={onView} views={views} />

@@ -8,10 +8,11 @@ import prisma from "@/lib/prisma";
 import { processQueue } from "@/lib/execution/queue-manager";
 import { LogEntry, LogLevel, LogType, PipelineStage, PIPELINE_STAGES, stageProgress } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { registerExecution, unregisterExecution } from "@/lib/execution/abort";
 import { createLogFlusher } from "@/lib/execution/log-flusher";
 import { formatDuration } from "@/lib/utils";
+import { customerBackupFollower } from "@/services/tenant/shared-backup-runs";
 
 const log = logger.child({ module: "Runner" });
 
@@ -27,6 +28,8 @@ export interface RunJobOptions {
      * database of a shared server. The job itself stays as it is, and the run leaves its folders out.
      */
     databases?: string[];
+    /** The id of the run, for a caller that records a run following it first. */
+    executionId?: string;
 }
 
 /** The databases a run is limited to, from the metadata it was queued with, undefined for a whole run. */
@@ -45,6 +48,11 @@ export async function runJob(jobId: string, triggerInfo?: TriggerInfo, options?:
     log.info("Enqueuing job", { jobId, triggerType: triggerInfo?.type, lock: options?.lock, databases: options?.databases?.length });
     const onlyDatabases = onlyDatabasesOf({ onlyDatabases: options?.databases });
 
+    // The run would be created in the tenant of the caller whatever job it names, so the job is
+    // read through the tenant filter first. One of another tenant reads like one that does not exist.
+    const job = await prisma.job.findFirst({ where: { id: jobId }, select: { id: true } });
+    if (!job) throw new NotFoundError("Job", jobId);
+
     try {
         const initialLog: LogEntry = {
             timestamp: new Date().toISOString(),
@@ -56,6 +64,7 @@ export async function runJob(jobId: string, triggerInfo?: TriggerInfo, options?:
 
         const execution = await prisma.execution.create({
             data: {
+                ...(options?.executionId ? { id: options.executionId } : {}),
                 jobId: jobId,
                 status: "Pending",
                 logs: JSON.stringify([initialLog]),
@@ -114,6 +123,22 @@ export async function performExecution(executionId: string, jobId: string) {
         unregisterExecution(executionId);
         return;
     }
+
+    // Read before the flush loop overwrites it with live progress.
+    const initialMetadataParsed: Record<string, unknown> = initialExe.metadata
+        ? JSON.parse(initialExe.metadata)
+        : {};
+    const onlyDatabases = onlyDatabasesOf(initialMetadataParsed);
+
+    // A backup a customer started of a database of a shared server has a run in the customer's
+    // History that follows this one. It is only ever a run of single databases.
+    const follower = onlyDatabases
+        ? await customerBackupFollower(executionId).catch((error: unknown) => {
+            jobLog.error("Reading the run that follows this one failed", {}, wrapError(error));
+            return null;
+        })
+        : null;
+    follower?.start();
 
     let currentProgress = 0;
     let currentStage = "Initializing";
@@ -235,6 +260,7 @@ export async function performExecution(executionId: string, jobId: string) {
         currentProgress = stageProgress(stage, 0);
         if (ctx) ctx.metadata = { ...ctx.metadata, progress: currentProgress, stage: currentStage, detail: currentDetail };
         flusher.schedule();
+        follower?.stage(stage);
     };
 
     /** Update the live detail text without changing the stage (e.g. "125.5 MB dumped...") */
@@ -252,13 +278,7 @@ export async function performExecution(executionId: string, jobId: string) {
     };
 
     // Read lock option stored in the initial metadata at enqueue time.
-    // The metadata field is later overwritten with live progress, so we
-    // capture the value here before the flush loop takes over.
-    const initialMetadataParsed: Record<string, unknown> = initialExe.metadata
-        ? JSON.parse(initialExe.metadata)
-        : {};
     const lockBackup = initialMetadataParsed.lock === true;
-    const onlyDatabases = onlyDatabasesOf(initialMetadataParsed);
 
     // Create Context
     // We cast initialExe to any because Prisma types might mismatch RunnerContext expectation slightly,
@@ -295,6 +315,7 @@ export async function performExecution(executionId: string, jobId: string) {
         } : undefined,
         lock: lockBackup,
         onlyDatabases,
+        ...(follower ? { follower } : {}),
         // Kept in the metadata the run ends with, so its page tells it backed up these alone.
         ...(onlyDatabases ? { metadata: { onlyDatabases } } : {}),
     };

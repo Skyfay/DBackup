@@ -693,6 +693,47 @@ describe("GoogleDriveAdapter", () => {
     });
 
     // ====================================================================
+    // list() of a subfolder that is not there yet
+    // ====================================================================
+    describe("list() of a subfolder nothing was written to yet", () => {
+        it("lists it as empty and creates no folder", async () => {
+            mockDrive.files.list.mockResolvedValueOnce({ data: { files: [] } }); // "tenants" is not there
+
+            const result = await GoogleDriveAdapter.list(validConfig, "tenants/t1");
+
+            expect(result).toEqual([]);
+            expect(mockDrive.files.create).not.toHaveBeenCalled();
+            expect(mockDrive.files.list).toHaveBeenCalledTimes(1);
+            expect(mockDrive.files.list.mock.calls[0][0].q).toContain("name='tenants' and 'root-folder-id' in parents");
+        });
+
+        it("lists it as empty when only its last folder is missing, still creating nothing", async () => {
+            mockDrive.files.list
+                .mockResolvedValueOnce({ data: { files: [{ id: "tenants-id", name: "tenants" }] } })
+                .mockResolvedValueOnce({ data: { files: [] } }); // "t1" is not there
+
+            const result = await GoogleDriveAdapter.list(validConfig, "tenants/t1");
+
+            expect(result).toEqual([]);
+            expect(mockDrive.files.create).not.toHaveBeenCalled();
+            expect(mockDrive.files.list.mock.calls[1][0].q).toContain("name='t1' and 'tenants-id' in parents");
+        });
+
+        it("still fails when looking the folder up fails", async () => {
+            mockDrive.files.list.mockRejectedValueOnce(new Error("invalid_grant"));
+
+            await expect(GoogleDriveAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("invalid_grant");
+            expect(mockDrive.files.create).not.toHaveBeenCalled();
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockDrive.files.list.mockRejectedValueOnce(new Error("File not found: root-folder-id."));
+
+            await expect(GoogleDriveAdapter.list(validConfig, "")).rejects.toThrow("File not found: root-folder-id.");
+        });
+    });
+
+    // ====================================================================
     // resolveOrCreatePath - folder creation (lines 75-83)
     // ====================================================================
     describe("resolveOrCreatePath - creates missing folders", () => {

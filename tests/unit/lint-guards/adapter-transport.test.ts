@@ -106,6 +106,9 @@ const ADAPTER_RULES: Rule[] = [
             "connection-summary.ts":
                 "Not an adapter. It writes the address shown in the connection tables, which names the jump host of an "
                 + "SSH connection, and decides no transport.",
+            "host-local.ts":
+                "Not an adapter. It decides whether a tenant may add a connection that runs on the server DBackup runs on, "
+                + "and decides no transport. The adapter pickers load it in the browser, where the resolvers and ssh2 cannot go.",
         },
         reason: "Transport decisions belong in a TransportResolver, not in adapter bodies.",
     },

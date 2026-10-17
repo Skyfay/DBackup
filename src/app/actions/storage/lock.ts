@@ -1,7 +1,6 @@
 "use server";
 
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { storageService } from "@/services/storage/storage-service";
@@ -14,30 +13,31 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 
 const log = logger.child({ action: "storage-lock" });
 
+const LockSchema = z.object({
+    destinationId: z.string().min(1).max(200),
+    filePath: z.string().min(1).max(4096),
+});
+
 export async function lockBackup(destinationId: string, filePath: string) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+    // The delete permission, since a lock keeps a backup from being deleted.
+    const user = await checkPermission(PERMISSIONS.STORAGE.DELETE);
 
-    if (!session) {
-        throw new Error("Unauthorized");
-    }
-
-    await checkPermission(PERMISSIONS.STORAGE.DELETE); // Reuse delete permission for managing retention locks? Or WRITE? Let's use Delete since it prevents deletion.
+    const parsed = LockSchema.safeParse({ destinationId, filePath });
+    if (!parsed.success) return { success: false, error: "Invalid request" };
 
     try {
-        const locked = await storageService.toggleLock(destinationId, filePath);
+        const locked = await storageService.toggleLock(parsed.data.destinationId, parsed.data.filePath);
         revalidatePath(`/dashboard/backups`);
         await auditService.log(
-            session.user.id,
+            user.id,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.BACKUP,
-            { action: locked ? "lock" : "unlock", ...(await backupAuditDetails(destinationId, filePath)) },
-            destinationId
+            { action: locked ? "lock" : "unlock", ...(await backupAuditDetails(parsed.data.destinationId, parsed.data.filePath)) },
+            parsed.data.destinationId
         );
         return { success: true, locked };
     } catch (error: unknown) {
-        log.error("Failed to lock backup", { destinationId, filePath }, wrapError(error));
+        log.error("Failed to lock backup", { destinationId: parsed.data.destinationId, filePath: parsed.data.filePath }, wrapError(error));
         return { success: false, error: getErrorMessage(error) };
     }
 }

@@ -9,9 +9,15 @@ import { encryptConfig } from "@/lib/crypto";
 import { ConflictError, ValidationError } from "@/lib/logging/errors";
 import { isStorageRole, STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { registerAdapters } from "@/lib/adapters";
+import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { validateStorageRole } from "@/lib/adapters/role-validation";
 import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
+import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { hostLocalReason } from "@/lib/adapters/host-local";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 
 export interface CreateAdapterInput {
     name: string;
@@ -31,7 +37,8 @@ const KIND_NAMES: Record<string, string> = { database: "source", storage: "desti
  * Checks and stores a new connection with its secrets encrypted.
  *
  * @throws ValidationError for a missing field, a credential profile of the wrong type, a role the
- *   adapter cannot take or a snapshot the server cannot deliver.
+ *   adapter cannot take, a snapshot the server cannot deliver or a connection that reaches the
+ *   server DBackup runs on outside the platform.
  * @throws NotFoundError for a credential profile that does not exist.
  * @throws ConflictError when a connection of the same type has the name already.
  */
@@ -43,6 +50,10 @@ export async function createAdapter(input: CreateAdapterInput): Promise<AdapterC
     if (!name || !type || !adapterId || !config) {
         throw new ValidationError("Missing required fields");
     }
+    // The caller checked the permission of the type, so the adapter must be one of that type.
+    if (getAdapterDefinition(adapterId)?.type !== type) {
+        throw new ValidationError("Unknown adapter for this kind of connection");
+    }
 
     registerAdapters();
     await validateCredentialAssignments(adapterId, primaryCredentialId, sshCredentialId);
@@ -51,8 +62,12 @@ export async function createAdapter(input: CreateAdapterInput): Promise<AdapterC
     // whatever the request asked for.
     const role = isStorageRole(storageRole) ? storageRole : STORAGE_ROLES.DESTINATION;
     if (type === "storage") validateStorageRole(adapterId, role);
+    // The platform decides whether the tenant adds connections of this kind itself.
+    await assertMayAdd(type, role);
 
     const configObject = typeof config === "string" ? JSON.parse(config) : config;
+    // Before the snapshot check, which already logs in to the server the config names.
+    await assertMayReachHost(adapterId, configObject, { primaryCredentialId, sshCredentialId });
     // A snapshot-enabled config is only accepted when the server can actually deliver one, the
     // gate of the form alone could be bypassed.
     await validateSnapshotConfig(adapterId, configObject, role, primaryCredentialId, sshCredentialId);
@@ -75,4 +90,37 @@ export async function createAdapter(input: CreateAdapterInput): Promise<AdapterC
             ...(type === "storage" && isStorageRole(storageRole) ? { storageRole } : {}),
         },
     });
+}
+
+/** The credential profiles a config is used with, laid over it before it is checked. */
+export interface HostCheckLogins {
+    primaryCredentialId?: string | null;
+    sshCredentialId?: string | null;
+}
+
+/**
+ * Refuses a connection that reaches the server DBackup runs on, see `hostLocalReason`, unless the
+ * code runs for the home tenant or outside any tenant, like a script or the system scope. Every path
+ * that saves a connection or runs one that is not saved yet, like a connection test or a browse of
+ * its folders, checks it, since one run is enough to read the key of every secret.
+ *
+ * The config may come as a function, for a caller that would decrypt it only for this check.
+ *
+ * @throws ValidationError saying what reaches the server.
+ */
+export async function assertMayReachHost(
+    adapterId: string,
+    config: Record<string, unknown> | (() => Record<string, unknown>),
+    logins: HostCheckLogins = {}
+): Promise<void> {
+    const tenantId = await currentTenantId();
+    if (!tenantId || tenantId === HOME_TENANT_ID) return;
+
+    const plain = { ...(typeof config === "function" ? config() : config) };
+    const primary = logins.primaryCredentialId ?? null;
+    const ssh = logins.sshCredentialId ?? null;
+    // An SSH key profile decides how SSH logs in, through the agent of the server among others.
+    const effective = primary || ssh ? await overlayCredentialsOnConfig(adapterId, plain, primary, ssh) : plain;
+    const reason = hostLocalReason(adapterId, effective);
+    if (reason) throw new ValidationError(reason, { field: "config" });
 }

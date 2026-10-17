@@ -20,8 +20,8 @@ export interface OwnerFacts {
 
 export async function factsOf(sourceId: string): Promise<OwnerFacts> {
     const [assignments, rules] = await Promise.all([
-        prisma.databaseAssignment.findMany({ where: { sourceId }, select: { databaseName: true, tenantId: true, validFrom: true, validUntil: true, movedToSourceId: true } }),
-        prisma.databaseAssignmentRule.findMany({ where: { sourceId }, select: { pattern: true, tenantId: true, priority: true, validFrom: true, createdAt: true } }),
+        prisma.databaseAssignment.findMany({ where: { sourceId }, select: { databaseName: true, tenantId: true, validFrom: true, validUntil: true, movedToSourceId: true, createdAt: true } }),
+        prisma.databaseAssignmentRule.findMany({ where: { sourceId }, select: { id: true, pattern: true, tenantId: true, priority: true, validFrom: true, validUntil: true, createdAt: true } }),
     ]);
     return { assignments, rules };
 }
@@ -56,7 +56,8 @@ export async function serverBackupFiles(sourceId: string): Promise<ServerBackupF
 
     const found: ServerBackupFile[] = [];
     for (const destination of destinations) {
-        const listing = await storageService.readCachedListing(destination.id);
+        // The listing of the server's tenant, never one of a customer the destination is shared with.
+        const listing = await storageService.readCachedListing(destination.id, source.tenantId);
         for (const file of listing?.files ?? []) {
             if (!file.hasFileIndex || !file.createdAt || !file.databases?.length) continue;
             if (!fromServer(file, sourceId, jobsOfServer)) continue;

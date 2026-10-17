@@ -6,7 +6,7 @@ import { Building2 } from "lucide-react";
 import type { DataTableFilterableColumn } from "@/components/ui/data-table-types";
 import { cn } from "@/lib/utils";
 import { compareTenantNames, matchesTenants, TENANT_COLUMN_ID, tenantFilterOptions } from "./tenant-rows";
-import { useTenantName, useTenantView } from "./tenant-view";
+import { useNamedTenants, useTenantName, useTenantView } from "./tenant-view";
 
 /** The name of the tenant of a row, in a table cell. */
 export function TenantCell({ name }: { name: string | null }) {
@@ -46,7 +46,9 @@ interface TenantColumns<TData> {
  * which holds the rows of every tenant from inside a tenant too.
  */
 export function useTenantColumns<TData>(tenantIdOf: (row: TData) => string | null | undefined, rows?: readonly TData[], options: { always?: boolean } = {}): TenantColumns<TData> {
-    const { allTenants, tenants } = useTenantView();
+    const { allTenants } = useTenantView();
+    // The tenants the viewer may open, and on the Platform the others it names too.
+    const tenants = useNamedTenants();
     const nameOf = useTenantName();
     const shown = allTenants || options.always === true;
 

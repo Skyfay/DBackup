@@ -21,6 +21,8 @@ const prismaMock = {
     jobSource: { findUnique: vi.fn() },
     // getMaxConcurrentFiles reads this; unset means the code's default (4) is used.
     systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    // Whether the tenant of the destination shares it with customers.
+    connectionShare: { count: vi.fn().mockResolvedValue(0) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
@@ -139,7 +141,7 @@ beforeEach(async () => {
     const adapter = makeAdapter();
     registryGet.mockReturnValue(adapter);
     prismaMock.adapterConfig.findUnique.mockResolvedValue({
-        id: "storage-1", type: "storage", adapterId: "test-storage", name: "Test Storage", config: "{}",
+        id: "storage-1", type: "storage", adapterId: "test-storage", name: "Test Storage", config: "{}", tenantId: "tenant-1",
     });
 });
 

@@ -108,8 +108,10 @@ describe("making, changing and deleting groups", () => {
         await groupService.delete("g-ops", "g-view", TENANT_ADMIN);
         await groupService.delete("g-ops", null, TENANT_ADMIN);
 
-        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenNthCalledWith(1, { where: { defaultGroupId: "g-ops" }, data: { defaultGroupId: "g-view" } });
-        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenNthCalledWith(2, { where: { defaultGroupId: "g-ops" }, data: { defaultGroupId: null } });
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-ops" }, data: { defaultGroupId: "g-view" } });
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-ops" }, data: { defaultGroupId: null } });
+        // A provider of a tenant adds people into a group only, so without one it adds nobody.
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-ops", tenantId: { not: null } }, data: { defaultGroupId: null, allowProvisioning: false } });
     });
 
     it("refuses to move the members into the group that is deleted, or into one that is gone", async () => {
@@ -190,7 +192,8 @@ describe("making, changing and deleting groups", () => {
         // Members of any tenant keep a group.
         expect(mocks.prisma.group.deleteMany).toHaveBeenCalledWith({ where: { id: "g-empty", memberships: { none: {} } } });
         // Only the group that went is cleared as the group of new people of a provider.
-        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledTimes(1);
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledTimes(2);
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-empty", tenantId: { not: null } }, data: { defaultGroupId: null, allowProvisioning: false } });
         expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-empty" }, data: { defaultGroupId: null } });
     });
 

@@ -21,7 +21,12 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn().mockResolvedValue({ userId: "user-1" }),
     checkPermissionWithContext: vi.fn(),
+    // The caller may not see what the tenant shares, so no row carries a share.
+    hasPermissionWithContext: vi.fn().mockReturnValue(false),
 }));
+
+// The roles are about the own connections, nothing another tenant shares is listed beside them.
+vi.mock("@/services/sharing/connection-options", () => ({ providedItems: vi.fn().mockResolvedValue([]) }));
 
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
@@ -57,6 +62,8 @@ vi.mock("@/lib/prisma", () => ({
         },
         jobDestination: { findMany: (...args: any[]) => mockJobDestinationFindMany(...args) },
         jobSource: { findMany: (...args: any[]) => mockJobSourceFindMany(...args) },
+        // No connection of these tests is shared with other tenants.
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
     },
 }));
 

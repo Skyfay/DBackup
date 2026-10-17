@@ -10,7 +10,7 @@ import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
 import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
-import { placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/auth/sso-guard";
+import { isSsoManagementRequest, placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/auth/sso-guard";
 import { allowTenantSsoLink, joinSsoTenant, refuseTenantSsoSession } from "@/lib/auth/sso-tenant-guard";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -138,6 +138,8 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
     }
     // The browser signs up the first account only. Later ones come from an admin or a provider.
     await refuseLateSignUp(ctx.path, Boolean(ctx.request));
+    // Providers are managed on the pages of DBackup, never through the endpoints of the SSO plugin.
+    if (isSsoManagementRequest(ctx.path, Boolean(ctx.request))) throw new APIError("NOT_FOUND");
     // A provider that is off signs nobody in, not only on the login page.
     await refuseDisabledProvider(ctx, (url) => ctx.redirect(url));
     // The own profile follows the group, also where the browser calls better-auth itself.

@@ -584,6 +584,59 @@ describe("DropboxAdapter", () => {
     });
 
     // ====================================================================
+    // list() of a subfolder that is not there yet
+    // ====================================================================
+    describe("list() of a subfolder nothing was written to yet", () => {
+        /** How the SDK rejects: a DropboxResponseError with the parsed body of the API. */
+        function dropboxFailure(status: number, summary: string, reason: Record<string, unknown>) {
+            return Object.assign(new Error(`Response failed with a ${status} code`), {
+                name: "DropboxResponseError",
+                status,
+                headers: {},
+                error: { error_summary: summary, error: reason },
+            });
+        }
+
+        const notFound = () => dropboxFailure(409, "path/not_found/..", { ".tag": "path", path: { ".tag": "not_found" } });
+
+        it("lists it as empty when Dropbox answers path/not_found", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(notFound());
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).resolves.toEqual([]);
+            expect(mockDbx.filesListFolder).toHaveBeenCalledWith(expect.objectContaining({ path: "/backups/tenants/t1" }));
+        });
+
+        it("still fails when the path names a file, not a folder", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(
+                dropboxFailure(409, "path/not_folder/..", { ".tag": "path", path: { ".tag": "not_folder" } }));
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Response failed with a 409 code");
+        });
+
+        it("still fails on an expired authorization", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(
+                dropboxFailure(401, "expired_access_token/", { ".tag": "expired_access_token" }));
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Response failed with a 401 code");
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockDbx.filesListFolder.mockRejectedValue(notFound());
+
+            await expect(DropboxAdapter.list(validConfig, "")).rejects.toThrow("Response failed with a 409 code");
+        });
+
+        it("still fails when the folder goes away while it is being read", async () => {
+            mockDbx.filesListFolder.mockResolvedValue({
+                result: { entries: [], has_more: true, cursor: "page-cursor" },
+            });
+            mockDbx.filesListFolderContinue.mockRejectedValue(notFound());
+
+            await expect(DropboxAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Response failed with a 409 code");
+        });
+    });
+
+    // ====================================================================
     // delete()
     // ====================================================================
     describe("delete()", () => {

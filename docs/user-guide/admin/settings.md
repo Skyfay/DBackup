@@ -1,6 +1,6 @@
 # Settings
 
-The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup, how people sign in and what a password needs. Looking at it needs `settings:read`, changing anything needs `settings:write`. With [tenants](/user-guide/admin/tenants), both count only from the group someone holds in the home tenant, since the settings apply to every tenant.
+The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup, how people sign in and what a password needs. Looking at it needs `settings:read`, changing anything needs `settings:write`. With [tenants](/user-guide/admin/tenants), both count only from the group someone holds in the home tenant or from a platform group, since the settings apply to every tenant. They give no right to the keys, templates or other records of a tenant, and the parts that name one, like the destination and key of the configuration backup or the channels of the notifications, offer only those of the home tenant.
 
 With one tenant the page sits under **Administration → Settings**. With more than one it moves to **Platform → Settings**, and **Administration → Settings** holds the [settings of the open tenant](#tenant-settings) instead.
 
@@ -121,7 +121,7 @@ A new certificate applies after a restart of DBackup. `DISABLE_HTTPS=true` on th
 
 ## Tenant Settings
 
-With more than one tenant, **Administration → Settings** holds what belongs to the open tenant. Looking needs `tenant-settings:read`, changing `tenant-settings:write`, both from the group in that tenant.
+With more than one tenant, **Administration → Settings** holds what belongs to the open tenant. Looking needs `tenant-settings:read`, changing `tenant-settings:write`, both from the group in that tenant. When another tab of the browser opened another tenant meanwhile, a change is refused until the page is loaded again, so it never lands in the wrong tenant.
 
 - **Name and logo**: the name of the tenant and its logo, a PNG, JPG, GIF or WebP of up to 1 MB. The logo shows in the head of the sidebar, in the tenant switcher and on the Tenants page. A preview shows both.
 - **Recently deleted**: what was deleted in the tenant, see [Recently deleted](/user-guide/admin/recently-deleted).
@@ -141,5 +141,5 @@ How many requests one address may make in a time window. See [Rate Limits](/user
 
 - `settings:read` shows the page, `settings:write` changes it, starts the system tasks, sends test notifications and optimizes the database.
 - **New channel** under Notifications also needs `notifications:write`.
-- Only a platform admin restores a configuration backup, downloads the database and manages the tenants, see [Groups & Permissions](/user-guide/admin/permissions#what-only-a-platform-admin-does).
-- Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) with the values before and after.
+- Only a platform admin restores a configuration backup and downloads the database, see [Groups & Permissions](/user-guide/admin/permissions#what-only-a-platform-admin-does). The tenants are managed with the rights of the platform, see [Managing Tenants](/user-guide/admin/tenants#managing-tenants).
+- Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) of the home tenant with the values before and after, whichever tenant you have open.

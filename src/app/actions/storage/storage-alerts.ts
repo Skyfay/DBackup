@@ -1,22 +1,30 @@
 "use server";
 
 import { z } from "zod";
-import { checkPermission } from "@/lib/auth/access-control";
+import { checkPermission, type Viewer } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { auditService } from "@/services/audit-service";
-import { getAlertConfig, saveAlertConfig } from "@/services/storage/storage-alert-service";
-import { applyAlertChanges } from "@/services/storage/storage-alert-changes";
+import { applyAlertChanges, saveDestinationAlerts } from "@/services/storage/storage-alert-changes";
 import { alertChanges } from "@/services/storage/storage-alert-audit";
-import { connectionName } from "@/services/adapters/adapter-audit";
 import { SETTINGS_AREAS } from "@/services/system/settings-audit";
 
 const log = logger.child({ action: "storage-alerts" });
 
+/**
+ * The alerts belong to a destination of one tenant, so they change with the right to change its
+ * destinations, in that tenant. All tenants changes no tenant.
+ */
+const OPEN_A_TENANT = "Open the tenant of the destination to change its alerts.";
+
+const inTenant = (viewer: Viewer) => !viewer.allTenants && Boolean(viewer.tenantId);
+
 // ── Validation Schema ──────────────────────────────────────────
+
+const configIdSchema = z.string().min(1).max(200);
 
 const alertConfigSchema = z.object({
   usageSpikeEnabled: z.boolean(),
@@ -29,7 +37,7 @@ const alertConfigSchema = z.object({
 
 /** The alerts of the bulk dialog: each off, or on with its value. Left out, one stays as each destination has it. */
 const alertChangesSchema = z.object({
-  configIds: z.array(z.string().min(1)).min(1).max(BULK_REQUEST_LIMIT),
+  configIds: z.array(configIdSchema).min(1).max(BULK_REQUEST_LIMIT),
   changes: z
     .object({
       usageSpike: z
@@ -55,31 +63,34 @@ export async function updateStorageAlertSettings(
   configId: string,
   data: z.infer<typeof alertConfigSchema>
 ) {
-  const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+  const user = await checkPermission(PERMISSIONS.DESTINATIONS.WRITE);
+  if (!inTenant(user)) return { success: false, error: OPEN_A_TENANT };
 
+  const id = configIdSchema.safeParse(configId);
+  if (!id.success) return { success: false, error: "Unknown destination" };
   const result = alertConfigSchema.safeParse(data);
   if (!result.success) {
     return { success: false, error: result.error.issues[0].message };
   }
 
   try {
-    const before = await getAlertConfig(configId);
-    await saveAlertConfig(configId, result.data);
+    const { name, before } = await saveDestinationAlerts(id.data, result.data);
     const changes = alertChanges(before, result.data);
     if (changes.length > 0) {
       await auditService.log(
         user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.ADAPTER,
-        { name: await connectionName(configId), area: SETTINGS_AREAS.STORAGE_ALERTS, changes },
-        configId
+        { name, area: SETTINGS_AREAS.STORAGE_ALERTS, changes },
+        id.data
       );
     }
     return { success: true };
   } catch (error: unknown) {
+    if (error instanceof NotFoundError) return { success: false, error: "This destination does not exist anymore" };
     log.error(
       "Failed to update storage alert settings",
-      { configId },
+      { configId: id.data },
       wrapError(error)
     );
     return {
@@ -91,7 +102,8 @@ export async function updateStorageAlertSettings(
 
 /** Changes the alerts of several destinations at once. Only the alerts that were set change. */
 export async function updateStorageAlertsOfMany(configIds: string[], changes: z.input<typeof alertChangesSchema>["changes"]) {
-  const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+  const user = await checkPermission(PERMISSIONS.DESTINATIONS.WRITE);
+  if (!inTenant(user)) return { success: false, error: OPEN_A_TENANT };
 
   const result = alertChangesSchema.safeParse({ configIds, changes });
   if (!result.success) {

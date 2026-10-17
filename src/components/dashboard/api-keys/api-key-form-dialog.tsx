@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { apiKeyTemplate, type ApiKeyTemplate } from "@/lib/auth/api-key-templates";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { freeGroupName } from "@/lib/auth/group-templates";
-import { areaChanges, describeChange, knownPermissions } from "@/lib/auth/permission-areas";
+import { areaChanges, describeChange, keyAreas, knownKeyPermissions } from "@/lib/auth/permission-areas";
+import { useTenantView } from "@/components/tenant/tenant-view";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
@@ -128,7 +129,11 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
     const taken = useMemo(() => keys.filter((entry) => entry.id !== key?.id).map((entry) => entry.name), [keys, key]);
     const [initial] = useState(() => initialOf(mode, start, taken, viewer, presetName));
     const [name, setName] = useState(initial.name);
-    const [held, setHeld] = useState<Set<string>>(() => new Set(knownPermissions(initial.permissions)));
+    // A key in a tenant that shares databases may share them too, for a hosting panel, see `keyAreas`.
+    const { activeTenantId, tenants, tenantCount } = useTenantView();
+    const tenantShares = (tenantCount ?? tenants.length) > 1 && tenants.some((tenant) => tenant.id === activeTenantId && tenant.sharesWithCustomers);
+    const areas = useMemo(() => keyAreas(tenantShares), [tenantShares]);
+    const [held, setHeld] = useState<Set<string>>(() => new Set(knownKeyPermissions(initial.permissions, tenantShares)));
     const [expiry, setExpiry] = useState<{ choice: ExpiryChoice; date: Date | null }>({ choice: initial.choice, date: initial.date });
     const [problem, setProblem] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -142,7 +147,7 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
         return null;
     };
 
-    const before = useMemo(() => new Set(knownPermissions(initial.permissions)), [initial]);
+    const before = useMemo(() => new Set(knownKeyPermissions(initial.permissions, tenantShares)), [initial, tenantShares]);
     const changes = useMemo(() => areaChanges(before, held), [before, held]);
     const renamed = key !== null && name.trim() !== key.name;
     const expiresAt = expiryOf(expiry.choice, expiry.date);
@@ -257,6 +262,7 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
                     }}
                     lockedReason={lockedReason}
                     withNeeds={false}
+                    areas={areas}
                     changedAreas={key ? new Set(changes.map((change) => change.area.id)) : undefined}
                     note={
                         <div className="flex gap-2.5 rounded-lg border bg-muted/30 p-3 text-xs">

@@ -175,7 +175,7 @@ export function TenantProfilePart({ model }: { model: TenantSettingsModel }) {
                     form.discard();
                     save.clearProblem();
                 }}
-                onSave={() => save.run(() => renameOwnTenant(values.name), () => form.commit())}
+                onSave={() => save.run(() => renameOwnTenant(model.tenant.id, values.name), () => form.commit())}
             />
         </>
     );

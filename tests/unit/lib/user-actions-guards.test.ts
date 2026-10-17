@@ -36,9 +36,11 @@ const mocks = vi.hoisted(() => ({
         revokeSession: vi.fn(),
         revokeSessions: vi.fn(),
         permissionsIn: vi.fn(),
+        accountRefusalFor: vi.fn(),
     },
     groups: { find: vi.fn() },
-    memberships: { setRole: vi.fn(), roleOf: vi.fn() },
+    memberships: { setRole: vi.fn(), roleOf: vi.fn(), isPersonOf: vi.fn(), isPlatformAdmin: vi.fn() },
+    tenants: { switchable: vi.fn() },
     setPassword: vi.fn(),
     audit: vi.fn(),
 }));
@@ -64,6 +66,21 @@ vi.mock("@/services/tenant/membership-service", () => ({ membershipService: mock
 vi.mock("@/services/auth/auth-service", () => ({ authService: { setPassword: mocks.setPassword } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
+vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: mocks.tenants }));
+vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.fn(async () => null) }));
+
+const { accountRefusal } = await vi.importActual<typeof import("@/lib/auth/account-access")>("@/lib/auth/account-access");
+
+/** The service decides with the real rule, from the accounts of the test. */
+function decideAccounts() {
+    mocks.service.accountRefusalFor.mockImplementation(async (caller: TestViewer, id: string) => {
+        const target = await mocks.service.accountOf(id);
+        return target ? accountRefusal({ ...caller, platformGroupShape: null }, target) : null;
+    });
+    mocks.memberships.isPersonOf.mockResolvedValue(true);
+    mocks.memberships.isPlatformAdmin.mockResolvedValue(false);
+    mocks.tenants.switchable.mockResolvedValue([{ id: HOME_TENANT_ID, name: "Home" }, { id: "tenant-a", name: "A" }]);
+}
 
 const { bulkDeleteUsers, createUser, deleteUser, updateUserGroup } = await import("@/app/actions/auth/user");
 const { resetUserTwoFactor, revokeUserSession, revokeUserSessions, setUserPassword } = await import("@/app/actions/auth/user-security");
@@ -103,7 +120,9 @@ const FULL_ACCESS: TestGroup = { id: "g-full", name: "Admin", permissions: "[]",
 const DELETERS: TestGroup = { id: "g-delete", name: "Deleters", permissions: JSON.stringify([PERMISSIONS.JOBS.READ, PERMISSIONS.STORAGE.DELETE]), fullAccess: false };
 
 /** The accounts the guards look at: whose they are decides who may change them. */
-const ACCOUNTS: Record<string, { isPlatformAdmin: boolean; tenantIds: string[] }> = {
+const ACCOUNTS: Record<string, { isPlatformAdmin: boolean; tenantIds: string[]; platformGroup?: { platformPermissions: string[]; tenantPermissions: string[]; allTenants: boolean; tenantIds: string[] } }> = {
+    // A technician of a platform group who works in no tenant.
+    "platform-tech": { isPlatformAdmin: false, tenantIds: [], platformGroup: { platformPermissions: [PERMISSIONS.PLATFORM.ACCOUNTS_WRITE], tenantPermissions: [], allTenants: true, tenantIds: [] } },
     lena: { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID] },
     root: { isPlatformAdmin: true, tenantIds: [HOME_TENANT_ID] },
     "root-2": { isPlatformAdmin: true, tenantIds: [] },
@@ -114,7 +133,7 @@ const ACCOUNTS: Record<string, { isPlatformAdmin: boolean; tenantIds: string[] }
 };
 
 const PLATFORM_ONLY = "Only a platform admin can change the account of a platform admin.";
-const OTHER_TENANTS = "This account also works in other tenants. Only a platform admin can change it.";
+const OTHER_TENANTS = "This account also works in other tenants. Only someone who manages the accounts of the platform can change it.";
 const GROUP_TOO_STRONG = "This group may do more than you may, so you cannot give it to anyone.";
 
 describe("what an admin may do to other users", () => {
@@ -124,6 +143,7 @@ describe("what an admin may do to other users", () => {
         mocks.mayChangeSettings = true;
         mocks.viewer = ADMIN;
         mocks.service.accountOf.mockImplementation(async (id: string) => ACCOUNTS[id] ?? { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID] });
+        decideAccounts();
         mocks.service.namesOf.mockImplementation(async (ids: string[]) => ids.map((id) => ({ id, name: id === "root" ? "Root" : id === "tech" ? "Tom Tech" : id })));
         mocks.service.createUser.mockResolvedValue({ id: "u-new" });
         mocks.service.deleteUsers.mockImplementation(async (ids: string[]) => ({ succeeded: ids, failed: [] }));
@@ -358,6 +378,7 @@ describe("users in All tenants, where a platform admin opens no tenant", () => {
         mocks.mayChangeSettings = true;
         mocks.viewer = IN_ALL_TENANTS;
         mocks.service.accountOf.mockImplementation(async (id: string) => ACCOUNTS[id] ?? { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID] });
+        decideAccounts();
         mocks.service.createUser.mockResolvedValue({ id: "u-new" });
         mocks.service.deleteUser.mockResolvedValue({ name: "Tom Tech", email: "tom@example.ch" });
         mocks.groups.find.mockImplementation(async (id: string) => [VIEWERS, FULL_ACCESS, DELETERS].find((group) => group.id === id) ?? null);
@@ -405,5 +426,17 @@ describe("users in All tenants, where a platform admin opens no tenant", () => {
 
         expect(await updateUserGroup("tech", "g-view")).toEqual({ success: false, error: "Open a tenant, or change the group per tenant in the panel of the user." });
         expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+    });
+
+    it("never gives a group to an account of another tenant, nor touches an account of a platform group", async () => {
+        mocks.viewer = ADMIN;
+        mocks.memberships.isPersonOf.mockResolvedValue(false);
+        expect(await updateUserGroup("cust-user", "g-view")).toEqual({ success: false, error: "This account works in another tenant. Add people to this tenant with an invitation." });
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+
+        mocks.memberships.isPersonOf.mockResolvedValue(true);
+        expect(await setUserPassword("platform-tech", { password: "correct horse", signOut: true })).toEqual({ success: false, error: "This account holds a platform group. Only someone who may give that platform group can change it." });
+        expect(await resetUserTwoFactor("platform-tech")).toEqual(expect.objectContaining({ success: false }));
+        expect(mocks.setPassword).not.toHaveBeenCalled();
     });
 });

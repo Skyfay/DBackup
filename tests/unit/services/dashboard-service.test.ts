@@ -36,6 +36,11 @@ vi.mock("@/services/storage/storage-alert-service", () => ({
   checkStorageAlerts: vi.fn(),
 }));
 
+// The destinations other tenants share with a tenant, which the sharing module reads across tenants.
+vi.mock("@/services/sharing/provided", () => ({
+  providedIds: vi.fn(),
+}));
+
 import {
   getDashboardStats,
   getActivityData,
@@ -46,6 +51,7 @@ import {
   hasRunningJobs,
 } from "@/services/dashboard-service";
 import { registry } from "@/lib/core/registry";
+import { providedIds } from "@/services/sharing/provided";
 import { explicitScope, runAsTenant, type TenantScope } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
@@ -225,6 +231,57 @@ describe("getStorageVolume", () => {
     }));
   });
 
+  describe("of a destination the MSP shares with its customers", () => {
+    const cache = [
+      { configId: "acme-nas", tenantId: "acme", name: "NAS", adapterId: "local", size: 500, count: 3 },
+      { configId: "msp-s3", tenantId: "msp", name: "MSP S3", adapterId: "s3", size: 50, count: 1 },
+      { configId: "msp-s3", tenantId: "acme", name: "MSP S3", adapterId: "s3", size: 100, count: 2 },
+      { configId: "msp-s3", tenantId: "shop", name: "MSP S3", adapterId: "s3", size: 200, count: 4 },
+      { configId: "shop-ftp", tenantId: "shop", name: "FTP", adapterId: "ftp", size: 900, count: 9 },
+    ];
+
+    beforeEach(() => {
+      prismaMock.systemSetting.findUnique.mockResolvedValue({ key: "cache.storageVolume", value: JSON.stringify(cache) } as any);
+    });
+
+    it("shows a customer its own backups on it beside its own destinations, and nothing of the others", async () => {
+      // The read of the connections in the tenant finds its own destination only.
+      prismaMock.adapterConfig.findMany.mockResolvedValue([{ id: "acme-nas", tenantId: "acme" }] as any);
+      vi.mocked(providedIds).mockResolvedValue(new Set(["msp-s3"]));
+
+      const result = await runAsTenant("acme", () => getStorageVolume());
+
+      expect(result).toEqual([cache[0], cache[2]]);
+      expect(providedIds).toHaveBeenCalledWith("acme", ["msp-s3", "shop-ftp"]);
+    });
+
+    it("shows the MSP only its own backups on it, never the ones of its customers", async () => {
+      prismaMock.adapterConfig.findMany.mockResolvedValue([{ id: "msp-s3", tenantId: "msp" }] as any);
+      vi.mocked(providedIds).mockResolvedValue(new Set());
+
+      const result = await runAsTenant("msp", () => getStorageVolume());
+
+      expect(result).toEqual([cache[1]]);
+    });
+
+    it("shows each destination once outside a tenant, with the backups of every tenant on it", async () => {
+      prismaMock.adapterConfig.findMany.mockResolvedValue([
+        { id: "acme-nas", tenantId: "acme" },
+        { id: "msp-s3", tenantId: "msp" },
+        { id: "shop-ftp", tenantId: "shop" },
+      ] as any);
+
+      const result = await getStorageVolume();
+
+      expect(result.map((entry) => [entry.configId, entry.tenantId, entry.size, entry.count])).toEqual([
+        ["acme-nas", undefined, 500, 3],
+        ["msp-s3", undefined, 350, 7],
+        ["shop-ftp", undefined, 900, 9],
+      ]);
+      expect(providedIds).not.toHaveBeenCalled();
+    });
+  });
+
   it("triggers a live refresh when no cache entry exists", async () => {
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
     prismaMock.adapterConfig.findMany.mockResolvedValue([]);
@@ -298,6 +355,9 @@ describe("refreshStorageStatsCache", () => {
     prismaMock.storageSnapshot.createMany.mockResolvedValue({ count: 0 } as any);
     prismaMock.storageSnapshot.deleteMany.mockResolvedValue({ count: 0 } as any);
     prismaMock.systemSetting.findUnique.mockResolvedValue(null); // default retention setting
+    // No destination is shared with customers, and none was measured for a customer before.
+    prismaMock.connectionShare.findMany.mockResolvedValue([]);
+    prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
   });
 
   it("saves empty cache and returns [] when no storage adapters are configured", async () => {
@@ -320,7 +380,7 @@ describe("refreshStorageStatsCache", () => {
     vi.mocked(registry.get).mockReturnValue(mockAdapter as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-1", name: "S3", adapterId: "s3", type: "storage", config: "{}" } as any,
+      { id: "cfg-1", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
 
     const result = await refreshStorageStatsCache();
@@ -336,7 +396,7 @@ describe("refreshStorageStatsCache", () => {
     } as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-1", name: "S3", adapterId: "s3", type: "storage", config: "{}" } as any,
+      { id: "cfg-1", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
     prismaMock.storageSnapshot.findFirst.mockResolvedValue({
       size: BigInt(800),
@@ -357,7 +417,7 @@ describe("refreshStorageStatsCache", () => {
     prismaMock.adapterConfig.findMany.mockResolvedValue([
       {
         id: "usb", name: "USB rotation", adapterId: "local-filesystem", type: "storage", storageRole: "DESTINATION",
-        config: "{}", lastStatus: "OFFLINE", metadata: JSON.stringify({ airGapped: true }),
+        config: "{}", lastStatus: "OFFLINE", metadata: JSON.stringify({ airGapped: true }), tenantId: HOME_TENANT_ID,
       } as any,
     ]);
     prismaMock.storageSnapshot.findFirst.mockResolvedValue({
@@ -381,7 +441,7 @@ describe("refreshStorageStatsCache", () => {
     vi.mocked(registry.get).mockReturnValue(mockAdapter as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-snap", name: "Snap", adapterId: "local", type: "storage", config: "{}" } as any,
+      { id: "cfg-snap", name: "Snap", adapterId: "local", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
 
     const { checkStorageAlerts } = await import("@/services/storage/storage-alert-service");
@@ -424,11 +484,78 @@ describe("refreshStorageStatsCache", () => {
     });
   });
 
+  it("counts the backups under the tenants folder of each customer on a shared destination for that customer, and gives its alerts the whole destination", async () => {
+    vi.mocked(registry.get).mockReturnValue({
+      list: vi.fn().mockResolvedValue([
+        { name: "own.tar", path: "nightly/own.tar", size: 50, lastModified: new Date() },
+        { name: "a.tar", path: "tenants/acme/nightly/a.tar", size: 100, lastModified: new Date() },
+        { name: "a2.tar", path: "/tenants/acme/weekly/a2.tar", size: 120, lastModified: new Date() },
+        { name: "s.tar", path: "tenants/shop/nightly/s.tar", size: 200, lastModified: new Date() },
+      ]),
+    } as any);
+    prismaMock.adapterConfig.findMany.mockResolvedValue([
+      { id: "msp-s3", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: "msp" },
+    ] as any);
+    prismaMock.connectionShare.findMany.mockResolvedValue([{ id: "msp-s3" }] as any);
+    const { checkStorageAlerts } = await import("@/services/storage/storage-alert-service");
+
+    const result = await refreshStorageStatsCache();
+
+    expect(result.map((entry) => [entry.tenantId, entry.size, entry.count])).toEqual([["msp", 50, 1], ["acme", 220, 2], ["shop", 200, 1]]);
+    expect(prismaMock.storageSnapshot.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ adapterConfigId: "msp-s3", tenantId: "msp", size: BigInt(50) }),
+        expect.objectContaining({ adapterConfigId: "msp-s3", tenantId: "acme", size: BigInt(220) }),
+        expect.objectContaining({ adapterConfigId: "msp-s3", tenantId: "shop", size: BigInt(200) }),
+      ],
+    });
+    // One time for the whole refresh, so the snapshots of the tenants read back as one measurement.
+    const { data } = vi.mocked(prismaMock.storageSnapshot.createMany).mock.calls[0][0] as { data: { createdAt: Date }[] };
+    expect(new Set(data.map((row) => row.createdAt.getTime())).size).toBe(1);
+    // The storage limit and the usage spike watch everything the destination holds, the missing
+    // backup alert the backups of its own tenant, which the entry names.
+    expect(vi.mocked(checkStorageAlerts)).toHaveBeenCalledWith([{ configId: "msp-s3", tenantId: "msp", name: "S3", adapterId: "s3", size: 470, count: 4 }]);
+  });
+
+  it("counts a tenants folder on a destination nobody shares for the tenant of the destination", async () => {
+    vi.mocked(registry.get).mockReturnValue({
+      list: vi.fn().mockResolvedValue([{ name: "a.tar", path: "tenants/acme/nightly/a.tar", size: 100, lastModified: new Date() }]),
+    } as any);
+    prismaMock.adapterConfig.findMany.mockResolvedValue([
+      { id: "msp-s3", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: "msp" },
+    ] as any);
+
+    const result = await refreshStorageStatsCache();
+
+    expect(result).toEqual([expect.objectContaining({ configId: "msp-s3", tenantId: "msp", size: 100, count: 1 })]);
+  });
+
+  it("keeps the last scan of every tenant measured on a shared destination whose listing fails", async () => {
+    vi.mocked(registry.get).mockReturnValue({
+      list: vi.fn().mockRejectedValue(new Error("S3 unreachable")),
+    } as any);
+    prismaMock.adapterConfig.findMany.mockResolvedValue([
+      { id: "msp-s3", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: "msp" },
+    ] as any);
+    prismaMock.connectionShare.findMany.mockResolvedValue([{ id: "msp-s3" }] as any);
+    prismaMock.storageSnapshot.findMany.mockResolvedValue([{ tenantId: "acme" }] as any);
+    prismaMock.storageSnapshot.findFirst.mockImplementation((async (args: { where: { tenantId: string } }) => ({
+      size: BigInt(args.where.tenantId === "acme" ? 700 : 300),
+      count: 1,
+      createdAt: new Date("2026-09-21T05:00:00.000Z"),
+    })) as any);
+
+    const result = await refreshStorageStatsCache();
+
+    expect(result.map((entry) => [entry.tenantId, entry.size, entry.scanError])).toEqual([["msp", 300, true], ["acme", 700, true]]);
+    expect(prismaMock.storageSnapshot.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { adapterConfigId: "msp-s3", tenantId: "acme" } }));
+  });
+
   describe("of the destinations a backup wrote to", () => {
     const destinations = [
-      { id: "s3", name: "S3", adapterId: "s3", type: "storage", config: "{}" },
-      { id: "nas", name: "NAS", adapterId: "local", type: "storage", config: "{}" },
-      { id: "ftp", name: "FTP", adapterId: "ftp", type: "storage", config: "{}" },
+      { id: "s3", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID },
+      { id: "nas", name: "NAS", adapterId: "local", type: "storage", config: "{}", tenantId: HOME_TENANT_ID },
+      { id: "ftp", name: "FTP", adapterId: "ftp", type: "storage", config: "{}", tenantId: HOME_TENANT_ID },
     ];
     let stored: string | null;
 
@@ -499,7 +626,7 @@ describe("refreshStorageStatsCache", () => {
     vi.mocked(registry.get).mockReturnValue(undefined as any);
 
     prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: "cfg-1", name: "S3", adapterId: "s3", type: "storage", config: "{}" } as any,
+      { id: "cfg-1", name: "S3", adapterId: "s3", type: "storage", config: "{}", tenantId: HOME_TENANT_ID } as any,
     ]);
 
     const result = await refreshStorageStatsCache();

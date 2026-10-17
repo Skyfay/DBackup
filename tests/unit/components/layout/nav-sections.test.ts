@@ -33,8 +33,10 @@ describe("the sidebar with one tenant, every install before tenants", () => {
         expect(sections({ tenantCount: 1, isPlatformAdmin: true }).Platform).toBeUndefined();
     });
 
-    it("shows Settings to whoever may read the settings of the instance, as before", () => {
-        expect(sections({ tenantCount: 1 }, only(PERMISSIONS.SETTINGS.READ)).Administration).toEqual(["Settings /dashboard/settings"]);
+    it("shows Settings to whoever may read the settings of the instance, with the sign-in providers of Users & Groups", () => {
+        // The settings show the sign-in providers too, which are a tab of Users & Groups with one tenant.
+        expect(sections({ tenantCount: 1 }, only(PERMISSIONS.SETTINGS.READ)).Administration).toEqual(["Users & Groups /dashboard/users", "Settings /dashboard/settings"]);
+        expect(sections({ tenantCount: 1 }, only(PERMISSIONS.PLATFORM.SIGN_IN_READ)).Administration).toEqual(["Users & Groups /dashboard/users"]);
         // Recently deleted sits inside Settings, so the right to read it alone opens no page of its own.
         expect(sections({ tenantCount: 1 }, only(PERMISSIONS.TENANT_SETTINGS.READ)).Administration).toBeUndefined();
     });
@@ -73,8 +75,9 @@ describe("the sidebar with more than one tenant", () => {
         expect(sections({ tenantCount: 3 }, TENANT_ADMIN).Platform).toBeUndefined();
     });
 
-    it("shows Platform with its Settings alone to someone of the home tenant who holds them but is no platform admin", () => {
-        expect(sections({ tenantCount: 3 }, only(PERMISSIONS.SETTINGS.READ)).Platform).toEqual(["Settings /dashboard/platform/settings"]);
+    it("shows Platform with its Settings and the sign-in providers to someone of the home tenant who holds them but is no platform admin", () => {
+        // The settings show the sign-in providers too, which are a tab of Users & Groups of the platform.
+        expect(sections({ tenantCount: 3 }, only(PERMISSIONS.SETTINGS.READ)).Platform).toEqual(["Users & Groups /dashboard/platform/users", "Settings /dashboard/platform/settings"]);
     });
 
     it("shows a platform admin in All tenants every entry, which the pages answer with a pick of the tenant", () => {

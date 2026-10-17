@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
     viewer: null as unknown as { id: string; isPlatformAdmin: boolean; tenantId: string | null; allTenants: boolean; permissions: string[] },
     tenants: { find: vi.fn(), switchable: vi.fn() },
     groups: { find: vi.fn() },
-    memberships: { setRole: vi.fn(), isPlatformAdmin: vi.fn() },
+    memberships: { setRole: vi.fn(), isPlatformAdmin: vi.fn(), roleOf: vi.fn(async (): Promise<unknown> => null) },
+    platformGroups: { reaches: vi.fn(), peopleReached: vi.fn(async (): Promise<string[]> => []) },
+    users: { permissionsIn: vi.fn() },
     audit: vi.fn(),
 }));
 
@@ -30,6 +32,8 @@ vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: mocks.tenant
 vi.mock("@/services/user/group-service", () => ({ groupService: mocks.groups }));
 vi.mock("@/services/tenant/membership-service", () => ({ membershipService: mocks.memberships }));
 vi.mock("@/services/user/users-model", () => ({ getUsersModel: vi.fn() }));
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: mocks.platformGroups }));
+vi.mock("@/services/user/user-service", () => ({ userService: mocks.users }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 
 const { setTenantMember } = await import("@/app/actions/tenant/members");
@@ -112,7 +116,11 @@ describe("the members of a tenant, changed through a platform group", () => {
         mocks.viewer = NINA;
         mocks.memberships.isPlatformAdmin.mockResolvedValue(false);
         mocks.memberships.setRole.mockResolvedValue(undefined);
+        mocks.memberships.roleOf.mockResolvedValue(null);
         mocks.tenants.switchable.mockResolvedValue([ACME]);
+        // The platform group of Nina reaches Acme, where it lets her manage users.
+        mocks.platformGroups.reaches.mockImplementation(async (_userId: string, tenantId: string) => tenantId === ACME.id);
+        mocks.users.permissionsIn.mockResolvedValue([PERMISSIONS.USERS.READ, PERMISSIONS.USERS.WRITE]);
         mocks.tenants.find.mockImplementation(async (id: string) => (id === ACME.id ? ACME : { id, name: "Other" }));
         mocks.groups.find.mockImplementation(async (id: string) => (id === OPERATORS.id ? OPERATORS : null));
     });
@@ -124,6 +132,16 @@ describe("the members of a tenant, changed through a platform group", () => {
 
     it("never changes a tenant out of its reach, which reads as gone", async () => {
         expect(await setTenantMember("tenant-b", "tom", "g-ops")).toEqual({ success: false, error: "The tenant no longer exists." });
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+    });
+
+    it("never gives or takes a group that may do more than she may in that tenant", async () => {
+        const admins = { id: "g-admins", name: "Admin", permissions: "[]", fullAccess: true };
+        mocks.groups.find.mockImplementation(async (id: string) => (id === admins.id ? admins : OPERATORS));
+        expect(await setTenantMember("tenant-a", "tom", "g-admins")).toEqual(expect.objectContaining({ success: false }));
+
+        mocks.memberships.roleOf.mockResolvedValue(admins);
+        expect(await setTenantMember("tenant-a", "tom", null)).toEqual(expect.objectContaining({ success: false }));
         expect(mocks.memberships.setRole).not.toHaveBeenCalled();
     });
 

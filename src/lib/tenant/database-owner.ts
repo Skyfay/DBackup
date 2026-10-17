@@ -8,18 +8,24 @@ import { Minimatch } from "minimatch";
 
 export interface AssignmentFact {
     databaseName: string;
-    tenantId: string;
+    /** The customer, null when the tenant of the server took the database back. */
+    tenantId: string | null;
     validFrom: Date;
     validUntil: Date | null;
     /** The server the database went to when a move ended this assignment. */
     movedToSourceId?: string | null;
+    /** When it was given, which decides whether a start in the past reaches over another holder. */
+    createdAt: Date;
 }
 
 export interface RuleFact {
+    id?: string;
     pattern: string;
     tenantId: string;
     priority: number;
     validFrom: Date;
+    /** When the rule was removed or its tenant deleted, null while it gives. */
+    validUntil?: Date | null;
     createdAt: Date;
 }
 
@@ -52,24 +58,56 @@ export function movedAwayAt<T extends AssignmentFact>(assignments: readonly T[],
 
 /** The rule that gives the name away at the time: the highest priority, of equal ones the oldest. */
 export function ruleAt<T extends RuleFact>(rules: readonly T[], databaseName: string, at: Date): T | null {
+    const time = at.getTime();
     const matching = rules
-        .filter((rule) => rule.validFrom.getTime() <= at.getTime() && matchesPattern(rule.pattern, databaseName))
-        .sort((a, b) => b.priority - a.priority || a.createdAt.getTime() - b.createdAt.getTime());
+        .filter((rule) => rule.validFrom.getTime() <= time && (!rule.validUntil || time < rule.validUntil.getTime()) && matchesPattern(rule.pattern, databaseName))
+        .sort((a, b) => b.priority - a.priority || a.createdAt.getTime() - b.createdAt.getTime() || (a.id ?? "").localeCompare(b.id ?? ""));
     return matching[0] ?? null;
+}
+
+/** What decides who a name belonged to at a time: an assignment of it, a move away, a rule, or nothing. */
+export type Holder<A extends AssignmentFact, R extends RuleFact> =
+    | { via: "assignment"; fact: A }
+    | { via: "moved"; fact: A }
+    | { via: "rule"; fact: R };
+
+function decide<A extends AssignmentFact, R extends RuleFact>(assignments: readonly A[], rules: readonly R[], databaseName: string, at: Date): Holder<A, R> | null {
+    const assignment = assignmentAt(assignments, databaseName, at);
+    if (assignment) return { via: "assignment", fact: assignment };
+    const moved = movedAwayAt(assignments, databaseName, at);
+    if (moved) return { via: "moved", fact: moved };
+    const rule = ruleAt(rules, databaseName, at);
+    return rule ? { via: "rule", fact: rule } : null;
+}
+
+/** The customer of a holder, null for a move away, a database taken back, or no holder. */
+export function tenantOfHolder(holder: Holder<AssignmentFact, RuleFact> | null): string | null {
+    return holder && holder.via !== "moved" ? holder.fact.tenantId : null;
+}
+
+/**
+ * What decides who a name belonged to at a time. An assignment of the name wins over every rule,
+ * and a move away keeps every rule of the server off it. Who held it is settled by what was given
+ * by then: an assignment or a rule made later that starts in the past only reaches times nobody
+ * else held, so giving a database again, or a new rule of a higher priority, never takes the
+ * backups of another customer's time.
+ */
+export function holderAt<A extends AssignmentFact, R extends RuleFact>(assignments: readonly A[], rules: readonly R[], databaseName: string, at: Date): Holder<A, R> | null {
+    const known = (fact: { createdAt: Date }) => fact.createdAt.getTime() <= at.getTime();
+    const settled = decide(assignments.filter(known), rules.filter(known), databaseName, at);
+    if (tenantOfHolder(settled) !== null) return settled;
+    return decide(assignments, rules, databaseName, at);
 }
 
 /**
  * The customer a database belonged to at a time, null for one that belonged to nobody but the
- * tenant of the server. An assignment of the name wins over every rule. A name that came back
- * later, after another customer had it, belongs to whoever held it at the time, which is why a
- * backup is judged by when it was made, never by who holds the name now. A name that moved to
- * another server belongs to nobody on this one from the move on, unless it is given again by name.
+ * tenant of the server. A name that came back later, after another customer had it, belongs to
+ * whoever held it at the time, which is why a backup is judged by when it was made, never by who
+ * holds the name now. The id of a tenant deleted since stays the owner of its time, so its backups
+ * go to nobody. See `holderAt`.
  */
 export function ownerAt(assignments: readonly AssignmentFact[], rules: readonly RuleFact[], databaseName: string, at: Date): string | null {
-    const assignment = assignmentAt(assignments, databaseName, at);
-    if (assignment) return assignment.tenantId;
-    if (movedAwayAt(assignments, databaseName, at)) return null;
-    return ruleAt(rules, databaseName, at)?.tenantId ?? null;
+    return tenantOfHolder(holderAt(assignments, rules, databaseName, at));
 }
 
 /** One database on one server, where a customer's database lives at some time. */

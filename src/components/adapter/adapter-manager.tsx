@@ -11,7 +11,7 @@ import { Activity, ArrowLeftRight, FolderOpen, ListChecks } from "lucide-react";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JOIN_END } from "@/components/ui/page-head";
-import { DataTable } from "@/components/ui/data-table";
+import { DataTable, type RowMenuBulk } from "@/components/ui/data-table";
 import { ListEmpty } from "@/components/ui/list-empty";
 import { useRouter } from "next/navigation";
 
@@ -29,7 +29,9 @@ import { EMPTY_TABS as EMPTY } from "./connection-empty";
 import { ConnectionRowActions } from "./connection-row-actions";
 import { ConnectionContextMenu } from "./connection-context-menu";
 import type { ConnectionActionHandlers } from "./connection-actions";
-import { ConnectionStatusFilter, matchesStatus, type StatusFilter } from "./connection-status-filter";
+import { ConnectionStatusFilter, effectiveStatusFilter, isProvidedRow, matchesStatus, type StatusFilter } from "./connection-status-filter";
+import { useSharedServers } from "./use-shared-servers";
+import { ShareDialogLoader, shareableKind, useShareAccess } from "./connection-share-card";
 import { ConnectionDetailsSheet } from "./connection-details-sheet";
 import { ConnectionDetailsContent } from "./connection-details-content";
 import { ConnectionCard } from "./connection-card";
@@ -65,7 +67,7 @@ const TAB_OF: Record<ConnectionKind, string> = {
 
 const tenantOfConfig = (config: AdapterConfig) => config.tenantId;
 
-export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view, onCreate }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
+export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view, onCreate, canAdd = canManage }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -82,6 +84,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const [hasLoaded, setHasLoaded] = useState(false);
     const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string; adapterId: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+    // The connection whose sharing the menu of its row opened.
+    const [sharingId, setSharingId] = useState<string | null>(null);
     // The id stays after closing, so the panel keeps its content while it slides out. The view
     // it was opened in is kept too, so leaving that view closes it for good.
     const [details, setDetails] = useState<{ id: string; open: boolean; view: typeof view } | null>(null);
@@ -101,6 +105,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const tenant = useTenantColumns(tenantOfConfig, configs);
     const { allTenants: inAllTenants, nameOf: tenantNameOf } = tenant;
     const openRecord = useOpenRecord();
+    const shareAccess = useShareAccess();
+    const shareable = shareableKind(kind);
 
     // A storage adapter has exactly one role; a manager instance scoped to one (the
     // "Directory Sources" section, the Destinations page) only shows configs in it -
@@ -111,8 +117,9 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     }, [roleFilter, type]);
 
     // The overview adds usage, last backup and health. The server caches it for a minute,
-    // so the frequent status poll stays cheap.
-    const listUrl = `/api/adapters?type=${type}&overview=true`;
+    // so the frequent status poll stays cheap. The list of databases also holds the databases of
+    // other tenants' servers the tenant holds, which only this page asks for.
+    const listUrl = `/api/adapters?type=${type}&overview=true${type === "database" ? "&shared=true" : ""}`;
 
     const fetchConfigs = useCallback(async () => {
         setIsLoading(true);
@@ -183,6 +190,16 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     // Keeps the health of the connections current every 10 seconds, never in a hidden tab.
     useVisibleInterval(silentRefresh, 10_000);
 
+    // In All tenants a connection opens in its tenant, with its details on the page there.
+    const openDetails = useCallback((config: AdapterConfig) => openRecord(
+        config.tenantId,
+        `/dashboard/connections?tab=${TAB_OF[kind]}&open=${encodeURIComponent(config.id)}`,
+        () => setDetails({ id: config.id, open: true, view }),
+    ), [openRecord, kind, view]);
+
+    // The servers of other tenants with databases of this one: their menus, their panel, Back up now and the restore.
+    const { rowMenu: sharedRowMenu, contextMenu: sharedContextMenu, panel: sharedPanel, dialogs: sharedDialogs } = useSharedServers({ configs, permissions, onChanged: silentRefresh, onOpen: openDetails });
+
     const cloneAdapter = async (id: string, name: string, role?: StorageRole) => {
         setCloningId(id);
         try {
@@ -235,6 +252,10 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         const isDestination = type === "storage" && (config.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION;
 
         const tenantName = inAllTenants && config.tenantId ? tenantNameOf(config.tenantId) : null;
+        // Another tenant shares it: this tenant looks at its own backups on it and changes nothing.
+        if (config.provided) {
+            return { onHistory: isDestination && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name, adapterId: config.adapterId }) : undefined };
+        }
         return {
             onExplore: !inPanel && type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined,
             onHistory: isDestination && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name, adapterId: config.adapterId }) : undefined,
@@ -242,8 +263,10 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 ? { label: `Open in ${tenantName}`, onSelect: () => openRecord(config.tenantId, `/dashboard/connections?tab=${TAB_OF[kind]}&open=${encodeURIComponent(config.id)}`, () => undefined) }
                 : undefined,
             onEdit: !inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
-            onClone: canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
-            counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
+            // A copy is a new connection, which the platform may not let the tenant add itself.
+            onClone: canAdd ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
+            counterpart: canAdd && type === "storage" ? counterpartOf() : undefined,
+            onShare: shareable && shareAccess.share ? () => setSharingId(config.id) : undefined,
             onDelete: canManage ? () => {
                 // The row already knows whether a job or a template still holds the connection.
                 const blocker = deleteBlocker(config);
@@ -252,23 +275,25 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             } : undefined,
             busy: cloningId === config.id,
         };
-    }, [type, kind, canViewStorage, canManage, cloningId, router, inAllTenants, tenantNameOf, openRecord]);
+    }, [type, kind, canViewStorage, canManage, canAdd, shareable, shareAccess.share, cloningId, router, inAllTenants, tenantNameOf, openRecord]);
 
     const renderActions = useCallback(
-        (config: AdapterConfig, inPanel = false) => <ConnectionRowActions name={config.name} {...rowHandlers(config, inPanel)} />,
-        [rowHandlers]
+        (config: AdapterConfig, inPanel = false) => (config.sharedServer
+            ? sharedRowMenu(config)
+            : <ConnectionRowActions name={config.name} {...rowHandlers(config, inPanel)} />),
+        [rowHandlers, sharedRowMenu]
     );
+    const renderRowMenu = (config: AdapterConfig, bulk: RowMenuBulk<AdapterConfig> | null) => (config.sharedServer
+        ? sharedContextMenu(config)
+        : <ConnectionContextMenu config={config} bulk={bulk} {...rowHandlers(config)} />);
 
-    // In All tenants a connection opens in its tenant, with its details on the page there.
-    const openDetails = useCallback((config: AdapterConfig) => openRecord(
-        config.tenantId,
-        `/dashboard/connections?tab=${TAB_OF[kind]}&open=${encodeURIComponent(config.id)}`,
-        () => setDetails({ id: config.id, open: true, view }),
-    ), [openRecord, kind, view]);
-
+    // Whose each connection is, once the list holds any another tenant gives, and who gets each one
+    // this tenant shares, for whoever may see that.
+    const withFrom = configs.some(isProvidedRow);
+    const withShared = shareable && shareAccess.see;
     const columns = useMemo(
-        () => withTenantColumn(connectionColumns({ kind, canViewHealth, renderActions: (config) => renderActions(config), onOpen: openDetails }), tenant.column),
-        [kind, canViewHealth, renderActions, openDetails, tenant.column]
+        () => withTenantColumn(connectionColumns({ kind, canViewHealth, renderActions: (config) => renderActions(config), onOpen: openDetails, withFrom, withShared }), tenant.column),
+        [kind, canViewHealth, renderActions, openDetails, tenant.column, withFrom, withShared]
     );
 
     // A deleted connection has no row left to show, so its panel closes with it.
@@ -279,14 +304,22 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     /** What the details of one connection offer, the same in the side panel and in the split view. */
     const detailProps = (config: AdapterConfig) => ({
         kind,
-        canTest: canManage && type !== "notification",
+        // A connection another tenant shares is tested and changed by that tenant alone.
+        canTest: canManage && type !== "notification" && !config.provided,
         canViewHistory,
         exploreHref: type === "database" ? `/dashboard/explorer?sourceId=${config.id}` : undefined,
-        onEdit: canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
+        onEdit: canManage && !config.provided ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
         menu: renderActions(config, true),
+        onChanged: afterChange,
     });
 
-    const visibleConfigs = useMemo(() => configs.filter((config) => matchesStatus(config, statusFilter)), [configs, statusFilter]);
+    // Provided only shows while the list holds anything another tenant gives, so a pick of it that
+    // outlived the last such row shows everything again.
+    const withHealth = type !== "notification";
+    const visibleConfigs = useMemo(() => {
+        const filter = effectiveStatusFilter(statusFilter, configs, withHealth);
+        return configs.filter((config) => matchesStatus(config, filter));
+    }, [configs, statusFilter, withHealth]);
 
     // Only show filter options for adapter types that have at least one config entry
     const typeFilterColumns = useMemo(() => {
@@ -328,7 +361,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     icon={EMPTY[kind].icon}
                     title={EMPTY[kind].title}
                     description={EMPTY[kind].description}
-                    action={onCreate ? { label: EMPTY[kind].action, onClick: onCreate } : canManage ? { label: EMPTY[kind].action, onClick: openCreate } : undefined}
+                    action={onCreate ? { label: EMPTY[kind].action, onClick: onCreate } : canAdd ? { label: EMPTY[kind].action, onClick: openCreate } : undefined}
                 />
             ) : (
                 <>
@@ -342,16 +375,11 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                         onRefresh={fetchConfigs}
                         isLoading={isLoading}
                         filterableColumns={typeFilterColumns}
-                        toolbarExtra={
-                            <ConnectionStatusFilter
-                                value={statusFilter}
-                                onChange={setStatusFilter}
-                                configs={configs}
-                                withHealth={type !== "notification"}
-                            />
-                        }
+                        toolbarExtra={<ConnectionStatusFilter value={statusFilter} onChange={setStatusFilter} configs={configs} withHealth={withHealth} />}
                         // Selecting for bulk actions is a table thing. Cards keep to one connection at a time.
                         enableRowSelection={canManage && view === "table"}
+                        // A server of another tenant is changed by that tenant alone.
+                        isRowSelectable={(config) => !config.sharedServer}
                         // Load-bearing here: this list is re-fetched by a poll every
                         // 10 seconds, and index-keyed selection would jump each time.
                         getRowId={(config) => config.id}
@@ -361,20 +389,18 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                         onRowClick={openDetails}
                         view={view}
                         renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} tenantName={tenant.allTenants ? tenant.nameOf(row.original.tenantId) : null} />}
-                        renderRowMenu={(config, bulk) => (
-                            <ConnectionContextMenu config={config} bulk={bulk} {...rowHandlers(config)} />
-                        )}
+                        renderRowMenu={renderRowMenu}
                         renderSplit={(rows) => (
                             <ConnectionSplitView
                                 configs={rows.map((row) => row.original)}
-                                withHealth={type !== "notification"}
+                                withHealth={withHealth}
                                 selectedId={splitId}
                                 onSelect={setSplitId}
                                 tenantName={tenant.allTenants ? tenant.nameOf : undefined}
-                                renderPanel={(config) => (
-                                    <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />
-                                )}
-                                renderMenu={(config) => <ConnectionContextMenu config={config} bulk={null} {...rowHandlers(config)} />}
+                                renderPanel={(config) => (config.sharedServer
+                                    ? sharedPanel(config, "inline")
+                                    : <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />)}
+                                renderMenu={(config) => renderRowMenu(config, null)}
                             />
                         )}
                     />
@@ -386,8 +412,10 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 open={details !== null && details.open && details.view === view}
                 config={detailsConfig}
                 onClose={() => setDetails((current) => current && { ...current, open: false })}
+                renderShared={(config) => sharedPanel(config, "sheet")}
                 {...(detailsConfig ? detailProps(detailsConfig) : { kind, canTest: false, canViewHistory, menu: null })}
             />
+            {sharedDialogs}
 
             {/* Step 1: Adapter Picker */}
             <Dialog open={isPickerOpen} onOpenChange={setIsPickerOpen}>
@@ -442,6 +470,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     adapterId={historyAdapter.adapterId}
                 />
             )}
+
+            {sharingId && <ShareDialogLoader configId={sharingId} onClose={() => setSharingId(null)} onSaved={afterChange} />}
 
             {cloneTarget && (
                 <CloneDialog

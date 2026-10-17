@@ -1,5 +1,6 @@
 import type { RunCopies, RunLive, RunRow, RunStarter, RunStatus, RunUpload } from "./run-types";
 import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
+import { backupOf } from "@/services/tenant/shared-backup-runs";
 
 /**
  * A run as the History page shows it, out of its execution record. Pure, so the list, the page
@@ -36,6 +37,8 @@ interface RunMetadata {
     destinations?: unknown;
     uploads?: unknown;
     target?: unknown;
+    restoreOf?: unknown;
+    backupOf?: unknown;
 }
 
 const SYSTEM_TASKS: Record<string, { name: string; sub: string }> = {
@@ -80,6 +83,16 @@ function target(metadata: RunMetadata): { name: string; adapterId: string | null
     return { name: value.name, adapterId: typeof value.adapterId === "string" ? value.adapterId : null };
 }
 
+/**
+ * A customer's restore of a database of a shared server: the database, and in the provider's run
+ * the customer it was restored for.
+ */
+function restoreOf(metadata: RunMetadata): { database: string; customer: string | null } | null {
+    const value = metadata.restoreOf as { database?: unknown; customer?: unknown } | undefined;
+    if (!value || typeof value.database !== "string" || !value.database) return null;
+    return { database: value.database, customer: typeof value.customer === "string" && value.customer ? value.customer : null };
+}
+
 function fileName(path: string | null): string | null {
     if (!path) return null;
     const parts = path.split("/");
@@ -92,9 +105,17 @@ export function nameAndSub(record: RunRecord, metadata: RunMetadata): { name: st
     if (record.type === "Restore") {
         const onto = target(metadata);
         const file = fileName(record.path);
-        return { name: onto ? `Restore onto ${onto.name}` : "Restore", sub: file ? `Restore · ${file}` : "Restore" };
+        const of = restoreOf(metadata);
+        const sub = of ? `Restore of ${of.database}${of.customer ? ` for ${of.customer}` : ""}` : "Restore";
+        return { name: onto ? `Restore onto ${onto.name}` : "Restore", sub: file ? `${sub} · ${file}` : sub };
     }
     if (record.type === "Backup") {
+        // A customer's run of a backup they started of a database of a shared server, which has no job of theirs.
+        const of = !record.job ? backupOf(metadata as Record<string, unknown>) : null;
+        if (of) {
+            const onto = target(metadata);
+            return { name: `Backup of ${of.database}`, sub: onto ? `Backup · on ${onto.name}` : "Backup" };
+        }
         const databases = databasesOf(metadata);
         return {
             name: record.job?.name ?? "A deleted job",

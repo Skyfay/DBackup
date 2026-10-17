@@ -6,6 +6,7 @@ import { Bell, BellOff, Pencil, Plus, Send } from "lucide-react";
 import { toast } from "sonner";
 import { AddConnectionDialogs } from "@/components/adapter/add-connection-dialogs";
 import { useCan } from "@/components/permissions/permissions-context";
+import { useMayAdd } from "@/components/tenant/tenant-view";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { Button } from "@/components/ui/button";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
@@ -81,7 +82,10 @@ export function NotificationsPart({ model, openEventId, onOpened, part = "notifi
     const router = useRouter();
     const api = useNotificationsApi();
     const { readOnly } = useSettingsFrame();
-    const canAddChannel = useCan(PERMISSIONS.NOTIFICATIONS.WRITE) && !readOnly;
+    // A new channel only where the viewer may add one, and the platform lets the tenant add it itself.
+    const mayWrite = useCan(PERMISSIONS.NOTIFICATIONS.WRITE);
+    const mayAdd = useMayAdd("channels");
+    const canAddChannel = mayWrite && mayAdd && !readOnly;
     const [filter, setFilter] = useState<EventFilter>("all");
     const [editing, setEditing] = useState<string | null>(null);
     const [switching, setSwitching] = useState<string | null>(null);

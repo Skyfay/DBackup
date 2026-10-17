@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
     denied: new Set<string>(),
     viewer: null as unknown as TestViewer,
     groups: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), find: vi.fn(), heldBy: vi.fn() },
-    memberships: { roleOf: vi.fn(), setRoles: vi.fn() },
+    memberships: { roleOf: vi.fn(), setRoles: vi.fn(), isPersonOf: vi.fn(async () => true), isPlatformAdmin: vi.fn(async () => false) },
     users: { namesOf: vi.fn() },
     audit: vi.fn(),
 }));

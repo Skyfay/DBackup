@@ -1,4 +1,4 @@
-import { assignmentAt, movedAwayAt, ruleAt, type AssignmentFact, type RuleFact } from "@/lib/tenant/database-owner";
+import { holderAt, type AssignmentFact, type RuleFact } from "@/lib/tenant/database-owner";
 import type { AssignmentRow, MovePlace, RuleRow, SourceAssignments } from "@/services/tenant/database-assignments";
 
 /**
@@ -44,24 +44,32 @@ function assignmentFacts(rows: readonly AssignmentRow[]): AssignmentFactRow[] {
         validFrom: new Date(row.validFrom),
         validUntil: row.validUntil ? new Date(row.validUntil) : null,
         movedToSourceId: row.movedTo?.sourceId ?? null,
+        createdAt: new Date(row.createdAt),
         row,
     }));
 }
 
 function ruleFacts(rows: readonly RuleRow[]): RuleFactRow[] {
-    // The service sorts by priority and then by creation, so the place in the list stands for the age.
-    return rows.map((row, index) => ({ pattern: row.pattern, tenantId: row.tenantId, priority: row.priority, validFrom: new Date(row.validFrom), createdAt: new Date(index), row }));
+    return rows.map((row) => ({
+        id: row.id,
+        pattern: row.pattern,
+        tenantId: row.tenantId,
+        priority: row.priority,
+        validFrom: new Date(row.validFrom),
+        validUntil: row.validUntil ? new Date(row.validUntil) : null,
+        createdAt: new Date(row.createdAt),
+        row,
+    }));
 }
 
 /** Who held the name at a moment, as a segment without its bounds. */
-function holderAt(assignments: readonly AssignmentFactRow[], rules: readonly RuleFactRow[], name: string, at: number): Omit<HoldSegment, "from" | "to"> {
-    const assignment = assignmentAt(assignments, name, new Date(at));
-    if (assignment) return { tenantId: assignment.tenantId, tenantName: assignment.row.tenantName, via: "assignment", byName: assignment.row.byName };
+function segmentAt(assignments: readonly AssignmentFactRow[], rules: readonly RuleFactRow[], name: string, at: number): Omit<HoldSegment, "from" | "to"> {
+    const holder = holderAt(assignments, rules, name, new Date(at));
+    // A database taken back belongs to nobody here, whatever a rule matches.
+    if (holder?.via === "assignment") return { tenantId: holder.fact.tenantId, tenantName: holder.fact.row.tenantName, via: holder.fact.tenantId ? "assignment" : null, byName: holder.fact.row.byName };
     // A database that moved away belongs to nobody here, whatever a rule matches.
-    const moved = movedAwayAt(assignments, name, new Date(at));
-    if (moved?.row.movedTo) return { tenantId: null, tenantName: null, via: null, movedTo: moved.row.movedTo };
-    const rule = ruleAt(rules, name, new Date(at));
-    if (rule) return { tenantId: rule.tenantId, tenantName: rule.row.tenantName, via: "rule", pattern: rule.pattern };
+    if (holder?.via === "moved" && holder.fact.row.movedTo) return { tenantId: null, tenantName: null, via: null, movedTo: holder.fact.row.movedTo };
+    if (holder?.via === "rule") return { tenantId: holder.fact.tenantId, tenantName: holder.fact.row.tenantName, via: "rule", pattern: holder.fact.pattern };
     return { tenantId: null, tenantName: null, via: null };
 }
 
@@ -74,17 +82,24 @@ export function holdSegments(name: string, data: Pick<SourceAssignments, "assign
     const rules = ruleFacts(data.rules);
     const end = now.getTime();
     const points = new Set<number>();
+    // Who holds it changes where a holding starts or ends, and where one given later with a start
+    // in the past begins to count, see `holderAt`.
     for (const fact of assignments) {
         if (fact.databaseName !== name) continue;
         points.add(fact.validFrom.getTime());
+        points.add(fact.createdAt.getTime());
         if (fact.validUntil) points.add(fact.validUntil.getTime());
     }
-    for (const fact of rules) points.add(fact.validFrom.getTime());
+    for (const fact of rules) {
+        points.add(fact.validFrom.getTime());
+        points.add(fact.createdAt.getTime());
+        if (fact.validUntil) points.add(fact.validUntil.getTime());
+    }
     const changes = [...points].filter((point) => point <= end).sort((a, b) => a - b);
 
     const segments: HoldSegment[] = [{ from: null, to: null, tenantId: null, tenantName: null, via: null }];
     for (const point of changes) {
-        const holder = holderAt(assignments, rules, name, point);
+        const holder = segmentAt(assignments, rules, name, point);
         const last = segments[segments.length - 1];
         if (sameHolder(last, holder)) continue;
         last.to = point;

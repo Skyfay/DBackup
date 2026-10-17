@@ -1,9 +1,12 @@
 import type { Prisma } from "@prisma/client";
+import { WHOLE_JOB_RUNS } from "@/services/history/whole-runs";
 import { subDays } from "date-fns";
 import prisma from "@/lib/prisma";
 import { getJobOverviews, type JobOverview } from "./job-overview";
 import { isAirGapped } from "@/lib/core/air-gap";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { currentTenantId } from "@/lib/tenant/current";
+import { providedTo } from "@/services/sharing/provided";
 
 /** What a list shows of a connection a job uses. Never its config, which holds hosts and secrets. */
 const connectionFields = { id: true, name: true, adapterId: true, lastStatus: true } satisfies Prisma.AdapterConfigSelect;
@@ -81,13 +84,20 @@ function parsePatterns(value: string): string[] {
     }
 }
 
-/** The ids of the air-gapped destinations, see `lib/core/air-gap.ts`. */
+/**
+ * The ids of the air-gapped destinations, see `lib/core/air-gap.ts`: the own ones and those another
+ * tenant shares with the tenant that runs now, which its jobs write to as well.
+ */
 async function airGappedDestinations(): Promise<Set<string>> {
-    const rows = await prisma.adapterConfig.findMany({
-        where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-        select: { id: true, type: true, storageRole: true, metadata: true },
-    });
-    return new Set(rows.filter((row) => isAirGapped(row)).map((row) => row.id));
+    const tenantId = await currentTenantId();
+    const [rows, provided] = await Promise.all([
+        prisma.adapterConfig.findMany({
+            where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
+            select: { id: true, type: true, storageRole: true, metadata: true },
+        }),
+        tenantId ? providedTo(tenantId, { kind: "destination" }) : Promise.resolve([]),
+    ]);
+    return new Set([...rows, ...provided].filter((row) => isAirGapped(row)).map((row) => row.id));
 }
 
 /**
@@ -144,19 +154,20 @@ export interface JobRunHistory {
 export async function getJobRunHistory(jobId: string, now = new Date()): Promise<JobRunHistory> {
     const since = subDays(now, SUCCESS_RATE_DAYS);
     const [runs, outcomes, lastSuccess] = await Promise.all([
+        // The runs of the whole job, a run of single databases is in History.
         prisma.execution.findMany({
-            where: { jobId, type: "Backup" },
+            where: { jobId, type: "Backup", AND: [WHOLE_JOB_RUNS] },
             orderBy: { startedAt: "desc" },
             take: RUN_HISTORY_SIZE,
             select: { id: true, status: true, startedAt: true, endedAt: true, size: true },
         }),
         prisma.execution.groupBy({
             by: ["status"],
-            where: { jobId, type: "Backup", startedAt: { gte: since }, status: { in: ["Success", "Partial", "Failed"] } },
+            where: { jobId, type: "Backup", startedAt: { gte: since }, status: { in: ["Success", "Partial", "Failed"] }, AND: [WHOLE_JOB_RUNS] },
             _count: { _all: true },
         }),
         prisma.execution.findFirst({
-            where: { jobId, type: "Backup", status: "Success" },
+            where: { jobId, type: "Backup", status: "Success", AND: [WHOLE_JOB_RUNS] },
             orderBy: { startedAt: "desc" },
             select: { startedAt: true, size: true },
         }),

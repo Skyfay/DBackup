@@ -12,6 +12,8 @@ export interface BackupAction {
     disabled?: boolean;
     /** The task of what the action opens, which colors its entry in the menus. */
     tone: Tone;
+    /** A short line under the label, like what a restore of a shared database leaves alone. */
+    note?: string;
 }
 
 export interface BackupActionGroup {

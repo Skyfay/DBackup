@@ -7,7 +7,7 @@ import { groupColumns } from "@/components/dashboard/groups/group-columns";
 import { GroupsStrip } from "@/components/dashboard/groups/group-strip";
 import { useTenantColumns } from "@/components/tenant/tenant-column";
 import { withTenantColumn } from "@/components/tenant/tenant-rows";
-import { useOpenInTenant } from "@/components/tenant/tenant-view";
+import { useMayOpenTenant, useOpenInTenant } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
@@ -33,24 +33,26 @@ interface TenantGroupsListProps {
 export function TenantGroupsList({ cards, toolbarStart }: TenantGroupsListProps) {
     const { model, isLoading, refresh } = usePageModel<GroupsModel>("/api/platform/groups", "The groups could not be loaded.");
     const openInTenant = useOpenInTenant();
+    // A platform group of some tenants sees the groups of every tenant, and opens only its own.
+    const mayOpen = useMayOpenTenant();
     const [opening, setOpening] = useState<string | null>(null);
     const groups = useMemo(() => model?.groups ?? [], [model]);
     const tenantIdOf = useCallback((group: GroupRow) => group.tenantId ?? null, []);
     const tenant = useTenantColumns(tenantIdOf, groups, { always: true });
 
     const open = useCallback(async (group: GroupRow) => {
-        if (!group.tenantId) return;
+        if (!group.tenantId || !mayOpen(group.tenantId)) return;
         setOpening(group.id);
         try {
             await openInTenant(group.tenantId, groupHref(group));
         } finally {
             setOpening(null);
         }
-    }, [openInTenant]);
+    }, [openInTenant, mayOpen]);
 
     const columns = useMemo(() => withTenantColumn(groupColumns({
         onOpen: (group) => void open(group),
-        renderActions: (group) => (
+        renderActions: (group) => mayOpen(group.tenantId) && (
             <Button
                 variant="outline"
                 size="sm"
@@ -62,7 +64,7 @@ export function TenantGroupsList({ cards, toolbarStart }: TenantGroupsListProps)
                 <span className="hidden sm:inline">Open in its tenant</span>
             </Button>
         ),
-    }), tenant.column), [open, opening, tenant]);
+    }), tenant.column), [open, opening, tenant, mayOpen]);
 
     return (
         <div className="space-y-4 md:space-y-0">

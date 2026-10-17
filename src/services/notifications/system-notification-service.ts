@@ -189,7 +189,8 @@ async function notifyChannels(
       ...renderTemplate(event, { timeZone: brand.timeZone }),
       reason: eventReason(eventDef, reminderHours, !!opts?.test),
     };
-    const sendOpts = { ...opts, brand };
+    // The channels of the platform send as they are set, whichever tenant the event is about.
+    const sendOpts = { executionId: opts?.executionId, brand };
 
     // Make sure adapters are registered
     registerAdapters();

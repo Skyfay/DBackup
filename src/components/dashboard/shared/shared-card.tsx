@@ -6,7 +6,7 @@ import { BackupFlags, IntegrityBadge } from "@/components/dashboard/storage/expl
 import { isPlainClick } from "@/components/ui/row-click";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes } from "@/lib/utils";
-import { checkOf, FormerTag, ProviderChip } from "./shared-columns";
+import { checkOf, FormerTag, ProviderChip } from "./shared-cells";
 import { formerLabel, isFormer, madeAt, madeAtText, type SharedRow } from "./shared-model";
 
 interface SharedCardProps {

@@ -7,26 +7,32 @@ import { Layers } from "lucide-react";
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
+import type { ExplorerDestination, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
+import type { SharedDatabase } from "@/services/tenant/shared-databases";
 import { failedCheck, runKey } from "./backup-filters";
+import { isSharedRun, sharedJobKey, type ListRun, type SharedRun } from "./shared-runs";
 import { TimelineLegend, TimelineTotal, useTimelineFormat } from "./timeline-cells";
 import { TimelineAheadCaption, TimelineAxis, TimelineBands, gridTemplate, useColumns, useTimelineWindow } from "./timeline-frame";
 import { buildRow, isPicked, totalsOf, type DayKey, type TimelinePick } from "./timeline-model";
 import { AHEAD, TimelineNav, toDate } from "./timeline-nav";
 import { TimelinePickList } from "./timeline-pick-list";
 import { TimelineJobRow } from "./timeline-row";
+import { buildSharedLine } from "./timeline-shared";
+import { SharedSwatch, TimelineSharedRow } from "./timeline-shared-row";
 
 interface JobsTimelineProps {
-    /** The backups the filters leave. */
-    runs: BackupRun[];
+    /** The backups the filters leave, the shared ones among them. */
+    runs: ListRun[];
     /** The jobs to show a row for, in their order. */
     jobs: ExplorerJob[];
+    /** The shared databases to show a row for after the jobs, in their order. */
+    shared?: SharedDatabase[];
     /** What the schedules plan and missed, null while it loads. */
     plan: ExplorerPlan | null;
     destinations: Map<string, ExplorerDestination>;
     at: string[];
     /** Opens a backup in its details. `onClosed` runs once they are gone again. */
-    onOpen: (run: BackupRun, onClosed?: () => void) => void;
+    onOpen: (run: ListRun, onClosed?: () => void) => void;
     /** Shows what a list holds in the list view of the tab. */
     onShowInList: (pick: TimelinePick) => void;
 }
@@ -42,9 +48,10 @@ interface OpenList {
  * The arrows page through the days, the date button jumps to one, and at today the arrow to the
  * right adds the next days with the runs the schedules plan, while today stays in view. A click on
  * a day, a job or a day of a job lists its backups right there, and a day of a job with a single
- * backup opens it at once. Closing a backup brings its list back.
+ * backup opens it at once. Closing a backup brings its list back. A database another tenant's server
+ * gives to this one is a row of its own after the jobs, with dashed days.
  */
-export function JobsTimeline({ runs, jobs, plan, destinations, at, onOpen, onShowInList }: JobsTimelineProps) {
+export function JobsTimeline({ runs, jobs, shared = [], plan, destinations, at, onOpen, onShowInList }: JobsTimelineProps) {
     const router = useRouter();
     // In All tenants a job opens in its tenant.
     const openRecord = useOpenRecord();
@@ -61,14 +68,18 @@ export function JobsTimeline({ runs, jobs, plan, destinations, at, onOpen, onSho
     const refocus = useRef(false);
 
     const rows = useMemo(() => {
-        const byJob = new Map<string, BackupRun[]>();
+        const byJob = new Map<string, ListRun[]>();
         for (const run of runs) {
             const entries = byJob.get(run.jobKey);
             if (entries) entries.push(run);
             else byJob.set(run.jobKey, [run]);
         }
-        return jobs.map((job) => buildRow({ job, plan: plans.get(job.key), runs: byJob.get(job.key) ?? [], days, today, at, dayOf: format.dayOf }));
-    }, [runs, jobs, plans, days, today, at, format]);
+        const sharedOf = (database: SharedDatabase) => (byJob.get(sharedJobKey(database)) ?? []).filter((run): run is SharedRun => isSharedRun(run));
+        return [
+            ...jobs.map((job) => buildRow({ job, plan: plans.get(job.key), runs: byJob.get(job.key) ?? [], days, today, at, dayOf: format.dayOf })),
+            ...shared.map((database) => buildSharedLine(database, sharedOf(database), days, format.dayOf)),
+        ];
+    }, [runs, jobs, shared, plans, days, today, at, format]);
     const totals = useMemo(() => totalsOf(rows, days, today), [rows, days, today]);
     const peak = Math.max(...totals.map((total) => total.count), 1);
 
@@ -105,7 +116,7 @@ export function JobsTimeline({ runs, jobs, plan, destinations, at, onOpen, onSho
         show(pick, anchor);
     };
 
-    const openRun = (run: BackupRun) => {
+    const openRun = (run: ListRun) => {
         if (!list) return;
         const from = list.pick;
         const anchor = anchorRef.current;
@@ -196,7 +207,9 @@ export function JobsTimeline({ runs, jobs, plan, destinations, at, onOpen, onSho
                         ))}
                     </div>
 
-                    {rows.map((row) => (
+                    {rows.map((row) => (row.shared ? (
+                        <TimelineSharedRow key={row.job.key} row={row} database={row.shared} range={range} template={template} format={format} pick={pick} onToggle={toggle} />
+                    ) : (
                         <TimelineJobRow
                             key={row.job.key}
                             row={row}
@@ -208,12 +221,13 @@ export function JobsTimeline({ runs, jobs, plan, destinations, at, onOpen, onSho
                             pick={pick}
                             onToggle={toggle}
                         />
-                    ))}
+                    )))}
                 </div>
             )}
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t bg-page/60 px-5 py-2.5 text-xs text-muted-foreground">
                 <TimelineLegend />
+                {shared.length > 0 && <span className="inline-flex items-center gap-1.5"><SharedSwatch />A backup of a shared database</span>}
                 <span className="ml-auto">Missed runs are looked for over the last 90 days</span>
             </div>
 

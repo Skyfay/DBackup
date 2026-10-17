@@ -18,12 +18,15 @@ import { tenantService } from "@/services/tenant/tenant-service";
 /**
  * The settings of the tenant the viewer works in: its name and where its own events go. They
  * need the right to change the tenant settings there, and All tenants, which changes no tenant,
- * is refused. Every change goes into the audit log of the tenant. The logo is a route, see
- * `api/tenants/[id]/logo`, for the size of a file.
+ * is refused. Each action names the tenant the page shows and is refused when the session works
+ * in another one, since a switch in another tab moves the session under an open page. Every
+ * change goes into the audit log of the tenant. The logo is a route, see `api/tenants/[id]/logo`,
+ * for the size of a file.
  */
 
 const log = logger.child({ action: "tenant-settings" });
 
+const TenantIdSchema = z.string().min(1).max(200);
 const NameSchema = z.string().trim().min(1, "Give the tenant a name.").max(60, "The name can have at most 60 characters.");
 const IdsSchema = z.array(z.string().min(1).max(200)).max(100);
 const PatchSchema = z.object({
@@ -32,21 +35,24 @@ const PatchSchema = z.object({
 });
 
 const OPEN_A_TENANT = "Open a tenant to change its settings.";
+const ANOTHER_TENANT = "You opened another tenant in another tab. Load the page again before you change these settings.";
 const HOME_IS_PLATFORM = "The home tenant reports through the notifications of the platform.";
 
-/** The tenant the viewer may change the settings of, or why not. */
-function tenantOfViewer(viewer: Viewer): { tenantId: string } | { error: string } {
+/** The tenant the viewer may change the settings of, the one the page shows, or why not. */
+function tenantOfViewer(viewer: Viewer, pageTenantId: string): { tenantId: string } | { error: string } {
     if (viewer.allTenants || !viewer.tenantId) return { error: OPEN_A_TENANT };
+    const page = TenantIdSchema.safeParse(pageTenantId);
+    if (!page.success || page.data !== viewer.tenantId) return { error: ANOTHER_TENANT };
     return { tenantId: viewer.tenantId };
 }
 
 const messageOf = (error: unknown, fallback: string) =>
     error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError ? error.message : fallback;
 
-/** Renames the tenant the viewer works in. */
-export async function renameOwnTenant(name: string): Promise<SaveResult> {
+/** Renames the tenant the viewer works in, `tenantId` the one the page shows. */
+export async function renameOwnTenant(tenantId: string, name: string): Promise<SaveResult> {
     const viewer = await checkPermission(PERMISSIONS.TENANT_SETTINGS.WRITE);
-    const scope = tenantOfViewer(viewer);
+    const scope = tenantOfViewer(viewer, tenantId);
     if ("error" in scope) return { success: false, error: scope.error };
     const parsed = NameSchema.safeParse(name);
     if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request", field: "name" };
@@ -87,10 +93,10 @@ async function saved(viewer: Viewer, tenantId: string, save: () => Promise<{ bef
     }
 }
 
-/** Saves one event of the tenant, or the same change of several. */
-export async function saveTenantNotificationEventsAction(eventIds: string[], patch: z.infer<typeof PatchSchema>): Promise<SaveResult> {
+/** Saves one event of the tenant the page shows, or the same change of several. */
+export async function saveTenantNotificationEventsAction(tenantId: string, eventIds: string[], patch: z.infer<typeof PatchSchema>): Promise<SaveResult> {
     const viewer = await checkPermission(PERMISSIONS.TENANT_SETTINGS.WRITE);
-    const scope = tenantOfViewer(viewer);
+    const scope = tenantOfViewer(viewer, tenantId);
     if ("error" in scope) return { success: false, error: scope.error };
     if (scope.tenantId === HOME_TENANT_ID) return { success: false, error: HOME_IS_PLATFORM };
 
@@ -101,10 +107,10 @@ export async function saveTenantNotificationEventsAction(eventIds: string[], pat
     return saved(viewer, scope.tenantId, () => saveTenantEventSettings(scope.tenantId, ids.data, parsed.data));
 }
 
-/** Saves the channels every event of the tenant goes to unless it has its own. */
-export async function saveTenantDefaultChannelsAction(channelIds: string[]): Promise<SaveResult> {
+/** Saves the channels every event of the tenant the page shows goes to unless it has its own. */
+export async function saveTenantDefaultChannelsAction(tenantId: string, channelIds: string[]): Promise<SaveResult> {
     const viewer = await checkPermission(PERMISSIONS.TENANT_SETTINGS.WRITE);
-    const scope = tenantOfViewer(viewer);
+    const scope = tenantOfViewer(viewer, tenantId);
     if ("error" in scope) return { success: false, error: scope.error };
     if (scope.tenantId === HOME_TENANT_ID) return { success: false, error: HOME_IS_PLATFORM };
 
@@ -113,11 +119,12 @@ export async function saveTenantDefaultChannelsAction(channelIds: string[]): Pro
     return saved(viewer, scope.tenantId, () => saveTenantDefaultChannels(scope.tenantId, parsed.data));
 }
 
-/** Sends an example of an event of the tenant to where it goes now, and says how many channels took it. */
-export async function sendTenantTestNotificationAction(eventId: string): Promise<{ success: boolean; message?: string; error?: string }> {
+/** Sends an example of an event of the tenant the page shows to where it goes now, and says how many channels took it. */
+export async function sendTenantTestNotificationAction(tenantId: string, eventId: string): Promise<{ success: boolean; message?: string; error?: string }> {
     const viewer = await checkPermission(PERMISSIONS.TENANT_SETTINGS.WRITE);
-    const scope = tenantOfViewer(viewer);
+    const scope = tenantOfViewer(viewer, tenantId);
     if ("error" in scope) return { success: false, error: scope.error };
+    if (scope.tenantId === HOME_TENANT_ID) return { success: false, error: HOME_IS_PLATFORM };
 
     const parsed = z.string().min(1).max(100).safeParse(eventId);
     if (!parsed.success) return { success: false, error: "Unknown notification event" };

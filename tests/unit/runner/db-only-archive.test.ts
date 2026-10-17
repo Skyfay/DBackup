@@ -22,6 +22,7 @@ vi.mock('@/lib/prisma', () => ({
         systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
         namingTemplate: { findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null) },
         retentionPolicy: { findUnique: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+        connectionShare: { count: vi.fn().mockResolvedValue(0) },
     },
 }));
 
@@ -70,9 +71,9 @@ async function runDbOnlyJob(job: Record<string, unknown>, adapter: Record<string
     const { registry } = await import('@/lib/core/registry');
 
     (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'job-1', name: 'DB Only Job', pgCompression: undefined, namingTemplateId: null, compression: 'GZIP',
-        source: { id: 'src-1', adapterId: 'mysql', config: '{}', name: 'My MySQL', type: 'database' },
-        destinations: [{ id: 'dest-1', configId: 'cfg-1', priority: 0, retention: '{}', retentionPolicyId: null, config: { id: 'cfg-1', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage' } }],
+        id: 'job-1', tenantId: 'tenant-1', name: 'DB Only Job', pgCompression: undefined, namingTemplateId: null, compression: 'GZIP',
+        source: { id: 'src-1', adapterId: 'mysql', config: '{}', name: 'My MySQL', type: 'database', tenantId: 'tenant-1' },
+        destinations: [{ id: 'dest-1', configId: 'cfg-1', priority: 0, retention: '{}', retentionPolicyId: null, config: { id: 'cfg-1', adapterId: 'local-filesystem', config: '{}', name: 'Local', type: 'storage', tenantId: 'tenant-1' } }],
         sources: [],
         notifications: [], notificationEvents: 'ALWAYS', notificationTemplates: [],
         ...job,

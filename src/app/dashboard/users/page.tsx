@@ -30,8 +30,6 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     const [permissions, user, params, tenantCount] = await Promise.all([getUserPermissions(), getViewer(), searchParams, tenantService.count()]);
     // The login lives on the root page, there is no /login.
     if (!user) redirect("/");
-    // With more than one tenant the sign-in providers are the platform's, an old link to them lands there.
-    if (tenantCount > 1 && firstOf(params, "tab") === "sso" && permissions.includes(PERMISSIONS.PLATFORM.SIGN_IN_READ)) redirect("/dashboard/platform/users?tab=providers");
 
     const can = (permission: string) => permissions.includes(permission);
     const canReadUsers = can(PERMISSIONS.USERS.READ);
@@ -40,7 +38,11 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     const canReadApiKeys = can(PERMISSIONS.API_KEYS.READ);
     // The providers are seen with the settings too, as on an install of one tenant before platform groups.
     const canReadSignIn = can(PERMISSIONS.PLATFORM.SIGN_IN_READ) || can(PERMISSIONS.SETTINGS.READ);
-    if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
+    // With more than one tenant the sign-in providers are the platform's, an old link to them lands there.
+    if (tenantCount > 1 && firstOf(params, "tab") === "sso" && canReadSignIn) redirect("/dashboard/platform/users?tab=providers");
+    // With one tenant the providers are a tab of this page, which may be all the viewer sees here.
+    const showsSignIn = canReadSignIn && tenantCount <= 1;
+    if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys && !showsSignIn) redirect("/dashboard");
 
     // All tenants changes no tenant: the members, groups and keys belong to one, every account is under Platform.
     if (user.allTenants) {
@@ -89,7 +91,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                     canOpenRuns={can(PERMISSIONS.HISTORY.READ)}
                     canReadAudit={canReadAudit}
                     // With more than one tenant the providers are the platform's, under Platform, Users & Groups.
-                    canReadSignIn={canReadSignIn && tenantCount <= 1}
+                    canReadSignIn={showsSignIn}
                     canManageSignIn={can(PERMISSIONS.PLATFORM.SIGN_IN_WRITE)}
                     viewerPlatformAdmin={user.isPlatformAdmin}
                     attention={visibleAttention}

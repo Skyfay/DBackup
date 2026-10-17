@@ -8,6 +8,7 @@ import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { vacuumDatabase } from "@/services/system/database-service";
+import { PLATFORM_LOG } from "@/services/system/settings-save";
 
 const log = logger.child({ action: "database" });
 
@@ -22,7 +23,7 @@ export async function vacuumDatabaseAction() {
             beforeBytes: result.beforeBytes,
             afterBytes: result.afterBytes,
             durationMs: result.durationMs,
-        });
+        }, undefined, PLATFORM_LOG);
         revalidatePath("/dashboard/settings");
         return { success: true, data: result };
     } catch (error: unknown) {

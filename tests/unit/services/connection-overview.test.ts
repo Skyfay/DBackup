@@ -4,10 +4,16 @@ import { prismaMock } from "@/lib/testing/prisma-mock";
 vi.mock("@/services/dashboard-service", () => ({
     getStorageVolume: vi.fn(),
 }));
+// The destinations and channels other tenants share with a tenant, which the sharing module reads across tenants.
+vi.mock("@/services/sharing/provided", () => ({
+    providedTo: vi.fn(),
+}));
 
 import { getStorageVolume } from "@/services/dashboard-service";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import { getConnectionOverview, healthBuckets } from "@/services/adapters/connection-overview";
+import { providedTo, type ProvidedConnection } from "@/services/sharing/provided";
+import { runAsTenant } from "@/lib/tenant/context";
 
 const NOW = new Date("2026-09-22T12:00:00.000Z");
 const HOUR = 60 * 60 * 1000;
@@ -70,6 +76,7 @@ describe("getConnectionOverview", () => {
         prismaMock.execution.findMany.mockResolvedValue([]);
         mocked(prismaMock.notificationLog.groupBy).mockResolvedValue([]);
         prismaMock.notificationLog.findMany.mockResolvedValue([]);
+        vi.mocked(providedTo).mockReset().mockResolvedValue([]);
     });
 
     it("counts a job once when it reads several folders of the same source", async () => {
@@ -144,5 +151,73 @@ describe("getConnectionOverview", () => {
         expect(overview?.usedBy).toEqual({ jobs: 0, templates: 1 });
         expect(overview?.lastSent).toEqual({ at: at(3).toISOString(), status: "Success" });
         expect(getStorageVolume).not.toHaveBeenCalled();
+    });
+
+    describe("of a connection another tenant shares with this one", () => {
+        const provided = (id: string, type: string): ProvidedConnection => ({
+            id, name: id, type, adapterId: type === "storage" ? "s3" : "email", storageRole: "DESTINATION", metadata: null,
+            lastStatus: "ONLINE", lastHealthCheck: at(0.1), createdAt: at(100), updatedAt: at(100),
+            providerId: "msp", providerName: "MSP", allTenants: true, encryptedOnly: false, ownRecipients: true,
+        });
+
+        it("shows a provided destination with what this tenant does with it and nothing of its health", async () => {
+            // The tenant filter keeps the destination of the MSP out of the tenant's own read.
+            prismaMock.adapterConfig.findMany.mockResolvedValue([]);
+            vi.mocked(providedTo).mockResolvedValue([provided("msp-s3", "storage")]);
+            prismaMock.jobDestination.findMany.mockResolvedValue([{ configId: "msp-s3", jobId: "acme-nightly" }] as never);
+            mocked(prismaMock.execution.groupBy).mockResolvedValue([{ jobId: "acme-nightly", _max: { startedAt: at(5) } }]);
+            prismaMock.execution.findMany.mockResolvedValue([{ id: "run-acme", jobId: "acme-nightly", status: "Success", startedAt: at(5) }] as never);
+            // A check of the destination is the MSP's, even should one reach the read.
+            prismaMock.healthCheckLog.findMany.mockResolvedValue([
+                { adapterConfigId: "msp-s3", status: "DEGRADED", latencyMs: 4000, createdAt: at(0.5) },
+            ] as never);
+            // The storage numbers of the tenant are its own backups on the destination.
+            vi.mocked(getStorageVolume).mockResolvedValue([{ configId: "msp-s3", tenantId: "acme", name: "msp-s3", adapterId: "s3", size: 220, count: 2 }]);
+
+            const overview = await runAsTenant("acme", () => getConnectionOverview(["msp-s3"]));
+
+            expect(providedTo).toHaveBeenCalledWith("acme", { ids: ["msp-s3"] });
+            expect(overview.get("msp-s3")).toEqual({
+                usedBy: { jobs: 1, templates: 0 },
+                lastBackup: { id: "run-acme", at: at(5).toISOString(), status: "Success" },
+                health: Array.from({ length: 24 }, () => "none"),
+                checksPassed: null,
+                latencyMs: null,
+                credentialName: null,
+                retentionName: null,
+                stored: { size: 220, count: 2 },
+                lastSent: null,
+            });
+        });
+
+        it("gives a provided channel its own templates and messages", async () => {
+            vi.mocked(providedTo).mockResolvedValue([provided("msp-mail", "notification")]);
+            prismaMock.notificationTemplateChannel.findMany.mockResolvedValue([{ configId: "msp-mail" }] as never);
+            mocked(prismaMock.notificationLog.groupBy).mockResolvedValue([{ channelId: "msp-mail", _max: { sentAt: at(2) } }]);
+            prismaMock.notificationLog.findMany.mockResolvedValue([{ channelId: "msp-mail", status: "Success", sentAt: at(2) }] as never);
+
+            const overview = (await runAsTenant("acme", () => getConnectionOverview(["msp-mail"]))).get("msp-mail");
+
+            expect(overview).toMatchObject({ usedBy: { jobs: 0, templates: 1 }, lastSent: { at: at(2).toISOString(), status: "Success" } });
+            expect(getStorageVolume).not.toHaveBeenCalled();
+        });
+
+        it("asks for provided connections only for the ids the tenant does not own", async () => {
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: "own-nas", type: "storage", storageRole: "DESTINATION", primaryCredential: null, defaultRetentionPolicy: null },
+            ] as never);
+
+            const overview = await runAsTenant("acme", () => getConnectionOverview(["own-nas", "gone"]));
+
+            expect(providedTo).toHaveBeenCalledWith("acme", { ids: ["gone"] });
+            expect([...overview.keys()]).toEqual(["own-nas"]);
+        });
+
+        it("finds none outside a tenant", async () => {
+            const overview = await getConnectionOverview(["msp-s3"]);
+
+            expect(providedTo).not.toHaveBeenCalled();
+            expect(overview.size).toBe(0);
+        });
     });
 });

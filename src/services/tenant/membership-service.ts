@@ -68,6 +68,15 @@ export const membershipService = {
         return users.map((user) => ({ id: user.id, name: user.name, email: user.email, platformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE }));
     },
 
+    /**
+     * Whether an account is one of the people of a tenant, see `peopleOf`: a member there, or in the
+     * home tenant an account of no tenant. Only these get a group of the tenant from its own admins,
+     * anyone else joins through an invitation, or by whoever manages the tenants.
+     */
+    async isPersonOf(userId: string, tenantId: string): Promise<boolean> {
+        return (await prisma.user.count({ where: { AND: [{ id: userId }, peopleOf(tenantId)] } })) > 0;
+    },
+
     /** The tenants an account works in. */
     async tenantsOf(userId: string): Promise<string[]> {
         const memberships = await prisma.tenantMembership.findMany({ where: { userId }, select: { tenantId: true } });
@@ -132,6 +141,9 @@ export const membershipService = {
                 });
             } else if (current) {
                 await tx.tenantMembership.delete({ where: { userId_tenantId: { userId, tenantId } } });
+                // A session that worked there picks another tenant on its next request, and does not
+                // come back there by itself should the account be added again.
+                await tx.session.updateMany({ where: { userId, activeTenantId: tenantId }, data: { activeTenantId: null } });
             }
         }));
     },

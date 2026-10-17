@@ -12,8 +12,9 @@ import { PageTabs } from "@/components/ui/page-tabs";
 import { Tabs } from "@/components/ui/tabs";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
 import { attentionOf } from "@/lib/core/tab-attention";
+import { TenantAllowancesDialog } from "./tenant-allowances-dialog";
 import { TenantTile, tenantActions, tenantColumns, tenantNote, type TenantHandlers } from "./tenant-columns";
-import { TenantDeleteDialog, TenantNameDialog } from "./tenant-dialogs";
+import { TenantDeleteDialog, TenantNameDialog, TenantSharingDialog } from "./tenant-dialogs";
 import { TenantMembersDialog } from "./tenant-members-dialog";
 import { troubledTenants, type TenantListRow } from "./tenant-words";
 import { TenantsStrip } from "./tenants-strip";
@@ -33,8 +34,9 @@ interface TenantsClientProps {
 
 /**
  * The tenants of this DBackup for whoever may see them: each with its members, connections,
- * databases and jobs, its members opened with a click, opened, and for whoever may manage them
- * renamed or deleted with everything it holds. The home tenant holds what the platform owns and
+ * databases and jobs, what other tenants share with it and what it may add itself, its members
+ * opened with a click, opened, and for whoever may manage them renamed, limited in what it adds or
+ * deleted with everything it holds. The home tenant holds what the platform owns and
  * stays. `?open=<id>` opens the members of a tenant, like after New tenant in the head of the sidebar.
  */
 export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewerPlatformAdmin, through = null }: TenantsClientProps) {
@@ -43,6 +45,8 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
     const [naming, setNaming] = useState<{ tenant: TenantListRow | null } | null>(null);
     const [members, setMembers] = useState<{ id: string; name: string } | null>(null);
     const [deleting, setDeleting] = useState<TenantListRow | null>(null);
+    const [sharing, setSharing] = useState<TenantListRow | null>(null);
+    const [allowing, setAllowing] = useState<TenantListRow | null>(null);
     const [opening, setOpening] = useState<string | null>(null);
 
     const open = useCallback(async (row: TenantListRow) => {
@@ -57,7 +61,7 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
     const handlers = useMemo<TenantHandlers>(() => ({
         onOpen: (row) => void open(row),
         onMembers: (row) => setMembers({ id: row.id, name: row.name }),
-        ...(canManage ? { onRename: (row: TenantListRow) => setNaming({ tenant: row }), onDelete: setDeleting } : {}),
+        ...(canManage ? { onRename: (row: TenantListRow) => setNaming({ tenant: row }), onDelete: setDeleting, onSharing: setSharing, onAllowances: setAllowing } : {}),
     }), [open, canManage]);
 
     useOpenFromLink(rows, handlers.onMembers);
@@ -137,6 +141,26 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
             )}
             {members && (
                 <TenantMembersDialog key={members.id} tenant={members} viewerId={viewerId} canManage={canManage} viewerPlatformAdmin={viewerPlatformAdmin} onClose={() => setMembers(null)} onChanged={() => router.refresh()} />
+            )}
+            {sharing && (
+                <TenantSharingDialog
+                    tenant={sharing}
+                    onClose={() => setSharing(null)}
+                    onChanged={() => {
+                        setSharing(null);
+                        router.refresh();
+                    }}
+                />
+            )}
+            {allowing && (
+                <TenantAllowancesDialog
+                    tenant={allowing}
+                    onClose={() => setAllowing(null)}
+                    onSaved={() => {
+                        setAllowing(null);
+                        router.refresh();
+                    }}
+                />
             )}
             {deleting && (
                 <TenantDeleteDialog

@@ -163,13 +163,31 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
 }
 
 /**
+ * Whether a Graph call failed because the item it named does not exist: HTTP 404 with the
+ * error code `itemNotFound`, as Graph answers a path that resolves to nothing.
+ */
+function isGraphItemNotFound(error: unknown): boolean {
+    const e = error as { statusCode?: number; code?: string | null } | null;
+    return e?.statusCode === 404 && e.code === "itemNotFound";
+}
+
+/** One page of the children of a folder, with the fields the listing selects. */
+interface DriveChildrenPage {
+    value?: Array<{ name: string; size?: number; lastModifiedDateTime?: string; folder?: unknown }>;
+    "@odata.nextLink"?: string;
+}
+
+/**
  * Lists all files recursively under a OneDrive folder.
- * Returns a flat list with relative paths.
+ * Returns a flat list with relative paths. With `missingAsEmpty`, a folder that does not exist
+ * lists as empty instead of failing. Only the first page decides that, so a folder removed
+ * halfway through a listing still fails it rather than dropping what was read.
  */
 async function listFilesRecursive(
     client: Client,
     folderPath: string,
-    prefix: string
+    prefix: string,
+    missingAsEmpty = false
 ): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
 
@@ -180,10 +198,16 @@ async function listFilesRecursive(
     let url: string | null = apiPath;
 
     while (url) {
-        const res = await client.api(url)
-            .select("id,name,size,lastModifiedDateTime,folder,file")
-            .top(200)
-            .get();
+        let res: DriveChildrenPage;
+        try {
+            res = await client.api(url)
+                .select("id,name,size,lastModifiedDateTime,folder,file")
+                .top(200)
+                .get();
+        } catch (error: unknown) {
+            if (missingAsEmpty && url === apiPath && isGraphItemNotFound(error)) return files;
+            throw error;
+        }
 
         for (const item of res.value || []) {
             const relativePath = prefix ? `${prefix}/${item.name}` : item.name;
@@ -454,11 +478,14 @@ export const OneDriveAdapter: StorageAdapter = {
             const accessToken = await getAccessToken(config);
             const client = createGraphClient(accessToken);
             const basePath = stripSlashes(config.folderPath ?? "");
-            const listPath = dir && dir !== "."
+            const isSubfolder = Boolean(dir && dir !== ".");
+            const listPath = isSubfolder
                 ? (basePath ? `${basePath}/${dir}` : dir)
                 : basePath;
 
-            return await listFilesRecursive(client, listPath, dir || "");
+            // A subfolder nothing was written to yet is not there. It lists as empty, like on the
+            // other destinations. A missing root still fails.
+            return await listFilesRecursive(client, listPath, dir || "", isSubfolder);
         } catch (error: unknown) {
             log.error("OneDrive list failed", { dir }, wrapError(error));
             throw error;

@@ -23,10 +23,28 @@ export function countOf(value: number, noun: string, plural = `${noun}s`): strin
     return `${value.toLocaleString()} ${value === 1 ? noun : plural}`;
 }
 
-/** The rules as the owner rules know them, in the order the service hands them out: priority, then age. */
+/** The rules as the owner rules know them. */
 function factsOf(rules: readonly RuleRow[]): (RuleFact & { row: RuleRow })[] {
-    // The service sorts by priority and then by creation, so the place in the list stands for the age.
-    return rules.map((row, index) => ({ pattern: row.pattern, tenantId: row.tenantId, priority: row.priority, validFrom: new Date(row.validFrom), createdAt: new Date(index), row }));
+    return rules.map((row) => ({
+        id: row.id,
+        pattern: row.pattern,
+        tenantId: row.tenantId,
+        priority: row.priority,
+        validFrom: new Date(row.validFrom),
+        validUntil: row.validUntil ? new Date(row.validUntil) : null,
+        createdAt: new Date(row.createdAt),
+        row,
+    }));
+}
+
+/** The rules that still give, for the list of the card. An ended rule only decides the backups of its time. */
+export function activeRules(rules: readonly RuleRow[]): RuleRow[] {
+    return rules.filter((rule) => rule.validUntil === null);
+}
+
+/** The assignment of the name that holds now, the record of a database taken back included. */
+function currentAssignment(assignments: readonly AssignmentRow[], databaseName: string): AssignmentRow | null {
+    return assignments.find((entry) => entry.databaseName === databaseName && entry.validUntil === null) ?? null;
 }
 
 /** The rule that gives a database away now, the one the service picked for it. */
@@ -39,9 +57,9 @@ export type How =
     | { kind: "assignment"; since: string; byName: string | null; from: MovePlace | null; onDemandPerDay: number | null }
     | { kind: "rule"; pattern: string; since: string; onDemandPerDay: number | null }
     /** It moved to another server, and the tenant that held it took it along. */
-    | { kind: "moved"; at: string; to: MovePlace; before: string }
-    /** Nobody else holds it, and a tenant did until then. */
-    | { kind: "taken-back"; at: string; before: string }
+    | { kind: "moved"; at: string; to: MovePlace; before: string | null }
+    /** Nobody else holds it, and a tenant did until then, by name or by a rule. */
+    | { kind: "taken-back"; at: string; before: string | null }
     | { kind: "nobody" };
 
 export function howOf(row: DatabaseOwnerRow, data: Pick<SourceAssignments, "assignments" | "rules">, now: Date): How {
@@ -53,9 +71,14 @@ export function howOf(row: DatabaseOwnerRow, data: Pick<SourceAssignments, "assi
         const rule = ruleFor(data.rules, row.name, now);
         return { kind: "rule", pattern: rule?.pattern ?? "*", since: row.owner.since, onDemandPerDay: row.owner.onDemandPerDay };
     }
-    const ended = endedAssignments(data.assignments).find((entry) => entry.databaseName === row.name);
-    if (ended?.movedTo) return { kind: "moved", at: ended.validUntil, to: ended.movedTo, before: ended.tenantName };
-    return ended ? { kind: "taken-back", at: ended.validUntil, before: ended.tenantName } : { kind: "nobody" };
+    const ended = endedAssignments(data.assignments).filter((entry) => entry.databaseName === row.name);
+    const lastHolder = ended.find((entry) => entry.tenantName !== null)?.tenantName ?? null;
+    // Taken back: the record of it holds now, whoever held it before.
+    const back = currentAssignment(data.assignments, row.name);
+    if (back && back.tenantId === null) return { kind: "taken-back", at: back.validFrom, before: lastHolder };
+    const [last] = ended;
+    if (last?.movedTo) return { kind: "moved", at: last.validUntil, to: last.movedTo, before: last.tenantName };
+    return last ? { kind: "taken-back", at: last.validUntil, before: lastHolder } : { kind: "nobody" };
 }
 
 /** "3 backups a day on demand", or null while the tenant may start none. */
@@ -121,10 +144,10 @@ export function heldAfter(databases: readonly DatabaseOwnerRow[], given: readonl
 /** Why a new assignment of a name cannot start earlier, and since when it may. */
 export type StartLimit =
     | { kind: "none" }
-    /** Someone holds it by name now, so the next one starts now. */
-    | { kind: "current"; from: Date; holder: string }
-    /** The time of the one before ended then, and two never overlap. */
-    | { kind: "previous"; from: Date; holder: string };
+    /** Someone holds it by name now, or it was taken back, so the next one starts now. Null for taken back. */
+    | { kind: "current"; from: Date; holder: string | null }
+    /** The time of the one before ended then, and two never overlap. Null for a time it was taken back. */
+    | { kind: "previous"; from: Date; holder: string | null };
 
 /** How early an assignment of the name may start, so a backup never belongs to two tenants. */
 export function startLimit(assignments: readonly AssignmentRow[], databaseName: string, now: Date): StartLimit {
@@ -210,7 +233,9 @@ export function rulePreview(
             if (row.owner?.via === "assignment") {
                 return { name: row.name, outcome: "keeps", reason: `stays with ${row.owner.tenantName}, assigned by name` };
             }
-            // A database that moved away is given to nobody here by a rule.
+            // A database taken back or moved away is given to nobody here by a rule.
+            const back = !row.owner && currentAssignment(data.assignments ?? [], row.name);
+            if (back && back.tenantId === null) return { name: row.name, outcome: "keeps", reason: "taken back, no rule gives it" };
             const moved = !row.owner && endedAssignments(data.assignments ?? []).find((entry) => entry.databaseName === row.name)?.movedTo;
             if (moved) return { name: row.name, outcome: "keeps", reason: `moved ${movedText(moved, row.name)}, no rule gives it here` };
             // A new rule is the youngest, so it loses every tie.

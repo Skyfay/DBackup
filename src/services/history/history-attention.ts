@@ -6,12 +6,28 @@
 
 import prisma from "@/lib/prisma";
 import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
+import { currentTenantId } from "@/lib/tenant/current";
+import { providedTo } from "@/services/sharing/provided";
 
 const FINISHED = ["Success", "Failed", "Partial", "Cancelled"];
 
 export interface HistoryAttention {
     runs?: TabAttention;
     notifications?: TabAttention;
+}
+
+/**
+ * The names of these channels as they are now, sorted: the own ones and those another tenant still
+ * shares with the tenant that runs now. A channel that is gone, or no longer shared, has none.
+ */
+async function channelNames(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const own = await prisma.adapterConfig.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    const found = new Set(own.map((channel) => channel.id));
+    const missing = ids.filter((id) => !found.has(id));
+    const tenantId = missing.length > 0 ? await currentTenantId() : null;
+    const shared = tenantId ? await providedTo(tenantId, { kind: "channel", ids: missing }) : [];
+    return [...own, ...shared].map((channel) => channel.name).sort((a, b) => a.localeCompare(b));
 }
 
 export async function getHistoryAttention(): Promise<HistoryAttention> {
@@ -52,9 +68,7 @@ export async function getHistoryAttention(): Promise<HistoryAttention> {
 
     // The channel by its name of now, and only while it still exists.
     const channelIds = [...new Set(messages.map((message) => message.channelId).filter((id): id is string => id !== null))];
-    const channels = channelIds.length === 0
-        ? []
-        : await prisma.adapterConfig.findMany({ where: { id: { in: channelIds } }, select: { name: true }, orderBy: { name: "asc" } });
+    const channels = await channelNames(channelIds);
 
     const jobs = (status: string) => runs.filter((run) => run.status === status && run.job).map((run) => run.job!.name).sort((a, b) => a.localeCompare(b));
     return {
@@ -62,6 +76,6 @@ export async function getHistoryAttention(): Promise<HistoryAttention> {
             attentionOf("destructive", jobs("Failed"), "failed on its last run", "failed on their last run"),
             attentionOf("warning", jobs("Partial"), "missed a copy on its last run", "missed a copy on their last run"),
         ),
-        notifications: attentionOf("destructive", channels.map((channel) => channel.name), "failed to send its last message", "failed to send their last message"),
+        notifications: attentionOf("destructive", channels, "failed to send its last message", "failed to send their last message"),
     };
 }

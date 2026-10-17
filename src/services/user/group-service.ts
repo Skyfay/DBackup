@@ -124,11 +124,13 @@ export const groupService = {
         await assertManagersStay(group, !!target && managesMembers(target), by);
 
         // A sign-in provider that adds new people to the group adds them where its members go.
-        // Without a group to go to, a member leaves the tenant, since a membership needs a group.
+        // Without a group to go to, a member leaves the tenant, since a membership needs a group,
+        // and a provider of a tenant stops adding people, since it adds them into a group only.
         const [moved] = await prisma.$transaction([
             moveTo
                 ? prisma.tenantMembership.updateMany({ where: { groupId: id }, data: { groupId: moveTo } })
                 : prisma.tenantMembership.deleteMany({ where: { groupId: id } }),
+            prisma.ssoProvider.updateMany({ where: { defaultGroupId: id, tenantId: { not: null } }, data: moveTo ? { defaultGroupId: moveTo } : { defaultGroupId: null, allowProvisioning: false } }),
             prisma.ssoProvider.updateMany({ where: { defaultGroupId: id }, data: { defaultGroupId: moveTo } }),
             prisma.group.delete({ where: { id } }),
         ]);
@@ -153,7 +155,9 @@ export const groupService = {
                 await prisma.$transaction(async (tx) => {
                     const { count } = await tx.group.deleteMany({ where: { id, memberships: { none: {} } } });
                     if (count === 0) throw new Error("People are in it. Delete it on its own to move them to another group.");
-                    // A sign-in provider that added new people to it adds them without a group from now on.
+                    // A sign-in provider that added new people to it adds them without a group from now
+                    // on, and one of a tenant, which adds people into a group only, adds nobody.
+                    await tx.ssoProvider.updateMany({ where: { defaultGroupId: id, tenantId: { not: null } }, data: { defaultGroupId: null, allowProvisioning: false } });
                     await tx.ssoProvider.updateMany({ where: { defaultGroupId: id }, data: { defaultGroupId: null } });
                 });
             },

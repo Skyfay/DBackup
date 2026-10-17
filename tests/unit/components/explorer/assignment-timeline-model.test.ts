@@ -9,11 +9,11 @@ const acme = { id: "t-acme", name: "Acme" };
 const beta = { id: "t-beta", name: "Beta" };
 
 function assignment(databaseName: string, tenant: { id: string; name: string }, validFrom: string, validUntil: string | null = null): AssignmentRow {
-    return { id: `${databaseName}-${validFrom}`, databaseName, tenantId: tenant.id, tenantName: tenant.name, validFrom, validUntil, byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: null };
+    return { id: `${databaseName}-${validFrom}`, databaseName, tenantId: tenant.id, tenantName: tenant.name, validFrom, validUntil, createdAt: validFrom, byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: null };
 }
 
 function rule(id: string, pattern: string, tenant: { id: string; name: string }, validFrom: string, priority = 0): RuleRow {
-    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, onDemandPerDay: null };
+    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, validUntil: null, createdAt: validFrom, onDemandPerDay: null };
 }
 
 const database = (name: string): DatabaseOwnerRow => ({ name, sizeInBytes: null, owner: null, backups: 0 });

@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import { AddConnectionDialogs } from "@/components/adapter/add-connection-dialogs";
 import { AdapterTiles } from "@/components/adapter/adapter-picker";
+import { useMayAdd, useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { ADAPTER_DEFINITIONS, type AdapterDefinition } from "@/lib/adapters/definitions";
 import { STORAGE_ROLES, supportsStorageRole, type StorageRole } from "@/lib/core/storage-roles";
+import type { AllowanceKind } from "@/lib/tenant/allowances";
 import { ExistingList, useExistingConnections } from "./existing-list";
 import type { SetupEntry, SetupStep } from "./setup-model";
 import { OpenSection } from "./setup-sections";
@@ -22,6 +24,8 @@ interface ConnectionKind {
     offers: (adapter: AdapterDefinition) => boolean;
     /** Storage is added as a destination and nothing else. */
     role?: StorageRole;
+    /** The limit of the platform that decides whether the tenant adds one itself. */
+    allowance: AllowanceKind;
 }
 
 const KINDS: Record<ConnectionStepId, ConnectionKind> = {
@@ -31,6 +35,7 @@ const KINDS: Record<ConnectionStepId, ConnectionKind> = {
         plural: "databases",
         url: "/api/adapters?type=database",
         offers: (adapter) => adapter.type === "database",
+        allowance: "databases",
     },
     destination: {
         type: "storage",
@@ -40,6 +45,7 @@ const KINDS: Record<ConnectionStepId, ConnectionKind> = {
         // A connection that can only be read from, like a container runtime, has no place here.
         offers: (adapter) => adapter.type === "storage" && supportsStorageRole(adapter.supportedRoles, STORAGE_ROLES.DESTINATION),
         role: STORAGE_ROLES.DESTINATION,
+        allowance: "destinations",
     },
     notification: {
         type: "notification",
@@ -47,6 +53,7 @@ const KINDS: Record<ConnectionStepId, ConnectionKind> = {
         plural: "notification channels",
         url: "/api/adapters?type=notification",
         offers: (adapter) => adapter.type === "notification",
+        allowance: "channels",
     },
 };
 
@@ -72,6 +79,9 @@ export function ConnectionStep({ number, step, picked, onSkip, onDone }: Connect
     const [selected, setSelected] = useState<string | null>(picked?.id ?? null);
     const selectedEntry = existing?.find((entry) => entry.id === selected);
     const hasExisting = existing === null || existing.length > 0;
+    // The platform may not let the tenant add this kind itself, then it picks from what it has.
+    const mayAdd = useMayAdd(kind.allowance);
+    const { platformName } = useTenantView();
 
     return (
         <OpenSection
@@ -103,8 +113,17 @@ export function ConnectionStep({ number, step, picked, onSkip, onDone }: Connect
                     <ExistingList entries={existing} value={selected} onValueChange={setSelected} label={`Your ${kind.plural}`} />
                 </div>
             )}
-            {hasExisting && <p className="mb-2 text-xs font-medium text-muted-foreground">Or add a new one</p>}
-            <AdapterTiles adapters={adapters} onSelect={setAdding} />
+            {mayAdd ? (
+                <>
+                    {hasExisting && <p className="mb-2 text-xs font-medium text-muted-foreground">Or add a new one</p>}
+                    <AdapterTiles adapters={adapters} onSelect={setAdding} />
+                </>
+            ) : (
+                <p className="rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground">
+                    {platformName ?? "The platform"} adds the {kind.plural} of this tenant.
+                    {existing !== null && existing.length === 0 && (onSkip ? " There is none yet, skip this part or ask them for one." : " There is none yet, ask them for one.")}
+                </p>
+            )}
             <AddConnectionDialogs
                 open={adding !== null}
                 onOpenChange={(open) => !open && setAdding(null)}

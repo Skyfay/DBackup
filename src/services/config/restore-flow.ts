@@ -9,11 +9,12 @@ import path from "path";
 import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
 import { registerAdapters } from "@/lib/adapters";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { registry } from "@/lib/core/registry";
-import type { StorageAdapter } from "@/lib/core/interfaces";
+import { isShared, openRow } from "@/services/sharing/destination-access";
 import { getTempDir } from "@/lib/temp-dir";
 import { ValidationError } from "@/lib/logging/errors";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { AppConfigurationBackup, RestorePreview } from "@/lib/types/config-backup";
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import { inspectDatabaseCopy, isDatabaseCopy, previewOfJson } from "./copy-inspect";
@@ -82,8 +83,16 @@ async function check(plain: string, fileName: string, owner: RestoreOwner): Prom
     }
 }
 
-/** Opens and checks an uploaded configuration backup, which then waits for Restore. */
+/**
+ * Opens and checks an uploaded configuration backup, which then waits for Restore. A configuration
+ * backup is encrypted with a key of the home tenant, which is where its key is looked up, also on
+ * the sign-up page, which has no session and so no tenant of its own.
+ */
 export async function checkUploadedBackup(upload: ConfigUpload, owner: RestoreOwner): Promise<CheckedRestore> {
+    return runAsTenant(HOME_TENANT_ID, () => checkUpload(upload, owner));
+}
+
+async function checkUpload(upload: ConfigUpload, owner: RestoreOwner): Promise<CheckedRestore> {
     const backupPath = await toTempFile(upload.backup);
     try {
         let meta: Record<string, unknown> | null = null;
@@ -101,14 +110,23 @@ export async function checkUploadedBackup(upload: ConfigUpload, owner: RestoreOw
     }
 }
 
-/** The same for a configuration backup at a destination. It is read on the server, so no size limit applies. */
+/**
+ * The same for a configuration backup at a destination. It is read on the server, so no size limit
+ * applies. The configuration backup only goes to destinations of the home tenant, so the
+ * destination, its login and the key are read there, whichever tenant the admin looks at. A file at
+ * a customer's destination is never taken, since whoever owns the destination could have put it there.
+ */
 export async function checkStoredBackup(destinationId: string, file: string, override: KeyOverride | undefined, owner: RestoreOwner): Promise<CheckedRestore> {
+    return runAsTenant(HOME_TENANT_ID, () => checkStored(destinationId, file, override, owner));
+}
+
+async function checkStored(destinationId: string, file: string, override: KeyOverride | undefined, owner: RestoreOwner): Promise<CheckedRestore> {
     registerAdapters();
     const config = await prisma.adapterConfig.findUnique({ where: { id: destinationId } });
-    if (!config) throw new ValidationError("The destination no longer exists.");
-    const adapter = registry.get(config.adapterId) as StorageAdapter | undefined;
-    if (!adapter) throw new ValidationError(`The adapter ${config.adapterId} of the destination is not available.`);
-    const resolved = await resolveAdapterConfig(config);
+    if (!config) throw new ValidationError("The destination no longer exists, or it belongs to a customer. A configuration backup is only restored from a destination of the home tenant.");
+    if (!registry.get(config.adapterId)) throw new ValidationError(`The adapter ${config.adapterId} of the destination is not available.`);
+    // Shared with customers, the destination holds their folder too, which their jobs filled. No file of it is taken.
+    const { adapter, config: resolved } = await openRow(config, (await isShared(config.id)) ? { kind: "provider" } : { kind: "own" });
 
     const local = path.join(getTempDir(), `config_restore_${randomUUID()}_${path.basename(file)}`);
     try {
@@ -135,7 +153,8 @@ export async function checkStoredBackup(destinationId: string, file: string, ove
 export async function applyCheckedRestore(token: string, owner: RestoreOwner): Promise<AppliedRestore> {
     const held = await peekRestore(token, owner);
     if (!held) throw new ValidationError("The checked backup is gone, it waits 30 minutes. Pick it again.");
-    if (held.preview.kind === "database" && (await prisma.execution.count({ where: { status: "Running" } })) > 0) {
+    // The runs of every tenant, which the restart would all stop, also on the sign-up page without a session.
+    if (held.preview.kind === "database" && (await runAsSystem(() => prisma.execution.count({ where: { status: "Running" } }))) > 0) {
         throw new ValidationError("A backup or restore runs right now, and the restart would stop it. Restore once it has ended.");
     }
 

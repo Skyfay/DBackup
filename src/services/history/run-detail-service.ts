@@ -1,5 +1,9 @@
 import type { Prisma } from "@prisma/client";
+import { WHOLE_JOB_RUNS, isSingleDatabaseRun } from "./whole-runs";
+import { LEADING_RUNS } from "@/lib/execution/follower-runs";
+import { CUSTOMER_BACKUP_STAGES, backupOf } from "@/services/tenant/shared-backup-runs";
 import prisma from "@/lib/prisma";
+import { providedTo } from "@/services/sharing/provided";
 import { buildChecks, type CheckTarget } from "./run-checks";
 import { dumpRecordsOf, dumpSizes } from "./run-dumps";
 import { markSteps, buildProblems, type ProblemTargets } from "./run-problems";
@@ -93,17 +97,24 @@ async function encryptionOf(archive: unknown): Promise<string | true | null> {
     return profile?.name ?? true;
 }
 
-/** The destinations an integrity check or a verification went through, with whether each checks a copy by itself. */
-async function checkTargets(metadata: { plan?: unknown; copies?: unknown }): Promise<Map<string, CheckTarget>> {
+/**
+ * The destinations an integrity check or a verification went through, with whether each checks a
+ * copy by itself. A destination another tenant shares with the tenant of the run is no row of that
+ * tenant, so it is asked for by its id, and only its name and adapter come back.
+ */
+async function checkTargets(metadata: { plan?: unknown; copies?: unknown }, tenantId: string): Promise<Map<string, CheckTarget>> {
     const ids = new Set<string>();
     for (const copy of Array.isArray(metadata.copies) ? metadata.copies : []) if (typeof copy?.destinationId === "string") ids.add(copy.destinationId);
     const planned = (metadata.plan as { destinations?: { id?: unknown }[] } | undefined)?.destinations ?? [];
     for (const entry of planned) if (typeof entry?.id === "string") ids.add(entry.id);
     if (ids.size === 0) return new Map();
-    const [configs, { checksNatively }] = await Promise.all([
+    const [own, { checksNatively }] = await Promise.all([
         prisma.adapterConfig.findMany({ where: { id: { in: [...ids] } }, select: { id: true, name: true, adapterId: true } }),
         import("@/services/storage/verification-service"),
     ]);
+    const found = new Set(own.map((config) => config.id));
+    const provided = await providedTo(tenantId, { kind: "destination", ids: [...ids].filter((configId) => !found.has(configId)) });
+    const configs = [...own, ...provided.map(({ id, name, adapterId }) => ({ id, name, adapterId }))];
     return new Map(configs.map((config) => [config.id, { name: config.name, adapterId: config.adapterId, native: checksNatively(config.adapterId) }]));
 }
 
@@ -125,7 +136,7 @@ function scopeOf(record: { jobId: string | null; type: string }): Prisma.Executi
 
 async function usualStepsOf(scope: Prisma.ExecutionWhereInput, exclude: string) {
     const runs = await prisma.execution.findMany({
-        where: { ...scope, status: "Success", id: { not: exclude }, logsPurgedAt: null },
+        where: { ...scope, status: "Success", id: { not: exclude }, logsPurgedAt: null, AND: [WHOLE_JOB_RUNS] },
         orderBy: { startedAt: "desc" },
         take: USUAL_RUNS,
         select: { logs: true },
@@ -145,18 +156,20 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
     const jobId = record.jobId;
     const scope = scopeOf(record);
     const isCheck = record.type === "IntegrityCheck" || record.type === "Verification";
+    // A run of single databases is compared with nothing, the usual times are those of the whole job.
+    const single = isSingleDatabaseRun(record.metadata);
 
     const [notificationRows, usual, usualMs, recent, previous, next, queue, sizes, encryption, checkTargetMap] = await Promise.all([
         prisma.notificationLog.findMany({ where: { executionId: id }, orderBy: { sentAt: "asc" }, select: { id: true, channelId: true, channelName: true, adapterId: true, status: true, error: true, title: true, sentAt: true } }),
-        scope ? usualStepsOf(scope, id) : Promise.resolve(new Map<string, number>()),
-        jobId && record.type === "Backup" ? usualOf(jobId) : Promise.resolve(null),
+        scope && !single ? usualStepsOf(scope, id) : Promise.resolve(new Map<string, number>()),
+        jobId && record.type === "Backup" && !single ? usualOf(jobId) : Promise.resolve(null),
         scope ? prisma.execution.findMany({ where: scope, orderBy: { startedAt: "desc" }, take: RECENT, select: NEIGHBOUR_SELECT }) : Promise.resolve([]),
         scope ? prisma.execution.findFirst({ where: { ...scope, startedAt: { lt: record.startedAt } }, orderBy: { startedAt: "desc" }, select: NEIGHBOUR_SELECT }) : Promise.resolve(null),
         scope ? prisma.execution.findFirst({ where: { ...scope, startedAt: { gt: record.startedAt } }, orderBy: { startedAt: "asc" }, select: NEIGHBOUR_SELECT }) : Promise.resolve(null),
-        status === "Running" ? prisma.execution.findMany({ where: { status: "Pending" }, orderBy: { startedAt: "asc" }, select: RUN_SELECT }) : Promise.resolve([]),
+        status === "Running" ? prisma.execution.findMany({ where: { status: "Pending", AND: [LEADING_RUNS] }, orderBy: { startedAt: "asc" }, select: RUN_SELECT }) : Promise.resolve([]),
         jobId && record.type === "Backup" ? previousDumps(jobId, record.startedAt) : Promise.resolve(new Map<string, number>()),
         encryptionOf(extra.archive),
-        isCheck ? checkTargets(extra) : Promise.resolve(new Map<string, CheckTarget>()),
+        isCheck ? checkTargets(extra, record.tenantId) : Promise.resolve(new Map<string, CheckTarget>()),
     ]);
 
     const notifications: RunNotification[] = notificationRows.map((row) => ({
@@ -172,8 +185,10 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
         sourceId: record.job?.source?.id ?? null,
     };
     // A removed log leaves no steps to tell, which is not the same as steps that were skipped.
+    // A customer's run of a backup of a shared database tells the steps it has, not those of the job.
+    const followed = record.type === "Backup" && !record.job && backupOf(extra) !== null;
     const steps = record.logsPurgedAt ? [] : buildSteps(entries, { type: record.type, status, currentStage: liveOf(metadata).stage, now, usual })
-        .filter((step) => step.lines.length > 0 || appliesTo(step.name, record.job, entries));
+        .filter((step) => step.lines.length > 0 || (followed ? CUSTOMER_BACKUP_STAGES.includes(step.name) : appliesTo(step.name, record.job, entries)));
     const { problems, lineProblems } = buildProblems(entries, notifications, targets);
 
     let uploads = live ? uploadsOf(metadata) : finishedUploads(metadata, record.size === null ? null : Number(record.size));

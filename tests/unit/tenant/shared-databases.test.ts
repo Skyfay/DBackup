@@ -12,13 +12,14 @@ import path from "path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
-import { runAsTenant } from "@/lib/tenant/context";
+import { explicitScope, runAsTenant } from "@/lib/tenant/context";
 import { tenantScopeExtension } from "@/lib/tenant/prisma-scope";
 
 const holder = vi.hoisted(() => ({ client: undefined as unknown }));
 const mocks = vi.hoisted(() => ({
     listing: vi.fn(),
     writeDump: vi.fn(),
+    openArchive: vi.fn(),
     restoreShared: vi.fn(),
     dumpSizes: vi.fn(),
 }));
@@ -30,13 +31,18 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: mocks.listing } }));
 vi.mock("@/services/restore/archive-download", () => ({ writeDatabaseDump: mocks.writeDump }));
+// A restore opens the copy first, to know it answers and to find its key.
+vi.mock("@/services/restore/file-restore", () => ({ openArchiveForRestore: mocks.openArchive }));
 vi.mock("@/services/restore/restore-service", () => ({ restoreService: { restoreShared: mocks.restoreShared } }));
 // Reading the size of a dump opens the index of the archive, see shared-dump-sizes.test.ts.
 vi.mock("@/services/tenant/shared-dump-sizes", () => ({ dumpSizes: mocks.dumpSizes }));
+vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: vi.fn() } }));
+vi.mock("@/services/dashboard/cache", () => ({ invalidateDashboardCache: vi.fn() }));
 
 const { listSharedDatabases, sharedOverview, prepareSharedDownload, restoreSharedBackup } = await import("@/services/tenant/shared-databases");
 type Overview = Awaited<ReturnType<typeof sharedOverview>>;
 const { databaseAssignmentService } = await import("@/services/tenant/database-assignments");
+const { tenantService } = await import("@/services/tenant/tenant-service");
 
 let root = "";
 let base: PrismaClient;
@@ -120,8 +126,9 @@ beforeEach(() => {
         return null;
     });
     mocks.writeDump.mockResolvedValue({ fileName: "feb_shop.sql" });
+    mocks.openArchive.mockResolvedValue({ masterKey: undefined, dispose: vi.fn() });
     mocks.dumpSizes.mockImplementation(async (records: { id: string }[]) => new Map(records.map((record) => [record.id, { stored: 100, unpacked: 400 }])));
-    mocks.restoreShared.mockResolvedValue({ success: true, executionId: "run-1" });
+    mocks.restoreShared.mockResolvedValue({ success: true, executionId: "run-1", providerExecutionId: "msp-run-1" });
 });
 
 const overview = (tenantId: string) => sharedOverview(tenantId, day("2026-08-01"));
@@ -175,10 +182,42 @@ describe("what a customer sees of a shared server", () => {
 
     it("hands out no destination, path, key or size of the archive with a backup, only the size of its dump", async () => {
         const data = await overview("acme");
-        expect(Object.keys(data.backups[0]).sort()).toEqual(["createdAt", "databaseKey", "databaseName", "dump", "encrypted", "id", "sourceId", "verification"]);
+        expect(Object.keys(data.backups[0]).sort()).toEqual(["createdAt", "databaseKey", "databaseName", "dump", "encrypted", "id", "requestedBy", "sourceId", "verification"]);
         expect(data.backups[0].dump).toEqual({ stored: 100, unpacked: 400 });
         const text = JSON.stringify(data);
         for (const secret of ["msp-nas", "MSP NAS", "msp-s3", "Shared/", "msp-key", "nightly"]) expect(text).not.toContain(secret);
+    });
+
+    it("says which backups someone of the tenant started with Back up now, and by whom", async () => {
+        await base.user.create({ data: { id: "u-sara", name: "Sara Nguyen", email: "sara@acme.test", emailVerified: true, createdAt: new Date(), updatedAt: new Date() } });
+        await base.execution.create({ data: { id: "run-on-demand", jobId: "nightly", status: "Success", logs: "[]", path: "/Shared/may.tar" } });
+        // A request of another tenant never names the person of this one.
+        await base.execution.create({ data: { id: "run-of-globex", jobId: "nightly", status: "Success", logs: "[]", path: "Shared/jul.tar" } });
+        await base.sharedBackupRequest.createMany({
+            data: [
+                { tenantId: "acme", sourceId: "shared-mysql", databaseName: "shop_acme", executionId: "run-on-demand", requestedById: "u-sara" },
+                { tenantId: "globex", sourceId: "shared-mysql", databaseName: "blog_one", executionId: "run-of-globex", requestedById: "u-sara" },
+            ],
+        });
+        try {
+            const started = (await overview("acme")).backups.filter((entry) => entry.databaseName === "shop_acme").map((entry) => [entry.createdAt.slice(0, 10), entry.requestedBy]);
+            // The path of the run names the backup however the destination writes it, a leading slash or not.
+            expect(started).toEqual([["2026-07-10", null], ["2026-05-10", { name: "Sara Nguyen" }]]);
+        } finally {
+            await base.sharedBackupRequest.deleteMany({});
+            await base.execution.deleteMany({ where: { id: { in: ["run-on-demand", "run-of-globex"] } } });
+            await base.user.delete({ where: { id: "u-sara" } });
+        }
+    });
+
+    it("reads the sizes of the dumps in the tenant of the server, so a backup that names no key is matched against that tenant's keys alone", async () => {
+        let scope: unknown;
+        mocks.dumpSizes.mockImplementationOnce(async (records: { id: string }[]) => {
+            scope = explicitScope();
+            return new Map(records.map((record) => [record.id, { stored: 100, unpacked: 400 }]));
+        });
+        expect((await overview("acme")).backups.every((entry) => entry.dump !== null)).toBe(true);
+        expect(scope).toEqual({ kind: "tenant", tenantId: "default" });
     });
 
     it("never shows the customer the server, its job or its destination itself", async () => {
@@ -198,14 +237,27 @@ describe("what a customer does with a backup", () => {
             expect.any(String)
         );
         // The name of the archive starts with the job of the server's tenant, the time takes its place.
-        expect(prepared).toEqual(expect.objectContaining({ storageId: "msp-s3", fileName: "2026-02-10_1200_shop.sql" }));
+        // The token alone leaves the server, never the destination it was read from.
+        expect(prepared).toEqual({ token: expect.any(String), fileName: "2026-02-10_1200_shop.sql" });
     });
 
     it("reads the next copy when the first one cannot be read", async () => {
         mocks.writeDump.mockRejectedValueOnce(new Error("offline"));
-        const prepared = await prepareSharedDownload("acme", "u-acme", await refOf("acme", "shop", "2026-02-10"));
+        await prepareSharedDownload("acme", "u-acme", await refOf("acme", "shop", "2026-02-10"));
         expect(mocks.writeDump).toHaveBeenCalledTimes(2);
-        expect(prepared.storageId).toBe("msp-nas");
+        expect(mocks.writeDump.mock.calls[1][0]).toEqual(expect.objectContaining({ storageConfigId: "msp-nas" }));
+    });
+
+    it("reads a backup in the tenant of the server, so one that names no key is matched against that tenant's keys alone", async () => {
+        mocks.listing.mockImplementation(async (id: string) => (id === "msp-nas" ? { files: LISTING.map((file) => ({ ...file, encryptionProfileId: undefined })), listedAt: new Date(), current: true } : null));
+        let scope: unknown;
+        mocks.writeDump.mockImplementationOnce(async () => {
+            scope = explicitScope();
+            return { fileName: "feb_shop.sql" };
+        });
+        await prepareSharedDownload("acme", "u-acme", await refOf("acme", "shop", "2026-02-10"));
+        expect(mocks.writeDump).toHaveBeenCalledWith({ storageConfigId: "msp-nas", file: "Shared/feb.tar", database: "shop" }, expect.any(String));
+        expect(scope).toEqual({ kind: "tenant", tenantId: "default" });
     });
 
     it("refuses a backup from before or after their time, or a database of someone else", async () => {
@@ -220,7 +272,12 @@ describe("what a customer does with a backup", () => {
 
     it("restores their database into itself on its server, and nothing else", async () => {
         const ref = await refOf("acme", "shop_acme", "2026-05-10");
-        expect(await restoreSharedBackup("acme", ref, "Ana")).toEqual({ executionId: "run-1", target: { sourceId: "shared-mysql", databaseName: "shop_acme" } });
+        expect(await restoreSharedBackup("acme", ref, "Ana")).toEqual({
+            executionId: "run-1",
+            target: { sourceId: "shared-mysql", databaseName: "shop_acme" },
+            // The tenant of the server gets its own run of the restore, and its audit log names the server and the customer.
+            provider: { tenantId: "default", executionId: "msp-run-1", serverName: "Shared MySQL", customerName: "Acme" },
+        });
         expect(mocks.restoreShared).toHaveBeenCalledWith(
             {
                 storageConfigId: "msp-nas",
@@ -231,10 +288,44 @@ describe("what a customer does with a backup", () => {
                 keyOverride: { profileId: "msp-key" },
                 triggerInfo: { type: "Manual", label: "Ana" },
                 // The run in the customer's History names the database, never the archive of the server.
-                shared: { databaseName: "shop_acme" },
+                shared: { databaseName: "shop_acme", provider: { tenantId: "default", name: "Default", customer: "Acme" } },
             },
             "acme"
         );
+    });
+
+    it("restores with the key found among the keys of the server's tenant when the backup names none", async () => {
+        mocks.listing.mockImplementation(async (id: string) => (id === "msp-nas" ? { files: LISTING.map((file) => ({ ...file, encryptionProfileId: undefined })), listedAt: new Date(), current: true } : null));
+        let scope: unknown;
+        mocks.openArchive.mockImplementationOnce(async () => {
+            scope = explicitScope();
+            return { masterKey: Buffer.alloc(32, 7), dispose: vi.fn() };
+        });
+        await restoreSharedBackup("acme", await refOf("acme", "shop_acme", "2026-05-10"), "Ana");
+        expect(mocks.openArchive).toHaveBeenCalledWith("msp-nas", "Shared/may.tar", undefined);
+        expect(scope).toEqual({ kind: "tenant", tenantId: "default" });
+        expect(mocks.restoreShared).toHaveBeenCalledWith(expect.objectContaining({ keyOverride: { rawKeyHex: "07".repeat(32) } }), "acme");
+    });
+
+    it("restores from the next copy when the destination of the first one does not answer", async () => {
+        const verified = { verification: { verifiedAt: day("2026-05-11").toISOString(), passed: true, trigger: "scheduled" } };
+        mocks.listing.mockImplementation(async (id: string) => {
+            if (id === "msp-nas") return { files: LISTING, listedAt: new Date(), current: true };
+            if (id === "msp-s3") return { files: [backup("may.tar", "2026-05-10", ["shop", "shop_acme", "blog_one"], verified)], listedAt: new Date(), current: true };
+            return null;
+        });
+        mocks.openArchive.mockRejectedValueOnce(new Error("connect ETIMEDOUT"));
+        await restoreSharedBackup("acme", await refOf("acme", "shop_acme", "2026-05-10"), "Ana");
+        expect(mocks.openArchive.mock.calls.map((call) => call[0])).toEqual(["msp-s3", "msp-nas"]);
+        expect(mocks.restoreShared).toHaveBeenCalledWith(expect.objectContaining({ storageConfigId: "msp-nas", file: "Shared/may.tar" }), "acme");
+    });
+
+    it("starts no restore when no copy opens, and says so without naming the archive", async () => {
+        mocks.openArchive.mockRejectedValue(new Error("Archive missing: Shared/may.tar"));
+        const refused = restoreSharedBackup("acme", await refOf("acme", "shop_acme", "2026-05-10"), "Ana");
+        await expect(refused).rejects.toBeInstanceOf(ValidationError);
+        await expect(refused).rejects.not.toThrow(/Shared\//);
+        expect(mocks.restoreShared).not.toHaveBeenCalled();
     });
 
     it("restores nothing that is not theirs", async () => {
@@ -291,8 +382,12 @@ describe("what the tenant of the server decides", () => {
         expect(current?.validFrom.toISOString()).toBe(day("2026-09-15").toISOString());
     });
 
-    it("counts no change when it takes back a database that only a rule gives", async () => {
+    it("takes back a database a rule gives, which no rule gives again, and counts no change for one nobody holds", async () => {
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: null }], "u-msp"))).toEqual({ changed: 1 });
+        const data = await runAsTenant("default", () => databaseAssignmentService.forSource("shared-mysql"));
+        expect(data.databases.find((row) => row.name === "blog_one")?.owner ?? null).toBeNull();
         expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: null }], "u-msp"))).toEqual({ changed: 0 });
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "nobody_db", tenantId: null }], "u-msp"))).toEqual({ changed: 0 });
     });
 
     it("starts a rule today or earlier, like an assignment", async () => {
@@ -308,7 +403,7 @@ describe("what the tenant of the server decides", () => {
             .rejects.toBeInstanceOf(ValidationError);
     });
 
-    it("shares only from the home tenant, so a customer neither gives databases away nor sees the other tenants", async () => {
+    it("shares only from a tenant that shares, so a customer neither gives databases away nor sees the other tenants", async () => {
         await base.adapterConfig.create({ data: { id: "acme-mysql", tenantId: "acme", name: "Acme MySQL", type: "database", adapterId: "mysql", config: "{}" } });
         const model = await runAsTenant("acme", () => databaseAssignmentService.forSource("acme-mysql"));
         expect(model.customers).toEqual([]);
@@ -322,5 +417,48 @@ describe("what the tenant of the server decides", () => {
         await expect(runAsTenant("acme", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "shop", tenantId: "acme" }], null)))
             .rejects.toBeInstanceOf(NotFoundError);
         await expect(runAsTenant("acme", () => databaseAssignmentService.forSource("shared-mysql"))).rejects.toBeInstanceOf(NotFoundError);
+    });
+});
+
+describe("tenants of the MSP that share databases", () => {
+    it("lets a second tenant share its servers once the platform switches it on, to every other tenant", async () => {
+        await base.tenant.create({ data: { id: "msp-two", name: "MSP Two" } });
+        await base.adapterConfig.create({ data: { id: "two-mysql", tenantId: "msp-two", name: "Two MySQL", type: "database", adapterId: "mysql", config: "{}" } });
+        await expect(runAsTenant("msp-two", () => databaseAssignmentService.assign("two-mysql", [{ databaseName: "crm", tenantId: "globex" }], null)))
+            .rejects.toBeInstanceOf(ValidationError);
+
+        expect(await tenantService.setSharing("msp-two", true)).toEqual({ name: "MSP Two", changed: true });
+        expect(await runAsTenant("msp-two", () => databaseAssignmentService.assign("two-mysql", [{ databaseName: "crm", tenantId: "globex" }], null))).toEqual({ changed: 1 });
+        // Every other tenant can get one, a tenant that shares as well.
+        const model = await runAsTenant("msp-two", () => databaseAssignmentService.forSource("two-mysql"));
+        expect(model.customers.map((tenant) => tenant.id).sort()).toEqual(["acme", "default", "globex"]);
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "other", tenantId: "msp-two" }], null))).toEqual({ changed: 1 });
+        await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "other", tenantId: null }], null));
+    });
+
+    it("stops sharing only once the tenant took back what it gives, and starts also for a tenant that holds databases of another", async () => {
+        await expect(tenantService.setSharing("msp-two", false)).rejects.toBeInstanceOf(ValidationError);
+        await runAsTenant("msp-two", () => databaseAssignmentService.assign("two-mysql", [{ databaseName: "crm", tenantId: null }], null));
+        expect(await tenantService.setSharing("msp-two", false)).toEqual({ name: "MSP Two", changed: true });
+
+        // Globex holds databases of the home tenant and may share its own all the same.
+        expect(await tenantService.setSharing("globex", true)).toEqual({ name: "Globex", changed: true });
+        expect(await tenantService.setSharing("globex", false)).toEqual({ name: "Globex", changed: true });
+    });
+});
+
+describe("a customer that is deleted", () => {
+    it("keeps the backups of its time away from a tenant whose rule matches the name, and ends what it held", async () => {
+        // Retail gets every shop_ database by a rule, Acme holds shop_acme by name since March.
+        await base.tenant.create({ data: { id: "retail", name: "Retail" } });
+        await base.databaseAssignmentRule.create({ data: { sourceId: "shared-mysql", pattern: "shop_*", tenantId: "retail", validFrom: day("2026-01-01") } });
+        expect((await overview("retail")).backups.filter((entry) => entry.databaseName === "shop_acme")).toEqual([]);
+
+        await tenantService.delete("acme");
+
+        expect((await overview("retail")).backups.filter((entry) => entry.databaseName === "shop_acme")).toEqual([]);
+        const kept = await base.databaseAssignment.findFirst({ where: { databaseName: "shop_acme" } });
+        expect(kept?.tenantId).toBe("acme");
+        expect(kept?.validUntil).not.toBeNull();
     });
 });

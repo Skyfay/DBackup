@@ -14,12 +14,10 @@
 import fs from "fs/promises";
 import crypto from "crypto";
 import path from "path";
-import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
 import { AdapterConfig as AdapterConfigType, StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { openDestination } from "@/services/sharing/destination-access";
 import { getTempDir } from "@/lib/temp-dir";
-import { NotFoundError, wrapError } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { localFileSource } from "./sources";
 import { ArchiveByteSource } from "./types";
@@ -33,21 +31,15 @@ export interface ManagedArchiveSource {
     dispose: () => Promise<void>;
 }
 
-/** Resolves a storage adapter config row into its implementation and decrypted config. */
+/**
+ * Resolves a storage connection into its implementation and decrypted config, as the tenant that
+ * runs now sees it, see `src/services/sharing/destination-access.ts`.
+ */
 export async function resolveStorageAdapter(
     configId: string
 ): Promise<{ adapter: StorageAdapter; config: AdapterConfigType }> {
-    const row = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-    if (!row || row.type !== "storage") {
-        throw new NotFoundError("Storage adapter", configId);
-    }
-
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter) {
-        throw new NotFoundError("Storage adapter implementation", row.adapterId);
-    }
-
-    return { adapter, config: (await resolveAdapterConfig(row)) as AdapterConfigType };
+    const { adapter, config } = await openDestination(configId);
+    return { adapter, config };
 }
 
 /**

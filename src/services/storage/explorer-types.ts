@@ -18,6 +18,11 @@ export interface ExplorerDestination {
     name: string;
     /** The tenant of the destination, which the lists show and open it in while they hold every tenant. */
     tenantId?: string;
+    /**
+     * The tenant that shares the destination with this one, whose backups on it are the only ones
+     * listed. Absent for an own destination. See src/services/sharing/.
+     */
+    provider?: string;
     adapterId: string;
     /** Connected only now and then, so not answering is no problem and a backup it lacks is no copy missing. */
     airGapped: boolean;

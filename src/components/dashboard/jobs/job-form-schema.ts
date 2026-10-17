@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { isValidCron } from "@/lib/core/cron";
 import type { JobListItem } from "@/services/jobs/job-list-service";
+import type { ProvidedTerms } from "@/lib/adapters/dto";
 
 /** A connection a job can use, as the page hands it to the form. */
 export interface AdapterOption {
@@ -18,6 +19,10 @@ export interface AdapterOption {
     /** The config without its secrets, for where the connection points. */
     config?: string;
     lastStatus?: string;
+    /** Set when another tenant shares the connection with this one, see src/services/sharing/. */
+    provided?: ProvidedTerms;
+    /** The tenant that shares it, where a list names no more than that, like the templates page. */
+    provider?: string;
 }
 
 export interface EncryptionOption {

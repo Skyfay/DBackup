@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_NAV_ITEMS, isActiveRoute, navSections, platformLine, type NavState } from "@/components/layout/nav-sections";
+import { ALL_NAV_ITEMS, isActiveRoute, navSections, type NavState } from "@/components/layout/nav-sections";
 import { breadcrumbs } from "@/components/layout/breadcrumbs";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { ALL_TENANTS_PERMISSIONS } from "@/lib/auth/owner-permissions";
@@ -91,16 +91,6 @@ describe("the sidebar with more than one tenant", () => {
             expect(entries.filter((entry) => entry.startsWith("Recently deleted"))).toEqual([]);
         }
         expect(ALL_NAV_ITEMS.map((item) => item.href)).not.toContain("/dashboard/recently-deleted");
-    });
-
-    it("counts every tenant beside the label Platform", () => {
-        expect(platformLine(4)).toBe("all 4 tenants");
-        expect(platformLine(1200)).toBe("all 1,200 tenants");
-    });
-
-    it("names the platform group beside the label Platform for someone who sees it through one", () => {
-        expect(platformLine(4, "Support")).toBe("through Support");
-        expect(platformLine(4, null)).toBe("all 4 tenants");
     });
 
 });

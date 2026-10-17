@@ -121,7 +121,6 @@ export default async function DashboardLayout({
                                 allTenants={allTenants}
                                 tenantCount={tenantCount}
                                 tenantAccess={tenantAccess}
-                                platformGroupName={viewer?.platformGroup?.name ?? null}
                             />
                             <SidebarInset className="min-w-0 overflow-clip bg-page">
                                 <Header

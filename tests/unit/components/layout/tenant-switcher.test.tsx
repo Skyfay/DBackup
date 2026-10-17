@@ -44,10 +44,9 @@ interface Viewer {
     tenantCount?: number;
     permissions?: string[];
     tenantAccess?: { opensAll: boolean; see: boolean; create: boolean };
-    platformGroupName?: string | null;
 }
 
-const sidebar = ({ tenants, activeTenantId = "default", isPlatformAdmin = false, allTenants = false, tenantCount = tenants.length, permissions, tenantAccess, platformGroupName }: Viewer) =>
+const sidebar = ({ tenants, activeTenantId = "default", isPlatformAdmin = false, allTenants = false, tenantCount = tenants.length, permissions, tenantAccess }: Viewer) =>
     render(
         <SidebarProvider>
             <AppSidebar
@@ -59,7 +58,6 @@ const sidebar = ({ tenants, activeTenantId = "default", isPlatformAdmin = false,
                 tenantCount={tenantCount}
                 permissions={permissions}
                 tenantAccess={tenantAccess}
-                platformGroupName={platformGroupName}
             />
         </SidebarProvider>
     );
@@ -235,10 +233,13 @@ describe("the head of the sidebar for someone of a platform group", () => {
         expect(getTenantSummaries).not.toHaveBeenCalled();
     });
 
-    it("names the platform group beside the section Platform, which holds what its rights open", () => {
-        sidebar({ tenants: [HOME, ACME], tenantCount: 3, permissions: ["platform-tenants:read"], tenantAccess: { opensAll: false, see: true, create: false }, platformGroupName: "Support" });
+    it("shows Platform as the last section below Administration, with what the rights of a platform group open", () => {
+        sidebar({ tenants: [HOME, ACME], tenantCount: 3, permissions: ["platform-tenants:read"], tenantAccess: { opensAll: false, see: true, create: false } });
 
-        const platform = screen.getByRole("group", { name: "Platform, through Support" });
+        const labels = [...document.querySelectorAll('[data-sidebar="group-label"]')].map((label) => label.textContent);
+        expect(labels.at(-1)).toBe("Platform");
+        expect(screen.queryByText(/all \d+ tenants|through /)).not.toBeInTheDocument();
+        const platform = screen.getByText("Platform", { selector: '[data-sidebar="group-label"]' }).closest<HTMLElement>('[data-sidebar="group"]')!;
         expect(within(platform).getByRole("link", { name: /Tenants/ })).toBeInTheDocument();
         expect(within(platform).queryByRole("link", { name: /Users & Groups/ })).not.toBeInTheDocument();
     });

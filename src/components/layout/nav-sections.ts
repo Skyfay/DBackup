@@ -39,7 +39,7 @@ export interface NavItem {
 export interface NavGroup {
     label: string;
     items: NavItem[];
-    /** The section Platform, which the sidebar sets apart at its foot. */
+    /** The section Platform, the last one, below Administration. */
     platform?: boolean;
 }
 
@@ -128,12 +128,6 @@ export function navSections(state: NavState, can: (permission: string) => boolea
     return allSections(several)
         .map((group) => ({ ...group, items: group.items.filter(mayOpen) }))
         .filter((group) => group.items.length > 0);
-}
-
-/** "all 4 tenants", the line beside the label Platform, or "through Support" for someone of a platform group. */
-export function platformLine(tenantCount: number, platformGroup?: string | null): string {
-    if (platformGroup) return `through ${platformGroup}`;
-    return `all ${tenantCount.toLocaleString("en-US")} tenants`;
 }
 
 /** Overview is the index route and only matches exactly. Every other entry also owns its sub-pages. */

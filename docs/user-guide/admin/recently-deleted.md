@@ -28,7 +28,7 @@ After a delete a message offers **Undo** for a few seconds, which brings back wh
 
 ## The List
 
-Go to **Settings → Recently deleted**. With more than one tenant that is the Settings under **Administration**, the settings of the open tenant. In All tenants the page lists what was deleted in every tenant, read only, with **Open tenant** on every row. Every row names the record, what it was, who deleted it and when, and when it is gone. A record with 3 days or less left is marked in amber. The chips above the list show one kind at a time.
+Go to **Settings → Recently deleted**. With more than one tenant that is the Settings under **Administration**, the settings of the open tenant, which in All tenants asks for the tenant first. Every row names the record, what it was, who deleted it and when, and when it is gone. A record with 3 days or less left is marked in amber. The chips above the list show one kind at a time.
 
 Only the kinds you may change show here:
 

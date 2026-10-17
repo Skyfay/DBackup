@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
@@ -8,7 +7,7 @@ import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/g
 import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
 import { UsersClient } from "@/components/dashboard/users/users-client";
 import { USERS_TABLE_ID, type UsersPageAttention } from "@/components/dashboard/users/users-tables";
-import { PickTenantPanel } from "@/components/tenant/tenant-pick";
+import { PickTenantPage } from "@/components/tenant/tenant-pick";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
@@ -46,19 +45,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
 
     // All tenants changes no tenant: the members, groups and keys belong to one, every account is under Platform.
     if (user.allTenants) {
-        return (
-            <PickTenantPanel
-                title="Users & Groups"
-                description="Members, groups, API keys and the audit log belong to one tenant. Pick the tenant to open them in."
-                href="/dashboard/users"
-                footer={
-                    <>
-                        Every account of the instance with its tenants is under{" "}
-                        <Link href="/dashboard/platform/users" className="font-medium text-foreground underline-offset-4 hover:underline">Platform, Users & Groups</Link>.
-                    </>
-                }
-            />
-        );
+        return <PickTenantPage href="/dashboard/users" />;
     }
 
     const [attention, layouts, groupsView, apiKeysView, auditView, signInView] = await Promise.all([

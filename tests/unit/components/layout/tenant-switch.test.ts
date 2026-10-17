@@ -128,6 +128,15 @@ describe("the menu of the head", () => {
         expect(pageAfterSwitch("/dashboard/platform/tenants")).toBeNull();
     });
 
+    it("leads from a page of one tenant into All tenants to the Overview, and stays on it in another tenant", () => {
+        expect(pageAfterSwitch("/dashboard/vault", true)).toBe("/dashboard");
+        expect(pageAfterSwitch("/dashboard/settings", true)).toBe("/dashboard");
+        expect(pageAfterSwitch("/dashboard/users", true)).toBe("/dashboard");
+        expect(pageAfterSwitch("/dashboard/vault")).toBeNull();
+        expect(pageAfterSwitch("/dashboard/jobs", true)).toBeNull();
+        expect(pageAfterSwitch("/dashboard/platform/settings", true)).toBeNull();
+    });
+
     it("marks each tenant with its initials", () => {
         expect(tenantInitials("Acme Corp")).toBe("AC");
         expect(tenantInitials("shop")).toBe("SH");

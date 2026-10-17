@@ -1,3 +1,4 @@
+import { oneTenantPage } from "@/components/tenant/one-tenant-pages";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 /**
@@ -126,8 +127,12 @@ export function healthNote(health: "failed" | "partial" | null | undefined): str
 /** The pages that show one record, which the next tenant does not hold. */
 const RECORD_PAGES = ["/dashboard/history/run", "/dashboard/explorer/database", "/dashboard/explorer/server", "/dashboard/backups/restore"];
 
-/** Where a switch leads: the Overview from the page of a record, the same page otherwise, as null. */
-export function pageAfterSwitch(pathname: string): string | null {
+/**
+ * Where a switch leads: the Overview from the page of a record, and from a page of one tenant like
+ * the Vault into All tenants, which cannot show it. The same page otherwise, as null.
+ */
+export function pageAfterSwitch(pathname: string, toAllTenants = false): string | null {
+    if (toAllTenants && oneTenantPage(pathname)) return "/dashboard";
     return RECORD_PAGES.some((page) => pathname === page || pathname.startsWith(`${page}/`)) ? "/dashboard" : null;
 }
 

@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Building2, Loader2 } from "lucide-react";
 import { tenantInitials, isHomeTenant } from "@/components/layout/tenant-switch";
+import { PageProblem } from "@/components/layout/page-problem";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { oneTenantPage } from "./one-tenant-pages";
 import { useOpenInTenant, useTenantView, type ViewTenant } from "./tenant-view";
 
 const TILE = "flex size-7 shrink-0 items-center justify-center rounded-md border bg-muted text-[11px] font-semibold text-muted-foreground";
@@ -69,19 +71,19 @@ export function TenantPickList({ tenants, onPick, busyId = null, className }: Te
 interface TenantPickDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    /** What the pick is for, like "New job". */
+    /** What the pick is for, like "New job" or "Vault". */
     title: string;
     /** One line under the title, like "A job belongs to one tenant". */
     description: string;
-    /** The page that opens in the picked tenant, like the form of a new job. */
+    /** The page that opens in the picked tenant, like the form of a new job or the Vault. */
     href: string;
     /** The tenants to offer, like the ones where the viewer may add the record. Every tenant of the view when left out. */
     tenants?: ViewTenant[];
 }
 
 /**
- * Asks which tenant a new record belongs to, in All tenants, then opens its form in that tenant.
- * A record is made in its tenant, where everything it links to is checked against that tenant.
+ * Asks which tenant a new record or a page of one tenant belongs to, in All tenants, then opens it
+ * in that tenant. A record is made in its tenant, where everything it links to is checked against that tenant.
  */
 export function TenantPickDialog({ open, onOpenChange, title, description, href, tenants: offered }: TenantPickDialogProps) {
     const view = useTenantView();
@@ -111,45 +113,32 @@ export function TenantPickDialog({ open, onOpenChange, title, description, href,
     );
 }
 
-interface PickTenantPanelProps {
-    /** What the page is, like "The Vault". */
-    title: string;
-    /** Why it needs one tenant, like "Keys and logins belong to one tenant". */
-    description: string;
-    /** The page that opens in the picked tenant, usually this one. */
-    href: string;
-    /** Under the tenants, like a way to what the platform shows of every tenant at once. */
-    footer?: React.ReactNode;
-}
-
 /**
- * The page of something that belongs to one tenant, in All tenants: it says so and lets the viewer
- * pick the tenant to open it in.
+ * The page of something that belongs to one tenant, opened by its address in All tenants, like a
+ * bookmark: it says so in the look of an empty list and asks for the tenant at once, in the dialog
+ * that its entry in the sidebar opens too.
  */
-export function PickTenantPanel({ title, description, href, footer }: PickTenantPanelProps) {
-    const { tenants } = useTenantView();
-    const openInTenant = useOpenInTenant();
-    const [busyId, setBusyId] = useState<string | null>(null);
-
-    const pick = async (tenant: ViewTenant) => {
-        setBusyId(tenant.id);
-        try {
-            await openInTenant(tenant.id, href);
-        } finally {
-            setBusyId(null);
-        }
-    };
+export function PickTenantPage({ href }: { href: string }) {
+    const page = oneTenantPage(href);
+    const title = page?.title ?? "This page";
+    const description = page?.description ?? "It belongs to one tenant, pick the one to open.";
+    const [open, setOpen] = useState(true);
 
     return (
-        <Card className="mx-auto max-w-lg gap-0 overflow-hidden py-0">
-            <DialogHead tone="pick" icon={Building2} className="px-5 py-4">
-                <h2 className="text-base font-semibold">{title}</h2>
-                <p className={dialogNoteClass("pick")}>{description}</p>
-            </DialogHead>
-            <CardContent className="p-1">
-                <TenantPickList tenants={tenants} onPick={(tenant) => void pick(tenant)} busyId={busyId} />
-            </CardContent>
-            {footer && <div className="border-t px-5 py-3 text-sm text-muted-foreground">{footer}</div>}
-        </Card>
+        <>
+            <PageProblem
+                icon={Building2}
+                title={title}
+                actions={
+                    <Button tone="pick" onClick={() => setOpen(true)}>
+                        <Building2 />
+                        Pick a tenant
+                    </Button>
+                }
+            >
+                {description}
+            </PageProblem>
+            <TenantPickDialog open={open} onOpenChange={setOpen} title={title} description={description} href={href} />
+        </>
     );
 }

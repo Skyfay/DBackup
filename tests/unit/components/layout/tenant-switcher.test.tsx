@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { TenantViewProvider } from "@/components/tenant/tenant-view";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
 const push = vi.fn();
@@ -183,6 +184,17 @@ describe("the head of the sidebar as the tenant switcher", () => {
         await waitFor(() => expect(switchTenant).toHaveBeenCalledWith("*"));
     });
 
+    it("leads from the Vault into All tenants to the Overview, since All tenants has no Vault", async () => {
+        pathname = "/dashboard/vault";
+        switchTenant.mockResolvedValue({ success: true, data: { name: "All tenants" } });
+        sidebar({ tenants: [HOME, ACME], activeTenantId: "t-acme", isPlatformAdmin: true });
+
+        await userEvent.click(headButton());
+        await userEvent.click(await screen.findByRole("option", { name: /All tenants/ }));
+
+        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+    });
+
     it("leads a platform admin to the page of the tenants from Manage tenants", async () => {
         sidebar({ tenants: [HOME, ACME], isPlatformAdmin: true });
 
@@ -242,5 +254,52 @@ describe("the head of the sidebar for someone of a platform group", () => {
         const platform = screen.getByText("Platform", { selector: '[data-sidebar="group-label"]' }).closest<HTMLElement>('[data-sidebar="group"]')!;
         expect(within(platform).getByRole("link", { name: /Tenants/ })).toBeInTheDocument();
         expect(within(platform).queryByRole("link", { name: /Users & Groups/ })).not.toBeInTheDocument();
+    });
+});
+
+describe("the entries of the sidebar that belong to one tenant, in All tenants", () => {
+    beforeEach(() => {
+        push.mockReset();
+        refresh.mockReset();
+        switchTenant.mockReset();
+        pathname = "/dashboard";
+    });
+
+    const allTenantsSidebar = (allTenants: boolean) =>
+        render(
+            <TenantViewProvider value={{ tenants: [HOME, ACME], activeTenantId: allTenants ? null : "t-acme", allTenants, isPlatformAdmin: true, tenantCount: 2 }}>
+                <SidebarProvider>
+                    <AppSidebar tenants={[HOME, ACME]} activeTenantId={allTenants ? null : "t-acme"} isPlatformAdmin allTenants={allTenants} tenantCount={2} />
+                </SidebarProvider>
+            </TenantViewProvider>
+        );
+
+    it("asks for the tenant right where the Vault is clicked, instead of leading to a page that cannot show it", async () => {
+        switchTenant.mockResolvedValue({ success: true, data: { name: "Acme Corp" } });
+        allTenantsSidebar(true);
+
+        expect(screen.queryByRole("link", { name: "Vault" })).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole("button", { name: "Vault" }));
+
+        const dialog = await screen.findByRole("dialog", { name: "Vault" });
+        await userEvent.click(within(dialog).getByRole("option", { name: /Acme Corp/ }));
+        await waitFor(() => expect(switchTenant).toHaveBeenCalledWith("t-acme"));
+        expect(push).toHaveBeenCalledWith("/dashboard/vault");
+    });
+
+    it("keeps the entries of every tenant and of the platform as links", () => {
+        allTenantsSidebar(true);
+
+        expect(screen.getByRole("link", { name: "Jobs" })).toHaveAttribute("href", "/dashboard/jobs");
+        expect(screen.getByRole("link", { name: "Tenants" })).toHaveAttribute("href", "/dashboard/platform/tenants");
+        for (const name of ["Templates", "Users & Groups", "Settings"]) {
+            expect(screen.getAllByRole("button", { name }).length).toBeGreaterThan(0);
+        }
+    });
+
+    it("leads straight to the Vault in a tenant", () => {
+        allTenantsSidebar(false);
+
+        expect(screen.getByRole("link", { name: "Vault" })).toHaveAttribute("href", "/dashboard/vault");
     });
 });

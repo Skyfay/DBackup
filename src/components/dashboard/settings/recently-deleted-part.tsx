@@ -2,11 +2,10 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArchiveRestore, ArrowRightLeft, Building2, Loader2, Trash2 } from "lucide-react";
+import { ArchiveRestore, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { purgeDeletedAction, restoreDeletedAction } from "@/app/actions/settings/trash";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
-import { useOpenInTenant, useTenantName } from "@/components/tenant/tenant-view";
 import { reportRestore } from "@/components/trash/use-undo-delete";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, DialogItemList } from "@/components/ui/confirm-dialog";
@@ -34,24 +33,15 @@ function failuresOf(result: TrashRestoreResult, names: Map<string, string>): Bul
     ];
 }
 
-/** Where an entry is restored: Recently deleted of the tenant settings, in the tenant of the entry. */
-const PART_HREF = "/dashboard/settings?part=recently-deleted";
-
 /**
  * What was deleted lately, of the kinds the viewer may change: keys, saved logins, connections, jobs
  * and users, each until Data retention lets go of it. Someone who may change the tenant settings restores
  * one under its own name, and gives another one when someone took it meanwhile, or deletes it for
- * good. Someone who may only read the settings sees the list without its buttons. All tenants lists
- * the entries of every tenant with their tenant and opens that tenant for a restore, since an entry
- * comes back or goes for good in its own tenant.
+ * good. Someone who may only read the settings sees the list without its buttons.
  */
-export function RecentlyDeletedPart({ rows, allTenants = false }: { rows: TrashRow[]; allTenants?: boolean }) {
+export function RecentlyDeletedPart({ rows }: { rows: TrashRow[] }) {
     const router = useRouter();
-    const frame = useSettingsFrame();
-    const readOnly = frame.readOnly || allTenants;
-    const tenantName = useTenantName();
-    const openInTenant = useOpenInTenant();
-    const [opening, setOpening] = useState<string | null>(null);
+    const { readOnly } = useSettingsFrame();
     const [filter, setFilter] = useState<KindFilter>("all");
     const [conflict, setConflict] = useState<{ row: TrashRow; reason: string } | null>(null);
     const [purging, setPurging] = useState<TrashRow | null>(null);
@@ -103,32 +93,15 @@ export function RecentlyDeletedPart({ rows, allTenants = false }: { rows: TrashR
         onPurge: setPurging,
     }), [restore]);
 
-    const openTenantOf = useCallback(async (row: TrashRow) => {
-        setOpening(row.id);
-        try {
-            await openInTenant(row.tenantId, PART_HREF);
-        } finally {
-            setOpening(null);
-        }
-    }, [openInTenant]);
-
-    const columns = useMemo(() => trashColumns(
-        (row) => allTenants ? (
-            <Button variant="outline" size="sm" onClick={() => void openTenantOf(row)} disabled={opening !== null} aria-label={`Open ${tenantName(row.tenantId) ?? "the tenant"} to restore ${row.name}`}>
-                {opening === row.id ? <Loader2 className="animate-spin" /> : <ArrowRightLeft />}
-                Open tenant
+    const columns = useMemo(() => trashColumns((row) => readOnly ? null : (
+        <>
+            <Button variant="outline" size="sm" onClick={() => handlers.onRestore(row)}>
+                <ArchiveRestore />
+                Restore
             </Button>
-        ) : readOnly ? null : (
-            <>
-                <Button variant="outline" size="sm" onClick={() => handlers.onRestore(row)}>
-                    <ArchiveRestore />
-                    Restore
-                </Button>
-                <BackupRowMenu name={row.name} groups={trashActions(row, handlers)} />
-            </>
-        ),
-        allTenants ? (row) => tenantName(row.tenantId) : undefined
-    ), [allTenants, handlers, opening, openTenantOf, readOnly, tenantName]);
+            <BackupRowMenu name={row.name} groups={trashActions(row, handlers)} />
+        </>
+    )), [handlers, readOnly]);
 
     const bulkActions = useMemo<BulkAction<TrashRow>[]>(() => readOnly ? [] : [
         {
@@ -177,12 +150,6 @@ export function RecentlyDeletedPart({ rows, allTenants = false }: { rows: TrashR
 
     return (
         <PartFrame part="recently-deleted" flush>
-            {allTenants && rows.length > 0 && (
-                <p className="flex items-start gap-2 border-b px-4 py-3 text-sm text-muted-foreground md:px-6">
-                    <Building2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                    All tenants lists what was deleted in every tenant. Open the tenant of an entry to restore it or delete it for good.
-                </p>
-            )}
             {rows.length === 0 ? (
                 <div className="m-4 flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-12 text-center md:m-6">
                     <ArchiveRestore className="size-6 text-muted-foreground" aria-hidden="true" />

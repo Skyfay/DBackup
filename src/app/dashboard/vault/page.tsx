@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { PickTenantPanel } from "@/components/tenant/tenant-pick";
+import { PickTenantPage } from "@/components/tenant/tenant-pick";
 import { VaultClient } from "@/components/dashboard/vault/vault-client";
 import { VAULT_TABLE_IDS } from "@/components/dashboard/vault/vault-tables";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
@@ -23,16 +23,7 @@ export default async function VaultPage() {
     if (!permissions.includes(PERMISSIONS.VAULT.READ)) redirect("/dashboard");
     // Keys and logins are those of one tenant, which the viewer picks first in All tenants.
     if (user.allTenants) {
-        return (
-            <>
-                <h1 className="sr-only">Vault</h1>
-                <PickTenantPanel
-                    title="The Vault holds the keys and logins of one tenant"
-                    description="Pick the tenant to open it in"
-                    href="/dashboard/vault"
-                />
-            </>
-        );
+        return <PickTenantPage href="/dashboard/vault" />;
     }
 
     const canReadCredentials = permissions.includes(PERMISSIONS.CREDENTIALS.READ);

@@ -114,7 +114,7 @@ export function SidebarHead(input: HeadInput) {
             toast.success(appliedId === ALL_TENANTS ? "You see every tenant now" : `You work in ${applied.name} now`)
             announceTenantSwitch(appliedId, applied.name)
             closeOnPhone()
-            const target = pageAfterSwitch(pathname)
+            const target = pageAfterSwitch(pathname, appliedId === ALL_TENANTS)
             if (target) router.push(target)
             router.refresh()
         } catch (error: unknown) {

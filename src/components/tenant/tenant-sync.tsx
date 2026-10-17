@@ -113,7 +113,7 @@ export function TenantSync({ shown }: { shown: string }) {
             if (!followsSwitch(entry, tab.current)) return;
             tab.current.handled = entry.at;
             toast.info(entry.tenantId === ALL_TENANTS ? "You see every tenant now, opened in another tab" : `You work in ${entry.name} now, opened in another tab`);
-            const target = pageAfterSwitch(path.current);
+            const target = pageAfterSwitch(path.current, entry.tenantId === ALL_TENANTS);
             if (target) router.push(target);
             router.refresh();
         };

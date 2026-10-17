@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { PickTenantPanel } from "@/components/tenant/tenant-pick";
+import { PickTenantPage } from "@/components/tenant/tenant-pick";
 import { TemplatesClient } from "@/components/dashboard/templates/templates-client";
 import { TEMPLATE_TABLE_IDS } from "@/components/dashboard/templates/template-tables";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
@@ -22,16 +22,7 @@ export default async function TemplatesPage() {
     if (!permissions.includes(PERMISSIONS.TEMPLATES.READ)) redirect("/dashboard");
     // Every tenant has templates of its own, so All tenants asks which first.
     if (user.allTenants) {
-        return (
-            <>
-                <h1 className="sr-only">Templates</h1>
-                <PickTenantPanel
-                    title="Every tenant has templates of its own"
-                    description="Pick the tenant whose templates to open"
-                    href="/dashboard/templates"
-                />
-            </>
-        );
+        return <PickTenantPage href="/dashboard/templates" />;
     }
 
     const layouts = await getTablePreferences(user.id, Object.values(TEMPLATE_TABLE_IDS));

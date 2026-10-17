@@ -10,8 +10,11 @@ import { markSteps, buildProblems, type ProblemTargets } from "./run-problems";
 import { databasesOf, isRunStatus, liveOf, parseMetadata, runRow, starterOf, uploadsOf } from "./run-row";
 import { buildSteps, median, parseLog, usualSteps } from "./run-steps";
 import { buildSummary } from "./run-summary";
+import { buildRestoreSummary } from "./restore-summary";
+import { restoreRecordOf } from "./restore-rows";
 import { RUN_SELECT, usualOf } from "./run-list-service";
-import type { RunDetail, RunNeighbour, RunNotification, RunUpload } from "./run-types";
+import type { RunDetail, RunNeighbour, RunNotification, RunRestoreRead, RunUpload } from "./run-types";
+import type { RestoreRecord } from "@/services/restore/restore-record";
 
 /**
  * The page of one run: its steps with their lines and usual times, what to look at, its copies,
@@ -144,6 +147,25 @@ async function usualStepsOf(scope: Prisma.ExecutionWhereInput, exclude: string) 
     return usualSteps(runs.map((run) => parseLog(run.logs)));
 }
 
+/**
+ * What a restore read, with the size of the archive when the backup run that wrote it is still
+ * known in the tenant of the run. A customer's run names no archive, so it never gets one.
+ */
+async function restoreRead(record: RestoreRecord | null): Promise<RunRestoreRead | null> {
+    if (!record || record.ranged === null) return null;
+    const backup = record.archive
+        ? await prisma.execution.findFirst({ where: { type: "Backup", path: record.archive }, orderBy: { startedAt: "desc" }, select: { size: true } })
+        : null;
+    return { bytes: record.read, total: backup?.size ? Number(backup.size) : null, ranged: record.ranged };
+}
+
+/** The tenant a provider's run of a customer's restore restores for, and whether a run is the customer's own. */
+function restoreParties(metadata: Record<string, unknown>): { customer: string | null; shared: boolean } {
+    const of = metadata.restoreOf as { database?: unknown; customer?: unknown } | undefined;
+    if (!of || typeof of.database !== "string") return { customer: null, shared: false };
+    return typeof of.customer === "string" ? { customer: of.customer, shared: false } : { customer: null, shared: true };
+}
+
 export async function getRunDetail(id: string, now = Date.now()): Promise<RunDetail | null> {
     const record = await prisma.execution.findUnique({ where: { id }, select: DETAIL_SELECT });
     if (!record) return null;
@@ -156,10 +178,11 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
     const jobId = record.jobId;
     const scope = scopeOf(record);
     const isCheck = record.type === "IntegrityCheck" || record.type === "Verification";
+    const restored = record.type === "Restore" ? restoreRecordOf(extra.restore) : null;
     // A run of single databases is compared with nothing, the usual times are those of the whole job.
     const single = isSingleDatabaseRun(record.metadata);
 
-    const [notificationRows, usual, usualMs, recent, previous, next, queue, sizes, encryption, checkTargetMap] = await Promise.all([
+    const [notificationRows, usual, usualMs, recent, previous, next, queue, sizes, encryption, checkTargetMap, read] = await Promise.all([
         prisma.notificationLog.findMany({ where: { executionId: id }, orderBy: { sentAt: "asc" }, select: { id: true, channelId: true, channelName: true, adapterId: true, status: true, error: true, title: true, sentAt: true } }),
         scope && !single ? usualStepsOf(scope, id) : Promise.resolve(new Map<string, number>()),
         jobId && record.type === "Backup" && !single ? usualOf(jobId) : Promise.resolve(null),
@@ -170,6 +193,7 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
         jobId && record.type === "Backup" ? previousDumps(jobId, record.startedAt) : Promise.resolve(new Map<string, number>()),
         encryptionOf(extra.archive),
         isCheck ? checkTargets(extra, record.tenantId) : Promise.resolve(new Map<string, CheckTarget>()),
+        restoreRead(restored),
     ]);
 
     const notifications: RunNotification[] = notificationRows.map((row) => ({
@@ -201,7 +225,16 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
     const marked = markSteps(steps, lineProblems, problems);
     const size = record.size === null ? null : Number(record.size);
     const checks = buildChecks(record.type, extra, checkTargetMap, live);
-    const summary = checks ? [] : buildSummary({
+    const target = extra.target as { name?: unknown; adapterId?: unknown } | undefined;
+    const summary = checks ? [] : record.type === "Restore" ? buildRestoreSummary({
+        entries,
+        steps: marked,
+        record: restored,
+        target: typeof target?.name === "string" ? { name: target.name, adapterId: typeof target.adapterId === "string" ? target.adapterId : null } : null,
+        ...restoreParties(extra),
+        live,
+        now,
+    }) : buildSummary({
         entries,
         steps: marked,
         records: dumpRecordsOf(extra.dumps),
@@ -236,6 +269,7 @@ export async function getRunDetail(id: string, now = Date.now()): Promise<RunDet
         problems,
         uploads,
         checks,
+        restore: read,
         notifications,
         recent: recent.map((entry) => neighbour(entry)!),
         previous: neighbour(previous),

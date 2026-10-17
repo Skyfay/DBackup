@@ -41,6 +41,7 @@
 
 - **api**: Pages, Server Actions and API routes read the database only through the services.
 - **docker**: A start that applies database migrations first keeps a copy of the database beside it. The three newest copies stay.
+- **history**: The Summary of a restore run tells each step like a backup does, with where it read from and how much, and a row for every database and folder it restored. A database row opens to its command and the lines of its tool.
 
 ### 🔄 Changed
 

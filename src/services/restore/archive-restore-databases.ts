@@ -125,6 +125,7 @@ export async function restoreDatabases(
     const updateProgress = (percent: number, detail?: string) =>
         (detail === undefined ? callbacks.updateProgress?.(percent) : callbacks.updateProgress?.(percent, reason(detail)));
 
+    const record = callbacks.record;
     const hasMapping = !!dbMapping && dbMapping.length > 0;
     if (!hasMapping && input.targetDatabaseName && selectedDbNames.length > 1) {
         log(
@@ -142,12 +143,14 @@ export async function restoreDatabases(
                 const testResult = await sourceAdapter.test(dbConf, host) as { success: boolean; version?: string };
                 if (testResult.success && testResult.version) {
                     dbConf.detectedVersion = testResult.version;
+                    record?.versions({ target: testResult.version });
                     log(`Target server version: ${testResult.version}`, 'info');
                 }
             } catch { /* ignore - cosmetic binary-selection hint only */ }
         }
 
         const targetNames = selectedDbNames.map(targetFor);
+        record?.planDatabases(selectedDbNames.map((name) => ({ name, target: targetFor(name), bytes: archive.index.databases.find((d) => d.name === name)?.s ?? null })));
         if (sourceAdapter.prepareRestore) {
             log(`Preparing target database(s): ${targetNames.join(', ')}...`, 'info');
             try {
@@ -157,6 +160,7 @@ export async function restoreDatabases(
                 // The run of a customer ends on a line that says nothing of the error, so the
                 // reason stands here, in their words.
                 if (scrubber) log(`Failed to prepare ${targetNames.join(', ')}: ${message}`, 'error');
+                for (const name of selectedDbNames) record?.endDatabase(name, false);
                 throw new Error(`Failed to prepare target database(s): ${message}`);
             }
         }
@@ -167,6 +171,7 @@ export async function restoreDatabases(
             const entry = dbLine ? archive.index.entries.get(entryKey(undefined, dbLine.n)) : undefined;
             if (!dbLine || !entry) {
                 errors.push({ entry: `database:${dbName}`, error: "Not found in the archive index" });
+                record?.endDatabase(dbName, false);
                 log(`Database '${dbName}' is missing from the archive index`, 'error');
                 continue;
             }
@@ -180,6 +185,7 @@ export async function restoreDatabases(
             );
 
             try {
+                record?.startDatabase(dbName);
                 log(`Fetching dump for '${dbName}' (${archive.ranged ? "ranged read" : "from downloaded archive"})...`, 'info');
                 let digest: string | undefined;
                 await pipeline(
@@ -187,6 +193,7 @@ export async function restoreDatabases(
                     hashingStream((d) => { digest = d; }),
                     createWriteStream(dumpPath)
                 );
+                record?.read(entry.size);
 
                 // For an unencrypted archive this is the only integrity check a dump gets, and
                 // restoring a damaged one would overwrite a working database with it.
@@ -205,16 +212,19 @@ export async function restoreDatabases(
                         // Each database gets an equal slice of the bar, so a multi-database
                         // restore moves forward instead of restarting at 0 for every dump.
                         const overall = Math.round(((position + Math.min(100, Math.max(0, percent)) / 100) / total) * 100);
+                        record?.databaseProgress(dbName, percent, detail ? reason(detail) : null);
                         updateProgress(overall, `${dbName}: ${detail ?? `${Math.round(percent)}%`}`);
                     },
                     dbName
                 );
                 restoredDatabases.push(targetName);
+                record?.endDatabase(dbName, true);
                 log(`Database restored: ${targetName}`, 'success');
             } catch (e: unknown) {
                 // The log scrubs the line for a customer's run, the provider's run keeps the error whole.
                 const message = e instanceof Error ? e.message : String(e);
                 errors.push({ entry: `database:${dbName}`, error: reason(message) });
+                record?.endDatabase(dbName, false);
                 log(`Failed to restore database '${dbName}': ${message}`, 'error');
             } finally {
                 await fs.unlink(dumpPath).catch(() => { });

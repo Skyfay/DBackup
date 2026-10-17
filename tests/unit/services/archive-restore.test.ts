@@ -7,6 +7,7 @@ import { createReadStream } from 'fs';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { registry } from '@/lib/core/registry';
 import { restoreArchiveSnapshot } from '@/services/restore/archive-restore';
+import { createRestoreTracker } from '@/services/restore/restore-record';
 import { createTempDir } from '@/lib/adapters/database/common/tar-utils';
 import { createArchive } from '@/lib/archive/writer';
 import type { ArchiveSourceEntry, SourceFileEntry } from '@/lib/archive/types';
@@ -340,6 +341,46 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(result.status).toBe('Success');
         expect(result.restoredDatabases).toEqual(['db1']);
+    });
+
+    it('records every database and folder it restores, where each went and what it read, for the summary of the run', async () => {
+        const { sourceAdapter, archiveSize } = await buildRemoteBackup(['db1', 'db2'], { 'a.txt': 'AAAA', 'b.txt': 'BB' });
+        wire({ 'source-fs': sourceAdapter, mysql: makeFakeDbAdapter(), 'local-filesystem': makeFakeStorageAdapter() });
+        const record = createRestoreTracker();
+
+        await restoreArchiveSnapshot(makeInput({
+            targetSourceId: 'target-db-1',
+            databaseMapping: [
+                { originalName: 'db1', targetName: 'db1_restored', selected: true },
+                { originalName: 'db2', targetName: 'db2', selected: true },
+            ],
+            directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn(), record });
+
+        const view = record.view(false);
+        expect(view.ranged).toBe(true);
+        expect(view.targetVersion).toBe('8.0');
+        expect(view.databases.map((entry) => [entry.name, entry.target, entry.state])).toEqual([['db1', 'db1_restored', 'done'], ['db2', 'db2', 'done']]);
+        expect(view.databases[0].bytes).toBe(Buffer.byteLength('-- dump of db1'));
+        expect(view.databases[0].startedAt).not.toBeNull();
+        expect(view.folders).toEqual([expect.objectContaining({
+            id: 'src-1', label: 'Test Directory', target: 'Local Restore Target:/restore/dir', adapterId: 'local-filesystem',
+            state: 'done', files: 2, total: 2, failed: 0, bytes: 6, totalBytes: 6,
+        })]);
+        // Only the entries it needed, never the whole archive.
+        expect(view.read).toBeGreaterThan(0);
+        expect(view.read).toBeLessThan(archiveSize);
+    });
+
+    it('records a database that failed as failed and the rest as restored', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['db1', 'db2']);
+        const dbAdapter = makeFakeDbAdapter({ restoreOne: vi.fn().mockRejectedValueOnce(new Error('disk full')).mockResolvedValueOnce(undefined) });
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        const record = createRestoreTracker();
+
+        await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn(), record });
+
+        expect(record.view(false).databases.map((entry) => entry.state)).toEqual(['failed', 'done']);
     });
 
     it('returns Partial when one database entry fails and the rest succeed', async () => {

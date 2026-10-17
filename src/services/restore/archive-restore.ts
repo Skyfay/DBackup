@@ -32,13 +32,14 @@ import { resolveTransferConcurrency } from "@/lib/adapters/transfer-concurrency"
 import { resolveSelection } from "@/lib/archive/browse";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import { summariseExcluded, formatExcludeSummary } from "@/lib/exclude-summary";
-import { IndexFileLine, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
+import { IndexFileLine, entryKey, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
 import { getTempDir } from "@/lib/temp-dir";
 import { stripTrailingSlashes } from "@/lib/paths";
 import { openArchiveForRestore } from "./file-restore";
 import { restoreDatabases, type DatabaseMapping } from "./archive-restore-databases";
 import type { RestoreInput } from "./types";
 import type { SharedRunLogs } from "./run-logs";
+import type { RestoreTracker } from "./restore-record";
 
 /**
  * Names one entry for the error list, as "<source label>/<path>".
@@ -63,6 +64,8 @@ export interface ArchiveRestoreCallbacks {
      * the lines they read apart. `log` writes to both.
      */
     sharedLogs?: SharedRunLogs;
+    /** What the summary of the run tells, every database and folder with what it read. */
+    record?: RestoreTracker;
 }
 
 export interface ArchiveRestoreResult {
@@ -114,6 +117,7 @@ export async function restoreArchiveSnapshot(
     // Opens the archive remotely, reads the index (sidecar first), and verifies the chain
     // is complete - a missing sibling archive fails here, by name, before anything runs.
     const archive = await openArchiveForRestore(input.storageConfigId, input.file, input.keyOverride);
+    callbacks.record?.opened(archive.ranged);
 
     try {
         const index = archive.index;
@@ -253,6 +257,28 @@ export async function restoreArchiveSnapshot(
                 }
             }
 
+            callbacks.record?.planFolders(selectedDirs.map((dir) => {
+                const items = workItems.filter((item) => item.src === dir.src);
+                return {
+                    id: dir.src,
+                    label: dir.label,
+                    target: targets.get(dir.src)?.label ?? "",
+                    adapterId: targets.get(dir.src)?.adapter.id ?? null,
+                    total: items.length,
+                    totalBytes: items.reduce((sum, item) => sum + (item.file.s ?? 0), 0),
+                    failed: !targets.has(dir.src),
+                };
+            }));
+            // Many small files share one bundle, which is read once.
+            const readEntries = new Set<string>();
+            const countRead = (file: IndexFileLine) => {
+                if (file.n === undefined) return;
+                const key = entryKey(file.a, file.n);
+                if (readEntries.has(key)) return;
+                readEntries.add(key);
+                callbacks.record?.read(index.entries.get(key)?.size ?? 0);
+            };
+
             const perSourceDone = new Map<string, number>();
             const perSourceFailed = new Map<string, number>();
             /**
@@ -298,6 +324,7 @@ export async function restoreArchiveSnapshot(
 
                     try {
                         await pipeline(content, hashingStream((d) => { digest = d; }), createWriteStream(stagePath));
+                        countRead(file);
 
                         // For unencrypted archives this is the only integrity check the file
                         // gets - there is no AEAD tag protecting its bytes.
@@ -319,9 +346,11 @@ export async function restoreArchiveSnapshot(
                         }
 
                         perSourceDone.set(file.src, (perSourceDone.get(file.src) ?? 0) + 1);
+                        callbacks.record?.folderEntry(file.src, "restored", file.s ?? 0);
                     } catch (e: unknown) {
                         const message = e instanceof Error ? e.message : String(e);
                         perSourceFailed.set(file.src, (perSourceFailed.get(file.src) ?? 0) + 1);
+                        callbacks.record?.folderEntry(file.src, "failed", 0);
                         errors.push({ entry: entryLabel(labels.get(file.src) ?? file.src, file.p), error: message });
                         log(`Failed to restore '${file.p}' to ${target.label}: ${message}`, 'error', 'storage');
                     } finally {
@@ -347,6 +376,7 @@ export async function restoreArchiveSnapshot(
                     if (!target.adapter.createSymlink) {
                         const reason = `${target.label} cannot store symbolic links`;
                         perSourceSkippedLinks.set(src, (perSourceSkippedLinks.get(src) ?? 0) + 1);
+                        callbacks.record?.folderEntry(src, "skipped", 0);
                         errors.push({ entry: entryLabel(label, file.p), error: reason });
                         log(
                             `Symbolic link ${link} was not restored: ${reason}. Restore to a local path, `
@@ -366,9 +396,11 @@ export async function restoreArchiveSnapshot(
                             file.lnk
                         );
                         perSourceDone.set(src, (perSourceDone.get(src) ?? 0) + 1);
+                        callbacks.record?.folderEntry(src, "restored", 0);
                     } catch (e: unknown) {
                         const message = e instanceof Error ? e.message : String(e);
                         perSourceFailed.set(src, (perSourceFailed.get(src) ?? 0) + 1);
+                        callbacks.record?.folderEntry(src, "failed", 0);
                         errors.push({ entry: entryLabel(label, file.p), error: message });
                         log(`Failed to restore symbolic link ${link} to ${target.label}: ${message}`, 'error', 'storage');
                     }
@@ -380,6 +412,7 @@ export async function restoreArchiveSnapshot(
                 }
             } finally {
                 await sessions.close();
+                callbacks.record?.endFolders();
             }
 
             for (const dir of selectedDirs) {

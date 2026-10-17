@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { detail, dumpingDetail, integrityDetail, liveDetail, serve } from "./history-fixtures";
+import { detail, dumpingDetail, integrityDetail, liveDetail, restoreDetail, serve } from "./history-fixtures";
 
 let search = new URLSearchParams();
 const push = vi.fn();
@@ -68,6 +68,26 @@ describe("the page of a run", () => {
         expect(within(steps).getByText("403 quota")).toBeInTheDocument();
         expect(within(steps).getByText("1 of 2 stored")).toBeInTheDocument();
         expect(screen.getByText("Google Drive failed")).toBeInTheDocument();
+    });
+
+    it("tells a restore like a backup: the archive it read, how much, every database with where it went and every folder", async () => {
+        serve({ run: restoreDetail() });
+        const user = userEvent.setup();
+        open("id=restore");
+
+        const summary = await screen.findByRole("region", { name: "Summary" });
+        expect(within(summary).getByText("Shop_offsite_2026-10-17.tar")).toBeInTheDocument();
+        expect(within(summary).getByText("NAS Backups")).toBeInTheDocument();
+        expect(within(summary).getByText("uploads → Local:/srv/www/uploads")).toBeInTheDocument();
+        await user.click(within(summary).getByRole("button", { name: /shop → shop_test/ }));
+        expect(within(summary).getByText("connecting to database for restore")).toBeInTheDocument();
+
+        const steps = screen.getByRole("region", { name: "Steps" });
+        expect(within(steps).getByText("read 5.5 KB with ranged reads")).toBeInTheDocument();
+        expect(within(steps).getByText("shop → shop_test")).toBeInTheDocument();
+        expect(within(steps).getByText("restored in 1s")).toBeInTheDocument();
+        expect(within(steps).getByText("1 folder")).toBeInTheDocument();
+        expect(screen.getByText("of an archive of 11 KB")).toBeInTheDocument();
     });
 
     it("tells each problem once in plain words, with what to do and a way to its lines", async () => {

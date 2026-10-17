@@ -65,16 +65,16 @@ const dump = (overrides: Partial<RunDump>): RunDump => ({
 });
 
 const offsiteSummary: RunStepSummary[] = [
-    { step: "Initializing", text: "Found shop and billing on Shop cluster, engine 16.4.", tool: null, dumps: [], items: [], checksum: null, now: null },
+    { step: "Initializing", text: "Found shop and billing on Shop cluster, engine 16.4.", tool: null, file: null, dumps: [], items: [], checksum: null, now: null },
     {
-        step: "Dumping Databases", text: "Dumped shop and billing with {tool}.", tool: "pg_dump", items: [], checksum: null, now: null,
+        step: "Dumping Databases", text: "Dumped shop and billing with {tool}.", tool: "pg_dump", file: null, items: [], checksum: null, now: null,
         dumps: [
             dump({ command: PG_DUMP, warnings: [{ title: "Circular foreign keys in orders", count: 1, raw: "pg_dump: warning: there are circular foreign-key constraints on this table: orders", help: "Nothing is missing from the dump." }] }),
             dump({ name: "billing", bytes: 800_000_000, durationMs: 70_000 }),
         ],
     },
     {
-        step: "Uploading", text: "Stored the archive at 1 of 2 destinations.", tool: null, dumps: [], now: null,
+        step: "Uploading", text: "Stored the archive at 1 of 2 destinations.", tool: null, file: null, dumps: [], now: null,
         checksum: "c5bc45b2a5ae65e4d9801b19d24c05d1109c7152da5568c51869e5b4f654650d",
         items: [
             { key: "nas", label: "NAS Backups", adapterId: "sftp", state: "done", text: "stored in 1m 12s", outputs: [{ source: "NAS Backups", lines: [{ at: ago(6.02), level: "info", type: "storage", message: "Upload complete: Shop offsite/a.tar" }] }] },
@@ -107,6 +107,7 @@ export function detail(overrides: Partial<RunDetail> = {}): RunDetail {
         ],
         summary: offsiteSummary,
         checks: null,
+        restore: null,
         problems,
         uploads: [
             { configId: "nas", name: "NAS Backups", adapterId: "sftp", state: "done", bytes: 2_200_000_000, total: 2_200_000_000, error: null, startedAt: null, endedAt: null },
@@ -147,9 +148,9 @@ export const liveDetail = () => detail({
     notifications: [],
     queue: [{ id: "waiting", name: "Shop nightly", starter: { key: "manual:Manu", kind: "manual", label: "Manu" } }],
     summary: [
-        { step: "Dumping Databases", text: "Dumped crm with {tool}.", tool: "mysqldump", dumps: [dump({ name: "crm", bytes: 820 * 1_048_576, durationMs: 48_000 })], items: [], checksum: null, now: null },
+        { step: "Dumping Databases", text: "Dumped crm with {tool}.", tool: "mysqldump", file: null, dumps: [dump({ name: "crm", bytes: 820 * 1_048_576, durationMs: 48_000 })], items: [], checksum: null, now: null },
         {
-            step: "Uploading", text: "Stores the archive at each destination, one after the other.", tool: null, dumps: [], checksum: null, now: null,
+            step: "Uploading", text: "Stores the archive at each destination, one after the other.", tool: null, file: null, dumps: [], checksum: null, now: null,
             items: [
                 { key: "nas", label: "NAS Backups", adapterId: "sftp", state: "done", text: "stored in 12s", outputs: [] },
                 { key: "r2", label: "Cloudflare R2", adapterId: "s3-r2", state: "running", text: "64 %", outputs: [{ source: "Cloudflare R2", lines: [{ at: ago(0.01), level: "info", type: "storage", message: "Multipart upload: 8 parallel parts of 5 MB" }] }] },
@@ -183,9 +184,9 @@ export const dumpingDetail = () => detail({
         { name: "Processing", state: "pending", startedAt: null, durationMs: null, usualMs: 2_000, errors: 0, warnings: 0, lines: [] },
     ],
     summary: [
-        { step: "Initializing", text: "Found testdb and testdb1 on Test MongoDB 8.0, engine 8.0.20.", tool: null, dumps: [], items: [], checksum: null, now: null },
+        { step: "Initializing", text: "Found testdb and testdb1 on Test MongoDB 8.0, engine 8.0.20.", tool: null, file: null, dumps: [], items: [], checksum: null, now: null },
         {
-            step: "Dumping Databases", text: "Dumps testdb and testdb1 one after the other with {tool}.", tool: "mongodump", items: [], checksum: null, now: null,
+            step: "Dumping Databases", text: "Dumps testdb and testdb1 one after the other with {tool}.", tool: "mongodump", file: null, items: [], checksum: null, now: null,
             dumps: [
                 dump({ name: "testdb", facts: "2 collections · 1,500,001 documents", bytes: 890 * 1_048_576, durationMs: 52_000 }),
                 dump({
@@ -286,3 +287,48 @@ export async function onPhone(check: () => Promise<void>) {
         Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
     }
 }
+
+const PG_RESTORE = "pg_restore -h db.internal -p 5432 -U backup -d shop_test --clean --if-exists";
+
+/** A restore of shop into shop_test and of a folder, read with ranged reads, told like a backup. */
+export const restoreDetail = () => detail({
+    id: "restore",
+    type: "Restore",
+    status: "Success",
+    name: "Restore onto Shop cluster",
+    sub: "Restore · shop",
+    jobId: null,
+    job: null,
+    size: null,
+    copies: null,
+    note: null,
+    usualMs: null,
+    starter: { key: "manual:Manu", kind: "manual", label: "Manu" },
+    problems: [],
+    uploads: [],
+    notifications: [],
+    recent: [],
+    previous: null,
+    steps: [
+        { name: "Initializing", state: "done", startedAt: ago(1), durationMs: 14, usualMs: null, errors: 0, warnings: 0, lines: [] },
+        { name: "Downloading", state: "done", startedAt: ago(1), durationMs: 427, usualMs: null, errors: 0, warnings: 0, lines: [] },
+        { name: "Restoring Databases", state: "done", startedAt: ago(1), durationMs: 1_000, usualMs: null, errors: 0, warnings: 0, lines: [] },
+        { name: "Restoring Files", state: "done", startedAt: ago(1), durationMs: 2_000, usualMs: null, errors: 0, warnings: 0, lines: [] },
+    ],
+    summary: [
+        { step: "Initializing", text: "Restores shop and the folder uploads from {file} onto Shop cluster, engine 16.4. shop goes to shop_test.", tool: null, file: "Shop_offsite_2026-10-17.tar", dumps: [], items: [], checksum: null, now: null },
+        {
+            step: "Downloading", text: "Read the 1 dump and the files of 1 folder from the archive at NAS Backups, 5.5 KB, without a full download.", tool: null, file: null, dumps: [], checksum: null, now: null,
+            items: [{ key: "from", label: "NAS Backups", adapterId: "sftp", state: "done", text: "read 5.5 KB in 427ms", outputs: [] }],
+        },
+        {
+            step: "Restoring Databases", text: "Restored shop with {tool}.", tool: "pg_restore", file: null, items: [], checksum: null, now: null,
+            dumps: [dump({ name: "shop", target: "shop_test", note: null, bytes: 5_632, durationMs: 1_000, command: PG_RESTORE, outputs: [{ source: "pg_restore", lines: [{ at: ago(1), level: "info", type: "general", message: "connecting to database for restore" }] }] })],
+        },
+        {
+            step: "Restoring Files", text: "Restored the folder uploads with 1,204 files to Local:/srv/www/uploads.", tool: null, file: null, dumps: [], checksum: null, now: null,
+            items: [{ key: "src-1", label: "uploads → Local:/srv/www/uploads", adapterId: "local-filesystem", state: "done", text: "1,204 files · 2 KB · 2s", outputs: [] }],
+        },
+    ],
+    restore: { bytes: 5_632, total: 11_264, ranged: true },
+});

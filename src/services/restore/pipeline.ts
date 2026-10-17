@@ -27,6 +27,7 @@ import { resolveDecryptionKey } from "./smart-recovery";
 import { restoreArchiveSnapshot } from "./archive-restore";
 import { openDestination } from "@/services/sharing/destination-access";
 import { createRestoreLogs, type ProviderRun } from "./run-logs";
+import { createRestoreTracker } from "./restore-record";
 import { FOLLOWS_KEY } from "@/lib/execution/follower-runs";
 
 const svcLog = logger.child({ service: "RestoreService" });
@@ -73,6 +74,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
     let target: { id: string; name: string; adapterId: string } | null = null;
 
     const progress = () => ({ progress: currentProgress, stage: currentStage, detail: currentDetail });
+    // What the summary of the run tells: where it read from, how much, and every database and folder.
+    const record = createRestoreTracker();
     const logs = createRestoreLogs({
         executionId,
         shared: Boolean(input.shared),
@@ -83,11 +86,13 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             ...progress(),
             ...(target ? { target: input.shared ? { name: target.name, adapterId: target.adapterId } : target } : {}),
             ...(input.shared ? { restoreOf: { database: input.shared.databaseName } } : {}),
+            restore: record.view(Boolean(input.shared)),
         }),
         providerMetadata: () => ({
             ...progress(),
             ...(target ? { target } : {}),
             restoreOf: { database: input.shared?.databaseName, customer: providerRun?.customer },
+            restore: record.view(false),
             [FOLLOWS_KEY]: executionId,
         }),
     });
@@ -149,6 +154,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         const storage = await openDestination(storageConfigId);
         const storageConfig = storage.row;
         resolvedStorageName = storageConfig.name;
+        record.from(storageConfig.name, storageConfig.adapterId);
+        record.archive(file);
 
         const storageAdapter = storage.adapter;
 
@@ -227,6 +234,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
                 // Version Check (informational - hard guard already done in preflight).
                 // Only meaningful when a database target was actually resolved above.
+                record.versions({ backup: typeof metadata.engineVersion === "string" ? metadata.engineVersion : null });
                 if (metadata.engineVersion && sourceConfig && sourceAdapter) {
                     const usageConfig = { ...(await resolveAdapterConfig(sourceConfig) as any) };
                     if (privilegedAuth) {
@@ -238,6 +246,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     try {
                         const test = await runAdapterTest(sourceAdapter, usageConfig);
                         if (test?.success && test.version) {
+                            record.versions({ target: test.version });
                             log(`Compatibility Check: Backup Version [${metadata.engineVersion}] vs Target [${test.version}]`, 'info');
                             if (parseFloat(metadata.engineVersion) > parseFloat(test.version)) {
                                 log(`WARNING: You are restoring a newer version backup (${metadata.engineVersion}) to an older database (${test.version}). This might fail.`, 'warning');
@@ -283,6 +292,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     if (detail !== undefined) currentDetail = detail;
                     void logs.flush();
                 },
+                record,
                 ...(logs.sinks ? { sharedLogs: logs.sinks } : {}),
             });
 
@@ -337,8 +347,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         if (input.shared) throw new Error("This backup can only be restored out of an archive with an index.");
 
         log(`Downloading backup file: ${file}...`, 'info');
+        record.opened(false);
         const downloadStartTime = Date.now();
         const downloadSuccess = await storageAdapter.download(sConf, file, tempFile, (processed, total) => {
+            record.readTotal(processed);
             const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
             currentProgress = percent;
             if (total > 0) {
@@ -540,6 +552,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 const testResult = (await runAdapterTest(sourceAdapter, testConf))!;
                 if (testResult.success && testResult.version) {
                     dbConf.detectedVersion = testResult.version;
+                    record.versions({ target: testResult.version });
                     log(`Target server version: ${testResult.version}`, 'info');
                 } else {
                     log('Could not detect target server version, using default binary', 'warning');

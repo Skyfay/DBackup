@@ -1,6 +1,6 @@
 import type { Tx } from "@/lib/prisma-tx";
 import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
-import { VIEWER_PERMISSIONS } from "@/lib/auth/owner-permissions";
+import { seedTemplateGroups } from "@/services/user/tenant-group-templates";
 
 /**
  * The built-in templates a new tenant starts with, the same the migrations gave the first one: the
@@ -27,16 +27,13 @@ const SCHEDULES = [
 ];
 
 /**
- * The groups a new tenant starts with: Admin, which may do everything in the tenant, and Viewer,
- * which sees it. The tenant's admins add their own from there.
+ * The groups a new tenant starts with: Admin, which may do everything in the tenant, and every
+ * group the platform gives all tenants, like a Viewer or a Client made once under Platform. The
+ * tenant's admins add their own from there.
  */
 export async function seedTenantGroups(tx: Tx, tenantId: string): Promise<void> {
-    await tx.group.createMany({
-        data: [
-            { tenantId, name: "Admin", fullAccess: true, permissions: JSON.stringify(AVAILABLE_PERMISSIONS.map((permission) => permission.id)) },
-            { tenantId, name: "Viewer", permissions: JSON.stringify(VIEWER_PERMISSIONS) },
-        ],
-    });
+    await seedTemplateGroups(tx, tenantId);
+    await tx.group.create({ data: { tenantId, name: "Admin", fullAccess: true, permissions: JSON.stringify(AVAILABLE_PERMISSIONS.map((permission) => permission.id)) } });
 }
 
 /** Writes the built-in templates into a tenant, inside the transaction that creates it. */

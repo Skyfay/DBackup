@@ -28,6 +28,8 @@ vi.mock("@/lib/auth/access-control", async (importOriginal) => ({
 vi.mock("@/services/dashboard/start-page", () => ({
     showsQuickSetup: (...args: unknown[]) => mocks.showsQuickSetup(...args),
     hasNothingToBackUp: (...args: unknown[]) => mocks.hasNothingToBackUp(...args),
+    // A tenant that backs up with jobs of its own, like every tenant before customers.
+    ownBackupReach: async () => ({ jobs: true, databases: true }),
 }));
 vi.mock("@/services/dashboard/overview-service", () => ({ getDashboardOverview: (...args: unknown[]) => mocks.getDashboardOverview(...args) }));
 vi.mock("@/app/actions/tenant/tenant", () => ({ getTenantSummaries: vi.fn() }));

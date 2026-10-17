@@ -62,7 +62,7 @@ beforeEach(() => {
 
 describe("the platform groups under Platform, Users & Groups", () => {
     it("lists Platform admin built in first, then each group with its rights and where they count", async () => {
-        render(<PlatformGroupList cards={false} canManage toolbarStart={null} />);
+        render(<PlatformGroupList cards={false} canManage />);
 
         const admin = await screen.findByRole("row", { name: /Platform admin/ });
         expect(within(admin).getByText("Built in")).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe("the platform groups under Platform, Users & Groups", () => {
     });
 
     it("opens Platform admin read only, with Duplicate as a new group", async () => {
-        render(<PlatformGroupList cards={false} canManage toolbarStart={null} />);
+        render(<PlatformGroupList cards={false} canManage />);
 
         await userEvent.click(await screen.findByRole("button", { name: "Platform admin" }));
         const dialog = await screen.findByRole("dialog");
@@ -87,7 +87,7 @@ describe("the platform groups under Platform, Users & Groups", () => {
 
     it("edits a group in three parts and names what changed in the foot", async () => {
         mocks.update.mockResolvedValue({ success: true });
-        render(<PlatformGroupList cards={false} canManage toolbarStart={null} />);
+        render(<PlatformGroupList cards={false} canManage />);
 
         await userEvent.click(await screen.findByRole("button", { name: "Support" }));
         const dialog = await screen.findByRole("dialog");
@@ -106,7 +106,7 @@ describe("New platform group", () => {
     it("starts with Custom or a copy, then makes the group with the rights and the tenants picked", async () => {
         mocks.create.mockResolvedValue({ success: true, data: { id: "pg-new" } });
         const ref = { current: null as null | { openCreate: () => void } };
-        render(<PlatformGroupList ref={ref} cards={false} canManage toolbarStart={null} />);
+        render(<PlatformGroupList ref={ref} cards={false} canManage />);
         await screen.findByRole("row", { name: /Support/ });
 
         act(() => ref.current?.openCreate());

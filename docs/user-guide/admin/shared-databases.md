@@ -114,6 +114,8 @@ Once a database is given to a tenant, it shows in two places the tenant knows al
 
 Every row is one backup of one database, made while the database was theirs, however many destinations hold a copy. It shows the database, the server without its address, who provides it, when the backup was made, the size of that database's dump, the integrity check and whether it is encrypted. The customer never sees the destinations, the keys, the other databases or the size of the database on the server. A database that is theirs no longer shows as **Former** with the backups of its time, and only in **Backups**.
 
+A tenant that has no database connection or directory source of its own and may add none, or has nowhere to write backups to, has nothing for a job of its own. Its **Overview** then says which tenant backs up its databases, how many there are on how many servers, and links to their backups, instead of asking for a first job. **Quick Setup** and the **Database Explorer**, which only reads the tenant's own database connections, leave its sidebar.
+
 A right click on a shared backup offers only what the customer may do with it: **Restore into** the database, **Download the dump** and **Back up now**. Verify, lock and delete stay with the tenant of the server, and a shared backup is never picked for an action of several backups. An own backup keeps its whole menu. Older links to the former tab **Shared with you** open **Backups** with **Shared with you** picked.
 
 | Action | Does | Needs in the customer's tenant |

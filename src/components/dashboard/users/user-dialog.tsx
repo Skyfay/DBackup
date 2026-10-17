@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
-import { z } from "zod";
 import { Loader2, Pencil, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import { createUser, updateUser, updateUserGroup } from "@/app/actions/auth/user";
+import { updateUser, updateUserGroup } from "@/app/actions/auth/user";
 import { PasswordChecklist } from "@/components/auth/password-checklist";
+import { PlatformAdminConfirmDialog } from "@/components/dashboard/platform/platform-admin-role";
 import { useViewerPermissions } from "@/components/permissions/permissions-context";
 import { useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
@@ -16,49 +16,28 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MAX_PASSWORD_LENGTH, passwordProblem, type PasswordRules } from "@/lib/auth/password-policy";
+import { usePageModel } from "@/hooks/use-page-model";
+import type { PasswordRules } from "@/lib/auth/password-policy";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
+import { PLATFORM_ADMIN_GROUP_ID, type PlatformGroupsModel } from "@/services/user/platform-groups-types";
 import type { UserRow, UsersGroup } from "@/services/user/users-types";
 import { accountLock, groupLock, groupsOfTenant } from "./user-access";
+import { accessNote, platformChange, saveAccess, useAccessEdit, UserAccessFields } from "./user-dialog-access";
+import { AccountKindFields, createAccount } from "./user-dialog-kind";
 import { NO_GROUP } from "./user-columns";
 import { GroupPicker } from "./user-group-picker";
 import { PasswordField } from "./user-password-field";
-import { TenantField } from "./user-tenant-field";
+import { schemaFor, type Values } from "./user-dialog-schema";
+import { TenantField, tenantGroupsMeta } from "./user-tenant-field";
 
 const log = logger.child({ component: "user-dialog" });
 
 /** Leaves room for the head and the foot on a short screen. */
 const BODY_SCROLL = "min-h-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-9.5rem)]";
-
-/**
- * The fields of the dialog. A new password follows the rules of Settings > Passwords once they are
- * loaded. A new account of All tenants names its tenant, and outside the home tenant its group.
- */
-function schemaFor(creating: boolean, rules: PasswordRules | null, pickTenant: boolean) {
-    return z
-        .object({
-            name: z.string().trim().min(2, "Name must be at least 2 characters.").max(100, "Name can have at most 100 characters."),
-            email: z.string().trim().email("Invalid email address."),
-            password: creating
-                ? z.string().min(1, "Enter a password, or click Generate.").max(MAX_PASSWORD_LENGTH, `The password can have at most ${MAX_PASSWORD_LENGTH} characters.`)
-                : z.string(),
-            tenantId: pickTenant ? z.string().min(1, "Pick the tenant they work in.") : z.string(),
-            groupId: z.string().min(1, "Pick a group, or No group."),
-        })
-        .superRefine((values, ctx) => {
-            const problem = creating && rules && values.password ? passwordProblem(values.password, rules, values) : null;
-            if (problem) ctx.addIssue({ code: "custom", path: ["password"], message: problem });
-            if (pickTenant && values.tenantId && values.tenantId !== HOME_TENANT_ID && values.groupId === NO_GROUP) {
-                ctx.addIssue({ code: "custom", path: ["groupId"], message: "Pick the group they work with in this tenant." });
-            }
-        });
-}
-
-type Values = z.infer<ReturnType<typeof schemaFor>>;
 
 interface UserDialogProps {
     open: boolean;
@@ -73,19 +52,26 @@ interface UserDialogProps {
     allowNoGroup: boolean;
     /**
      * All tenants, where an account has a group per tenant. New user picks the tenant with the
-     * group, and Edit changes the name and the email alone, the panel the groups.
+     * group, and Edit changes the name, the email and, for whoever may, the tenants and the
+     * platform group.
      */
     allTenants?: boolean;
+    /** May give and take the group of an account in each tenant, in All tenants. */
+    manageTenants?: boolean;
+    /** May give platform groups, under Platform. */
+    managePlatformGroup?: boolean;
     onOpenChange: (open: boolean) => void;
     onSaved: () => void;
 }
 
 /**
- * New user and Edit user: the name, the email, a first password for a new one and the group. The
- * name and the email of an account the viewer may not change stay as they are, the group can
- * still change.
+ * New user and Edit user: the name, the email, a first password for a new one and the group. Under
+ * Platform New user makes someone who works in a tenant or, for whoever gives platform groups,
+ * someone who runs the platform with a platform group. In All tenants Edit holds the platform group
+ * and the group in each tenant in place of the group, all saved with Save. The name and the email of
+ * an account the viewer may not change stay as they are, the group can still change.
  */
-export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAdmin, allowNoGroup, allTenants = false, onOpenChange, onSaved }: UserDialogProps) {
+export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAdmin, allowNoGroup, allTenants = false, manageTenants = false, managePlatformGroup = false, onOpenChange, onSaved }: UserDialogProps) {
     const creating = user === null;
     const tone = creating ? "create" : "edit";
     const pickTenant = creating && allTenants;
@@ -94,15 +80,26 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
     const currentGroup = user ? user.group?.id ?? NO_GROUP : "";
     const form = useForm<Values>({
         resolver: zodResolver(schemaFor(creating, passwordRules, pickTenant)),
-        defaultValues: { name: "", email: "", password: "", tenantId: "", groupId: "" },
+        defaultValues: { name: "", email: "", password: "", kind: "tenant", tenantId: "", groupId: "", platform: "" },
     });
-    const [name, email, password, tenantId] = useWatch({ control: form.control, name: ["name", "email", "password", "tenantId"] });
+    const [name, email, password, tenantId, kind] = useWatch({ control: form.control, name: ["name", "email", "password", "tenantId", "kind"] });
+    // Whoever gives platform groups also makes an account of the platform with New user under Platform.
+    const choosesKind = pickTenant && managePlatformGroup;
+    const forPlatform = choosesKind && kind === "platform";
+    const { model: newPlatformModel } = usePageModel<PlatformGroupsModel>(open && choosesKind ? "/api/platform/platform-groups" : null, "The platform groups could not be loaded.");
     const { tenants } = useTenantView();
     // A group belongs to one tenant, so a new account of the list of every account picks from the groups of its tenant.
     const offered = pickTenant ? (tenantId ? groupsOfTenant(groups, tenantId) : []) : groups;
 
+    // In All tenants Edit also holds the platform group and the tenants, for whoever may change them.
+    const { withAccess, parts, platformModel, access, setAccess, line: accessLine } = useAccessEdit({ open, user, allTenants, manageTenants, managePlatformGroup, viewerPlatformAdmin });
+    const [asking, setAsking] = useState<Values | null>(null);
+    const [busy, setBusy] = useState(false);
+
     useEffect(() => {
-        if (open) form.reset({ name: user?.name ?? "", email: user?.email ?? "", password: "", tenantId: "", groupId: currentGroup });
+        if (!open) return;
+        form.reset({ name: user?.name ?? "", email: user?.email ?? "", password: "", kind: "tenant", tenantId: "", groupId: currentGroup, platform: "" });
+        setAsking(null);
     }, [open, user, currentGroup, form]);
 
     const permissions = useViewerPermissions();
@@ -111,18 +108,19 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
     // The account of a platform admin is for a platform admin, one that also works in another tenant
     // also for whoever manages the accounts of the platform.
     const accountLocked = user ? accountLock(user, viewerPlatformAdmin, permissions?.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE) ?? false) : null;
-    const saving = form.formState.isSubmitting;
+    const saving = form.formState.isSubmitting || busy;
 
-    const submit = async (values: Values) => {
+    const submit = async (values: Values, confirmed = false) => {
+        // Giving or ending the platform admin role asks first, before anything is saved.
+        const asks = user ? withAccess && platformChange(user, access, parts).asks : forPlatform && values.platform === PLATFORM_ADMIN_GROUP_ID;
+        if (asks && !confirmed) {
+            setAsking(values);
+            return;
+        }
+        setBusy(true);
         try {
             if (!user) {
-                const result = await createUser({
-                    name: values.name,
-                    email: values.email,
-                    password: values.password,
-                    groupId: values.groupId === NO_GROUP ? null : values.groupId,
-                    ...(pickTenant ? { tenantId: values.tenantId } : {}),
-                });
+                const result = await createAccount({ ...values, kind: forPlatform ? "platform" : "tenant" }, pickTenant);
                 if (!result.success) {
                     toast.error(result.error || "The user could not be created.");
                     return;
@@ -143,6 +141,11 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                         return;
                     }
                 }
+                if (withAccess && !(await saveAccess(user, access, parts))) {
+                    // What went through before the refusal shows once the list loads again.
+                    onSaved();
+                    return;
+                }
                 toast.success("User saved");
             }
             onSaved();
@@ -151,20 +154,25 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
             // Without the right to change users the actions throw instead of answering.
             log.warn("Saving a user failed", { userId: user?.id }, wrapError(error));
             toast.error("The user could not be saved.");
+        } finally {
+            setBusy(false);
+            setAsking(null);
         }
     };
 
     return (
         <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-            <DialogContent tone={tone} showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-2xl")}>
+            <DialogContent tone={tone} showCloseButton={false} className={cn(DIALOG_SURFACE, parts.tenants ? "sm:max-w-3xl" : "sm:max-w-2xl")}>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(submit)} noValidate className="flex min-h-0 flex-1 flex-col">
+                    <form onSubmit={form.handleSubmit((values) => submit(values))} noValidate className="flex min-h-0 flex-1 flex-col">
                         <DialogHead tone={tone} icon={creating ? UserPlus : Pencil}>
                             <DialogTitle className="truncate text-base">{creating ? "New user" : `Edit ${user.name}`}</DialogTitle>
                             <DialogDescription className={dialogNoteClass(tone)}>
                                 {creating
-                                    ? pickTenant ? "Signs in right away with the password, with the access of the group in the tenant" : "Signs in right away with the password, with the access of the group"
-                                    : accountLocked ? "Only the group" : withGroup ? "The name, the email and the group" : "The name and the email, the panel changes the group of each tenant"}
+                                    ? forPlatform
+                                        ? "Signs in right away with the password, with the rights of the platform group"
+                                        : pickTenant ? "Signs in right away with the password, with the access of the group in the tenant" : "Signs in right away with the password, with the access of the group"
+                                    : withGroup ? (accountLocked ? "Only the group" : "The name, the email and the group") : accessNote(parts, accountLocked !== null)}
                             </DialogDescription>
                         </DialogHead>
 
@@ -226,7 +234,9 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                                     />
                                 )}
 
-                                {pickTenant && (
+                                {choosesKind && <AccountKindFields form={form} kind={kind} model={newPlatformModel} disabled={saving} />}
+
+                                {pickTenant && !forPlatform && (
                                     <FormField
                                         control={form.control}
                                         name="tenantId"
@@ -236,6 +246,7 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                                                 <FormControl>
                                                     <TenantField
                                                         tenants={tenants}
+                                                        metaOf={tenantGroupsMeta(groups)}
                                                         value={field.value}
                                                         onChange={(next) => {
                                                             if (next !== field.value) form.setValue("groupId", "");
@@ -245,14 +256,18 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                                                         ref={field.ref}
                                                     />
                                                 </FormControl>
-                                                <FormDescription>The account belongs to every tenant it works in. Add more in its panel later.</FormDescription>
+                                                <FormDescription>The account belongs to every tenant it works in. Add more with Edit later.</FormDescription>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
                                     />
                                 )}
 
-                                {withGroup && (
+                                {user && withAccess && (
+                                    <UserAccessFields user={user} groups={groups} platformModel={platformModel} parts={parts} value={access} onChange={setAccess} disabled={saving} />
+                                )}
+
+                                {withGroup && !forPlatform && (
                                     <FormField
                                         control={form.control}
                                         name="groupId"
@@ -282,6 +297,7 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                         </ScrollArea>
 
                         <div className={cn(DIALOG_FOOTER, "flex items-center justify-end gap-2")}>
+                            {accessLine && <span className="mr-auto min-w-0 truncate text-xs text-muted-foreground" title={accessLine}>{accessLine}</span>}
                             <DialogClose asChild>
                                 <Button type="button" variant="ghost" disabled={saving}>Cancel</Button>
                             </DialogClose>
@@ -292,6 +308,16 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                         </div>
                     </form>
                 </Form>
+
+                {asking && (
+                    <PlatformAdminConfirmDialog
+                        name={user ? user.name || user.email : asking.name}
+                        on={user ? access.platform === PLATFORM_ADMIN_GROUP_ID : true}
+                        pending={busy}
+                        onClose={() => !busy && setAsking(null)}
+                        onConfirm={() => void submit(asking, true)}
+                    />
+                )}
             </DialogContent>
         </Dialog>
     );

@@ -20,6 +20,8 @@ const NINA: Viewer = { id: "nina", name: "Nina", email: "nina@example.com", isPl
 const mocks = vi.hoisted(() => ({
     viewer: null as unknown as Viewer,
     audit: vi.fn(),
+    createPlatformUser: vi.fn(),
+    notify: vi.fn(),
     service: {
         shapeOf: vi.fn(),
         find: vi.fn(),
@@ -42,8 +44,10 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ default: {} }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: mocks.service }));
+vi.mock("@/services/user/user-service", () => ({ userService: { createPlatformUser: mocks.createPlatformUser } }));
+vi.mock("@/services/notifications/system-notification-service", () => ({ notify: mocks.notify }));
 
-const { createPlatformGroup, deletePlatformGroup, setUserPlatformGroup, updatePlatformGroup } = await import("@/app/actions/auth/platform-group");
+const { bulkDeletePlatformGroups, createPlatformGroup, createPlatformUser, deletePlatformGroup, setUserPlatformGroup, updatePlatformGroup } = await import("@/app/actions/auth/platform-group");
 
 const values = (over: Partial<{ platformPermissions: string[]; tenantPermissions: string[]; allTenants: boolean; tenantIds: string[] }> = {}) => ({
     name: "Helpdesk",
@@ -145,5 +149,71 @@ describe("giving someone a platform group", () => {
         mocks.viewer = ROOT;
         expect(await setUserPlatformGroup("root", { kind: "none" })).toEqual({ success: false, error: "Another admin changes your own platform group." });
         expect(mocks.service.setFor).not.toHaveBeenCalled();
+    });
+});
+
+describe("deleting several platform groups at once", () => {
+    it("needs the right to manage the accounts of the platform", async () => {
+        mocks.viewer = { ...NINA, permissions: [P.PLATFORM.ACCOUNTS_READ] };
+        await expect(bulkDeletePlatformGroups(["pg-helpdesk"])).rejects.toThrow(PermissionError);
+        expect(mocks.service.delete).not.toHaveBeenCalled();
+    });
+
+    it("deletes what the viewer may change and keeps, with why, their own and one beyond them", async () => {
+        const result = await bulkDeletePlatformGroups(["pg-helpdesk", "pg-support", "pg-sharing", "platform-admin"]);
+
+        expect(result).toEqual({
+            success: true,
+            data: {
+                succeeded: ["pg-helpdesk"],
+                failed: [
+                    { id: "pg-support", name: "Support", error: "You are in this platform group. Another admin deletes it." },
+                    { id: "pg-sharing", name: "Sharing", error: expect.stringMatching(/may do more than you may/) },
+                    { id: "platform-admin", name: undefined, error: "The platform group no longer exists." },
+                ],
+            },
+        });
+        expect(mocks.service.delete).toHaveBeenCalledTimes(1);
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "DELETE", "PLATFORM_GROUP", expect.objectContaining({ name: "Helpdesk" }), "pg-helpdesk", HOME_LOG);
+    });
+});
+
+describe("a new account of the platform", () => {
+    const account = (platformGroup: { kind: "admin" } | { kind: "group"; id: string }) => ({ name: "Lena Graf", email: "lena@example.com", password: "Correct-Horse-9", platformGroup });
+
+    beforeEach(() => {
+        mocks.createPlatformUser.mockResolvedValue({ id: "u-lena" });
+        mocks.notify.mockResolvedValue(undefined);
+    });
+
+    it("needs the right to manage the accounts of the platform", async () => {
+        mocks.viewer = { ...NINA, permissions: [P.PLATFORM.ACCOUNTS_READ] };
+        await expect(createPlatformUser(account({ kind: "group", id: "pg-helpdesk" }))).rejects.toThrow(PermissionError);
+        expect(mocks.createPlatformUser).not.toHaveBeenCalled();
+    });
+
+    it("makes a platform admin only for a platform admin", async () => {
+        expect(await createPlatformUser(account({ kind: "admin" }))).toEqual({ success: false, error: "Only a platform admin gives or takes the platform admin role." });
+        mocks.viewer = ROOT;
+        expect(await createPlatformUser(account({ kind: "admin" }))).toEqual({ success: true, data: { id: "u-lena" } });
+        expect(mocks.createPlatformUser).toHaveBeenCalledWith({ name: "Lena Graf", email: "lena@example.com", password: "Correct-Horse-9" }, { kind: "admin" });
+        expect(mocks.audit).toHaveBeenCalledWith("root", "CREATE", "USER", expect.objectContaining({ name: "Lena Graf", platformGroup: "Platform admin" }), "u-lena", HOME_LOG);
+    });
+
+    it("gives no platform group that may do more than the viewer, and one that is gone to nobody", async () => {
+        expect(await createPlatformUser(account({ kind: "group", id: "pg-sharing" }))).toEqual({ success: false, error: expect.stringMatching(/may do more than you may/) });
+        expect(await createPlatformUser(account({ kind: "group", id: "pg-gone" }))).toEqual({ success: false, error: "The platform group no longer exists." });
+        expect(mocks.createPlatformUser).not.toHaveBeenCalled();
+    });
+
+    it("creates the account with a platform group the viewer may give", async () => {
+        expect(await createPlatformUser(account({ kind: "group", id: "pg-helpdesk" }))).toEqual({ success: true, data: { id: "u-lena" } });
+        expect(mocks.createPlatformUser).toHaveBeenCalledWith(expect.objectContaining({ email: "lena@example.com" }), { kind: "group", id: "pg-helpdesk" });
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "CREATE", "USER", expect.objectContaining({ platformGroup: "Helpdesk" }), "u-lena", HOME_LOG);
+    });
+
+    it("says why the account could not be made", async () => {
+        mocks.createPlatformUser.mockRejectedValue(new Error("User already exists"));
+        expect(await createPlatformUser(account({ kind: "group", id: "pg-helpdesk" }))).toEqual({ success: false, error: "User already exists" });
     });
 });

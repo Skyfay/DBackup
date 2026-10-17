@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useId, useState } from "react";
-import { CheckCircle2, ChevronDown, CircleAlert, Loader2, Play, Plus, TriangleAlert } from "lucide-react";
+import { CheckCircle2, ChevronDown, CircleAlert, DatabaseBackup, Loader2, Play, Plus, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,16 @@ const TONES = {
     failing: { bar: "bg-destructive", icon: "bg-destructive/12 text-destructive", frame: "border-destructive/30 bg-destructive/5", Icon: CircleAlert },
     degraded: { bar: "bg-warning", icon: "bg-warning/12 text-warning", frame: "border-warning/30 bg-warning/5", Icon: TriangleAlert },
     empty: { bar: "bg-muted-foreground/40", icon: "bg-muted text-muted-foreground", frame: "bg-card", Icon: Plus },
+    provided: { bar: "bg-muted-foreground/40", icon: "bg-muted text-muted-foreground", frame: "bg-card", Icon: DatabaseBackup },
 } as const;
+
+/** The databases another tenant backs up for this one, for a tenant without jobs of its own. */
+export interface ProvidedSummary {
+    /** The tenants that run their servers. */
+    providers: string[];
+    databases: number;
+    servers: number;
+}
 
 type Unhealthy = "failing" | "degraded";
 
@@ -30,7 +39,20 @@ interface StatusBannerProps {
     canExecute: boolean;
     canViewHistory: boolean;
     canManageJobs: boolean;
+    /** Whether the tenant can back something up with a job of its own, see `ownBackupReach`. */
+    ownJobs?: boolean;
+    /** The databases another tenant backs up for this one, read while it has no job. */
+    provided?: ProvidedSummary | null;
+    canViewBackups?: boolean;
 }
+
+/** "Skyfay Hosting", "A and B". */
+function names(list: string[]): string {
+    if (list.length <= 1) return list[0] ?? "";
+    return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
+
+const plural = (count: number, noun: string) => `${count.toLocaleString()} ${count === 1 ? noun : `${noun}s`}`;
 
 /** "has failed 2 of its last 12 runs", or the partial equivalent. */
 function outcomeText(state: Unhealthy, job: UnhealthyJob): string {
@@ -87,10 +109,10 @@ function JobActions({ job, canViewHistory, canExecute, runJob, startingJobId, pr
 }
 
 /** The banner at the top of the dashboard: all good, or which jobs need attention and why. */
-export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs }: StatusBannerProps) {
+export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs, ownJobs = true, provided = null, canViewBackups = false }: StatusBannerProps) {
     const { runJob, startingJobId } = useRunJob("overview");
     // In All tenants the jobs of every tenant count, so a job is named with its tenant.
-    const { allTenants } = useTenantView();
+    const { allTenants, platformName } = useTenantView();
     const tenantName = useTenantName();
     const jobLabel = (job: UnhealthyJob) => {
         const tenant = allTenants ? tenantName(job.tenantId) : null;
@@ -100,7 +122,9 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
     // It stays open through auto refreshes while the page is open, but every visit starts folded.
     const [expanded, setExpanded] = useState(false);
     const detailsId = useId();
-    const tone = TONES[health.state];
+    // A tenant whose databases another tenant backs up, and that has nothing for a job of its own.
+    const providedOnly = health.state === "empty" && !ownJobs;
+    const tone = TONES[providedOnly && provided ? "provided" : health.state];
     const actionProps = { canViewHistory, canExecute, runJob, startingJobId };
 
     let title: string;
@@ -109,7 +133,20 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
     // Sits below the header at full width, so the buttons of a job line up with the toggle.
     let details: React.ReactNode = null;
 
-    if (health.state === "empty") {
+    if (providedOnly && provided) {
+        title = `${names(provided.providers)} ${provided.providers.length === 1 ? "backs" : "back"} up your databases`;
+        body = <p className="text-sm text-muted-foreground">{plural(provided.databases, "database")} on {plural(provided.servers, "server")}. Their backups are under Backups.</p>;
+        if (canViewBackups) {
+            actions = (
+                <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+                    <Link href="/dashboard/backups">Show the backups</Link>
+                </Button>
+            );
+        }
+    } else if (providedOnly) {
+        title = "Nothing backed up yet";
+        body = <p className="text-sm text-muted-foreground">{platformName ?? "The platform"} sets up what this tenant backs up.</p>;
+    } else if (health.state === "empty") {
         title = "No backup jobs yet";
         body = <p className="text-sm text-muted-foreground">Create a job to start backing up your databases.</p>;
         if (canManageJobs) {

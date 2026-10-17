@@ -28,6 +28,8 @@ interface AppSidebarProps {
     /** The name under General, which the head shows instead of DBackup. */
     instanceName?: string;
     showQuickSetup?: boolean;
+    /** Whether the tenant has or may add a database connection, which the Database Explorer needs. */
+    ownDatabases?: boolean;
     groupName?: string;
     /** The tenants the viewer may open, the home tenant first, which the head switches between. */
     tenants?: HeadTenant[];
@@ -64,7 +66,7 @@ function NavItems({ items, pathname, onNavigate }: { items: NavItem[]; pathname:
     )
 }
 
-export function AppSidebar({ permissions = [], isPlatformAdmin = false, currentVersion, instanceName, showQuickSetup = false, groupName, tenants = [], activeTenantId = null, allTenants = false, tenantCount = 1, tenantAccess, platformGroupName = null }: AppSidebarProps) {
+export function AppSidebar({ permissions = [], isPlatformAdmin = false, currentVersion, instanceName, showQuickSetup = false, ownDatabases = true, groupName, tenants = [], activeTenantId = null, allTenants = false, tenantCount = 1, tenantAccess, platformGroupName = null }: AppSidebarProps) {
     const pathname = usePathname()
     const { isMobile, setOpenMobile } = useSidebar()
 
@@ -74,7 +76,7 @@ export function AppSidebar({ permissions = [], isPlatformAdmin = false, currentV
     }
 
     const held = new Set(permissions)
-    const sections = navSections({ tenantCount, isPlatformAdmin, allTenants, showQuickSetup }, (permission) => held.has(permission))
+    const sections = navSections({ tenantCount, isPlatformAdmin, allTenants, showQuickSetup, ownDatabases }, (permission) => held.has(permission))
     const platform = sections.find((group) => group.platform)
 
     return (

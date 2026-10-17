@@ -29,7 +29,7 @@ export function UsersStrip({ model }: { model: UsersModel | null }) {
                     label: "Users",
                     icon: Users,
                     value: stats ? stats.users.toLocaleString() : "-",
-                    extra: stats ? `${stats.inGroup.toLocaleString()} ${all ? "in a tenant" : "in a group"}` : " ",
+                    extra: stats ? `${stats.inGroup.toLocaleString()} ${all ? "in a tenant or on the platform" : "in a group"}` : " ",
                 },
                 {
                     label: all ? "In no tenant" : "Without a group",
@@ -38,7 +38,7 @@ export function UsersStrip({ model }: { model: UsersModel | null }) {
                     tone: withoutGroup.length > 0 ? "warning" : undefined,
                     extra: withoutGroup.length > 0
                         ? `${listed(withoutGroup)} ${plural(withoutGroup.length, "can sign in but sees", "can sign in but see")} nothing`
-                        : all ? "everyone works in a tenant" : "everyone has a group",
+                        : all ? "everyone works in a tenant or on the platform" : "everyone has a group",
                 },
                 {
                     label: "Second factor",

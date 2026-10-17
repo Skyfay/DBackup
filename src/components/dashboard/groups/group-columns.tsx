@@ -1,7 +1,9 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import { Globe } from "lucide-react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { useTenantView } from "@/components/tenant/tenant-view";
 import { DateDisplay } from "@/components/utils/date-display";
 import { accessLine, summarizeAccess } from "@/lib/auth/access-summary";
 import { cn } from "@/lib/utils";
@@ -11,9 +13,21 @@ import { GroupTile, MemberFaces, permissionCount, ShareBar } from "./group-cells
 /** What members of a group may do in one line. */
 export const groupLine = (group: Pick<GroupRow, "permissions" | "superAdmin">) => accessLine(summarizeAccess(group.permissions, group.superAdmin));
 
-/** "built in" for the group with every permission, or when the group was made and by whom. */
+/** The mark of a group the platform gives, like "From Skyfay Hosting", beside its name. */
+export function PlatformMark({ label }: { label: string }) {
+    return (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+            <Globe className="size-3" aria-hidden="true" />
+            {label}
+        </span>
+    );
+}
+
+/** "built in" for the group with every permission, who gives a group of the platform, or when the group was made and by whom. */
 export function MadeText({ group }: { group: GroupRow }) {
+    const { platformName } = useTenantView();
     if (group.superAdmin) return <>built in, holds every permission</>;
+    if (group.fromPlatform && group.tenantId === undefined && !group.id.startsWith("template:")) return <>given by {platformName ?? "the platform"}, changed there</>;
     return (
         <>
             made <DateDisplay date={group.made?.at ?? group.createdAt} format="P" />
@@ -23,19 +37,22 @@ export function MadeText({ group }: { group: GroupRow }) {
 }
 
 /** Tile, name and when it was made. The name is a button, the way in for keyboards. */
-function GroupCell({ group, compact, onOpen }: { group: GroupRow; compact: boolean; onOpen: (group: GroupRow) => void }) {
+function GroupCell({ group, compact, onOpen, mark }: { group: GroupRow; compact: boolean; onOpen: (group: GroupRow) => void; mark: string | null }) {
     return (
         <div className="flex min-w-0 items-center gap-3">
             <GroupTile group={group} size={compact ? "sm" : "md"} />
             <div className={cn("min-w-0 max-w-64", compact && "flex items-baseline gap-2")}>
-                <button
-                    type="button"
-                    onClick={() => onOpen(group)}
-                    title={group.name}
-                    className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
-                >
-                    {group.name}
-                </button>
+                <span className="flex min-w-0 items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => onOpen(group)}
+                        title={group.name}
+                        className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                        {group.name}
+                    </button>
+                    {mark && <PlatformMark label={mark} />}
+                </span>
                 <div className="min-w-0 truncate text-xs text-muted-foreground">
                     <MadeText group={group} />
                 </div>
@@ -60,16 +77,18 @@ export function ChangedCell({ group }: { group: GroupRow }) {
 interface ColumnOptions {
     onOpen: (group: GroupRow) => void;
     renderActions: (group: GroupRow) => React.ReactNode;
+    /** The mark beside the name of a group the platform gives, like "From Skyfay Hosting", none for the others. */
+    markOf?: (group: GroupRow) => string | null;
 }
 
 /** The columns of the groups. Group and actions stay put, the rest can move and hide. */
-export function groupColumns({ onOpen, renderActions }: ColumnOptions): ColumnDef<GroupRow>[] {
+export function groupColumns({ onOpen, renderActions, markOf }: ColumnOptions): ColumnDef<GroupRow>[] {
     return [
         {
             accessorKey: "name",
             header: "Group",
             meta: { pin: "start" },
-            cell: ({ row, table }) => <GroupCell group={row.original} compact={table.options.meta?.density === "compact"} onOpen={onOpen} />,
+            cell: ({ row, table }) => <GroupCell group={row.original} compact={table.options.meta?.density === "compact"} onOpen={onOpen} mark={markOf?.(row.original) ?? null} />,
         },
         {
             id: "access",

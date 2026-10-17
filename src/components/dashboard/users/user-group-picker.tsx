@@ -62,8 +62,9 @@ export function GroupPicker({ groups, viewerPlatformAdmin, value, onChange, allo
                     <PickTrigger icon={current?.glyph ?? Users} aria-expanded={open} {...props}>
                         {current ? (
                             <>
-                                <span className="truncate">{current.name}</span>
-                                <span className="hidden truncate text-xs text-muted-foreground sm:inline">{current.meta}</span>
+                                {/* The name keeps its room, what the group does gets the rest. */}
+                                <span className="max-w-full flex-none truncate">{current.name}</span>
+                                <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline">{current.meta}</span>
                             </>
                         ) : (
                             <span className="truncate text-muted-foreground">Pick a group</span>

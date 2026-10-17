@@ -71,7 +71,7 @@ describe("every account of the instance in All tenants", () => {
         expect(byId.get("carla")?.elsewhere).toBe(false);
     });
 
-    it("counts an account of no tenant as the one who sees nothing, never one with a group somewhere", () => {
+    it("counts an account of no tenant as the one who sees nothing, never one with a group somewhere or a platform admin", () => {
         const model = buildAll([
             account({ id: "carla", name: "Carla", memberships: [{ tenantId: "tenant-a", group: OPERATORS }] }),
             account({ id: "sara", name: "Sara Nguyen" }),
@@ -80,8 +80,8 @@ describe("every account of the instance in All tenants", () => {
 
         expect(model.users.find((row) => row.id === "sara")?.tenants).toEqual([]);
         expect(model.stats.users).toBe(3);
-        expect(model.stats.inGroup).toBe(1);
-        expect(model.stats.withoutGroup).toEqual(["Root", "Sara Nguyen"]);
+        expect(model.stats.inGroup).toBe(2);
+        expect(model.stats.withoutGroup).toEqual(["Sara Nguyen"]);
     });
 
     it("leaves the rows of a tenant as they were, without tenants", () => {
@@ -144,6 +144,7 @@ describe("loading every account and every group for the Platform", () => {
 
     it("lists the groups of every tenant with their tenant and members, read in every tenant and with nobody to move", async () => {
         let scope: unknown = null;
+        prismaMock.tenantGroupTemplate.findMany.mockResolvedValue([] as never);
         prismaMock.group.findMany.mockImplementation((async () => {
             scope = explicitScope();
             return [

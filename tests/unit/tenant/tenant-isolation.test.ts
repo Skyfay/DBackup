@@ -125,8 +125,9 @@ describe("the boundary between tenants", () => {
         // services. The assignments of databases name the customer, they belong to the tenant of
         // their server, see CHILD_MODELS. A sign-in provider names its tenant but the login page reads
         // it before anyone is signed in, and the logo of a tenant is keyed by the tenant itself.
-        // The customers of a shared connection are the tenant's that shares it, see CHILD_MODELS.
-        const own = withColumn.map((model) => model.name).filter((name) => !["TenantMembership", "TenantInvitation", "DatabaseAssignment", "DatabaseAssignmentRule", "SsoProvider", "TenantLogo", "PlatformGroupTenant", "ConnectionShareTenant"].includes(name));
+        // The customers of a shared connection are the tenant's that shares it, see CHILD_MODELS. The
+        // tenants a group for tenants reaches are the platform's, like the scope of a platform group.
+        const own = withColumn.map((model) => model.name).filter((name) => !["TenantMembership", "TenantInvitation", "DatabaseAssignment", "DatabaseAssignmentRule", "SsoProvider", "TenantLogo", "PlatformGroupTenant", "ConnectionShareTenant", "TenantGroupTemplateTenant"].includes(name));
         expect(own.sort()).toEqual([...TENANT_MODELS].sort());
     });
 

@@ -281,6 +281,9 @@ export function knownKeyPermissions(ids: Iterable<string>, tenantShares: boolean
  */
 export const PLATFORM_GROUP_TENANT_AREAS: PermissionArea[] = PERMISSION_AREAS.filter((area) => area.id !== "settings" && area.id !== "profile");
 
+/** The areas of a group the platform makes for tenants: those of a group of a tenant, without the settings of the instance. */
+export const TENANT_GROUP_AREAS: PermissionArea[] = PERMISSION_AREAS.filter((area) => area.id !== "settings");
+
 const INFO = new Map([...PERMISSION_AREAS, ...PLATFORM_AREAS].flatMap((area) => area.permissions.map((permission) => [permission.id, { permission, area }] as const)));
 
 export function permissionInfo(id: string): PermissionInfo | undefined {

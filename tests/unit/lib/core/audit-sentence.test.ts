@@ -63,6 +63,11 @@ describe("an entry of the audit log as a sentence", () => {
         expect(auditSentence(entry("RESTORE", "SYSTEM", { action: "config_restore", file: "config/2026-09-28.tar.gz.enc" }))).toBe("Restored the configuration from 2026-09-28.tar.gz.enc");
     });
 
+    it("names a group the platform makes for tenants apart from the groups of a tenant", () => {
+        expect(auditSentence(entry("CREATE", "GROUP", { name: "Client", forTenants: true }))).toBe("Created the group for tenants Client");
+        expect(auditSentence(entry("CREATE", "GROUP", { name: "Client", fromPlatform: true }))).toBe("Created the group Client");
+    });
+
     it("names the database, the server and the customer of a customer's restore in the log of the server's tenant", () => {
         const restore = describeEntry(entry("RESTORE", "BACKUP", { action: "shared_restore", name: "shop2", server: "Shared MySQL", tenant: "Acme" }));
         expect(restore.parts.map((part) => part.text).join("")).toBe("Restored shop2 on Shared MySQL for Acme");

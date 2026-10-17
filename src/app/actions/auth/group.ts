@@ -12,7 +12,7 @@ import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
-import { groupService } from "@/services/user/group-service";
+import { fromPlatform, groupService } from "@/services/user/group-service";
 import { membershipService } from "@/services/tenant/membership-service";
 import { userService } from "@/services/user/user-service";
 
@@ -96,6 +96,7 @@ export async function updateGroup(id: string, input: GroupFormValues) {
     const group = await groupService.find(groupId.data);
     if (!group) return { success: false, error: "The group no longer exists." };
     if (group.fullAccess) return { success: false, error: `${group.name} holds every permission and cannot be edited.` };
+    if (group.templateId) return { success: false, error: fromPlatform(group.name) };
     if (roleRefusal(viewer, group)) return { success: false, error: GROUP_BEYOND };
 
     const permissions = capToTenant(parsed.data.permissions, scope.tenantId);
@@ -131,6 +132,7 @@ export async function deleteGroup(id: string, moveTo: string | null = null) {
     }
     const group = await groupService.find(groupId.data);
     if (!group) return { success: false, error: "The group no longer exists." };
+    if (group.templateId) return { success: false, error: fromPlatform(group.name) };
     if (roleRefusal(viewer, group)) return { success: false, error: GROUP_BEYOND };
     const moveToGroup = target.data ? await groupService.find(target.data) : null;
     if (target.data && !moveToGroup) return { success: false, error: "The group for the members no longer exists." };

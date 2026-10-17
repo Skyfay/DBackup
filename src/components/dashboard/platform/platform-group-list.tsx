@@ -2,16 +2,18 @@
 
 import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Info, Trash2 } from "lucide-react";
+import { Globe, Info, Trash, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { deletePlatformGroup } from "@/app/actions/auth/platform-group";
+import { bulkDeletePlatformGroups, deletePlatformGroup } from "@/app/actions/auth/platform-group";
+import { countWord } from "@/components/dashboard/groups/group-cells";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { DataTable } from "@/components/ui/data-table";
+import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePageModel } from "@/hooks/use-page-model";
 import { PLATFORM_AREAS } from "@/lib/auth/permission-areas";
+import { unwrapBulkAction } from "@/lib/bulk-request";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
@@ -34,17 +36,16 @@ interface PlatformGroupListProps {
     cards: boolean;
     /** May make, change, give and delete platform groups. */
     canManage: boolean;
-    /** The switch to the groups of the tenants, before the search. */
-    toolbarStart: React.ReactNode;
 }
 
 /**
  * The platform groups of Users & Groups under Platform: Platform admin, built in and locked, then
  * the groups of the people of the MSP, each with its rights on the platform, its rights in the
  * tenants with the levels of the areas, where they count, its members and when it changed. A click
- * opens the editor, read only for Platform admin and for a group the viewer may not change.
+ * opens the editor, read only for Platform admin and for a group the viewer may not change. The
+ * groups the viewer may change can be deleted together.
  */
-export function PlatformGroupList({ ref, cards, canManage, toolbarStart }: PlatformGroupListProps) {
+export function PlatformGroupList({ ref, cards, canManage }: PlatformGroupListProps) {
     const router = useRouter();
     const { model, isLoading, refresh } = usePageModel<PlatformGroupsModel>("/api/platform/platform-groups", "The platform groups could not be loaded.");
     const [form, setForm] = useState<{ open: boolean; mode: PlatformGroupFormMode }>({ open: false, mode: { kind: "create" } });
@@ -75,6 +76,23 @@ export function PlatformGroupList({ ref, cards, canManage, toolbarStart }: Platf
         onOpen: handlers.onOpen,
         renderActions: (group) => <BackupRowMenu name={group.name} groups={actionsOf(group)} />,
     }), [model, handlers, actionsOf]);
+
+    const bulkActions = useMemo<BulkAction<PlatformGroupRow>[]>(() => canManage ? [{
+        id: "delete",
+        labels: { verb: "delete", verbPast: "deleted", noun: "platform group" },
+        icon: Trash,
+        variant: "destructive",
+        itemName: (group) => group.name,
+        itemDetail: (group) => countWord(group.members.length, "member", "members"),
+        confirm: {
+            title: (selected) => `Delete ${countWord(selected.length, "platform group", "platform groups")}?`,
+            description: (selected) => (selected.some((group) => group.members.length > 0)
+                ? "Their members keep their accounts and their groups in the tenants, and hold no platform group any more."
+                : "Nobody holds them. They go at once."),
+            confirmLabel: "Delete",
+        },
+        run: (selected) => unwrapBulkAction(bulkDeletePlatformGroups(selected.map((group) => group.id))),
+    }] : [], [canManage]);
 
     const remove = async (group: PlatformGroupRow) => {
         setPending(true);
@@ -114,7 +132,6 @@ export function PlatformGroupList({ ref, cards, canManage, toolbarStart }: Platf
                     data={model.groups}
                     searchKey="name"
                     searchPlaceholder="Search platform groups"
-                    toolbarStart={toolbarStart}
                     filterableColumns={[
                         { id: "where", title: "Where", options: [{ label: "All tenants", value: "all", icon: Globe }, { label: "Selected tenants", value: "selected" }] },
                         { id: "platform", title: "Platform right", options: PLATFORM_AREAS.map((area) => ({ label: area.label, value: area.id })) },
@@ -122,6 +139,10 @@ export function PlatformGroupList({ ref, cards, canManage, toolbarStart }: Platf
                     onRefresh={refresh}
                     isLoading={isLoading}
                     getRowId={(group) => group.id}
+                    enableRowSelection={canManage && !cards}
+                    isRowSelectable={editable}
+                    bulkActions={bulkActions}
+                    onBulkActionComplete={afterChange}
                     onRowClick={handlers.onOpen}
                     activeRowId={form.open && form.mode.kind === "edit" ? form.mode.group.id : null}
                     view={cards ? "cards" : "table"}

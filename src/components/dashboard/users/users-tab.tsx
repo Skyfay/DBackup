@@ -33,6 +33,7 @@ import { UserDetails } from "./user-details";
 import { UserDialog } from "./user-dialog";
 import { UserPasswordDialog } from "./user-password-dialog";
 import { UsersStrip } from "./user-strip";
+import { onPlatform } from "./user-tenants";
 import { USERS_TABLE_ID } from "./users-tables";
 import { useNewFromLink } from "@/hooks/use-new-from-link";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
@@ -45,8 +46,8 @@ export interface UsersTabHandle {
 
 type Quick = "all" | "no-factor" | "no-group";
 
-/** Sees nothing: no group in the tenant, or in All tenants no tenant at all. */
-const placeless = (user: UserRow) => (user.tenants ? user.tenants.length === 0 : !user.group);
+/** Sees nothing: no group in the tenant, or in All tenants no tenant at all and nothing on the platform. */
+const placeless = (user: UserRow) => (user.tenants ? user.tenants.length === 0 && !onPlatform(user) : !user.group);
 
 const QUICK: { value: Quick; label: string; keep: (user: UserRow) => boolean }[] = [
     { value: "all", label: "All", keep: () => true },
@@ -273,6 +274,8 @@ export function UsersTab({ ref, cards, canManage, initialLayout, source = "/api/
                 viewerPlatformAdmin={viewerPlatformAdmin}
                 allowNoGroup={model?.homeTenant ?? true}
                 allTenants={allTenants}
+                manageTenants={allTenants && managesTenants}
+                managePlatformGroup={platformRole && canManage}
                 onOpenChange={(next) => setForm((current) => ({ ...current, open: next }))}
                 onSaved={afterChange}
             />

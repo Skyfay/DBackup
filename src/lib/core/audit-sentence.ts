@@ -108,7 +108,9 @@ function object(noun: [string, string], name: string | null): SentencePart[] {
 
 function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescription, "kind"> {
     const details = parse(entry.details);
-    const noun = (entry.resource === R.TEMPLATE && TEMPLATES[String(details.type)]) || NOUNS[entry.resource] || ["entry", "an entry"];
+    const noun = (entry.resource === R.TEMPLATE && TEMPLATES[String(details.type)])
+        || (entry.resource === R.GROUP && details.forTenants === true && ["group for tenants", "a group for tenants"] as [string, string])
+        || NOUNS[entry.resource] || ["entry", "an entry"];
     const file = text(details.file);
     const name = text(details.name) ?? (file ? fileName(file) : null) ?? target;
     const kind = text(details.action);

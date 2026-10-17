@@ -50,7 +50,7 @@ beforeAll(async () => {
     holder.client = base.$extends(tenantScopeExtension(async () => null)) as unknown as PrismaClient;
 
     acme = (await tenantService.create("Acme GmbH")).id;
-    acmeViewer = (await base.group.findFirstOrThrow({ where: { tenantId: acme, name: "Viewer" } })).id;
+    acmeViewer = (await base.group.create({ data: { tenantId: acme, name: "Viewer", permissions: JSON.stringify(["sources:read"]) } })).id;
     await base.ssoProvider.create({
         data: { providerId: "entra-acme", name: "Acme Entra ID", adapterId: "generic", domain: "acme.ch", tenantId: acme, allowProvisioning: true, defaultGroupId: acmeViewer },
     });

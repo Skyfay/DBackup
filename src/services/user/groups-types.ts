@@ -26,6 +26,8 @@ export interface GroupRow {
     tenantId?: string;
     /** The group with every permission (`fullAccess`), which nobody edits or deletes. */
     superAdmin: boolean;
+    /** A group the platform gives the tenant, which its admins give to people and only the platform changes. */
+    fromPlatform: boolean;
     permissions: string[];
     /** Its members, who hold it in its tenant. */
     members: GroupMember[];
@@ -59,8 +61,26 @@ export interface GroupsStats {
     empty: string[];
 }
 
+/** A group the platform makes for tenants, on Users & Groups of the Platform, with its group in each tenant it reaches. */
+export interface TenantGroupTemplateRow {
+    id: string;
+    name: string;
+    permissions: string[];
+    /** Every tenant, the ones made later too. */
+    allTenants: boolean;
+    /** The tenants it reaches while it does not reach every tenant. */
+    tenantIds: string[];
+    /** Its group in each tenant it reaches, with who holds it there. */
+    groups: { tenantId: string; groupId: string; members: GroupMember[] }[];
+    createdAt: string;
+    made: GroupActor | null;
+    changed: GroupActor | null;
+}
+
 export interface GroupsModel {
     groups: GroupRow[];
+    /** The groups the platform makes for tenants, on Users & Groups of the Platform only. */
+    templates?: TenantGroupTemplateRow[];
     stats: GroupsStats;
     /** The people of the tenant the list is for, only for a viewer who may see the users. */
     people: GroupPerson[] | null;

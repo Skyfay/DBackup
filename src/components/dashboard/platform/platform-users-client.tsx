@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LogIn, Plus, User, Users, type LucideIcon } from "lucide-react";
+import { Globe, LogIn, Plus, User, Users, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { SignInTab, type SignInTabHandle } from "@/components/dashboard/sign-in/sign-in-tab";
@@ -17,21 +17,26 @@ import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
 import type { PlatformGroupListHandle } from "./platform-group-list";
-import { groupsKindOf, PlatformGroupsTab, type GroupsKind } from "./platform-groups-tab";
+import { PlatformGroupList } from "./platform-group-list";
+import { TenantGroupsList, type TenantGroupsListHandle } from "./tenant-groups-list";
 
-export type PlatformUsersTab = "users" | "groups" | "providers";
+export type PlatformUsersTab = "users" | "groups" | "tenant-groups" | "providers";
 
-const TABS: PlatformUsersTab[] = ["users", "groups", "providers"];
+const TABS: PlatformUsersTab[] = ["users", "groups", "tenant-groups", "providers"];
 
-const LABELS: Record<PlatformUsersTab, string> = { users: "Users", groups: "Groups", providers: "Sign-in providers" };
-const ICONS: Record<PlatformUsersTab, LucideIcon> = { users: User, groups: Users, providers: LogIn };
+const LABELS: Record<PlatformUsersTab, string> = { users: "Users", groups: "Platform groups", "tenant-groups": "Tenant groups", providers: "Sign-in providers" };
+const ICONS: Record<PlatformUsersTab, LucideIcon> = { users: User, groups: Globe, "tenant-groups": Users, providers: LogIn };
 
 /** The sign-in providers show as a table or as cards, the cards on a phone. */
 const LIST_VIEWS: ViewMode[] = ["table", "cards"];
 
-/** The tab an address opens, `?tab=sso` of the old Users & Groups as the providers. */
-export function platformTabOf(value: string | null): PlatformUsersTab {
+/**
+ * The tab an address opens, `?tab=sso` of the old Users & Groups as the providers, and
+ * `?tab=groups&groups=tenant` of the former switch on the groups as the tenant groups.
+ */
+export function platformTabOf(value: string | null, groups: string | null = null): PlatformUsersTab {
     if (value === "sso") return "providers";
+    if (value === "groups" && groups === "tenant") return "tenant-groups";
     return TABS.includes(value as PlatformUsersTab) ? (value as PlatformUsersTab) : "users";
 }
 
@@ -61,21 +66,22 @@ export function PlatformUsersClient({ canReadAccounts, canManageAccounts, canRea
     const isMobile = useIsMobileState();
     const users = useRef<UsersTabHandle>(null);
     const platformGroups = useRef<PlatformGroupListHandle>(null);
+    const tenantGroups = useRef<TenantGroupsListHandle>(null);
     const signIn = useRef<SignInTabHandle>(null);
     const [signInView, setSignInView] = useState<"table" | "cards">(savedSignInView === "cards" ? "cards" : "table");
     const tabs = TABS.filter((tab) => (tab === "providers" ? canReadSignIn : canReadAccounts));
-    const asked = platformTabOf(searchParams.get("tab"));
+    const asked = platformTabOf(searchParams.get("tab"), searchParams.get("groups"));
     const active = tabs.includes(asked) ? asked : tabs[0] ?? "users";
-    const groupsKind = groupsKindOf(searchParams.get("groups"));
 
     const setParam = useCallback((key: string, value: string) => {
         const next = new URLSearchParams(searchParams.toString());
         next.set(key, value);
+        // The tenant groups are a tab of their own now, the switch of the groups is gone.
+        next.delete("groups");
         // Replace rather than push, switching tabs should not fill the back button.
         router.replace(`?${next.toString()}`, { scroll: false });
     }, [router, searchParams]);
     const setTab = useCallback((value: string) => setParam("tab", value), [setParam]);
-    const setGroupsKind = useCallback((kind: GroupsKind) => setParam("groups", kind), [setParam]);
 
     const changeSignInView = useCallback((next: ViewMode) => {
         const view = next === "cards" ? "cards" : "table";
@@ -104,10 +110,16 @@ export function PlatformUsersClient({ canReadAccounts, canManageAccounts, canRea
                             <span className="hidden sm:inline">New user</span>
                         </Button>
                     )}
-                    {active === "groups" && groupsKind === "platform" && canManageAccounts && (
+                    {active === "groups" && canManageAccounts && (
                         <Button tone="create" onClick={() => platformGroups.current?.openCreate()} aria-label="New platform group">
                             <Plus />
                             <span className="hidden sm:inline">New platform group</span>
+                        </Button>
+                    )}
+                    {active === "tenant-groups" && canManageAccounts && (
+                        <Button tone="create" onClick={() => tenantGroups.current?.openCreate()} aria-label="New group for tenants">
+                            <Plus />
+                            <span className="hidden sm:inline">New group for tenants</span>
                         </Button>
                     )}
                     {active === "providers" && (
@@ -137,9 +149,12 @@ export function PlatformUsersClient({ canReadAccounts, canManageAccounts, canRea
             )}
             {canReadAccounts && (
                 <TabsContent value="groups">
-                    {isMobile !== undefined && (
-                        <PlatformGroupsTab ref={platformGroups} cards={isMobile} kind={groupsKind} onKindChange={setGroupsKind} canManage={canManageAccounts} />
-                    )}
+                    {isMobile !== undefined && <PlatformGroupList ref={platformGroups} cards={isMobile} canManage={canManageAccounts} />}
+                </TabsContent>
+            )}
+            {canReadAccounts && (
+                <TabsContent value="tenant-groups">
+                    {isMobile !== undefined && <TenantGroupsList ref={tenantGroups} cards={isMobile} canManage={canManageAccounts} />}
                 </TabsContent>
             )}
             {canReadSignIn && (

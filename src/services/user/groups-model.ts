@@ -5,7 +5,8 @@ import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { peopleOf, roleIn } from "@/services/tenant/membership-service";
 import { runAsSystem } from "@/lib/tenant/context";
 import { parsePermissions } from "./users-model";
-import type { GroupActor, GroupRow, GroupsModel } from "./groups-types";
+import type { GroupActor, GroupRow, GroupsModel, TenantGroupTemplateRow } from "./groups-types";
+import { tenantGroupTemplates } from "./tenant-group-templates";
 
 /** The newest entries of the audit log read at most, so a log with years of changes stays quick. */
 const AUDIT_LIMIT = 1000;
@@ -16,6 +17,8 @@ export interface ListedGroup {
     permissions: string;
     fullAccess: boolean;
     createdAt: Date;
+    /** The group for tenants of the platform it is in its tenant, none for a group of the tenant's own. */
+    templateId?: string | null;
     /** The tenant it belongs to, for the list of every tenant on the Platform. */
     tenantId?: string;
     /** Its members, who hold it in its tenant. */
@@ -72,6 +75,7 @@ export function buildGroupsModel({ groups, people, audit, viewerId, viewerPlatfo
             name: group.name,
             ...(group.tenantId ? { tenantId: group.tenantId } : {}),
             superAdmin: group.fullAccess,
+            fromPlatform: Boolean(group.templateId),
             permissions: parsePermissions(group.permissions),
             members: group.users.map((user) => ({ ...user, isYou: user.id === viewerId })).sort((a, b) => a.name.localeCompare(b.name)),
             createdAt: group.createdAt.toISOString(),
@@ -126,7 +130,7 @@ function groupAudit() {
  * reads every tenant, also the ones they may not open, which `platformTenantNames` names.
  */
 export async function getPlatformGroupsModel(viewerId: string | null): Promise<GroupsModel> {
-    const [listed, audit] = await runAsSystem(() => Promise.all([
+    const [listed, audit, templates] = await runAsSystem(() => Promise.all([
         prisma.group.findMany({
             select: {
                 id: true,
@@ -135,14 +139,40 @@ export async function getPlatformGroupsModel(viewerId: string | null): Promise<G
                 fullAccess: true,
                 createdAt: true,
                 tenantId: true,
+                templateId: true,
                 memberships: { select: { user: { select: { id: true, name: true, email: true, image: true } } } },
             },
         }),
         groupAudit(),
+        tenantGroupTemplates.list(),
     ]));
     const groups = listed.map(({ memberships, ...group }) => ({ ...group, users: memberships.map((membership) => membership.user) }));
     // The people of a tenant move between its groups in that tenant, so none are listed here.
-    return buildGroupsModel({ groups, people: [], audit, viewerId, viewerPlatformAdmin: true, withPeople: false, allTenants: true });
+    const model = buildGroupsModel({ groups, people: [], audit, viewerId, viewerPlatformAdmin: true, withPeople: false, allTenants: true });
+    // The groups for tenants keep the entries of their own log, made and changed on the platform.
+    const made = new Map<string, GroupActor>();
+    const changed = new Map<string, GroupActor>();
+    for (const row of audit) {
+        if (!row.resourceId) continue;
+        if (row.action === AUDIT_ACTIONS.CREATE) made.set(row.resourceId, actorOf(row));
+        else if (row.action === AUDIT_ACTIONS.UPDATE && !changed.has(row.resourceId)) changed.set(row.resourceId, actorOf(row));
+    }
+    const rows: TenantGroupTemplateRow[] = templates.map((template) => ({
+        id: template.id,
+        name: template.name,
+        permissions: template.permissions,
+        allTenants: template.allTenants,
+        tenantIds: template.tenantIds,
+        groups: template.groups.map((group) => ({
+            tenantId: group.tenantId,
+            groupId: group.id,
+            members: group.members.map((user) => ({ ...user, isYou: user.id === viewerId })).sort((a, b) => a.name.localeCompare(b.name)),
+        })),
+        createdAt: template.createdAt.toISOString(),
+        made: made.get(template.id) ?? null,
+        changed: changed.get(template.id) ?? null,
+    }));
+    return { ...model, templates: rows };
 }
 
 /**
@@ -165,6 +195,7 @@ export async function getGroupsModel(viewerId: string | null, viewerPlatformAdmi
                 permissions: true,
                 fullAccess: true,
                 createdAt: true,
+                templateId: true,
                 memberships: { where: { tenantId }, select: { user: { select: { id: true, name: true, email: true, image: true } } } },
             },
         }),

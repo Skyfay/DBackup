@@ -139,6 +139,14 @@ describe("the entries that depend on the tenant", () => {
         expect(sections({ showQuickSetup: false }).General).toEqual(["Overview /dashboard"]);
     });
 
+    it("leaves the Database Explorer out of a tenant without a database connection of its own, also for a platform admin", () => {
+        expect(sections({ tenantCount: 3, ownDatabases: true }).Explorer).toContain("Database Explorer /dashboard/explorer");
+        expect(sections({ tenantCount: 3, ownDatabases: false }).Explorer).toEqual(["History /dashboard/history"]);
+        expect(sections({ tenantCount: 3, isPlatformAdmin: true, ownDatabases: false }).Explorer).toEqual(["History /dashboard/history"]);
+        // Left out, as in every caller from before, the entry shows.
+        expect(sections({ tenantCount: 3 }).Explorer).toContain("Database Explorer /dashboard/explorer");
+    });
+
     it("knows the icon of every page any viewer can get, for the search", () => {
         const hrefs = ALL_NAV_ITEMS.map((item) => item.href);
         expect(hrefs).toEqual(expect.arrayContaining(["/dashboard/platform/tenants", "/dashboard/platform/users", "/dashboard/platform/settings", "/dashboard/settings"]));

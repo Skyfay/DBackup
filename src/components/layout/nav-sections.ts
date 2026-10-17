@@ -32,6 +32,8 @@ export interface NavItem {
     /** Any of them shows the entry. A platform admin sees every entry of the sections they get. */
     permission?: string | string[];
     quickSetupOnly?: boolean;
+    /** Shows only in a tenant that has or may add a database connection. */
+    needsDatabases?: boolean;
 }
 
 export interface NavGroup {
@@ -49,6 +51,11 @@ export interface NavState {
     /** A platform admin looks at every tenant at once. */
     allTenants?: boolean;
     showQuickSetup?: boolean;
+    /**
+     * Whether the tenant has or may add a database connection. A customer whose databases another
+     * tenant backs up and who adds none has nothing for the Database Explorer to read.
+     */
+    ownDatabases?: boolean;
 }
 
 const P = PERMISSIONS;
@@ -63,7 +70,7 @@ const JOBS: NavItem = { icon: CalendarClock, label: "Jobs", href: "/dashboard/jo
 // What the jobs made, beside the jobs: every backup and where it lies.
 const BACKUPS: NavItem = { icon: Archive, label: "Backups", href: "/dashboard/backups", permission: P.STORAGE.READ };
 
-const EXPLORER: NavItem = { icon: SearchCode, label: "Database Explorer", href: "/dashboard/explorer", permission: P.SOURCES.VIEW };
+const EXPLORER: NavItem = { icon: SearchCode, label: "Database Explorer", href: "/dashboard/explorer", permission: P.SOURCES.VIEW, needsDatabases: true };
 const HISTORY: NavItem = { icon: History, label: "History", href: "/dashboard/history", permission: P.HISTORY.READ };
 
 const VAULT: NavItem = { icon: Lock, label: "Vault", href: "/dashboard/vault", permission: P.VAULT.READ };
@@ -113,6 +120,7 @@ export function navSections(state: NavState, can: (permission: string) => boolea
     const several = hasSeveralTenants(state.tenantCount);
     const mayOpen = (item: NavItem) => {
         if (item.quickSetupOnly && !state.showQuickSetup) return false;
+        if (item.needsDatabases && state.ownDatabases === false) return false;
         if (!item.permission || state.isPlatformAdmin) return true;
         const needs = Array.isArray(item.permission) ? item.permission : [item.permission];
         return needs.some(can);

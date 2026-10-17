@@ -15,7 +15,19 @@ import { getUserPermissions, getViewer, hasPermissionWithContext } from "@/lib/a
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canUseQuickSetup } from "@/lib/auth/sign-in-target";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";
-import { hasNothingToBackUp } from "@/services/dashboard/start-page";
+import { hasNothingToBackUp, ownBackupReach } from "@/services/dashboard/start-page";
+import { listSharedDatabases } from "@/services/tenant/shared-databases";
+import type { ProvidedSummary } from "@/components/dashboard/widgets/status-banner";
+
+/** The databases other tenants back up for this one now, for the banner of a tenant without jobs. */
+async function providedSummary(tenantId: string): Promise<ProvidedSummary> {
+    const held = (await listSharedDatabases(tenantId)).filter((database) => database.until === null && !database.serverGone);
+    return {
+        providers: [...new Set(held.map((database) => database.providerName))],
+        databases: held.length,
+        servers: new Set(held.map((database) => database.sourceId)).size,
+    };
+}
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
 export const metadata: Metadata = { title: "Overview" };
@@ -30,8 +42,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
     // Right after signing in, someone who may set DBackup up and has nothing to back up yet
     // starts on the Quick Setup. Only then: the Overview stays reachable from the sidebar.
+    // A tenant with nothing to back up itself, whose databases another tenant backs up, never starts there.
+    const reach = await ownBackupReach();
     if ((await searchParams).from === "sign-in") {
-        redirect(canUseQuickSetup(viewer.permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
+        redirect(reach.jobs && canUseQuickSetup(viewer.permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
     }
 
     // In All tenants whoever may see the tenants sees each with how it is doing, the failed ones first.
@@ -47,6 +61,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     const canViewJobs = permissions.includes(PERMISSIONS.JOBS.READ);
     const canExecute = permissions.includes(PERMISSIONS.JOBS.EXECUTE);
     const hasLiveRuns = overview.strip.runningNow + overview.strip.queuedNow > 0;
+    const provided = overview.health.state === "empty" && !reach.jobs && viewer.tenantId ? await providedSummary(viewer.tenantId) : null;
 
     return (
         <DashboardRefresh hasRunningJobs={hasLiveRuns}>
@@ -56,7 +71,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     health={overview.health}
                     canExecute={canExecute}
                     canViewHistory={canViewHistory}
-                    canManageJobs={permissions.includes(PERMISSIONS.JOBS.WRITE)}
+                    canManageJobs={permissions.includes(PERMISSIONS.JOBS.WRITE) && reach.jobs}
+                    ownJobs={reach.jobs}
+                    provided={provided && provided.databases > 0 ? provided : null}
+                    canViewBackups={canViewStorage}
                 />
                 {summaries?.success && <TenantsCard summaries={summaries.data} />}
                 <KpiCards

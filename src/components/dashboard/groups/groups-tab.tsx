@@ -28,6 +28,7 @@ import { GroupMoveDialog, type GroupMoveTask } from "./group-move-dialog";
 import { GroupsStrip } from "./group-strip";
 import { GROUPS_TABLE_ID } from "./groups-tables";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
+import { useTenantView } from "@/components/tenant/tenant-view";
 
 /** What the page around the list can start, like New group beside the tabs. */
 export interface GroupsTabHandle {
@@ -98,9 +99,16 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
     const open = useCallback((group: GroupRow) => setDetails({ id: group.id, open: true }), []);
     // A link like the search in the header opens one with `?open=`.
     useOpenFromLink(model?.groups, open);
+    // A group the platform gives the tenant is named after the platform, which changes it.
+    const { platformName } = useTenantView();
+    const giver = platformName ?? "The platform";
     const columns = useMemo(
-        () => groupColumns({ onOpen: open, renderActions: (group) => <BackupRowMenu name={group.name} groups={groupActions(group, handlersFor(group))} /> }),
-        [open, handlersFor]
+        () => groupColumns({
+            onOpen: open,
+            renderActions: (group) => <BackupRowMenu name={group.name} groups={groupActions(group, handlersFor(group), false, giver)} />,
+            markOf: (group) => (group.fromPlatform ? `From ${giver}` : null),
+        }),
+        [open, handlersFor, giver]
     );
 
     const groups = useMemo(() => model?.groups ?? [], [model]);
@@ -113,7 +121,11 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
         itemName: (group) => group.name,
         itemDetail: (group) => countWord(group.members.length, "member", "members"),
         // A group with members is deleted on its own, where the dialog asks where they go.
-        ineligible: (group) => (group.superAdmin ? "Holds every permission" : group.members.length > 0 ? "People are in it, delete it on its own to move them" : null),
+        ineligible: (group) => (group.superAdmin
+            ? "Holds every permission"
+            : group.fromPlatform
+              ? `Comes from ${giver}, which deletes it`
+              : group.members.length > 0 ? "People are in it, delete it on its own to move them" : null),
         confirm: {
             title: (selected) => `Delete ${selected.length} group${selected.length === 1 ? "" : "s"}?`,
             // The server keeps a group that has members anywhere, so nobody loses access by this.
@@ -121,7 +133,7 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
             confirmLabel: "Delete",
         },
         run: (selected) => unwrapBulkAction(bulkDeleteGroups(selected.map((group) => group.id))),
-    }] : [], [canManage]);
+    }] : [], [canManage, giver]);
 
     const shown = details ? groups.find((group) => group.id === details.id) ?? null : null;
 
@@ -157,7 +169,7 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                     isLoading={isLoading}
                     enableRowSelection={canManage && view === "table"}
                     getRowId={(group) => group.id}
-                    isRowSelectable={(group) => !group.superAdmin && !groupBeyond(group, viewer)}
+                    isRowSelectable={(group) => !group.superAdmin && !group.fromPlatform && !groupBeyond(group, viewer)}
                     bulkActions={bulkActions}
                     onBulkActionComplete={afterChange}
                     columnLayout={layout}
@@ -165,10 +177,10 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                     activeRowId={details?.open ? details.id : null}
                     view={view}
                     renderCard={(row) => (
-                        <GroupCard group={row.original} onOpen={open} actions={<BackupRowMenu name={row.original.name} groups={groupActions(row.original, handlersFor(row.original))} />} />
+                        <GroupCard group={row.original} onOpen={open} actions={<BackupRowMenu name={row.original.name} groups={groupActions(row.original, handlersFor(row.original), false, giver)} />} />
                     )}
                     renderRowMenu={(group, bulk) => (
-                        <BackupContextMenu tile={<GroupTile group={group} size="sm" />} title={group.name} note={groupLine(group)} groups={groupActions(group, handlersFor(group))} bulk={bulk} />
+                        <BackupContextMenu tile={<GroupTile group={group} size="sm" />} title={group.name} note={group.fromPlatform ? `From ${giver}` : groupLine(group)} groups={groupActions(group, handlersFor(group), false, giver)} bulk={bulk} />
                     )}
                 />
             )}
@@ -181,7 +193,7 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                 onDuplicate={handlers.onDuplicate}
                 onMove={shown && movable(shown) ? (group: GroupRow, member: GroupMember) => setMoving({ kind: "member", group, member }) : undefined}
                 onAddPeople={shown && movable(shown) && model?.people ? (group: GroupRow) => setMoving({ kind: "add", group }) : undefined}
-                groupsMenu={shown ? groupActions(shown, handlersFor(shown), true) : []}
+                groupsMenu={shown ? groupActions(shown, handlersFor(shown), true, giver) : []}
                 version={version}
             />
 

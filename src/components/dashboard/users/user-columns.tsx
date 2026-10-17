@@ -8,7 +8,7 @@ import type { DataTableFilterableColumn } from "@/components/ui/data-table";
 import { DateDisplay } from "@/components/utils/date-display";
 import type { SignInMethod, UserRow } from "@/services/user/users-types";
 import { CountCell, GroupTag, LastSignInCell, MethodsCell, SecondFactorCell, UserCell } from "./user-cells";
-import { namedTenants, tenantFilter, TenantsCell, tenantsAccessor, type TenantNameOf } from "./user-tenants";
+import { namedTenants, onPlatform, tenantFilter, TenantsCell, tenantsAccessor, type TenantNameOf } from "./user-tenants";
 
 /** The value of the Group filter for a user without one. */
 export const NO_GROUP = "none";
@@ -50,7 +50,7 @@ function tenantsColumn(nameOf: TenantNameOf): ColumnDef<UserRow> {
         getUniqueValues: tenantsAccessor,
         filterFn: (row, id, value: string[]) => (row.getValue(id) as string[]).some((tenantId) => value.includes(tenantId)),
         sortingFn: (a, b) => (a.original.tenants?.length ?? 0) - (b.original.tenants?.length ?? 0) || first(a.original).localeCompare(first(b.original)),
-        cell: ({ row }) => <TenantsCell tenants={row.original.tenants ?? []} nameOf={nameOf} className="max-w-64" />,
+        cell: ({ row }) => <TenantsCell tenants={row.original.tenants ?? []} nameOf={nameOf} platform={onPlatform(row.original)} className="max-w-64" />,
     };
 }
 

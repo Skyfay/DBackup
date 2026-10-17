@@ -17,6 +17,7 @@ const group = (id: string, permissions: string[], superAdmin = false): GroupRow 
     id,
     name: id,
     superAdmin,
+    fromPlatform: false,
     permissions,
     members: [],
     createdAt: "2026-10-01T00:00:00.000Z",

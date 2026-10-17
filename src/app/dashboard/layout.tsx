@@ -18,7 +18,7 @@ import { taskColorCss } from "@/lib/core/task-colors"
 import { getTrashDays } from "@/services/trash/trash-service"
 import { logger } from "@/lib/logging/logger"
 import { wrapError } from "@/lib/logging/errors"
-import { showsQuickSetup } from "@/services/dashboard/start-page"
+import { ownBackupReach, showsQuickSetup } from "@/services/dashboard/start-page"
 import { getInstanceName } from "@/services/system/system-settings-service"
 import { usesAppleKeys } from "@/lib/core/keyboard"
 import { tenantService } from "@/services/tenant/tenant-service"
@@ -51,7 +51,7 @@ export default async function DashboardLayout({
     // An account that works in no tenant yet, and is not in All tenants, reads nothing of a tenant:
     // every such query would refuse it and take each page down with it.
     const inTenantLoad = viewerLoad.then((user) => Boolean(user && (user.tenantId || user.allTenants)));
-    const [permissions, viewer, tenants, tenantCount, updateInfo, showQuickSetup, cookieStore, tableDefaults, trashDays, taskColors, instanceName] = await Promise.all([
+    const [permissions, viewer, tenants, tenantCount, updateInfo, reach, cookieStore, tableDefaults, trashDays, taskColors, instanceName] = await Promise.all([
         getUserPermissions(),
         viewerLoad,
         // The tenants the viewer may switch to, which the head of the sidebar offers from two on.
@@ -60,7 +60,12 @@ export default async function DashboardLayout({
         tenantService.count(),
         // The last answer of GitHub, so a page never waits for it.
         updateService.getUpdateInfo(),
-        inTenantLoad.then((inTenant) => (inTenant ? showsQuickSetup() : false)),
+        // Quick Setup builds a job of the tenant's own, which a tenant with nothing to back up itself cannot.
+        inTenantLoad.then(async (inTenant) => {
+            if (!inTenant) return { quickSetup: false, databases: true };
+            const [shows, own] = await Promise.all([showsQuickSetup(), ownBackupReach()]);
+            return { quickSetup: shows && own.jobs, databases: own.databases };
+        }),
         cookies(),
         getTableDefaults(session.user.id),
         getTrashDays(),
@@ -108,7 +113,8 @@ export default async function DashboardLayout({
                                 isPlatformAdmin={viewer?.isPlatformAdmin ?? false}
                                 currentVersion={updateInfo.currentVersion}
                                 instanceName={instanceName || undefined}
-                                showQuickSetup={showQuickSetup}
+                                showQuickSetup={reach.quickSetup}
+                                ownDatabases={reach.databases}
                                 groupName={groupName}
                                 tenants={tenants}
                                 activeTenantId={activeTenantId}

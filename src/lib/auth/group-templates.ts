@@ -7,7 +7,7 @@ import { knownPermissions } from "@/lib/auth/permission-areas";
  */
 
 export interface GroupTemplate {
-    id: "viewer" | "operator" | "backup-admin" | "auditor" | "user-admin";
+    id: "client" | "viewer" | "operator" | "backup-admin" | "auditor" | "user-admin";
     label: string;
     /** The name the new group gets, which can change before it is created. */
     groupName: string;
@@ -72,6 +72,29 @@ export const GROUP_TEMPLATES: GroupTemplate[] = [
             P.USERS.READ, P.USERS.WRITE, P.GROUPS.READ, P.GROUPS.WRITE, P.API_KEYS.READ, P.API_KEYS.WRITE, P.AUDIT.READ, ...OWN_PROFILE,
         ]),
     },
+];
+
+/**
+ * The customer of a hosting company: sees the databases given to it and their backups, backs them up
+ * on demand, downloads and restores them, and changes nothing else.
+ */
+export const CLIENT_TEMPLATE: GroupTemplate = {
+    id: "client",
+    label: "Client",
+    groupName: "Client",
+    description: "Sees its databases and backups, backs them up on demand, downloads and restores them",
+    permissions: knownPermissions([
+        P.SOURCES.VIEW, P.JOBS.READ, P.JOBS.EXECUTE, P.STORAGE.READ, P.STORAGE.DOWNLOAD, P.STORAGE.RESTORE, P.HISTORY.READ, ...OWN_PROFILE,
+    ]),
+};
+
+/**
+ * What a group the platform makes for tenants can start with: the customer of a hosting company
+ * first, then the kinds of work of any team. The names are the ones a tenant sees, in the singular.
+ */
+export const TENANT_GROUP_TEMPLATES: GroupTemplate[] = [
+    CLIENT_TEMPLATE,
+    ...GROUP_TEMPLATES.map((template) => ({ ...template, groupName: template.label })),
 ];
 
 /** A name for a new group that none of the others has, like "Operators 2". */

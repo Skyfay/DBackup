@@ -187,8 +187,9 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
         .sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin) || a.name.localeCompare(b.name));
 
     const passwordOnly = rows.filter((row) => row.secondFactor === "none").map((row) => row.name);
-    // In All tenants an account sees something once it works in some tenant.
-    const placed = (row: UserRow) => (row.tenants ? row.tenants.length > 0 : row.group !== null);
+    // In All tenants an account sees something once it works in some tenant, or runs the platform
+    // as a platform admin or with a platform group, which needs no tenant.
+    const placed = (row: UserRow) => (row.tenants ? row.tenants.length > 0 || row.superAdmin || Boolean(row.platformGroup) : row.group !== null);
     return {
         users: rows,
         groups: groupRows,

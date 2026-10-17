@@ -16,8 +16,8 @@ import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { UserRow, UsersGroup } from "@/services/user/users-types";
 import { groupsOfTenant } from "./user-access";
 import { GroupPicker } from "./user-group-picker";
-import { TenantField } from "./user-tenant-field";
-import { namedTenants, type NamedTenantRole } from "./user-tenants";
+import { TenantField, tenantGroupsMeta } from "./user-tenant-field";
+import { namedTenants, onPlatform, type NamedTenantRole } from "./user-tenants";
 
 const log = logger.child({ component: "user-tenants-section" });
 
@@ -93,7 +93,10 @@ export function UserTenantsSection({ user, groups, canManage, onChanged }: UserT
 
     return (
         <Section title="Tenants" aside={aside}>
-            {roles.length === 0 && (
+            {roles.length === 0 && onPlatform(user) && (
+                <p className="text-sm text-muted-foreground">Works in no tenant of its own. Its platform group decides which tenants it opens.</p>
+            )}
+            {roles.length === 0 && !onPlatform(user) && (
                 <div className="relative flex gap-3 overflow-hidden rounded-lg border border-warning/30 bg-warning/5 p-3 pl-4">
                     <span className="absolute inset-y-0 left-0 w-1 bg-warning" aria-hidden="true" />
                     <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
@@ -167,6 +170,7 @@ export function UserTenantsSection({ user, groups, canManage, onChanged }: UserT
                     <div className="grid gap-2 sm:grid-cols-2">
                         <TenantField
                             tenants={open}
+                            metaOf={tenantGroupsMeta(groups)}
                             value={newTenant}
                             onChange={(tenantId) => {
                                 // A group belongs to its tenant, so a pick of another tenant starts the group anew.

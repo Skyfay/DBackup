@@ -41,7 +41,7 @@ interface PlatformGroupEditorProps {
     readOnly?: string;
 }
 
-function AreaButton({ label, level, on, changed, icon: Icon, onClick }: { label: string; level: string; on: boolean; changed: boolean; icon?: typeof Globe; onClick: () => void }) {
+export function AreaButton({ label, level, on, changed, icon: Icon, onClick }: { label: string; level: string; on: boolean; changed: boolean; icon?: typeof Globe; onClick: () => void }) {
     return (
         <button
             type="button"
@@ -61,7 +61,7 @@ function AreaButton({ label, level, on, changed, icon: Icon, onClick }: { label:
     );
 }
 
-function Part({ icon: Icon, title, note, children }: { icon: typeof Globe; title: string; note: string; children: React.ReactNode }) {
+export function Part({ icon: Icon, title, note, children }: { icon: typeof Globe; title: string; note: string; children: React.ReactNode }) {
     return (
         <section className="rounded-lg border p-1">
             <h3 className="flex items-center gap-1.5 px-2 pt-1.5 pb-1 text-[11px] font-semibold tracking-wide uppercase">
@@ -74,7 +74,7 @@ function Part({ icon: Icon, title, note, children }: { icon: typeof Globe; title
     );
 }
 
-function Eyebrow({ icon: Icon, children }: { icon: typeof Globe; children: React.ReactNode }) {
+export function Eyebrow({ icon: Icon, children }: { icon: typeof Globe; children: React.ReactNode }) {
     return (
         <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
             <Icon className="size-3.5" aria-hidden="true" />

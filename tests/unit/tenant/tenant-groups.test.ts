@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
  * Groups of tenants against a real SQLite database migrated with the migrations of this version:
- * every tenant has groups of its own, starts with Admin and Viewer, and gives a person only a group
- * of itself.
+ * every tenant has groups of its own, starts with Admin and the groups the platform gives every
+ * tenant, and gives a person only a group of itself.
  */
 import { execFileSync } from "child_process";
 import { mkdtempSync, rmSync } from "fs";
@@ -10,7 +10,6 @@ import os from "os";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { VIEWER_PERMISSIONS } from "@/lib/auth/owner-permissions";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { tenantScopeExtension } from "@/lib/tenant/prisma-scope";
 
@@ -52,19 +51,21 @@ afterAll(async () => {
     if (root) rmSync(root, { recursive: true, force: true });
 });
 
+/** A group of the tenant by the name Viewer, which the tests below give and take. */
+const viewerIn = (tenantId: string) => base.group.create({ data: { tenantId, name: "Viewer", permissions: JSON.stringify(["sources:read", "jobs:read"]) } });
+
 describe("the groups of a tenant", () => {
-    it("starts a new tenant with Admin, who may do everything there, and Viewer, who sees it", async () => {
+    it("starts a new tenant with Admin alone, who may do everything there, while no group for every tenant exists", async () => {
         const acme = await tenantService.create("Acme");
         const groups = await base.group.findMany({ where: { tenantId: acme.id }, orderBy: { name: "asc" } });
 
-        expect(groups.map((group) => [group.name, group.fullAccess])).toEqual([["Admin", true], ["Viewer", false]]);
-        expect(JSON.parse(groups[1].permissions)).toEqual([...VIEWER_PERMISSIONS]);
-        expect(VIEWER_PERMISSIONS).not.toContain("jobs:write");
-        expect(VIEWER_PERMISSIONS).not.toContain("settings:read");
+        expect(groups.map((group) => [group.name, group.fullAccess])).toEqual([["Admin", true]]);
+        await viewerIn(acme.id);
     });
 
     it("lets every tenant use a name once, also a name another tenant has", async () => {
         const globex = await tenantService.create("Globex");
+        await viewerIn(globex.id);
         await runAsTenant(globex.id, () => groupService.create({ name: "Operators", permissions: ["jobs:read"] }));
         const acme = (await base.tenant.findFirstOrThrow({ where: { name: "Acme" } })).id;
 

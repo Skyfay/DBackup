@@ -34,6 +34,26 @@ export const userService = {
     return result.user;
   },
 
+  /**
+   * Creates an account of the people of the MSP with its password and its platform group, the
+   * built-in Platform admin or another one, and no tenant. Like `createUser`, the session Better Auth
+   * opens while creating it is removed again.
+   */
+  async createPlatformUser(data: { name: string; email: string; password: string }, platform: { kind: "admin" } | { kind: "group"; id: string }) {
+    if (platform.kind === "group" && !(await prisma.platformGroup.findUnique({ where: { id: platform.id }, select: { id: true } }))) {
+      throw new ValidationError("The platform group no longer exists.");
+    }
+    const result = await authService.createUser(data);
+    await prisma.$transaction([
+      prisma.session.deleteMany({ where: { userId: result.user.id } }),
+      prisma.user.update({
+        where: { id: result.user.id },
+        data: platform.kind === "admin" ? { platformRole: PLATFORM_ADMIN_ROLE, platformGroupId: null } : { platformRole: null, platformGroupId: platform.id },
+      }),
+    ]);
+    return result.user;
+  },
+
   /** The name of a user, which a run or a task they start records as who started it. */
   async nameOf(userId: string): Promise<string | null> {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });

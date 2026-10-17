@@ -45,16 +45,16 @@ model AdapterConfig {
   lastError           String? // Human-readable reason when lastStatus != ONLINE (e.g. "No credential profile assigned")
   consecutiveFailures Int       @default(0) // Zähler für Logik (Grün -> Orange -> Rot)
 
-  healthLogs              HealthCheckLog[]
-  versionHistory          DbVersionHistory[]
-  storageListCaches       StorageListCache[]
-  databaseListCache       DatabaseListCache?
+  healthLogs        HealthCheckLog[]
+  versionHistory    DbVersionHistory[]
+  storageListCaches StorageListCache[]
+  databaseListCache DatabaseListCache?
   // A destination or a channel its tenant shares with other tenants, and the recipients they name.
-  share                   ConnectionShare?
-  channelRecipients       ChannelRecipients[]
+  share             ConnectionShare?
+  channelRecipients ChannelRecipients[]
   // The tenant the row belongs to, see src/lib/tenant/prisma-scope.ts. The default only fills the
   // rows of the migration, the client names the tenant of every new row itself.
-  tenantId                String                   @default("default")
+  tenantId          String              @default("default")
 
   @@index([tenantId])
 }
@@ -334,7 +334,7 @@ model User {
   // A group of the platform someone of the MSP holds besides their memberships, null for none.
   // A platform admin holds none, their role covers everything.
   platformGroupId String?
-  platformGroup   PlatformGroup? @relation(fields: [platformGroupId], references: [id], onDelete: SetNull)
+  platformGroup   PlatformGroup?     @relation(fields: [platformGroupId], references: [id], onDelete: SetNull)
 
   @@index([platformGroupId])
 }
@@ -374,26 +374,27 @@ model PlatformGroupTenant {
 // template belongs to one tenant, see src/lib/tenant/. An instance starts with the tenant "default",
 // which holds what the platform owns and is never deleted.
 model Tenant {
-  id                      String                   @id @default(cuid())
-  name                    String                   @unique
+  id                   String                      @id @default(cuid())
+  name                 String                      @unique
   // A tenant of the MSP, set by the platform: its database servers give single databases to other
   // tenants, see src/services/tenant/shared-servers.ts, and it shares destinations and notification
   // channels with them, see src/services/sharing/. It may also get what another tenant shares.
-  sharesWithCustomers     Boolean                  @default(false)
+  sharesWithCustomers  Boolean                     @default(false)
   // What the tenant may add itself, set by the platform. Off stops new ones, what it has keeps
   // working, see src/services/tenant/tenant-allowances.ts.
-  addsDatabases           Boolean                  @default(true)
-  addsDirectorySources    Boolean                  @default(true)
-  addsDestinations        Boolean                  @default(true)
-  addsChannels            Boolean                  @default(true)
+  addsDatabases        Boolean                     @default(true)
+  addsDirectorySources Boolean                     @default(true)
+  addsDestinations     Boolean                     @default(true)
+  addsChannels         Boolean                     @default(true)
   // Whether it makes API keys itself. Off stops new keys, the ones it has keep working.
-  addsApiKeys             Boolean                  @default(true)
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  memberships             TenantMembership[]
-  invitations             TenantInvitation[]
-  logo                    TenantLogo?
-  platformGroups          PlatformGroupTenant[]
+  addsApiKeys          Boolean                     @default(true)
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  memberships          TenantMembership[]
+  invitations          TenantInvitation[]
+  logo                 TenantLogo?
+  platformGroups       PlatformGroupTenant[]
+  groupTemplates       TenantGroupTemplateTenant[]
 }
 
 // The logo of a tenant, which the head of the sidebar and the tenant switcher show.
@@ -550,21 +551,52 @@ model SystemSetting {
 }
 
 model Group {
-  id          String             @id @default(uuid())
+  id          String               @id @default(uuid())
   name        String
   permissions String // Stored as JSON
   // The role with every permission of its tenant, now and in later versions. The permission sync
   // keeps it complete, and nobody edits or deletes it. The SuperAdmin group of earlier versions.
-  fullAccess  Boolean            @default(false)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  fullAccess  Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
   // A group belongs to one tenant, whose admins make and change it. See AdapterConfig.tenantId.
-  tenantId    String             @default("default")
+  tenantId    String               @default("default")
   // Who holds it in its tenant.
   memberships TenantMembership[]
   invitations TenantInvitation[]
+  // A group the platform made for tenants, which this one is in its tenant. The tenant's admins give
+  // it to people, only the platform changes, renames or deletes it. See TenantGroupTemplate.
+  templateId  String?
+  template    TenantGroupTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, name])
+  @@unique([tenantId, templateId])
+  @@index([tenantId])
+}
+
+// A group the platform makes once and gives to tenants, see src/services/user/tenant-group-templates.ts.
+// Every tenant it reaches has a Group linked to it, which follows its name and its permissions.
+model TenantGroupTemplate {
+  id          String                      @id @default(uuid())
+  name        String                      @unique
+  // The permissions in a tenant, a JSON list like the permissions of a group.
+  permissions String                      @default("[]")
+  // Every tenant, the ones made later too. Otherwise the tenants listed in `tenants`.
+  allTenants  Boolean                     @default(false)
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  tenants     TenantGroupTemplateTenant[]
+  groups      Group[]
+}
+
+// A tenant a group for tenants reaches while it does not reach every tenant.
+model TenantGroupTemplateTenant {
+  templateId String
+  tenantId   String
+  template   TenantGroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([templateId, tenantId])
   @@index([tenantId])
 }
 

@@ -28,7 +28,17 @@ interface ScopePaneProps {
     /** Shows the scope without a way to change it. */
     readOnly?: boolean;
     eyebrow?: React.ReactNode;
+    /** The words of the pane, for a group of the platform that gives tenants a group rather than rights on top. */
+    texts?: { sub: string; all: string; note: string };
+    /** What a tenant of the list shows on its right, in place of what it holds, like a group of its own by the name. */
+    aside?: (tenantId: string) => React.ReactNode;
 }
+
+const PLATFORM_GROUP_TEXTS = {
+    sub: "In which tenants the rights of this part count",
+    all: "every new one, the home tenant included. Members also get All tenants in the switcher when they see something there.",
+    note: "In the other tenants this group gives nothing. A member who has a group there of their own keeps it.",
+};
 
 const CARD = "rounded-lg border p-3 transition-colors has-data-[state=checked]:border-tone-control/60 has-data-[state=checked]:bg-tone-control/5 dark:has-data-[state=checked]:bg-tone-control/10";
 
@@ -37,7 +47,7 @@ const CARD = "rounded-lg border p-3 transition-colors has-data-[state=checked]:b
  * too, or the tenants ticked in the list, with a search, what each holds and Tick all. A tenant or
  * All tenants the viewer may not give stays, locked, with why.
  */
-export function ScopePane({ value, onChange, tenants, allLock, tenantLock, readOnly = false, eyebrow }: ScopePaneProps) {
+export function ScopePane({ value, onChange, tenants, allLock, tenantLock, readOnly = false, eyebrow, texts = PLATFORM_GROUP_TEXTS, aside }: ScopePaneProps) {
     const id = useId();
     const [query, setQuery] = useState("");
     const shown = tenants.filter((tenant) => tenant.name.toLowerCase().includes(query.trim().toLowerCase()));
@@ -50,7 +60,7 @@ export function ScopePane({ value, onChange, tenants, allLock, tenantLock, readO
             {eyebrow}
             <div>
                 <h3 className="text-base font-semibold">Where</h3>
-                <p className="text-xs text-muted-foreground">In which tenants the rights of this part count</p>
+                <p className="text-xs text-muted-foreground">{texts.sub}</p>
             </div>
 
             <RadioGroup
@@ -64,7 +74,7 @@ export function ScopePane({ value, onChange, tenants, allLock, tenantLock, readO
                     <span className="grid min-w-0 flex-1 gap-0.5">
                         <span className="text-sm font-medium">All tenants</span>
                         <span className="text-xs text-muted-foreground">
-                            The {tenants.length.toLocaleString("en-US")} of today and every new one, the home tenant included. Members also get All tenants in the switcher when they see something there.
+                            The {tenants.length.toLocaleString("en-US")} of today and {texts.all}
                         </span>
                         {allLock && !readOnly && (
                             <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -120,7 +130,7 @@ export function ScopePane({ value, onChange, tenants, allLock, tenantLock, readO
                                                     </span>
                                                     {lock && !readOnly && <span className="block truncate text-xs text-muted-foreground">{lock}</span>}
                                                 </span>
-                                                <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">{countLine(tenant)}</span>
+                                                {aside?.(tenant.id) ?? <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">{countLine(tenant)}</span>}
                                             </label>
                                         </li>
                                     );
@@ -148,7 +158,7 @@ export function ScopePane({ value, onChange, tenants, allLock, tenantLock, readO
 
             <p className="flex gap-2.5 rounded-lg border bg-muted/30 p-3 text-xs">
                 <Info className="mt-px size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span>In the other tenants this group gives nothing. A member who has a group there of their own keeps it.</span>
+                <span>{texts.note}</span>
             </p>
         </div>
     );

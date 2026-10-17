@@ -30,14 +30,14 @@ A platform admin and someone of a platform group work across tenants, so no tena
 
 ## Platform Groups
 
-A platform group gives the people of the MSP rights without making them platform admins. It is made under **Platform → Users & Groups → Groups**, where a switch shows the platform groups or the groups of every tenant. A platform group has two parts:
+A platform group gives the people of the MSP rights without making them platform admins. It is made under **Platform → Users & Groups → Platform groups**, beside the tab **Tenant groups**. A platform group has two parts:
 
 | Part | Holds |
 | :--- | :--- |
 | **On the platform** | The settings of the instance, the tenants, the accounts with the platform groups and the sharing with customers, each with a level like See or Change, and the sign-in providers to see |
 | **In the tenants** | The same areas as the group of a tenant, in **All tenants**, the ones made later included, or in **Selected tenants** |
 
-Someone holds at most one platform group, picked in the panel of the account, and changes their own profile through it, also without a group in any tenant. In a tenant of its scope they may do what their group there gives plus what the platform group gives there, it never takes anything away, and they open such a tenant without being a member. A platform group of all tenants that sees something there also opens [All tenants](#all-tenants). The section **Platform** of the sidebar shows them only what their rights on the platform open.
+Someone holds at most one platform group, picked with **Runs the platform** in **New user**, in **Edit** or in the panel of the account, and changes their own profile through it, also without a group in any tenant. In a tenant of its scope they may do what their group there gives plus what the platform group gives there, it never takes anything away, and they open such a tenant without being a member. A platform group of all tenants that sees something there also opens [All tenants](#all-tenants). The section **Platform** of the sidebar shows them only what their rights on the platform open.
 
 Nobody makes, changes or gives a platform group that may do more than they may themselves, on the platform or in the tenants of its scope. The account of someone in a platform group is changed only by a platform admin, or by someone with `platform-accounts:write` who may give that platform group, never by the admin of a tenant. An API key of someone in a platform group gets its rights in the tenants, never the ones on the platform, but for **Sharing** in a key of a tenant that shares with customers, see [API Keys](#api-keys).
 
@@ -142,13 +142,38 @@ A customer's save, test or run of such a connection is refused with a message th
 
 ## Groups in Tenants
 
-Every tenant has groups of its own. A new tenant starts with **Admin**, which may do everything in the tenant, and **Viewer**, which sees everything and changes nothing. Whoever holds `groups:write` in the tenant adds, changes and deletes its groups, and a group never gets a permission its maker does not hold there. A person holds one group per tenant they work in, like **Admin** in one and **Operators** in another.
+Every tenant has groups of its own. A new tenant starts with **Admin**, which may do everything in the tenant, and every [group for all tenants](#groups-for-tenants). Whoever holds `groups:write` in the tenant adds, changes and deletes its groups, and a group never gets a permission its maker does not hold there. A person holds one group per tenant they work in, like **Admin** in one and **Operators** in another.
 
 The **Settings** of the instance (`settings:read`, `settings:write`) count only from the group someone holds in the home tenant or from a platform group, so the admin of a customer never reaches them. **Tenant settings** (`tenant-settings:read`, `tenant-settings:write`) count in each tenant: the name, the logo and the notifications of the tenant, and its Recently deleted. The own profile (`profile:*`) counts from any group someone holds.
 
 ::: info After the update
 Every group of an earlier version belongs to the home tenant. A group that could change the settings may also change the tenant settings, so Recently deleted works as before.
 :::
+
+### Groups for Tenants
+
+A group the platform needs in many tenants, like **Client** for the people of every customer, is made once under **Platform → Users & Groups → Tenant groups** with **New group for tenants**. It needs `platform-accounts:write`. It starts as **Custom**, as a copy of another group for tenants, or as a preset for a common use:
+
+| Preset | A member in a tenant |
+| :--- | :--- |
+| **Client** | Sees the databases of the tenant and their backups, backs them up on demand, downloads and restores them, changes nothing else |
+| **Viewer**, **Operator**, **Backup admin**, **Auditor**, **User admin** | The same as the [templates of a new group](/user-guide/admin/permissions#create-a-group), without the settings of the instance |
+
+It has a name, the permissions a member gets in a tenant, and **Where**: **All tenants**, the ones made later too, or **Selected tenants**. The list shows it above the own groups of the tenants, marked **For tenants**, with the tenants it reaches and everyone who holds it. **Admin** heads the list once, built in, with everyone who holds the Admin of a tenant. The menu at the end of a row, also on a right click, holds **Edit**, **Duplicate** and **Delete**, and **Delete** of the selection removes several groups for tenants nobody holds at once.
+
+Each tenant it reaches gets a real group by that name, marked **From** and the name of the home tenant. Its admins give it to their people like any group, but only the platform changes, renames or deletes it, and a change counts in every tenant at once. A group of a tenant cannot take its name. Someone of a platform group gives such a group no permission and no tenant beyond what their own platform group gives.
+
+A name is used once inside a tenant, everything else goes by the id of a group. When a tenant to reach has a group of its own by the name, saving asks per tenant:
+
+- **Take over** that group: its members keep it, its permissions become the ones of the platform, which the dialog lists.
+- **Leave the tenant out**: it keeps its own group, and once the name is free, it can be picked again.
+
+When a tenant leaves the group, or the group is deleted, and people hold it there, it asks too:
+
+- **Remove it**: the group is gone there, its members move to the group picked for that tenant, or to none, which takes them out of the tenant.
+- **Keep it** as a group of that tenant: its members keep their rights, and the tenant changes and deletes it from then on.
+
+A group nobody holds goes without a question. Every change goes into the audit log of the platform, and what happened to its group into the log of each tenant. A new tenant starts with **Admin** and every group for all tenants, so a **Viewer** or a **Client** made once for all tenants is there from the start. A tenant made before keeps the Viewer it started with.
 
 ## People in a Tenant
 

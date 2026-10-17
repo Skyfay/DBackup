@@ -107,7 +107,7 @@ function Content({ group, onEdit, onDuplicate, onMove, onAddPeople, groupsMenu, 
 
                     <Section
                         title="By area"
-                        aside={!onEdit || group.superAdmin ? undefined : isOwnGroup(group) ? "You are in it, another admin changes it" : "Edit to change"}
+                        aside={!onEdit || group.superAdmin ? undefined : group.fromPlatform ? "The platform changes it" : isOwnGroup(group) ? "You are in it, another admin changes it" : "Edit to change"}
                     >
                         <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
                             {SUMMARY_AREAS.map((area) => {

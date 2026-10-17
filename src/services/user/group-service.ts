@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { runAsTenant } from "@/lib/tenant/context";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { Tx } from "@/lib/prisma-tx";
 import { AVAILABLE_PERMISSIONS, PERMISSIONS } from "@/lib/auth/permissions";
@@ -23,6 +23,9 @@ export interface GroupChange {
     removed: string[];
     areas: { area: string; from: string; to: string }[];
 }
+
+/** Why a group the platform gives the tenant is not changed or deleted there. */
+export const fromPlatform = (name: string) => `${name} comes from the platform, which changes and deletes it.`;
 
 /** A name is unique within its tenant, the one the code runs in. */
 async function assertFreeName(name: string, exceptId?: string) {
@@ -91,6 +94,7 @@ export const groupService = {
         const group = await prisma.group.findUnique({ where: { id } });
         if (!group) throw new NotFoundError("Group", id);
         if (group.fullAccess) throw new ValidationError(`${group.name} holds every permission and cannot be edited.`);
+        if (group.templateId) throw new ValidationError(fromPlatform(group.name));
 
         const name = input.name.trim();
         await assertFreeName(name, id);
@@ -115,9 +119,10 @@ export const groupService = {
      * which the database would do on its own.
      */
     async delete(id: string, moveTo: string | null, by: MembershipActor) {
-        const group = await prisma.group.findUnique({ where: { id }, select: { id: true, name: true, permissions: true, fullAccess: true } });
+        const group = await prisma.group.findUnique({ where: { id }, select: { id: true, name: true, permissions: true, fullAccess: true, templateId: true } });
         if (!group) throw new NotFoundError("Group", id);
         if (group.fullAccess) throw new ValidationError(`${group.name} holds every permission and cannot be deleted.`);
+        if (group.templateId) throw new ValidationError(fromPlatform(group.name));
         if (moveTo === id) throw new ValidationError("Pick another group for its members.");
         const target = moveTo ? await prisma.group.findUnique({ where: { id: moveTo }, select: { permissions: true, fullAccess: true } }) : null;
         if (moveTo && !target) throw new ValidationError("The group for the members no longer exists.");
@@ -143,15 +148,17 @@ export const groupService = {
      * in the delete itself, so someone who joins in between keeps the group.
      */
     async deleteMany(ids: string[]): Promise<BulkResult> {
-        const groups = await prisma.group.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, fullAccess: true } });
+        const groups = await prisma.group.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, fullAccess: true, templateId: true } });
         const names = new Map(groups.map((group) => [group.id, group.name]));
         const full = new Set(groups.filter((group) => group.fullAccess).map((group) => group.id));
+        const platform = new Set(groups.filter((group) => group.templateId).map((group) => group.id));
 
         return runBulk(
             ids,
             async (id) => {
                 if (!names.has(id)) throw new Error("The group no longer exists.");
                 if (full.has(id)) throw new Error(`${names.get(id)} holds every permission and cannot be deleted.`);
+                if (platform.has(id)) throw new Error(fromPlatform(names.get(id) ?? "This group"));
                 await prisma.$transaction(async (tx) => {
                     const { count } = await tx.group.deleteMany({ where: { id, memberships: { none: {} } } });
                     if (count === 0) throw new Error("People are in it. Delete it on its own to move them to another group.");
@@ -167,7 +174,12 @@ export const groupService = {
 
     /** The group itself, null when it is gone. */
     async find(groupId: string) {
-        return prisma.group.findUnique({ where: { id: groupId }, select: { id: true, name: true, permissions: true, fullAccess: true } });
+        return prisma.group.findUnique({ where: { id: groupId }, select: { id: true, name: true, permissions: true, fullAccess: true, templateId: true } });
+    },
+
+    /** A group of any tenant, for the platform, which moves people between the groups of every tenant. */
+    async findAnywhere(groupId: string) {
+        return runAsSystem(() => prisma.group.findUnique({ where: { id: groupId }, select: { id: true, name: true, permissions: true, fullAccess: true, tenantId: true } }));
     },
 
     /** Whether the user holds the group. A group belongs to one tenant, so only there. */

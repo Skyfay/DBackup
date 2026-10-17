@@ -72,23 +72,24 @@ export function LevelDots({ rank, className }: { rank: number; className?: strin
 }
 
 const SHORT: Record<string, string> = {
-    connections: "Conn",
-    jobs: "Jobs",
-    backups: "Back",
-    history: "Hist",
-    templates: "Tmpl",
-    vault: "Vault",
-    users: "Users",
-    "api-keys": "Keys",
-    audit: "Audit",
-    settings: "Sett",
+    connections: "Con",
+    jobs: "Job",
+    backups: "Bak",
+    history: "His",
+    templates: "Tpl",
+    vault: "Vlt",
+    users: "Usr",
+    "api-keys": "Key",
+    audit: "Aud",
+    settings: "Set",
+    "tenant-settings": "Tnt",
 };
 
 /** The level of every area as a small column of four bars, for the cards and the first step of New group. */
 export function LevelStrip({ permissions, fullAccess = false, className }: { permissions: readonly string[]; fullAccess?: boolean; className?: string }) {
     const held = new Set(permissions);
     return (
-        <div className={cn("grid grid-cols-10 gap-1", className)}>
+        <div className={cn("grid auto-cols-fr grid-flow-col gap-0.5", className)}>
             {SUMMARY_AREAS.map((area) => {
                 const rank = fullAccess ? 4 : rankOf(area, held);
                 const level = fullAccess ? "full" : levelOf(area, held);

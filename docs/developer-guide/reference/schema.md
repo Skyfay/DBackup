@@ -345,11 +345,31 @@ model Group {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   tenantId    String   @default("default")  // The tenant it belongs to
+  templateId  String?             // The group for tenants it is in its tenant, changed by the platform alone
 
   memberships TenantMembership[]
   invitations TenantInvitation[]
 
   @@unique([tenantId, name])
+  @@unique([tenantId, templateId])
+}
+```
+
+### TenantGroupTemplate
+
+A group the platform makes once for tenants. Each tenant it reaches has a `Group` linked to it, see [Tenants](/developer-guide/advanced/tenants#groups-for-tenants).
+
+```prisma
+model TenantGroupTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  permissions String   @default("[]")    // JSON array, the permissions of a group of a tenant
+  allTenants  Boolean  @default(false)   // Every tenant, the ones made later too
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenants     TenantGroupTemplateTenant[] // The tenants it reaches while not every tenant
+  groups      Group[]
 }
 ```
 

@@ -11,7 +11,7 @@ import { usePageModel } from "@/hooks/use-page-model";
 import type { UserDetails as UserDetailsModel, UserRow, UsersGroup } from "@/services/user/users-types";
 import { GroupTag, PlatformAdminTag, UserAvatar, YouTag } from "./user-cells";
 import { AccessSection, ActivitySection, ApiKeysSection, SessionsSection, SignInSection } from "./user-details-sections";
-import { NoTenantTag } from "./user-tenants";
+import { NoTenantTag, onPlatform } from "./user-tenants";
 import { UserTenantsSection } from "./user-tenants-section";
 import { PlatformGroupTag } from "@/components/dashboard/platform/platform-group-cells";
 import { UserPlatformGroupSection } from "@/components/dashboard/platform/user-platform-group";
@@ -79,7 +79,7 @@ function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <SheetTitle className="truncate text-lg font-semibold">{user.name}</SheetTitle>
                             {/* In All tenants the account has a group per tenant, which the section below lists. */}
-                            {!user.tenants ? <GroupTag group={user.group} /> : user.tenants.length === 0 && <NoTenantTag />}
+                            {!user.tenants ? <GroupTag group={user.group} /> : user.tenants.length === 0 && !onPlatform(user) && <NoTenantTag />}
                             {user.superAdmin && <PlatformAdminTag />}
                             {!user.superAdmin && user.platformGroup && <PlatformGroupTag user={user} />}
                             {user.isYou && <YouTag />}

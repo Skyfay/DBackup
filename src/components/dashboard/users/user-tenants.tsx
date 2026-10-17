@@ -38,6 +38,18 @@ const tenantIdsOf = (user: UserRow) => {
     return ids.length > 0 ? ids : [NO_TENANT];
 };
 
+/** Whether an account runs the platform, as a platform admin or with a platform group, which needs no tenant. */
+export const onPlatform = (user: Pick<UserRow, "superAdmin" | "platformGroup">) => user.superAdmin || Boolean(user.platformGroup);
+
+/** A quiet "Platform only" for an account of the platform in no tenant, which is fine. */
+export function PlatformOnlyTag({ className }: { className?: string }) {
+    return (
+        <span className={cn("inline-flex h-5.5 items-center text-xs whitespace-nowrap text-muted-foreground", className)} title="Runs the platform through its platform group, in no tenant of its own">
+            Platform only
+        </span>
+    );
+}
+
 /** A dashed amber "No tenant", since such an account signs in and sees nothing. */
 export function NoTenantTag({ className }: { className?: string }) {
     return (
@@ -50,9 +62,12 @@ export function NoTenantTag({ className }: { className?: string }) {
     );
 }
 
-/** The first tenant of an account with its group, and how many more, all of them on hover. */
-export function TenantsCell({ tenants, nameOf, className }: { tenants: readonly UserTenantRole[]; nameOf: TenantNameOf; className?: string }) {
-    if (tenants.length === 0) return <NoTenantTag className={className} />;
+/**
+ * The first tenant of an account with its group, and how many more, all of them on hover. An
+ * account of the platform in no tenant is fine, any other one sees nothing.
+ */
+export function TenantsCell({ tenants, nameOf, platform = false, className }: { tenants: readonly UserTenantRole[]; nameOf: TenantNameOf; platform?: boolean; className?: string }) {
+    if (tenants.length === 0) return platform ? <PlatformOnlyTag className={className} /> : <NoTenantTag className={className} />;
     const named = namedTenants(tenants, nameOf);
     const [first, ...rest] = named;
     return (

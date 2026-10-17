@@ -17,6 +17,7 @@ import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
 import type { PlatformGroupListHandle } from "./platform-group-list";
+import { PLATFORM_GROUPS_TABLE_ID, TENANT_GROUPS_TABLE_ID } from "./platform-tables";
 import { PlatformGroupList } from "./platform-group-list";
 import { TenantGroupsList, type TenantGroupsListHandle } from "./tenant-groups-list";
 
@@ -149,12 +150,12 @@ export function PlatformUsersClient({ canReadAccounts, canManageAccounts, canRea
             )}
             {canReadAccounts && (
                 <TabsContent value="groups">
-                    {isMobile !== undefined && <PlatformGroupList ref={platformGroups} cards={isMobile} canManage={canManageAccounts} />}
+                    {isMobile !== undefined && <PlatformGroupList ref={platformGroups} cards={isMobile} canManage={canManageAccounts} initialLayout={layouts[PLATFORM_GROUPS_TABLE_ID] ?? null} />}
                 </TabsContent>
             )}
             {canReadAccounts && (
                 <TabsContent value="tenant-groups">
-                    {isMobile !== undefined && <TenantGroupsList ref={tenantGroups} cards={isMobile} canManage={canManageAccounts} />}
+                    {isMobile !== undefined && <TenantGroupsList ref={tenantGroups} cards={isMobile} canManage={canManageAccounts} initialLayout={layouts[TENANT_GROUPS_TABLE_ID] ?? null} />}
                 </TabsContent>
             )}
             {canReadSignIn && (

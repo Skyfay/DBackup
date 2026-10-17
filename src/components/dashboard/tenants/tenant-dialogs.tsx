@@ -1,9 +1,9 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { Building2, Loader2, Pencil, Plus, Share2, Trash2 } from "lucide-react";
+import { Building2, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { createTenant, deleteTenant, renameTenant, setTenantSharing } from "@/app/actions/tenant/tenant";
+import { createTenant, deleteTenant } from "@/app/actions/tenant/tenant";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog, DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, DialogItemList, dialogNoteClass } from "@/components/ui/confirm-dialog";
@@ -14,28 +14,24 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { TenantRow } from "@/services/tenant/tenant-service";
+import { NAME_MAX } from "./tenant-edit-panes";
 import { deletionLoss, removalText } from "./tenant-words";
 
 const log = logger.child({ component: "tenant-dialogs" });
 
-/** The longest name a tenant may have, like the server checks it. */
-const NAME_MAX = 60;
-
-interface TenantNameDialogProps {
-    /** The tenant to rename, none for New tenant. */
-    tenant: TenantRow | null;
+interface NewTenantDialogProps {
     onClose: () => void;
-    /** After the save, with the tenant a new one became. */
+    /** After the save, with the tenant it made. */
     onSaved: (tenant: { id: string; name: string }) => void;
 }
 
 /**
- * New tenant and Rename in one dialog: blue while it adds, violet while it renames. A new tenant
- * starts with the built-in templates and without members.
+ * New tenant in the blue of adding: its name, and whether it shares with customers. A new tenant
+ * starts with the built-in templates and without members, and Edit of it changes everything else.
  */
-export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogProps) {
-    const tone = tenant ? "edit" : "create";
-    const [name, setName] = useState(tenant?.name ?? "");
+export function NewTenantDialog({ onClose, onSaved }: NewTenantDialogProps) {
+    const tone = "create";
+    const [name, setName] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [pending, setPending] = useState(false);
     const [shares, setShares] = useState(false);
@@ -47,22 +43,8 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
     const submit = async (event: React.FormEvent) => {
         event.preventDefault();
         if (!trimmed || pending) return;
-        if (tenant && trimmed === tenant.name) {
-            onClose();
-            return;
-        }
         setPending(true);
         try {
-            if (tenant) {
-                const result = await renameTenant(tenant.id, trimmed);
-                if (!result.success) {
-                    setError(result.error);
-                    return;
-                }
-                toast.success(`Renamed to ${trimmed}`);
-                onSaved({ id: tenant.id, name: trimmed });
-                return;
-            }
             const result = await createTenant(trimmed, shares);
             if (!result.success) {
                 setError(result.error);
@@ -72,8 +54,8 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
             onSaved(result.data);
         } catch (failure: unknown) {
             // Without the platform admin role the actions throw instead of answering.
-            log.warn("Saving a tenant failed", { tenantId: tenant?.id }, wrapError(failure));
-            setError(tenant ? "The tenant could not be renamed." : "The tenant could not be created.");
+            log.warn("Creating a tenant failed", {}, wrapError(failure));
+            setError("The tenant could not be created.");
         } finally {
             setPending(false);
         }
@@ -92,11 +74,9 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
                 }}
             >
                 <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
-                    <DialogHead tone={tone} icon={tenant ? Pencil : Building2}>
-                        <DialogTitle className="truncate text-base">{tenant ? `Rename ${tenant.name}` : "New tenant"}</DialogTitle>
-                        <DialogDescription className={dialogNoteClass(tone)}>
-                            {tenant ? "Its people see the new name at once" : "A customer with its own connections, jobs and people"}
-                        </DialogDescription>
+                    <DialogHead tone={tone} icon={Building2}>
+                        <DialogTitle className="truncate text-base">New tenant</DialogTitle>
+                        <DialogDescription className={dialogNoteClass(tone)}>A customer with its own connections, jobs and people</DialogDescription>
                     </DialogHead>
 
                     <div className="space-y-4 p-5">
@@ -118,18 +98,16 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
                                 aria-describedby={`${nameId}-message`}
                             />
                             <p id={`${nameId}-message`} className={cn("text-xs", error ? "text-destructive" : "text-muted-foreground")}>
-                                {error ?? (tenant ? "Every tenant has a name of its own." : "It starts with the built-in templates and without members. Add them under Members.")}
+                                {error ?? "It starts with the built-in templates and without members. Add them in the next step."}
                             </p>
                         </div>
-                        {!tenant && (
-                            <div className="flex items-start gap-3 rounded-lg border p-3">
-                                <Checkbox id={sharesId} checked={shares} onCheckedChange={(value) => setShares(value === true)} className="mt-0.5" disabled={pending} />
-                                <div className="space-y-0.5">
-                                    <Label htmlFor={sharesId} className="text-sm leading-snug font-medium">Shares with customers</Label>
-                                    <p className="text-xs text-muted-foreground">A tenant of the MSP. It can give single databases, destinations and notification channels to other tenants.</p>
-                                </div>
+                        <div className="flex items-start gap-3 rounded-lg border p-3">
+                            <Checkbox id={sharesId} checked={shares} onCheckedChange={(value) => setShares(value === true)} className="mt-0.5" disabled={pending} />
+                            <div className="space-y-0.5">
+                                <Label htmlFor={sharesId} className="text-sm leading-snug font-medium">Shares with customers</Label>
+                                <p className="text-xs text-muted-foreground">A tenant of the MSP. It can give single databases, destinations and notification channels to other tenants.</p>
                             </div>
-                        )}
+                        </div>
                     </div>
 
                     <div className={cn(DIALOG_FOOTER, "flex items-center justify-end gap-2")}>
@@ -137,64 +115,13 @@ export function TenantNameDialog({ tenant, onClose, onSaved }: TenantNameDialogP
                             <Button type="button" variant="outline" disabled={pending}>Cancel</Button>
                         </DialogClose>
                         <Button type="submit" disabled={pending || !trimmed}>
-                            {pending ? <Loader2 className="animate-spin" /> : tenant ? <Pencil /> : <Plus />}
-                            {tenant ? "Rename" : "Create tenant"}
+                            {pending ? <Loader2 className="animate-spin" /> : <Plus />}
+                            Create tenant
                         </Button>
                     </div>
                 </form>
             </DialogContent>
         </Dialog>
-    );
-}
-
-interface TenantSharingDialogProps {
-    tenant: TenantRow;
-    onClose: () => void;
-    onChanged: () => void;
-}
-
-/**
- * Switches whether a tenant shares with customers: gives single databases, destinations and
- * notification channels to other tenants. The server refuses to switch it off while the tenant
- * gives anything away, and says why.
- */
-export function TenantSharingDialog({ tenant, onClose, onChanged }: TenantSharingDialogProps) {
-    const [pending, setPending] = useState(false);
-    const on = !tenant.sharesWithCustomers;
-
-    const save = async () => {
-        setPending(true);
-        try {
-            const result = await setTenantSharing(tenant.id, on);
-            if (!result.success) {
-                toast.error(result.error);
-                return;
-            }
-            toast.success(on ? `${tenant.name} shares with customers now` : `${tenant.name} shares nothing with customers now`);
-            onChanged();
-        } catch (error: unknown) {
-            log.warn("Switching the sharing of a tenant failed", { tenantId: tenant.id }, wrapError(error));
-            toast.error("The tenant could not be changed.");
-        } finally {
-            setPending(false);
-        }
-    };
-
-    return (
-        <ConfirmDialog
-            open
-            onOpenChange={(open) => !open && onClose()}
-            icon={Share2}
-            tone="edit"
-            title={on ? `Let ${tenant.name} share with customers?` : `Stop ${tenant.name} sharing with customers?`}
-            note={on ? "A tenant of the MSP" : "Only once it gives nothing away"}
-            description={on
-                ? "It can give single databases, destinations and notification channels to other tenants, by whoever holds Share with customers."
-                : "It gives no databases, destinations or notification channels to other tenants from then on. It has to take back what it gives first."}
-            confirmLabel={on ? "Share with customers" : "Stop sharing with customers"}
-            isPending={pending}
-            onConfirm={() => void save()}
-        />
     );
 }
 

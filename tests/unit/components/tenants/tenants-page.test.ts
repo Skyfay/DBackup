@@ -19,15 +19,15 @@ import { ALL_ALLOWED } from "@/lib/tenant/allowances";
 
 const HOME: TenantListRow = {
     id: "default", name: "Platform", isHome: true, sharesWithCustomers: true, logo: null, members: 2, connections: 3, jobs: 4, createdAt: "2026-01-01T00:00:00.000Z", databases: 6, health: null,
-    allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 2, channels: 1 },
+    allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 2, channels: 1 }, onDemand: { perDay: null, own: 0 },
 };
 const ACME: TenantListRow = {
     id: "t-acme", name: "Acme", isHome: false, sharesWithCustomers: false, logo: null, members: 1, connections: 0, jobs: 1, createdAt: "2026-10-01T00:00:00.000Z", databases: 0, health: null,
-    allowances: ALL_ALLOWED, provided: { destinations: 2, channels: 2 }, gives: { destinations: 0, channels: 0 },
+    allowances: ALL_ALLOWED, provided: { destinations: 2, channels: 2 }, gives: { destinations: 0, channels: 0 }, onDemand: { perDay: null, own: 0 },
 };
 
 const noop = () => undefined;
-const HANDLERS: TenantHandlers = { onOpen: noop, onRename: noop, onMembers: noop, onDelete: noop, onSharing: noop, onAllowances: noop };
+const HANDLERS: TenantHandlers = { onOpen: noop, onEdit: noop, onDelete: noop, canManage: true };
 const actionsOf = (row: TenantListRow, active: string | null, handlers = HANDLERS) => tenantActions(row, active, handlers).flatMap((group) => group.actions);
 const idsOf = (row: TenantListRow, active: string | null) => actionsOf(row, active).map((action) => action.id);
 
@@ -81,8 +81,14 @@ describe("the menu of a tenant", () => {
         expect(idsOf(ACME, null)[0]).toBe("open");
     });
 
-    it("changes the members and the name of every tenant, the home tenant too", () => {
-        expect(idsOf(HOME, "default")).toEqual(expect.arrayContaining(["members", "rename"]));
+    it("changes every tenant through Edit, the home tenant too, and only shows it to someone who may only see the tenants", () => {
+        expect(idsOf(HOME, "default")).toEqual(["edit"]);
+        expect(idsOf(ACME, "default")).toEqual(["open", "edit", "delete"]);
+        expect(actionsOf(ACME, "default").find((action) => action.id === "edit")).toMatchObject({ label: "Edit", tone: "edit" });
+        expect(idsOf(ACME, "default").some((id) => ["members", "rename", "sharing", "allowances", "on-demand"].includes(id))).toBe(false);
+
+        const viewer: TenantHandlers = { onOpen: noop, onEdit: noop, canManage: false };
+        expect(actionsOf(ACME, "default", viewer).map((action) => action.id)).toEqual(["open", "view"]);
     });
 
     it("names the facts of a tenant in its head", () => {
@@ -91,32 +97,7 @@ describe("the menu of a tenant", () => {
     });
 });
 
-describe("sharing with customers from the menu of a tenant", () => {
-    it("offers to share with customers, or to stop it for a tenant that does", () => {
-        expect(actionsOf(ACME, "default").find((action) => action.id === "sharing")?.label).toBe("Share with customers");
-        expect(actionsOf(HOME, "default").find((action) => action.id === "sharing")?.label).toBe("Stop sharing with customers");
-    });
-});
-
 describe("what a tenant may add itself", () => {
-    it("is decided from the menu of a customer, after the sharing entry", () => {
-        const allowances = actionsOf(ACME, "default").find((action) => action.id === "allowances");
-
-        expect(allowances).toMatchObject({ label: "What it may add", tone: "edit" });
-        expect(idsOf(ACME, "default").indexOf("allowances")).toBe(idsOf(ACME, "default").indexOf("sharing") + 1);
-    });
-
-    it("is never limited for the home tenant, which adds what the platform needs", () => {
-        expect(idsOf(HOME, "default")).not.toContain("allowances");
-        expect(idsOf(HOME, null)).not.toContain("allowances");
-    });
-
-    it("is not offered to someone who may only see the tenants", () => {
-        const viewer: TenantHandlers = { onOpen: noop, onMembers: noop };
-
-        expect(actionsOf(ACME, "default", viewer).map((action) => action.id)).not.toContain("allowances");
-    });
-
     it("names nothing for a tenant that adds everything, and for the home tenant whatever it holds", () => {
         expect(heldBack(ACME)).toBeNull();
         expect(heldBack({ ...HOME, allowances: { ...ALL_ALLOWED, destinations: false } })).toBeNull();

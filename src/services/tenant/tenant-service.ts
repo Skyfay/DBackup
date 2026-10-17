@@ -38,6 +38,11 @@ export interface TenantRow {
     provided: { destinations: number; channels: number };
     /** The destinations and channels it shares with other tenants. */
     gives: { destinations: number; channels: number };
+    /**
+     * Backups on demand: how many a day it may start of every database given to it, null for none,
+     * and how many databases and rules of now set a number of their own instead.
+     */
+    onDemand: { perDay: number | null; own: number };
 }
 
 /** A tenant someone may switch to, as the head of the sidebar and All tenants show it. */
@@ -110,14 +115,17 @@ export const tenantService = {
             orderBy: { name: "asc" },
             select: {
                 id: true, name: true, sharesWithCustomers: true, createdAt: true, logo: { select: { updatedAt: true } }, _count: { select: { memberships: true } },
-                addsDatabases: true, addsDirectorySources: true, addsDestinations: true, addsChannels: true, addsApiKeys: true,
+                addsDatabases: true, addsDirectorySources: true, addsDestinations: true, addsChannels: true, addsApiKeys: true, onDemandPerDay: true,
             },
         });
         // The connections and jobs of every tenant at once, counted by tenant, and what is shared.
-        const [connections, jobs, shares] = await runAsSystem(async () => Promise.all([
+        const ownNumber = { validUntil: null, onDemandPerDay: { not: null } };
+        const [connections, jobs, shares, ownDatabases, ownRules] = await runAsSystem(async () => Promise.all([
             prisma.adapterConfig.groupBy({ by: ["tenantId"], _count: { _all: true } }),
             prisma.job.groupBy({ by: ["tenantId"], _count: { _all: true } }),
             prisma.connectionShare.findMany({ select: { tenantId: true, allTenants: true, tenants: { select: { tenantId: true } }, config: { select: { type: true, storageRole: true } } } }),
+            prisma.databaseAssignment.groupBy({ by: ["tenantId"], where: ownNumber, _count: { _all: true } }),
+            prisma.databaseAssignmentRule.groupBy({ by: ["tenantId"], where: ownNumber, _count: { _all: true } }),
         ]));
         const count = (rows: { tenantId: string; _count: { _all: number } }[], id: string) => rows.find((row) => row.tenantId === id)?._count._all ?? 0;
         const sharing = new Set(tenants.filter((tenant) => tenant.sharesWithCustomers).map((tenant) => tenant.id));
@@ -145,6 +153,10 @@ export const tenantService = {
                 allowances: allowancesOfRow(tenant),
                 provided: tally(tenant.id, false),
                 gives: tally(tenant.id, true),
+                onDemand: {
+                    perDay: tenant.onDemandPerDay,
+                    own: (ownDatabases.find((row) => row.tenantId === tenant.id)?._count._all ?? 0) + count(ownRules, tenant.id),
+                },
             }))
             // The home tenant first, it holds what the platform owns.
             .sort((a, b) => Number(b.isHome) - Number(a.isHome) || a.name.localeCompare(b.name));

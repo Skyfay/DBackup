@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DateDisplay } from "@/components/utils/date-display";
 import type { RuleRow, SourceAssignments } from "@/services/tenant/database-assignments";
-import { activeRules, countOf, onDemandText, ruleGives } from "./assignment-model";
+import { activeRules, countOf, onDemandLine, ruleGives } from "./assignment-model";
+import { OnDemandNote } from "./assignment-on-demand-note";
 import { OnDemandDialog } from "./assignment-on-demand-dialog";
 import { RuleForm } from "./assignment-rule-form";
 import { RuleRemoveDialog } from "./assignment-rule-remove";
@@ -57,8 +58,8 @@ function RuleItem({ rule, gives, canAssign, onRemove, onOnDemand }: { rule: Rule
             </div>
             <p className="text-xs text-muted-foreground tabular-nums">
                 Priority {rule.priority} · from <DateDisplay date={rule.validFrom} format="P" />
-                {rule.onDemandPerDay !== null && <> · {onDemandText(rule.onDemandPerDay)?.toLowerCase()}</>}
             </p>
+            <OnDemandNote line={onDemandLine(rule.onDemandPerDay, rule.tenantOnDemand, rule.tenantName)} />
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
                 <span className="text-muted-foreground">Gives now</span>
                 {gives.length === 0 ? (
@@ -141,7 +142,7 @@ export function AssignmentRules({ serverId, serverName, data, canAssign, now, ch
                 <OnDemandDialog
                     serverId={serverId}
                     serverName={serverName}
-                    target={{ kind: "rule", ruleId: onDemand.id, pattern: onDemand.pattern, tenantName: onDemand.tenantName, perDay: onDemand.onDemandPerDay }}
+                    target={{ kind: "rule", ruleId: onDemand.id, pattern: onDemand.pattern, tenantName: onDemand.tenantName, perDay: onDemand.onDemandPerDay, tenantPerDay: onDemand.tenantOnDemand }}
                     onClose={() => setOnDemand(null)}
                     onSaved={() => {
                         setOnDemand(null);

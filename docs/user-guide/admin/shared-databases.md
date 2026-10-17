@@ -12,7 +12,7 @@ Only the servers of a [tenant that shares with customers](#tenants-that-share), 
 
 ## Tenants That Share
 
-A tenant of the MSP shares with customers, a customer does not. The home tenant shares from the start, any other tenant once the platform switches it on: **Share with customers** in the menu of its row under **Platform → Tenants**, or the tick **Shares with customers** in **New tenant**. The list marks such a tenant with **Shares with customers**. The same switch lets it share its destinations and channels, see [Shared Destinations and Channels](/user-guide/admin/shared-connections). Switching needs `platform-tenants:write`, someone of a platform group switches only the tenants their platform group reaches, and every switch goes into the audit log of the home tenant.
+A tenant of the MSP shares with customers, a customer does not. The home tenant shares from the start, any other tenant once the platform switches it on: **Shares with customers** under **Sharing** in **Edit** of the tenant under **Platform → Tenants**, or the tick **Shares with customers** in **New tenant**. The list marks such a tenant with **Shares with customers**. The same switch lets it share its destinations and channels, see [Shared Destinations and Channels](/user-guide/admin/shared-connections). Switching needs `platform-tenants:write`, someone of a platform group switches only the tenants their platform group reaches, and every switch goes into the audit log of the home tenant.
 
 - **A tenant that shares can also get databases** of another tenant that shares. It never passes them on, a database it gets is no server of its own.
 - **Stop sharing with customers** is refused while the servers of the tenant give databases away, or while it shares a destination or a channel. Take them back and end its rules first, so no customer loses anything by the switch.
@@ -99,7 +99,17 @@ Deleting the connection of a server that gives databases away warns first, and n
 
 ## Backups on Demand
 
-**Backups on demand** in the menu of a database, or of a rule, lets the tenant start a backup of that one database itself, 1 to 24 times a day, 3 by default. A day starts at midnight in the time zone of the instance, and with a rule every database counts on its own.
+How many backups a customer may start of each of its databases, 1 to 24 a day, is set once per customer: **Backups on demand** in **Edit** of the tenant under **Platform → Tenants**, which needs `platform-tenants:write`. A new tenant starts at none. The column **Backups on demand** of the list shows the number and how many databases and rules set their own.
+
+**Backups on demand** in the menu of a database, or of a rule, on the server page of the Database Explorer decides it for that database, or for every database of the rule:
+
+| Choice | The tenant may start |
+| :--- | :--- |
+| **As** the tenant | The number of the tenant, also when it changes. What every database starts with |
+| **A number of its own** | 1 to 24 a day, whatever the tenant has |
+| **Off for** the database | None, whatever the tenant may for its other databases |
+
+The **How** column says it under each database, like **Backups on demand, 3 a day · as Acme** or **· set here**, and **Backups on demand off here**. **Backups on demand** in **Edit** of the tenant lists the databases and rules that set their own, each with **Follow** to let it follow the tenant again. The menu of a database, also on a right click, holds **Who held it**, **Move to another server**, **Backups on demand** and **Take back**. A day starts at midnight in the time zone of the instance, and with a rule every database counts on its own.
 
 The backup runs the job of the server that backs up the database, an enabled one first, for that database alone. It belongs to the tenant of the server like every run of that job, shows in its History with the tenant and the person as the trigger, and sends the notifications of the job. Retention judges these backups apart from the full backups of the job, under the same policy, so they never push a full backup out. Such a run counts toward no usual length, neither of the job nor of its steps.
 

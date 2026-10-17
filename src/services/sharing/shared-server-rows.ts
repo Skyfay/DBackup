@@ -6,8 +6,10 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { runAsSystem } from "@/lib/tenant/context";
+import { effectiveOnDemand } from "@/lib/tenant/sharing";
 import { cached } from "@/services/dashboard/cache";
 import { sharedOverview, type SharedBackup, type SharedDatabase, type SharedOverview } from "@/services/tenant/shared-databases";
+import { tenantOnDemand } from "@/services/tenant/shared-servers";
 
 /**
  * The servers of other tenants that hold databases a tenant has now, as rows of its list of
@@ -137,7 +139,7 @@ interface ServerFacts {
  */
 function serverFacts(tenantId: string, sourceIds: string[], now: Date): Promise<ServerFacts> {
     return runAsSystem(async () => {
-        const [servers, jobs, rules] = await Promise.all([
+        const [servers, jobs, rules, perDay] = await Promise.all([
             prisma.adapterConfig.findMany({ where: { id: { in: sourceIds }, type: "database" }, select: { id: true, metadata: true } }),
             prisma.job.findMany({
                 where: { sourceId: { in: sourceIds } },
@@ -149,8 +151,11 @@ function serverFacts(tenantId: string, sourceIds: string[], now: Date): Promise<
                 select: { sourceId: true, pattern: true, onDemandPerDay: true },
                 orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
             }),
+            tenantOnDemand([tenantId]),
         ]);
-        return { versions: new Map(servers.map((server) => [server.id, connectionVersion(server.metadata ?? undefined)])), jobs, rules };
+        // A rule without a number of its own allows what the customer may of every database.
+        const allowed = rules.map((rule) => ({ ...rule, onDemandPerDay: effectiveOnDemand(rule.onDemandPerDay, perDay.get(tenantId) ?? null) }));
+        return { versions: new Map(servers.map((server) => [server.id, connectionVersion(server.metadata ?? undefined)])), jobs, rules: allowed };
     });
 }
 
@@ -231,8 +236,9 @@ export async function sharedServerItems(tenantId: string, options: { backups: bo
     let rows: SharedServerItem[];
     try {
         if (!(await mayHoldSharedDatabases(tenantId, now))) return [];
-        const stamp = await onDemandStamp(tenantId, now);
-        rows = await cached(`shared-server-rows:${tenantId}:${stamp}`, ROWS_TTL_MS, () => loadRows(tenantId, now));
+        // What the platform lets the customer start goes into the key, so a change of it shows at once.
+        const [stamp, perDay] = await Promise.all([onDemandStamp(tenantId, now), runAsSystem(() => tenantOnDemand([tenantId]))]);
+        rows = await cached(`shared-server-rows:${tenantId}:${stamp}:${perDay.get(tenantId) ?? "off"}`, ROWS_TTL_MS, () => loadRows(tenantId, now));
     } catch (error: unknown) {
         log.warn("Reading the shared databases of a tenant failed", { tenantId }, wrapError(error));
         return [];

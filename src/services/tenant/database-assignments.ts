@@ -3,7 +3,7 @@ import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { holderAt, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
 import { movesOf } from "./database-moves";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
-import { assertCustomer, listedDatabases, onDemandValue, ownSource, rememberServer, sharesWithCustomers } from "./shared-servers";
+import { assertCustomer, listedDatabases, onDemandValue, ownSource, rememberServer, sharesWithCustomers, tenantOnDemand } from "./shared-servers";
 
 export { listedDatabases, sharesWithCustomers };
 
@@ -41,7 +41,7 @@ export interface AssignmentRow {
     movedTo: MovePlace | null;
     /** Where the database came from, on the assignment a move started here. */
     movedFrom: MovePlace | null;
-    /** The backups a day the customer may start, null when it may start none. */
+    /** What it stores for backups on demand: null as the customer, 0 none, else its own number a day. */
     onDemandPerDay: number | null;
 }
 
@@ -56,15 +56,18 @@ export interface RuleRow {
     /** When the rule was removed or its tenant deleted, null while it gives. */
     validUntil: string | null;
     createdAt: string;
-    /** The backups a day the customer may start of each database the rule gives, null for none. */
+    /** What it stores for backups on demand of each database it gives: null as the customer, 0 none, else its own number a day. */
     onDemandPerDay: number | null;
+    /** The backups a day the platform lets the customer start of every database, null for none. */
+    tenantOnDemand: number | null;
 }
 
 /** A database the server holds now, and who it belongs to now. */
 export interface DatabaseOwnerRow {
     name: string;
     sizeInBytes: number | null;
-    owner: { tenantId: string; tenantName: string; via: "assignment" | "rule"; since: string; onDemandPerDay: number | null } | null;
+    /** `onDemandPerDay` is what the assignment or the rule stores, `tenantOnDemand` what the customer may of every database. */
+    owner: { tenantId: string; tenantName: string; via: "assignment" | "rule"; since: string; onDemandPerDay: number | null; tenantOnDemand: number | null } | null;
     /** Backups of it the destinations of the server keep, one per backup however many copies. */
     backups: number;
 }
@@ -123,13 +126,14 @@ export const databaseAssignmentService = {
             serverBackupFiles(sourceId),
         ]);
         const dates = backupDatesByDatabase(files);
-        const [givers, moves, nameOf] = await Promise.all([
+        const [givers, moves, nameOf, perDay] = await Promise.all([
             prisma.user.findMany({
                 where: { id: { in: [...new Set(assignments.flatMap((assignment) => (assignment.createdById ? [assignment.createdById] : [])))] } },
                 select: { id: true, name: true },
             }).then((users) => new Map(users.map((user) => [user.id, user.name]))),
             movesOf(sourceId, assignments),
             tenantNames([...assignments.map((assignment) => assignment.tenantId), ...rules.map((rule) => rule.tenantId)]),
+            tenantOnDemand([...assignments.flatMap((assignment) => (assignment.tenantId ? [assignment.tenantId] : [])), ...rules.map((rule) => rule.tenantId)]),
         ]);
 
         const databases = listed
@@ -144,7 +148,10 @@ export const databaseAssignmentService = {
                     name,
                     sizeInBytes,
                     backups,
-                    owner: { tenantId, tenantName: nameOf(tenantId), via: holder.via, since: fact.validFrom.toISOString(), onDemandPerDay: fact.onDemandPerDay },
+                    owner: {
+                        tenantId, tenantName: nameOf(tenantId), via: holder.via, since: fact.validFrom.toISOString(),
+                        onDemandPerDay: fact.onDemandPerDay, tenantOnDemand: perDay.get(tenantId) ?? null,
+                    },
                 };
             })
             .sort((a, b) => a.name.localeCompare(b.name));
@@ -164,7 +171,7 @@ export const databaseAssignmentService = {
                 movedFrom: moves.from(assignment),
                 onDemandPerDay: assignment.onDemandPerDay,
             })),
-            rules: rules.map((rule) => ruleRow(rule, nameOf(rule.tenantId))),
+            rules: rules.map((rule) => ruleRow(rule, nameOf(rule.tenantId), perDay.get(rule.tenantId) ?? null)),
             customers: tenants,
             // Only of the databases a tenant ever held, whose timeline counts the backups of each time.
             backupDates: Object.fromEntries([...dates].filter(([name]) =>
@@ -230,7 +237,7 @@ export const databaseAssignmentService = {
                 data: { sourceId, pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now, onDemandPerDay, createdAt: now },
             });
         });
-        return ruleRow(rule, (await tenantNames([rule.tenantId]))(rule.tenantId));
+        return ruleRow(rule, (await tenantNames([rule.tenantId]))(rule.tenantId), (await tenantOnDemand([rule.tenantId])).get(rule.tenantId) ?? null);
     },
 
     /**
@@ -247,8 +254,9 @@ export const databaseAssignmentService = {
     },
 
     /**
-     * Lets the customer who holds a database by name start backups of it, up to `perDay` a day, or
-     * none with null. The switch belongs to the assignment of now, a later one starts without it.
+     * How many backups a day the customer who holds a database by name may start of it: `perDay` of
+     * its own, none with 0, or as many as the customer may of every database with null. It belongs
+     * to the assignment of now, a later one starts as the customer.
      */
     async setOnDemand(sourceId: string, databaseName: string, perDay: number | null): Promise<{ tenantName: string; before: number | null }> {
         await ownSource(sourceId);
@@ -259,7 +267,7 @@ export const databaseAssignmentService = {
         return { tenantName: (await tenantNames([current.tenantId]))(current.tenantId), before: current.onDemandPerDay };
     },
 
-    /** The same for every database a rule gives: up to `perDay` backups a day of each, or none with null. */
+    /** The same for every database a rule gives: `perDay` of its own, none with 0, or as the customer with null. */
     async setRuleOnDemand(sourceId: string, ruleId: string, perDay: number | null): Promise<{ pattern: string; tenantName: string; before: number | null }> {
         await ownSource(sourceId);
         const value = onDemandValue(perDay);
@@ -270,7 +278,7 @@ export const databaseAssignmentService = {
     },
 };
 
-export function ruleRow(rule: { id: string; pattern: string; tenantId: string; priority: number; validFrom: Date; validUntil: Date | null; createdAt: Date; onDemandPerDay: number | null }, tenantName: string): RuleRow {
+export function ruleRow(rule: { id: string; pattern: string; tenantId: string; priority: number; validFrom: Date; validUntil: Date | null; createdAt: Date; onDemandPerDay: number | null }, tenantName: string, tenantPerDay: number | null = null): RuleRow {
     return {
         id: rule.id,
         pattern: rule.pattern,
@@ -281,5 +289,6 @@ export function ruleRow(rule: { id: string; pattern: string; tenantId: string; p
         validUntil: rule.validUntil?.toISOString() ?? null,
         createdAt: rule.createdAt.toISOString(),
         onDemandPerDay: rule.onDemandPerDay,
+        tenantOnDemand: tenantPerDay,
     };
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { PlatformUsersClient } from "@/components/dashboard/platform/platform-users-client";
+import { PLATFORM_GROUPS_TABLE_ID, TENANT_GROUPS_TABLE_ID } from "@/components/dashboard/platform/platform-tables";
 import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
 import { USERS_TABLE_ID } from "@/components/dashboard/users/users-tables";
 import { TenantNamesProvider } from "@/components/tenant/tenant-view";
@@ -30,7 +31,7 @@ export default async function PlatformUsersPage() {
     if (!canReadAccounts && !canReadSignIn) redirect("/dashboard");
 
     const [layouts, signInView, tenantNames] = await Promise.all([
-        getTablePreferences(viewer.id, [USERS_TABLE_ID, SIGN_IN_TABLE_ID]),
+        getTablePreferences(viewer.id, [USERS_TABLE_ID, SIGN_IN_TABLE_ID, PLATFORM_GROUPS_TABLE_ID, TENANT_GROUPS_TABLE_ID]),
         getViewMode(viewer.id, SIGN_IN_PAGE_ID),
         // The accounts and groups of every tenant name their tenants, also the ones the viewer may not open.
         canReadAccounts ? platformTenantNames() : [],

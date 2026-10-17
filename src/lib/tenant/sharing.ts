@@ -16,3 +16,26 @@ export const SEE_SHARING_PERMISSION = PERMISSIONS.PLATFORM.SHARING_READ;
 export const ON_DEMAND_MIN = 1;
 export const ON_DEMAND_MAX = 24;
 export const ON_DEMAND_DEFAULT = 3;
+
+/**
+ * What a database given by name or a rule stores for backups on demand: null follows the number the
+ * platform sets for the customer (`Tenant.onDemandPerDay`), 0 is none for it, else its own number.
+ */
+export const ON_DEMAND_OFF = 0;
+
+/** Where the number of a database comes from: the customer, its own, or off for it. */
+export type OnDemandSource = "tenant" | "own" | "off";
+
+export function onDemandSource(held: number | null): OnDemandSource {
+    if (held === null) return "tenant";
+    return held === ON_DEMAND_OFF ? "off" : "own";
+}
+
+/**
+ * The backups a day the customer may start of a database: its own number, none when it is off, else
+ * the number of the customer. Null for none.
+ */
+export function effectiveOnDemand(held: number | null, tenantPerDay: number | null): number | null {
+    if (held === null) return tenantPerDay;
+    return held === ON_DEMAND_OFF ? null : held;
+}

@@ -126,3 +126,9 @@ export function heldBack(row: Pick<TenantRow, "isHome" | "allowances">): { tag: 
 export function allowancesPatch(before: TenantAllowances, after: TenantAllowances): Partial<TenantAllowances> {
     return Object.fromEntries(ALLOWANCE_KINDS.filter((kind) => before[kind] !== after[kind]).map((kind) => [kind, after[kind]]));
 }
+
+/** "3 a day" or "Off", what a customer may start of every database given to it. */
+export function onDemandWords(perDay: number | null): string {
+    return perDay === null ? "Off" : `${perDay} a day`;
+}
+

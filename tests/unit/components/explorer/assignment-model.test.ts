@@ -12,7 +12,7 @@ import {
     howOf,
     matchesQuick,
     movedText,
-    onDemandText,
+    onDemandLine,
     ownerKey,
     quickCounts,
     ruleFor,
@@ -30,7 +30,7 @@ const acme = { id: "t-acme", name: "Acme" };
 const beta = { id: "t-beta", name: "Beta" };
 
 function rule(id: string, pattern: string, tenant: { id: string; name: string }, priority = 0, validFrom = "2026-10-01T00:00:00Z", createdAt = validFrom): RuleRow {
-    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, validUntil: null, createdAt, onDemandPerDay: null };
+    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, validUntil: null, createdAt, onDemandPerDay: null, tenantOnDemand: null };
 }
 
 function assignment(id: string, databaseName: string, tenant: { id: string; name: string }, validFrom: string, validUntil: string | null = null, byName: string | null = "Manu"): AssignmentRow {
@@ -41,8 +41,8 @@ function database(name: string, owner: DatabaseOwnerRow["owner"] = null): Databa
     return { name, sizeInBytes: 1024, owner, backups: 3 };
 }
 
-const byRule = (tenant: { id: string; name: string }, since = "2026-10-01T00:00:00Z") => ({ tenantId: tenant.id, tenantName: tenant.name, via: "rule" as const, since, onDemandPerDay: null });
-const byName = (tenant: { id: string; name: string }, since = "2026-10-05T00:00:00Z") => ({ tenantId: tenant.id, tenantName: tenant.name, via: "assignment" as const, since, onDemandPerDay: null });
+const byRule = (tenant: { id: string; name: string }, since = "2026-10-01T00:00:00Z") => ({ tenantId: tenant.id, tenantName: tenant.name, via: "rule" as const, since, onDemandPerDay: null, tenantOnDemand: null });
+const byName = (tenant: { id: string; name: string }, since = "2026-10-05T00:00:00Z") => ({ tenantId: tenant.id, tenantName: tenant.name, via: "assignment" as const, since, onDemandPerDay: null, tenantOnDemand: null });
 
 /** A server with a shop rule for Acme, a wider one for Beta and one database Beta holds by name. */
 function server(): SourceAssignments {
@@ -77,8 +77,8 @@ describe("who a database of a shared server belongs to", () => {
 
     it("says how a tenant holds a database: by name and by whom, by a rule, taken back, or never given", () => {
         const data = server();
-        expect(howOf(data.databases[0], data, NOW)).toEqual({ kind: "rule", pattern: "shop_*", since: "2026-10-01T00:00:00Z", onDemandPerDay: null });
-        expect(howOf(data.databases[1], data, NOW)).toEqual({ kind: "assignment", since: "2026-10-05T00:00:00Z", byName: "Manu", from: null, onDemandPerDay: null });
+        expect(howOf(data.databases[0], data, NOW)).toEqual({ kind: "rule", pattern: "shop_*", since: "2026-10-01T00:00:00Z", onDemandPerDay: null, tenantOnDemand: null });
+        expect(howOf(data.databases[1], data, NOW)).toEqual({ kind: "assignment", since: "2026-10-05T00:00:00Z", byName: "Manu", from: null, onDemandPerDay: null, tenantOnDemand: null });
         const taken = { ...data, assignments: [assignment("a-9", "logs", acme, "2026-09-01T00:00:00Z", "2026-10-10T00:00:00Z")] };
         expect(howOf(database("logs"), taken, NOW)).toEqual({ kind: "taken-back", at: "2026-10-10T00:00:00Z", before: "Acme" });
         expect(howOf(database("internal"), data, NOW)).toEqual({ kind: "nobody" });
@@ -93,9 +93,12 @@ describe("who a database of a shared server belongs to", () => {
         expect(movedText({ ...to, databaseName: "shop" }, "shop")).toBe("to New MySQL");
     });
 
-    it("says how many backups on demand a tenant may start, and nothing while it may start none", () => {
-        expect(onDemandText(3)).toBe("Backups on demand, 3 a day");
-        expect(onDemandText(null)).toBeNull();
+    it("says how many backups on demand a tenant may start and where the number comes from, nothing while it may start none", () => {
+        expect(onDemandLine(null, 3, "Acme")).toEqual({ text: "Backups on demand, 3 a day", from: "as Acme", off: false });
+        expect(onDemandLine(1, 3, "Acme")).toEqual({ text: "Backups on demand, 1 a day", from: "set here", off: false });
+        expect(onDemandLine(5, null, "Acme")).toEqual({ text: "Backups on demand, 5 a day", from: "set here", off: false });
+        expect(onDemandLine(0, 3, "Acme")).toEqual({ text: "Backups on demand off here", from: null, off: true });
+        expect(onDemandLine(null, null, "Acme")).toBeNull();
     });
 
     it("lets the older of two rules of equal priority win, like the service orders them", () => {

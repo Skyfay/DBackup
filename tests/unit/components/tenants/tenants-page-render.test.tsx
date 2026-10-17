@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
-import { AllowanceCell, ProvidedCell } from "@/components/dashboard/tenants/tenant-columns";
+import { AllowanceCell, OnDemandCell, ProvidedCell } from "@/components/dashboard/tenants/tenant-columns";
 import { TenantsClient } from "@/components/dashboard/tenants/tenants-client";
 import type { TenantListRow } from "@/components/dashboard/tenants/tenant-words";
 import { ALL_ALLOWED } from "@/lib/tenant/allowances";
@@ -23,6 +23,11 @@ vi.mock("@/app/actions/tenant/tenant", () => ({
     setTenantSharing: vi.fn(),
     setTenantAllowances: (...args: unknown[]) => setTenantAllowances(...args),
 }));
+vi.mock("@/app/actions/tenant/tenant-on-demand", () => ({
+    getTenantOnDemand: vi.fn(async () => ({ success: true, data: { name: "Acme", perDay: null, overrides: [] } })),
+    setTenantOnDemand: vi.fn(),
+    followTenantOnDemand: vi.fn(),
+}));
 const getTenantMembers = vi.fn();
 vi.mock("@/app/actions/tenant/members", () => ({ getTenantMembers: (id: string) => getTenantMembers(id), setTenantMember: vi.fn(), setPlatformAdmin: vi.fn() }));
 
@@ -32,11 +37,11 @@ Element.prototype.scrollIntoView = vi.fn();
 const ROWS: TenantListRow[] = [
     {
         id: "default", name: "Platform", isHome: true, sharesWithCustomers: true, logo: null, members: 2, connections: 3, jobs: 4, createdAt: "2026-01-01T00:00:00.000Z", databases: 6, health: null,
-        allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 2, channels: 1 },
+        allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 2, channels: 1 }, onDemand: { perDay: null, own: 0 },
     },
     {
         id: "t-acme", name: "Acme", isHome: false, sharesWithCustomers: false, logo: null, members: 1, connections: 0, jobs: 1, createdAt: "2026-10-01T00:00:00.000Z", databases: 0, health: "failed",
-        allowances: { ...ALL_ALLOWED, destinations: false, channels: false }, provided: { destinations: 2, channels: 2 }, gives: { destinations: 0, channels: 0 },
+        allowances: { ...ALL_ALLOWED, destinations: false, channels: false }, provided: { destinations: 2, channels: 2 }, gives: { destinations: 0, channels: 0 }, onDemand: { perDay: null, own: 0 },
     },
 ];
 
@@ -84,7 +89,8 @@ describe("the Tenants page", () => {
         render(<TenantsClient rows={ROWS} activeTenantId="default" viewerId="u1" canManage viewerPlatformAdmin />);
 
         await userEvent.click(screen.getByRole("button", { name: "Acme" }));
-        const dialog = await screen.findByRole("dialog", { name: "Members of Acme" });
+        const dialog = await screen.findByRole("dialog", { name: "Edit Acme" });
+        await userEvent.click(within(dialog).getByRole("tab", { name: "Members" }));
 
         expect(getTenantMembers).toHaveBeenCalledWith("t-acme");
         expect(await within(dialog).findByText("manu@example.com")).toBeInTheDocument();
@@ -111,32 +117,37 @@ describe("the Tenants page", () => {
         expect(within(home).getByText("Everything")).toBeInTheDocument();
     });
 
-    it("decides what a customer may add from its menu, and saves only what changed", async () => {
+    it("decides what a customer may add in Edit of it, and saves only what changed", async () => {
         const user = userEvent.setup();
         setTenantAllowances.mockResolvedValue({ success: true });
         render(<TenantsClient rows={ROWS} activeTenantId="default" viewerId="u1" canManage viewerPlatformAdmin />);
 
         await user.click(screen.getByRole("button", { name: "Open menu for Acme" }));
-        await user.click(await screen.findByRole("menuitem", { name: "What it may add" }));
-        const dialog = await screen.findByRole("dialog", { name: "What Acme may add" });
+        await user.click(await screen.findByRole("menuitem", { name: /^Edit/ }));
+        const dialog = await screen.findByRole("dialog", { name: "Edit Acme" });
+        await user.click(within(dialog).getByRole("tab", { name: "What it may add" }));
         expect(within(dialog).getByText("2 destinations and 2 channels of other tenants")).toBeInTheDocument();
         expect(within(dialog).getByRole("switch", { name: "Destinations" })).not.toBeChecked();
-        expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+        expect(within(dialog).queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
 
         await user.click(within(dialog).getByRole("switch", { name: "Destinations" }));
-        await user.click(within(dialog).getByRole("button", { name: "Save" }));
+        expect(within(dialog).getByText("Changed: what it may add")).toBeInTheDocument();
+        await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
 
         await waitFor(() => expect(setTenantAllowances).toHaveBeenCalledWith("t-acme", { destinations: true }));
-        expect(toast.success).toHaveBeenCalledWith("Saved what Acme may add");
+        expect(toast.success).toHaveBeenCalledWith("Acme saved");
     });
 
-    it("never offers to limit the home tenant", async () => {
+    it("never offers to limit the home tenant or its backups on demand, and keeps its sharing on", async () => {
         const user = userEvent.setup();
         render(<TenantsClient rows={ROWS} activeTenantId="default" viewerId="u1" canManage viewerPlatformAdmin />);
 
         await user.click(screen.getByRole("button", { name: "Open menu for Platform" }));
-        expect(await screen.findByRole("menuitem", { name: "Stop sharing with customers" })).toBeInTheDocument();
-        expect(screen.queryByRole("menuitem", { name: "What it may add" })).not.toBeInTheDocument();
+        await user.click(await screen.findByRole("menuitem", { name: /^Edit/ }));
+        const dialog = await screen.findByRole("dialog", { name: "Edit Platform" });
+        expect(within(dialog).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["General", "Members", "Sharing"]);
+        await user.click(within(dialog).getByRole("tab", { name: "Sharing" }));
+        expect(within(dialog).getByRole("switch", { name: "Shares with customers" })).toBeDisabled();
     });
 });
 
@@ -153,6 +164,16 @@ describe("the cells of what a tenant gets and adds", () => {
         expect(screen.getByText("1 destination")).toBeInTheDocument();
         expect(screen.queryByText(/channel/)).not.toBeInTheDocument();
         expect(screen.queryByText(/Gives/)).not.toBeInTheDocument();
+    });
+
+    it("says how many backups on demand a customer may start of each database, and how many set their own", () => {
+        const { rerender } = render(<OnDemandCell row={{ isHome: false, onDemand: { perDay: 3, own: 2 } }} />);
+        expect(screen.getByText("3 a day per database")).toBeInTheDocument();
+        expect(screen.getByText("2 set on their own")).toBeInTheDocument();
+
+        rerender(<OnDemandCell row={{ isHome: false, onDemand: { perDay: null, own: 0 } }} />);
+        expect(screen.getByText("Off")).toBeInTheDocument();
+        expect(screen.queryByText(/on their own|on its own/)).not.toBeInTheDocument();
     });
 
     it("says Everything for a tenant without limits, and names a limit with a lock and in full on hover", () => {

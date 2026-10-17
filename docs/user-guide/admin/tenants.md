@@ -75,12 +75,15 @@ Inside a customer tenant a platform admin sees under Administration exactly what
 
 ## Managing Tenants
 
-Tenants are managed under **Platform → Tenants**, which **Manage tenants** in the menu of the sidebar head opens too. Seeing it needs `platform-tenants:read`, changing anything `platform-tenants:write`. Someone of a platform group changes the members, the name, the sharing, what it may add or the delete only of the tenants their platform group reaches, never of one they are merely a member of. The list shows every tenant with its members, connections, databases and jobs, and a dot when one of its newest backups failed, the home tenant first. **You work here** marks the tenant you have open, and **Shares with customers** a tenant of the MSP that gives databases, destinations and channels to customers. Two more columns:
+Tenants are managed under **Platform → Tenants**, which **Manage tenants** in the menu of the sidebar head opens too. Seeing it needs `platform-tenants:read`, changing anything `platform-tenants:write`. Someone of a platform group changes the members, the name, the sharing, what it may add or the delete only of the tenants their platform group reaches, never of one they are merely a member of. The list shows every tenant with its members, connections, databases and jobs, and a dot when one of its newest backups failed, the home tenant first. **You work here** marks the tenant you have open, and **Shares with customers** a tenant of the MSP that gives databases, destinations and channels to customers. **Columns** hides and orders the columns, which stay as you left them. Three more columns:
 
 | Column | Shows |
 | :--- | :--- |
 | **Provided to it** | The destinations and channels other tenants share with it. A tenant that gets none but shares some itself shows what it gives in gray, like **Gives 2 destinations** |
+| **Backups on demand** | How many backups a day a customer may start of each database given to it, and how many databases and rules set their own, see [Backups on Demand](/user-guide/admin/shared-databases#backups-on-demand) |
 | **May add itself** | **Everything**, or a tag like **No own destinations, channels** or **Adds nothing itself**, see [What It May Add](#what-it-may-add) |
+
+The menu of a tenant, also on a right click, holds **Open**, **Edit** and **Delete**. A click on a tenant opens **Edit**, and someone who may only see the tenants gets **View** in its place.
 
 ### Create a Tenant
 
@@ -89,11 +92,25 @@ Tenants are managed under **Platform → Tenants**, which **Manage tenants** in 
 3. Tick **Shares with customers** for a tenant of the MSP that gives single databases, destinations and notification channels to other tenants, see [Share with Customers](#share-with-customers)
 4. Click **Create tenant**
 
-A new tenant starts with the built-in templates: the retention policies **Keep All**, **Simple - 14 Days** and **Smart GVS (7/4/12/2)**, the naming template **Standard**, five schedule presets and the exclude preset **System Junk Files**. Nobody works in it yet, so its members open next.
+A new tenant starts with the built-in templates: the retention policies **Keep All**, **Simple - 14 Days** and **Smart GVS (7/4/12/2)**, the naming template **Standard**, five schedule presets and the exclude preset **System Junk Files**. Nobody works in it yet, so **Edit** opens next on its members.
+
+### Edit a Tenant
+
+**Edit** holds every setting of a tenant in one dialog, its parts listed on the left:
+
+| Part | Holds |
+| :--- | :--- |
+| **General** | The name, at most 60 characters that no other tenant has. Its people see a new one at once |
+| **Members** | Who works there with which group, see [Members](#members) |
+| **Sharing** | **Shares with customers**, see [Share with Customers](#share-with-customers) |
+| **What it may add** | A switch per kind, see [What It May Add](#what-it-may-add). Not for the home tenant |
+| **Backups on demand** | How many backups a day it may start of each database given to it. Not for the home tenant |
+
+**Save changes** saves the name, the sharing, what it may add and the backups on demand together, and the foot says what changed. A change of the members and **Follow** of backups on demand count at once. When the server refuses one part, like sharing that is still in use, the dialog opens that part and keeps the rest of what is not saved yet.
 
 ### Members
 
-A click on a tenant, or **Members** in its menu, lists who works there with which group.
+**Members** in **Edit** lists who works there with which group.
 
 - **Add member** picks an account and its group in this tenant. It lists every account to a platform admin. Someone of a platform group sees every account with `platform-accounts:read`, else the people of the tenants their platform group reaches, and never a platform admin or themselves, whose memberships a platform admin changes.
 - The group of a member changes as soon as it is picked. Someone of a platform group gives and takes only a group that may do no more than they may in that tenant.
@@ -105,9 +122,9 @@ A tenant keeps someone who manages its members. The last member whose group hold
 Add one person of the customer with a group that may manage users. They invite everyone else with a link, see [Invitations](#invitations).
 :::
 
-### Open, Rename, Delete
+### Open, Delete
 
-**Open** switches you into the tenant. **Rename** gives it a new name, which its people see at once.
+**Open** switches you into the tenant.
 
 **Delete** removes the tenant with everything it holds: its connections with their health history, its jobs with their runs and logs, its encryption keys and saved logins, its templates, API keys, invitations and logs, its groups and sign-in providers, its notification settings and the storage alerts of its destinations. The databases of shared servers given to it end with it, and the backups of its time belong to nobody from then on, see [Shared Databases](/user-guide/admin/shared-databases#the-time-window). Its backups on destinations another tenant shares with it are deleted after the tenant is gone. A tenant that shares destinations or channels takes them from its customers first, whose backups stay on the storage. Nothing of it waits in Recently deleted. What stays:
 
@@ -116,13 +133,17 @@ Add one person of the customer with a group that may manage users. They invite e
 
 The dialog lists what goes and waits for the tick **I have the recovery kits of its keys, or do not need its backups**. The home tenant and the tenant you work in cannot be deleted.
 
+Ticked tenants go together with **Delete** above the list, as long as they are empty: no connections, no jobs and nobody working in them. A tenant that holds any of it is deleted on its own, where the dialog asks first.
+
 ### Share with Customers
 
-**Share with customers** in the menu of a tenant lets it give single databases of its servers, its destinations and its notification channels to other tenants, for a tenant of the MSP. **Stop sharing with customers** turns it off again, and is refused while it gives anything away. The home tenant shares from the start. The connections of a tenant that does not share with customers are never shared, whoever holds the right to share. When a switch is refused and what it changes, see [Shared Databases](/user-guide/admin/shared-databases#tenants-that-share), and for destinations and channels [Shared Destinations and Channels](/user-guide/admin/shared-connections).
+**Shares with customers** under **Sharing** in **Edit** lets a tenant give single databases of its servers, its destinations and its notification channels to other tenants, for a tenant of the MSP. Off again is refused while it gives anything away. The home tenant shares from the start. The connections of a tenant that does not share with customers are never shared, whoever holds the right to share. When a switch is refused and what it changes, see [Shared Databases](/user-guide/admin/shared-databases#tenants-that-share), and for destinations and channels [Shared Destinations and Channels](/user-guide/admin/shared-connections).
 
 ### What It May Add
 
-**What it may add** in the menu of a tenant decides what the tenant adds itself, with a switch each for **Database connections**, **Directory sources**, **Destinations**, **Channels** and **API keys**, all on for a new tenant. The home tenant holds what the platform owns and is never limited.
+**Backups on demand** in **Edit** of a customer decides how many backups a day it may start of each database given to it, see [Backups on Demand](/user-guide/admin/shared-databases#backups-on-demand).
+
+**What it may add** in **Edit** of a tenant decides what the tenant adds itself, with a switch each for **Database connections**, **Directory sources**, **Destinations**, **Channels** and **API keys**, all on for a new tenant. The home tenant holds what the platform owns and is never limited.
 
 Off stops new ones only. Its Connections page shows a note that they come from the platform in place of **New**, Clone and Quick Setup add none, and the server refuses one with `<tenant> adds no destinations of its own. <home tenant> decides that, ask them for one.` What it has keeps working and stays its own. **API keys** are the exception: off, no key of the tenant works any more, a request with one answers `API keys are switched off for this tenant`, nobody makes a new one, and **New API key** shows **API keys are off**. On again, the keys work as before. A tenant without destinations of its own writes to those a tenant of the MSP shares with it, which the dialog lists under **Provided to it**, see [Shared Destinations and Channels](/user-guide/admin/shared-connections).
 

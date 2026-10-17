@@ -2,7 +2,7 @@
 
 import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Info, Trash, Trash2 } from "lucide-react";
+import { Globe, Trash, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { bulkDeletePlatformGroups, deletePlatformGroup } from "@/app/actions/auth/platform-group";
 import { countWord } from "@/components/dashboard/groups/group-cells";
@@ -12,6 +12,8 @@ import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { JOIN_END } from "@/components/ui/page-head";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePageModel } from "@/hooks/use-page-model";
+import { useTableLayout } from "@/hooks/use-table-layout";
+import type { TablePreferences } from "@/lib/core/table-preferences";
 import { PLATFORM_AREAS } from "@/lib/auth/permission-areas";
 import { unwrapBulkAction } from "@/lib/bulk-request";
 import { wrapError } from "@/lib/logging/errors";
@@ -23,6 +25,7 @@ import { platformGroupActions, platformGroupColumns, platformRights, type Platfo
 import { PlatformGroupDialog } from "./platform-group-dialog";
 import { editableBy, type PlatformGroupFormMode } from "./platform-group-form";
 import { PlatformGroupStrip } from "./platform-group-strip";
+import { PLATFORM_GROUPS_TABLE_ID } from "./platform-tables";
 
 const log = logger.child({ component: "platform-group-list" });
 
@@ -36,6 +39,8 @@ interface PlatformGroupListProps {
     cards: boolean;
     /** May make, change, give and delete platform groups. */
     canManage: boolean;
+    /** The column layout the viewer saved for the table. */
+    initialLayout?: TablePreferences | null;
 }
 
 /**
@@ -45,8 +50,9 @@ interface PlatformGroupListProps {
  * opens the editor, read only for Platform admin and for a group the viewer may not change. The
  * groups the viewer may change can be deleted together.
  */
-export function PlatformGroupList({ ref, cards, canManage }: PlatformGroupListProps) {
+export function PlatformGroupList({ ref, cards, canManage, initialLayout = null }: PlatformGroupListProps) {
     const router = useRouter();
+    const layout = useTableLayout(PLATFORM_GROUPS_TABLE_ID, initialLayout);
     const { model, isLoading, refresh } = usePageModel<PlatformGroupsModel>("/api/platform/platform-groups", "The platform groups could not be loaded.");
     const [form, setForm] = useState<{ open: boolean; mode: PlatformGroupFormMode }>({ open: false, mode: { kind: "create" } });
     const [removing, setRemoving] = useState<PlatformGroupRow | null>(null);
@@ -143,6 +149,7 @@ export function PlatformGroupList({ ref, cards, canManage }: PlatformGroupListPr
                     isRowSelectable={editable}
                     bulkActions={bulkActions}
                     onBulkActionComplete={afterChange}
+                    columnLayout={layout}
                     onRowClick={handlers.onOpen}
                     activeRowId={form.open && form.mode.kind === "edit" ? form.mode.group.id : null}
                     view={cards ? "cards" : "table"}
@@ -164,10 +171,6 @@ export function PlatformGroupList({ ref, cards, canManage }: PlatformGroupListPr
                     )}
                 />
             )}
-            <p className="flex items-center gap-2 text-xs text-muted-foreground md:mt-4">
-                <Info className="size-3.5 shrink-0" aria-hidden="true" />
-                A person holds one platform group. In a tenant it adds to their group there, while the tenant is in its scope.
-            </p>
 
             {model && (
                 <PlatformGroupDialog

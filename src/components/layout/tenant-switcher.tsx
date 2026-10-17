@@ -7,7 +7,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { ChevronsUpDown, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { getTenantSummaries, switchTenant } from "@/app/actions/tenant/tenant"
-import { TenantNameDialog } from "@/components/dashboard/tenants/tenant-dialogs"
+import { NewTenantDialog } from "@/components/dashboard/tenants/tenant-dialogs"
 import { announceTenantSwitch, TenantSync } from "@/components/tenant/tenant-sync"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -187,8 +187,7 @@ export function SidebarHead(input: HeadInput) {
                     </PopoverContent>
                 </Popover>
                 {creating && (
-                    <TenantNameDialog
-                        tenant={null}
+                    <NewTenantDialog
                         onClose={() => setCreating(false)}
                         onSaved={(tenant) => {
                             setCreating(false)

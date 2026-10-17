@@ -1,16 +1,44 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRightLeft, Asterisk, Database, EyeOff, History, MoreHorizontal, Tag, Undo2, Zap } from "lucide-react";
+import { ArrowRightLeft, Asterisk, Database, EyeOff, History, Tag, Undo2, Zap } from "lucide-react";
+import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
+import { BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { TenantTileMark } from "@/components/tenant/tenant-pick";
-import { Button } from "@/components/ui/button";
 import type { DataTableFilterableColumn } from "@/components/ui/data-table";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DateDisplay } from "@/components/utils/date-display";
 import { formatBytes } from "@/lib/utils";
 import type { DatabaseOwnerRow, SourceAssignments } from "@/services/tenant/database-assignments";
-import { NOBODY, howOf, movedText, onDemandText, ownerKey, type How } from "./assignment-model";
+import { NOBODY, howOf, movedText, onDemandLine, ownerKey, type How } from "./assignment-model";
+import { OnDemandNote } from "./assignment-on-demand-note";
 import { OwnerPicker, type OwnerChange } from "./assignment-picker";
+
+/** What the menu of a database needs: who may change it and what each entry does. */
+export interface AssignmentActionOptions {
+    canAssign: boolean;
+    onChange: (changes: OwnerChange[]) => Promise<boolean>;
+    onHistory: (name: string) => void;
+    onMove: (row: DatabaseOwnerRow) => void;
+    onOnDemand: (row: DatabaseOwnerRow) => void;
+}
+
+/**
+ * What a database of the server can have done to it, for the button at the end of its row and the
+ * right click: who held it, and for whoever may give databases away moving it, its backups on
+ * demand and taking it back.
+ */
+export function assignmentActions(row: DatabaseOwnerRow, { canAssign, onChange, onHistory, onMove, onOnDemand }: AssignmentActionOptions): BackupActionGroup[] {
+    const byName = row.owner?.via === "assignment";
+    const manage = canAssign ? [
+        ...(row.owner ? [{ id: "move", label: "Move to another server", icon: ArrowRightLeft, onSelect: () => onMove(row), tone: "edit" as const }] : []),
+        ...(byName ? [{ id: "on-demand", label: "Backups on demand", icon: Zap, onSelect: () => onOnDemand(row), tone: "edit" as const }] : []),
+    ] : [];
+    return [
+        { actions: [{ id: "history", label: "Who held it", icon: History, onSelect: () => onHistory(row.name), tone: "neutral" as const }] },
+        ...(manage.length > 0 ? [{ actions: manage }] : []),
+        ...(canAssign && byName ? [{ actions: [{ id: "take-back", label: "Take back", icon: Undo2, onSelect: () => void onChange([{ databaseName: row.name, tenantId: null }]), tone: "neutral" as const }] }] : []),
+    ];
+}
 
 interface ColumnOptions {
     data: SourceAssignments;
@@ -47,7 +75,7 @@ function OwnerText({ row }: { row: DatabaseOwnerRow }) {
 }
 
 /** How the tenant holds the database, on two lines like the design of the card, and a third for backups on demand. */
-function HowCell({ how, tenantName, databaseName }: { how: How; tenantName: string; databaseName: string }) {
+function HowCell({ how, tenantName, ownerName, databaseName }: { how: How; tenantName: string; ownerName: string | null; databaseName: string }) {
     const [title, line]: [React.ReactNode, React.ReactNode] = how.kind === "assignment"
         ? ["By name", <>since <DateDisplay date={how.since} format="P" />{how.from ? <> · from {how.from.serverName}</> : how.byName && <> · by {how.byName}</>}</>]
         : how.kind === "rule"
@@ -57,17 +85,12 @@ function HowCell({ how, tenantName, databaseName }: { how: How; tenantName: stri
                 : how.kind === "taken-back"
                     ? [<>Taken back <DateDisplay date={how.at} format="P" /></>, how.before ? `${how.before} before` : "no rule gives it"]
                     : [`Only ${tenantName}`, "never given"];
-    const onDemand = how.kind === "assignment" || how.kind === "rule" ? onDemandText(how.onDemandPerDay) : null;
+    const onDemand = how.kind === "assignment" || how.kind === "rule" ? onDemandLine(how.onDemandPerDay, how.tenantOnDemand, ownerName ?? "the tenant") : null;
     return (
         <div className="min-w-0 text-sm">
             <p className="max-w-56 truncate">{title}</p>
             <p className="max-w-56 truncate text-xs text-muted-foreground tabular-nums">{line}</p>
-            {onDemand && (
-                <p className="flex max-w-56 items-center gap-1 truncate text-xs text-muted-foreground">
-                    <Zap className="size-3 shrink-0" aria-hidden="true" />
-                    {onDemand}
-                </p>
-            )}
+            {onDemand && <OnDemandNote line={onDemand} />}
         </div>
     );
 }
@@ -108,7 +131,7 @@ export function assignmentColumns({ data, tenantName, canAssign, onChange, onHis
             header: "How",
             enableSorting: false,
             filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)),
-            cell: ({ row }) => <HowCell how={howOf(row.original, data, now)} tenantName={tenantName} databaseName={row.original.name} />,
+            cell: ({ row }) => <HowCell how={howOf(row.original, data, now)} tenantName={tenantName} ownerName={row.original.owner?.tenantName ?? null} databaseName={row.original.name} />,
         },
         {
             accessorKey: "backups",
@@ -121,32 +144,7 @@ export function assignmentColumns({ data, tenantName, canAssign, onChange, onHis
             enableSorting: false,
             cell: ({ row }) => (
                 <div className="flex justify-end">
-                    <DropdownMenu modal={false}>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="size-8 p-0">
-                                <MoreHorizontal />
-                                <span className="sr-only">Open menu for {row.original.name}</span>
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-52">
-                            <DropdownMenuItem onSelect={() => onHistory(row.original.name)}><History /> Who held it</DropdownMenuItem>
-                            {canAssign && row.original.owner && (
-                                <DropdownMenuItem tone="edit" onSelect={() => onMove(row.original)}>
-                                    <ArrowRightLeft /> Move to another server
-                                </DropdownMenuItem>
-                            )}
-                            {canAssign && row.original.owner?.via === "assignment" && (
-                                <DropdownMenuItem tone="edit" onSelect={() => onOnDemand(row.original)}>
-                                    <Zap /> Backups on demand
-                                </DropdownMenuItem>
-                            )}
-                            {canAssign && row.original.owner?.via === "assignment" && (
-                                <DropdownMenuItem onSelect={() => void onChange([{ databaseName: row.original.name, tenantId: null }])}>
-                                    <Undo2 /> Take back
-                                </DropdownMenuItem>
-                            )}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    <BackupRowMenu name={row.original.name} groups={assignmentActions(row.original, { canAssign, onChange, onHistory, onMove, onOnDemand })} />
                 </div>
             ),
         },

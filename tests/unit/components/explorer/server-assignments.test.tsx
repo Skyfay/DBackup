@@ -31,14 +31,14 @@ function data(overrides: Partial<SourceAssignments> = {}): SourceAssignments {
     return {
         databases: [
             { name: "crm", sizeInBytes: 2048, owner: null, backups: 4 },
-            { name: "shop_a", sizeInBytes: 1024, owner: { tenantId: acme.id, tenantName: acme.name, via: "rule", since: "2026-10-01T00:00:00.000Z", onDemandPerDay: null }, backups: 15 },
-            { name: "shop_b", sizeInBytes: null, owner: { tenantId: beta.id, tenantName: beta.name, via: "assignment", since: "2026-10-05T00:00:00.000Z", onDemandPerDay: 3 }, backups: 30 },
+            { name: "shop_a", sizeInBytes: 1024, owner: { tenantId: acme.id, tenantName: acme.name, via: "rule", since: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null }, backups: 15 },
+            { name: "shop_b", sizeInBytes: null, owner: { tenantId: beta.id, tenantName: beta.name, via: "assignment", since: "2026-10-05T00:00:00.000Z", onDemandPerDay: 3, tenantOnDemand: null }, backups: 30 },
         ],
         assignments: [
             { id: "a-2", databaseName: "shop_b", tenantId: beta.id, tenantName: beta.name, validFrom: "2026-10-05T00:00:00.000Z", validUntil: null, createdAt: "2026-10-05T00:00:00.000Z", byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: 3 },
             { id: "a-1", databaseName: "shop_b", tenantId: acme.id, tenantName: acme.name, validFrom: "2026-09-01T00:00:00.000Z", validUntil: "2026-10-05T00:00:00.000Z", createdAt: "2026-09-01T00:00:00.000Z", byName: "Manu", movedTo: null, movedFrom: null, onDemandPerDay: null },
         ],
-        rules: [{ id: "r-shop", pattern: "shop_*", tenantId: acme.id, tenantName: acme.name, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", validUntil: null, createdAt: "2026-10-01T00:00:00.000Z", onDemandPerDay: null }],
+        rules: [{ id: "r-shop", pattern: "shop_*", tenantId: acme.id, tenantName: acme.name, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", validUntil: null, createdAt: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null }],
         customers: [acme, beta],
         backupDates: { shop_b: ["2026-09-10T02:00:00.000Z", "2026-10-10T02:00:00.000Z"] },
         ...overrides,
@@ -183,20 +183,36 @@ describe("the databases of a shared server and their tenants", () => {
         expect(within(detail).getByText(/1 backup still kept/)).toBeInTheDocument();
     });
 
-    it("switches backups on demand of a database given by name off, and shows how many a day in its row", async () => {
+    it("switches backups on demand of a database given by name off here, and shows how many a day in its row and where from", async () => {
         const user = userEvent.setup();
         actions.setDatabaseOnDemand.mockResolvedValue({ success: true });
         card();
         const row = await rowOf("shop_b");
-        expect(within(row).getByText("Backups on demand, 3 a day")).toBeInTheDocument();
+        expect(within(row).getByText(/Backups on demand, 3 a day/)).toBeInTheDocument();
+        expect(within(row).getByText(/set here/)).toBeInTheDocument();
         await user.click(within(row).getByRole("button", { name: "Open menu for shop_b" }));
         await user.click(await screen.findByRole("menuitem", { name: "Backups on demand" }));
 
         const dialog = await screen.findByRole("dialog", { name: "Backups on demand" });
-        await user.click(within(dialog).getByRole("switch"));
+        expect(within(dialog).getByRole("radio", { name: /A number of its own/ })).toBeChecked();
+        await user.click(within(dialog).getByRole("radio", { name: /Off for shop_b/ }));
+        await user.click(within(dialog).getByRole("button", { name: "Save" }));
+        await waitFor(() => expect(actions.setDatabaseOnDemand).toHaveBeenCalledWith("s1", "shop_b", 0));
+        expect(toast.success).toHaveBeenCalledWith("Backups on demand are off for shop_b");
+    });
+
+    it("lets a database follow the number of its tenant again", async () => {
+        const user = userEvent.setup();
+        actions.setDatabaseOnDemand.mockResolvedValue({ success: true });
+        card();
+        await user.click(within(await rowOf("shop_b")).getByRole("button", { name: "Open menu for shop_b" }));
+        await user.click(await screen.findByRole("menuitem", { name: "Backups on demand" }));
+
+        const dialog = await screen.findByRole("dialog", { name: "Backups on demand" });
+        await user.click(within(dialog).getByRole("radio", { name: /As Beta, none/ }));
         await user.click(within(dialog).getByRole("button", { name: "Save" }));
         await waitFor(() => expect(actions.setDatabaseOnDemand).toHaveBeenCalledWith("s1", "shop_b", null));
-        expect(toast.success).toHaveBeenCalledWith("Backups on demand are off for shop_b");
+        expect(toast.success).toHaveBeenCalledWith("shop_b follows Beta again");
     });
 
     it("moves a database a tenant holds to another server of the same engine", async () => {

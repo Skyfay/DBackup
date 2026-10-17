@@ -8,7 +8,7 @@ import { diffFields } from "@/lib/core/audit-diff";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { ON_DEMAND_MAX, ON_DEMAND_MIN, SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
+import { ON_DEMAND_MAX, ON_DEMAND_MIN, ON_DEMAND_OFF, SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { auditService } from "@/services/audit-service";
 import { databaseAssignmentService, type SourceAssignments } from "@/services/tenant/database-assignments";
 import { moveDatabase, moveTargets, type MoveTarget } from "@/services/tenant/database-moves";
@@ -25,7 +25,9 @@ const log = logger.child({ action: "database-assignments" });
 
 const IdSchema = z.string().min(1).max(200);
 const NameSchema = z.string().trim().min(1, "Name the database.").max(200);
-const PerDaySchema = z.coerce.number().int().min(ON_DEMAND_MIN).max(ON_DEMAND_MAX).nullable();
+// Null follows the customer, 0 is none for it, else a number a day of its own.
+const PerDaySchema = z.coerce.number().int().min(ON_DEMAND_OFF).max(ON_DEMAND_MAX).nullable()
+    .refine((value) => value === null || value === ON_DEMAND_OFF || value >= ON_DEMAND_MIN, `Allow from ${ON_DEMAND_MIN} to ${ON_DEMAND_MAX} backups a day.`);
 const ChangeSchema = z.object({
     databaseName: NameSchema,
     tenantId: IdSchema.nullable(),
@@ -47,9 +49,10 @@ const MoveSchema = z.object({
 const messageOf = (error: unknown, fallback: string) => (error instanceof ValidationError || error instanceof NotFoundError ? error.message : fallback);
 const expected = (error: unknown) => error instanceof ValidationError || error instanceof NotFoundError;
 
-/** The change of backups on demand as the audit log keeps it, Off for none. */
+/** The change of backups on demand as the audit log keeps it. */
+const onDemandWords = (perDay: number | null) => (perDay === null ? "As the tenant" : perDay === ON_DEMAND_OFF ? "Off here" : `${perDay} a day`);
 const onDemandChanges = (before: number | null, after: number | null) =>
-    diffFields({ perDay: before === null ? "Off" : `${before} a day` }, { perDay: after === null ? "Off" : `${after} a day` }, { perDay: { label: "Backups on demand" } });
+    diffFields({ perDay: onDemandWords(before) }, { perDay: onDemandWords(after) }, { perDay: { label: "Backups on demand" } });
 
 /** The databases of a shared server with who holds each, the rules and their history, for whoever may see the shared databases. */
 export async function getSourceAssignments(sourceId: string): Promise<{ success: true; data: SourceAssignments } | { success: false; error: string }> {
@@ -161,7 +164,7 @@ export async function moveSharedDatabase(sourceId: string, input: z.input<typeof
     }
 }
 
-/** Lets the customer who holds a database by name start backups of it, up to a number a day, or none with null. */
+/** How many backups a day the customer who holds a database by name may start of it: its own number, none with 0, or as the customer with null. */
 export async function setDatabaseOnDemand(sourceId: string, databaseName: string, perDay: number | null) {
     const viewer = await checkPermission(SHARE_PERMISSION);
     const id = IdSchema.safeParse(sourceId);

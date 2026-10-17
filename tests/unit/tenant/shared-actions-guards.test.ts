@@ -116,11 +116,18 @@ describe("what the tenant of a shared server changes", () => {
         expect(mocks.setRuleOnDemand).not.toHaveBeenCalled();
     });
 
-    it("refuses a number of backups a day out of range before the service sees it", async () => {
+    it("refuses a number of backups a day out of range before the service sees it, and takes 0 as off here", async () => {
         mocks.granted.add(SHARE_PERMISSION);
         expect(await setDatabaseOnDemand("old", "shop", 25)).toEqual(expect.objectContaining({ success: false }));
-        expect(await setDatabaseOnDemand("old", "shop", 0)).toEqual(expect.objectContaining({ success: false }));
+        expect(await setDatabaseOnDemand("old", "shop", -1)).toEqual(expect.objectContaining({ success: false }));
         expect(mocks.setOnDemand).not.toHaveBeenCalled();
+
+        mocks.setOnDemand.mockResolvedValue({ tenantName: "Acme", before: null });
+        expect(await setDatabaseOnDemand("old", "shop", 0)).toEqual(expect.objectContaining({ success: true }));
+        expect(mocks.setOnDemand).toHaveBeenCalledWith("old", "shop", 0);
+        expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "ADAPTER", expect.objectContaining({
+            change: "Backups on demand", changes: [expect.objectContaining({ from: "As the tenant", to: "Off here" })],
+        }), "old");
     });
 
     it("keeps the move in the audit log of the tenant of the server", async () => {

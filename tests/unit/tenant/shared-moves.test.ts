@@ -45,6 +45,7 @@ const { customersOfServer } = await import("@/services/tenant/shared-servers");
 const { dayStart, requestSharedBackup, sharedBackupRun } = await import("@/services/tenant/shared-on-demand");
 const { deleteAdapter } = await import("@/services/adapters/adapter-service");
 const { restoreFromTrash } = await import("@/services/trash/trash-service");
+const { tenantOnDemandService } = await import("@/services/tenant/tenant-on-demand");
 
 let root = "";
 let base: PrismaClient;
@@ -382,6 +383,47 @@ describe("backups a customer starts on demand", () => {
         expect(later).toBe("started");
         expect(await earlier).toMatch(/2 backups of shop2 started today/);
         expect(await base.sharedBackupRequest.count({ where: { tenantId: "acme", databaseName: "shop2", createdAt: { gte: at("00:00"), lt: day("2026-09-06") } } })).toBe(2);
+    });
+
+    it("follows the number the platform sets for the customer, unless the database sets its own or is off there", async () => {
+        const blog = { sourceId: "new-mysql", databaseName: "blog_one" };
+        await tenantOnDemandService.set("globex", 1);
+        try {
+            await expect(requestSharedBackup("globex", lena, blog, day("2026-09-20"))).resolves.toEqual(expect.objectContaining({ databaseName: "blog_one" }));
+            await expect(requestSharedBackup("globex", lena, blog, day("2026-09-20"))).rejects.toThrow(/1 backup of blog_one started today/);
+
+            await asHome(() => databaseAssignmentService.setOnDemand("new-mysql", "blog_one", 0));
+            await expect(requestSharedBackup("globex", lena, blog, day("2026-09-21"))).rejects.toThrow(/off for blog_one/);
+
+            await asHome(() => databaseAssignmentService.setOnDemand("new-mysql", "blog_one", 2));
+            await requestSharedBackup("globex", lena, blog, day("2026-09-22"));
+            await expect(requestSharedBackup("globex", lena, blog, day("2026-09-22"))).resolves.toEqual(expect.objectContaining({ databaseName: "blog_one" }));
+        } finally {
+            await asHome(() => databaseAssignmentService.setOnDemand("new-mysql", "blog_one", null));
+            await tenantOnDemandService.set("globex", null);
+        }
+    });
+
+    it("lists what the databases and rules of a customer set on their own, and lets one follow the customer again", async () => {
+        await asHome(() => databaseAssignmentService.setOnDemand("new-mysql", "blog_one", 0));
+        const found = await tenantOnDemandService.find("globex");
+        expect(found).toEqual({
+            name: "Globex",
+            perDay: null,
+            overrides: [expect.objectContaining({ kind: "database", name: "blog_one", serverName: "New MySQL", providerId: HOME, providerName: "Default", perDay: 0 })],
+        });
+
+        expect(await tenantOnDemandService.follow("globex", "database", found!.overrides[0].id)).toEqual(expect.objectContaining({ name: "blog_one", tenantName: "Globex" }));
+        expect((await tenantOnDemandService.find("globex"))!.overrides).toEqual([]);
+        await expect(tenantOnDemandService.follow("globex", "database", found!.overrides[0].id)).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("keeps the number of a customer within the limits, and none for the home tenant", async () => {
+        await expect(tenantOnDemandService.set("globex", 25)).rejects.toBeInstanceOf(ValidationError);
+        await expect(tenantOnDemandService.set("globex", 0)).rejects.toBeInstanceOf(ValidationError);
+        await expect(tenantOnDemandService.set(HOME, 3)).rejects.toThrow(/home tenant/);
+        expect(await tenantOnDemandService.set("globex", 4)).toEqual({ name: "Globex", before: null, after: 4 });
+        expect(await tenantOnDemandService.set("globex", null)).toEqual({ name: "Globex", before: 4, after: null });
     });
 
     it("lets only the tenant of the server switch backups on demand, within the limits", async () => {

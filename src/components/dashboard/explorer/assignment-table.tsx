@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Building2, Info, Undo2 } from "lucide-react";
+import { Building2, Database, Info, Undo2 } from "lucide-react";
 import { assignDatabases } from "@/app/actions/tenant/database-assignments";
+import { BackupContextMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import type { BulkResult } from "@/lib/core/bulk";
 import type { DatabaseOwnerRow, SourceAssignments } from "@/services/tenant/database-assignments";
-import { assignmentColumns, assignmentFilters } from "./assignment-columns";
+import { assignmentActions, assignmentColumns, assignmentFilters } from "./assignment-columns";
 import { GiveDialog } from "./assignment-give-dialog";
 import { countOf, matchesQuick, quickCounts, type Quick } from "./assignment-model";
 import { MoveDialog } from "./assignment-move-dialog";
@@ -127,6 +128,15 @@ export function AssignmentTable({ serverId, serverName, tenantName, data, canAss
                         onBulkActionComplete={onReload}
                         onRefresh={onReload}
                         autoResetPageIndex={false}
+                        renderRowMenu={(row, bulk) => (
+                            <BackupContextMenu
+                                tile={<span className="flex size-7 items-center justify-center rounded-md border bg-muted/50"><Database className="size-3.5 text-muted-foreground" aria-hidden="true" /></span>}
+                                title={row.name}
+                                note={row.owner ? `${row.owner.tenantName} · ${row.owner.via === "assignment" ? "by name" : "by a rule"}` : `Only ${tenantName}`}
+                                groups={assignmentActions(row, { canAssign, onChange, onHistory, onMove: setMoving, onOnDemand: setOnDemand })}
+                                bulk={bulk}
+                            />
+                        )}
                     />
                 </div>
             )}
@@ -150,7 +160,7 @@ export function AssignmentTable({ serverId, serverName, tenantName, data, canAss
                 <OnDemandDialog
                     serverId={serverId}
                     serverName={serverName}
-                    target={{ kind: "database", name: onDemand.name, tenantName: onDemand.owner.tenantName, perDay: onDemand.owner.onDemandPerDay }}
+                    target={{ kind: "database", name: onDemand.name, tenantName: onDemand.owner.tenantName, perDay: onDemand.owner.onDemandPerDay, tenantPerDay: onDemand.owner.tenantOnDemand }}
                     onClose={() => setOnDemand(null)}
                     onSaved={() => {
                         setOnDemand(null);

@@ -2,7 +2,7 @@
 
 import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Info, Trash } from "lucide-react";
+import { Globe, Trash } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { bulkDeleteTenantGroupTemplates } from "@/app/actions/auth/tenant-group-template";
 import { GroupCard } from "@/components/dashboard/groups/group-card";
@@ -18,12 +18,15 @@ import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePageModel } from "@/hooks/use-page-model";
+import { useTableLayout } from "@/hooks/use-table-layout";
+import type { TablePreferences } from "@/lib/core/table-preferences";
 import { platformGroupRefusal } from "@/lib/auth/platform-group-caps";
 import { unwrapBulkAction } from "@/lib/bulk-request";
 import { cn } from "@/lib/utils";
 import type { GroupRow, GroupsModel, TenantGroupTemplateRow } from "@/services/user/groups-types";
 import type { PlatformGroupsModel } from "@/services/user/platform-groups-types";
 import { actorOf } from "./platform-group-form";
+import { TENANT_GROUPS_TABLE_ID } from "./platform-tables";
 import { tenantGroupActions, type TenantGroupHandlers } from "./tenant-group-actions";
 import { TenantGroupTemplateDeleteDialog } from "./tenant-group-template-delete-dialog";
 import { TenantGroupTemplateDialog } from "./tenant-group-template-dialog";
@@ -47,6 +50,8 @@ interface TenantGroupsListProps {
     cards: boolean;
     /** May make, change and delete groups for tenants. */
     canManage: boolean;
+    /** The column layout the viewer saved for the table. */
+    initialLayout?: TablePreferences | null;
 }
 
 /**
@@ -56,8 +61,9 @@ interface TenantGroupsListProps {
  * tenant, so opening one switches into its tenant and shows it on the Groups tab. Groups for
  * tenants nobody holds can be deleted together.
  */
-export function TenantGroupsList({ ref, cards, canManage }: TenantGroupsListProps) {
+export function TenantGroupsList({ ref, cards, canManage, initialLayout = null }: TenantGroupsListProps) {
     const router = useRouter();
+    const layout = useTableLayout(TENANT_GROUPS_TABLE_ID, initialLayout);
     const { model, isLoading, refresh } = usePageModel<GroupsModel>("/api/platform/groups", "The groups could not be loaded.");
     // The tenants and what the viewer may give, as the platform groups read them, for the editor.
     const { model: editor, refresh: refreshEditor } = usePageModel<PlatformGroupsModel>("/api/platform/platform-groups", "The tenants could not be loaded.");
@@ -225,6 +231,7 @@ export function TenantGroupsList({ ref, cards, canManage }: TenantGroupsListProp
                     isRowSelectable={(group) => isTemplateRow(group) && editable(group)}
                     bulkActions={bulkActions}
                     onBulkActionComplete={afterChange}
+                    columnLayout={layout}
                     onRowClick={(group) => void open(group)}
                     activeRowId={form.open && form.template ? rowIdOf(form.template.id) : null}
                     view={cards ? "cards" : "table"}
@@ -251,10 +258,6 @@ export function TenantGroupsList({ ref, cards, canManage }: TenantGroupsListProp
                     )}
                 />
             )}
-            <p className="flex items-center gap-2 text-xs text-muted-foreground md:mt-4">
-                <Info className="size-3.5 shrink-0" aria-hidden="true" />
-                A group for tenants is one group in every tenant it reaches. Their admins give it to people, only the platform changes or deletes it. Admin is built in, with every permission in each tenant. The own groups of a tenant change there.
-            </p>
 
             {model && editor && (
                 <TenantGroupTemplateDialog

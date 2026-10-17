@@ -13,7 +13,7 @@ function assignment(databaseName: string, tenant: { id: string; name: string }, 
 }
 
 function rule(id: string, pattern: string, tenant: { id: string; name: string }, validFrom: string, priority = 0): RuleRow {
-    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, validUntil: null, createdAt: validFrom, onDemandPerDay: null };
+    return { id, pattern, tenantId: tenant.id, tenantName: tenant.name, priority, validFrom, validUntil: null, createdAt: validFrom, onDemandPerDay: null, tenantOnDemand: null };
 }
 
 const database = (name: string): DatabaseOwnerRow => ({ name, sizeInBytes: null, owner: null, backups: 0 });

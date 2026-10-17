@@ -515,6 +515,7 @@ model Tenant {
   addsDestinations     Boolean  @default(true)
   addsChannels         Boolean  @default(true)
   addsApiKeys          Boolean  @default(true)
+  onDemandPerDay       Int?                           // Backups on demand a day of each database given to it, null for none
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -570,7 +571,7 @@ model DatabaseAssignment {
   validUntil      DateTime?           // Null while it holds, an assignment ends rather than being deleted
   movedToSourceId String?             // Where a move took the database, on the assignment it ended
   movedToDatabase String?
-  onDemandPerDay  Int?                // Backups a day the customer may start, null for none
+  onDemandPerDay  Int?                // Backups on demand a day: null as Tenant.onDemandPerDay, 0 none, else its own
   createdAt       DateTime  @default(now())  // When it was given, which decides whether a start in the past reaches over another holder
   createdById     String?
 }
@@ -587,7 +588,7 @@ model DatabaseAssignmentRule {
   priority       Int       @default(0)
   validFrom      DateTime
   validUntil     DateTime?           // When it was removed or its tenant deleted, it still decides the backups of its time
-  onDemandPerDay Int?
+  onDemandPerDay Int?                 // Like DatabaseAssignment.onDemandPerDay, for each database it gives
   createdAt      DateTime  @default(now())
 }
 ```

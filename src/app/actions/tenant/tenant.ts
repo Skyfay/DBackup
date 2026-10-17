@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, currentSessionId, forgetAuthContext, getViewer } from "@/lib/auth/access-control";
+import { checkPermission, currentSessionId, forgetAuthContext, getViewer, type Viewer } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
@@ -15,6 +15,9 @@ import { platformGroupService } from "@/services/user/platform-group-service";
 import { tenantSummaries } from "@/services/tenant/tenant-summaries";
 import { setAllowances } from "@/services/tenant/tenant-allowances";
 import { ALLOWANCE_KINDS, ALLOWANCE_NOUNS, type TenantAllowances } from "@/lib/tenant/allowances";
+import { emptyBulkResult } from "@/lib/core/bulk";
+import { BulkIdsSchema } from "@/lib/core/bulk-schema";
+import { isEmptyTenant, tenantContents } from "@/services/tenant/tenant-contents";
 
 const log = logger.child({ action: "tenant" });
 
@@ -186,25 +189,70 @@ export async function deleteTenant(id: string) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
     const tenantId = IdSchema.safeParse(id);
     if (!tenantId.success) return { success: false as const, error: "Invalid request" };
-    if (tenantId.data === viewer.tenantId) return { success: false as const, error: "You work in this tenant. Open another one first." };
-    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
+    const refused = await deleteRefused(viewer, tenantId.data);
+    if (refused) return { success: false as const, error: refused };
 
     try {
-        const { withdrawn = [], ...removal } = await tenantService.delete(tenantId.data);
-        await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.TENANT, { ...removal }, tenantId.data, PLATFORM);
-        // Each customer of what it shared learns in its own log what it lost with it.
-        for (const loss of withdrawn) {
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, loss.kind === "destination" ? AUDIT_RESOURCES.DESTINATION : AUDIT_RESOURCES.ADAPTER, {
-                name: loss.name,
-                action: "unshare",
-                ...(loss.jobs.length > 0 ? { jobs: loss.jobs } : {}),
-                ...(loss.templates.length > 0 ? { templates: loss.templates } : {}),
-            }, loss.configId, { tenantId: loss.tenantId });
-        }
+        const removal = await removeTenant(viewer, tenantId.data);
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: removal };
     } catch (error: unknown) {
         log.error("Deleting a tenant failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be deleted.") };
     }
+}
+
+/** Why the viewer may not delete a tenant, null when they may: never the one they work in, never one beyond them. */
+async function deleteRefused(viewer: Viewer, tenantId: string): Promise<string | null> {
+    if (tenantId === viewer.tenantId) return "You work in this tenant. Open another one first.";
+    if (!(await managesTenant(viewer, tenantId))) return "The tenant no longer exists.";
+    return null;
+}
+
+/** Deletes a tenant and writes it into the log of the platform, and what its customers lost into theirs. */
+async function removeTenant(viewer: Viewer, tenantId: string) {
+    const { withdrawn = [], ...removal } = await tenantService.delete(tenantId);
+    await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.TENANT, { ...removal }, tenantId, PLATFORM);
+    // Each customer of what it shared learns in its own log what it lost with it.
+    for (const loss of withdrawn) {
+        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, loss.kind === "destination" ? AUDIT_RESOURCES.DESTINATION : AUDIT_RESOURCES.ADAPTER, {
+            name: loss.name,
+            action: "unshare",
+            ...(loss.jobs.length > 0 ? { jobs: loss.jobs } : {}),
+            ...(loss.templates.length > 0 ? { templates: loss.templates } : {}),
+        }, loss.configId, { tenantId: loss.tenantId });
+    }
+    return removal;
+}
+
+/**
+ * Deletes several empty tenants at once: no connection, no job, nobody working in them. One that
+ * holds any of it stays, with why, since Delete of one asks first what goes with it.
+ */
+export async function bulkDeleteTenants(ids: string[]) {
+    const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
+    const parsed = BulkIdsSchema.safeParse(ids);
+    if (!parsed.success) return { success: false as const, error: "Invalid request" };
+
+    const result = emptyBulkResult();
+    for (const id of parsed.data) {
+        try {
+            const refused = await deleteRefused(viewer, id);
+            if (refused) {
+                result.failed.push({ id, error: refused });
+                continue;
+            }
+            if (!isEmptyTenant(await tenantContents(id))) {
+                result.failed.push({ id, error: "It holds connections, jobs or people. Delete it on its own, which asks first." });
+                continue;
+            }
+            await removeTenant(viewer, id);
+            result.succeeded.push(id);
+        } catch (error: unknown) {
+            if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Deleting a tenant failed", { tenantId: id }, wrapError(error));
+            result.failed.push({ id, error: messageOf(error, "The tenant could not be deleted.") });
+        }
+    }
+    revalidatePath("/dashboard", "layout");
+    return { success: true as const, data: result };
 }

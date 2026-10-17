@@ -75,6 +75,8 @@ beforeEach(() => {
         { sourceId: "srv-pg", databases: JSON.stringify(["acme_reports"]), enabled: true, schedule: "30 1 * * *", schedulePreset: null },
     ] as never);
     prismaMock.databaseAssignmentRule.findMany.mockResolvedValue([]);
+    // The platform lets the tenant start no backups on demand of a database without a number of its own.
+    prismaMock.tenant.findMany.mockResolvedValue([] as never);
 });
 
 describe("a tenant without shared databases", () => {
@@ -139,6 +141,20 @@ describe("the rows of the provided servers", () => {
         const query = prismaMock.databaseAssignmentRule.findMany.mock.calls[0][0];
         expect(query?.where).toMatchObject({ tenantId: "acme", sourceId: { in: ["srv-mysql", "srv-pg"] } });
         expect(query?.select).toEqual({ sourceId: true, pattern: true, onDemandPerDay: true });
+    });
+
+    it("tell the number of a rule as the customer may start it: its own, none when off, else the one the platform sets", async () => {
+        prismaMock.tenant.findMany.mockResolvedValue([{ id: "acme", onDemandPerDay: 3 }] as never);
+        prismaMock.databaseAssignmentRule.findMany.mockResolvedValue([
+            { sourceId: "srv-mysql", pattern: "acme_*", onDemandPerDay: null },
+            { sourceId: "srv-mysql", pattern: "old_*", onDemandPerDay: 0 },
+            { sourceId: "srv-mysql", pattern: "big_*", onDemandPerDay: 6 },
+        ] as never);
+        const [mysql] = await sharedServerItems("acme", { backups: true });
+
+        expect(mysql.sharedServer.rules).toEqual([{ pattern: "acme_*", perDay: 3 }, { pattern: "old_*", perDay: null }, { pattern: "big_*", perDay: 6 }]);
+        // The number of the customer is part of the key, so a change of it shows at once.
+        expect(mocks.cached.mock.calls.at(-1)?.[0]).toMatch(/:3$/);
     });
 
     it("leave the newest backups out for a viewer who may not see backups, and keep the counts", async () => {

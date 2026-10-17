@@ -1,6 +1,7 @@
 import { addDays, format } from "date-fns";
 import { fromZonedTime } from "date-fns-tz";
 import { matchesPattern, ruleAt, type RuleFact } from "@/lib/tenant/database-owner";
+import { effectiveOnDemand, onDemandSource } from "@/lib/tenant/sharing";
 import type { AssignmentRow, DatabaseOwnerRow, MovePlace, RuleRow, SourceAssignments } from "@/services/tenant/database-assignments";
 
 /**
@@ -54,8 +55,8 @@ export function ruleFor(rules: readonly RuleRow[], databaseName: string, now: Da
 
 /** How the owner holds a database now, for the How column. */
 export type How =
-    | { kind: "assignment"; since: string; byName: string | null; from: MovePlace | null; onDemandPerDay: number | null }
-    | { kind: "rule"; pattern: string; since: string; onDemandPerDay: number | null }
+    | { kind: "assignment"; since: string; byName: string | null; from: MovePlace | null; onDemandPerDay: number | null; tenantOnDemand: number | null }
+    | { kind: "rule"; pattern: string; since: string; onDemandPerDay: number | null; tenantOnDemand: number | null }
     /** It moved to another server, and the tenant that held it took it along. */
     | { kind: "moved"; at: string; to: MovePlace; before: string | null }
     /** Nobody else holds it, and a tenant did until then, by name or by a rule. */
@@ -65,11 +66,14 @@ export type How =
 export function howOf(row: DatabaseOwnerRow, data: Pick<SourceAssignments, "assignments" | "rules">, now: Date): How {
     if (row.owner?.via === "assignment") {
         const current = data.assignments.find((entry) => entry.databaseName === row.name && entry.validUntil === null);
-        return { kind: "assignment", since: row.owner.since, byName: current?.byName ?? null, from: current?.movedFrom ?? null, onDemandPerDay: row.owner.onDemandPerDay };
+        return {
+            kind: "assignment", since: row.owner.since, byName: current?.byName ?? null, from: current?.movedFrom ?? null,
+            onDemandPerDay: row.owner.onDemandPerDay, tenantOnDemand: row.owner.tenantOnDemand,
+        };
     }
     if (row.owner?.via === "rule") {
         const rule = ruleFor(data.rules, row.name, now);
-        return { kind: "rule", pattern: rule?.pattern ?? "*", since: row.owner.since, onDemandPerDay: row.owner.onDemandPerDay };
+        return { kind: "rule", pattern: rule?.pattern ?? "*", since: row.owner.since, onDemandPerDay: row.owner.onDemandPerDay, tenantOnDemand: row.owner.tenantOnDemand };
     }
     const ended = endedAssignments(data.assignments).filter((entry) => entry.databaseName === row.name);
     const lastHolder = ended.find((entry) => entry.tenantName !== null)?.tenantName ?? null;
@@ -81,9 +85,24 @@ export function howOf(row: DatabaseOwnerRow, data: Pick<SourceAssignments, "assi
     return last ? { kind: "taken-back", at: last.validUntil, before: lastHolder } : { kind: "nobody" };
 }
 
-/** "3 backups a day on demand", or null while the tenant may start none. */
-export function onDemandText(perDay: number | null): string | null {
-    return perDay === null ? null : `Backups on demand, ${perDay} a day`;
+/** What a database or a rule allows of backups on demand, and where it comes from, for its line. */
+export interface OnDemandLine {
+    text: string;
+    /** "as Acme" or "set here", none for one off here. */
+    from: string | null;
+    off: boolean;
+}
+
+/**
+ * "Backups on demand, 3 a day" as the customer or set here, "Backups on demand off here", or null
+ * while it follows a customer that may start none, which says nothing.
+ */
+export function onDemandLine(held: number | null, tenantPerDay: number | null, tenantName: string): OnDemandLine | null {
+    const source = onDemandSource(held);
+    if (source === "off") return { text: "Backups on demand off here", from: null, off: true };
+    const perDay = effectiveOnDemand(held, tenantPerDay);
+    if (perDay === null) return null;
+    return { text: `Backups on demand, ${perDay} a day`, from: source === "own" ? "set here" : `as ${tenantName}`, off: false };
 }
 
 /** The line under a database a move took to another server, like "to New MySQL as shop2". */

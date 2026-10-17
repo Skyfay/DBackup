@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     platformGroups: { reaches: vi.fn(), reachesAll: vi.fn() },
     summaries: vi.fn(),
     audit: vi.fn(),
+    contents: vi.fn(),
 }));
 
 // The real check, reduced to the permissions of the viewer, which a platform admin passes.
@@ -29,8 +30,12 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } 
 vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: mocks.tenants }));
 vi.mock("@/services/tenant/tenant-summaries", () => ({ tenantSummaries: mocks.summaries }));
 vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: mocks.platformGroups }));
+vi.mock("@/services/tenant/tenant-contents", () => ({
+    tenantContents: mocks.contents,
+    isEmptyTenant: (contents: { connections: number; jobs: number; members: number }) => contents.connections + contents.jobs + contents.members === 0,
+}));
 
-const { createTenant, deleteTenant, getTenantSummaries, renameTenant } = await import("@/app/actions/tenant/tenant");
+const { bulkDeleteTenants, createTenant, deleteTenant, getTenantSummaries, renameTenant } = await import("@/app/actions/tenant/tenant");
 
 const P = PERMISSIONS;
 /** Someone of a platform group of Acme and Shop that sees the tenants. */
@@ -102,5 +107,37 @@ describe("the tenants through a platform group", () => {
         mocks.viewer = { id: "root", isPlatformAdmin: true, tenantId: "default", permissions: [] };
         expect(await deleteTenant("praxis")).toEqual(expect.objectContaining({ success: true }));
         expect(mocks.tenants.switchable).not.toHaveBeenCalled();
+    });
+});
+
+describe("deleting several tenants at once", () => {
+    beforeEach(() => {
+        mocks.viewer = { ...SUPPORT, permissions: [P.PLATFORM.TENANTS_READ, P.PLATFORM.TENANTS_WRITE] };
+        mocks.contents.mockImplementation(async (id: string) => (id === "shop" ? { connections: 2, jobs: 1, members: 3 } : { connections: 0, jobs: 0, members: 0 }));
+    });
+
+    it("needs the right to change the tenants", async () => {
+        mocks.viewer = SUPPORT;
+        await expect(bulkDeleteTenants(["acme"])).rejects.toBeInstanceOf(PermissionError);
+        expect(mocks.tenants.delete).not.toHaveBeenCalled();
+    });
+
+    it("deletes only empty tenants the viewer looks after, never the one they work in, and says why of the others", async () => {
+        const result = await bulkDeleteTenants(["acme", "shop", "praxis", "default"]);
+
+        expect(result).toEqual({
+            success: true,
+            data: {
+                succeeded: ["acme"],
+                failed: [
+                    { id: "shop", error: expect.stringMatching(/holds connections, jobs or people/) },
+                    { id: "praxis", error: "The tenant no longer exists." },
+                    { id: "default", error: "You work in this tenant. Open another one first." },
+                ],
+            },
+        });
+        expect(mocks.tenants.delete).toHaveBeenCalledTimes(1);
+        expect(mocks.tenants.delete).toHaveBeenCalledWith("acme");
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "DELETE", "TENANT", expect.objectContaining({ name: "Acme GmbH" }), "acme", { tenantId: "default" });
     });
 });

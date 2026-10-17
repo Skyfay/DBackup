@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import type { Tx } from "@/lib/prisma-tx";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
-import { ON_DEMAND_MAX, ON_DEMAND_MIN } from "@/lib/tenant/sharing";
+import { ON_DEMAND_MAX, ON_DEMAND_MIN, ON_DEMAND_OFF } from "@/lib/tenant/sharing";
 
 /**
  * The servers whose databases are given to customers, each as a SharedServer beside its connection,
@@ -51,9 +51,10 @@ export async function assertCustomer(tenantId: string, serverTenantId: string): 
     if (!(await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }))) throw new ValidationError("The tenant no longer exists.");
 }
 
-/** A number of backups a day, or null to allow none, as the service stores it. */
+/** What a database or a rule stores for backups on demand: null as the customer, 0 none, else a number of backups a day. */
 export function onDemandValue(perDay: number | null | undefined): number | null {
     if (perDay === null || perDay === undefined) return null;
+    if (perDay === ON_DEMAND_OFF) return ON_DEMAND_OFF;
     if (!Number.isInteger(perDay) || perDay < ON_DEMAND_MIN || perDay > ON_DEMAND_MAX) {
         throw new ValidationError(`Allow from ${ON_DEMAND_MIN} to ${ON_DEMAND_MAX} backups a day.`);
     }
@@ -128,4 +129,11 @@ export async function customersOfServer(sourceId: string): Promise<string[]> {
     // A tenant deleted since holds nothing any more.
     const tenants = await prisma.tenant.findMany({ where: { id: { in: ids } }, select: { name: true } });
     return tenants.map((tenant) => tenant.name).sort((a, b) => a.localeCompare(b));
+}
+
+/** The backups a day the platform lets each customer start of every database given to it, by tenant, null for none. */
+export async function tenantOnDemand(tenantIds: readonly string[]): Promise<Map<string, number | null>> {
+    if (tenantIds.length === 0) return new Map();
+    const tenants = await prisma.tenant.findMany({ where: { id: { in: [...new Set(tenantIds)] } }, select: { id: true, onDemandPerDay: true } });
+    return new Map(tenants.map((tenant) => [tenant.id, tenant.onDemandPerDay]));
 }

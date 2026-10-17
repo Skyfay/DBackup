@@ -1,7 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRightLeft, Building2, House, Lock, Pencil, Share2, Trash2, Users } from "lucide-react";
+import { ArrowRightLeft, Building2, Eye, House, Lock, Pencil, Trash2 } from "lucide-react";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DateDisplay } from "@/components/utils/date-display";
@@ -9,7 +9,7 @@ import { ALLOWANCE_KINDS } from "@/lib/tenant/allowances";
 import { cn } from "@/lib/utils";
 import type { TenantRow } from "@/services/tenant/tenant-service";
 import { healthNote } from "@/components/layout/tenant-switch";
-import { countOf, deleteRefusal, heldBack, sharedParts, type TenantListRow } from "./tenant-words";
+import { countOf, deleteRefusal, heldBack, onDemandWords, sharedParts, type TenantListRow } from "./tenant-words";
 
 /** The tile of a tenant: its logo, else a house for the home tenant and a building for the others. */
 export function TenantTile({ home = false, logo = null, className }: { home?: boolean; logo?: string | null; className?: string }) {
@@ -48,33 +48,29 @@ export function tenantNote(row: TenantRow): string {
 
 export interface TenantHandlers {
     onOpen: (row: TenantListRow) => void;
-    /** Absent for a viewer who may only see the tenants, like the rest of the changes. */
-    onRename?: (row: TenantListRow) => void;
-    onMembers: (row: TenantListRow) => void;
+    /** Opens Edit of the tenant, read only for a viewer who may only see the tenants. */
+    onEdit: (row: TenantListRow) => void;
+    /** Absent for a viewer who may only see the tenants, like every change. */
     onDelete?: (row: TenantListRow) => void;
-    /** Switches whether it shares with customers, absent like the other changes. */
-    onSharing?: (row: TenantListRow) => void;
-    /** Decides what it may add itself, absent like the other changes and never offered for the home tenant. */
-    onAllowances?: (row: TenantListRow) => void;
+    /** Whether the viewer may change the tenants, which makes Edit of View. */
+    canManage: boolean;
 }
 
 /**
- * What a tenant can have done to it, for the button at the end of its row and the right click.
- * Someone who may only see the tenants gets Open and the members to look at.
+ * What a tenant can have done to it, for the button at the end of its row and the right click:
+ * Open, Edit with every setting of it in one dialog, and Delete. Someone who may only see the
+ * tenants gets Open and View.
  */
 export function tenantActions(row: TenantListRow, activeTenantId: string | null, handlers: TenantHandlers): BackupActionGroup[] {
-    const { onRename, onDelete, onSharing, onAllowances } = handlers;
+    const { onDelete, canManage } = handlers;
     const groups: BackupActionGroup[] = [];
     if (row.id !== activeTenantId) {
         groups.push({ actions: [{ id: "open", label: "Open", icon: ArrowRightLeft, onSelect: () => handlers.onOpen(row), tone: "neutral" }] });
     }
     groups.push({
-        actions: [
-            { id: "members", label: "Members", icon: Users, onSelect: () => handlers.onMembers(row), tone: onRename ? "edit" : "neutral" },
-            ...(onRename ? [{ id: "rename", label: "Rename", icon: Pencil, onSelect: () => onRename(row), tone: "edit" as const }] : []),
-            ...(onSharing ? [{ id: "sharing", label: row.sharesWithCustomers ? "Stop sharing with customers" : "Share with customers", icon: Share2, onSelect: () => onSharing(row), tone: "edit" as const }] : []),
-            ...(onAllowances && !row.isHome ? [{ id: "allowances", label: "What it may add", icon: Lock, onSelect: () => onAllowances(row), tone: "edit" as const }] : []),
-        ],
+        actions: [canManage
+            ? { id: "edit", label: "Edit", icon: Pencil, onSelect: () => handlers.onEdit(row), tone: "edit", note: "Name, members, sharing and more" }
+            : { id: "view", label: "View", icon: Eye, onSelect: () => handlers.onEdit(row), tone: "neutral" }],
     });
     if (onDelete && !deleteRefusal(row, activeTenantId)) {
         groups.push({ actions: [{ id: "delete", label: "Delete", icon: Trash2, onSelect: () => onDelete(row), tone: "destructive" }] });
@@ -103,6 +99,23 @@ export function ProvidedCell({ row }: { row: Pick<TenantListRow, "provided" | "g
     return <span className="text-sm text-muted-foreground tabular-nums">{gives.length > 0 ? `Gives ${gives.join(", ")}` : "-"}</span>;
 }
 
+/** "3 a day per database", what a customer may start of each database, for the column. */
+function onDemandNote(row: Pick<TenantListRow, "onDemand">): string {
+    return row.onDemand.perDay === null ? "Off" : `${onDemandWords(row.onDemand.perDay)} per database`;
+}
+
+/** Backups on demand of a customer: the number of every database and how many set their own. The home tenant gives, it starts none. */
+export function OnDemandCell({ row }: { row: Pick<TenantListRow, "isHome" | "onDemand"> }) {
+    if (row.isHome) return <span className="text-sm text-muted-foreground">-</span>;
+    const own = row.onDemand.own;
+    return (
+        <div className="min-w-0 text-sm">
+            <p className={cn("truncate", row.onDemand.perDay === null && "text-muted-foreground")}>{onDemandNote(row)}</p>
+            {own > 0 && <p className="truncate text-xs text-muted-foreground">{own} set on {own === 1 ? "its" : "their"} own</p>}
+        </div>
+    );
+}
+
 /** Everything a tenant may add itself, or a tag with a lock that names what it may not. */
 export function AllowanceCell({ row }: { row: Pick<TenantListRow, "isHome" | "allowances"> }) {
     const limits = heldBack(row);
@@ -122,7 +135,7 @@ function HealthDot({ health }: { health: TenantListRow["health"] }) {
 }
 
 /** The columns of the Tenants page. */
-export function tenantColumns(activeTenantId: string | null, onMembers: (row: TenantListRow) => void, renderActions: (row: TenantListRow) => React.ReactNode): ColumnDef<TenantListRow>[] {
+export function tenantColumns(activeTenantId: string | null, onEdit: (row: TenantListRow) => void, renderActions: (row: TenantListRow) => React.ReactNode): ColumnDef<TenantListRow>[] {
     return [
         {
             accessorKey: "name",
@@ -132,8 +145,8 @@ export function tenantColumns(activeTenantId: string | null, onMembers: (row: Te
                     <TenantTile home={row.original.isHome} logo={row.original.logo} />
                     <div className="min-w-0 max-w-md">
                         <div className="flex min-w-0 items-center gap-2">
-                            {/* The keyboard way into the members, like a click on the row. */}
-                            <button type="button" onClick={() => onMembers(row.original)} className="truncate rounded-sm text-left text-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
+                            {/* The keyboard way into Edit of the tenant, like a click on the row. */}
+                            <button type="button" onClick={() => onEdit(row.original)} className="truncate rounded-sm text-left text-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
                                 {row.original.name}
                             </button>
                             <HealthDot health={row.original.health} />
@@ -155,6 +168,13 @@ export function tenantColumns(activeTenantId: string | null, onMembers: (row: Te
             header: "Provided to it",
             accessorFn: (row) => row.provided.destinations + row.provided.channels,
             cell: ({ row }) => <ProvidedCell row={row.original} />,
+        },
+        {
+            id: "on-demand",
+            header: "Backups on demand",
+            // The ones that may start the most sort first, then the ones of no number.
+            accessorFn: (row) => (row.isHome ? -1 : row.onDemand.perDay ?? 0),
+            cell: ({ row }) => <OnDemandCell row={row.original} />,
         },
         {
             id: "allowances",

@@ -1,7 +1,8 @@
 import prisma from "@/lib/prisma";
 import { assignmentAt, followMoves, matchesPattern, ownerAt, ruleAt, type DatabasePlace, type PlacedAssignment } from "@/lib/tenant/database-owner";
+import { effectiveOnDemand } from "@/lib/tenant/sharing";
 import { factsOf, serverBackupFiles, type OwnerFacts } from "./shared-backups";
-import { listedDatabases } from "./shared-servers";
+import { listedDatabases, tenantOnDemand } from "./shared-servers";
 
 /**
  * Where the databases of a customer live on the shared servers of another tenant, and where they
@@ -69,10 +70,13 @@ async function namesFromBackups(sourceId: string, pattern: string, facts: OwnerF
 
 /** Every place of the databases a tenant holds or held on the shared servers of other tenants. */
 export async function tenantPlaces(tenantId: string, now: Date): Promise<TenantPlaces> {
-    const [assignments, rules] = await Promise.all([
+    const [assignments, rules, perDay] = await Promise.all([
         prisma.databaseAssignment.findMany({ where: { tenantId }, select: ASSIGNMENT }),
         prisma.databaseAssignmentRule.findMany({ where: { tenantId } }),
+        tenantOnDemand([tenantId]),
     ]);
+    // A database or a rule without a number of its own allows what the customer may of every database.
+    const allowed = (held: number | null) => effectiveOnDemand(held, perDay.get(tenantId) ?? null);
     const servers = await serversOf([...new Set([
         ...assignments.flatMap((assignment) => [assignment.sourceId, ...(assignment.movedToSourceId ? [assignment.movedToSourceId] : [])]),
         ...rules.map((rule) => rule.sourceId),
@@ -97,7 +101,7 @@ export async function tenantPlaces(tenantId: string, now: Date): Promise<TenantP
     };
 
     for (const assignment of assignments) {
-        hold(assignment, assignment.validFrom, assignment.validUntil, assignment.onDemandPerDay);
+        hold(assignment, assignment.validFrom, assignment.validUntil, allowed(assignment.onDemandPerDay));
     }
     // The place a move went to is the customer's, whatever happened to the assignment there since.
     for (const assignment of assignments) {
@@ -119,7 +123,7 @@ export async function tenantPlaces(tenantId: string, now: Date): Promise<TenantP
                 // What it allows comes from the holding that wins: the name itself, else the rule of the highest priority.
                 const held = assignmentAt(assignments.filter((entry) => entry.sourceId === rule.sourceId), name, now)
                     ?? ruleAt(rules.filter((entry) => entry.sourceId === rule.sourceId), name, now);
-                hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, null, held?.onDemandPerDay ?? null);
+                hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, null, held ? allowed(held.onDemandPerDay) : null);
             }
         } else {
             for (const name of await namesFromBackups(rule.sourceId, rule.pattern, sourceFacts, tenantId)) {
@@ -175,10 +179,11 @@ export async function holdingNow(tenantId: string, place: DatabasePlace, now: Da
     const live = !!(await prisma.adapterConfig.findFirst({ where: { id: place.sourceId, type: "database" }, select: { id: true } }));
     const facts = await factsOf(place.sourceId);
     if (ownerAt(facts.assignments, facts.rules, place.databaseName, now) !== tenantId) return { live, owner: false, perDay: null };
-    const [assignments, rules] = await Promise.all([
+    const [assignments, rules, perDay] = await Promise.all([
         prisma.databaseAssignment.findMany({ where: { tenantId, sourceId: place.sourceId, databaseName: place.databaseName } }),
         prisma.databaseAssignmentRule.findMany({ where: { tenantId, sourceId: place.sourceId } }),
+        tenantOnDemand([tenantId]),
     ]);
     const held = assignmentAt(assignments, place.databaseName, now) ?? ruleAt(rules, place.databaseName, now);
-    return { live, owner: true, perDay: held?.onDemandPerDay ?? null };
+    return { live, owner: true, perDay: held ? effectiveOnDemand(held.onDemandPerDay, perDay.get(tenantId) ?? null) : null };
 }

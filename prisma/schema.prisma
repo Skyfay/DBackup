@@ -388,6 +388,9 @@ model Tenant {
   addsChannels         Boolean                     @default(true)
   // Whether it makes API keys itself. Off stops new keys, the ones it has keep working.
   addsApiKeys          Boolean                     @default(true)
+  // How many backups a day it may start of each database other tenants give it, set by the platform,
+  // null for none. A database or a rule that sets its own keeps that, see src/lib/tenant/sharing.ts.
+  onDemandPerDay       Int?
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
   memberships          TenantMembership[]
@@ -483,7 +486,8 @@ model DatabaseAssignment {
   // where an assignment of the same customer starts at the end of this one.
   movedToSourceId String?
   movedToDatabase String?
-  // How many backups of it a day the customer may start, null when it may start none.
+  // How many backups of it a day the customer may start: null as many as the customer may of every
+  // database (Tenant.onDemandPerDay), 0 none, else the number of its own.
   onDemandPerDay  Int?
   createdAt       DateTime     @default(now())
   createdById     String?
@@ -505,7 +509,8 @@ model DatabaseAssignmentRule {
   validFrom      DateTime
   // When the rule was removed, or its tenant deleted. It still decides the backups of its time.
   validUntil     DateTime?
-  // How many backups a day the customer may start of each database the rule gives, null for none.
+  // How many backups a day the customer may start of each database the rule gives, like
+  // DatabaseAssignment.onDemandPerDay: null as the customer, 0 none, else its own.
   onDemandPerDay Int?
   createdAt      DateTime     @default(now())
   server         SharedServer @relation(fields: [sourceId], references: [id], onDelete: Cascade)

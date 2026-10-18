@@ -1,7 +1,7 @@
 import { transportSuffix, type ExecutionHost } from "@/lib/transport";
 import { PostgresConfig } from "@/lib/adapters/definitions";
 import { DatabaseInfo } from "@/lib/core/interfaces";
-import { PSQL, buildConnectionArgs, firstReachableDatabase, pgEnv } from "./args";
+import { PSQL, buildConnectionArgs, firstReachableDatabase, pgEnv, dbArg } from "./args";
 
 /**
  * A database adapter cannot fall back to a default transport: guessing "direct"
@@ -35,7 +35,7 @@ export async function test(
             host,
             config,
             (database) => [
-                psql, ...buildConnectionArgs(config), "-d", database, "-t", "-c", "SELECT version()",
+                psql, ...buildConnectionArgs(config), "-d", dbArg(database), "-t", "-c", "SELECT version()",
             ],
             (result) => {
                 // "PostgreSQL 16.1 on x86_64-pc-linux-gnu ..." -> "16.1"
@@ -62,7 +62,7 @@ export async function getDatabases(config: PostgresConfig, hostArg: ExecutionHos
         host,
         config,
         (database) => [
-            psql, ...buildConnectionArgs(config), "-d", database,
+            psql, ...buildConnectionArgs(config), "-d", dbArg(database),
             // -t = tuples only, -A = unaligned
             "-t", "-A", "-c", "SELECT datname FROM pg_database WHERE datistemplate = false;",
         ],
@@ -106,7 +106,7 @@ async function countTables(
     dbName: string,
 ): Promise<number | undefined> {
     const result = await host.exec(
-        [psql, ...buildConnectionArgs(config), "-d", dbName, "-t", "-A", "-c", pgTableCountQuery],
+        [psql, ...buildConnectionArgs(config), "-d", dbArg(dbName), "-t", "-A", "-c", pgTableCountQuery],
         { env: pgEnv(config.password) },
     );
     if (result.code !== 0) return undefined;
@@ -122,7 +122,7 @@ export async function getDatabasesWithStats(config: PostgresConfig, hostArg: Exe
         host,
         config,
         (database) => [
-            psql, ...buildConnectionArgs(config), "-d", database,
+            psql, ...buildConnectionArgs(config), "-d", dbArg(database),
             "-t", "-A", "-F", "\t", "-c", pgStatsQuery,
         ],
         async (result) => {

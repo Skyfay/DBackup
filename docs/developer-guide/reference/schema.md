@@ -373,6 +373,25 @@ model TenantGroupTemplate {
 }
 ```
 
+### PlatformGroup
+
+A group of the platform for the people of the MSP: rights on the instance and rights in the tenants of its scope, on top of the group someone holds in a tenant. A user holds at most one through `User.platformGroupId`. A platform admin is no row, it is `User.platformRole`. See [Tenants](/developer-guide/advanced/tenants#platform-groups).
+
+```prisma
+model PlatformGroup {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  platformPermissions String   @default("[]")  // JSON array, the rights on the platform
+  tenantPermissions   String   @default("[]")  // JSON array, the rights in every tenant of its scope
+  allTenants          Boolean  @default(true)  // Every tenant, the ones made later too. Else PlatformGroupTenant
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  members             User[]
+  tenants             PlatformGroupTenant[]    // The tenants of its scope while not every tenant
+}
+```
+
 ### ApiKey
 
 ```prisma
@@ -590,6 +609,24 @@ model DatabaseAssignmentRule {
   validUntil     DateTime?           // When it was removed or its tenant deleted, it still decides the backups of its time
   onDemandPerDay Int?                 // Like DatabaseAssignment.onDemandPerDay, for each database it gives
   createdAt      DateTime  @default(now())
+}
+```
+
+### SharedBackupRequest
+
+A backup a customer started of a database given to it. It counts towards the backups a day its assignment allows and lets the customer follow the run, which belongs to the tenant of the server and which the customer never opens itself.
+
+```prisma
+model SharedBackupRequest {
+  id            String   @id @default(cuid())
+  sourceId      String              // The SharedServer of the database
+  databaseName  String
+  executionId   String              // The run of the server's tenant that makes the backup
+  requestedById String?
+  createdAt     DateTime @default(now())
+  tenantId      String              // The customer that asked, in TENANT_MODELS
+
+  @@index([tenantId, sourceId, databaseName, createdAt])
 }
 ```
 

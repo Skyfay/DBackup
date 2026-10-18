@@ -348,6 +348,13 @@ export class StorageService {
     }
 
     async appendStorageListCacheEntry(adapterConfigId: string, entry: RichFileInfo, tenantId?: string): Promise<void> {
+        // A destination never listed has no listing to add to. Listing it now in the background shows
+        // the new backup at once, also to the customers of a shared server, who read only the listing.
+        const tenant = await this.listingTenant(adapterConfigId, tenantId);
+        if (!(await this.loadCurrentCache(adapterConfigId, tenant))) {
+            this.refreshInBackground(adapterConfigId, tenant, "rebuild");
+            return;
+        }
         await this.mutateStorageListCache(adapterConfigId, (files) =>
             files.some(f => f.path === entry.path) ? null : [...files, entry]
         , tenantId);

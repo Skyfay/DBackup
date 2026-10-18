@@ -10,12 +10,6 @@ export function queryOf(searchParams: PageSearchParams): string {
     return params.toString();
 }
 
-/** A path with the query of a page, for a redirect that keeps what an old link asked for. */
-export function withQuery(path: string, searchParams: PageSearchParams): string {
-    const query = queryOf(searchParams);
-    return query ? `${path}?${query}` : path;
-}
-
 /** The first value of a key of the query, null without one. */
 export function firstOf(searchParams: PageSearchParams, key: string): string | null {
     const value = searchParams[key];

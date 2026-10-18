@@ -45,7 +45,7 @@ export class App {
     constructor(private readonly request: APIRequestContext) {}
 
     /** Sends a request and returns its JSON. A 429 waits and tries again, anything else not ok fails the test. */
-    private async send(method: "get" | "post" | "delete", url: string, data?: unknown): Promise<unknown> {
+    private async send(method: "get" | "post" | "put" | "delete", url: string, data?: unknown): Promise<unknown> {
         for (let attempt = 0; ; attempt++) {
             const response: APIResponse = await this.request[method](url, data === undefined ? {} : { data });
             if (response.status() === 429 && attempt < 20) {
@@ -56,6 +56,11 @@ export class App {
             expect(response.ok(), `${method.toUpperCase()} ${url} answered ${response.status()}: ${text.slice(0, 500)}`).toBe(true);
             return text ? JSON.parse(text) : null;
         }
+    }
+
+    /** Reads a route that answers with JSON, for the lists a test compares. */
+    async get<T>(url: string): Promise<T> {
+        return await this.send("get", url) as T;
     }
 
     async credential(name: string, type: "USERNAME_PASSWORD" | "SSH_KEY" | "ACCESS_KEY" | "SMTP" | "TOKEN" | "WEBHOOK", data: Record<string, unknown>): Promise<string> {
@@ -91,19 +96,31 @@ export class App {
 
     /**
      * A paused job to the destinations given, encrypted and compressed like most real jobs. Every
-     * database of a database source, or the whole of a folder source.
+     * database of a database source unless `databases` names some, or the whole of a folder source.
      */
-    async job(name: string, sourceId: string, destinationIds: string[], encryptionProfileId: string, kind: "database" | "folder" = "database"): Promise<Job> {
+    async job(name: string, sourceId: string, destinationIds: string[], encryptionProfileId: string, kind: "database" | "folder" = "database", databases: string[] = []): Promise<Job> {
         const result = await this.send("post", "/api/jobs", {
             name,
             schedule: "0 3 * * *",
             enabled: false,
-            ...(kind === "folder" ? { sources: [{ configId: sourceId, priority: 0, path: "/" }] } : { sourceId, databases: [] }),
+            ...(kind === "folder" ? { sources: [{ configId: sourceId, priority: 0, path: "/" }] } : { sourceId, databases }),
             destinations: destinationIds.map((configId, priority) => ({ configId, priority, retention: JSON.stringify({ mode: "SIMPLE", simple: { keepCount: 10 } }) })),
             encryptionProfileId,
             compression: "GZIP",
         }) as Job;
         return result;
+    }
+
+    /** Gives databases of a shared server to tenants, a null tenant takes one back. */
+    async assignDatabases(sourceId: string, assignments: { database: string; tenantId: string | null }[]): Promise<{ changed: number }> {
+        const result = await this.send("put", `/api/adapters/${sourceId}/database-assignments`, { assignments }) as { data: { changed: number } };
+        return result.data;
+    }
+
+    /** The tenants a database of a shared server can go to, by name. */
+    async customersOf(sourceId: string): Promise<{ id: string; name: string }[]> {
+        const result = await this.send("get", `/api/adapters/${sourceId}/database-assignments`) as { data: { customers: { id: string; name: string }[] } };
+        return result.data.customers;
     }
 
     /** Runs a job like Run now and waits for its run. */

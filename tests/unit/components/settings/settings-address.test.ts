@@ -24,12 +24,6 @@ describe("where an address of the settings leads", () => {
         expect(platformSettingsRoute({ several: true, part: "tasks", query: "part=tasks" })).toEqual({ kind: "platform" });
     });
 
-    it("leads the parts that became pages to their page, with one tenant and with several", () => {
-        for (const several of [false, true]) {
-            expect(settingsRoute({ several, part: "tenants", tab: null, query: "" })).toEqual({ kind: "redirect", to: "/dashboard/platform/tenants" });
-        }
-    });
-
     it("keeps Recently deleted a part of Settings with one tenant and of the tenant settings with several", () => {
         const query = "part=recently-deleted";
         expect(settingsRoute({ several: false, part: "recently-deleted", tab: null, query })).toEqual({ kind: "platform" });

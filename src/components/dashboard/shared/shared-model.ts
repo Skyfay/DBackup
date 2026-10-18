@@ -60,11 +60,6 @@ export function othersOnServer(databases: readonly SharedDatabase[], row: Pick<S
     return databases.filter((database) => database.sourceId === row.database.sourceId && database.databaseName !== row.database.databaseName && !isFormer(database));
 }
 
-/** The line under a database that is no longer the tenant's, or since when it is. */
-export function heldText(database: Pick<SharedDatabase, "since" | "until">, date: (iso: string) => string): string {
-    return database.until ? `Yours from ${date(database.since)} to ${date(database.until)}` : `Yours since ${date(database.since)}`;
-}
-
 /** Who started a backup: the provider by its schedule, or someone of the tenant with Back up now. */
 export function starterOf(row: Pick<SharedRow, "requestedBy" | "database">): { kind: "schedule" | "request"; label: string; who: string } {
     if (!row.requestedBy) return { kind: "schedule", label: "Schedule", who: row.database.providerName };

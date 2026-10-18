@@ -60,7 +60,7 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL browser over a %s host", 
             await getTables(baseConfig as never, "otherdb", host);
 
             const argv = host.calls.exec[0];
-            expect(argv[argv.indexOf("-d") + 1]).toBe("otherdb");
+            expect(argv[argv.indexOf("-d") + 1]).toBe("dbname='otherdb'");
             expect(argv[argv.indexOf("-h") + 1]).toBe("db.internal");
             expect(argv[argv.indexOf("-p") + 1]).toBe("5432");
             expect(argv[argv.indexOf("-U") + 1]).toBe("postgres");

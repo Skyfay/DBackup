@@ -140,15 +140,6 @@ describe("the Backups page with databases shared with the tenant", () => {
         expect(within(table()).getByText("shop_a")).toBeInTheDocument();
     });
 
-    it("lands a link to the old tab Shared with you on the Backups tab with Shared with you picked", async () => {
-        search = new URLSearchParams("tab=shared");
-        page(true);
-        expect(within(await quickFilter()).getByRole("button", { name: /^Shared with you/ })).toHaveAttribute("aria-pressed", "true");
-        expect(screen.getByRole("tab", { name: /Backups/ })).toHaveAttribute("aria-selected", "true");
-        expect(within(table()).getByText("shop_a")).toBeInTheDocument();
-        expect(within(table()).queryByText("Shop nightly")).not.toBeInTheDocument();
-    });
-
     it("narrows the list to one shared database a link names", async () => {
         search = new URLSearchParams("quick=shared&shared=my%2Fcrm_a");
         page(true);

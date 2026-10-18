@@ -1,5 +1,7 @@
 > ⚠️ **Before updating:** This version moves everything an installation holds into its first tenant. The first start after the update keeps a copy of the database from before, and going back to an earlier version means starting it on that copy, see [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating).
 
+> ⚠️ **Breaking:** For API users the group SuperAdmin is now Admin, `viewerSuperAdmin` is now `viewerPlatformAdmin` and `GET /api/sso-providers` refuses API keys. The right to see the settings no longer covers the encryption keys and the templates, and the configuration restore, the database download and the files of a configuration backup are for a platform admin only.
+
 ### ✨ Features
 
 - **tenants**: One instance serves several tenants, each with its own connections, jobs, backups, keys, templates, API keys and audit log. People work in a tenant through a group, and the head of the sidebar switches between the tenants someone may open.
@@ -24,7 +26,6 @@
 
 - **backups**: The Destinations timeline of the Backups page follows the search and the filters of the list.
 - **api**: Changing a job through the API keeps its notification channels when the request leaves them out, and checks the destinations it names. Starting a job that does not exist answers 404 instead of 500.
-- **SSO**: Someone who may only see the settings opens the sign-in providers again.
 - **storage**: SMB, FTP, Dropbox, OneDrive and Rsync list a folder that does not exist yet as empty instead of failing. Google Drive no longer creates a folder by listing it.
 - **history**: The long name of an archive in the page of a restore run breaks inside its card instead of running out of it.
 - **ui**: A button in a toast, like Open the run or Undo, works while a dialog or a side panel is open.
@@ -32,10 +33,11 @@
 - **api**: Routes answer 403 instead of 500 when a permission is missing, cancelling a run among them.
 - **audit**: Cancelling a restore, verifying a backup and switching the passkey as second factor are written to the audit log.
 - **dashboard**: Latest executions names each run like the History does instead of showing Manual Action for a restore.
+- **docker**: A missing or malformed ENCRYPTION_KEY stops the start of the container before the database migrations run.
 - **startup**: An ENCRYPTION_KEY with a character other than 0 to 9 and a to f stops the start with a clear message instead of failing at the first secret it encrypts.
 - **dashboard**: Pages that read 1000 or more jobs or connections, like Backups and the Database Explorer, load instead of failing with an error of the database.
 - **scheduler**: Saving a job or a setting no longer keeps the replaced schedules in memory.
-- **system tasks**: A scheduled system task that still runs is not started a second time.
+- **scheduler**: A scheduled system task that still runs is not started a second time.
 - **vault**: Downloading a recovery kit is written to the audit log once it succeeded, with the names of its keys.
 - **storage**: SFTP, FTP and Dropbox list their backups right when their folder is written with a leading `./`, double slashes or another case.
 
@@ -43,6 +45,7 @@
 
 - **connections**: Testing a connection or its SSH login, checking its access or its snapshots and reading databases, tables or rows from the fields of a form need the right to change that kind of connection.
 - **storage**: A configuration backup on a destination is downloaded, opened and restored file by file only by a platform admin who is signed in, and never through a link.
+- **PostgreSQL**: The tools get a database name of a job, a restore or the table browser always as a name, so a name that reads like a connection string no longer connects to another server.
 - **storage**: Connecting Google Drive, Dropbox or OneDrive finishes only for the person and the login that started it.
 - **storage**: Deleting in the Storage Explorer refuses the root folder of a destination.
 - **storage**: A download link opened without signing in only serves a file that was shared as a link.
@@ -74,5 +77,7 @@
 
 ### 🧪 Tests
 
+- **SSH**: The test of a new ed25519 key that ssh2 writes a byte short no longer fails now and then.
 - **lint**: Lint guards keep direct database queries out of the routes and Next.js out of the services.
+- **e2e**: An end-to-end test walks an MSP through two customers, an invitation, a shared database, the network block, All tenants and the delete of a tenant.
 - **tenants**: Tests against a real database prove that no tenant reads, changes or deletes the rows of another. Invitation links, shared databases and shared destinations and channels have tests of their own.

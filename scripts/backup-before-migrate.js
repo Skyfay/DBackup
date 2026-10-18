@@ -44,10 +44,18 @@ function main() {
     const db = new DatabaseSync(live);
     try {
         let applied;
+        let failed;
         try {
             applied = new Set(db.prepare("SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL").all().map((row) => row.migration_name));
+            failed = db.prepare("SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL").all().map((row) => row.migration_name);
         } catch {
             // A database without the table of Prisma holds nothing a migration could lose.
+            return;
+        }
+        // A migration that started and never finished left the database half changed. The copy of
+        // the start before it is the clean one, and a new copy on every restart would prune it away.
+        if (failed.length > 0) {
+            console.log(`A migration did not finish (${failed.join(", ")}). The copy taken before it stays, no new one is made.`);
             return;
         }
         const pending = shippedMigrations().filter((name) => !applied.has(name));
@@ -64,9 +72,13 @@ function main() {
     prune(live);
 }
 
-try {
-    main();
-} catch (error) {
-    // The migrations still run. Refusing to start over a failed copy would leave nothing to fix it with.
-    console.error(`The database could not be copied before the migrations: ${error.message}`);
+if (require.main === module) {
+    try {
+        main();
+    } catch (error) {
+        // The migrations still run. Refusing to start over a failed copy would leave nothing to fix it with.
+        console.error(`The database could not be copied before the migrations: ${error.message}`);
+    }
 }
+
+module.exports = { PREFIX, KEEP };

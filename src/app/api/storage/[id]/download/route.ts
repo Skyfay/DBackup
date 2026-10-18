@@ -15,7 +15,7 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
-import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { requestRefusal } from "@/lib/server/permission-refusal";
 import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 import { z } from "zod";
 
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
              await fsPromises.unlink(tempFile).catch(() => {});
         }
 
-        const refused = permissionRefusal(error);
+        const refused = requestRefusal(error);
         if (refused) return refused;
         const keyRequired = keyRequiredResponse(error);
         if (keyRequired) return keyRequired;
@@ -227,7 +227,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             await fsPromises.unlink(tempFile).catch(() => {});
         }
 
-        const refused = permissionRefusal(error);
+        const refused = requestRefusal(error);
         if (refused) return refused;
         // Same contract as the GET path, so the key dialog opens for a prepare too.
         const keyRequired = keyRequiredResponse(error);

@@ -181,6 +181,8 @@ COPY --from=builder --link --chown=1001:1001 /app/scripts/dbackup-recover.js ./s
 COPY --from=builder --link --chown=1001:1001 /app/scripts/apply-pending-restore.js ./scripts/apply-pending-restore.js
 # Keeps a copy of the database before the migrations change it, called by docker-entrypoint.sh.
 COPY --from=builder --link --chown=1001:1001 /app/scripts/backup-before-migrate.js ./scripts/backup-before-migrate.js
+# Refuses a missing or bad ENCRYPTION_KEY before the migrations run, called by docker-entrypoint.sh.
+COPY --from=builder --link --chown=1001:1001 /app/scripts/check-encryption-key.sh ./scripts/check-encryption-key.sh
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

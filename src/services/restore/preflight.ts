@@ -21,6 +21,19 @@ const svcLog = logger.child({ service: "RestoreService" });
  *
  * Throws on incompatibility so the caller fails fast before logging an Execution.
  */
+/**
+ * The settings of the target server. A customer's restore of a shared database reads nothing of
+ * them: why they are refused, like a host in a local network its tenant blocks, stays with the
+ * tenant of the server, and the customer reads that the restore could not be started.
+ */
+function targetSettings(input: RestoreInput, target: Parameters<typeof resolveAdapterConfig>[0]): Promise<unknown> {
+    return resolveAdapterConfig(target).catch((error: unknown) => {
+        if (!input.shared) throw error;
+        svcLog.warn("The settings of the server of a shared database could not be used for a restore", { targetSourceId: input.targetSourceId }, wrapError(error));
+        throw new Error("The settings of the server of a shared database could not be used");
+    });
+}
+
 export async function preflightRestore(input: RestoreInput): Promise<void> {
     const { file, storageConfigId, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, privilegedAuth } = input;
 
@@ -49,7 +62,7 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
             }
 
             if (dbsToCheck.length > 0) {
-                const dbConf = await resolveAdapterConfig(targetConfig) as any;
+                const dbConf = await targetSettings(input, targetConfig) as any;
                 if (privilegedAuth) dbConf.privilegedAuth = privilegedAuth;
 
                 const prepare = targetAdapter.prepareRestore;
@@ -119,7 +132,7 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
                     }
 
                     if (metadata.engineVersion) {
-                        const dbConf = await resolveAdapterConfig(targetConfig) as any;
+                        const dbConf = await targetSettings(input, targetConfig) as any;
                         if (privilegedAuth) dbConf.privilegedAuth = privilegedAuth;
 
                         const testResult = (await runAdapterTest(targetAdapter, dbConf)) as { success: boolean; version?: string; edition?: string };

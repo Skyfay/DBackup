@@ -121,7 +121,8 @@ const prismaClientSingleton = () => {
   // Every query on a tenant model is narrowed to the tenant of the code that runs now, see
   // src/lib/tenant/prisma-scope.ts. The request is asked lazily, it imports this client itself.
   // A read of more than 999 parents with an ordered relation breaks Prisma on SQLite, so it runs
-  // in pages, see src/lib/prisma-paging.ts. Added last, it runs first and pages the read as asked.
+  // in pages, see src/lib/prisma-paging.ts. Prisma runs the extensions in the order they were added,
+  // so the tenant filter narrows the read first and every page carries that narrowed read.
   return client
     .$extends(tenantScopeExtension(async () => (await import('./tenant/current')).requestScope()))
     .$extends(relationOrderPaging);

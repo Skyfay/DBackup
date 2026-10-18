@@ -94,6 +94,25 @@ describe('preflightRestore()', () => {
         );
     });
 
+    it('gives a customer restoring a shared database no word of why the settings of the server were refused', async () => {
+        const { ValidationError } = await import('@/lib/logging/errors');
+        const refusal = 'Main reaches no address of the local network, db1 is 10.0.0.5.';
+        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
+        vi.mocked(registry.get).mockReturnValue({ prepareRestore: vi.fn() } as any);
+        vi.mocked(resolveAdapterConfig).mockRejectedValueOnce(new ValidationError(refusal));
+
+        const started = preflightRestore({
+            storageConfigId: 'st-1',
+            file: '/backup.sql',
+            targetSourceId: 'target-1',
+            targetDatabaseName: 'shop',
+            shared: { databaseName: 'shop' },
+        } as any);
+
+        await expect(started).rejects.toThrow('could not be used');
+        await expect(started).rejects.not.toBeInstanceOf(ValidationError);
+    });
+
     it('throws on incompatible source/target database types', async () => {
         const testFn = vi.fn().mockResolvedValue({ success: true, version: '14.0' });
         const readFn = vi.fn().mockResolvedValue(JSON.stringify({

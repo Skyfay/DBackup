@@ -36,15 +36,43 @@ function shortEd25519Pair() {
     };
 }
 
-/** Lets ssh2's keygen answer with the short pair, the next `times` calls or every one. */
+/** The length of the key in an ed25519 `authorized_keys` line, 32 for a key ssh2 wrote in full. */
+function ed25519KeyLength(publicLine: string): number {
+    const blob = Buffer.from(publicLine.split(" ")[1], "base64");
+    return blob.readUInt32BE(4 + blob.readUInt32BE(0));
+}
+
+/**
+ * An ed25519 pair ssh2 wrote in full, made once with its synchronous keygen, which the spy leaves
+ * alone. One key in 256 comes out short, so it keeps the first full one.
+ */
+function readablePair(): { private: string; public: string } {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        const pair = sshUtils.generateKeyPairSync("ed25519", { comment: "dbackup@prod" });
+        if (ed25519KeyLength(pair.public) === 32) return { private: pair.private, public: pair.public };
+    }
+    throw new Error("ssh2 wrote no full ed25519 key in 100 attempts");
+}
+
+const READABLE_PAIR = readablePair();
+
+type KeygenDone = (err: Error | null, pair: { private: string; public: string }) => void;
+
+/**
+ * Lets ssh2's keygen answer with the short pair, the next `times` calls and then with a full pair,
+ * or every call. Nothing is left to the real keygen, which writes a short key now and then itself.
+ */
 function answerShort(times?: number) {
     const spy = vi.spyOn(sshUtils, "generateKeyPair");
-    const short = (...args: unknown[]) => {
-        const done = args[args.length - 1] as (err: Error | null, pair: ReturnType<typeof shortEd25519Pair>) => void;
-        done(null, shortEd25519Pair());
+    const answer = (pair: () => { private: string; public: string }) => (...args: unknown[]) => {
+        (args[args.length - 1] as KeygenDone)(null, pair());
     };
-    if (times === undefined) spy.mockImplementation(short);
-    else for (let i = 0; i < times; i++) spy.mockImplementationOnce(short);
+    if (times === undefined) {
+        spy.mockImplementation(answer(shortEd25519Pair));
+    } else {
+        for (let i = 0; i < times; i++) spy.mockImplementationOnce(answer(shortEd25519Pair));
+        spy.mockImplementation(answer(() => READABLE_PAIR));
+    }
     return spy;
 }
 

@@ -247,6 +247,30 @@ The action `setTenantNetwork` in `actions/tenant/tenant.ts` needs `platform-tena
 The check reads the answer of the resolver when it runs, and the adapter resolves the name again when it connects. A hostile DNS server that answers a public address first and a private one after gets past it, so is a host whose lookup takes longer than five seconds. The firewall of the server keeps out what must never be reached.
 :::
 
+## Tenant Notifications
+
+The channels of Settings → Notifications belong to the platform and hear about every tenant. A tenant other than the home tenant also picks channels of its own for the events about its own data, under the Notifications part of its tenant settings.
+
+| Module | Holds |
+| :--- | :--- |
+| `src/lib/notifications/tenant-events.ts` | `TENANT_EVENT_DEFINITIONS`, the events a tenant may hear about: the three runs of a job, which the platform only hears about through the job, and the restores, storage alerts, connections and the integrity check in the words of the platform. `getTenantEventDefinition` is undefined for an event of the platform alone, like a sign-in or a new version |
+| `src/services/notifications/tenant-notification-settings.ts` | What a tenant stored, in `SystemSetting` under `notifications.tenant.<id>` (`tenantNotificationKey`), with default channels and channels per event like the platform, without reminders and mails to a person. A save checks every channel against the own ones and those another tenant shares (`providedTo`). `tenantHearsAbout` tells a caller whether gathering the event is worth it |
+| `src/services/notifications/tenant-notification-delivery.ts` | `recordTenant`, the tenant an event is about: the one a caller names, else the connection, run or job it names, else the tenant that runs now. `deliverToTenant` sends to the picked channels in `runAsTenant` of that tenant, the shared ones read in the system scope, and never for the home tenant. `sendTenantEventTest` is Send a test |
+| `src/services/notifications/channel-send.ts` | `sendThroughChannel`, shared by the platform and the tenants. It asks `channelTarget` before every send and records the send in the notification log of the tenant it was for, also through a shared channel. A customer reads `SHARED_FAILURE` instead of the error of a channel another tenant shares |
+| `src/services/notifications/tenant-integrity.ts` | `notifyTenantsOfIntegrity`, after the integrity check: each tenant whose copies failed hears about its own copies alone, by the tenant whose run checked them, never by the tenant of the destination |
+
+`notify()` finds the tenant with `recordTenant` before it enters the system scope of the platform, which would hide the tenant of a run, and then sends to the platform and to the tenant. A run of a job sends with `platform: false` and `skipChannelIds` from `04-completion.ts`, so a channel the job told already gets it once. The actions in `actions/tenant/tenant-settings.ts` need `tenant-settings:write` in the tenant they change and refuse the home tenant, which reports through the notifications of the platform.
+
+## The Logo
+
+`TenantLogo` keeps the logo of a tenant in the database, one row per tenant, like `Avatar` keeps the pictures of the people, so a configuration backup brings it back. `src/services/tenant/tenant-logo-service.ts` stores at most 1 MB (`TENANT_LOGO_MAX_BYTES`) and reads the type from the first bytes with `imageTypeOf`, PNG, JPG, GIF or WebP, never SVG, which could carry a script. `GET /api/tenants/[id]/logo` serves it with `nosniff` to whoever `mayViewTenantLogo` allows, a platform admin, the tenant a request acts in, a member or a platform group that reaches the tenant, and answers anyone else like a tenant without a logo. Its address carries the time of the logo in `?v=` (`tenantLogoUrl`), so it is cached for good. `POST` and `DELETE` need `tenant-settings:write` in the tenant the request acts in and write into its audit log.
+
+## Invitations
+
+`TenantInvitation` keeps a link into a tenant with a group, an optional note, its maker and when it runs out, and only the SHA-256 of its token (`tokenHash`). `invitationService` in `src/services/tenant/invitation-service.ts` makes a token of 32 random bytes and hands it back once. A link works from 1 to 30 days, 7 by default, and a tenant has at most 100 open ones (`OPEN_INVITATIONS_MAX`). `openInvitation` finds a link by the hash and treats a link that is unknown, used, run out, or whose maker may no longer give its group (`creatorMayGive` through `roleRefusal`) the same.
+
+`acceptWithNewAccount` marks the link used before it makes the account, so two requests at once make one account, and frees it again when the account fails. A refusal, like an email with an account or one whose domain the provider of another tenant claims, counts against the link in a map of the process by the hash, and the fifth (`MAX_FAILED_SIGN_UPS`) spends the link, since a refusal tells whether an email has an account. The count lives in memory, so a restart resets it. The actions in `actions/tenant/invitation.ts` write the creation and the revoke with the note, and the accept, into the audit log of the tenant.
+
 ## Permissions
 
 `src/lib/auth/owner-permissions.ts` decides what someone may do while working in a tenant:
@@ -258,7 +282,7 @@ The check reads the answer of the resolver when it runs, and the adapter resolve
 | `ownerPermissionsIn(owner, tenantId, tenantShares)` | The ceiling of an API key in its tenant: every permission of a tenant for a platform admin, else `permissionsIn` without what a platform group gives on the platform. In a tenant that shares with customers also the `platform-sharing:*` the owner holds (`keyPlatformPermissions(tenantShares)`) |
 | `capToOwner(key, owner)` | What the key holds and its owner may do now |
 
-`PLATFORM_PERMISSIONS` are `settings:*`, which act on the whole instance. Groups belong to a tenant, so `groups:*` counts in each tenant, and `tenant-settings:*` covers the tenant's own settings and its Recently deleted (`TRASH_ADMIN_PERMISSION`). `VIEWER_PERMISSIONS` is the group Viewer that tenants made before the groups for tenants started with, and what the preset Viewer of a group for tenants holds. `PROFILE_PERMISSIONS` are `profile:*`, which change the own account, which belongs to no tenant. With one tenant `permissionsIn` is exactly what the group gives.
+`PLATFORM_PERMISSIONS` are `settings:*`, which act on the whole instance. Groups belong to a tenant, so `groups:*` counts in each tenant, and `tenant-settings:*` covers the tenant's own settings and its Recently deleted (`TRASH_ADMIN_PERMISSION`). `PROFILE_PERMISSIONS` are `profile:*`, which change the own account, which belongs to no tenant. With one tenant `permissionsIn` is exactly what the group gives.
 
 `AuthContext` carries `tenantId`, `isPlatformAdmin` and `allTenants`. A platform admin passes every check of `checkPermission` and `checkPermissionWithContext` inside a tenant, never through an API key, and in All tenants only what `ALL_TENANTS_PERMISSIONS` holds. The tenants and their members check `platform-tenants:*` (`actions/tenant/tenant.ts`, `members.ts`). `checkPlatformAdmin()` guards the platform admin role and the keys of the home tenant a configuration restore picks from (`getPlatformEncryptionProfiles`). `getViewer()` returns the user with `isPlatformAdmin`, `tenantId`, `permissions` and `role`, their group in the tenant.
 

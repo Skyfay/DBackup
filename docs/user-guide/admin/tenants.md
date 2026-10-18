@@ -188,7 +188,7 @@ This covers what DBackup does on the server itself, not what it reaches over the
 An IPv4 address written as IPv6, like `::ffff:10.0.0.5`, counts as its IPv4. DBackup checks every address a host of the connection resolves to: the server of a database or a destination, the S3 endpoint and the host of the bucket on it, the URL of a webhook, of Gotify or of ntfy, the SMTP host of an email channel. Amazon S3, the cloud drives, Telegram and Twilio have public endpoints of their own and need no check.
 
 - **Over SSH** only the SSH server counts. The database behind it, `127.0.0.1` of that server too, is reached from there and never from the server DBackup runs on.
-- **Allowed ranges** let the tenant reach parts of the local network anyway, like `10.10.10.0/24` for the servers of the customer behind a VPN of the MSP, or `fd00:1::/64`. A single address is `10.0.0.5/32`, or just `10.0.0.5`. The field checks a range as you type, **Add** puts it into the list, and the button at the end of a row takes it out. They count while the block is on.
+- **Allowed ranges** let the tenant reach parts of the local network anyway, like `10.10.10.0/24` for the servers of the customer behind a VPN of the MSP, or `fd00:1::/64`. A single address is `10.0.0.5/32`, or just `10.0.0.5`. The field checks a range as you type, **Add** puts it into the list, and the button at the end of a row takes it out. They count while the block is on. A tenant has at most 50 of them, a wider range covers more.
 - Saving, **Test connection**, a browse of folders and every run check it. A connection saved before the block that reaches a blocked address stops working at its next run, with a message like `Acme reaches no address of the local network, db.internal is 10.0.0.5. The platform allows ranges for it under Platform, Tenants.`
 - A destination or a channel another tenant shares follows the setting of that tenant, not the one of its customer.
 - A host that does not resolve passes the check, its connection fails on its own.
@@ -258,7 +258,7 @@ An invitation is a link that lets one person join the tenant with a group, with 
 
 1. Go to **Users & Groups → Users** and click **Invite**. It needs `users:write`
 2. Pick the **Group** they join with. Only groups that may do no more than you may are listed
-3. Add a **Note** of up to 100 characters about who it is for, if you like. Only the list of open invitations shows it
+3. Add a **Note** of up to 100 characters about who it is for, if you like. The list of open invitations shows it, and the audit log of the tenant keeps it with the creation and the revoke of the link
 4. Set how many days it **Works for**, from 1 to 30, 7 by default
 5. Click **Create link** and copy it. DBackup keeps only a hash of it and shows the link this once
 
@@ -268,7 +268,7 @@ The link works once, for whoever opens it first:
 - **Not signed in**, they click **Sign in**, and once they signed in the link opens again for **Join**. Or they create an account right there while password sign-in is on. The password follows [Settings → Passwords](/user-guide/admin/settings#passwords), and they sign in on the login page afterwards.
 - With `DISABLE_EMAIL_LOGIN=true` a new person signs in through a [sign-in provider](/user-guide/admin/sso) from **Sign in** and comes back to the link the same way.
 
-After five failed attempts to create an account with one link, like with an email that has an account already or one whose domain another tenant claims, the link stops working and you make a new one. The link is used up before the account is made, so two requests at once make one account.
+After five failed attempts to create an account with one link, like with an email that has an account already or one whose domain another tenant claims, the link stops working and you make a new one. DBackup counts the attempts in memory, so a restart starts the count again. The link is used up before the account is made, so two requests at once make one account.
 
 A link works only while whoever made it may still give its group in the tenant. When they lose that right or leave the tenant, their open links stop working. A tenant has at most 100 open links at once.
 
@@ -298,13 +298,17 @@ The update to this version moves the whole instance into the home tenant:
 - The names of saved logins and templates only need to be unique within a tenant from now on.
 - Sessions, passwords, passkeys, second factors and the settings of the instance stay as they are, so nobody has to sign in again.
 
-A database migration cannot be taken back. A start that is about to apply one first keeps a copy of the database beside it in `/data/db`, named `dbackup.db.before-migrate-<time>`, like `dbackup.db.before-migrate-2026-10-15T08-30-00-000Z`. The three newest copies stay, older ones are deleted. A start without a migration to apply copies nothing.
+A database migration cannot be taken back. A start that is about to apply one first keeps a copy of the database beside it in `/data/db`, named `dbackup.db.before-migrate-<time>`, like `dbackup.db.before-migrate-2026-10-15T08-30-00-000Z`. The three newest copies stay, older ones are deleted. A start without a migration to apply copies nothing, and neither does a start after a migration that failed half way, so restarts of a container that cannot finish its migrations never push the copy from before them out.
 
 ::: warning Take a backup as well
 When the copy fails, for example on a full volume, the log of the start says so and the migrations run anyway. Take a [configuration backup](/user-guide/features/system-backup) or [download the database](/user-guide/admin/data-retention#download-the-database) before the update.
 :::
 
 ### Going Back
+
+::: danger Put the copy in place first
+Start the older version only on the copy from before the update. The older version finds no migration of its own left to apply on a migrated database and starts as if all were well, so switching only the image tag back breaks once it reads or writes the tables that changed.
+:::
 
 1. Stop DBackup
 2. In `/data/db`, move `dbackup.db` and its `-wal` and `-shm` files away

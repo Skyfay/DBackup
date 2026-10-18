@@ -26,6 +26,11 @@ _resolve_secret() {
 _resolve_secret ENCRYPTION_KEY
 _resolve_secret BETTER_AUTH_SECRET
 
+# ─── Encryption key ──────────────────────────────────────────
+# Checked here, before the copy of the database and the migrations, since a migrated database
+# cannot be undone and the app would then refuse to start with the same key anyway.
+sh /app/scripts/check-encryption-key.sh
+
 # ─── Configurable UID/GID ────────────────────────────────────
 # Defaults match the build-time user (1001:1001).
 # Override with PUID/PGID env vars to match host user permissions.

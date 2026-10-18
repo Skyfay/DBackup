@@ -169,6 +169,17 @@ describe.each(readers)("$name of a configuration backup", ({ send, reached }) =>
 });
 
 describe("a backup of a job", () => {
+    it("answers 400 with the sentence when the decrypted download names no database of a backup that holds several", async () => {
+        mocks.ctx = member("storage:download");
+        const { ValidationError } = await import("@/lib/logging/errors");
+        mocks.downloadFile.mockRejectedValueOnce(new ValidationError("This backup holds 2 database(s). Name the database to download, or download the contents as a .tar.gz."));
+
+        const response = await download.GET(get(`?file=${encodeURIComponent("nightly/shop.tar")}&decrypt=true`), params);
+
+        expect(response.status).toBe(400);
+        expect((await response.json()).error).toContain("Name the database to download");
+    });
+
     it("still downloads for a member with the download right, asked in the view of its tenant", async () => {
         mocks.ctx = member("storage:download");
 

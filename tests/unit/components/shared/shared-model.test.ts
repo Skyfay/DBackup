@@ -3,7 +3,6 @@ import {
     backupRef,
     canBackUpNow,
     formerLabel,
-    heldText,
     isFormer,
     madeAt,
     madeAtText,
@@ -78,10 +77,7 @@ describe("the words of the shared backups", () => {
         expect(othersOnServer(DATABASES, { database: PG_A })).toEqual([]);
     });
 
-    it("says since when a database is the tenant's, or from when to when", () => {
-        const date = (iso: string) => iso.slice(0, 10);
-        expect(heldText(MY_A, date)).toBe("Yours since 2026-10-01");
-        expect(heldText(OLD, date)).toBe("Yours from 2026-10-01 to 2026-10-08");
+    it("says that the restore of a database started", () => {
         expect(restoreStarted({ database: MY_A })).toBe("The restore of shop_a started");
     });
 });

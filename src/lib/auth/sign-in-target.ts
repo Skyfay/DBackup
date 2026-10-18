@@ -57,11 +57,6 @@ export function safeNextPath(value: unknown): string | null {
     return CALLBACK_PATH.test(path) ? path : null;
 }
 
-/** Where the browser goes after signing in: the page `next` names when it is safe, else `AFTER_SIGN_IN`. */
-export function signInTarget(next: unknown): string {
-    return safeNextPath(next) ?? AFTER_SIGN_IN;
-}
-
 /** The login page that leads back to a page after signing in, the plain login page for a path it refuses. */
 export function loginHref(next: unknown): string {
     const path = safeNextPath(next);

@@ -12,7 +12,7 @@ import {
     getTargetDatabaseName,
 } from "../common/tar-utils";
 import { PostgresConfig } from "@/lib/adapters/definitions";
-import { PG_RESTORE, PSQL, buildConnectionArgs, pgEnv } from "./args";
+import { PG_RESTORE, PSQL, buildConnectionArgs, pgEnv, dbArg } from "./args";
 
 /**
  * Extended PostgreSQL config for restore operations with runtime fields
@@ -40,7 +40,7 @@ export async function prepareRestore(
     const pass = usePrivileged ? config.privilegedAuth!.password : config.password;
 
     const psql = await host.which(...PSQL);
-    const args = [...buildConnectionArgs(config, { user }), "-d", "postgres"];
+    const args = [...buildConnectionArgs(config, { user }), "-d", dbArg("postgres")];
     const env = pgEnv(pass);
 
     for (const dbName of databases) {
@@ -101,7 +101,7 @@ async function restoreSingleDatabase(
     await host.stageInput(sourcePath, {}, async (stagedPath) => {
         const args = [
             ...buildConnectionArgs(config),
-            "-d", targetDb,
+            "-d", dbArg(targetDb),
             "-w",
             "--clean",
             "--if-exists",

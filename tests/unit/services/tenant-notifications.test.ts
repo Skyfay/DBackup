@@ -28,7 +28,7 @@ vi.mock("@/services/sharing/provided", async (importOriginal) => ({
 
 const { getTenantNotificationConfig, getTenantNotificationsModel, saveTenantDefaultChannels, saveTenantEventSettings, tenantHearsAbout, tenantNotificationKey } =
     await import("@/services/notifications/tenant-notification-settings");
-const { deliverToTenant, eventTenant, sendTenantEventTest } = await import("@/services/notifications/tenant-notification-delivery");
+const { deliverToTenant, recordTenant, sendTenantEventTest } = await import("@/services/notifications/tenant-notification-delivery");
 const { notify } = await import("@/services/notifications/system-notification-service");
 
 const ACME = "t-acme";
@@ -155,26 +155,26 @@ describe("the tenant an event is about", () => {
     it("finds it by the connection the event names", async () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValue({ tenantId: ACME } as never);
 
-        expect(await eventTenant(offline)).toBe(ACME);
+        expect(await recordTenant(offline)).toBe(ACME);
         expect(prismaMock.adapterConfig.findUnique).toHaveBeenCalledWith({ where: { id: "nas" }, select: { tenantId: true } });
     });
 
     it("finds it by the run, like a restore of a shared database that belongs to the customer", async () => {
         prismaMock.execution.findUnique.mockResolvedValue({ tenantId: ACME } as never);
 
-        expect(await eventTenant(restoreDone)).toBe(ACME);
+        expect(await recordTenant(restoreDone)).toBe(ACME);
     });
 
     it("takes the tenant a caller names, and the tenant the code runs for without anything else", async () => {
-        expect(await eventTenant(offline, { tenantId: "t-shop" })).toBe("t-shop");
+        expect(await recordTenant(offline, { tenantId: "t-shop" })).toBe("t-shop");
         mocks.current.mockResolvedValue(ACME);
-        expect(await eventTenant({ eventType: NOTIFICATION_EVENTS.BACKUP_FAILURE, data: { jobName: "Nightly", timestamp: "x" } })).toBe(ACME);
+        expect(await recordTenant({ eventType: NOTIFICATION_EVENTS.BACKUP_FAILURE, data: { jobName: "Nightly", timestamp: "x" } })).toBe(ACME);
     });
 
-    it("has none for the home tenant, which the platform covers, nor for an event of the platform alone", async () => {
+    it("names the home tenant for its own records, and none for an event of the platform alone", async () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValue({ tenantId: HOME_TENANT_ID } as never);
-        expect(await eventTenant(offline)).toBeNull();
-        expect(await eventTenant({ eventType: NOTIFICATION_EVENTS.USER_LOGIN, data: { userName: "Ada", email: "ada@example.ch", timestamp: "x" } }, { tenantId: ACME })).toBeNull();
+        expect(await recordTenant(offline)).toBe(HOME_TENANT_ID);
+        expect(await recordTenant({ eventType: NOTIFICATION_EVENTS.USER_LOGIN, data: { userName: "Ada", email: "ada@example.ch", timestamp: "x" } }, { tenantId: ACME })).toBeNull();
     });
 });
 

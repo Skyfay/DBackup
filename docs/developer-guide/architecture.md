@@ -149,6 +149,8 @@ Services:
 - Coordinate between adapters
 - Are easily unit-testable
 
+Services read the database through the client of `src/lib/prisma.ts`. Prisma 6 on SQLite fails a `findMany` of more than 999 parents that orders one of their relations under a `select`, so `relationOrderPaging` from `src/lib/prisma-paging.ts`, added to that client, reads such a query in pages of 999. A client of its own, like the copy of `openCopy`, does not have it.
+
 ### 4. Adapter Layer (`src/lib/adapters`)
 
 Plugin architecture for external integrations.

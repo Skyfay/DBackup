@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AFTER_SIGN_IN, NEXT_PARAM, loginHref, safeNextPath, signInTarget } from "@/lib/auth/sign-in-target";
+import { NEXT_PARAM, loginHref, safeNextPath } from "@/lib/auth/sign-in-target";
 
 /** The relative callbackURL better-auth 1.6 takes, from `isTrustedOrigin` with `allowRelativePaths`. */
 const BETTER_AUTH_RELATIVE = /^\/(?!\/|\\|%2f|%5c)[\w\-.\+/@]*(?:\?[\w\-.\+/=&%@]*)?$/;
@@ -9,7 +9,7 @@ describe("where a sign-in leads", () => {
         expect(safeNextPath("/invite?token=abc123")).toBe("/invite?token=abc123");
         expect(safeNextPath("/dashboard/jobs?open=job-1")).toBe("/dashboard/jobs?open=job-1");
         expect(safeNextPath("/dashboard?tenant=acme")).toBe("/dashboard?tenant=acme");
-        expect(signInTarget("/dashboard/history")).toBe("/dashboard/history");
+        expect(safeNextPath("/dashboard/history")).toBe("/dashboard/history");
     });
 
     it("reads the path as a browser would, so a dot segment cannot climb out of it", () => {
@@ -56,9 +56,9 @@ describe("where a sign-in leads", () => {
         }
     });
 
-    it("falls back to the Overview with its marker for anything else", () => {
+    it("names no page for anything else, so the sign-in goes to the Overview", () => {
         for (const value of [undefined, null, "", 42, ["/invite?token=a"], "/".padEnd(2049, "a"), "//evil.example"]) {
-            expect(signInTarget(value)).toBe(AFTER_SIGN_IN);
+            expect(safeNextPath(value)).toBeNull();
         }
     });
 });

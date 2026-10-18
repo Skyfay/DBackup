@@ -13,7 +13,7 @@ import { TarFileEntry, TarManifest } from "../common/types";
 import { awaitDumpProcess } from "../common/dump-process";
 import { PostgresConfig } from "@/lib/adapters/definitions";
 import { getDatabases } from "./connection";
-import { PG_DUMP, buildConnectionArgs, pgEnv } from "./args";
+import { PG_DUMP, buildConnectionArgs, pgEnv, dbArg } from "./args";
 
 /**
  * Extended PostgreSQL config for dump operations with runtime fields
@@ -75,7 +75,7 @@ async function dumpSingleDatabase(
         ...buildConnectionArgs(config),
         "-F", "c", // Custom format (compressed, binary)
         ...buildCompressionArgs(config.pgCompression),
-        "-d", dbName,
+        "-d", dbArg(dbName),
     ];
 
     if (config.options) {

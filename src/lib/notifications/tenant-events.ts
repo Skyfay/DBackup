@@ -51,8 +51,3 @@ const BY_ID = new Map(TENANT_EVENT_DEFINITIONS.map((definition) => [definition.i
 export function getTenantEventDefinition(eventType: string): TenantEventDefinition | undefined {
     return BY_ID.get(eventType);
 }
-
-/** Whether a tenant may hear about the event on its own channels. */
-export function isTenantEvent(eventType: string): boolean {
-    return BY_ID.has(eventType);
-}

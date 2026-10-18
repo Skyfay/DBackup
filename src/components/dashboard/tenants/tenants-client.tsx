@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ArrowRightLeft, Building2, Eye, Loader2, Plus, Trash } from "lucide-react";
 import { bulkDeleteTenants } from "@/app/actions/tenant/tenant";
 import { TENANTS_TABLE_ID } from "@/components/dashboard/platform/platform-tables";
@@ -57,6 +57,7 @@ const holdsNothing = (row: TenantListRow) => row.connections === 0 && row.jobs =
  */
 export function TenantsClient({ rows, activeTenantId, viewerId, canManage, managedIds = null, canCreate = canManage, viewerPlatformAdmin, through = null, initialLayout = null }: TenantsClientProps) {
     const router = useRouter();
+    const pathname = usePathname();
     const openInTenant = useOpenInTenant();
     const layout = useTableLayout(TENANTS_TABLE_ID, initialLayout);
     const [creating, setCreating] = useState(false);
@@ -173,8 +174,11 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, manag
                     onClose={() => setCreating(false)}
                     onSaved={(tenant) => {
                         setCreating(false);
+                        // A new tenant has nobody in it yet, so its members come next. The second
+                        // tenant moves a session that never picked one to All tenants, which mounts
+                        // the page anew, so the address names the tenant to open, see useOpenFromLink.
+                        router.replace(`${pathname}?open=${encodeURIComponent(tenant.id)}`);
                         router.refresh();
-                        // A new tenant has nobody in it yet, so its members come next.
                         setEditing({ id: tenant.id, section: "members" });
                     }}
                 />

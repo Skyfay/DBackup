@@ -40,7 +40,7 @@ export interface AdapterConfigInput {
      * The tenant of the connection. Its saved logins are read there, so a destination or a channel
      * another tenant shares works in the run of a customer, whose own scope never sees them.
      */
-    tenantId?: string;
+    tenantId: string;
 }
 
 /**

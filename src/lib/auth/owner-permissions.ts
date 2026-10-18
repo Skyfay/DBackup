@@ -63,14 +63,6 @@ export const EVERY_PERMISSION: readonly string[] = [...ALL, ...PLATFORM_ONLY, ..
 /** Whether a permission acts on the platform itself and only a platform group gives it. */
 export const isPlatformOnly = (permission: string) => PLATFORM_ONLY.includes(permission);
 
-/**
- * The group Viewer every new tenant starts with: it sees everything of the tenant and changes
- * nothing but the own profile.
- */
-export const VIEWER_PERMISSIONS: readonly string[] = ALL.filter((permission) =>
-    ((permission.endsWith(":read") || permission.endsWith(":view")) && !PLATFORM_PERMISSIONS.has(permission))
-    || PROFILE_PERMISSIONS.has(permission));
-
 /** Every permission for the full access role, the stored ones DBackup knows for any other, nothing without a role. */
 export function groupPermissions(group: OwnerGroup | null | undefined): string[] {
     if (!group) return [];

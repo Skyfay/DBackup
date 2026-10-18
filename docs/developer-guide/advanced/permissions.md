@@ -191,6 +191,10 @@ export async function getSources() {
 }
 ```
 
+### Protecting API Routes
+
+An API route checks with `checkPermissionWithContext(ctx, ...)` on the context of `getAuthContext`, which throws a `PermissionError`. `src/lib/server/permission-refusal.ts` turns it into a 403 instead of a 500: `permissionRefusal(error)` in the catch of a route, `requestRefusal(error)` where a `ValidationError` answers 400 too, and `refusedUnless(() => ...)` for the checks at the start of a route.
+
 ### Protecting Page Access
 
 ```typescript

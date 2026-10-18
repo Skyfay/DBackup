@@ -64,6 +64,7 @@ scripts
 !scripts/dbackup-recover.js
 !scripts/apply-pending-restore.js
 !scripts/backup-before-migrate.js
+!scripts/check-encryption-key.sh
 coverage
 wiki
 api-docs

@@ -5,6 +5,7 @@ import { Readable, Transform } from "stream";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { pipeline } from "stream/promises";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
@@ -35,6 +36,17 @@ export function isDriveFolderId(value: string): boolean {
  * Creates an authenticated Google Drive client using OAuth2 refresh token.
  * Throws if no refresh token is available (user must authorize first).
  */
+/**
+ * The account a client works for, from the app and the grant of its connection. The in-flight
+ * folder lookups below are kept per account, so two connections of different tenants that write
+ * into a folder of the same name at the same moment never share one.
+ */
+const clientAccounts = new WeakMap<object, string>();
+
+function accountKey(config: { clientId?: string; refreshToken?: string }): string {
+    return createHash("sha256").update(`${config.clientId ?? ""}\n${config.refreshToken ?? ""}`).digest("hex").slice(0, 16);
+}
+
 function createDriveClient(config: GoogleDriveConfig): drive_v3.Drive {
     if (!config.refreshToken) {
         throw new Error("Google Drive is not authorized. Please click 'Authorize with Google' to connect your account.");
@@ -49,7 +61,9 @@ function createDriveClient(config: GoogleDriveConfig): drive_v3.Drive {
         refresh_token: config.refreshToken,
     });
 
-    return google.drive({ version: "v3", auth: oauth2Client });
+    const drive = google.drive({ version: "v3", auth: oauth2Client });
+    clientAccounts.set(drive, accountKey(config));
+    return drive;
 }
 
 /**
@@ -100,7 +114,7 @@ async function resolveSegment(
     parentId: string,
     segment: string
 ): Promise<string> {
-    const key = `${parentId}/${segment}`;
+    const key = `${clientAccounts.get(drive) ?? ""}:${parentId}/${segment}`;
     const inFlight = folderResolutions.get(key);
     if (inFlight) return inFlight;
 

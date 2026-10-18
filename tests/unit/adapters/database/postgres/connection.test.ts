@@ -28,7 +28,8 @@ const baseConfig = {
 
 /** Which database a recorded call connected to. */
 function connectedTo(argv: string[]): string {
-    return argv[argv.indexOf("-d") + 1];
+    // The name goes to libpq as a literal keyword value, see dbArg.
+    return argv[argv.indexOf("-d") + 1].replace(/^dbname='(.*)'$/, "$1");
 }
 
 /** A host where only `reachable` answers and every other database refuses. */

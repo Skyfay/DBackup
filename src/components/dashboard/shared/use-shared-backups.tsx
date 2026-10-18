@@ -123,5 +123,3 @@ export function useSharedBackups({ enabled, ...access }: SharedAccess & { enable
         elements,
     };
 }
-
-export type SharedBackups = ReturnType<typeof useSharedBackups>;

@@ -28,6 +28,8 @@ function buildRow(overrides: Partial<{
         config: JSON.stringify(overrides.config ?? { host: "db.local", port: 3306 }),
         primaryCredentialId: overrides.primaryCredentialId ?? null,
         sshCredentialId: overrides.sshCredentialId ?? null,
+        // The home tenant, whose connections reach the server DBackup runs on and the local network.
+        tenantId: "default",
     };
 }
 
@@ -298,6 +300,7 @@ describe("resolveAdapterConfig", () => {
                 config: "{ invalid json }",
                 primaryCredentialId: "cred-1",
                 sshCredentialId: null,
+                tenantId: "default",
             })
         ).rejects.toBeInstanceOf(ConfigurationError);
     });

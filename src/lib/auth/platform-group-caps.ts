@@ -1,4 +1,3 @@
-import { isPlatformOnly, PLATFORM_PERMISSIONS } from "@/lib/auth/owner-permissions";
 import { permissionInfo } from "@/lib/auth/permission-areas";
 
 /**
@@ -37,9 +36,6 @@ export interface PlatformGroupActor {
     /** Their own platform group, none for someone who holds none. */
     group: PlatformGroupShape | null;
 }
-
-/** Whether a permission is a right on the platform a platform group may hold: the settings of the instance or the platform's own. */
-export const isPlatformRight = (permission: string) => PLATFORM_PERMISSIONS.has(permission) || isPlatformOnly(permission);
 
 /** The words the editor and the actions use when a right is beyond the actor. */
 export const BEYOND_YOU_PLATFORM = "You may not do this yourself, so you cannot give it to a platform group.";

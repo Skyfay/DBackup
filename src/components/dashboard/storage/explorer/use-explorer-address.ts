@@ -36,8 +36,7 @@ export type AddressUpdate = Record<string, string | string[] | null>;
  * destination on its own is the one whose details show in the Destinations tab.
  *
  * `quick` is the quick filter, all, yours or shared. `shared=<sourceId>/<databaseName>` names a
- * shared database, which picks Shared with you and narrows the Job filter to it. The tab Shared with
- * you of earlier versions, `tab=shared`, is the Backups tab with Shared with you picked.
+ * shared database, which picks Shared with you and narrows the Job filter to it.
  */
 export function useExplorerAddress(jobs: ExplorerJob[], jobsByKey: Map<string, ExplorerJob>, destinationsById: Map<string, ExplorerDestination>) {
     const router = useRouter();
@@ -49,9 +48,8 @@ export function useExplorerAddress(jobs: ExplorerJob[], jobsByKey: Map<string, E
     const tabParam = searchParams.get("tab");
     const quickParam = searchParams.get("quick");
     const sharedParam = searchParams.get("shared");
-    const oldShared = tabParam === "shared";
-    const tab: ExplorerTab = tabParam === "destinations" || (!oldShared && !jobParams && !sharedParam && destinationParam) ? "destinations" : "backups";
-    const quick: QuickPick = isQuickPick(quickParam) ? quickParam : oldShared || sharedParam ? "shared" : "all";
+    const tab: ExplorerTab = tabParam === "destinations" || (!jobParams && !sharedParam && destinationParam) ? "destinations" : "backups";
+    const quick: QuickPick = isQuickPick(quickParam) ? quickParam : sharedParam ? "shared" : "all";
 
     const scope = useMemo<BackupScope>(() => {
         const named = jobParams ? jobParams.split("\n") : [];
@@ -83,16 +81,16 @@ export function useExplorerAddress(jobs: ExplorerJob[], jobsByKey: Map<string, E
     const keepQuick = useMemo((): AddressUpdate => (quickParam === null && quick !== "all" ? { quick } : {}), [quickParam, quick]);
 
     const setScope = useCallback((next: BackupScope) => {
-        setParams({ ...keepQuick, job: next.jobs, at: next.at, by: next.by, destination: null, shared: null, ...(oldShared ? { tab: null } : {}) });
-    }, [setParams, keepQuick, oldShared]);
+        setParams({ ...keepQuick, job: next.jobs, at: next.at, by: next.by, destination: null, shared: null });
+    }, [setParams, keepQuick]);
 
     const setQuick = useCallback((next: QuickPick) => {
         // All is the default, unless a shared database in the address would pick Shared with you again.
-        setParams({ quick: next === "all" && !sharedParam ? null : next, ...(oldShared ? { tab: null } : {}) });
-    }, [setParams, sharedParam, oldShared]);
+        setParams({ quick: next === "all" && !sharedParam ? null : next });
+    }, [setParams, sharedParam]);
 
     // A new entry in the history, so Back returns to the destination.
     const showBackupsAt = useCallback((destinationId: string) => router.push(`/dashboard/backups?at=${encodeURIComponent(destinationId)}`), [router]);
 
-    return { tab, tabParam, quick, scope, picked, setParams, setScope, setQuick, showBackupsAt };
+    return { tab, quick, scope, picked, setParams, setScope, setQuick, showBackupsAt };
 }

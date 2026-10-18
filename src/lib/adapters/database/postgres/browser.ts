@@ -1,7 +1,7 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { PostgresConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
-import { PSQL, buildConnectionArgs, pgEnv } from "./args";
+import { PSQL, buildConnectionArgs, pgEnv, dbArg } from "./args";
 
 /** Sanitize a PostgreSQL identifier for double-quote quoting. */
 function escapePgIdentifier(name: string): string {
@@ -95,7 +95,7 @@ function parseDataRows(
 export async function getTables(config: PostgresConfig, database: string, host: ExecutionHost): Promise<TableInfo[]> {
     const psql = await host.which(...PSQL);
     const result = await host.exec(
-        [psql, ...buildConnectionArgs(config), "-d", database, "-t", "-A", "-F", "\t", "-c", tablesQuery(database)],
+        [psql, ...buildConnectionArgs(config), "-d", dbArg(database), "-t", "-A", "-F", "\t", "-c", tablesQuery(database)],
         { env: pgEnv(config.password) },
     );
     if (result.code !== 0) {
@@ -130,7 +130,7 @@ export async function getTableData(
     const dataQuery = `SELECT * FROM ${tblId}${whereClause}${sortClause} LIMIT ${pageSize} OFFSET ${offset}`;
 
     const psql = await host.which(...PSQL);
-    const base = [psql, ...buildConnectionArgs(config), "-d", database, "-t", "-A", "-F", "\t"];
+    const base = [psql, ...buildConnectionArgs(config), "-d", dbArg(database), "-t", "-A", "-F", "\t"];
     const env = pgEnv(config.password);
 
     // Three concurrent queries. Over SSH each one is a separate channel, which

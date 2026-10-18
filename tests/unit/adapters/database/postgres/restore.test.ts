@@ -198,7 +198,7 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL restore over a %s host", 
             await restoreOne(baseConfig as never, "/tmp/a.dump", "target", host);
 
             const restoreCall = host.calls.exec.find(a => a[0] === "pg_restore")!;
-            expect(restoreCall[restoreCall.indexOf("-d") + 1]).toBe("target");
+            expect(restoreCall[restoreCall.indexOf("-d") + 1]).toBe("dbname='target'");
         });
 
         it("works without callbacks", async () => {

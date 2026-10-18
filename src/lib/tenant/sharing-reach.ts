@@ -10,9 +10,6 @@ import { reachCovers, type PlatformReach } from "@/lib/auth/platform-group-caps"
 
 export { reachCovers, type PlatformReach };
 
-/** Whether a reach covers every tenant, the ones made later too. */
-export const reachesEveryTenant = (reach: PlatformReach): reach is "all" => reach === "all";
-
 /** The sentences of a refusal, each naming what lies beyond the reach. */
 export const OUTSIDE_REACH = {
     /** Giving a database or a rule to a tenant. */

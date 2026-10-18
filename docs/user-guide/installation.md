@@ -422,6 +422,8 @@ docker compose up -d
 
 The first start of a new version runs its database migrations, which can take a while on an instance with a long history. Leave the container running until its log (`docker compose logs -f dbackup`) shows `All migrations have been successfully applied`. A container stopped halfway leaves a migration marked as failed, and the next start stops with an error.
 
+A start that is about to apply a migration first keeps a copy of the database beside it in `/data/db`, the three newest stay. To go back to the version you ran before, put that copy in place before you start the older image, see [Going Back](/user-guide/admin/tenants#going-back).
+
 ## Troubleshooting
 
 ### Container Won't Start

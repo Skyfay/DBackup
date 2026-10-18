@@ -78,15 +78,6 @@ export async function recordTenant(event: NotificationEventData, opts: { tenantI
 }
 
 /**
- * The tenant an event is about, other than the home tenant, null for none. Only an event a tenant
- * can hear about has one, see `recordTenant`.
- */
-export async function eventTenant(event: NotificationEventData, opts: { tenantId?: string | null; executionId?: string } = {}): Promise<string | null> {
-    const found = await recordTenant(event, opts);
-    return found && found !== HOME_TENANT_ID ? found : null;
-}
-
-/**
  * Sends the event to the channels the tenant picked for it, its own or the default ones, while it
  * is on there. Nothing for the home tenant, an event a tenant cannot hear about, or a tenant
  * without a channel for it. Never throws for a channel that does not take it.

@@ -44,7 +44,7 @@ export { EMAIL_ADAPTER_IDS };
  * replaced (used for user-targeted delivery).
  */
 export async function sendThroughChannel(
-  channel: { id: string; name: string; adapterId: string; config: string; primaryCredentialId: string | null; sshCredentialId: string | null; tenantId?: string },
+  channel: { id: string; name: string; adapterId: string; config: string; primaryCredentialId: string | null; sshCredentialId: string | null; tenantId: string },
   payload: ReturnType<typeof renderTemplate>,
   eventType: string,
   toOverride?: string,
@@ -81,7 +81,30 @@ export async function sendThroughChannel(
     throw new Error(target.refusal);
   }
 
-  let channelConfig = await resolveAdapterConfig(channel) as Record<string, unknown>;
+  let channelConfig: Record<string, unknown>;
+  try {
+    channelConfig = await resolveAdapterConfig(channel) as Record<string, unknown>;
+  } catch (err) {
+    // Settings that are refused, like a host in a local network its tenant blocks, fail like a send:
+    // logged, and for a customer in words that name nothing of the tenant that shares the channel.
+    await recordNotificationLog({
+      eventType,
+      channelId: channel.id,
+      channelName: channel.name,
+      adapterId: channel.adapterId,
+      status: "Failed",
+      title: payload.title,
+      message: payload.message,
+      error: logTenant ? SHARED_FAILURE : getErrorMessage(err),
+      executionId: opts?.executionId,
+      tenantId: logTenant,
+    });
+    if (logTenant) {
+      log.warn("The settings of a shared channel could not be used for a customer", { channelId: channel.id, tenantId: logTenant, error: getErrorMessage(err) });
+      throw new Error(SHARED_FAILURE);
+    }
+    throw err;
+  }
   if (target.to) channelConfig = { ...channelConfig, to: target.to };
 
   // Override the recipient for user-targeted emails

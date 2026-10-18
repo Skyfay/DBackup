@@ -32,6 +32,11 @@ export function buildConnectionArgs(config: AnyRedisConfig): string[] {
         args.push("--tls");
     }
     if (config.database !== undefined && config.database !== 0) {
+        // The index of a database is a whole number. A restore target or a stored value of
+        // another kind would reach redis-cli as something else than the value of -n.
+        if (!/^\d+$/.test(String(config.database))) {
+            throw new Error(`The Redis database ${String(config.database)} is no index. Use a whole number like 0.`);
+        }
         args.push("-n", String(config.database));
     }
 

@@ -172,28 +172,46 @@ export function permissionsIn(memberships: readonly OwnerMembership[], tenantId:
 }
 
 /**
- * The rights of the platform a key may carry in the tenant of the key: sharing the databases of its
- * servers, for a hosting panel that gives a customer the database it creates. Only a key made in a
- * tenant that shares databases, see `Tenant.sharesWithCustomers`.
+ * The rights of the platform a key of the home tenant may carry: managing the tenants with their
+ * members and invitations, and the accounts, for the automation of an MSP. Never in the key of a
+ * customer, whose tenant is no place to act on the platform from.
  */
-export function keyPlatformPermissions(tenantShares: boolean): string[] {
-    return tenantShares ? [PERMISSIONS.PLATFORM.SHARING_READ, PERMISSIONS.PLATFORM.SHARING_WRITE] : [];
+export const HOME_KEY_PLATFORM_PERMISSIONS: readonly string[] = [
+    PERMISSIONS.PLATFORM.TENANTS_READ,
+    PERMISSIONS.PLATFORM.TENANTS_WRITE,
+    PERMISSIONS.PLATFORM.ACCOUNTS_READ,
+    PERMISSIONS.PLATFORM.ACCOUNTS_WRITE,
+];
+
+/**
+ * The rights of the platform a key may carry in the tenant of the key: sharing the databases of its
+ * servers, for a hosting panel that gives a customer the database it creates, in a tenant that shares
+ * them (`Tenant.sharesWithCustomers`), and in the home tenant the tenants and the accounts
+ * (`HOME_KEY_PLATFORM_PERMISSIONS`). Never the sign-in providers, nor the settings of the instance
+ * through the platform group.
+ */
+export function keyPlatformPermissions(tenantShares: boolean, homeTenant = false): string[] {
+    return [
+        ...(homeTenant ? HOME_KEY_PLATFORM_PERMISSIONS : []),
+        ...(tenantShares ? [PERMISSIONS.PLATFORM.SHARING_READ, PERMISSIONS.PLATFORM.SHARING_WRITE] : []),
+    ];
 }
 
 /**
  * What the owner of an API key may do in the tenant of the key, the ceiling of the key: every
  * permission of a tenant for a platform admin, else what their roles and the tenant part of their
- * platform group give there. A key never acts on the platform, so what a platform group gives on
- * it, the settings of the instance included, is left out, but for the sharing of databases in a
- * tenant that shares them, see `keyPlatformPermissions`. The key itself never passes the checks
- * only a platform admin passes.
+ * platform group give there. Of the rights a platform group gives on the platform, the settings of
+ * the instance included, a key holds only what `keyPlatformPermissions` allows in its tenant, and
+ * only while its owner holds them: a platform admin, or a platform group that gives them. What such
+ * a key reaches stays the reach of its owner (`platformGroupService.reachOf`). The key itself never
+ * passes the checks only a platform admin passes.
  */
 export function ownerPermissionsIn(owner: { platformRole: string | null; memberships: readonly OwnerMembership[]; platformGroup?: PlatformGroupGrant | null }, tenantId: string, tenantShares = false): string[] {
-    const keyable = keyPlatformPermissions(tenantShares);
+    const keyable = keyPlatformPermissions(tenantShares, tenantId === HOME_TENANT_ID);
     if (owner.platformRole === PLATFORM_ADMIN_ROLE) return [...ALL, ...keyable];
     const tenantPart = owner.platformGroup ? { ...owner.platformGroup, platformPermissions: "[]" } : null;
-    const sharing = platformRightsOf(owner.platformGroup).filter((permission) => keyable.includes(permission));
-    return [...permissionsIn(owner.memberships, tenantId, tenantPart).filter((permission) => !PLATFORM_ONLY.includes(permission)), ...sharing];
+    const platform = platformRightsOf(owner.platformGroup).filter((permission) => keyable.includes(permission));
+    return [...permissionsIn(owner.memberships, tenantId, tenantPart).filter((permission) => !PLATFORM_ONLY.includes(permission)), ...platform];
 }
 
 /** The permissions of a key its owner may use right now. What the owner lost stays stored but does nothing. */

@@ -1,5 +1,6 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { MONGORESTORE, buildConnectionArgs, maskSecrets } from "./args";
+import { assertDatabaseArgument } from "@/lib/adapters/database/common/database-name";
 import { withMongoMeta } from "./meta";
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
@@ -81,6 +82,9 @@ async function restoreSingleDatabase(
             "--drop", // Drop collections before restoring, mirroring MySQL's --clean
         ];
 
+        // Names, never options, see `database-name.ts`.
+        if (sourceDb) assertDatabaseArgument(sourceDb);
+        if (targetDb) assertDatabaseArgument(targetDb);
         if (sourceDb && targetDb && sourceDb !== targetDb) {
             args.push("--nsFrom", `${sourceDb}.*`);
             args.push("--nsTo", `${targetDb}.*`);

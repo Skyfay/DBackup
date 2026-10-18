@@ -2,27 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { jobActions } from "@/components/dashboard/jobs/job-actions";
 import { retentionLabel } from "@/components/dashboard/jobs/job-retention";
 import { describeSchedule } from "@/components/dashboard/jobs/job-schedule";
-import { lastOutcome, matchesJobFilter } from "@/components/dashboard/jobs/job-status";
-import type { JobListItem } from "@/services/jobs/job-list-service";
-
-function job(overrides: Partial<JobListItem> & { runs?: string[]; live?: boolean } = {}): JobListItem {
-    const { runs = [], live = false, ...rest } = overrides;
-    return {
-        id: "job-1",
-        name: "Shop nightly",
-        enabled: true,
-        overview: {
-            status: live ? "Running" : runs[runs.length - 1] ?? null,
-            runs: runs.map((status, index) => ({ id: `run-${index}`, status, startedAt: "2026-09-23T03:00:00.000Z", endedAt: null })),
-            lastRun: null,
-            error: null,
-            live: live ? { executionId: "run-live", status: "Running", startedAt: "2026-09-23T14:00:00.000Z", stage: "Uploading", progress: 62 } : null,
-            nextRunAt: null,
-        },
-        ...rest,
-    } as JobListItem;
-}
-
+import { jobsAttention } from "@/components/dashboard/jobs/job-status";
 describe("job schedules in words", () => {
     it("names the schedules people pick most", () => {
         expect(describeSchedule("0 3 * * *").text).toBe("Every day at 03:00");
@@ -49,18 +29,17 @@ describe("job schedules in words", () => {
     });
 });
 
-describe("job quick filters", () => {
-    it("counts a job whose last finished run failed or was partial as needing attention, also while it runs again", () => {
-        expect(matchesJobFilter(job({ runs: ["Success", "Failed"] }), "attention")).toBe(true);
-        expect(matchesJobFilter(job({ runs: ["Failed", "Partial", "Running"], live: true }), "attention")).toBe(true);
-        expect(matchesJobFilter(job({ runs: ["Failed", "Success"] }), "attention")).toBe(false);
-        expect(lastOutcome(job({ runs: ["Success", "Cancelled"] }))).toBe("Cancelled");
-    });
-
-    it("puts live and paused jobs under their own filter", () => {
-        expect(matchesJobFilter(job({ live: true }), "running")).toBe(true);
-        expect(matchesJobFilter(job({ enabled: false }), "paused")).toBe(true);
-        expect(matchesJobFilter(job(), "paused")).toBe(false);
+describe("the dot of the Jobs tab", () => {
+    it("names the first job that failed and counts the others the server did not name", () => {
+        expect(jobsAttention({ failed: { count: 40, names: ["Shop", "ERP", "CRM"] }, partial: { count: 1, names: ["Files"] } })).toEqual({
+            tone: "destructive",
+            note: "Shop and 39 more failed on their last run. Files missed a copy on its last run",
+        });
+        expect(jobsAttention({ failed: { count: 0, names: [] }, partial: { count: 2, names: ["Files", "Wiki"] } })).toEqual({
+            tone: "warning",
+            note: "Files and Wiki missed a copy on their last run",
+        });
+        expect(jobsAttention({ failed: { count: 0, names: [] }, partial: { count: 0, names: [] } })).toBeUndefined();
     });
 });
 

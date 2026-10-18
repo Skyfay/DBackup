@@ -14,9 +14,11 @@ import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { useTenantColumns } from "@/components/tenant/tenant-column";
 import { withTenantColumn } from "@/components/tenant/tenant-rows";
 import { DataTable, type DataTableFilterableColumn } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import type { DatabaseOverview, ServersOverview } from "@/services/databases/database-explorer-types";
 import { engineOf } from "./database-columns";
+import { DatabasesEmpty, DatabasesSkeleton } from "./database-list-parts";
 import { useDatabaseData } from "./database-data";
 import { serverActions } from "./explorer-actions";
 import { ServerCard } from "./server-card";
@@ -30,6 +32,20 @@ const QUICK: { value: ServerQuick; label: string; dot?: string }[] = [
 ];
 
 const tenantOfServer = (row: ServerRow) => row.server.tenantId;
+
+/** The Servers tab with every server and database of the overview, which the paged Databases tab does not read. */
+export function ServersOfOverview({ canOpenBackups, cards }: Omit<ServersTabProps, "overview">) {
+    const overview = useDatabaseData<DatabaseOverview>("/api/databases");
+    if (!overview.data) {
+        return overview.error ? (
+            <DatabasesEmpty joined title="The servers could not be loaded">
+                {overview.error}{" "}
+                <Button variant="link" className="h-auto p-0" onClick={overview.reload}>Try again</Button>
+            </DatabasesEmpty>
+        ) : <DatabasesSkeleton />;
+    }
+    return <ServersTab overview={overview.data} canOpenBackups={canOpenBackups} cards={cards} />;
+}
 
 interface ServersTabProps {
     overview: DatabaseOverview;

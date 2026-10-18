@@ -443,6 +443,29 @@ describe('runRestorePipeline (extra coverage)', () => {
         expect(restoredConfig.path).toBe('/data/newdb.sqlite');
     });
 
+    it('never restores a sqlite file outside the folder of the source', async () => {
+        const sqliteConfig = {
+            ...mockSourceConfig,
+            adapterId: 'sqlite',
+            config: JSON.stringify({ path: '/data/mydb.sqlite' }),
+        };
+        const storageAdapter = makeStorageAdapter();
+        const dbAdapter = { restore: vi.fn().mockResolvedValue({ success: true }) };
+
+        prismaMock.adapterConfig.findUnique
+            .mockResolvedValueOnce(mockStorageConfig as any)
+            .mockResolvedValueOnce(sqliteConfig as any);
+        useAdapters(storageAdapter, dbAdapter);
+
+        const mapping = [
+            { originalName: 'mydb.sqlite', targetName: '../etc/other.sqlite', selected: true },
+        ];
+
+        await runRestorePipeline('exec-sqlite-mapping-outside', makeInput({ databaseMapping: mapping as any }));
+
+        expect(dbAdapter.restore).not.toHaveBeenCalled();
+    });
+
     it('does not override sqlite path via databaseMapping when no entry is selected', async () => {
         const sqliteConfig = {
             ...mockSourceConfig,

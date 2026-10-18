@@ -9,10 +9,12 @@ import {
     type CredentialType,
     type CredentialData,
     type CredentialProfileShape,
+    type SshKeyData,
     parseCredentialData,
 } from "@/lib/core/credentials";
 import { generateSshKeyPair, readPublicKey, sshFingerprint } from "@/lib/transport/openssh-key";
 import { holdsOf } from "@/lib/core/credential-holds";
+import { rsyncUsernameProblem } from "@/lib/adapters/storage/rsync-user";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 
@@ -351,6 +353,7 @@ export async function updateCredentialProfile(
             });
         }
         patch.data = encrypt(JSON.stringify(stored));
+        await assertRsyncLogin(id, type, stored);
     }
 
     if (updates.description !== undefined) {
@@ -367,6 +370,20 @@ export async function updateCredentialProfile(
         ...sanitize(updated),
         ...(stored ? describeParsedPayload(stored) : describePayload(updated.data)),
     };
+}
+
+/**
+ * Refuses a username that is no plain login name in an SSH profile an rsync connection logs in
+ * with, since rsync puts it in front of the host, see `rsync-user.ts`. A profile no rsync
+ * connection uses keeps any name, the SSH logins of the other adapters take it as it is, and
+ * assigning it to rsync checks it then.
+ */
+async function assertRsyncLogin(id: string, type: CredentialType, data: CredentialData): Promise<void> {
+    if (type !== "SSH_KEY") return;
+    const problem = rsyncUsernameProblem((data as SshKeyData).username);
+    if (!problem) return;
+    const used = await prisma.adapterConfig.count({ where: { primaryCredentialId: id, adapterId: "rsync" } });
+    if (used > 0) throw new ValidationError(`${problem} An rsync destination logs in with this profile.`, { field: "username" });
 }
 
 /**

@@ -13,6 +13,7 @@ import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { areaChanges, knownKeyPermissions, permissionPhrase } from "@/lib/auth/permission-areas";
 import { sharesWithCustomers } from "@/services/tenant/shared-servers";
 import { listWords } from "@/lib/auth/access-summary";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ action: "api-key" });
 
@@ -63,7 +64,7 @@ export async function createApiKey(data: CreateApiKeyFormValues) {
   const parsed = CreateApiKeySchema.safeParse(data);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
   if (!currentUser.tenantId) return { success: false, error: "Open a tenant, a key works in the tenant it was made in." };
-  const permissions = knownKeyPermissions(parsed.data.permissions, await sharesWithCustomers(currentUser.tenantId));
+  const permissions = knownKeyPermissions(parsed.data.permissions, await sharesWithCustomers(currentUser.tenantId), currentUser.tenantId === HOME_TENANT_ID);
   if (permissions.length === 0) return { success: false, error: "Give the key at least one permission." };
   // What a key of the caller may do there, which leaves out the rights of their platform group on the platform.
   const refused = beyond(permissions, await apiKeyService.ceilingFor(currentUser.id, currentUser.tenantId));
@@ -121,7 +122,7 @@ export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
   const currentUser = await getViewer();
   if (!currentUser) return { success: false, error: "Not authenticated" };
 
-  const permissions = knownKeyPermissions(parsed.data.permissions, await sharesWithCustomers(currentUser.tenantId));
+  const permissions = knownKeyPermissions(parsed.data.permissions, await sharesWithCustomers(currentUser.tenantId), currentUser.tenantId === HOME_TENANT_ID);
   if (permissions.length === 0) return { success: false, error: "Give the key at least one permission." };
 
   try {

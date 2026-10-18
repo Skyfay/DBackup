@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { ADAPTER_DEFINITIONS } from "@/lib/adapters/definitions";
-import { DIALED_HOSTS, dialedHosts, hostOf, hostsIn, urlHost } from "@/lib/adapters/dialed-hosts";
+import { DIALED_HOSTS, HostFormatError, dialedHosts, hostOf, hostsIn, sqlServerHost, urlHost } from "@/lib/adapters/dialed-hosts";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 
@@ -109,5 +109,129 @@ describe("a host as a field names it", () => {
         expect(urlHost("http://2130706433/")).toBe("127.0.0.1");
         expect(urlHost("")).toBeNull();
         expect(urlHost(42)).toBeNull();
+    });
+});
+
+describe("each host field read as its client reads it", () => {
+    it("keeps what a plain host, a host with a port and an IPv6 host dialed before", () => {
+        const before: [string, Record<string, unknown>, string[]][] = [
+            ["mysql", { host: "db.example.com", port: 3306 }, ["db.example.com"]],
+            ["mariadb", { host: "10.0.0.5:3307" }, ["10.0.0.5"]],
+            ["postgres", { host: "fd00::5" }, ["fd00::5"]],
+            ["postgres", { host: "[fd00::5]:5432" }, ["fd00::5"]],
+            ["mongodb", { host: "mongo.example.com", port: 27017 }, ["mongo.example.com"]],
+            ["mongodb", { host: "[fd00::5]:27018" }, ["fd00::5"]],
+            ["mssql", { host: "sql.example.com", port: 1433 }, ["sql.example.com"]],
+            ["azure-sql", { host: "acme.database.windows.net" }, ["acme.database.windows.net"]],
+            ["firebird", { host: "fb.example.com", port: 3050 }, ["fb.example.com"]],
+            ["rsync", { host: "backup.example.com" }, ["backup.example.com"]],
+            ["smb", { address: "//fileserver/backups" }, ["fileserver"]],
+            ["discord", { webhookUrl: "https://discord.com/api/webhooks/1/x" }, ["discord.com"]],
+        ];
+        for (const [adapterId, config, hosts] of before) expect(dialedHosts(adapterId, config), `${adapterId} ${JSON.stringify(config)}`).toEqual(hosts);
+    });
+
+    it("dials 127.0.0.1 for an empty host of MySQL, MariaDB, PostgreSQL, MongoDB and Firebird, the fallback of their clients", () => {
+        for (const adapterId of ["mysql", "mariadb", "postgres", "mongodb", "firebird"]) {
+            expect(dialedHosts(adapterId, { host: "" }), adapterId).toEqual(["127.0.0.1"]);
+            expect(dialedHosts(adapterId, {}), adapterId).toEqual(["127.0.0.1"]);
+            expect(dialedHosts(adapterId, { host: "   " }), adapterId).toEqual(["127.0.0.1"]);
+        }
+        // Over SSH the fallback is the database server itself, reached from the SSH host.
+        expect(dialedHosts("postgres", { host: "", connectionMode: "ssh", sshHost: "jump.example.com" })).toEqual(["jump.example.com"]);
+    });
+
+    describe("MongoDB, by the parser of its tools", () => {
+        it("leaves out the user info before @ and the path or query after the host", () => {
+            expect(dialedHosts("mongodb", { host: "admin:secret@10.0.0.5:27017" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("mongodb", { host: "evil.example.com@10.0.0.5" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("mongodb", { host: "mongodb://u:p@10.0.0.5:27017/app?authSource=admin" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("mongodb", { host: "10.0.0.5/shop" })).toEqual(["10.0.0.5"]);
+        });
+
+        it("dials every host of a seed list and only the name of an SRV record", () => {
+            expect(dialedHosts("mongodb", { host: "a.example.com:27017, 10.0.0.6:27018" })).toEqual(["a.example.com", "10.0.0.6"]);
+            expect(dialedHosts("mongodb", { host: "mongodb+srv://cluster.example.com" })).toEqual(["cluster.example.com"]);
+            expect(dialedHosts("mongodb", { host: "cluster0.ab12c.mongodb.net" })).toEqual(["cluster0.ab12c.mongodb.net"]);
+        });
+
+        it("falls back to 127.0.0.1 when nothing of the host is left", () => {
+            expect(dialedHosts("mongodb", { host: "/tmp/mongodb-27017.sock" })).toEqual(["127.0.0.1"]);
+            expect(dialedHosts("mongodb", { host: "user@" })).toEqual(["127.0.0.1"]);
+            expect(dialedHosts("mongodb", { host: "mongodb://" })).toEqual(["127.0.0.1"]);
+        });
+
+        it("reads the user info of an older URI at the first and at the last @", () => {
+            expect(dialedHosts("mongodb", { host: "db.example.com", uri: "mongodb://u:p@x@10.0.0.9:27017/" })).toEqual(["db.example.com", "x", "10.0.0.9"]);
+        });
+    });
+
+    describe("SQL Server and Azure SQL, by the host part of a server name", () => {
+        it("counts a named instance by its host", () => {
+            expect(dialedHosts("mssql", { host: "10.0.0.5\\SQLEXPRESS" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("azure-sql", { host: "sql.example.com\\INST" })).toEqual(["sql.example.com"]);
+        });
+
+        it("counts Azure forms with a protocol and a port by their host", () => {
+            expect(dialedHosts("azure-sql", { host: "tcp:acme.database.windows.net,1433" })).toEqual(["acme.database.windows.net"]);
+            expect(dialedHosts("mssql", { host: "tcp:10.0.0.5,1433" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("mssql", { host: "10.0.0.5,1433" })).toEqual(["10.0.0.5"]);
+        });
+
+        it("counts the server itself for . and (local)", () => {
+            expect(sqlServerHost(".")).toBe("127.0.0.1");
+            expect(sqlServerHost("(local)\\SQLEXPRESS")).toBe("127.0.0.1");
+        });
+
+        it("keeps the SSH host of a tunnel, and the host part when the SSH host falls back to the database host", () => {
+            expect(dialedHosts("mssql", { host: "sql\\INST", connectionMode: "ssh", sshHost: "jump" })).toEqual(["jump"]);
+            expect(dialedHosts("mssql", { host: "10.0.0.5\\INST", connectionMode: "ssh" })).toContain("10.0.0.5");
+        });
+    });
+
+    describe("Firebird, by the host of host/port", () => {
+        it("counts host/port and [ipv6]/port by the host", () => {
+            expect(dialedHosts("firebird", { host: "10.0.0.5/3051" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("firebird", { host: "[fd00::5]/3051" })).toEqual(["fd00::5"]);
+            expect(dialedHosts("firebird", { host: "[fd00::5]" })).toEqual(["fd00::5"]);
+            expect(dialedHosts("firebird", { host: "fb.example.com/gds_db" })).toEqual(["fb.example.com"]);
+        });
+
+        it("counts a bare IPv6 address as Firebird reads it and as typed, and an inet URL by its host", () => {
+            expect(dialedHosts("firebird", { host: "fd00::5" })).toEqual(["fd00", "fd00::5"]);
+            expect(dialedHosts("firebird", { host: "inet://10.0.0.5:3050/" })).toEqual(["10.0.0.5"]);
+        });
+    });
+
+    describe("PostgreSQL, every entry of a libpq host list", () => {
+        it("dials every network entry and leaves sockets to the host-local check", () => {
+            expect(dialedHosts("postgres", { host: "db1.example.com, 10.0.0.6" })).toEqual(["db1.example.com", "10.0.0.6"]);
+            expect(dialedHosts("postgres", { host: "db1.example.com,/var/run/postgresql,@pg" })).toEqual(["db1.example.com"]);
+        });
+    });
+
+    describe("rsync, by the part after the last @", () => {
+        it("counts what rsync and OpenSSH dial for user@host", () => {
+            expect(dialedHosts("rsync", { host: "someone@10.0.0.5" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("rsync", { host: "a@b@nas.internal" })).toEqual(["nas.internal"]);
+            expect(dialedHosts("rsync", { host: "10.0.0.5:22" })).toEqual(["10.0.0.5"]);
+            expect(dialedHosts("rsync", { host: "[fd00::5]" })).toEqual(["fd00::5"]);
+            expect(dialedHosts("rsync", { host: "fd00::5" })).toEqual(["fd00::5", "fd00"]);
+        });
+    });
+
+    describe("SMB, only //host/share or \\\\host\\share", () => {
+        it("reads both forms and an IPv6 server", () => {
+            expect(dialedHosts("smb", { address: "//fileserver/backups/sub" })).toEqual(["fileserver"]);
+            expect(dialedHosts("smb", { address: "\\\\10.0.0.9\\share" })).toEqual(["10.0.0.9"]);
+            expect(dialedHosts("smb", { address: "//[fd00::9]/share" })).toEqual(["fd00::9"]);
+            expect(dialedHosts("smb", { address: "//fs/My Share" })).toEqual(["fs"]);
+        });
+
+        it("refuses an address of another form, which smbclient would read otherwise", () => {
+            for (const address of ["fileserver/share", "//fileserver", "///fileserver/share", "-L 10.0.0.9", "//-L/share", "smb://fileserver/share", "", "// fileserver/share"]) {
+                expect(() => dialedHosts("smb", { address }), address).toThrow(HostFormatError);
+            }
+        });
     });
 });

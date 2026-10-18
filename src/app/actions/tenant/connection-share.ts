@@ -9,7 +9,8 @@ import { ConflictError, NotFoundError, ValidationError, getErrorMessage, wrapErr
 import { logger } from "@/lib/logging/logger";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { auditService } from "@/services/audit-service";
-import { ShareChangeError, connectionShareService, type ShareChange, type ShareSettings } from "@/services/sharing/connection-shares";
+import { ShareChangeError, connectionShareService, type ShareSettings } from "@/services/sharing/connection-shares";
+import { logShareChange } from "@/services/sharing/share-audit";
 import { setRecipients } from "@/services/sharing/channel-recipients";
 import { sendRecipientsTest } from "@/services/sharing/recipients-test";
 import { platformGroupService } from "@/services/user/platform-group-service";
@@ -35,8 +36,6 @@ const messageOf = (error: unknown, fallback: string) =>
     error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError ? error.message : fallback;
 
 const ALL_TENANTS = "Open the tenant of the connection first.";
-
-const resourceOf = (kind: string) => (kind === "destination" ? AUDIT_RESOURCES.DESTINATION : AUDIT_RESOURCES.ADAPTER);
 
 /** Who gets a connection of the open tenant, and how each uses it. */
 export async function getConnectionShare(configId: string) {
@@ -65,27 +64,6 @@ export async function previewShareLoss(configId: string, settings: Pick<ShareSet
     }
 }
 
-/** Logs a change of who gets a connection, in the log of its tenant and in the log of each tenant that lost it. */
-async function logChange(viewerId: string, configId: string, result: ShareChange, settings: Pick<ShareSettings, "allTenants">, kept: string[]) {
-    const resource = resourceOf(result.kind);
-    if (result.gained.length > 0 || settings.allTenants) {
-        await auditService.log(viewerId, AUDIT_ACTIONS.UPDATE, resource, { name: result.name, action: "share", tenants: settings.allTenants ? "all tenants" : kept.join(", ") }, configId);
-    }
-    if (result.losses.length > 0) {
-        await auditService.log(viewerId, AUDIT_ACTIONS.UPDATE, resource, { name: result.name, action: "unshare", tenants: result.losses.map((loss) => loss.name).join(", ") }, configId);
-    }
-    for (const loss of result.losses) {
-        await auditService.log(viewerId, AUDIT_ACTIONS.UPDATE, resource, {
-            name: result.name,
-            action: "unshare",
-            tenants: loss.name,
-            ...(loss.jobs.length > 0 ? { jobs: loss.jobs } : {}),
-            ...(loss.templates.length > 0 ? { templates: loss.templates } : {}),
-            ...(loss.backups > 0 ? { backups: loss.backups } : {}),
-        }, configId, { tenantId: loss.tenantId });
-    }
-}
-
 /**
  * Saves who gets a destination or a channel of the open tenant. A tenant that loses a destination
  * loses its backups on it, so that needs `confirmed`.
@@ -99,12 +77,12 @@ export async function saveConnectionShare(configId: string, settings: ShareSetti
     try {
         const result = await connectionShareService.save(id.data, parsed.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
         const view = await connectionShareService.view(id.data);
-        await logChange(viewer.id, id.data, result, parsed.data, view.uses.map((use) => use.name));
+        await logShareChange({ id: viewer.id }, id.data, result, parsed.data, view.uses.map((use) => use.name));
         revalidatePath("/dashboard/connections");
         return { success: true as const, data: { gained: result.gained, lost: result.losses.map((loss) => ({ name: loss.name, backups: loss.backups, jobs: loss.jobs.length })) } };
     } catch (error: unknown) {
         // The tenants that lost it before the storage stopped answering are told all the same.
-        if (error instanceof ShareChangeError) await logChange(viewer.id, id.data, error.change, { allTenants: false }, []);
+        if (error instanceof ShareChangeError) await logShareChange({ id: viewer.id }, id.data, error.change, { allTenants: false }, []);
         if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Saving the sharing of a connection failed", { configId: id.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, getErrorMessage(error) || "The sharing could not be saved.") };
     }
@@ -120,11 +98,11 @@ export async function stopSharingWith(configId: string, tenantId: string, confir
     try {
         const result = await connectionShareService.stopFor(id.data, customer.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
         const view = await connectionShareService.view(id.data);
-        await logChange(viewer.id, id.data, result, { ...view.settings }, view.uses.map((use) => use.name));
+        await logShareChange({ id: viewer.id }, id.data, result, { ...view.settings }, view.uses.map((use) => use.name));
         revalidatePath("/dashboard/connections");
         return { success: true as const, data: { lost: result.losses.map((loss) => ({ name: loss.name, backups: loss.backups, jobs: loss.jobs.length })) } };
     } catch (error: unknown) {
-        if (error instanceof ShareChangeError) await logChange(viewer.id, id.data, error.change, { allTenants: false }, []);
+        if (error instanceof ShareChangeError) await logShareChange({ id: viewer.id }, id.data, error.change, { allTenants: false }, []);
         if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Stopping to share a connection failed", { configId: id.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, getErrorMessage(error) || "The sharing could not be changed.") };
     }

@@ -28,6 +28,11 @@ export function resolveAliasPath(config: FirebirdConfig, aliasName: string): str
  * containerized server, which the wire protocol handles correctly instead.
  */
 export function buildConnectionString(config: FirebirdConfig, dbPath: string): string {
+    // The string is a positional argument of gbak and isql, so it never starts with `-`, which
+    // they would read as a switch. The path follows the host, so only the host can bring one.
+    if (String(config.host ?? "").startsWith("-")) {
+        throw new Error("A Firebird host never starts with -.");
+    }
     const portSegment = config.port && config.port !== 3050 ? `/${config.port}` : "";
     return `${config.host}${portSegment}:${dbPath}`;
 }

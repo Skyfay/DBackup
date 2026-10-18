@@ -97,6 +97,20 @@ export async function newestDurations(jobIds: readonly string[], take: number): 
     return durations;
 }
 
+/**
+ * How the newest `take` runs of each job as a whole ended, counted by status over every job, like
+ * the latest runs the Jobs page sums up. Counted by SQLite instead of reading the runs of every job.
+ */
+export async function newestStatusCounts(jobIds: readonly string[], take: number): Promise<Record<string, number>> {
+    if (jobIds.length === 0) return {};
+    const rows = await prisma.$queryRaw<{ status: string; counted: number | bigint }[]>`
+        SELECT e.status AS status, COUNT(*) AS counted
+        FROM json_each(${JSON.stringify(jobIds)}) j, Execution e
+        WHERE e.id IN (${newestOf({ wholeJob: true }, Math.max(1, Math.floor(take)))})
+        GROUP BY e.status`;
+    return Object.fromEntries(rows.map((row) => [row.status, count(row.counted)]));
+}
+
 /** How many ids one read of rows names, well below the limit of SQLite on bound values. */
 const CHUNK = 5_000;
 

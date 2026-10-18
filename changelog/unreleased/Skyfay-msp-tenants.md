@@ -21,6 +21,8 @@
 - **tenants**: The platform decides for each tenant whether it adds database connections, directory sources, destinations, notification channels and API keys itself. Switching one off stops new ones, and for API keys also the keys the tenant has.
 - **tenants**: Connections that reach the server DBackup runs on, like Local Filesystem, SQLite without SSH or extra options of a dump tool in direct mode, are added in the home tenant only.
 - **tenants**: The platform blocks the connections of a tenant into the local network and allows chosen address ranges. New tenants start blocked, and a connection over SSH counts by its SSH server.
+- **api**: Tenants with their settings, members and invitations, the sharing of destinations and channels and the rules of a shared server can be managed through the API. An API key of the home tenant may carry the rights on tenants and accounts its owner holds, for the tenants its owner reaches.
+- **api**: GET /api/jobs/list and GET /api/databases/list read the jobs and the databases a page at a time with search, filters and their counts.
 
 ### 🐛 Bug Fixes
 
@@ -53,12 +55,19 @@
 - **uploads**: A picture for a profile or the login page that is larger than allowed is refused before it is read.
 - **api**: Creating a connection through the API with an unknown kind or an adapter of another kind is refused instead of skipping the permission check.
 - **MySQL**: A restore no longer runs shell commands or sends local files that a dump asks for. MariaDB clients use their sandbox and MySQL clients turn their system command off.
+- **MySQL**: A restore target whose name holds a backtick is quoted as one name when the database is created, and the client gets the target as `--database`.
+- **restore**: A database name of a job, a restore target or a mapping that starts with a hyphen is refused, so no tool reads it as an option.
+- **SQLite**: A restore under a new name always lands in the folder of the source.
+- **rsync**: A username with `@`, `:`, `/`, spaces or a leading hyphen is refused when the connection or its saved login is saved and before any command runs.
+- **notifications**: Discord, Slack, Teams, Generic Webhook, Gotify and ntfy no longer follow a redirect, and a send that gets one fails with a message naming where it led.
+- **WebDAV**: A redirect to another host is no longer followed.
 
 ### 🎨 Improvements
 
 - **api**: Pages, Server Actions and API routes read the database only through the services.
 - **docker**: A start that applies database migrations first keeps a copy of the database beside it. The three newest copies stay.
 - **dashboard**: The Overview, the Timeline, the schedule picker, the History and the Connections page load much faster with many jobs and connections.
+- **dashboard**: The Jobs page and the Database Explorer load their lists a page at a time from the server, so they open quickly with many thousands of jobs and databases.
 - **auth**: A link into the dashboard opened while signed out leads back to its page after signing in.
 - **history**: The Summary of a restore run tells each step like a backup does, with where it read from and how much, and a row for every database and folder it restored. A database row opens to its command and the lines of its tool.
 
@@ -70,14 +79,20 @@
 - **auth**: Restoring from Recently deleted and deleting for good need the new permission Tenant settings. Groups that could change the settings get it with the update.
 - **api**: GET /api/sso-providers answers a signed-in person only and refuses API keys.
 - **api**: GET /api/users and GET /api/groups answer viewerPlatformAdmin in place of viewerSuperAdmin.
+- **SMB**: The share address must have the form `//server/share` or `\\server\share`.
+- **MongoDB**: A connection to a single host talks to that host alone and no longer to the members of a replica set it announces.
 
 ### 📝 Documentation
 
-- **docs**: New guides for tenants, shared databases and shared destinations and channels, for admins and for developers. The guides of users, groups, permissions, API keys, SSO and the audit log describe platform admins and tenants.
+- **docs**: New guides for tenants, shared databases and shared destinations and channels, for admins and for developers. The guides of users, groups, permissions, API keys with platform keys, SSO and the audit log describe platform admins and tenants.
 
 ### 🧪 Tests
 
 - **SSH**: The test of a new ed25519 key that ssh2 writes a byte short no longer fails now and then.
 - **lint**: Lint guards keep direct database queries out of the routes and Next.js out of the services.
-- **e2e**: An end-to-end test walks an MSP through two customers, an invitation, a shared database, the network block, All tenants and the delete of a tenant.
+- **e2e**: End-to-end tests walk an MSP through its customers, an invitation, a shared database with its download and restore, a shared destination and channel, Recently deleted of a customer and a platform group of selected tenants. They also cover the network block, All tenants and the delete of a tenant.
 - **tenants**: Tests against a real database prove that no tenant reads, changes or deletes the rows of another. Invitation links, shared databases and shared destinations and channels have tests of their own.
+
+### 🔧 CI/CD
+
+- **lab**: `pnpm lab:seed` adds two customer tenants with a person each, a database, destination and channel shared with one of them and a platform group of both. `pnpm lab:status` shows what of it exists.

@@ -3,14 +3,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { FaqList } from "@/components/site/faq-list";
-import { DISCORD_URL, FAQ_KEYS } from "@/lib/content";
+import { DISCORD_URL, FAQ_KEYS, TENANTS_GUIDE_URL } from "@/lib/content";
 import { DATABASE_SLUGS } from "@/lib/integrations";
 import { useI18n } from "@/i18n/provider";
 
 export function Faq() {
   const { t, path } = useI18n();
   // The answer on the supported databases links every engine with a page of
-  // its own, and the page of all integrations.
+  // its own, and the page of all integrations. The answer on tenants links
+  // their guide in the docs.
   const link = (href: string) =>
     function FaqLink(chunks: ReactNode) {
       return (
@@ -25,6 +26,19 @@ export function Faq() {
   const tags = Object.fromEntries([
     ...DATABASE_SLUGS.map((slug) => [slug, link(`/integrations/${slug}/`)]),
     ["all", link("/integrations/")],
+    [
+      "tenants",
+      (chunks: ReactNode) => (
+        <a
+          href={TENANTS_GUIDE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="text-foreground underline decoration-foreground/30 underline-offset-4 transition-colors hover:decoration-foreground"
+        >
+          {chunks}
+        </a>
+      ),
+    ],
   ]);
   const items = FAQ_KEYS.map((faq) => ({ q: t(faq.q), a: t.rich(faq.a, tags) }));
 

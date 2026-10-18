@@ -10,6 +10,8 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { urlHost } from "@/lib/adapters/dialed-hosts";
+import { webdavAgents } from "./webdav-agents";
 
 const log = logger.child({ adapter: "webdav" });
 
@@ -20,10 +22,16 @@ interface WebDAVConfig {
     pathPrefix?: string;
 }
 
+/**
+ * The client of a connection. Its agents connect only to the host of the URL, so a redirect to
+ * another host fails instead of reaching a host the local network check never read, see
+ * `webdav-agents.ts`.
+ */
 function getClient(config: WebDAVConfig): WebDAVClient {
     return createClient(config.url, {
         username: config.username,
         password: config.password,
+        ...webdavAgents(urlHost(config.url) ?? ""),
     });
 }
 

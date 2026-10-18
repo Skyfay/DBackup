@@ -159,6 +159,18 @@ describe('createShadowCopy', () => {
         expect(created).toContain(' ro ');
     });
 
+    it('refuses an exposed share that is no share address, and releases the snapshot again', async () => {
+        // The server names the share the backup reads, so it is held to the form of a configured one.
+        const odd = EXPOSE_OUTPUT.replace('share \\\\fileserver\\data@{9f8e7d6c} exposed', 'share -L exposed');
+        respond({ fss_create_expose: odd, fss_recovery_complete: 'ok\n', fss_delete: '' });
+
+        await expect(createShadowCopy(CONFIG)).rejects.toThrow(/no share address/);
+
+        const commands = execFileMock.mock.calls.map((c) => c[1][c[1].indexOf('-c') + 1]);
+        expect(commands.some((c: string) => c.startsWith('fss_delete'))).toBe(true);
+        expect(commands.some((c: string) => c.startsWith('fss_recovery_complete'))).toBe(false);
+    });
+
     it('releases the snapshot again when it cannot be marked recovery-complete', async () => {
         // Better none than one the server removes while the backup reads from it.
         execFileMock.mockImplementation((_cmd: string, args: string[]) => {

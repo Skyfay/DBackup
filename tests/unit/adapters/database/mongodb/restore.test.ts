@@ -123,6 +123,13 @@ describe.each<HostKind>(["direct", "ssh"])("MongoDB restore over a %s host", (ki
             expect(argv[argv.indexOf("--nsTo") + 1]).toBe("target.*");
         });
 
+        it("runs no mongorestore for a target or a source name that starts with -", async () => {
+            const host = restoreHost(kind);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", "--dir=/tmp", host, undefined, undefined, "source")).rejects.toThrow(/starts with -/);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", "target", host, undefined, undefined, "-source")).rejects.toThrow(/starts with -/);
+            expect(host.calls.spawn).toHaveLength(0);
+        });
+
         it("limits the restore to the target namespace when there is no rename", async () => {
             const host = restoreHost(kind);
             await restoreOne(baseConfig as never, "/tmp/a.archive", "target", host);

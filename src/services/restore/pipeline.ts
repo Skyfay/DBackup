@@ -15,6 +15,7 @@ import { createDecryptionStream } from "@/lib/crypto/stream";
 import { getDecompressionStream, CompressionType } from "@/lib/crypto/compression";
 import { LogEntry, LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
 import { isMultiDbTar, readTarManifest } from "@/lib/adapters/database/common/tar-utils";
+import { resolveSqliteTargetPath } from "@/lib/adapters/database/sqlite/restore";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { verifyFileChecksum } from "@/lib/crypto/checksum";
@@ -585,8 +586,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         // Override database name if provided
         if (targetDatabaseName) {
             if (sourceConfig.adapterId === 'sqlite' && dbConf.path) {
-                const dir = path.dirname(dbConf.path);
-                dbConf.path = path.join(dir, targetDatabaseName);
+                dbConf.path = resolveSqliteTargetPath(dbConf.path as string, targetDatabaseName, undefined);
             } else {
                 dbConf.originalDatabase = dbConf.database;
                 dbConf.targetDatabaseName = targetDatabaseName;
@@ -605,8 +605,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 const rename = (databaseMapping as MappingEntry[])
                     .find(m => m.selected && m.targetName && m.targetName !== m.originalName);
                 if (rename) {
-                    const dir = path.dirname(dbConf.path as string);
-                    dbConf.path = path.join(dir, rename.targetName);
+                    dbConf.path = resolveSqliteTargetPath(dbConf.path as string, rename.targetName, rename.originalName);
                     log(`SQLite target path overridden by mapping: ${dbConf.path}`, 'info');
                 }
             }

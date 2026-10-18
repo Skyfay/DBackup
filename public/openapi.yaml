@@ -16,9 +16,12 @@ info:
 
     ## API Keys and Tenants
 
-    A key acts in the tenant it was made in, whichever tenant its owner opens in the browser later. It never gets more than its owner may in that tenant, and no right of the platform but `platform-sharing:read` and `platform-sharing:write` in a tenant that shares databases with customers.
+    A key acts in the tenant it was made in, whichever tenant its owner opens in the browser later. It never gets more than its owner may in that tenant, checked at every request, and of the rights of the platform only these, while its owner holds them:
 
-    Tenants, their members and invitations, the destinations and channels a tenant shares, what a tenant may add itself and the backups on demand are managed in the web UI only for now. Giving the databases of a shared server to tenants is the exception, see `PUT /adapters/{id}/database-assignments`.
+    - `platform-tenants:*` and `platform-accounts:*` in a key of the **home tenant**, for the routes under `/tenants`. What such a key manages is what its owner reaches: every tenant for a platform admin and a platform group of all tenants, the tenants of the platform group otherwise. Any other tenant reads as `404`.
+    - `platform-sharing:*` in a key of a tenant that **shares with customers**, for `/adapters/{id}/database-assignments` and `/adapters/{id}/share`, toward the tenants its owner reaches.
+
+    A key of a customer never carries a right of the platform, whatever it stores. It manages the members and invitations of its own tenant with `users:read` and `users:write`. A key never acts as a platform admin, also when its owner is one.
 
     A few routes answer a signed-in person only and refuse every API key with `403`: the routes under `/platform`, `GET /sso-providers`, the configuration restore under `/settings/config-backup/restore` and the download of the database.
 
@@ -38,7 +41,9 @@ info:
     | Users, groups, API keys, templates | `users:read`, `users:write`, `groups:read`, `groups:write`, `api-keys:read`, `api-keys:write`, `templates:read`, `templates:write` |
     | Settings of the instance | `settings:read`, `settings:write`, which count only from the group of the owner in the home tenant |
     | Settings of the tenant | `tenant-settings:read`, `tenant-settings:write`: the name, logo and notifications of the tenant, and Recently deleted, where a delete that skips it needs `tenant-settings:write` |
-    | Shared databases | `platform-sharing:read`, `platform-sharing:write`, in a tenant that shares with customers |
+    | Sharing with customers | `platform-sharing:read`, `platform-sharing:write`, in a tenant that shares with customers |
+    | Tenants, their members and invitations | `platform-tenants:read`, `platform-tenants:write`, in the home tenant |
+    | Accounts of the platform | `platform-accounts:read`, `platform-accounts:write`, in the home tenant |
 
     ## Rate Limits
 
@@ -94,7 +99,7 @@ tags:
   - name: Settings
     description: System tasks and configuration
   - name: Tenants
-    description: The logo of a tenant. Everything else of a tenant is managed in the web UI for now
+    description: The tenants with their settings, members and invitations, for whoever manages the tenants and a key of the home tenant, and the logo of a tenant
   - name: Users & Groups
     description: The people and groups of the tenant of the request, and the sign-in providers
   - name: Platform
@@ -111,7 +116,7 @@ paths:
       tags: [Jobs]
       summary: List Jobs
       description: |
-        Returns all backup jobs, newest first, with what each one backs up, where it stores it and how it is doing. The connections a job uses come with their name, type and health only, never with their config.
+        Returns all backup jobs, newest first, with what each one backs up, where it stores it and how it is doing. The connections a job uses come with their name, type and health only, never with their config. `GET /jobs/list` reads them a page at a time, like the Jobs page.
 
         **Required permission:** `jobs:read`
       operationId: listJobs
@@ -396,6 +401,97 @@ paths:
                     example: true
                   data:
                     $ref: "#/components/schemas/JobTimeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/list:
+    get:
+      tags: [Jobs]
+      summary: List Jobs by Page
+      description: |
+        One page of the jobs of the Jobs page, newest first, as `GET /jobs` lists them, with how many jobs each quick filter holds and the numbers above the list of every job. The server searches, filters and counts the jobs, so a page reads only the jobs it shows. With `id` it reads those jobs whatever the search, the filters and the page, like the one a link opens.
+
+        **Required permission:** `jobs:read`
+      operationId: listJobPage
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 25
+        - name: filter
+          in: query
+          description: A quick filter. `attention` keeps the jobs whose last finished run failed or missed a copy, `running` those with a run that runs or waits now.
+          schema:
+            type: string
+            enum: [all, attention, running, paused]
+            default: all
+        - name: search
+          in: query
+          description: Part of the name of the job, in any case
+          schema:
+            type: string
+            maxLength: 200
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, name]
+            default: createdAt
+        - name: order
+          in: query
+          description: The newest first and names from A unless given
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: tenant
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: >-
+            ID of a tenant, for a session in All tenants, which lists the jobs of every tenant. Inside
+            a tenant, and for an API key, which acts in its tenant, the filter is ignored.
+        - name: id
+          in: query
+          schema:
+            type: array
+            maxItems: 500
+            items:
+              type: string
+          style: form
+          explode: true
+          description: ID of a job to read whatever the other parameters
+      responses:
+        "200":
+          description: One page of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/JobPage"
+        "400":
+          description: Invalid query parameters
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -987,7 +1083,7 @@ paths:
       tags: [Database Explorer]
       summary: List Databases
       description: |
-        Every database of every database connection as DBackup last read them, with the servers they live on. The jobs that back each database up and its last backup come along for a caller with `jobs:read`.
+        Every database of every database connection as DBackup last read them, with the servers they live on. The jobs that back each database up and its last backup come along for a caller with `jobs:read`. `GET /databases/list` reads them a page at a time, like the Databases tab.
 
         **Required permission:** `sources:view`
       operationId: listDatabases
@@ -1006,6 +1102,117 @@ paths:
                     example: true
                   data:
                     $ref: "#/components/schemas/DatabaseOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /databases/list:
+    get:
+      tags: [Database Explorer]
+      summary: List Databases by Page
+      description: |
+        One page of the databases of the Database Explorer, biggest first, with how many databases each value of a filter leaves under the other filters, the numbers of every database and every server for the filters. The server searches, filters, sorts and counts the databases, so a page reads the versions of its servers and the schedules of their jobs alone. Every filter may repeat to match any of its values. The jobs, the Job filter and the last backups come along for a caller with `jobs:read`.
+
+        **Required permission:** `sources:view`
+      operationId: listDatabasePage
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 25
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [size, database, server, tables, last]
+            default: size
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: search
+          in: query
+          description: Part of the name of the database, in any case
+          schema:
+            type: string
+            maxLength: 200
+        - name: server
+          in: query
+          description: ID of a database connection
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: engine
+          in: query
+          description: The adapter of the server, like `postgres`
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: job
+          in: query
+          description: ID of a job that backs it up, `none` for the databases in no job
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: state
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [backed-up, no-job, never, unread]
+          style: form
+          explode: true
+          description: "`backed-up` is in an enabled job, `never` in a job without a kept backup yet, `unread` on a server whose databases were not read"
+        - name: tenant
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: >-
+            ID of a tenant, for a session in All tenants, which lists the databases of every tenant.
+            Inside a tenant, and for an API key, the filter is ignored.
+      responses:
+        "200":
+          description: One page of databases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/DatabasePage"
+        "400":
+          description: Invalid query parameters
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1609,6 +1816,338 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /adapters/{id}/database-assignments/rules:
+    get:
+      tags: [Adapters]
+      summary: List Assignment Rules
+      description: |
+        The rules of a shared database server that give its databases away by their name, the ended
+        ones too, which still decide the backups of their time, the highest priority first. The same
+        list is `rules` of `GET /adapters/{id}/database-assignments`.
+
+        **Required permission:** `platform-sharing:read` or `platform-sharing:write`
+      operationId: listAssignmentRules
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AssignmentRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No database source with this ID in the tenant of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Adapters]
+      summary: Add Assignment Rule
+      description: |
+        Adds a rule: every database of the server whose name matches `pattern` (`*` for any text)
+        goes to the tenant, unless an assignment by name or a rule of a higher priority holds it, or
+        of equal priority an older one. A new rule never ranks above a rule of a tenant beyond the
+        platform group of the caller. Written into the audit log of the tenant of the server with the key.
+
+        **Required permission:** `platform-sharing:write`, in the tenant of the server, which shares
+        with customers. Someone of a platform group of some tenants, and their key, adds rules for
+        the tenants it reaches only.
+      operationId: addAssignmentRule
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pattern, tenantId]
+              properties:
+                pattern:
+                  type: string
+                  maxLength: 100
+                  example: "acme_*"
+                tenantId:
+                  type: string
+                  example: cm2x8k1q40000acme
+                priority:
+                  type: integer
+                  minimum: -1000
+                  maximum: 1000
+                  default: 0
+                validFrom:
+                  type: string
+                  format: date-time
+                  description: When the customer's backups of what it gives start, now when left out
+                onDemandPerDay:
+                  type: [integer, "null"]
+                  minimum: 0
+                  maximum: 24
+                  description: Backups on demand a day of each database it gives, null to follow the tenant, 0 for none
+            example:
+              pattern: "acme_*"
+              tenantId: cm2x8k1q40000acme
+              priority: 10
+      responses:
+        "201":
+          description: The new rule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/AssignmentRule"
+        "400":
+          description: Invalid body, a server of a tenant that does not share, the tenant of the server itself, or a tenant beyond the platform group of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The permission is missing, or the request reads All tenants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No database source with this ID in the tenant of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /adapters/{id}/database-assignments/rules/{ruleId}:
+    delete:
+      tags: [Adapters]
+      summary: End Assignment Rule
+      description: |
+        Ends a rule. The backups made while it gave a database stay with its customer, like after an
+        ended assignment. Written into the audit log of the tenant of the server with the key.
+
+        **Required permission:** `platform-sharing:write`, in the tenant of the server, for a rule of
+        a tenant the platform group of the caller reaches
+      operationId: removeAssignmentRule
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: A rule of a tenant beyond the platform group of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No such rule on a database source of the tenant of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /adapters/{id}/share:
+    get:
+      tags: [Adapters]
+      summary: Connection Sharing
+      description: |
+        Who gets a destination or a notification channel of the tenant of the request: every other
+        tenant or the ones named, the terms, how each tenant uses it, and the tenants the caller may
+        share it with (`candidates`) with what their platform group leaves out (`reach`).
+
+        **Required permission:** `platform-sharing:read` or `platform-sharing:write`, in the tenant of
+        the connection, never All tenants. An API key holds them only when it was made in a tenant
+        that shares with customers by someone who holds them.
+      operationId: getConnectionShare
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The sharing of the connection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/ConnectionShare"
+        "400":
+          description: A connection that is no destination and no channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No connection with this ID in the tenant of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Adapters]
+      summary: Share Connection
+      description: |
+        Sets who gets a destination or a channel: every other tenant, the ones named, or nobody with
+        an empty list. A tenant that loses a destination loses its backups on it and every link to it,
+        so without `confirmed` the answer is `409` with what each would lose and nothing changes. A
+        destination a job of the tenant writes into `tenants/` with is refused. Written into the audit
+        log of the tenant and of each tenant that lost it, with the key.
+
+        **Required permission:** `platform-sharing:write`, in a tenant that shares with customers.
+        Someone of a platform group of some tenants, and their key, shares with and takes from the
+        tenants it reaches only, and a share with every tenant needs a reach of every tenant.
+      operationId: shareConnection
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allTenants, tenantIds]
+              properties:
+                allTenants:
+                  type: boolean
+                  description: Every other tenant, the ones made later too
+                tenantIds:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: string
+                  description: The tenants that get it while `allTenants` is false
+                encryptedOnly:
+                  type: boolean
+                  default: false
+                  description: A destination, a job of a customer writes to it only with a key of its Vault
+                ownRecipients:
+                  type: boolean
+                  default: true
+                  description: An email channel, each customer names its own recipients
+                confirmed:
+                  type: boolean
+                  default: false
+                  description: Go on although a tenant loses the destination with its backups
+            example:
+              allTenants: false
+              tenantIds: [cm2x8k1q40000acme, cm2x8k1q40000glob]
+              encryptedOnly: true
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      gained:
+                        type: array
+                        description: The names of the tenants that got it
+                        items:
+                          type: string
+                        example: [Globex]
+                      lost:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            backups:
+                              type: integer
+                            jobs:
+                              type: integer
+        "400":
+          description: Invalid body, a tenant that shares nothing, a tenant that is gone or beyond the platform group of the caller, or a storage that did not answer while it took the destination away
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The permission is missing, or the request reads All tenants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No connection with this ID in the tenant of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A tenant loses the destination and `confirmed` is missing, with what each loses in `data.losing`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      losing:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ShareTenantUse"
 
   # ─── Connection Testing ────────────────────────────────────────
   /adapters/test-connection:
@@ -3556,6 +4095,701 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /tenants:
+    get:
+      tags: [Tenants]
+      summary: List Tenants
+      description: |
+        The tenants the caller looks after, with the fields of Platform > Tenants and the numbers of
+        their summary, the home tenant first. Every tenant for a platform admin and for a platform
+        group of all tenants, the tenants of the platform group otherwise.
+
+        **Required permission:** `platform-tenants:read`. An API key holds it only when it was made in
+        the home tenant by someone who holds it, and reaches what its owner reaches. A key of any
+        other tenant gets `403`.
+      operationId: listTenants
+      responses:
+        "200":
+          description: The tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Tenant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Tenants]
+      summary: Create Tenant
+      description: |
+        Creates a tenant with the built-in templates and the groups for tenants. Nobody works in it
+        yet. A tenant of the MSP that gives databases, destinations and channels to customers says
+        so with `sharesWithCustomers`. Written into the audit log of the home tenant with the key.
+
+        **Required permission:** `platform-tenants:write`, and a reach of every tenant: a platform
+        admin, a platform group of all tenants, or the key of either. A platform group of some tenants
+        gets `403`, since it would never reach the new tenant.
+      operationId: createTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 60
+                  description: A name no other tenant has
+                  example: Acme Corp
+                sharesWithCustomers:
+                  type: boolean
+                  default: false
+            example:
+              name: Acme Corp
+      responses:
+        "201":
+          description: The new tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: cm2x8k1q40000acme
+                      name:
+                        type: string
+                        example: Acme Corp
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Another tenant has this name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /tenants/{id}:
+    get:
+      tags: [Tenants]
+      summary: Get Tenant
+      description: |
+        One tenant the caller looks after, like the list shows it. A tenant beyond the platform group
+        of the caller answers `404`, like one that does not exist.
+
+        **Required permission:** `platform-tenants:read`
+      operationId: getTenant
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Tenant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Tenants]
+      summary: Change Tenant
+      description: |
+        Changes what the Edit dialog of a tenant changes, any of: its name, whether it shares with
+        customers, what it adds itself, its backups on demand and its local network. The fields are
+        saved one after the other in this order, each with the refusals of the dialog, like a tenant
+        that still shares something when its sharing is switched off, or the home tenant, which keeps
+        everything it adds and reaches its network. The first refusal stops, and `data.saved` names the
+        fields saved before it. A change writes into the audit log of the home tenant, and what it
+        may add, its network and its backups on demand also into the log of the tenant, with the key.
+
+        **Required permission:** `platform-tenants:write`, for a tenant the caller looks after
+      operationId: updateTenant
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  maxLength: 60
+                sharesWithCustomers:
+                  type: boolean
+                  description: Whether its servers, destinations and channels go to customers
+                allowances:
+                  $ref: "#/components/schemas/TenantAllowances"
+                onDemandPerDay:
+                  type: [integer, "null"]
+                  minimum: 1
+                  maximum: 24
+                  description: How many backups a day it may start of every database given to it, null for none
+                network:
+                  $ref: "#/components/schemas/TenantNetwork"
+            example:
+              name: Acme AG
+              allowances:
+                destinations: false
+                apiKeys: false
+              onDemandPerDay: 3
+              network:
+                blocks: true
+                allowed: ["10.20.0.0/16"]
+      responses:
+        "200":
+          description: Every field was saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      saved:
+                        type: array
+                        items:
+                          type: string
+                          enum: [name, sharesWithCustomers, allowances, onDemandPerDay, network]
+                        example: [name, allowances, onDemandPerDay, network]
+                      tenant:
+                        $ref: "#/components/schemas/Tenant"
+        "400":
+          description: Invalid body, no field, or a refusal of a setting. `data.saved` names the fields saved before it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantPartialChange"
+              example:
+                success: false
+                error: The home tenant is the platform and reaches the network of its server.
+                data:
+                  saved: [name]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No tenant with this ID, or one beyond the platform group of the caller. Nothing changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantPartialChange"
+        "409":
+          description: A name another tenant has. `data.saved` names the fields saved before it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantPartialChange"
+    delete:
+      tags: [Tenants]
+      summary: Delete Tenant
+      description: |
+        Deletes a tenant with everything it holds, like Delete on Platform > Tenants. The backups at
+        its destinations stay, and so do the accounts, which lose their membership there. A tenant
+        that holds connections, jobs, people, keys, API keys or entries in Recently deleted needs
+        `confirmed=true`, and the answer without it lists what would go. Never the home tenant, never
+        the tenant the caller works in, never while a run of it waits or runs.
+
+        **Required permission:** `platform-tenants:write`, for a tenant the caller looks after
+      operationId: deleteTenant
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: confirmed
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Deletes a tenant that holds something
+      responses:
+        "200":
+          description: What went with it
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: Acme Corp
+                      connections:
+                        type: integer
+                        example: 4
+                      jobs:
+                        type: integer
+                        example: 2
+                      runs:
+                        type: integer
+                        example: 118
+                      keys:
+                        type: integer
+                        example: 1
+        "400":
+          description: The home tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The permission is missing, or the caller works in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The tenant holds something and `confirmed` is missing, with what would go in `data.contents`, or a run of it waits or runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      contents:
+                        type: object
+                        properties:
+                          connections:
+                            type: integer
+                          jobs:
+                            type: integer
+                          members:
+                            type: integer
+                          keys:
+                            type: integer
+                          apiKeys:
+                            type: integer
+                          deleted:
+                            type: integer
+              example:
+                success: false
+                error: The tenant holds connections, jobs or people, or keys, API keys or entries in Recently deleted, which go with it. Send confirmed to delete it anyway.
+                data:
+                  contents: { connections: 4, jobs: 2, members: 3, keys: 1, apiKeys: 0, deleted: 0 }
+
+  /tenants/{id}/members:
+    get:
+      tags: [Tenants]
+      summary: List Tenant Members
+      description: |
+        The members of a tenant with their group there. Whoever manages the tenants and looks after
+        this one also gets `accounts`, the accounts they may add, and `groups`, the groups of the
+        tenant they may give, like Add member on Platform > Tenants.
+
+        **Required permission:** `platform-tenants:read` for a tenant the caller looks after, or
+        `users:read` in the tenant of the request itself, a session working there or a key made
+        there. A key of another tenant gets `403`.
+      operationId: listTenantMembers
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      members:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TenantMember"
+                      accounts:
+                        type: array
+                        description: The accounts Add member offers, only with `platform-tenants:write`
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            email:
+                              type: string
+                            platformAdmin:
+                              type: boolean
+                      groups:
+                        type: array
+                        description: The groups of the tenant the caller may give there, only on the way of the platform
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            fullAccess:
+                              type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No tenant with this ID, or one beyond the platform group of the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Tenants]
+      summary: Add Tenant Member
+      description: |
+        Adds an existing account to the tenant with a group of the tenant, or gives a member another
+        group. Nobody gives a group that may do more than they may in that tenant, changes their own
+        membership or that of a platform admin, also not the key of a platform admin. Written into the
+        audit log of the tenant with the key.
+
+        **Required permission:** `platform-tenants:write` for a tenant the caller looks after, who
+        adds any account they see: the people of the tenants their platform group reaches, every
+        account but a platform admin's for a reach of all tenants. Or `users:write` in the tenant of
+        the request itself, which gives a group only to its own people, never one beyond what the
+        key holds. Someone of another tenant joins by an invitation.
+      operationId: addTenantMember
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, groupId]
+              properties:
+                userId:
+                  type: string
+                  example: usr_9f2c1a
+                groupId:
+                  type: string
+                  description: A group of this tenant
+                  example: grp_operators
+      responses:
+        "200":
+          description: The account works in the tenant with the group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The permission is missing, the group may do more than the caller may there, the account is the caller's own or a platform admin's, or works in another tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                success: false
+                error: This group may do more than you may in this tenant, so you cannot give it to anyone.
+        "404":
+          description: The tenant, the group or the account is gone, or beyond the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /tenants/{id}/members/{userId}:
+    patch:
+      tags: [Tenants]
+      summary: Change Tenant Member
+      description: |
+        Gives a member of the tenant another group, with the rules and the rights of Add Tenant
+        Member. On the way of the platform an account that is no member yet is added.
+      operationId: updateTenantMember
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupId]
+              properties:
+                groupId:
+                  type: string
+                  example: grp_viewers
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tenants]
+      summary: Remove Tenant Member
+      description: |
+        Takes an account out of the tenant. The account stays with its other tenants, and its
+        sessions that worked in the tenant pick another one. A tenant keeps someone who manages its
+        members, so its last member with `users:write` stays. Nobody takes out a member whose group may
+        do more than they may there.
+
+        **Required permission:** `platform-tenants:write` for a tenant the caller looks after, or
+        `users:write` in the tenant of the request itself
+      operationId: removeTenantMember
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: The last member who manages the members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tenants/{id}/invitations:
+    get:
+      tags: [Tenants]
+      summary: List Tenant Invitations
+      description: |
+        The links of the tenant nobody used yet and that still work, newest first. Never a token,
+        DBackup keeps only its hash.
+
+        **Required permission:** `platform-tenants:read` for a tenant the caller looks after, or
+        `users:read` in the tenant of the request itself
+      operationId: listTenantInvitations
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The open links
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TenantInvitation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Tenants]
+      summary: Create Tenant Invitation
+      description: |
+        Makes a link that adds one person to the tenant with a group, with the account they have or
+        a new one. The token comes back this once. The link is the address of DBackup with `path`. A
+        link works only while whoever made it may still give its group there, and a tenant has at most
+        100 open links. Written into the audit log of the tenant with the note and the key.
+
+        **Required permission:** `platform-tenants:write` for a tenant the caller looks after, who
+        gives a group no bigger than what the owner of the key may in that tenant, or `users:write`
+        in the tenant of the request itself, who gives a group no bigger than what the key holds.
+      operationId: createTenantInvitation
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupId]
+              properties:
+                groupId:
+                  type: string
+                  description: A group of this tenant
+                note:
+                  type: string
+                  maxLength: 100
+                  description: Who the link is for, shown in the list of open links and kept in the audit log
+                days:
+                  type: integer
+                  minimum: 1
+                  maximum: 30
+                  default: 7
+            example:
+              groupId: grp_operators
+              note: Jana, new at Acme
+              days: 7
+      responses:
+        "201":
+          description: The link, with its token once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      token:
+                        type: string
+                        description: Shown this once
+                        example: 3qG7v2Xr0kQd8yJb1mN5pL6sT9wZcA4eH2iU0oRfK8E
+                      path:
+                        type: string
+                        example: /invite?token=3qG7v2Xr0kQd8yJb1mN5pL6sT9wZcA4eH2iU0oRfK8E
+                      expiresAt:
+                        type: string
+                        format: date-time
+                      group:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+        "400":
+          description: Invalid body, or the tenant has 100 open links
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The permission is missing, or the group may do more than the caller may there
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: The tenant or the group is gone, or the tenant is beyond the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /tenants/{id}/invitations/{invitationId}:
+    delete:
+      tags: [Tenants]
+      summary: Revoke Tenant Invitation
+      description: |
+        Takes back a link of the tenant nobody used yet. Whoever opens it is told to ask for a new
+        one. Written into the audit log of the tenant with the key.
+
+        **Required permission:** `platform-tenants:write` for a tenant the caller looks after, or
+        `users:write` in the tenant of the request itself
+      operationId: revokeTenantInvitation
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: invitationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The link was used, revoked or ran out, or belongs to another tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # ─── Users & Groups ────────────────────────────────────────────
   /users:
     get:
@@ -4693,6 +5927,11 @@ components:
           description: Jobs that run more often than every five minutes, whose plan stops early
           items:
             type: string
+        names:
+          type: object
+          description: The names of the jobs runs wait for, by job ID
+          additionalProperties:
+            type: string
 
     CreateJobRequest:
       type: object
@@ -5373,6 +6612,301 @@ components:
               type: string
               format: date-time
 
+    Tenant:
+      type: object
+      description: A tenant as Platform > Tenants lists it
+      properties:
+        id:
+          type: string
+          example: cm2x8k1q40000acme
+        name:
+          type: string
+          example: Acme Corp
+        isHome:
+          type: boolean
+          description: The home tenant, which holds what the platform owns and is never deleted
+        sharesWithCustomers:
+          type: boolean
+          description: Gives databases, destinations and channels to other tenants
+        logo:
+          type: [string, "null"]
+          description: Where its logo is served, null without one
+          example: /api/tenants/cm2x8k1q40000acme/logo?v=1760000000000
+        members:
+          type: integer
+          example: 3
+        connections:
+          type: integer
+          example: 5
+        jobs:
+          type: integer
+          example: 4
+        databases:
+          type: integer
+          description: How many databases it holds
+          example: 12
+        health:
+          type: [string, "null"]
+          enum: [failed, partial, null]
+          description: Failed when the newest backup of one of its jobs failed, partial when one missed a copy
+        createdAt:
+          type: string
+          format: date-time
+        allowances:
+          $ref: "#/components/schemas/TenantAllowances"
+        provided:
+          type: object
+          description: The destinations and channels other tenants share with it
+          properties:
+            destinations:
+              type: integer
+            channels:
+              type: integer
+        gives:
+          type: object
+          description: The destinations and channels it shares with other tenants
+          properties:
+            destinations:
+              type: integer
+            channels:
+              type: integer
+        onDemand:
+          type: object
+          properties:
+            perDay:
+              type: [integer, "null"]
+              description: How many backups a day it may start of every database given to it, null for none
+            own:
+              type: integer
+              description: The databases and rules of now that set a number of their own
+        network:
+          $ref: "#/components/schemas/TenantNetwork"
+
+    TenantAllowances:
+      type: object
+      description: What a tenant adds itself. Off stops new ones only, but API keys, whose keys stop working
+      properties:
+        databases:
+          type: boolean
+        directorySources:
+          type: boolean
+        destinations:
+          type: boolean
+        channels:
+          type: boolean
+        apiKeys:
+          type: boolean
+
+    TenantNetwork:
+      type: object
+      required: [blocks, allowed]
+      description: Whether the connections of a tenant reach the local network of the server, never blocked for the home tenant
+      properties:
+        blocks:
+          type: boolean
+          example: true
+        allowed:
+          type: array
+          maxItems: 50
+          description: The CIDR ranges it reaches anyway
+          items:
+            type: string
+          example: ["10.20.0.0/16"]
+
+    TenantPartialChange:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        data:
+          type: object
+          properties:
+            saved:
+              type: array
+              description: The fields saved before the refusal
+              items:
+                type: string
+
+    TenantMember:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: Jana Keller
+        email:
+          type: string
+          example: jana@acme.example
+        image:
+          type: [string, "null"]
+        group:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+              example: Operators
+        platformAdmin:
+          type: boolean
+
+    TenantInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+        group:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        note:
+          type: [string, "null"]
+          example: Jana, new at Acme
+        createdByName:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    AssignmentRule:
+      type: object
+      properties:
+        id:
+          type: string
+        pattern:
+          type: string
+          example: "acme_*"
+        tenantId:
+          type: string
+        tenantName:
+          type: string
+          example: Acme Corp
+        priority:
+          type: integer
+          example: 10
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: [string, "null"]
+          format: date-time
+          description: When the rule ended, null while it gives
+        createdAt:
+          type: string
+          format: date-time
+        onDemandPerDay:
+          type: [integer, "null"]
+        tenantOnDemand:
+          type: [integer, "null"]
+
+    ShareTenantUse:
+      type: object
+      description: How one tenant uses a shared destination or channel
+      properties:
+        tenantId:
+          type: string
+        name:
+          type: string
+          example: Acme Corp
+        jobs:
+          type: integer
+          description: Its jobs that write to the destination, or that tell the channel
+        templates:
+          type: integer
+          description: A channel, its notification templates that name it
+        backups:
+          type: [integer, "null"]
+          description: A destination, its backups there at the last measurement
+        size:
+          type: [integer, "null"]
+        jobsWithoutKey:
+          type: integer
+        lastBackup:
+          type: [string, "null"]
+          format: date-time
+
+    ConnectionShare:
+      type: object
+      properties:
+        configId:
+          type: string
+        name:
+          type: string
+          example: NAS Zurich
+        kind:
+          type: string
+          enum: [destination, channel]
+        email:
+          type: boolean
+          description: An email channel, which may let each customer name its recipients
+        shared:
+          type: boolean
+        cleanupPending:
+          type: boolean
+          description: Shared with nobody while what its customers left could not be deleted yet
+        settings:
+          type: object
+          properties:
+            allTenants:
+              type: boolean
+            tenantIds:
+              type: array
+              items:
+                type: string
+            encryptedOnly:
+              type: boolean
+            ownRecipients:
+              type: boolean
+        candidates:
+          type: array
+          description: The other tenants the caller may share it with
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        reach:
+          type: object
+          description: What the platform group of the caller leaves out of a change
+          properties:
+            outside:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+            allTenants:
+              type: [string, "null"]
+            terms:
+              type: [string, "null"]
+        own:
+          type: [object, "null"]
+          description: A destination, what its own tenant keeps there
+          properties:
+            backups:
+              type: [integer, "null"]
+            size:
+              type: [integer, "null"]
+        uses:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShareTenantUse"
+
     MovePlace:
       type: object
       description: A database on a server, one end of a move
@@ -5606,6 +7140,93 @@ components:
             Set for a run of some databases of its job alone, like a backup a tenant started of a
             database another tenant shares with it
 
+    JobPage:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobListItem"
+        total:
+          type: integer
+          description: Jobs under the search and the filters
+        counts:
+          type: object
+          description: How many jobs each quick filter holds, of every job
+          properties:
+            all:
+              type: integer
+            attention:
+              type: integer
+            running:
+              type: integer
+            paused:
+              type: integer
+        tenants:
+          type: object
+          description: Jobs of each tenant under the search and the quick filter, only in All tenants
+          additionalProperties:
+            type: integer
+        stats:
+          type: object
+          description: The numbers above the list, of every job
+          properties:
+            total:
+              type: integer
+            paused:
+              type: integer
+            runs:
+              type: object
+              description: How the last 12 runs of every job ended
+              properties:
+                succeeded:
+                  type: integer
+                partial:
+                  type: integer
+                failed:
+                  type: integer
+            failed:
+              $ref: "#/components/schemas/NamedCount"
+            partial:
+              $ref: "#/components/schemas/NamedCount"
+            next:
+              type: [object, "null"]
+              properties:
+                at:
+                  type: string
+                  format: date-time
+                name:
+                  type: string
+            running:
+              type: object
+              properties:
+                count:
+                  type: integer
+                jobs:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      progress:
+                        type: [integer, "null"]
+            waiting:
+              type: integer
+              description: Jobs whose run waits for a slot of the queue
+        live:
+          type: boolean
+          description: Whether a run of any job runs or waits now
+    NamedCount:
+      type: object
+      description: How many jobs, with the names of the first three
+      properties:
+        count:
+          type: integer
+        names:
+          type: array
+          items:
+            type: string
     RunPage:
       type: object
       properties:
@@ -5705,6 +7326,130 @@ components:
               items:
                 type: string
 
+    DatabasePage:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerDatabase"
+        total:
+          type: integer
+          description: Databases under the search and the filters
+        servers:
+          type: array
+          description: The servers of the rows, with their versions
+          items:
+            $ref: "#/components/schemas/ExplorerServer"
+        jobs:
+          type: array
+          description: The jobs of the servers of the rows, empty without `jobs:read`
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              serverId:
+                type: string
+              enabled:
+                type: boolean
+              databases:
+                type: [array, "null"]
+                items:
+                  type: string
+              schedule:
+                type: [string, "null"]
+        coverage:
+          type: boolean
+          description: Whether the caller may see the jobs
+        serverList:
+          type: array
+          description: Every server, without its version
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              adapterId:
+                type: string
+              status:
+                type: string
+                enum: [ONLINE, DEGRADED, OFFLINE]
+              readAt:
+                type: [string, "null"]
+                format: date-time
+              readError:
+                type: [string, "null"]
+        jobOptions:
+          type: array
+          description: The enabled jobs that back up databases, for the Job filter
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        facets:
+          type: object
+          description: Per value of each filter, how many databases the other filters leave, a database once for each of its jobs and states
+          properties:
+            server:
+              type: object
+              additionalProperties:
+                type: integer
+            engine:
+              type: object
+              additionalProperties:
+                type: integer
+            job:
+              type: object
+              additionalProperties:
+                type: integer
+            state:
+              type: object
+              additionalProperties:
+                type: integer
+            tenant:
+              type: object
+              description: Only in All tenants
+              additionalProperties:
+                type: integer
+        summary:
+          type: object
+          description: The numbers above the list, of every database
+          properties:
+            databases:
+              type: integer
+            servers:
+              type: integer
+            size:
+              type: integer
+            unsized:
+              type: integer
+            tables:
+              type: integer
+            backedUp:
+              type: integer
+            noJob:
+              type: integer
+            noJobSize:
+              type: integer
+            biggest:
+              oneOf:
+                - $ref: "#/components/schemas/ExplorerDatabase"
+                - type: "null"
+        enabledJobs:
+          type: integer
+        keyStores:
+          type: array
+          description: The adapters of the Redis and Valkey servers
+          items:
+            type: string
     DatabaseOverview:
       type: object
       properties:

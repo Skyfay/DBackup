@@ -2,7 +2,8 @@
 /**
  * `pnpm lab:status` reads the lab connections and jobs of the dev database. Both belong to a tenant,
  * so a read without a scope threw "AdapterConfig was queried outside a tenant" and the command
- * crashed. The seed puts the lab into the home tenant, and the status reads it there.
+ * crashed. The seed puts the lab into the home tenant, and the status reads it there. The customers
+ * of the seed span tenants and are read in the system scope.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
@@ -35,7 +36,18 @@ vi.mock("@/lib/prisma", () => {
                     reads.scopes.jobs = explicitScope();
                     return 3;
                 }),
+                groupBy: vi.fn(async () => []),
             },
+            // A dev database seeded before the seed made customers.
+            tenant: {
+                findMany: vi.fn(async () => {
+                    reads.scopes.customers = explicitScope();
+                    return [];
+                }),
+            },
+            databaseAssignment: { findMany: vi.fn(async () => []) },
+            connectionShareTenant: { groupBy: vi.fn(async () => []) },
+            platformGroup: { findFirst: vi.fn(async () => null) },
             $disconnect: vi.fn(async () => undefined),
         },
     };
@@ -67,10 +79,17 @@ describe("the dev database part of lab:status", () => {
     it("reads the lab connections and jobs in the home tenant, where the seed put them", async () => {
         const section = await checkDevDatabase(CONFIG, "msp");
 
-        expect(reads.scopes).toEqual({ connections: { kind: "tenant", tenantId: "default" }, jobs: { kind: "tenant", tenantId: "default" } });
+        expect(reads.scopes).toEqual({ connections: { kind: "tenant", tenantId: "default" }, jobs: { kind: "tenant", tenantId: "default" }, customers: { kind: "system" } });
         expect(section.rows).toEqual(expect.arrayContaining([
             expect.objectContaining({ mark: "ok", name: "lab", detail: "2 connections, 3 jobs" }),
             expect.objectContaining({ mark: "ok", name: "backups" }),
         ]));
+    });
+
+    it("asks for the seed again while the customer tenants are missing", async () => {
+        const section = await checkDevDatabase(CONFIG, "msp");
+
+        expect(section.rows.filter((row) => row.mark === "warn").map((row) => row.name)).toEqual(["Acme", "Globex", "Lab Support"]);
+        expect(section.next).toEqual([expect.stringMatching(/^pnpm lab:seed +adds the customers Acme and Globex/)]);
     });
 });

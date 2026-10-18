@@ -3,15 +3,7 @@ import { MySQLConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
 import { MYSQL_CLIENT, buildConnectionArgs, withAuthArgs } from "./args";
 import { connectionClientOf } from "./dump-content";
-
-/** Sanitize a MySQL identifier (database/table/column name) for use in backtick-quoted SQL. */
-function escapeMysqlIdentifier(name: string): string {
-    return name.replace(/`/g, "``").replace(/\0/g, "");
-}
-/** Sanitize a MySQL string value for use in a single-quoted SQL literal. */
-function escapeMysqlLiteral(value: string): string {
-    return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\0/g, "");
-}
+import { escapeMysqlIdentifier, escapeMysqlLiteral } from "./sql-quote";
 
 const tablesQuery = (db: string) => `
     SELECT TABLE_NAME, TABLE_TYPE, TABLE_ROWS, COALESCE(DATA_LENGTH + INDEX_LENGTH, 0)

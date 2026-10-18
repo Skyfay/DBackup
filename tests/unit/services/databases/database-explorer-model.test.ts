@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-    cleanListedDatabases, coverageOf, databaseKey, destinationsOfRun, jobHolds, lastBackupsOf, namesOfRun, parseJobDatabases, parseListedDatabases, type KeptRun,
+    cleanListedDatabases, coverageOf, databaseKey, destinationsOfRun, jobHolds, jobsToReadFurther, lastBackupsOf, namesOfRun, parseJobDatabases, parseListedDatabases, type KeptRun,
 } from "@/services/databases/database-explorer-model";
 import type { ExplorerDbJob } from "@/services/databases/database-explorer-types";
 
@@ -83,6 +83,29 @@ describe("the last backup of each database", () => {
 
         expect(last.get(databaseKey("s1", "shop"))?.executionId).toBe("old");
         expect(last.has(databaseKey("s1", "billing"))).toBe(false);
+    });
+});
+
+describe("which jobs need more than their newest kept run", () => {
+    const databases = [{ serverId: "s1", name: "shop" }, { serverId: "s1", name: "billing" }, { serverId: "s2", name: "crm" }];
+    const jobs = [job("nightly", "s1", null), job("shop-only", "s1", ["shop"]), job("crm", "s2", null)];
+
+    it("reads no older run of a job whose newest run backed up every database of its server", () => {
+        const newest = [run("n1", "nightly", "2026-09-27T03:00:00Z", ["shop", "billing"]), run("c1", "crm", "2026-09-27T04:00:00Z", null)];
+        expect(jobsToReadFurther(newest, jobs, databases, lastBackupsOf(newest, jobs, databases))).toEqual([]);
+    });
+
+    it("reads older runs of a job whose newest run left out a database nobody backed up since", () => {
+        const newest = [run("n1", "nightly", "2026-09-27T03:00:00Z", ["shop"]), run("s1", "shop-only", "2026-09-26T03:00:00Z", ["shop"])];
+        // Billing has no last backup yet, so an older run of the nightly job may hold it. The job of
+        // shop alone left out billing too, which an older run of it may have held before.
+        expect(jobsToReadFurther(newest, jobs, databases, lastBackupsOf(newest, jobs, databases))).toEqual(["nightly", "shop-only"]);
+    });
+
+    it("skips a job whose older runs are older than the last backup another job made", () => {
+        const newest = [run("n1", "nightly", "2026-09-27T03:00:00Z", ["shop", "billing"]), run("s1", "shop-only", "2026-09-26T03:00:00Z", ["shop"])];
+        // The job of shop alone left out billing, which the nightly job backed up after its newest run.
+        expect(jobsToReadFurther(newest, jobs, databases, lastBackupsOf(newest, jobs, databases))).toEqual([]);
     });
 });
 

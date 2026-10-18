@@ -24,7 +24,7 @@ import { exampleTaskFor, templateExample } from "@/lib/auth/api-key-templates";
 import { permissionPhrase } from "@/lib/auth/permission-areas";
 import { cn } from "@/lib/utils";
 import type { ApiKeyDetails as ApiKeyDetailsModel, ApiKeyRow } from "@/services/auth/api-keys-types";
-import { KeyTile, PrefixText, StateBadge } from "./api-key-cells";
+import { KeyTile, PlatformKeyTag, PrefixText, StateBadge } from "./api-key-cells";
 
 interface ApiKeyDetailsProps {
     open: boolean;
@@ -70,6 +70,7 @@ function Content({ apiKey, now, onEdit, onRotate, keyMenu, canOpenRuns, version 
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <SheetTitle className="truncate text-lg font-semibold">{apiKey.name}</SheetTitle>
                             <StateBadge apiKey={apiKey} now={now} />
+                            {apiKey.platform && <PlatformKeyTag />}
                         </div>
                         <SheetDescription className="truncate text-sm text-muted-foreground">
                             <PrefixText prefix={apiKey.prefix} />

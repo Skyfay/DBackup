@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { dialedHosts } from "@/lib/adapters/dialed-hosts";
+import { dialedHosts, HostFormatError } from "@/lib/adapters/dialed-hosts";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { MAX_ALLOWED_RANGES, parseCidr, rangesOfColumn, toRanges } from "@/lib/network/local-network";
 import { firstBlockedAddress, type LocalHit } from "@/lib/network/reach-check";
@@ -40,18 +40,38 @@ export function localNetworkRefusal(tenantName: string, hit: LocalHit): string {
  *
  * @throws ValidationError naming the host and its address.
  */
-export async function assertHostsReachable(tenantId: string | null | undefined, hosts: readonly string[]): Promise<void> {
-    if (!tenantId || tenantId === HOME_TENANT_ID || hosts.length === 0) return;
+export async function assertHostsReachable(tenantId: string | null | undefined, hosts: readonly string[] | (() => readonly string[])): Promise<void> {
+    if (!tenantId || tenantId === HOME_TENANT_ID || (Array.isArray(hosts) && hosts.length === 0)) return;
     const row = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, blocksLocalNetwork: true, allowedNetworks: true } });
     if (!row?.blocksLocalNetwork) return;
-    const hit = await firstBlockedAddress(hosts, toRanges(rangesOfColumn(row.allowedNetworks)));
+    // The hosts are read only for a tenant that blocks, so an address no client reads changes
+    // nothing for the others, its connection fails on its own there.
+    let named: readonly string[];
+    try {
+        named = typeof hosts === "function" ? hosts() : hosts;
+    } catch (error: unknown) {
+        if (error instanceof HostFormatError) throw new ValidationError(`${row.name} reaches no address of the local network, and this address names no host to check. ${error.message}`, { field: "config" });
+        throw error;
+    }
+    const hit = await firstBlockedAddress(named, toRanges(rangesOfColumn(row.allowedNetworks)));
     if (hit) throw new ValidationError(localNetworkRefusal(row.name, hit), { field: "config" });
 }
 
 /** Refuses a config of a connection of a tenant whose hosts lie in its blocked local network, see `dialed-hosts.ts`. */
 export async function assertTenantReach(tenantId: string | null | undefined, adapterId: string, config: Record<string, unknown>): Promise<void> {
     if (!tenantId || tenantId === HOME_TENANT_ID) return;
-    await assertHostsReachable(tenantId, dialedHosts(adapterId, config));
+    let hosts: string[];
+    try {
+        hosts = dialedHosts(adapterId, config);
+    } catch (error: unknown) {
+        if (!(error instanceof HostFormatError)) throw error;
+        // Refused only where the tenant blocks the local network, see `assertHostsReachable`.
+        await assertHostsReachable(tenantId, () => {
+            throw error;
+        });
+        return;
+    }
+    await assertHostsReachable(tenantId, hosts);
 }
 
 /** The same for the tenant the code that runs now acts for, like a form tried before it is saved. */

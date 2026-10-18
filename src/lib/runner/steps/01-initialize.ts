@@ -116,6 +116,7 @@ export async function stepInitialize(ctx: RunnerContext) {
             jobSourceId: src.id,
             configId: src.config.id,
             configName: src.config.name,
+            tenantId: src.config.tenantId,
             adapter,
             config: await resolveAdapterConfig(src.config) as any,
             // "/" is the form's sentinel for "the whole adapter" (see DirectoryBrowseDialog in job-form.tsx);

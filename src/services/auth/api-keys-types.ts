@@ -44,6 +44,8 @@ export interface ApiKeyRow {
     isMine: boolean;
     /** The tenant the key acts in, for the Tenant column of All tenants. */
     tenantId: string;
+    /** A key of the home tenant that holds a right on the tenants or the accounts of the platform, see `HOME_KEY_PLATFORM_PERMISSIONS`. */
+    platform: boolean;
 }
 
 export interface ApiKeysStats {

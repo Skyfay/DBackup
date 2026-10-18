@@ -235,6 +235,27 @@ A connection that reaches the server DBackup runs on, its files, its Docker, its
 
 A database in direct mode dials its host and every host of a list (PostgreSQL's `a,b`, the sentinels of Redis, the hosts of a MongoDB URI), in SSH mode the SSH host alone, since whatever lies behind it is reached from that server. SQL Server tunnels to its SSH host, which falls back to the database host, and its older file transfer over SSH dials both. A storage dials the server of its address, an S3 endpoint and the host of the bucket on it unless the bucket goes in the path (the endpoint of R2 and Hetzner is built from a field the person types, so it counts too). A channel dials every URL or host a person types. Amazon S3, the cloud drives, Telegram and Twilio have endpoints of their own and dial nothing to check. An agent will be like SSH mode: DBackup dials the agent, the agent the database, so only the address of the agent counts.
 
+Each entry of `DIALED_HOSTS` reads its field the way the client or tool of that adapter reads it, so a spelling the client takes for another host than a plain reading never passes unchecked. `tests/unit/adapters/dialed-hosts.test.ts` has a case for each spelling:
+
+| Adapter | What counts |
+| :--- | :--- |
+| MySQL, MariaDB, PostgreSQL, MongoDB, Firebird | An empty host as `127.0.0.1`, the fallback of their clients |
+| PostgreSQL | Every entry of a libpq host list. An entry that starts with `/` or `@`, or an empty entry of a list, is a Unix socket, which `host-local.ts` keeps to the platform |
+| MongoDB | The hosts `parseMongoTarget` in `mongodb/args.ts` reads for the tools and the driver: after the user info before `@`, before a path or a query, every entry of a list, `127.0.0.1` when nothing is left, an SRV record by its name. A host that ends in `.sock` or holds `%2F` is a socket |
+| SQL Server, Azure SQL | The host part of a server name: without `tcp:`, a named instance `host\INSTANCE`, a port after a comma, and `.` or `(local)` as the server itself |
+| Firebird | The host of `host/port` and `[v6]/port`, as gbak and isql read the connection string |
+| rsync | The part after the last `@`, as rsync and OpenSSH read `user@host` |
+| SMB | Only `//server/share` or `\\server\share`, which the form schema and the adapter enforce too. Any other address throws `HostFormatError`, which `assertTenantReach` turns into a refusal for a tenant that blocks the local network |
+
+Beside the hosts, the values a form, a job or a restore hands on are taken only as the kind of value they are:
+
+- The SSH test of a form (`api/adapters/test-ssh`) checks `spec.ssh.host`, the host the transport resolved for the login, right before it connects, for every adapter id, and refuses an adapter without an SSH mode (`hasSshMode` in `src/lib/adapters/ssh-mode.ts`).
+- An rsync username is a plain login name, without `@`, `:`, `/`, whitespace or a leading `-` (`rsync-user.ts`). The form schema, the assignment of a saved login to an rsync connection, the update of a saved login an rsync connection uses, and the adapter before it builds a command check it.
+- A database name never starts with `-` (`database/common/database-name.ts`). A job checks its list on save, a restore its target and the selected entries of its mapping, and the MySQL and MongoDB adapters every name they pass as an argument. The MySQL client gets the restore target as `--database=<name>`. A Redis database is a whole number, and the Firebird connection string never starts with `-`.
+- The webhook style channels (Discord, Slack, Teams, Generic Webhook, Gotify, ntfy) send with `redirect: "manual"` (`notification/http.ts`) and treat a 3xx as a failed send. WebDAV gets HTTP agents that open a socket only to the host of its URL (`webdav-agents.ts`), so a redirect to another host fails and one on the same host still works.
+- The share a file server exposes a shadow copy under is held to the form `//server/share` in `smb-vss.ts` and checked like the configured connection in `acquireGroupSnapshot` (`collect-directories.ts`), in the tenant of the connection, before anything reads it.
+- MongoDB with one host and no SRV record connects with `directConnection: true` in `driver-meta.ts`, so the driver never contacts the members a server announces. The tools connect directly to a single `--host` on their own. A seed list or an SRV name still discovers its replica set.
+
 The check runs wherever a config of a tenant is used:
 
 - `resolveAdapterConfig` checks a saved connection with the tenant of its row, beside `hostLocalReason`, for every run, test, health check and notification that resolves one. A destination or a channel another tenant shares follows the setting of that tenant, never the one of the customer whose run uses it.
@@ -246,6 +267,12 @@ The action `setTenantNetwork` in `actions/tenant/tenant.ts` needs `platform-tena
 ::: warning A guard against mistakes and plain misuse
 The check reads the answer of the resolver when it runs, and the adapter resolves the name again when it connects. A hostile DNS server that answers a public address first and a private one after gets past it, so is a host whose lookup takes longer than five seconds. The firewall of the server keeps out what must never be reached.
 :::
+
+What only the network of the server can enforce, since the client follows the server or the network without DBackup seeing it:
+
+- A DNS answer that changes between the check and the connect, as above, and the hosts an SRV record of MongoDB names, which the driver and the tools look up themselves.
+- SQL Server sending a client on to another server, like the read-only routing of an availability group or the redirection of Azure SQL.
+- DFS referrals of an SMB server, which send smbclient on to another file server, and names smbclient resolves through NetBIOS or WINS instead of DNS.
 
 ## Tenant Notifications
 
@@ -279,7 +306,7 @@ The channels of Settings → Notifications belong to the platform and hear about
 | :--- | :--- |
 | `groupPermissions(group)` | Every permission for a `fullAccess` group, else the stored ones DBackup knows |
 | `permissionsIn(memberships, tenantId)` | The group in the tenant without the platform permissions, plus the platform permissions from the group in the home tenant, plus the profile permissions from any group |
-| `ownerPermissionsIn(owner, tenantId, tenantShares)` | The ceiling of an API key in its tenant: every permission of a tenant for a platform admin, else `permissionsIn` without what a platform group gives on the platform. In a tenant that shares with customers also the `platform-sharing:*` the owner holds (`keyPlatformPermissions(tenantShares)`) |
+| `ownerPermissionsIn(owner, tenantId, tenantShares)` | The ceiling of an API key in its tenant: every permission of a tenant for a platform admin, else `permissionsIn` without what a platform group gives on the platform. Of the rights of the platform only those `keyPlatformPermissions(tenantShares, homeTenant)` allows and the owner holds: `platform-sharing:*` in a tenant that shares with customers, `platform-tenants:*` and `platform-accounts:*` in the home tenant, see [The API of the Platform](#the-api-of-the-platform) |
 | `capToOwner(key, owner)` | What the key holds and its owner may do now |
 
 `PLATFORM_PERMISSIONS` are `settings:*`, which act on the whole instance. Groups belong to a tenant, so `groups:*` counts in each tenant, and `tenant-settings:*` covers the tenant's own settings and its Recently deleted (`TRASH_ADMIN_PERMISSION`). `PROFILE_PERMISSIONS` are `profile:*`, which change the own account, which belongs to no tenant. With one tenant `permissionsIn` is exactly what the group gives.
@@ -290,7 +317,7 @@ The channels of Settings → Notifications belong to the platform and hear about
 
 A `PlatformGroup` gives the people of the MSP rights without the platform admin role, which stays `User.platformRole` and shows in the pages as the built-in group Platform admin. A user holds at most one through `User.platformGroupId`. Its `platformPermissions` are the settings of the instance and the rights of `PLATFORM_ONLY_PERMISSIONS` (`platform-tenants:*`, `platform-accounts:*`, `platform-sign-in:read`, `platform-sharing:*`), which are kept apart from `AVAILABLE_PERMISSIONS`, so no group of a tenant ever holds them. Its `tenantPermissions` count in every tenant when `allTenants`, else in those of `PlatformGroupTenant`.
 
-`permissionsIn(memberships, tenantId, platformGroup)` adds the tenant rights of the group in a tenant of its scope (`platformTenantRightsIn`) and its platform rights (`platformRightsOf`), and `ctx.permissions` carries both, so a platform right is checked like any other. `pickTenant` opens a tenant of the scope without a membership, and All tenants for a group that reaches every tenant and reads there (`opensAllTenants`), with `allTenantsPermissionsOf`. `ownerPermissionsIn` gives an API key the tenant rights of its owner's platform group, and of its platform rights only `platform-sharing:*` in a key of a tenant that shares with customers. The settings of the instance from the owner's group in the home tenant still count for a key, as before tenants. `platform-sign-in:write` is in no list a group draws from, so only a platform admin changes a sign-in provider.
+`permissionsIn(memberships, tenantId, platformGroup)` adds the tenant rights of the group in a tenant of its scope (`platformTenantRightsIn`) and its platform rights (`platformRightsOf`), and `ctx.permissions` carries both, so a platform right is checked like any other. `pickTenant` opens a tenant of the scope without a membership, and All tenants for a group that reaches every tenant and reads there (`opensAllTenants`), with `allTenantsPermissionsOf`. `ownerPermissionsIn` gives an API key the tenant rights of its owner's platform group, and of its platform rights only `platform-sharing:*` in a key of a tenant that shares with customers and `platform-tenants:*` with `platform-accounts:*` in a key of the home tenant. The settings of the instance from the owner's group in the home tenant still count for a key, as before tenants. `platform-sign-in:write` is in no list a group draws from, so only a platform admin changes a sign-in provider.
 
 Two rights of the platform follow the scope as well, through `platformGroupService.reachOf`, which returns `"all"` for a platform admin and a platform group of all tenants and the tenants of the scope otherwise (`PlatformReach`, `reachCovers` in `platform-group-caps.ts`). `platform-sharing:*` gives to and takes from the reached tenants only, see [Shared Databases](#shared-databases) and [Shared Destinations and Channels](#shared-destinations-and-channels). `platform-sign-in:read` shows the providers of the platform and of the reached tenants, with the groups they place people in and the accounts that work there, `getSsoProvidersModel` with a `SsoProvidersScope`, while `settings:read` still shows every provider.
 
@@ -309,12 +336,36 @@ The actions in `actions/auth/tenant-group-template.ts` need `platform-accounts:w
 `src/lib/auth/account-access.ts` guards the people:
 
 - `accountRefusal(actor, target)`: a platform admin may change any account, nobody else the one of a platform admin. An account of a platform group is changed only by someone with `platform-accounts:write` who may give that platform group (`platformGroupRefusal` in `platform-group-caps.ts`), never by the admin of a tenant. Whoever holds `platform-accounts:write` changes any other account whose tenants their reach all covers (`reachCoversAccount`), every one for a platform group of all tenants, and an account of a platform group only within it too. Anyone else, and someone of a platform group beyond their reach, changes as a tenant admin with `users:write` only an account whose memberships are all in their tenant. An account of no tenant counts as one of the home tenant. `userService.accountRefusalFor` reads both sides and the reach.
-- `roleRefusal(actor, group)`: a group is given only by someone who holds every permission it gives in that tenant, from `roleGrantsIn`. On Platform > Tenants it is checked against what the viewer may do in that tenant (`actorIn` in `members.ts`), for the group given and for the one taken.
+- `roleRefusal(actor, group)`: a group is given only by someone who holds every permission it gives in that tenant, from `roleGrantsIn`. On Platform > Tenants it is checked against what the viewer may do in that tenant (`actorIn` in `services/tenant/member-admin.ts`), for the group given and for the one taken.
 - `updateUserGroup` and `moveUsersToGroup` give a group of the tenant only to its people, `membershipService.isPersonOf` with `peopleOf`: its members, and in the home tenant the accounts of no tenant. Only a platform admin gives one to a platform admin or to anyone else. The others join by an invitation or through Platform > Tenants.
 
 A change of an account writes its audit entry into the log `accountLogOrigin` in `src/services/audit/account-log.ts` picks, read before the change: the tenant the viewer works in while every account is one of its people, else the home tenant (`PLATFORM_LOG`), see [Audit Logging](/developer-guide/advanced/audit).
 
 Recently deleted keeps an account where someone may bring it back, never by the tenant it was deleted from. `keepInTrash` writes its `DeletedRecord` in the system scope into the tenant of the snapshot: the one tenant of an account with exactly one membership, no platform role, no platform group and no API key in another tenant, else the home tenant with `superAdminOnly`. Undo of the viewer's own delete reads the newest entry of each account in every tenant with `latestAccountEntries`, keeps those `mayRestoreAccount` allows (a platform admin any, anyone else with `users:write` or `platform-accounts:write` an entry without `superAdminOnly` whose account `accountRefusal` lets them change with their reach), and restores them with `restoreFromTrash(ids, { anyTenantAccounts: true })`. An account comes back with an email whose domain the provider of another tenant claims only through a platform admin or someone of a platform group that reaches that tenant, `claimedAccounts` with `emailClaimScope` in `actions/settings/trash.ts`, and its API keys stay out of a tenant without `addsApiKeys`.
+
+## The API of the Platform
+
+An MSP creates its customers from a script, so the tenants, their members, their invitations and what a tenant shares have routes beside Platform > Tenants:
+
+| Route | Right | Service |
+| :--- | :--- | :--- |
+| `GET`, `POST /api/tenants`, `GET`, `PATCH`, `DELETE /api/tenants/[id]` | `platform-tenants:read` or `:write` | `src/services/tenant/tenant-admin.ts` |
+| `/api/tenants/[id]/members`, `/members/[userId]` | `platform-tenants:*` and a reached tenant, or `users:*` in the tenant of the request | `member-admin.ts`, `member-rules.ts` |
+| `/api/tenants/[id]/invitations`, `/invitations/[invitationId]` | The same | `invitation-admin.ts` |
+| `GET`, `PUT /api/adapters/[id]/share` | `platform-sharing:read` or `:write` in the tenant of the connection | `connectionShareService`, `share-audit.ts` |
+| `GET`, `POST /api/adapters/[id]/database-assignments/rules`, `DELETE .../rules/[ruleId]` | The same in the tenant of the server | `databaseAssignmentService`, `assignment-audit.ts` |
+
+The Server Actions of the pages and the routes call the same functions, which check the reach and write the audit entries, so a rule never lives twice. `TenantAdminActor` is who acts: the person of a session or the owner of a key, `isPlatformAdmin` only for a session, the API key the entries name, and the reach. A route reads the reach once with `routeActor(ctx)`, an action leaves it out and `managesTenant` asks the platform group per check, as before. `tenantRouteAccess(ctx, tenantId, write)` in `src/lib/auth/tenant-route-access.ts` decides the way into a tenant's members and invitations: the platform first, with its right and a reached tenant, else the tenant itself with `users:*` while the request works in it, else 404 for a tenant beyond the reach of someone with the platform right and 403 for anyone else. `serviceRefusal` in `src/lib/server/permission-refusal.ts` answers a refusal of a service with 403, 400, 404 or 409 and its sentence.
+
+Why a key gets these rights, and why only like this:
+
+- **Only in the home tenant.** The home tenant is the platform. A key of a customer acting on the platform would let the admin of one customer reach the others, so `keyPlatformPermissions` offers `platform-tenants:*` and `platform-accounts:*` only for `tenantId === HOME_TENANT_ID`, and `capToOwner` drops them from any other key at every request, whatever it stores.
+- **Never more than the owner.** `ownerPermissionsIn` takes them only from the owner's platform group, or from a platform admin, and `validate()` caps the key at every request, so a key whose owner loses the right or the platform group stops at its next request. The actions check a new key and a change against the same ceiling, and the key editor offers the areas only to an owner who holds one of them.
+- **The reach of the owner.** A right of the platform is bounded by `platformGroupService.reachOf(ownerId)`, the same reach the pages read. The key of someone of a platform group of selected tenants manages those tenants only, reads any other as gone and creates none, since it would never reach the new one. The key of a platform admin reaches every tenant.
+- **Still no platform admin.** `AuthContext.isPlatformAdmin` stays false for a key, so a key of a platform admin changes neither its owner's memberships nor those of a platform admin, and passes no check only a platform admin passes. `roleRefusal` caps a group given on the platform way by what the owner may in that tenant (`actorIn`), on the way of the tenant by what the key holds.
+- **Sessions only stay so.** The sign-in providers, the configuration restore, the database download and the pages under `/api/platform` refuse every key, whatever it holds, since they decide who signs in as whom or bring back every tenant.
+
+`PATCH /api/tenants/[id]` saves its fields one after the other with the functions of the Edit dialog and stops at the first refusal, naming the fields it saved under `data.saved`. `DELETE` refuses a tenant that holds anything without `?confirmed=true` (`TenantNotEmptyError`, 409 with its `tenantContents`), like the dialog that lists it first. A key of the tenant itself gives a group only through `tenantGroupRefusal`, the rule of the Users tab: never its owner's own, only to the people of its tenant, never more than the key holds.
 
 ## Adding a Model
 

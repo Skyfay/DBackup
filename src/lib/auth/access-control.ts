@@ -164,6 +164,9 @@ async function resolveAuthContext(headersObj: Headers): Promise<AuthContext | nu
     return null;
   }
 
+  // The permissions are capped to what the owner may in the tenant of the key at this request, a
+  // right of the platform only in a key of the home tenant or of a tenant that shares, see
+  // `ownerPermissionsIn`. What such a right reaches is the reach of the owner, read by the route.
   return {
     userId: validated.userId,
     permissions: validated.permissions,

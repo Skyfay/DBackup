@@ -52,6 +52,25 @@ interface MongoTarget {
  * which is what makes an Atlas cluster work with nothing but its hostname typed in.
  */
 export function parseMongoTarget(config: AnyMongoConfig): MongoTarget {
+    const { hosts, srv } = readMongoHosts(config);
+
+    // An SRV record carries a port per host, so naming one alongside it is
+    // rejected as an invalid connection string.
+    const authority = srv
+        ? hosts[0].host
+        : hosts.map((entry) => `${entry.host}:${entry.port}`).join(",");
+
+    return {
+        authority,
+        host: hosts[0].host,
+        port: hosts[0].port,
+        srv,
+        multiHost: !srv && hosts.length > 1,
+    };
+}
+
+/** The Host field read into its hosts with their ports, never empty, and whether it names an SRV record. */
+function readMongoHosts(config: AnyMongoConfig): { hosts: { host: string; port: number }[]; srv: boolean } {
     let raw = (config.host || "127.0.0.1").trim();
     let srv = false;
 
@@ -91,19 +110,29 @@ export function parseMongoTarget(config: AnyMongoConfig): MongoTarget {
         srv = SRV_ZONES.some((zone) => lower.endsWith(zone));
     }
 
-    // An SRV record carries a port per host, so naming one alongside it is
-    // rejected as an invalid connection string.
-    const authority = srv
-        ? hosts[0].host
-        : hosts.map((entry) => `${entry.host}:${entry.port}`).join(",");
+    return { hosts, srv };
+}
 
-    return {
-        authority,
-        host: hosts[0].host,
-        port: hosts[0].port,
-        srv,
-        multiHost: !srv && hosts.length > 1,
-    };
+/**
+ * The hosts the tools and the driver dial for the Host field, read by `parseMongoTarget` itself:
+ * after the user info, before a path or a query, every entry of a list, `127.0.0.1` when nothing
+ * is left. An SRV name alone, the hosts its record names come from DNS. Without the brackets of
+ * an IPv6 address, so the local network check reads them as addresses.
+ */
+export function dialedMongoHosts(config: AnyMongoConfig): string[] {
+    const { hosts, srv } = readMongoHosts(config);
+    return (srv ? hosts.slice(0, 1) : hosts).map((entry) => entry.host.replace(/^\[|\]$/g, ""));
+}
+
+/**
+ * Whether the driver connects to the one host it names and to nobody it announces: a Host field
+ * of one host without an SRV record and without the older connection URI. The tools connect
+ * directly to a single `--host` on their own, since no replica set name is given.
+ */
+export function connectsDirectly(config: AnyMongoConfig): boolean {
+    if (config.uri) return false;
+    const { srv, multiHost } = parseMongoTarget(config);
+    return !srv && !multiHost;
 }
 
 /** Connection flags for mongosh, mongodump and mongorestore. */

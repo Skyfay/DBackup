@@ -6,7 +6,7 @@
  * caller was only not allowed.
  */
 
-import { PermissionError, ValidationError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, PermissionError, ValidationError } from "@/lib/logging/errors";
 
 /**
  * Turns a caught error into the 403 answer, or returns null when it is something else and the
@@ -48,4 +48,25 @@ export function refusedUnless(check: () => void): Response | null {
         if (refusal) return refusal;
         throw error;
     }
+}
+
+/**
+ * Like `requestRefusal`, and a record that is gone answers 404, a conflict like a run that still
+ * waits 409, each with the sentence of the service. For the routes over the rules of the platform,
+ * like `/api/tenants`, whose services refuse with these errors.
+ */
+export function serviceRefusal(error: unknown): Response | null {
+    const status = refusalStatus(error);
+    if (!status) return null;
+    const message = (error as Error).message;
+    return Response.json({ success: false, error: message, message }, { status });
+}
+
+/** The status `serviceRefusal` answers an error with, null for an error that is no refusal. */
+export function refusalStatus(error: unknown): 400 | 403 | 404 | 409 | null {
+    if (error instanceof PermissionError) return 403;
+    if (error instanceof ValidationError) return 400;
+    if (error instanceof NotFoundError) return 404;
+    if (error instanceof ConflictError) return 409;
+    return null;
 }

@@ -14,6 +14,7 @@ import { toRelativePath } from "./common/download-directory";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import { formatExcludeSummary, summariseExcluded } from "@/lib/exclude-summary";
 import { runRsync, sanitizeCommand, type RsyncCommand } from "./rsync-process";
+import { rsyncUsernameProblem } from "./rsync-user";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -152,11 +153,23 @@ function shellEscapeSingleQuote(value: string): string {
 }
 
 /**
+ * The login of every command, `user@host`, once the username is a plain login name. rsync and
+ * OpenSSH read the host after the last `@`, rsync ends it at a `:` and OpenSSH takes a leading
+ * `-` for an option, so another name would reach another host or another option, see
+ * `rsync-user.ts`. Checked here as well as on save, since a profile may predate the rule.
+ */
+function sshTarget(config: RsyncConfig): string {
+    const problem = rsyncUsernameProblem(config.username);
+    if (problem) throw new Error(problem);
+    return `${config.username}@${config.host}`;
+}
+
+/**
  * Builds the remote path for rsync (user@host:path).
  */
 function buildRemotePath(config: RsyncConfig, relativePath: string): string {
     const fullPath = path.posix.join(config.pathPrefix, relativePath);
-    return `${config.username}@${config.host}:${fullPath}`;
+    return `${sshTarget(config)}:${fullPath}`;
 }
 
 /**
@@ -239,7 +252,7 @@ const LISTING_LIMITS: Required<SshExecOptions> = { timeout: 10 * 60_000, maxBuff
  */
 async function execSSH(config: RsyncConfig, command: string, keyFile?: string, controlPath?: string, options: SshExecOptions = {}): Promise<string> {
     const sshArgs = buildSshArgArray(config, keyFile, controlPath);
-    const target = `${config.username}@${config.host}`;
+    const target = sshTarget(config);
     const env = getPasswordEnv(config) ?? process.env;
 
     let binary: string;
@@ -281,7 +294,7 @@ async function execSSH(config: RsyncConfig, command: string, keyFile?: string, c
  * is needed - the request travels over the existing socket rather than opening a new session.
  */
 async function closeSshMaster(config: RsyncConfig, keyFile: string | undefined, controlPath: string): Promise<void> {
-    const args = [...buildSshArgArray(config, keyFile, controlPath), "-O", "exit", `${config.username}@${config.host}`];
+    const args = [...buildSshArgArray(config, keyFile, controlPath), "-O", "exit", sshTarget(config)];
     await execFileAsync("ssh", args, { timeout: 10000 }).catch(() => { });
 }
 

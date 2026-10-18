@@ -11,6 +11,9 @@ import { assertConfigOffHost, overlayCredentialsOnConfig } from "@/lib/adapters/
 import { registerAdapters } from "@/lib/adapters";
 import { assertMayApplySavedLogin } from "@/lib/auth/saved-login-access";
 import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
+import { hasSshMode } from "@/lib/adapters/ssh-mode";
+import { hostOf } from "@/lib/adapters/dialed-hosts";
+import { assertHostsReachable } from "@/services/tenant/tenant-network";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 
@@ -49,6 +52,10 @@ export async function POST(req: NextRequest) {
         // sources:write for SSH without an adapter, and in one tenant, never All tenants.
         if (adapterId) {
             assertMayReadFormConfig(ctx, adapterId);
+            // An adapter without an SSH mode never logs in over SSH, whatever SSH fields its form sends.
+            if (!hasSshMode(adapterId)) {
+                return NextResponse.json({ success: false, message: "This kind of connection has no SSH mode." }, { status: 400 });
+            }
         } else {
             checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.WRITE);
             tenantOf(ctx);
@@ -123,6 +130,15 @@ export async function POST(req: NextRequest) {
 
         const sshHost = spec.ssh.host;
         const sshPort = spec.ssh.port ?? 22;
+
+        // The host the login dials, as the transport read it from the config, checked against the
+        // local network of the tenant right before it connects, whichever adapter named it.
+        try {
+            await assertHostsReachable(ctx.tenantId, [sshHost, hostOf(sshHost)].filter((entry): entry is string => !!entry));
+        } catch (refusal: unknown) {
+            if (refusal instanceof ValidationError) return NextResponse.json({ success: false, message: refusal.message }, { status: 400 });
+            throw refusal;
+        }
 
         // Only SQL Server has a backup directory that both the server and the
         // SSH account have to reach. Testing that here used to key off

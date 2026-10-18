@@ -314,6 +314,16 @@ describe("SMBAdapter", () => {
             expect(result.message).toContain("successful");
         });
 
+        it("runs no smbclient for an address of another form than //server/share", async () => {
+            for (const address of ["-L 10.0.0.9", "fileserver/share"]) {
+                const result = await SMBAdapter.test!({ ...config, address });
+
+                expect(result.success, address).toBe(false);
+                expect(result.message, address).toContain("//server/share");
+            }
+            expect(mockSendFile).not.toHaveBeenCalled();
+        });
+
         it("returns failure when sendFile throws", async () => {
             mockSendFile.mockRejectedValue(new Error("ECONNREFUSED"));
 

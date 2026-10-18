@@ -1,6 +1,7 @@
 import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, SnapshotHandle } from "@/lib/core/interfaces";
 import { probeSnapshotSupport, createShadowCopy, releaseShadowCopy, findOrphanedShadowCopies } from "./smb-vss";
 import { SMBSchema } from "@/lib/adapters/definitions";
+import { isSmbAddress, SMB_ADDRESS_HINT } from "@/lib/adapters/smb-address";
 import SambaClient from "samba-client";
 import path from "path";
 import fs from "fs/promises";
@@ -52,6 +53,9 @@ interface SMBConfig {
  * The `directory` option is set to pathPrefix if provided.
  */
 function createClient(config: SMBConfig): SambaClient {
+    // smbclient takes the address as an argument of its own, so one of another form could reach
+    // it as an option, see `smb-address.ts`.
+    if (!isSmbAddress(config.address)) throw new Error(`The share address does not read. ${SMB_ADDRESS_HINT}`);
     return new SambaClient({
         address: config.address,
         username: config.username || "guest",
@@ -317,6 +321,7 @@ export const SMBAdapter: StorageAdapter = {
         const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
         const testFileName = `.dbackup/test/connection-test-smb-${ts}`;
         const tmpPath = path.join(os.tmpdir(), `connection-test-smb-${ts}`);
+        if (!isSmbAddress(config.address)) return { success: false, message: `The share address does not read. ${SMB_ADDRESS_HINT}` };
         const client = createClient(config);
         const destination = resolvePath(config, testFileName);
 

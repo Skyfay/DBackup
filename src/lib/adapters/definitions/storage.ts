@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { safePath, sshFields } from "./shared";
+import { isSmbAddress, SMB_ADDRESS_HINT } from "../smb-address";
+import { rsyncUsernameProblem } from "../storage/rsync-user";
 
 /**
  * Where a Docker daemon listens unless told otherwise.
@@ -92,7 +94,8 @@ export const SFTPSchema = z.object({
 });
 
 export const SMBSchema = z.object({
-    address: z.string().min(1, "Share address is required (e.g. //server/share)"),
+    // Only the forms smbclient reads, see `smb-address.ts`.
+    address: z.string().min(1, "Share address is required (e.g. //server/share)").refine(isSmbAddress, SMB_ADDRESS_HINT),
     username: z.string().default("guest").describe("Username (default: guest)"),
     password: z.string().optional().describe("Password"),
     domain: z.string().optional().describe("Workgroup or domain name"),
@@ -122,7 +125,11 @@ export const FTPSchema = z.object({
 export const RsyncSchema = z.object({
     host: z.string().min(1, "Host is required"),
     port: z.coerce.number().default(22).describe("SSH port"),
-    username: z.string().min(1, "Username is required"),
+    // A plain login name, see `rsync-user.ts`.
+    username: z.string().min(1, "Username is required").superRefine((value, ctx) => {
+        const problem = value === "" ? null : rsyncUsernameProblem(value);
+        if (problem) ctx.addIssue({ code: "custom", message: problem });
+    }),
     authType: z.enum(["password", "privateKey", "agent"]).default("password").describe("Authentication Method"),
     password: z.string().optional().describe("Password"),
     privateKey: z.string().optional().describe("Private Key (PEM format, optional)"),

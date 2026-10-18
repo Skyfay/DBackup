@@ -1,21 +1,14 @@
 import prisma from "@/lib/prisma";
-import { newestBackupIds, readInChunks } from "@/services/history/newest-runs";
 import { compareVersions } from "@/lib/utils";
 import { extractLastError } from "@/services/dashboard/health";
 import { runsBetween } from "@/services/storage/explorer-plan";
-import {
-    coverageOf, databaseKey, destinationsOfRun, isInstance, jobHolds, lastBackupOfJobs, lastBackupsOf, namesOfRun, parseJobDatabases, parseListedDatabases, versionOf, type KeptRun,
-} from "./database-explorer-model";
-import type {
-    DatabaseOverview, DatabaseRunRecord, DatabaseRunsData, ExplorerDatabase, ExplorerDbJob, ExplorerServer, LastBackup, PlannedRun, RunStatus, VersionChange,
-} from "./database-explorer-types";
+import { destinationsOfRun, jobHolds, namesOfRun, parseListedDatabases } from "./database-explorer-model";
+import type { DatabaseOverview, DatabaseRunRecord, DatabaseRunsData, PlannedRun, RunStatus, VersionChange } from "./database-explorer-types";
+import { readDatabases, readJobs, readSources, readVersions, serverOf } from "./database-facts";
 
-/** How many kept runs of a job are searched for the last backup of each of its databases. */
-const LAST_RUNS = 40;
 /** The longest span the runs of the timeline are asked for at once. */
 const MAX_SPAN_MS = 120 * 86_400_000;
 const STATUSES = new Set<RunStatus>(["Success", "Partial", "Failed", "Running", "Pending", "Cancelled"]);
-const SERVER_STATES = new Set(["ONLINE", "DEGRADED", "OFFLINE"]);
 
 const toNumber = (value: bigint | number | null): number | null => (value === null ? null : Number(value));
 
@@ -27,96 +20,18 @@ const toNumber = (value: bigint | number | null): number | null => (value === nu
 export class DatabaseExplorerService {
     /** Every server and its databases. The jobs, the coverage and the last backups only when the viewer may see jobs. */
     async getOverview({ withJobs }: { withJobs: boolean }): Promise<DatabaseOverview> {
-        const [sources, jobs] = await Promise.all([
-            prisma.adapterConfig.findMany({
-                where: { type: "database" },
-                select: {
-                    id: true,
-                    name: true,
-                    adapterId: true,
-                    // The tenant of the server, which the lists show while they hold every tenant.
-                    tenantId: true,
-                    metadata: true,
-                    lastStatus: true,
-                    databaseListCache: { select: { databasesJson: true, readAt: true, error: true } },
-                    versionHistory: {
-                        where: { previousVersion: { not: null } },
-                        orderBy: { detectedAt: "desc" },
-                        take: 1,
-                        select: { previousVersion: true, detectedAt: true },
-                    },
-                },
-                orderBy: { name: "asc" },
-            }),
-            withJobs ? this.jobs() : Promise.resolve<ExplorerDbJob[]>([]),
+        const [sources, jobs, versions] = await Promise.all([
+            readSources(),
+            withJobs ? readJobs() : Promise.resolve(null),
+            readVersions(),
         ]);
-
-        const servers: ExplorerServer[] = sources.map((source) => {
-            const change = source.versionHistory[0];
-            return {
-                id: source.id,
-                name: source.name,
-                adapterId: source.adapterId,
-                tenantId: source.tenantId,
-                version: versionOf(source.metadata),
-                versionSince: change ? change.detectedAt.toISOString() : null,
-                previousVersion: change?.previousVersion ?? null,
-                status: SERVER_STATES.has(source.lastStatus) ? (source.lastStatus as ExplorerServer["status"]) : "ONLINE",
-                readAt: source.databaseListCache?.readAt?.toISOString() ?? null,
-                readError: source.databaseListCache?.error ?? null,
-            };
-        });
-
-        const instances = sources.filter((source) => isInstance(source.adapterId));
-        const listed = sources
-            .filter((source) => !isInstance(source.adapterId))
-            .flatMap((source) => parseListedDatabases(source.databaseListCache?.databasesJson).map((database) => ({ serverId: source.id, tenantId: source.tenantId, ...database })));
-        const kept = withJobs ? await this.keptRuns(jobs) : [];
-        const coverage = withJobs ? coverageOf(listed, jobs) : new Map<string, string[]>();
-        const lastBackups = withJobs ? lastBackupsOf(kept, jobs, listed) : new Map<string, LastBackup>();
-
-        const databases: ExplorerDatabase[] = listed.map((database) => {
-            const key = databaseKey(database.serverId, database.name);
-            return {
-                key,
-                serverId: database.serverId,
-                tenantId: database.tenantId,
-                kind: "database",
-                name: database.name,
-                sizeInBytes: database.sizeInBytes ?? null,
-                tableCount: database.tableCount ?? null,
-                keyCount: null,
-                logical: [],
-                emptyLogical: 0,
-                jobIds: coverage.get(key) ?? [],
-                lastBackup: lastBackups.get(key) ?? null,
-            };
-        });
-
-        // A Redis or Valkey server is one entry, backed up by every enabled job of it, since a job
-        // takes all its numbered databases. The ones without a key are only counted.
-        for (const source of instances) {
-            const numbered = parseListedDatabases(source.databaseListCache?.databasesJson);
-            if (numbered.length === 0) continue;
-            const logical = numbered.filter((database) => (database.tableCount ?? 0) > 0).map((database) => ({ name: database.name, keys: database.tableCount ?? 0 }));
-            const jobIds = jobs.filter((job) => job.enabled && job.serverId === source.id).map((job) => job.id);
-            databases.push({
-                key: source.id,
-                serverId: source.id,
-                tenantId: source.tenantId,
-                kind: "instance",
-                name: source.name,
-                sizeInBytes: null,
-                tableCount: null,
-                keyCount: logical.reduce((sum, database) => sum + database.keys, 0),
-                logical,
-                emptyLogical: numbered.length - logical.length,
-                jobIds,
-                lastBackup: lastBackupOfJobs(kept, jobIds),
-            });
-        }
-
-        return { servers, databases, jobs, coverage: withJobs };
+        const databases = await readDatabases(sources, jobs);
+        return {
+            servers: sources.map((source) => serverOf(source, versions.get(source.id))),
+            databases,
+            jobs: jobs ?? [],
+            coverage: withJobs,
+        };
     }
 
     /**
@@ -127,7 +42,7 @@ export class DatabaseExplorerService {
     async getRuns(from: Date, until: Date, now = new Date(), { withErrors = false }: { withErrors?: boolean } = {}): Promise<DatabaseRunsData> {
         const start = new Date(Math.max(from.getTime(), until.getTime() - MAX_SPAN_MS));
         const [jobs, executions, changes, timezone] = await Promise.all([
-            this.jobs(),
+            readJobs(),
             prisma.execution.findMany({
                 where: { type: "Backup", job: { sourceId: { not: null } }, startedAt: { gte: start, lte: until } },
                 orderBy: { startedAt: "asc" },
@@ -206,46 +121,6 @@ export class DatabaseExplorerService {
             const error = extractLastError(row.logs);
             return error ? [[row.id, error] as const] : [];
         }));
-    }
-
-    private async jobs(): Promise<ExplorerDbJob[]> {
-        const rows = await prisma.job.findMany({
-            where: { sourceId: { not: null } },
-            select: { id: true, name: true, sourceId: true, enabled: true, databases: true, schedule: true, schedulePreset: { select: { schedule: true } } },
-            orderBy: { name: "asc" },
-        });
-        return rows.map((job) => ({
-            id: job.id,
-            name: job.name,
-            serverId: job.sourceId as string,
-            enabled: job.enabled,
-            databases: parseJobDatabases(job.databases),
-            schedule: (job.schedulePreset?.schedule ?? job.schedule ?? "").trim() || null,
-        }));
-    }
-
-    /**
-     * The newest kept runs of every job, newest first overall. The ids come from one query for every
-     * job, `newestBackupIds`, since a query per job took minutes in All tenants of many tenants, and
-     * the rows through the client of the jobs it read.
-     */
-    private async keptRuns(jobs: ExplorerDbJob[]): Promise<KeptRun[]> {
-        if (jobs.length === 0) return [];
-        const ids = await newestBackupIds(jobs.map((job) => job.id), { take: LAST_RUNS, statuses: ["Success", "Partial"] });
-        const rows = await readInChunks(ids, (chunk) => prisma.execution.findMany({
-            where: { id: { in: chunk } },
-            select: { id: true, jobId: true, status: true, startedAt: true, size: true, metadata: true },
-        }));
-        return rows
-            .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
-            .map((run) => ({
-                id: run.id,
-                jobId: run.jobId as string,
-                status: run.status as KeptRun["status"],
-                startedAt: run.startedAt.toISOString(),
-                size: toNumber(run.size),
-                names: namesOfRun(run.metadata),
-            }));
     }
 
     /** The database names of every server as the list cache holds them. */

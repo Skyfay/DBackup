@@ -8,9 +8,11 @@ import { diffFields } from "@/lib/core/audit-diff";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { ON_DEMAND_MAX, ON_DEMAND_MIN, ON_DEMAND_OFF, SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
+import { ON_DEMAND_OFF, SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { auditService } from "@/services/audit-service";
 import { databaseAssignmentService, type SourceAssignments } from "@/services/tenant/database-assignments";
+import { logRuleAdded, logRuleRemoved } from "@/services/tenant/assignment-audit";
+import { AssignmentPerDaySchema, AssignmentRuleSchema } from "@/lib/tenant/tenant-schemas";
 import { moveDatabase, moveTargets, type MoveTarget } from "@/services/tenant/database-moves";
 import { customersOfServer } from "@/services/tenant/shared-servers";
 import { platformGroupService } from "@/services/user/platform-group-service";
@@ -29,20 +31,13 @@ const log = logger.child({ action: "database-assignments" });
 const IdSchema = z.string().min(1).max(200);
 const NameSchema = z.string().trim().min(1, "Name the database.").max(200);
 // Null follows the customer, 0 is none for it, else a number a day of its own.
-const PerDaySchema = z.coerce.number().int().min(ON_DEMAND_OFF).max(ON_DEMAND_MAX).nullable()
-    .refine((value) => value === null || value === ON_DEMAND_OFF || value >= ON_DEMAND_MIN, `Allow from ${ON_DEMAND_MIN} to ${ON_DEMAND_MAX} backups a day.`);
+const PerDaySchema = AssignmentPerDaySchema;
 const ChangeSchema = z.object({
     databaseName: NameSchema,
     tenantId: IdSchema.nullable(),
     validFrom: z.coerce.date().optional(),
 });
-const RuleSchema = z.object({
-    pattern: z.string().trim().min(1, "Enter a pattern, like shop_*.").max(100),
-    tenantId: IdSchema,
-    priority: z.coerce.number().int().min(-1000).max(1000).default(0),
-    validFrom: z.coerce.date().optional(),
-    onDemandPerDay: PerDaySchema.optional(),
-});
+const RuleSchema = AssignmentRuleSchema;
 const MoveSchema = z.object({
     databaseName: NameSchema,
     toSourceId: IdSchema,
@@ -106,10 +101,7 @@ export async function addAssignmentRule(sourceId: string, input: z.input<typeof 
 
     try {
         const rule = await databaseAssignmentService.addRule(id.data, parsed.data, new Date(), await platformGroupService.reachOf(viewer.id));
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
-            change: "Assignment rule added", pattern: rule.pattern, tenant: rule.tenantName,
-            ...(rule.onDemandPerDay !== null ? { onDemandPerDay: rule.onDemandPerDay } : {}),
-        }, id.data);
+        await logRuleAdded({ id: viewer.id }, id.data, rule);
         revalidatePath("/dashboard/explorer");
         return { success: true as const, data: rule };
     } catch (error: unknown) {
@@ -128,7 +120,7 @@ export async function removeAssignmentRule(sourceId: string, ruleId: string) {
 
     try {
         const removed = await databaseAssignmentService.removeRule(id.data, rule.data, new Date(), await platformGroupService.reachOf(viewer.id));
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, { change: "Assignment rule removed", pattern: removed.pattern, tenant: removed.tenantName }, id.data);
+        await logRuleRemoved({ id: viewer.id }, id.data, removed);
         revalidatePath("/dashboard/explorer");
         return { success: true as const };
     } catch (error: unknown) {

@@ -4,6 +4,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
 import { stripTrailingSlashes } from "@/lib/paths";
+import { NO_REDIRECTS, redirectRefusal } from "./http";
 
 const log = logger.child({ adapter: "gotify" });
 
@@ -62,6 +63,7 @@ export const GotifyAdapter: NotificationAdapter = {
 
             validateOutboundUrl(url);
             const response = await fetch(url, {
+                ...NO_REDIRECTS,
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -77,6 +79,8 @@ export const GotifyAdapter: NotificationAdapter = {
                 }),
             });
 
+            const redirect = redirectRefusal("Gotify", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: "Test notification sent successfully!" };
             } else {
@@ -98,6 +102,7 @@ export const GotifyAdapter: NotificationAdapter = {
 
             validateOutboundUrl(url);
             const response = await fetch(url, {
+                ...NO_REDIRECTS,
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

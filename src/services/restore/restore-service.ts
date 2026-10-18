@@ -11,7 +11,7 @@ import { preflightRestore } from "./preflight";
 import { runRestorePipeline } from "./pipeline";
 import type { ProviderRun } from "./run-logs";
 import { FOLLOWS_KEY } from "@/lib/execution/follower-runs";
-import { normalizeDatabaseMapping } from "./database-mapping";
+import { assertDatabaseTarget, normalizeDatabaseMapping } from "./database-mapping";
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 import { runAsSystem } from "@/lib/tenant/context";
 
@@ -50,6 +50,7 @@ export class RestoreService {
         // One mapping shape from here on, so the preflight checks the same databases the
         // pipeline then restores.
         const input: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping) };
+        assertDatabaseTarget(input.targetDatabaseName);
         const { file } = input;
 
         // Pre-flight: throws on permission/version/type incompatibility.

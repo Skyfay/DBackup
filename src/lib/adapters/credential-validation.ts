@@ -2,6 +2,8 @@ import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { ValidationError, NotFoundError } from "@/lib/logging/errors";
 import type { CredentialType } from "@/lib/core/credentials";
+import { getDecryptedCredentialData } from "@/services/auth/credential-service";
+import { rsyncUsernameProblem } from "@/lib/adapters/storage/rsync-user";
 
 /**
  * Validates that a credential profile exists and matches the expected type.
@@ -58,6 +60,12 @@ export async function validateCredentialAssignments(
             );
         }
         await ensureProfileMatchesType(primaryCredentialId, requirements.primary, "primary");
+        // rsync puts the username of its login in front of the host, so it must be a plain name.
+        if (adapterId === "rsync") {
+            const data = await getDecryptedCredentialData(primaryCredentialId);
+            const problem = rsyncUsernameProblem((data as { username?: unknown }).username);
+            if (problem) throw new ValidationError(problem, { field: "primaryCredentialId" });
+        }
     }
 
     if (sshCredentialId) {

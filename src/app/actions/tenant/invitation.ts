@@ -3,29 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission, currentSessionId, getViewer, tenantRefusal } from "@/lib/auth/access-control";
-import { roleRefusal } from "@/lib/auth/account-access";
 import { isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
-import { INVITATION_MAX_DAYS, invitationService, type InvitationPreview, type InvitationRow } from "@/services/tenant/invitation-service";
+import { invitationService, type InvitationPreview, type InvitationRow } from "@/services/tenant/invitation-service";
+import { createInvitationAs, INVITATION_GONE, InviteSchema, invitationsOf, revokeInvitationAs } from "@/services/tenant/invitation-admin";
 import { tenantService } from "@/services/tenant/tenant-service";
-import { groupService } from "@/services/user/group-service";
 
 const log = logger.child({ action: "invitation" });
 
 const IdSchema = z.string().min(1).max(200);
 const TokenSchema = z.string().min(20).max(100);
-
-const InviteSchema = z.object({
-    groupId: IdSchema,
-    /** Who the link is for, shown in the list of open links. */
-    note: z.string().trim().max(100, "The note can have at most 100 characters.").optional(),
-    days: z.coerce.number().int().min(1).max(INVITATION_MAX_DAYS),
-});
 
 const AccountSchema = z.object({
     name: z.string().trim().min(2, "Name must be at least 2 characters.").max(100),
@@ -53,24 +45,12 @@ export async function createInvitation(input: z.input<typeof InviteSchema>) {
     const parsed = InviteSchema.safeParse(input);
     if (!parsed.success) return { success: false as const, error: parsed.error.issues[0]?.message ?? "Invalid request" };
 
-    const group = await groupService.find(parsed.data.groupId);
-    if (!group) return { success: false as const, error: "The group no longer exists." };
-    const refused = roleRefusal(viewer, group);
-    if (refused) return { success: false as const, error: refused };
-
     try {
-        const invitation = await invitationService.create({
-            tenantId: viewer.tenantId,
-            groupId: group.id,
-            note: parsed.data.note,
-            days: parsed.data.days,
-            createdById: viewer.id,
-            createdByName: viewer.name,
-        });
-        await auditService.log(viewer.id, AUDIT_ACTIONS.CREATE, AUDIT_RESOURCES.TENANT, { change: "Invitation created", group: group.name, note: parsed.data.note ?? null }, viewer.tenantId);
+        const invitation = await createInvitationAs({ id: viewer.id, name: viewer.name }, viewer, viewer.tenantId, parsed.data);
         revalidatePath("/dashboard/users");
-        return { success: true as const, data: { id: invitation.id, path: `/invite?token=${invitation.token}`, expiresAt: invitation.expiresAt } };
+        return { success: true as const, data: { id: invitation.id, path: invitation.path, expiresAt: invitation.expiresAt } };
     } catch (error: unknown) {
+        if (error instanceof NotFoundError || error instanceof PermissionError || error instanceof ValidationError) return { success: false as const, error: error.message };
         log.error("Creating an invitation failed", {}, wrapError(error));
         return { success: false as const, error: "The invitation could not be created." };
     }
@@ -80,7 +60,7 @@ export async function createInvitation(input: z.input<typeof InviteSchema>) {
 export async function listInvitations(): Promise<{ success: true; data: InvitationRow[] } | { success: false; error: string }> {
     const viewer = await checkPermission(PERMISSIONS.USERS.READ);
     if (!viewer.tenantId) return { success: false, error: tenantRefusal(viewer) ?? "Unauthorized" };
-    return { success: true, data: await invitationService.list(viewer.tenantId) };
+    return { success: true, data: await invitationsOf(viewer.tenantId) };
 }
 
 /** Takes back a link nobody used yet. */
@@ -91,12 +71,11 @@ export async function revokeInvitation(id: string) {
     if (!parsed.success) return { success: false as const, error: "Invalid request" };
 
     try {
-        const revoked = await invitationService.revoke(parsed.data, viewer.tenantId);
-        await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.TENANT, { change: "Invitation revoked", group: revoked.groupName, note: revoked.note }, viewer.tenantId);
+        await revokeInvitationAs({ id: viewer.id }, viewer.tenantId, parsed.data);
         revalidatePath("/dashboard/users");
         return { success: true as const };
     } catch (error: unknown) {
-        if (error instanceof NotFoundError) return { success: false as const, error: "The invitation is gone already." };
+        if (error instanceof NotFoundError) return { success: false as const, error: INVITATION_GONE };
         log.error("Revoking an invitation failed", { invitationId: parsed.data }, wrapError(error));
         return { success: false as const, error: "The invitation could not be revoked." };
     }

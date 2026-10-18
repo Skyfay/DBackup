@@ -72,4 +72,9 @@ export interface JobTimeline {
      * takes beside them. Left out in All tenants, which lists every run.
      */
     otherTenants?: TimelineStretch[];
+    /**
+     * The names of the jobs runs wait for, by id. The page holds only the jobs of its list, which
+     * the search and the filters narrow, and the server pages.
+     */
+    names?: Record<string, string>;
 }

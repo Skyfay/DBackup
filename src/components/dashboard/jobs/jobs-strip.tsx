@@ -5,35 +5,24 @@ import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { successShare } from "@/lib/core/success-share";
 import { namesFor } from "@/lib/core/tab-attention";
-import type { JobListItem } from "@/services/jobs/job-list-service";
-import { lastOutcome } from "./job-status";
-
-const DONE = new Set(["Success", "Failed", "Partial"]);
+import type { JobStats } from "@/services/jobs/job-page-types";
 
 /**
  * The numbers above the jobs: how many run on their schedule, how their latest runs went, which
- * need attention, which runs next and what runs right now. Worked out from the list itself.
+ * need attention, which runs next and what runs right now. Of every job, whatever the search and
+ * the filters, counted by the server, which pages the list.
  */
-export function JobsStrip({ jobs }: { jobs: JobListItem[] }) {
-    const paused = jobs.filter((job) => !job.enabled).length;
-    const runs = jobs.flatMap((job) => job.overview.runs).filter((run) => DONE.has(run.status));
-    const succeeded = runs.filter((run) => run.status === "Success").length;
-    const share = successShare({
-        succeeded,
-        partial: runs.filter((run) => run.status === "Partial").length,
-        failed: runs.filter((run) => run.status === "Failed").length,
-    });
-    const failed = jobs.filter((job) => lastOutcome(job) === "Failed").map((job) => job.name);
-    const partial = jobs.filter((job) => lastOutcome(job) === "Partial").map((job) => job.name);
+export function JobsStrip({ stats }: { stats: JobStats }) {
+    const { total, paused, failed, partial, next, running, waiting } = stats;
+    const { succeeded } = stats.runs;
+    const finished = stats.runs.succeeded + stats.runs.partial + stats.runs.failed;
+    const share = successShare(stats.runs);
     const attention = [
-        ...(failed.length > 0 ? [`${namesFor(failed)} failed`] : []),
-        ...(partial.length > 0 ? [`${namesFor(partial)} missed a copy`] : []),
+        ...(failed.count > 0 ? [`${namesFor(failed.names, failed.count)} failed`] : []),
+        ...(partial.count > 0 ? [`${namesFor(partial.names, partial.count)} missed a copy`] : []),
     ];
-    const next = jobs
-        .filter((job) => job.overview.nextRunAt)
-        .sort((a, b) => Date.parse(a.overview.nextRunAt!) - Date.parse(b.overview.nextRunAt!))[0];
-    const running = jobs.filter((job) => job.overview.live?.status === "Running");
-    const waiting = jobs.filter((job) => job.overview.live?.status === "Pending").length;
+    const runningNames = running.jobs.map((job) => [job.name, job.progress != null ? `${job.progress} %` : null].filter(Boolean).join(" "));
+    const moreRunning = running.count - running.jobs.length;
 
     return (
         <ExplorerStrip joined
@@ -41,8 +30,8 @@ export function JobsStrip({ jobs }: { jobs: JobListItem[] }) {
                 {
                     label: "Jobs",
                     icon: CalendarClock,
-                    value: jobs.length.toLocaleString(),
-                    extra: paused > 0 ? `${(jobs.length - paused).toLocaleString()} on their schedule, ${paused.toLocaleString()} paused` : "all on their schedule",
+                    value: total.toLocaleString(),
+                    extra: paused > 0 ? `${(total - paused).toLocaleString()} on their schedule, ${paused.toLocaleString()} paused` : "all on their schedule",
                 },
                 {
                     label: "Succeeded",
@@ -51,27 +40,27 @@ export function JobsStrip({ jobs }: { jobs: JobListItem[] }) {
                     unit: share !== null ? "%" : undefined,
                     // Green only while nothing of it failed, a red tile next to it says the rest.
                     tone: share === 100 ? "success" : undefined,
-                    extra: runs.length > 0 ? `${succeeded.toLocaleString()} of the latest ${runs.length.toLocaleString()} runs` : "no run yet",
+                    extra: finished > 0 ? `${succeeded.toLocaleString()} of the latest ${finished.toLocaleString()} runs` : "no run yet",
                 },
                 {
                     label: "Needs attention",
                     icon: TriangleAlert,
-                    value: (failed.length + partial.length).toLocaleString(),
-                    tone: failed.length > 0 ? "destructive" : partial.length > 0 ? "warning" : undefined,
+                    value: (failed.count + partial.count).toLocaleString(),
+                    tone: failed.count > 0 ? "destructive" : partial.count > 0 ? "warning" : undefined,
                     extra: attention.length > 0 ? attention.join(", ") : "every last run went through",
                 },
                 {
                     label: "Next run",
                     icon: Clock,
-                    value: next ? <RelativeTime date={next.overview.nextRunAt!} /> : "-",
+                    value: next ? <RelativeTime date={next.at} /> : "-",
                     extra: next ? next.name : "no job runs on a schedule",
                 },
                 {
                     label: "Running",
                     icon: LoaderCircle,
-                    value: running.length.toLocaleString(),
-                    extra: running.length > 0
-                        ? running.map((job) => [job.name, job.overview.live?.progress != null ? `${job.overview.live.progress} %` : null].filter(Boolean).join(" ")).join(", ")
+                    value: running.count.toLocaleString(),
+                    extra: running.count > 0
+                        ? [...runningNames, ...(moreRunning > 0 ? [`${moreRunning.toLocaleString()} more`] : [])].join(", ")
                         : waiting > 0 ? `${waiting.toLocaleString()} waiting for a slot` : "nothing runs right now",
                 },
             ]}

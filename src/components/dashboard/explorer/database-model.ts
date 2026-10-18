@@ -1,7 +1,7 @@
 import type { DayKey } from "@/components/dashboard/storage/explorer/timeline-model";
 import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import type {
-    DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase, ExplorerDbJob, ExplorerServer, PlannedRun, VersionChange,
+    DatabaseRun, DatabaseRuns, DatabaseRunsData, DatabaseSummary, ExplorerDatabase, ExplorerDbJob, ExplorerServer, PlannedRun, VersionChange,
 } from "@/services/databases/database-explorer-types";
 
 /**
@@ -9,18 +9,9 @@ import type {
  * filters offer and the grid of the timeline. Kept free of React so they can be tested.
  */
 
-/** Where a database stands, one or more at once, for the State filter. */
-export type DatabaseState = "backed-up" | "no-job" | "never" | "unread";
-
-export function statesOf(database: ExplorerDatabase, server: ExplorerServer | undefined, coverage: boolean): DatabaseState[] {
-    const states: DatabaseState[] = [];
-    if (coverage) {
-        states.push(database.jobIds.length > 0 ? "backed-up" : "no-job");
-        if (database.jobIds.length > 0 && !database.lastBackup) states.push("never");
-    }
-    if (server && (server.readError || !server.readAt)) states.push("unread");
-    return states;
-}
+// The states, the numbers and the freshness of the lists, which the server reads for the paged list too.
+export { freshnessOf, statesOf, summarize } from "@/services/databases/database-list-model";
+export type { DatabaseState, DatabaseSummary } from "@/services/databases/database-explorer-types";
 
 /** The page of a database or of an instance, with the table to show when given. */
 export function databaseHref(database: Pick<ExplorerDatabase, "serverId" | "kind" | "name">, extra: { table?: string | null } = {}): string {
@@ -63,46 +54,6 @@ export function foldedNames(names: string[]): string {
     return runs
         .flatMap((run) => (run.length >= 3 ? [`db${run[0]} to db${run[run.length - 1]}`] : run.map((value) => `db${value}`)))
         .join(", ");
-}
-
-export interface DatabaseSummary {
-    databases: number;
-    servers: number;
-    /** The bytes of every database whose size is known. */
-    size: number;
-    /** Databases whose server does not tell their size. */
-    unsized: number;
-    tables: number;
-    backedUp: number;
-    noJob: number;
-    noJobSize: number;
-    biggest: ExplorerDatabase | null;
-}
-
-export function summarize(overview: DatabaseOverview): DatabaseSummary {
-    const { databases } = overview;
-    const noJob = databases.filter((database) => database.jobIds.length === 0);
-    const sized = databases.filter((database) => database.sizeInBytes !== null);
-    return {
-        databases: databases.length,
-        servers: overview.servers.length,
-        size: sized.reduce((sum, database) => sum + (database.sizeInBytes ?? 0), 0),
-        unsized: databases.length - sized.length,
-        // The keys of an instance are no tables.
-        tables: databases.reduce((sum, database) => sum + (database.kind === "database" ? database.tableCount ?? 0 : 0), 0),
-        backedUp: databases.length - noJob.length,
-        noJob: noJob.length,
-        noJobSize: noJob.reduce((sum, database) => sum + (database.sizeInBytes ?? 0), 0),
-        biggest: sized.reduce<ExplorerDatabase | null>((best, database) => ((database.sizeInBytes ?? 0) > (best?.sizeInBytes ?? -1) ? database : best), null),
-    };
-}
-
-/** How old the lists are: the oldest read, and the servers whose latest read failed or never happened. */
-export function freshnessOf(servers: ExplorerServer[]) {
-    const behind = servers.filter((server) => server.readError !== null || !server.readAt);
-    const times = servers.map((server) => server.readAt).filter((value): value is string => value !== null);
-    const oldest = times.length === 0 ? null : times.reduce((first, time) => (Date.parse(time) < Date.parse(first) ? time : first));
-    return { behind, oldest };
 }
 
 // ------------------------------------------------------------------ the timeline
@@ -289,7 +240,7 @@ export function runsSpan(first: DayKey, last: DayKey): { from: string; until: st
  * The dots of the Explorer tabs: databases no job backs up are amber, while the viewer sees the jobs,
  * and a server that does not answer is red, one that failed a check amber.
  */
-export function explorerAttention(overview: DatabaseOverview, summary: DatabaseSummary, coverage: boolean): { databases?: TabAttention; servers?: TabAttention } {
+export function explorerAttention(overview: { servers: Pick<ExplorerServer, "name" | "status">[] }, summary: Pick<DatabaseSummary, "noJob">, coverage: boolean): { databases?: TabAttention; servers?: TabAttention } {
     const named = (status: string) => overview.servers.filter((server) => server.status === status).map((server) => server.name);
     return {
         databases: coverage && summary.noJob > 0

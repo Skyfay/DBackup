@@ -7,7 +7,7 @@ import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { isPlainClick } from "@/components/ui/row-click";
 import { cn } from "@/lib/utils";
 import type { ApiKeyRow } from "@/services/auth/api-keys-types";
-import { keyLine, KeyTile, OwnerCell, PrefixText, quietName, StateBadge } from "./api-key-cells";
+import { keyLine, KeyTile, OwnerCell, PlatformKeyTag, PrefixText, quietName, StateBadge } from "./api-key-cells";
 
 interface ApiKeyCardProps {
     apiKey: ApiKeyRow;
@@ -39,6 +39,7 @@ export function ApiKeyCard({ apiKey, now, onOpen, actions }: ApiKeyCardProps) {
                         {apiKey.name}
                     </button>
                     <PrefixText prefix={apiKey.prefix} className="block truncate text-muted-foreground" />
+                    {apiKey.platform && <PlatformKeyTag />}
                     {allTenants && <TenantLine name={tenantName(apiKey.tenantId) ?? apiKey.tenantId} className="mt-0.5" />}
                 </div>
                 <StateBadge apiKey={apiKey} now={now} />

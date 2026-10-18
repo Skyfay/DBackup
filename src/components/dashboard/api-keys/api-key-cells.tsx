@@ -28,6 +28,15 @@ export function PrefixText({ prefix, className }: { prefix: string; className?: 
     return <span className={cn("font-mono text-xs", className)}>{prefix}...</span>;
 }
 
+/** A key of the home tenant that manages the tenants or the accounts of the platform, beyond the tenant it was made in. */
+export function PlatformKeyTag() {
+    return (
+        <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[11px] font-normal text-muted-foreground" title="Manages the tenants or the accounts of the platform, as far as its owner reaches">
+            Platform
+        </Badge>
+    );
+}
+
 /** A key that does not work, disabled or expired, has its name in gray like a paused job. */
 export const quietName = (key: Pick<ApiKeyRow, "state">) => key.state !== "enabled" && "text-muted-foreground";
 
@@ -37,17 +46,20 @@ export function KeyCell({ apiKey, compact, onOpen }: { apiKey: ApiKeyRow; compac
         <div className="flex min-w-0 items-center gap-3">
             <KeyTile size={compact ? "sm" : "md"} />
             <div className={cn("min-w-0 max-w-64", compact && "flex items-baseline gap-2")}>
-                <button
-                    type="button"
-                    onClick={() => onOpen(apiKey)}
-                    title={apiKey.name}
-                    className={cn(
-                        "block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50",
-                        quietName(apiKey)
-                    )}
-                >
-                    {apiKey.name}
-                </button>
+                <span className="flex min-w-0 items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => onOpen(apiKey)}
+                        title={apiKey.name}
+                        className={cn(
+                            "block min-w-0 max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50",
+                            quietName(apiKey)
+                        )}
+                    >
+                        {apiKey.name}
+                    </button>
+                    {apiKey.platform && <PlatformKeyTag />}
+                </span>
                 <PrefixText prefix={apiKey.prefix} className="block truncate text-muted-foreground" />
             </div>
         </div>

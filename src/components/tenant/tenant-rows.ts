@@ -30,6 +30,11 @@ export function tenantFilterOptions(tenants: readonly NamedTenant[], rowTenantId
         .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** The Tenant filter of a list the server pages, with how many rows of each tenant the server counted. */
+export function withTenantCounts<T extends { options: DataTableFilterOption[] }>(filter: T, counts: Record<string, number> | undefined): T {
+    return { ...filter, options: filter.options.map((option) => ({ ...option, count: counts?.[option.value] ?? 0 })) };
+}
+
 /** Whether a row passes the picked tenants of the filter. Nothing picked lets every row pass. */
 export function matchesTenants(tenantId: string | null | undefined, picked: readonly string[] | undefined): boolean {
     if (!picked || picked.length === 0) return true;

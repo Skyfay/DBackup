@@ -26,6 +26,9 @@ import { PIPELINE_STAGES } from "@/lib/core/logs";
 import { resolveTransferConcurrency } from "@/lib/adapters/transfer-concurrency";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { planCollectionGroups, type CollectionGroup } from "./source-groups";
+import { hostLocalReason } from "@/lib/adapters/host-local";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { assertTenantReach } from "@/services/tenant/tenant-network";
 
 /**
  * How many collected files are hashed at once.
@@ -341,6 +344,17 @@ async function collectOne(input: CollectOneInput): Promise<void> {
     );
 }
 
+/**
+ * Refuses the config a snapshot hands back when the connection of a customer may not read it,
+ * the checks `resolveAdapterConfig` runs for the configured one.
+ */
+async function assertSnapshotReach(tenantId: string | undefined, adapterId: string, config: Record<string, unknown>): Promise<void> {
+    if (!tenantId || tenantId === HOME_TENANT_ID) return;
+    const reason = hostLocalReason(adapterId, config);
+    if (reason) throw new Error(reason);
+    await assertTenantReach(tenantId, adapterId, config);
+}
+
 interface PreparedGroup {
     /** What the collection reads through: the plain config, or one overlaid with a snapshot. */
     readConfig: Record<string, unknown>;
@@ -418,10 +432,18 @@ async function acquireGroupSnapshot(ctx: RunnerContext, group: CollectionGroup):
     };
     ctx.shadowCopies = ctx.shadowCopies ?? [];
     ctx.shadowCopies.push(record);
+
+    // What a snapshot hands back, like the share a file server exposes a shadow copy under, is
+    // read like the configured connection: never the server DBackup runs on for a customer, and
+    // not the local network its tenant blocks. The handle is parked above, so stepCleanup releases it.
+    const readConfig = { ...config, ...handle.configOverride };
+    if (Object.keys(handle.configOverride ?? {}).length > 0) {
+        await assertSnapshotReach(source.tenantId, adapter.id, readConfig);
+    }
     ctx.log(`${logPrefix} Reading from ${nounOf(handle)} ${handle.label}`, 'info', 'storage');
 
     return {
-        readConfig: { ...config, ...handle.configOverride },
+        readConfig,
         release: async () => {
             if (record.released) return;
             try {

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { TenantViewProvider, type TenantView } from "@/components/tenant/tenant-view";
 import type { DatabaseOverview } from "@/services/databases/database-explorer-types";
 import { destination, file, job, run, stored } from "../storage/explorer-fixtures";
-import { dbRun, onPhone, overview, serve } from "./database-fixtures";
+import { dbRun, fetchMock, onPhone, overview, serve } from "./database-fixtures";
 
 let search = new URLSearchParams();
 let pathname = "/dashboard/explorer";
@@ -78,9 +78,11 @@ describe("the Database Explorer in All tenants", () => {
         await user.click(await screen.findByRole("option", { name: /Acme GmbH/ }));
         await user.keyboard("{Escape}");
 
+        // The server narrows the list, and the page asks it again.
+        await waitFor(() => expect(screen.queryByRole("link", { name: "erp" })).not.toBeInTheDocument());
         expect(screen.getByRole("link", { name: "shop" })).toBeInTheDocument();
         expect(screen.getByRole("link", { name: "analytics" })).toBeInTheDocument();
-        expect(screen.queryByRole("link", { name: "erp" })).not.toBeInTheDocument();
+        expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/api/databases/list?") && String(url).includes("tenant=acme"))).toBe(true);
     });
 
     it("opens a database in its tenant, from its name and from its menu", async () => {

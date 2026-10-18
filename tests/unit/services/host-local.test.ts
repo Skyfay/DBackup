@@ -45,6 +45,25 @@ describe("connections that reach the server DBackup runs on", () => {
         expect(reaches("mongodb", { connectionMode: "ssh", sshAuthType: "password", uri: "mongodb://localhost" })).toBe(false);
     });
 
+    it("counts a socket in any entry of a PostgreSQL host list, an abstract socket and an empty entry too", () => {
+        expect(reaches("postgres", { host: "db.customer,/var/run/postgresql" })).toBe(true);
+        expect(reaches("postgres", { host: "db.customer, /tmp" })).toBe(true);
+        expect(reaches("postgres", { host: "@pg-abstract" })).toBe(true);
+        expect(reaches("postgres", { host: "db.customer,@pg" })).toBe(true);
+        expect(reaches("postgres", { host: "db.customer," })).toBe(true);
+        // A list of servers of their own, and every entry over SSH, stay alone.
+        expect(reaches("postgres", { host: "db1.customer,db2.customer" })).toBe(false);
+        expect(reaches("postgres", { host: "db1.customer,/var/run/postgresql", connectionMode: "ssh", sshAuthType: "password" })).toBe(false);
+    });
+
+    it("counts a MongoDB host that names a socket file, plain or encoded", () => {
+        expect(reaches("mongodb", { host: "mongodb-27017.sock" })).toBe(true);
+        expect(reaches("mongodb", { host: "%2Ftmp%2Fmongodb-27017.sock" })).toBe(true);
+        expect(reaches("mongodb", { host: "db.customer,%2ftmp%2fm.sock" })).toBe(true);
+        expect(reaches("mongodb", { host: "mongodb://user:pw@db.customer:27017/x.sock" })).toBe(false);
+        expect(reaches("mongodb", { host: "sock.customer" })).toBe(false);
+    });
+
     it("leaves a database on a server of its own alone", () => {
         for (const adapterId of ["mysql", "mariadb", "postgres", "mongodb", "mssql", "azure-sql", "redis", "valkey", "firebird"]) {
             expect(reaches(adapterId, { host: "db.customer", port: 1234, user: "backup" })).toBe(false);

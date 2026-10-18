@@ -14,6 +14,7 @@ import { apiKeyTemplate, type ApiKeyTemplate } from "@/lib/auth/api-key-template
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { freeGroupName } from "@/lib/auth/group-templates";
 import { areaChanges, describeChange, keyAreas, knownKeyPermissions } from "@/lib/auth/permission-areas";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { useTenantView } from "@/components/tenant/tenant-view";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -26,6 +27,9 @@ import { ApiKeyStart, type ApiKeyStartChoice } from "./api-key-start";
 const log = logger.child({ component: "api-key-form-dialog" });
 
 export type ApiKeyFormMode = { kind: "create" } | { kind: "edit"; key: ApiKeyRow };
+
+/** The areas of the home tenant's rights of the platform, offered only to an owner who holds one of them. */
+const OWNER_ONLY_AREAS = new Set(["platform-tenants", "platform-accounts"]);
 
 interface ApiKeyFormDialogProps {
     open: boolean;
@@ -129,26 +133,32 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
     const taken = useMemo(() => keys.filter((entry) => entry.id !== key?.id).map((entry) => entry.name), [keys, key]);
     const [initial] = useState(() => initialOf(mode, start, taken, viewer, presetName));
     const [name, setName] = useState(initial.name);
-    // A key in a tenant that shares databases may share them too, for a hosting panel, see `keyAreas`.
+    // A key in a tenant that shares databases may share them too, for a hosting panel, and a key of
+    // the home tenant may manage the tenants and the accounts, for the automation of an MSP, see `keyAreas`.
     const { activeTenantId, tenants, tenantCount } = useTenantView();
     const tenantShares = (tenantCount ?? tenants.length) > 1 && tenants.some((tenant) => tenant.id === activeTenantId && tenant.sharesWithCustomers);
-    const areas = useMemo(() => keyAreas(tenantShares), [tenantShares]);
-    const [held, setHeld] = useState<Set<string>>(() => new Set(knownKeyPermissions(initial.permissions, tenantShares)));
-    const [expiry, setExpiry] = useState<{ choice: ExpiryChoice; date: Date | null }>({ choice: initial.choice, date: initial.date });
-    const [problem, setProblem] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
-
+    const homeTenant = activeTenantId === HOME_TENANT_ID;
     // A key never gets more than the group of its owner may do, and nobody hands out more than they may do.
     const owner = key?.owner;
     const ownerAllows = useMemo(() => (key ? new Set(key.ownerPermissions) : viewer), [key, viewer]);
+    const [startHeld] = useState<Set<string>>(() => new Set(knownKeyPermissions(initial.permissions, tenantShares, homeTenant)));
+    const [held, setHeld] = useState<Set<string>>(startHeld);
+    // The tenants and the accounts show only where the owner holds one of them, or the key does already.
+    const areas = useMemo(
+        () => keyAreas(tenantShares, homeTenant).filter((area) => !OWNER_ONLY_AREAS.has(area.id) || area.permissions.some((permission) => ownerAllows.has(permission.id) || startHeld.has(permission.id))),
+        [tenantShares, homeTenant, ownerAllows, startHeld]
+    );
+    const [expiry, setExpiry] = useState<{ choice: ExpiryChoice; date: Date | null }>({ choice: initial.choice, date: initial.date });
+    const [problem, setProblem] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
     const lockedReason = (permission: string) => {
         if (!ownerAllows.has(permission)) return key && !key.isMine ? `The group of ${owner?.name} may not, so the key may not either` : "Your group may not, so no key of yours may";
         if (!viewer.has(permission)) return "Your group may not, so you cannot give it to a key";
         return null;
     };
 
-    const before = useMemo(() => new Set(knownKeyPermissions(initial.permissions, tenantShares)), [initial, tenantShares]);
-    const changes = useMemo(() => areaChanges(before, held), [before, held]);
+    const before = startHeld;
+    const changes = useMemo(() => areaChanges(before, held, areas), [before, held, areas]);
     const renamed = key !== null && name.trim() !== key.name;
     const expiresAt = expiryOf(expiry.choice, expiry.date);
     // An untouched date is the stored one, a span counts from now and always changes it.

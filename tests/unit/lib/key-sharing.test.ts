@@ -40,4 +40,34 @@ describe("what an API key may carry of the platform", () => {
             .toEqual([PERMISSIONS.JOBS.READ, PERMISSIONS.SETTINGS.WRITE, PERMISSIONS.PLATFORM.SHARING_WRITE]);
         expect(knownKeyPermissions([PERMISSIONS.PLATFORM.SHARING_WRITE], false)).toEqual([]);
     });
+
+    it("carries the tenants and the accounts in a key of the home tenant only, as far as the owner holds them", () => {
+        const manager = {
+            ...technician,
+            platformGroup: { ...technician.platformGroup, platformPermissions: JSON.stringify([PERMISSIONS.SETTINGS.WRITE, PERMISSIONS.PLATFORM.TENANTS_WRITE, PERMISSIONS.PLATFORM.ACCOUNTS_READ, PERMISSIONS.PLATFORM.SIGN_IN_READ]) },
+        };
+        const home = ownerPermissionsIn(manager, "default", false);
+        expect(home).toEqual(expect.arrayContaining([PERMISSIONS.PLATFORM.TENANTS_WRITE, PERMISSIONS.PLATFORM.ACCOUNTS_READ]));
+        // What the platform group does not give stays out, and so do the settings and the sign-in.
+        expect(home).not.toContain(PERMISSIONS.PLATFORM.TENANTS_READ);
+        expect(home).not.toContain(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
+        expect(home).not.toContain(PERMISSIONS.PLATFORM.SIGN_IN_READ);
+        expect(home).not.toContain(PERMISSIONS.SETTINGS.WRITE);
+
+        expect(ownerPermissionsIn(manager, "acme", true)).not.toContain(PERMISSIONS.PLATFORM.TENANTS_WRITE);
+        expect(ownerPermissionsIn({ platformRole: PLATFORM_ADMIN_ROLE, memberships: [] }, "default", false)).toEqual(expect.arrayContaining([PERMISSIONS.PLATFORM.TENANTS_WRITE, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE]));
+        expect(ownerPermissionsIn({ platformRole: PLATFORM_ADMIN_ROLE, memberships: [] }, "acme", false)).not.toContain(PERMISSIONS.PLATFORM.TENANTS_READ);
+    });
+
+    it("offers and keeps the tenants and the accounts in the key editor of the home tenant only", () => {
+        const home = keyAreas(false, true).map((area) => area.id);
+        expect(home).toEqual(expect.arrayContaining(["platform-tenants", "platform-accounts"]));
+        expect(home).not.toContain("platform-sign-in");
+        expect(home.filter((id) => id === "settings")).toHaveLength(1);
+        expect(keyAreas(true, false).map((area) => area.id)).not.toContain("platform-tenants");
+
+        const stored = [PERMISSIONS.PLATFORM.TENANTS_WRITE, PERMISSIONS.PLATFORM.SIGN_IN_READ, PERMISSIONS.PLATFORM.ACCOUNTS_READ];
+        expect(knownKeyPermissions(stored, false, true)).toEqual([PERMISSIONS.PLATFORM.TENANTS_WRITE, PERMISSIONS.PLATFORM.ACCOUNTS_READ]);
+        expect(knownKeyPermissions(stored, true, false)).toEqual([]);
+    });
 });

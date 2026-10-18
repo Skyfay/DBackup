@@ -11,7 +11,7 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
-| **Address** | UNC share path (e.g. `//server/share`) | - | ✅ |
+| **Address** | UNC share path, `//server/share` or `\\server\share` | - | ✅ |
 | **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
 | **Domain** | Windows domain / workgroup | - | ❌ |
 | **Highest SMB version** | Highest SMB protocol version to use | `SMB3` | ❌ |

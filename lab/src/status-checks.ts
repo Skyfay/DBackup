@@ -9,6 +9,7 @@ import { devDatabaseFile } from "./app-env";
 import { REPO_ROOT, type LabConfig } from "./config";
 import { attempt } from "./docker";
 import { localBackupDir } from "./folders";
+import { LAB_SUPPORT, LAB_TENANTS } from "./tenants";
 
 export type Mark = "ok" | "warn" | "fail" | "info";
 
@@ -87,10 +88,118 @@ export async function checkDevDatabase(config: LabConfig, workspace: string): Pr
         } else if (folder) {
             section.rows.push({ mark: "ok", name: "backups", detail: `go to ${folder} and the folders of ${workspace} on every server` });
         }
+
+        // The customers span tenants, so they are read in the system scope.
+        const { runAsSystem } = await import("@/lib/tenant/context");
+        const customers = customerRows(await runAsSystem(() => readCustomers(prisma as unknown as CustomerReader)));
+        section.rows.push(...customers.rows);
+        section.next.push(...customers.next);
         return section;
     } finally {
         await prisma.$disconnect();
     }
+}
+
+/** What the seed made of a customer tenant. */
+export interface CustomerFacts {
+    name: string;
+    people: string[];
+    jobs: number;
+    /** The databases of servers of other tenants it holds now. */
+    given: string[];
+    /** The destinations and channels other tenants share with it. */
+    provided: number;
+    blocks: boolean;
+    allowed: number;
+}
+
+export interface SupportFacts {
+    people: string[];
+    tenants: number;
+}
+
+export interface Customers {
+    /** In the order of `LAB_TENANTS`, null for a tenant the seed never made. */
+    tenants: (CustomerFacts | null)[];
+    support: SupportFacts | null;
+}
+
+type Counted = { tenantId: string; _count: { _all: number } }[];
+
+/** The part of the Prisma client the read of the customers takes. */
+export interface CustomerReader {
+    tenant: { findMany(args: object): Promise<{ id: string; name: string; blocksLocalNetwork: boolean; allowedNetworks: string; memberships: { user: { email: string } }[] }[]> };
+    job: { groupBy(args: object): Promise<Counted> };
+    databaseAssignment: { findMany(args: object): Promise<{ tenantId: string | null; databaseName: string }[]> };
+    connectionShareTenant: { groupBy(args: object): Promise<Counted> };
+    platformGroup: { findFirst(args: object): Promise<{ members: { email: string }[]; tenants: { tenantId: string }[] } | null> };
+}
+
+const customerNames = () => Object.values(LAB_TENANTS).map((tenant) => tenant.name);
+
+/** Reads the customers of the seed and its platform group. Runs in the system scope, since they span tenants. */
+export async function readCustomers(client: CustomerReader): Promise<Customers> {
+    const names = customerNames();
+    const rows = await client.tenant.findMany({
+        where: { name: { in: names } },
+        select: { id: true, name: true, blocksLocalNetwork: true, allowedNetworks: true, memberships: { select: { user: { select: { email: true } } } } },
+    });
+    const ids = rows.map((row) => row.id);
+    const [jobs, given, provided, group] = await Promise.all([
+        client.job.groupBy({ by: ["tenantId"], where: { tenantId: { in: ids } }, _count: { _all: true } }),
+        client.databaseAssignment.findMany({ where: { tenantId: { in: ids }, validUntil: null }, select: { tenantId: true, databaseName: true } }),
+        client.connectionShareTenant.groupBy({ by: ["tenantId"], where: { tenantId: { in: ids } }, _count: { _all: true } }),
+        client.platformGroup.findFirst({ where: { name: LAB_SUPPORT.group }, select: { members: { select: { email: true } }, tenants: { select: { tenantId: true } } } }),
+    ]);
+    const count = (list: Counted, id: string) => list.find((entry) => entry.tenantId === id)?._count._all ?? 0;
+    const tenants = names.map((name): CustomerFacts | null => {
+        const row = rows.find((candidate) => candidate.name === name);
+        if (!row) return null;
+        let allowed: unknown;
+        try {
+            allowed = JSON.parse(row.allowedNetworks);
+        } catch {
+            allowed = [];
+        }
+        return {
+            name,
+            people: row.memberships.map((membership) => membership.user.email),
+            jobs: count(jobs, row.id),
+            given: [...new Set(given.filter((entry) => entry.tenantId === row.id).map((entry) => entry.databaseName))],
+            provided: count(provided, row.id),
+            blocks: row.blocksLocalNetwork,
+            allowed: Array.isArray(allowed) ? allowed.length : 0,
+        };
+    });
+    return { tenants, support: group ? { people: group.members.map((member) => member.email), tenants: group.tenants.length } : null };
+}
+
+const plural = (count: number, one: string) => `${count} ${count === 1 ? one : `${one}s`}`;
+
+/** A row per customer of the seed and one for its platform group, with the seed as the next step while one is missing. */
+export function customerRows(customers: Customers): { rows: Row[]; next: string[] } {
+    const names = customerNames();
+    const rows: Row[] = customers.tenants.map((tenant, index): Row => {
+        if (!tenant) return { mark: "warn", name: names[index], detail: "no such tenant yet" };
+        const network = !tenant.blocks ? "reaches the local network" : tenant.allowed ? `blocks the local network but ${plural(tenant.allowed, "range")}` : "blocks the local network";
+        const parts = [
+            tenant.people.join(", ") || "nobody works here",
+            ...(tenant.jobs ? [plural(tenant.jobs, "job")] : []),
+            ...(tenant.given.length ? [`${tenant.given.join(", ")} given to it`] : []),
+            ...(tenant.provided ? [`${plural(tenant.provided, "connection")} shared with it`] : []),
+            network,
+        ];
+        return { mark: tenant.people.length ? "ok" : "warn", name: tenant.name, detail: parts.join(", ") };
+    });
+    const support = customers.support;
+    rows.push(support
+        ? { mark: support.people.length ? "ok" : "warn", name: LAB_SUPPORT.group, detail: `${support.people.join(", ") || "nobody in it"}, platform group of ${plural(support.tenants, "tenant")}` }
+        : { mark: "warn", name: LAB_SUPPORT.group, detail: "no such platform group yet" });
+    if (rows.some((row) => row.mark === "warn")) {
+        return { rows, next: [`pnpm lab:seed    adds the customers ${names.join(" and ")} with a person each and the platform group ${LAB_SUPPORT.group}`] };
+    }
+    rows.push({ mark: "info", name: "people", detail: "each signs in with the password of the admin in the lab config" });
+    return { rows, next: [] };
 }
 
 interface Tool {

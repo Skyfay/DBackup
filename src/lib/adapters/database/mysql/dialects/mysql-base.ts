@@ -3,6 +3,7 @@ import { MySQLConfig } from "@/lib/adapters/definitions";
 import type { ExecutionHost } from "@/lib/transport";
 import { buildConnectionArgs } from "../args";
 import { contentArgs, optionTokens, type DumpClient } from "../dump-content";
+import { assertDatabaseArgument } from "@/lib/adapters/database/common/database-name";
 
 export class MySQLBaseDialect extends BaseDialect {
     /** `client` is the dump tool that runs, which decides the flags only MySQL's own mysqldump knows. */
@@ -20,7 +21,8 @@ export class MySQLBaseDialect extends BaseDialect {
 
         // Single database dump (Multi-DB is handled via TAR in dump.ts)
         if (databases.length === 1) {
-            args.push('--databases', databases[0]);
+            // A name, never an option, see `database-name.ts`.
+            args.push('--databases', assertDatabaseArgument(databases[0]));
         }
 
         return args;
@@ -35,11 +37,10 @@ export class MySQLBaseDialect extends BaseDialect {
 
         this.appendAuthArgs(args, config, client);
 
-        // Target DB is usually passed in the stream, but some tools need it in CLI
-        // For mysql client, if we want to force restoration into a specific DB, we append it.
-        // BUT: if the dump contains `USE dbname;`, this might be overridden.
+        // The target database as the value of --database, so the client reads it as a name and
+        // never as an option, whatever it starts with. A `USE dbname;` in the dump still wins.
         if (targetDatabase) {
-           args.push(targetDatabase);
+            args.push(`--database=${assertDatabaseArgument(targetDatabase)}`);
         }
 
         return args;

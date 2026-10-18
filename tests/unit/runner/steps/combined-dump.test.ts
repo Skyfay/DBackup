@@ -17,6 +17,12 @@ vi.mock('@/lib/prisma', () => ({
     },
 }));
 
+/** The local network check of the tenant of a connection, which passes unless a test says otherwise. */
+const reachMock = vi.hoisted(() => vi.fn());
+vi.mock('@/services/tenant/tenant-network', () => ({
+    assertTenantReach: (...args: unknown[]) => reachMock(...args),
+}));
+
 vi.mock('@/lib/adapters/config-resolver', () => ({
     resolveAdapterConfig: vi.fn(async (config: unknown) => ({ ...(config as Record<string, unknown>) })),
 }));
@@ -615,6 +621,51 @@ describe('executeCombinedDump - shadow copies', () => {
             expect.any(Function),
         );
         expect(createSnapshot).toHaveBeenCalledTimes(1);
+    });
+
+    it('checks the share a snapshot names like the configured one, in the tenant of the connection', async () => {
+        reachMock.mockResolvedValue(undefined);
+        const { adapter } = snapshotSource();
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, tenantId: 'acme', config: { address: '//server/share', useVss: true } })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(reachMock).toHaveBeenCalledWith('acme', 'sftp', expect.objectContaining({ address: '//server/share@snap' }));
+    });
+
+    it('reads nothing through a snapshot whose share the tenant may not reach, and leaves it for cleanup', async () => {
+        reachMock.mockRejectedValueOnce(new Error('Acme reaches no address of the local network, 10.0.0.9 is one.'));
+        const { adapter } = snapshotSource();
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, tenantId: 'acme', config: { address: '//server/share', useVss: true } })],
+            job: makeJob({ source: null }),
+        });
+
+        await expect(executeCombinedDump(ctx)).rejects.toThrow(/reaches no address of the local network/);
+        expect(adapter.downloadDirectory).not.toHaveBeenCalled();
+        expect(ctx.shadowCopies).toHaveLength(1);
+        expect(ctx.shadowCopies![0].released).toBe(false);
+    });
+
+    it('checks no snapshot of the home tenant', async () => {
+        reachMock.mockClear();
+        const { adapter } = snapshotSource();
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, tenantId: 'default', config: { address: '//server/share', useVss: true } })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(reachMock).not.toHaveBeenCalled();
     });
 
     it('leaves a source without the option completely alone', async () => {

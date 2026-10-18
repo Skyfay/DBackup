@@ -96,7 +96,7 @@ export function JobsUpcoming({ jobs, allJobs, timeline, onOpenJob }: JobsUpcomin
     const horizon = horizonOf(zoom);
     const span = ZOOMS.find((entry) => entry.value === zoom)?.span ?? "24 hours";
     const byId = useMemo(() => new Map(allJobs.map((job) => [job.id, job])), [allJobs]);
-    const names = useMemo(() => new Map(allJobs.map((job) => [job.id, job.name])), [allJobs]);
+    const names = useMemo(() => new Map([...Object.entries(data?.names ?? {}), ...allJobs.map((job) => [job.id, job.name] as const)]), [allJobs, data]);
     const agenda = useMemo(() => (data ? agendaOf(data, jobs.map((job) => job.id), horizon, clock.dayStart) : null), [data, jobs, horizon, clock]);
     const now = data ? Date.parse(data.now) : 0;
 

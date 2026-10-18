@@ -131,6 +131,25 @@ describe("the keys of the API keys tab", () => {
     });
 });
 
+describe("a key with rights of the platform", () => {
+    it("is listed as a platform key while it stores a right on the tenants or the accounts", () => {
+        const root = { ...manu, id: "root", platformRole: "ADMIN" };
+        const model = build({
+            keys: [
+                key({ id: "k-msp", name: "MSP automation", permissions: JSON.stringify(["platform-tenants:write", "platform-tenants:read"]), user: root }),
+                key({ id: "k-panel", name: "Hosting panel", permissions: JSON.stringify(["platform-sharing:write"]), user: root }),
+                key({ id: "k-ci", name: "CI pipeline" }),
+            ],
+        });
+        const platform = (id: string) => model.keys.find((row) => row.id === id)?.platform;
+
+        expect(platform("k-msp")).toBe(true);
+        expect(platform("k-panel")).toBe(false);
+        expect(platform("k-ci")).toBe(false);
+        expect(model.keys.find((row) => row.id === "k-msp")?.effective).toEqual(["platform-tenants:write", "platform-tenants:read"]);
+    });
+});
+
 describe("the names a key had before", () => {
     it("reads each rename from the audit log with when it happened", () => {
         const audit = [

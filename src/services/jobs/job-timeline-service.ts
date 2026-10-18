@@ -37,7 +37,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
     const to = new Date(now.getTime() + TIMELINE_REACH_MS);
     const viewer = await queueViewer();
     const [jobs, executions, history, timezone, slots, others] = await Promise.all([
-        prisma.job.findMany({ select: { id: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } } } }),
+        prisma.job.findMany({ select: { id: true, name: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } } } }),
         prisma.execution.findMany({
             where: { type: "Backup", jobId: { not: null }, OR: [{ startedAt: { gte: from } }, { status: { in: ["Running", "Pending"] } }] },
             orderBy: { startedAt: "asc" },
@@ -132,7 +132,15 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
             };
         });
 
-    const timeline: JobTimeline = { now: now.toISOString(), from: from.toISOString(), to: to.toISOString(), slots, estimates, failing, runs, planned, truncated };
+    const jobNames = new Map(jobs.map((job) => [job.id, job.name]));
+    const names: Record<string, string> = {};
+    for (const entry of [...runs, ...planned]) {
+        for (const jobId of entry.waitsFor) {
+            const name = jobNames.get(jobId);
+            if (name) names[jobId] = name;
+        }
+    }
+    const timeline: JobTimeline = { now: now.toISOString(), from: from.toISOString(), to: to.toISOString(), slots, estimates, failing, runs, planned, truncated, names };
     if (!viewer) return timeline;
     // A run that waits counts from when it was due, like the Every job row counts the bars.
     const spanOf = (item: QueueItem): Span => ({ from: item.due, to: plan.get(item.key)?.end ?? item.due });

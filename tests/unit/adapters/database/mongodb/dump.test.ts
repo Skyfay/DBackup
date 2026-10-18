@@ -120,6 +120,12 @@ describe.each<HostKind>(["direct", "ssh"])("MongoDB dump over a %s host", (kind)
     });
 
     describe("dumpOne()", () => {
+        it("runs no mongodump for a database name that starts with -", async () => {
+            const host = dumpHost(kind);
+            await expect(dumpOne(baseConfig as never, "--out=/tmp", "/tmp/x.archive", host)).rejects.toThrow(/starts with -/);
+            expect(host.calls.spawn).toHaveLength(0);
+        });
+
         it("writes a plain archive with no TAR wrapping", async () => {
             const result = await dumpOne(baseConfig as never, "shop", "/tmp/shop.archive", dumpHost(kind));
 

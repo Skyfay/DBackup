@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
+import type { SortingState } from "@tanstack/react-table";
 import { Database, Layers, RefreshCw, Server, ShieldCheck, ShieldOff, Table2 } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
@@ -15,9 +15,10 @@ import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { useTenantColumns } from "@/components/tenant/tenant-column";
 import { useMayAdd, useTenantView } from "@/components/tenant/tenant-view";
-import { withTenantColumn } from "@/components/tenant/tenant-rows";
+import { withTenantColumn, withTenantCounts } from "@/components/tenant/tenant-rows";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
+import { ListCap } from "@/components/ui/list-cap";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -26,16 +27,16 @@ import type { ViewMode } from "@/lib/core/table-preferences";
 import { cn, formatBytes } from "@/lib/utils";
 import type { DatabaseOverview, ExplorerDatabase } from "@/services/databases/database-explorer-types";
 import { databaseColumns, engineOf } from "./database-columns";
-import { readNow, useDatabaseData } from "./database-data";
+import { readNow, useDatabasePage } from "./database-data";
 import { DatabaseDayPanel, type DayPanelAccess, type DayPick } from "./database-day-panel";
 import { DatabaseCard, DatabasesEmpty, DatabasesSkeleton, databaseFilters } from "./database-list-parts";
-import { databaseHref, explorerAttention, freshnessOf, summarize } from "./database-model";
+import { databaseHref, explorerAttention, freshnessOf } from "./database-model";
 import { DatabasesTimeline } from "./databases-timeline";
 import { databaseActions } from "./explorer-actions";
 import { DATABASES_PAGE_ID } from "./explorer-ids";
 import { ExplorerTabs, type ExplorerTab } from "./explorer-tabs";
 import { ServerFreshness } from "./server-freshness";
-import { ServersTab } from "./servers-tab";
+import { ServersOfOverview } from "./servers-tab";
 
 const VIEWS: ViewMode[] = ["table", "timeline"];
 
@@ -52,23 +53,28 @@ interface DatabaseExplorerProps extends DayPanelAccess {
  * database as a page of its own, with its tables and their rows read live, and a day of the
  * timeline shows its backups in a panel beside it. The Servers tab lists the servers, see
  * `ServersTab`. The list comes from what DBackup read from the servers last, so the page opens
- * without asking one. The tab and the picked day live in the address.
+ * without asking one, a page at a time from the server, which searches, filters and sorts it. The
+ * tab and the picked day live in the address.
  */
 export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerProps) {
     const { canOpenBackups } = access;
     const router = useRouter();
     const searchParams = useSearchParams();
-    const overview = useDatabaseData<DatabaseOverview>("/api/databases");
-    const data = overview.data;
     const [view, setView] = useState<ViewMode>(VIEWS.includes(initialView) ? initialView : "table");
     const [sorting, setSorting] = useState<SortingState>([{ id: "size", desc: true }]);
-    // A link from a connection names it, and the list starts filtered to its databases.
-    const [filters, setFilters] = useState<ColumnFiltersState>(() => {
+    const isMobile = useIsMobileState();
+    const [initialFilters] = useState(() => {
+        // A link from a connection names it, and the list starts filtered to its databases.
         const sourceId = searchParams.get("sourceId");
         return sourceId ? [{ id: "server", value: [sourceId] }] : [];
     });
+    // The timeline draws the databases the search and the filters leave at once, the table a page.
+    // It waits for the measured screen, which decides between the table and the timeline.
+    const list = useDatabasePage({ sorting, timeline: view === "timeline" && isMobile === false, initialFilters, enabled: isMobile !== undefined });
+    const data = list.page;
     // In All tenants the list holds the databases of every tenant, and one opens in its tenant.
-    const { allTenants, nameOf, column: tenantColumn, filter: tenantFilter } = useTenantColumns(tenantOfDatabase, data?.databases);
+    // Without rows, since the server pages the list, the Tenant filter offers every tenant.
+    const { allTenants, nameOf, column: tenantColumn, filter: tenantFilter } = useTenantColumns(tenantOfDatabase);
     const openRecord = useOpenRecord();
     const open = useCallback((database: ExplorerDatabase) => {
         const href = databaseHref(database);
@@ -95,7 +101,6 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
     // From xl the panel sits beside the timeline, on smaller screens the timeline needs the width.
     const docked = useMediaQuery("(min-width: 1280px)");
 
-    const isMobile = useIsMobileState();
     // The platform may not let the tenant add a database itself, then the empty list says who does.
     const mayAddDatabases = useMayAdd("databases");
     const { platformName } = useTenantView();
@@ -113,7 +118,9 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
 
     const serversById = useMemo(() => new Map((data?.servers ?? []).map((server) => [server.id, server])), [data]);
     const jobsById = useMemo(() => new Map((data?.jobs ?? []).map((job) => [job.id, job])), [data]);
-    const summary = useMemo(() => (data ? summarize(data) : null), [data]);
+    const summary = data?.summary ?? null;
+    // The rows of the page with their servers and jobs, as the panel of a day reads them.
+    const shownOverview = useMemo<DatabaseOverview | null>(() => (data ? { servers: data.servers, databases: list.rows, jobs: data.jobs, coverage: data.coverage } : null), [data, list.rows]);
 
     const groupsFor = useCallback((database: ExplorerDatabase) => databaseActions(database, {
         coverage,
@@ -130,29 +137,35 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
         biggest: summary?.biggest?.sizeInBytes ?? 0,
         renderActions: (database) => <BackupRowMenu name={database.name} groups={groupsFor(database)} />,
     }), tenantColumn), [serversById, jobsById, coverage, summary, groupsFor, tenantColumn]);
-    const filterableColumns = useMemo(() => (data ? [...databaseFilters(data), ...(tenantFilter ? [tenantFilter] : [])] : []), [data, tenantFilter]);
+    const tenantCounts = data?.facets.tenant;
+    const filterableColumns = useMemo(() => (data
+        ? [
+            ...databaseFilters(data),
+            ...(tenantFilter ? [withTenantCounts(tenantFilter, tenantCounts)] : []),
+        ]
+        : []), [data, tenantFilter, tenantCounts]);
 
-    const { reload } = overview;
+    const { refresh } = list;
     const read = useCallback(async () => {
         try {
             await readNow();
         } catch (error: unknown) {
             toast.error(error instanceof Error ? error.message : "The servers could not be read.");
         }
-        reload();
-    }, [reload]);
+        refresh();
+    }, [refresh]);
 
     // Waits for the measured screen too, so a phone never flashes the table before its cards.
-    if (overview.loading || isMobile === undefined) return <DatabasesSkeleton />;
-    if (!data || !summary) {
+    if ((!list.loaded && !data) || isMobile === undefined) return <DatabasesSkeleton />;
+    if (!data || !summary || !shownOverview) {
         return (
             <DatabasesEmpty title="The databases could not be loaded">
-                {overview.error ?? "Something went wrong."}{" "}
-                <Button variant="link" className="h-auto p-0" onClick={overview.reload}>Try again</Button>
+                {list.error ?? "Something went wrong."}{" "}
+                <Button variant="link" className="h-auto p-0" onClick={list.refresh}>Try again</Button>
             </DatabasesEmpty>
         );
     }
-    if (data.servers.length === 0) {
+    if (data.serverList.length === 0) {
         return (
             <DatabasesEmpty title="No database connections yet">
                 {mayAddDatabases
@@ -167,7 +180,7 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
             <DatabaseDayPanel
                 frame={frame}
                 pick={pick}
-                overview={data}
+                overview={shownOverview}
                 access={access}
                 onRun={(run) => setPick({ ...pick, run })}
                 onShow={(day, run) => setPick({ key: pick.key, day, run })}
@@ -176,11 +189,10 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
         )
         : null;
     const [storedValue, storedUnit] = formatBytes(summary.size, 1).split(" ");
-    const oldestRead = freshnessOf(data.servers).oldest;
-    const neverRead = data.databases.length === 0 && data.servers.every((server) => !server.readAt);
+    const oldestRead = freshnessOf(data.serverList).oldest;
+    const neverRead = summary.databases === 0 && data.serverList.every((server) => !server.readAt);
     // The keys of an instance are no tables.
-    const keyStores = [...new Set(data.databases.filter((database) => database.kind === "instance").map((database) => serversById.get(database.serverId)?.adapterId ?? ""))]
-        .map((adapterId) => kindNames.get(adapterId) ?? adapterId);
+    const keyStores = data.keyStores.map((adapterId) => kindNames.get(adapterId) ?? adapterId);
 
     // The day beside the timeline docks beside the whole card, tabs and numbers included, from xl up.
     const dayBeside = tab === "databases" && !neverRead && dayPanel && docked;
@@ -188,8 +200,8 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
     return (
         <div className={cn(dayBeside && "flex items-start gap-4 md:gap-6")}>
             <div className="min-w-0 flex-1 space-y-4 md:space-y-0">
-                <ExplorerTabs tab={tab} attention={explorerAttention(data, summary, coverage)} onTab={setTab}>
-                    <ServerFreshness servers={data.servers} onReadNow={read} />
+                <ExplorerTabs tab={tab} attention={explorerAttention({ servers: data.serverList }, summary, coverage)} onTab={setTab}>
+                    <ServerFreshness servers={data.serverList} onReadNow={read} />
                     {coverage && tab === "databases" && (
                         // Hidden by CSS rather than by the measured screen, so it does not pop in after loading.
                         <div className="hidden md:block">
@@ -199,7 +211,7 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
                 </ExplorerTabs>
 
                 {tab === "servers" ? (
-                    <ServersTab overview={data} canOpenBackups={canOpenBackups} cards={isMobile} />
+                    <ServersOfOverview canOpenBackups={canOpenBackups} cards={isMobile} />
                 ) : neverRead ? (
                     <DatabasesEmpty joined title="The servers have not been read yet">
                         DBackup reads the databases of every server once an hour.{" "}
@@ -220,7 +232,7 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
                                 },
                                 { label: "Tables", icon: Table2, value: summary.tables.toLocaleString(), extra: keyStores.length > 0 ? `the keys of ${keyStores.join(" and ")} aside` : "as the servers list them" },
                                 coverage
-                                    ? { label: "Backed up", icon: ShieldCheck, value: summary.backedUp.toLocaleString(), unit: `of ${summary.databases.toLocaleString()}`, extra: `by ${count(data.jobs.filter((job) => job.enabled).length, "job")}` }
+                                    ? { label: "Backed up", icon: ShieldCheck, value: summary.backedUp.toLocaleString(), unit: `of ${summary.databases.toLocaleString()}`, extra: `by ${count(data.enabledJobs, "job")}` }
                                     : { label: "Servers", icon: Server, value: summary.servers.toLocaleString(), extra: "database connections" },
                                 coverage
                                     ? {
@@ -237,17 +249,24 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
                         <DataTable
                             joined
                             columns={columns}
-                            data={data.databases}
+                            data={list.rows}
                             searchKey="database"
                             searchPlaceholder="Search databases"
                             filterableColumns={filterableColumns}
                             initialColumnVisibility={{ server: false, engine: false, job: false, state: false }}
-                            columnFilters={filters}
-                            onColumnFiltersChange={setFilters}
+                            manualPagination
+                            manualFiltering
+                            manualSorting
+                            pagination={list.pagination}
+                            onPaginationChange={list.setPagination}
+                            pageCount={list.pageCount}
+                            rowCount={list.total}
+                            columnFilters={list.columnFilters}
+                            onColumnFiltersChange={list.onColumnFiltersChange}
                             sorting={sorting}
                             onSortingChange={setSorting}
-                            onRefresh={overview.reload}
-                            isLoading={overview.reloading}
+                            onRefresh={list.refresh}
+                            isLoading={list.isLoading}
                             getRowId={(database) => database.key}
                             onRowClick={open}
                             view={shownView === "cards" ? "cards" : "table"}
@@ -277,13 +296,16 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
                             )}
                             aboveRows={shownView === "timeline"
                                 ? (rows) => (
-                                    <DatabasesTimeline
-                                        databases={rows.map((row) => row.original)}
-                                        servers={data.servers}
-                                        jobs={data.jobs}
-                                        picked={pick}
-                                        onPick={(key, day) => setPick(pick?.key === key && pick.day === day ? null : { key, day, run: null })}
-                                    />
+                                    <>
+                                        <ListCap shown={list.rows.length} total={list.total} noun="databases" />
+                                        <DatabasesTimeline
+                                            databases={rows.map((row) => row.original)}
+                                            servers={data.servers}
+                                            jobs={data.jobs}
+                                            picked={pick}
+                                            onPick={(key, day) => setPick(pick?.key === key && pick.day === day ? null : { key, day, run: null })}
+                                        />
+                                    </>
                                 )
                                 : undefined}
                             hideRows={shownView === "timeline"}

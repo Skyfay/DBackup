@@ -27,6 +27,10 @@ vi.mock('@/lib/prisma', () => ({
         connectionShare: {
             count: vi.fn().mockResolvedValue(0),
         },
+        // The tenant of the source, which reaches the local network. Its empty host is 127.0.0.1.
+        tenant: {
+            findUnique: vi.fn().mockResolvedValue({ name: 'Tenant', blocksLocalNetwork: false, allowedNetworks: '[]' }),
+        },
     },
 }));
 

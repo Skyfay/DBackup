@@ -24,7 +24,9 @@ describe("job overview", () => {
         (prismaMock.execution.findMany as Mock).mockImplementation((args: { where: { status?: unknown; id?: { in: string[] } } }) => {
             if (args.where.status) {
                 return Promise.resolve([
-                    { ...run("shop-3", "Running", "2026-09-23T11:59:00Z"), jobId: "shop", metadata: JSON.stringify({ stage: "Uploading", progress: 61.6 }) },
+                    { ...run("shop-3", "Running", "2026-09-23T11:59:00Z"), jobId: "shop", type: "Backup", metadata: JSON.stringify({ stage: "Uploading", progress: 61.6 }) },
+                    // A restore runs beside it, which is no run of the job.
+                    { ...run("shop-restore", "Running", "2026-09-23T11:59:30Z"), jobId: "shop", type: "Restore", metadata: null },
                 ]);
             }
             return Promise.resolve(rows.filter((row) => args.where.id?.in.includes(row.id)));

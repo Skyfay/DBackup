@@ -33,6 +33,7 @@ pnpm test:e2e:ui                       # Playwright UI mode
 | `customer` | `engines.spec.ts` | The databases of the customer server over its OpenSSH |
 | `storage` | `storage.spec.ts`, `notifications.spec.ts` | Every destination and every channel, with SQLite inside DBackup as the source |
 
+- The specs of the tenants under `tests/ui/` (`tenants*.spec.ts`) sign in each person in a browser of their own and go through `support/tenants.ts` for creating a tenant, a person, switching tenants and allowing a range of the lab network. Each makes its own tenants with names from `unique()`, so they run in any order. With a second tenant a platform admin starts in All tenants, which changes nothing, so a spec that creates a tenant calls `keepSharedSessionHome` to keep the session of the setup, which every other project shares, in the home tenant.
 - What an engine looks like, its login, its source config and how its tools read a database, comes from its file under `lab/src/engines/`. A test never repeats that.
 
 ## Rules

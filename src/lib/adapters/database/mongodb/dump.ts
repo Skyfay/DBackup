@@ -1,5 +1,6 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { MONGODUMP, buildConnectionArgs, maskSecrets } from "./args";
+import { assertDatabaseArgument } from "@/lib/adapters/database/common/database-name";
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import fs from "fs/promises";
@@ -40,7 +41,8 @@ async function dumpSingleDatabase(
     await host.captureOutput(outputPath, {}, async (hostPath) => {
         const args = [
             ...buildConnectionArgs(config),
-            "--db", dbName,
+            // A name, never an option, see `database-name.ts`.
+            "--db", assertDatabaseArgument(dbName),
             `--archive=${hostPath}`,
             "--gzip",
         ];

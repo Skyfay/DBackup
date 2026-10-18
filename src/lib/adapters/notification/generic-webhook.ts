@@ -3,6 +3,7 @@ import { GenericWebhookSchema, GenericWebhookConfig } from "@/lib/adapters/defin
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { NO_REDIRECTS, redirectRefusal } from "./http";
 
 const log = logger.child({ adapter: "generic-webhook" });
 
@@ -59,12 +60,14 @@ export const GenericWebhookAdapter: NotificationAdapter = {
                   });
 
             const method = (config.method || "POST").toUpperCase();
-            const fetchOpts: RequestInit = { method, headers };
+            const fetchOpts: RequestInit = { ...NO_REDIRECTS, method, headers };
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
             const response = await fetch(config.webhookUrl, fetchOpts);
 
+            const redirect = redirectRefusal("The webhook", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: `Webhook returned ${response.status}` };
             } else {
@@ -116,7 +119,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             }
 
             const method = (config.method || "POST").toUpperCase();
-            const fetchOpts: RequestInit = { method, headers };
+            const fetchOpts: RequestInit = { ...NO_REDIRECTS, method, headers };
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }

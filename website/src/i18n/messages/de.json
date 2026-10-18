@@ -85,14 +85,17 @@
     "q7": "Unter welcher Lizenz steht DBackup?",
     "a7": "GPL-3.0. Der Quellcode ist vollständig offen und auf GitHub verfügbar.",
     "q8": "Kann ich ein Backup an mehrere Speicherziele senden?",
-    "a8": "Ja. Jobs mit mehreren Zielen laden jedes Backup gleichzeitig zu mehreren Speicher-Adaptern hoch, für Redundanz oder Kopien außer Haus."
+    "a8": "Ja. Jobs mit mehreren Zielen laden jedes Backup gleichzeitig zu mehreren Speicher-Adaptern hoch, für Redundanz oder Kopien außer Haus.",
+    "q9": "Kann ein DBackup mehrere Kunden bedienen?",
+    "a9": "Ja. Mandanten halten die Verbindungen, Jobs, Backups, Schlüssel, Personen und das Audit-Log jedes Kunden getrennt, und Ihr Team arbeitet über Plattformgruppen in allen Mandanten oder in ausgewählten. Ein Mandant des MSP kann einzelne Datenbanken eines geteilten Servers an seine Kunden geben und seine Speicherziele und Kanäle mit ihnen teilen. Die Plattform legt fest, was jeder Mandant selbst anlegen darf und ob er das lokale Netzwerk erreicht. <tenants>Zur Anleitung für Mandanten</tenants>."
   },
   "home": {
     "featureDatabase": "Backups von {name}",
     "featureFiles": "Backups von Dateien und Ordnern",
     "featureEncryption": "AES-256-GCM-Verschlüsselung",
     "featureRetention": "Kompression und Aufbewahrungsregeln",
-    "featureRecovery": "Wiederherstellung ohne DBackup über das Recovery Kit"
+    "featureRecovery": "Wiederherstellung ohne DBackup über das Recovery Kit",
+    "featureTenants": "Mandanten für Managed Service Provider"
   },
   "blog": {
     "eyebrow": "Blog",
@@ -138,6 +141,10 @@
   },
   "roadmap": {
     "items": {
+      "tenants": {
+        "title": "Mandanten für MSPs",
+        "description": "Eine Instanz für viele Kunden, jeder mit eigenen Verbindungen, Jobs, Backups, Schlüsseln, Personen und Audit-Log. Plattformgruppen für das Team des MSP, Einladungslinks, Anmeldeanbieter pro Mandant, einzelne Datenbanken eines geteilten Servers für ihren Kunden, geteilte Speicherziele und Kanäle sowie eine Sperre des lokalen Netzwerks pro Mandant."
+      },
       "dbackup-agent": {
         "title": "DBackup Agent",
         "description": "Ein kleiner Container auf dem Zielhost, mit dem DBackup spricht, statt eine SSH-Sitzung zu öffnen, für Hosts, auf denen SSH-Zugang nicht infrage kommt. Dumps strömen weiterhin zu DBackup zurück und werden dort komprimiert und verschlüsselt. So verlassen der Schlüssel und die Zugangsdaten zum Speicher DBackup nie."
@@ -483,7 +490,23 @@
     "cmdExplorer": "Database Explorer öffnen",
     "cmdFailed": "Fehlgeschlagene Läufe zeigen",
     "cmdRecoveryKit": "Recovery Kit herunterladen",
-    "alertStorage": "E-Mail · Warnung zum Speicherlimit"
+    "alertStorage": "E-Mail · Warnung zum Speicherlimit",
+    "tenantsTitle": "Viele Kunden, eine Instanz",
+    "tenantsText": "Mandanten halten die Verbindungen, Jobs, Backups, Schlüssel, Personen und das Audit-Log jedes Kunden getrennt. Gebaut für MSPs, Agenturen und Hoster.",
+    "tenantsPlatformGroups": "Plattformgruppen für alle oder ausgewählte Mandanten",
+    "tenantsInvitations": "Einladungslinks und SSO pro Mandant",
+    "tenantsSharing": "Geteilte Datenbanken, Speicherziele und Kanäle",
+    "tenantsNetwork": "Lokales Netzwerk pro Mandant gesperrt",
+    "tenantsGuide": "Zur Anleitung für Mandanten",
+    "tenantsSwitcher": "Mandant wechseln",
+    "allTenants": "Alle Mandanten",
+    "tenantCount": "{count} Mandanten",
+    "tenantOf": "Mandant {index} von {total}",
+    "findTenant": "Mandant suchen",
+    "tenantStats": "{jobs} Jobs · {databases} Datenbanken",
+    "tenantShared": "{count} geteilt",
+    "sharesWithCustomers": "Teilt mit Kunden",
+    "tenantFailed": "Das neueste Backup ist fehlgeschlagen"
   },
   "liveRun": {
     "stepDump": "Datenbank nextcloud sichern",

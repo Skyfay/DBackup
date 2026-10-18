@@ -10,6 +10,7 @@ import { authService } from "@/services/auth/auth-service";
 import { userService } from "@/services/user/user-service";
 import { groupService } from "@/services/user/group-service";
 import { membershipService } from "@/services/tenant/membership-service";
+import { tenantGroupRefusal } from "@/services/tenant/member-rules";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 import { auditService } from "@/services/audit-service";
@@ -28,7 +29,6 @@ import { z } from "zod";
 
 const log = logger.child({ action: "user" });
 
-const OUTSIDER = "This account works in another tenant. Add people to this tenant with an invitation.";
 const BEYOND_TENANT = "Your platform group does not reach this tenant, and you may not manage its users.";
 
 /**
@@ -137,12 +137,8 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
     if (currentUser.allTenants) return { success: false, error: "Open a tenant, or change the group per tenant in the panel of the user." };
     if (!currentUser.tenantId) return { success: false, error: "Unauthorized" };
 
-    // Prevent self-group-change (users cannot change their own group)
-    if (currentUser.id === userId) {
-        return { success: false, error: "You cannot change your own group assignment." };
-    }
-
-    const refused = (await outsiderRefused(userId, currentUser)) ?? (await groupRefused(groupId, currentUser)) ?? (await roleTakenRefused(userId, currentUser));
+    // Nobody changes their own group, gives one to someone of another tenant, or gives or takes one beyond them.
+    const refused = await tenantGroupRefusal(currentUser, userId, groupId);
     if (refused) return { success: false, error: refused };
 
     try {
@@ -164,28 +160,6 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
         log.error("Failed to update user group", { userId }, wrapError(error));
         return { success: false, error: getErrorMessage(error) || "Failed to update user group" };
     }
-}
-
-/**
- * Why the caller may not give a group of their tenant to an account, null when they may: only to
- * the people of the tenant, see `peopleOf`, so nobody pulls an account of another tenant into theirs.
- * Others join through an invitation, or by whoever manages the tenants. A platform admin may.
- */
-async function outsiderRefused(userId: string, caller: Viewer): Promise<string | null> {
-    if (caller.isPlatformAdmin || !caller.tenantId) return null;
-    if (!(await membershipService.isPersonOf(userId, caller.tenantId))) return OUTSIDER;
-    // An account of no tenant shows in the home tenant, and one of the platform keeps its own rules.
-    return (await membershipService.isPlatformAdmin(userId)) ? "Only a platform admin changes the memberships of a platform admin." : null;
-}
-
-/**
- * Why the caller may not change the group a user holds now, null when they may: nobody takes a
- * group from someone that may do more than they may.
- */
-async function roleTakenRefused(userId: string, caller: Viewer): Promise<string | null> {
-    if (caller.isPlatformAdmin || !caller.tenantId) return null;
-    const current = await membershipService.roleOf(userId, caller.tenantId);
-    return current && roleRefusal(caller, current) ? "This user's group may do more than you may, so only someone who may do all of it changes it." : null;
 }
 
 /** Deletes a user, who waits in Recently deleted unless `permanently`. */

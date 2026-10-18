@@ -15,6 +15,20 @@ import { assertOwnRecords } from "@/lib/tenant/references";
 import { currentTenantId } from "@/lib/tenant/current";
 import { providedTo } from "@/services/sharing/provided";
 import { TENANTS_FOLDER, isTenantsFolderName } from "@/lib/tenant/storage-view";
+import { databaseNameProblem } from "@/lib/adapters/database/common/database-name";
+
+/**
+ * Refuses a database of a job that no tool reads as a database name, like one that starts with
+ * `-`, see `database-name.ts`. The adapters check it again before they pass it.
+ *
+ * @throws ValidationError naming the database.
+ */
+function assertDatabaseNames(databases: readonly unknown[] | undefined): void {
+    for (const name of databases ?? []) {
+        const problem = databaseNameProblem(name);
+        if (problem) throw new ValidationError(problem, { field: "databases" });
+    }
+}
 
 registerAdapters();
 
@@ -226,13 +240,16 @@ export class JobService {
      * destinations too, so the check does not hang on which fields an update carries.
      */
     private async assertOwnReferences(input: CreateJobInput | UpdateJobInput, jobId?: string) {
-        // A destination another tenant shares with this one is no record of its own, and fine to name.
-        const shared = await this.providedDestinations((input.destinations ?? []).map((destination) => destination.configId));
+        // A destination or a channel another tenant shares with this one is no record of its own, and fine to name.
+        const [shared, sharedChannels] = await Promise.all([
+            this.providedDestinations((input.destinations ?? []).map((destination) => destination.configId)),
+            this.providedChannels(input.notificationIds ?? []),
+        ]);
         await assertOwnRecords(prisma, {
             job: jobId ? [jobId] : [],
             adapterConfig: [
                 input.sourceId,
-                ...(input.notificationIds ?? []),
+                ...(input.notificationIds ?? []).filter((id) => !sharedChannels.has(id)),
                 ...(input.destinations ?? []).map((destination) => destination.configId).filter((id) => !shared.has(id)),
                 ...(input.sources ?? []).map((source) => source.configId),
             ],
@@ -280,6 +297,13 @@ export class JobService {
         return new Map(provided.map((connection) => [connection.id, { name: connection.name, encryptedOnly: connection.encryptedOnly }]));
     }
 
+    /** The channels of `ids` another tenant shares with the tenant of the request. */
+    private async providedChannels(ids: string[]): Promise<Set<string>> {
+        const tenantId = await currentTenantId();
+        if (!tenantId || ids.length === 0) return new Set();
+        return new Set((await providedTo(tenantId, { kind: "channel", ids })).map((channel) => channel.id));
+    }
+
     /**
      * Refuses a job called like the folder a shared destination keeps for the customers, while it
      * writes to a destination this tenant shares. Its backups would land among theirs. An update
@@ -321,6 +345,7 @@ export class JobService {
             throw new Error(`A job with the name "${name}" already exists.`);
         }
 
+        assertDatabaseNames(databases);
         await this.validateJobSources(null, sourceId || null, sources);
         await this.validateJobDestinations(destinations);
         await this.assertOwnReferences(input);
@@ -396,6 +421,8 @@ export class JobService {
                 throw new Error(`A job with the name "${name}" already exists.`);
             }
         }
+
+        assertDatabaseNames(databases);
 
         if (sourceId !== undefined || sources !== undefined) {
             await this.validateJobSources(id, sourceId !== undefined ? (sourceId || null) : undefined, sources);
@@ -607,11 +634,14 @@ export class JobService {
 
         // The copy links what the original links, read through relations the tenant filter leaves
         // alone. A link to a record of another tenant is refused rather than copied.
-        const shared = await this.providedDestinations(original.destinations.map((destination) => destination.configId));
+        const [shared, sharedChannels] = await Promise.all([
+            this.providedDestinations(original.destinations.map((destination) => destination.configId)),
+            this.providedChannels(original.notifications.map((channel) => channel.id)),
+        ]);
         await assertOwnRecords(prisma, {
             adapterConfig: [
                 original.sourceId,
-                ...original.notifications.map((channel) => channel.id),
+                ...original.notifications.map((channel) => channel.id).filter((id) => !sharedChannels.has(id)),
                 ...original.destinations.map((destination) => destination.configId).filter((id) => !shared.has(id)),
                 ...original.sources.map((source) => source.configId),
             ],

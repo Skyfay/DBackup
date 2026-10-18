@@ -1,6 +1,6 @@
 # Dev Lab
 
-Containers to develop and test DBackup against: every database engine with test data, a server for every self-hostable destination and a receiver for every notification channel, plus a seed that fills the local database of DBackup with all of it and the first user.
+Containers to develop and test DBackup against: every database engine with test data, a server for every self-hostable destination and a receiver for every notification channel, plus a seed that fills the local database of DBackup with all of it, the first user and two customer tenants.
 
 ```bash
 pnpm lab:init --email you@example.com

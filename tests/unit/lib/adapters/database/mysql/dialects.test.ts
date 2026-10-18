@@ -235,9 +235,20 @@ describe("MySQLBaseDialect.getRestoreArgs", () => {
         expect(args).not.toContain("targetdb");
     });
 
-    it("appends target database when provided", () => {
+    it("names the target database as the value of --database, never as a bare argument", () => {
         const args = dialect.getRestoreArgs(baseMySQLConfig, "targetdb");
-        expect(args).toContain("targetdb");
+        expect(args).toContain("--database=targetdb");
+        expect(args).not.toContain("targetdb");
+    });
+
+    it("keeps a name with dashes and dots inside as it is", () => {
+        expect(dialect.getRestoreArgs(baseMySQLConfig, "shop-v2.archive")).toContain("--database=shop-v2.archive");
+        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop-v2.archive"]).slice(-2)).toEqual(["--databases", "shop-v2.archive"]);
+    });
+
+    it("refuses a database name that starts with -, which a tool would read as an option", () => {
+        expect(() => dialect.getRestoreArgs(baseMySQLConfig, "--init-command=x")).toThrow(/starts with -/);
+        expect(() => dialect.getDumpArgs(baseMySQLConfig, ["--result-file=/tmp/x"])).toThrow(/starts with -/);
     });
 
     it("adds --skip-ssl when disableSsl is true", () => {

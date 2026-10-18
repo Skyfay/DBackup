@@ -4,6 +4,7 @@ import { ToneDialogCard } from "@/components/site/home/tone-dialog-card";
 import { CommandCard } from "@/components/site/home/command-card";
 import { CalendarCard } from "@/components/site/home/calendar-card";
 import { CipherCard, TeamCard } from "@/components/site/home/small-cards";
+import { TenantsCard } from "@/components/site/home/tenants-card";
 import { NOTIFICATION_CHANNELS } from "@/lib/content";
 import type { Locale } from "@/i18n/config";
 import { createTranslator, type Translator } from "@/i18n/translate";
@@ -89,6 +90,7 @@ export function Features({ locale }: { locale: Locale }) {
           <AlertsCard t={t} />
           <RetentionCard t={t} />
           <TeamCard />
+          <TenantsCard className="md:col-span-2 lg:col-span-3" />
         </div>
       </div>
     </section>

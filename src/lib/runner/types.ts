@@ -70,6 +70,8 @@ export interface DirectorySourceContext {
     jobSourceId: string;
     configId: string;
     configName: string;
+    /** The tenant of the connection, whose local network setting a config of a snapshot follows. */
+    tenantId?: string;
     adapter: StorageAdapter;
     config: Record<string, unknown>; // decrypted adapter config
     remotePath: string;

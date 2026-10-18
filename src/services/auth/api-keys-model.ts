@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { capToOwner, ownerPermissionsIn, type OwnerGroup } from "@/lib/auth/owner-permissions";
+import { capToOwner, HOME_KEY_PLATFORM_PERMISSIONS, ownerPermissionsIn, type OwnerGroup } from "@/lib/auth/owner-permissions";
 import { runsOutSoon, type ApiKeyRow, type ApiKeysModel, type ApiKeyState } from "./api-keys-types";
 
 /** The trigger a run started with an API key stores, with the name of the key as its label. */
@@ -96,6 +96,7 @@ export function buildApiKeysModel({ keys, runs, viewer, sharingTenants = new Set
                 lastRun: run ? { job: run.job?.name ?? null, at: run.startedAt.toISOString(), status: run.status } : null,
                 isMine: key.user.id === viewer.id,
                 tenantId: key.tenantId,
+                platform: permissions.some((permission) => HOME_KEY_PLATFORM_PERMISSIONS.includes(permission)),
             };
         })
         .sort((a, b) => a.name.localeCompare(b.name));

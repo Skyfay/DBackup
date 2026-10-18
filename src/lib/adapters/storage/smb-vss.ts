@@ -26,6 +26,7 @@ import { logger } from "@/lib/logging/logger";
 import { AdapterError } from "@/lib/logging/errors";
 import type { SnapshotHandle } from "@/lib/core/interfaces";
 import { stripTrailingSlashes } from "@/lib/paths";
+import { isSmbAddress } from "@/lib/adapters/smb-address";
 
 const log = logger.child({ adapter: "smb", feature: "vss" });
 
@@ -185,15 +186,24 @@ export async function createShadowCopy(config: SmbVssConfig): Promise<SnapshotHa
 
     const [, setId, shadowCopyId, exposedShare] = exposed;
     const ref: ShadowCopyRef = { setId, shadowCopyId, baseShare: unc };
+    // The exposed share is a full UNC path; the adapter addresses shares as //server/share.
+    const address = exposedShare.replace(/\\/g, "/");
     const handle: SnapshotHandle = {
         id: encodeRef(ref),
-        // The exposed share is a full UNC path; the adapter addresses shares as //server/share.
-        configOverride: { address: exposedShare.replace(/\\/g, "/") },
+        configOverride: { address },
         label: exposedShare,
         // What VSS actually calls it, and what the log has always said. Stated explicitly
         // now that the runner no longer assumes every adapter makes shadow copies.
         noun: "shadow copy",
     };
+
+    // The server names the share to read, so it must have the form of a configured one before
+    // anything reads it. Its host is checked like the configured one by the runner, see
+    // `acquireGroupSnapshot` in `collect-directories.ts`.
+    if (!isSmbAddress(address)) {
+        await releaseShadowCopy(config, handle).catch(() => { });
+        throw new AdapterError("smb", "vss", `The server exposed the shadow copy as '${exposedShare}', which is no share address of the form //server/share`);
+    }
 
     try {
         await runRpc(config, `fss_recovery_complete ${setId}`);

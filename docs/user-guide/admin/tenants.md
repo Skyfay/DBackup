@@ -43,7 +43,7 @@ Two rights on the platform count only in the tenants of its scope as well. **Sha
 
 The accounts count only in the tenants of its scope as well. With a platform group of selected tenants, **See the accounts** lists the people who work in one of them, each with only those of its tenants, the accounts of no tenant while the home tenant is one of them, and the own account. The members of the platform groups show as far as it sees their accounts. **Manage the accounts** changes an account only while every tenant it works in is one of them, an account of no tenant counting as one of the home tenant. It gives a platform group only to such an account and makes a new account only in those tenants. An account that **Runs the platform** in no tenant is made by a platform admin or someone of a platform group of all tenants. Beyond its tenants someone makes and changes accounts only as the admin of a tenant, and changes only one that works in that tenant alone.
 
-Nobody makes, changes or gives a platform group that may do more than they may themselves, on the platform or in the tenants of its scope. The account of someone in a platform group is changed only by a platform admin, or by someone with `platform-accounts:write` who may give that platform group and reaches its tenants, never by the admin of a tenant. An API key of someone in a platform group gets its rights in the tenants, never the ones on the platform, but for **Sharing** in a key of a tenant that shares with customers, see [API Keys](#api-keys).
+Nobody makes, changes or gives a platform group that may do more than they may themselves, on the platform or in the tenants of its scope. The account of someone in a platform group is changed only by a platform admin, or by someone with `platform-accounts:write` who may give that platform group and reaches its tenants, never by the admin of a tenant. An API key of someone in a platform group gets its rights in the tenants, and of the ones on the platform only **Tenants** and **Accounts** in a key of the home tenant and **Sharing** in a key of a tenant that shares with customers, see [API Keys](#api-keys).
 
 ## Switching Tenants
 
@@ -145,6 +145,21 @@ The dialog lists what goes and waits for the tick **I have the recovery kits of 
 
 Ticked tenants go together with **Delete** above the list, as long as they are empty: no connections, no jobs, nobody working in them, no encryption keys, no API keys and nothing in Recently deleted. A tenant that holds any of it is deleted on its own, where the dialog asks first.
 
+### Through the API
+
+Everything of this page has a route, for an MSP that creates its customers from a script. The rights are the same: `platform-tenants:read` to read, `platform-tenants:write` to change, and only the tenants the caller reaches. A key holds these rights only when it was made in the home tenant by someone who holds them, see [Platform Keys](/user-guide/features/api-keys#platform-keys).
+
+| Route | Does |
+| :--- | :--- |
+| `GET /api/tenants`, `GET /api/tenants/{id}` | The tenants with the numbers and settings of this list |
+| `POST /api/tenants` | **New tenant**, for a platform admin and a platform group of all tenants |
+| `PATCH /api/tenants/{id}` | **Edit**: `name`, `sharesWithCustomers`, `allowances`, `onDemandPerDay` and `network`, saved one after the other. The first refusal stops and the answer names what was saved before it |
+| `DELETE /api/tenants/{id}` | **Delete**. A tenant that holds anything needs `?confirmed=true`, and without it the answer lists what would go |
+| `GET`, `POST /api/tenants/{id}/members`, `PATCH`, `DELETE /api/tenants/{id}/members/{userId}` | **Members**: list, add an account with a group, change the group, remove |
+| `GET`, `POST /api/tenants/{id}/invitations`, `DELETE /api/tenants/{id}/invitations/{invitationId}` | The open [invitations](#invitations), a new link with its token once, and **Revoke** |
+
+The members and the invitations of a tenant also answer a session or a key of that tenant itself with `users:read` or `users:write`, with the rules of its Users tab: a group only for its own people, nobody of another tenant, who joins by an invitation. Every change goes into the audit log like in the browser, with the API key that made it. The routes are described in the [API Reference](/user-guide/features/api-reference).
+
 ### Share with Customers
 
 **Shares with customers** under **Sharing** in **Edit** lets a tenant give single databases of its servers, its destinations and its notification channels to other tenants, for a tenant of the MSP. Off again is refused while it gives anything away. The home tenant shares from the start. The connections of a tenant that does not share with customers are never shared, whoever holds the right to share. When a switch is refused and what it changes, see [Shared Databases](/user-guide/admin/shared-databases#tenants-that-share), and for destinations and channels [Shared Destinations and Channels](/user-guide/admin/shared-connections).
@@ -192,11 +207,13 @@ An IPv4 address written as IPv6, like `::ffff:10.0.0.5`, counts as its IPv4. DBa
 - Saving, **Test connection**, a browse of folders and every run check it. A connection saved before the block that reaches a blocked address stops working at its next run, with a message like `Acme reaches no address of the local network, db.internal is 10.0.0.5. The platform allows ranges for it under Platform, Tenants.`
 - A destination or a channel another tenant shares follows the setting of that tenant, not the one of its customer.
 - A host that does not resolve passes the check, its connection fails on its own.
+- A host counts the way the client of the connection reads it: an empty host of MySQL, MariaDB, PostgreSQL, MongoDB or Firebird as `127.0.0.1`, every host of a PostgreSQL or MongoDB list, `host\INSTANCE` of SQL Server and `host/port` of Firebird by the host, and `user@host` of rsync by the part after the last `@`. An SMB address must read `//server/share` or `\\server\share`.
+- **Test** of an SSH login checks the SSH server before it logs in. A webhook, Gotify, ntfy or WebDAV server that answers with a redirect to another host fails instead of being followed, so enter the final address. The share a file server names for a shadow copy is checked like the configured one.
 
 A new tenant starts with the block on. A tenant made before the setting existed keeps reaching the local network until the platform switches it on. The home tenant is the platform and reaches what its server reaches, so it has no Network part. Every change goes into the audit log of the home tenant and of the tenant itself.
 
 ::: info A guard, not a firewall
-The check reads the answer of the DNS server when it runs, and the connection asks again right after. A name whose answer changes in between on purpose gets past it. What must never be reached belongs behind the firewall of the server.
+The check reads the answer of the DNS server when it runs, and the connection asks again right after. A name whose answer changes in between on purpose gets past it. So do the servers a database or a file server sends the client on to by itself: SQL Server routing a connection to another server, the hosts of a MongoDB SRV record and DFS referrals of an SMB share. What must never be reached belongs behind the firewall of the server.
 :::
 
 ## Groups in Tenants
@@ -276,7 +293,14 @@ The links nobody used yet show in a banner above the list of users, with their g
 
 ## API Keys
 
-An API key belongs to the tenant it was made in and acts only there, whichever tenant its owner opens later. The API keys tab lists the keys of the open tenant. A key never does more than its owner may in that tenant, and never carries what a platform group gives on the platform, the settings of the instance included. A key made in a tenant that [shares with customers](#share-with-customers) may hold **Sharing** while its owner does, for a hosting panel, and gives to and takes from only the tenants the platform group of its owner reaches, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api) and [API Keys](/user-guide/features/api-keys).
+An API key belongs to the tenant it was made in and acts only there, whichever tenant its owner opens later. The API keys tab lists the keys of the open tenant. A key never does more than its owner may in that tenant, and never carries the settings of the instance through a platform group.
+
+Rights of the platform go into a key in two places only, and only while its owner holds them:
+
+- A key of the **home tenant** may hold **Tenants** and **Accounts**, for the automation of an MSP, see [Through the API](#through-the-api). It manages the tenants the platform group of its owner reaches, every tenant for a key of a platform admin.
+- A key of a tenant that [shares with customers](#share-with-customers) may hold **Sharing**, for a hosting panel, and gives to and takes from only the tenants the platform group of its owner reaches, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api).
+
+A key of a customer manages its own members and invitations with `users:read` and `users:write`, never another tenant. See [Platform Keys](/user-guide/features/api-keys#platform-keys).
 
 ## Audit Log
 

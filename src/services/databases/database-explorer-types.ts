@@ -200,3 +200,64 @@ export interface VersionPage {
     page: number;
     size: number;
 }
+
+// ------------------------------------------------------------------ the paged list of the Databases tab
+
+/** Where a database stands, one or more at once, for the State filter. */
+export type DatabaseState = "backed-up" | "no-job" | "never" | "unread";
+
+/** The orders the list of databases is read in, the biggest first unless asked. */
+export const DATABASE_SORTS = ["size", "database", "server", "tables", "last"] as const;
+export type DatabaseSort = (typeof DATABASE_SORTS)[number];
+
+/** A server as the filters, the freshness of the lists and the dots of the tabs need it, for every server. */
+export type ServerBrief = Omit<ExplorerServer, "version" | "versionSince" | "previousVersion">;
+
+/** The numbers above the list, over every database whatever the filters. */
+export interface DatabaseSummary {
+    databases: number;
+    servers: number;
+    /** The bytes of every database whose size is known. */
+    size: number;
+    /** Databases whose server does not tell their size. */
+    unsized: number;
+    tables: number;
+    backedUp: number;
+    noJob: number;
+    noJobSize: number;
+    biggest: ExplorerDatabase | null;
+}
+
+/** How many databases each value of a filter leaves under the other filters, a database once for each of its jobs and states. */
+export interface DatabaseFacets {
+    server: Record<string, number>;
+    engine: Record<string, number>;
+    /** By job id, `none` for the databases in no job. */
+    job: Record<string, number>;
+    state: Record<string, number>;
+    /** By tenant id, only in All tenants. */
+    tenant?: Record<string, number>;
+}
+
+/** One page of the Databases tab, with what the filters, the numbers and the tabs need of every database. */
+export interface DatabasePage {
+    rows: ExplorerDatabase[];
+    /** The databases the search and the filters leave. */
+    total: number;
+    /** The servers of the rows, with their versions. */
+    servers: ExplorerServer[];
+    /** The jobs of the servers of the rows. */
+    jobs: ExplorerDbJob[];
+    /** Whether the viewer may see the jobs, which the coverage and the timeline need. */
+    coverage: boolean;
+    /** Every server, for the filters, how old the lists are and the dots of the tabs. */
+    serverList: ServerBrief[];
+    /** The enabled jobs that back up databases, by name, for the Job filter. */
+    jobOptions: { id: string; name: string }[];
+    facets: DatabaseFacets;
+    summary: DatabaseSummary;
+    /** How many enabled jobs back up databases. */
+    enabledJobs: number;
+    /** The engines of the Redis and Valkey servers, whose keys are no tables. */
+    keyStores: string[];
+}

@@ -9,10 +9,11 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
-import { ON_DEMAND_MAX, ON_DEMAND_MIN } from "@/lib/tenant/sharing";
+import { OnDemandPerDaySchema } from "@/lib/tenant/tenant-schemas";
 import type { PlatformReach } from "@/lib/tenant/sharing-reach";
 import { auditService } from "@/services/audit-service";
 import { tenantOnDemandService, type TenantOnDemand } from "@/services/tenant/tenant-on-demand";
+import { setTenantOnDemandAs } from "@/services/tenant/tenant-admin";
 import { platformGroupService } from "@/services/user/platform-group-service";
 
 /**
@@ -24,7 +25,6 @@ import { platformGroupService } from "@/services/user/platform-group-service";
 const log = logger.child({ action: "tenant-on-demand" });
 
 const IdSchema = z.string().min(1).max(200);
-const PerDaySchema = z.coerce.number().int().min(ON_DEMAND_MIN).max(ON_DEMAND_MAX).nullable();
 const PLATFORM = { tenantId: HOME_TENANT_ID };
 const GONE = "The tenant no longer exists.";
 
@@ -60,21 +60,11 @@ export async function getTenantOnDemand(id: string): Promise<{ success: true; da
 export async function setTenantOnDemand(id: string, perDay: number | null) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
     const tenantId = IdSchema.safeParse(id);
-    const value = PerDaySchema.safeParse(perDay);
+    const value = OnDemandPerDaySchema.safeParse(perDay);
     if (!tenantId.success || !value.success) return { success: false as const, error: value.error?.issues[0]?.message ?? "Invalid request" };
-    if (!(await reaches(viewer, tenantId.data))) return { success: false as const, error: GONE };
 
     try {
-        const change = await tenantOnDemandService.set(tenantId.data, value.data);
-        if (change.before !== change.after) {
-            const changes = diffFields({ perDay: words(change.before) }, { perDay: words(change.after) }, { perDay: { label: "Backups on demand" } });
-            // The platform's change, and one the tenant learns of in its own log, which is the same
-            // log for the home tenant.
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, PLATFORM);
-            if (tenantId.data !== HOME_TENANT_ID) {
-                await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, { tenantId: tenantId.data });
-            }
-        }
+        const change = await setTenantOnDemandAs({ id: viewer.id, isPlatformAdmin: viewer.isPlatformAdmin, tenantId: null }, tenantId.data, value.data);
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: change };
     } catch (error: unknown) {

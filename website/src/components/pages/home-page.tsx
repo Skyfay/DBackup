@@ -38,6 +38,7 @@ export function HomePage({ locale }: { locale: Locale }) {
       t("home.featureEncryption"),
       t("home.featureRetention"),
       t("home.featureRecovery"),
+      t("home.featureTenants"),
     ],
     sameAs: [GITHUB_URL, DOCS_URL],
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },

@@ -1,4 +1,5 @@
 import { ValidationError } from "@/lib/logging/errors";
+import { databaseNameProblem } from "@/lib/adapters/database/common/database-name";
 
 /** Which database of a backup to restore, and under which name. */
 export interface DatabaseMappingEntry {
@@ -20,6 +21,27 @@ export interface DatabaseMappingEntry {
  * to "restore everything" is how a restore overwrites databases nobody asked for.
  */
 export function normalizeDatabaseMapping(mapping: unknown): DatabaseMappingEntry[] | undefined {
+    const entries = readDatabaseMapping(mapping);
+    // A database the restore writes into is passed to the tools by its name, never as an option.
+    for (const entry of entries ?? []) {
+        if (entry.selected) assertDatabaseTarget(entry.targetName, "databaseMapping");
+    }
+    return entries;
+}
+
+/**
+ * Refuses a name a restore writes into that no tool reads as a database name, like one that
+ * starts with `-`, see `database-name.ts`.
+ *
+ * @throws ValidationError naming the name.
+ */
+export function assertDatabaseTarget(name: string | undefined, field = "targetDatabaseName"): void {
+    if (name === undefined || name === "") return;
+    const problem = databaseNameProblem(name);
+    if (problem) throw new ValidationError(problem, { field });
+}
+
+function readDatabaseMapping(mapping: unknown): DatabaseMappingEntry[] | undefined {
     if (mapping === undefined || mapping === null) return undefined;
 
     if (Array.isArray(mapping)) {

@@ -9,18 +9,18 @@
  */
 
 import { readFileSync } from "fs";
-import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { STORAGE } from "../../../lab/src/catalog";
 import { execIn } from "../../../lab/src/docker";
 import { dropIn } from "../../../lab/src/fingerprints";
 import { App, E2E_KEY, problemOf, unique, type Job } from "../../support/app";
 import { createSource, localDestination } from "../../support/backups";
-import { ADMIN, ADMIN_STATE, BASE_URL, lab } from "../../support/environment";
+import { ADMIN, lab } from "../../support/environment";
 import { FAMILIES, type Target } from "../../support/targets";
+import { HOME, addressesInApp, contextOptions, keepSharedSessionHome, networkOf, raw, signIn, switchTo } from "../../support/tenants";
 
 test.describe.configure({ mode: "serial" });
 
-const HOME = "Default";
 const ALL_TENANTS_REFUSAL = "All tenants only reads. Open the tenant of the record to change it.";
 
 
@@ -45,67 +45,11 @@ let acmeJobName = "";
 /** Whether Edit opened on the members of each new tenant, as it should. */
 const editOpened = new Map<string, boolean>();
 
-/** A browser without a session. A context of the browser fixture takes the session of the project otherwise. */
-const contextOptions = { baseURL: BASE_URL, locale: "en-US", storageState: { cookies: [], origins: [] } };
-
-async function signIn(page: Page, email: string, password: string): Promise<void> {
-    await page.goto("/");
-    await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password", { exact: true }).fill(password);
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    // A new instance moves on from the Overview to Quick Setup.
-    await page.waitForURL(/\/dashboard/);
-    await page.waitForLoadState("networkidle");
-}
-
-/** Picks a tenant, or All tenants, in the menu of the head of the sidebar. */
-async function switchTo(page: Page, tenant: string): Promise<void> {
-    if (!page.url().includes("/dashboard")) await page.goto("/dashboard");
-    await page.getByRole("button", { name: /Switch the tenant$/ }).click();
-    const menu = page.getByRole("listbox", { name: "Suggestions" });
-    await menu.getByRole("option", { name: new RegExp(`^${tenant}\\b`) }).click();
-    const said = tenant === "All tenants" ? "You see every tenant now" : `You work in ${tenant} now`;
-    await expect(page.getByText(said)).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(`^${tenant}[ ,]`) })).toBeVisible();
-}
-
-/** A request whose refusal the test reads itself, where `App` would fail on it. */
-async function raw(request: APIRequestContext, method: "get" | "post", url: string, data?: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
-    const response = await request[method](url, data === undefined ? {} : { data });
-    const text = await response.text();
-    return { status: response.status(), body: text ? JSON.parse(text) : {} };
-}
-
 /** Runs SQL in the PostgreSQL 18 of the lab, outside of DBackup. */
-async function psql(database: string, sql: string): Promise<void> {
-    const result = await execIn(lab, postgres.service, `psql -U ${postgres.login!.username} -d ${database} -v ON_ERROR_STOP=1 -q`, sql, 60_000);
+async function psql(database: string, sql: string): Promise<string> {
+    const result = await execIn(lab, postgres.service, `psql -U ${postgres.login!.username} -d ${database} -v ON_ERROR_STOP=1 -q -t -A`, sql, 60_000);
     expect(result.code, result.stderr || result.stdout).toBe(0);
-}
-
-/**
- * The IPv4 addresses a name resolves to inside DBackup, the way its connections see it, each with
- * the range of the network of DBackup it lies in, null when none.
- */
-async function addressesInApp(host: string): Promise<{ address: string; cidr: string | null }[]> {
-    const script = [
-        `const dns = require("dns"), os = require("os")`,
-        `const value = (ip) => ip.split(".").reduce((all, part) => all * 256 + Number(part), 0)`,
-        `const inNet = (address, net) => { const size = 2 ** (32 - Number(net.cidr.split("/")[1])); return Math.floor(value(address) / size) === Math.floor(value(net.address) / size) }`,
-        `const nets = Object.values(os.networkInterfaces()).flat().filter((net) => net.family === "IPv4" && !net.internal)`,
-        `dns.lookup(${JSON.stringify(host)}, { all: true, family: 4 }, (error, list) => { if (error) throw error; console.log(JSON.stringify(list.map(({ address }) => ({ address, cidr: nets.find((net) => inNet(address, net))?.cidr ?? null })))) })`,
-    ].join("\n");
-    const result = await execIn(lab, "app", "node -", script, 30_000);
-    expect(result.code, result.stderr || result.stdout).toBe(0);
-    return JSON.parse(result.stdout.trim());
-}
-
-/** The network part of a CIDR range like 172.20.0.7/16, as 172.20.0.0/16. */
-function networkOf(cidr: string): string {
-    const [address, bits] = cidr.split("/");
-    const value = address.split(".").reduce((all, part) => all * 256 + Number(part), 0);
-    const size = 2 ** (32 - Number(bits));
-    const base = Math.floor(value / size) * size;
-    return `${[24, 16, 8, 0].map((shift) => Math.floor(base / 2 ** shift) % 256).join(".")}/${bits}`;
+    return result.stdout.trim();
 }
 
 /** What the home tenant holds, read by its admin, never shows to the person of Acme, on the pages and through the API. */
@@ -171,12 +115,7 @@ test("a platform admin creates two customers through the pages", async ({ browse
     await test.step("both sessions of the admin keep working in the home tenant", async () => {
         // With more than one tenant a platform admin starts in All tenants, which changes nothing.
         await switchTo(adminPage, HOME);
-        const shared = await browser.newContext({ ...contextOptions, storageState: ADMIN_STATE });
-        try {
-            await switchTo(await shared.newPage(), HOME);
-        } finally {
-            await shared.close();
-        }
+        await keepSharedSessionHome(browser);
     });
 });
 
@@ -295,6 +234,39 @@ test("Acme sees and downloads the backup of its database and nothing else", asyn
 
     await test.step("still nothing of the home tenant itself", async () => {
         await expectNothingOfHome();
+    });
+});
+
+test("Acme restores the backup of its database into it, and the home tenant sees the run", async () => {
+    const rows = (database: string) => psql(database, "SELECT string_agg(name, ',' ORDER BY name) FROM owner");
+
+    await test.step("both databases change after the backup", async () => {
+        await psql(given, "DELETE FROM owner; INSERT INTO owner VALUES ('damaged');");
+        await psql(kept, "INSERT INTO owner VALUES ('after the backup');");
+    });
+
+    await test.step("Acme restores its database from Backups, into itself", async () => {
+        await personPage.goto("/dashboard/backups");
+        await personPage.getByRole("button", { name: `Open menu for ${given}`, exact: true }).click();
+        await personPage.getByRole("menuitem", { name: new RegExp(`^Restore into ${given}`) }).click();
+        const dialog = personPage.getByRole("alertdialog", { name: `Restore ${given}` });
+        await expect(dialog.getByText("Fixed", { exact: true })).toBeVisible();
+        await dialog.getByRole("button", { name: `Restore ${given}` }).click();
+    });
+
+    await test.step("the backup is back in that database, the other one stays as it is", async () => {
+        await expect.poll(() => rows(given), { timeout: 3 * 60_000 }).toBe(given);
+        expect(await rows(kept)).toBe(`after the backup,${kept}`);
+    });
+
+    await test.step("the History of Acme and of the home tenant each show the restore", async () => {
+        const runs = async (context: BrowserContext) => JSON.stringify((await raw(context.request, "get", "/api/history/runs?type=Restore")).body);
+        await expect.poll(() => runs(person), { timeout: 60_000 }).toContain(given);
+        const theirs = await runs(person);
+        // The customer's run names its database alone, never the server, the other database or the job.
+        expect(theirs).not.toContain(kept);
+        expect(theirs).not.toContain(homeJobName);
+        await expect.poll(() => runs(admin), { timeout: 60_000 }).toContain(acme);
     });
 });
 

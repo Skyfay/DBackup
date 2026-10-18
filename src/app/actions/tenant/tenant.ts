@@ -3,21 +3,18 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, currentSessionId, forgetAuthContext, getViewer, type Viewer } from "@/lib/auth/access-control";
+import { checkPermission, currentSessionId, forgetAuthContext, getViewer } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { ALL_TENANTS, HOME_TENANT_ID } from "@/lib/tenant/home";
-import { auditService } from "@/services/audit-service";
 import { tenantService } from "@/services/tenant/tenant-service";
-import { platformGroupService } from "@/services/user/platform-group-service";
 import { tenantSummaries } from "@/services/tenant/tenant-summaries";
-import { setAllowances } from "@/services/tenant/tenant-allowances";
-import { setNetwork, type TenantNetwork } from "@/services/tenant/tenant-network";
-import { ALLOWANCE_KINDS, ALLOWANCE_NOUNS, type TenantAllowances } from "@/lib/tenant/allowances";
-import { diffFields } from "@/lib/core/audit-diff";
-import { MAX_ALLOWED_RANGES, MAX_RANGE_LENGTH } from "@/lib/network/local-network";
+import type { TenantNetwork } from "@/services/tenant/tenant-network";
+import type { TenantAllowances } from "@/lib/tenant/allowances";
+import { AllowancesSchema, NetworkSchema, TenantNameSchema } from "@/lib/tenant/tenant-schemas";
+import {
+    createTenantAs, deleteRefusal, removeTenantAs, renameTenantAs, setTenantAllowancesAs, setTenantNetworkAs, setTenantSharingAs, type TenantAdminActor,
+} from "@/services/tenant/tenant-admin";
 import { emptyBulkResult } from "@/lib/core/bulk";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { isEmptyTenant, tenantContents } from "@/services/tenant/tenant-contents";
@@ -25,26 +22,19 @@ import { isEmptyTenant, tenantContents } from "@/services/tenant/tenant-contents
 const log = logger.child({ action: "tenant" });
 
 const IdSchema = z.string().min(1).max(200);
-const NameSchema = z.string().trim().min(1, "Give the tenant a name.").max(60, "The name can have at most 60 characters.");
-
-/** The message of a refusal the user can act on, a plain one for anything else. */
-const messageOf = (error: unknown, fallback: string) =>
-    error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError ? error.message : fallback;
 
 /** A refusal the user can act on, which is no failure for the log. */
-const isRefusal = (error: unknown) => error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError;
+const isRefusal = (error: unknown) =>
+    error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError || error instanceof PermissionError;
 
-/** A change of the tenants is the platform's, so its entry goes into the log of the home tenant. */
-const PLATFORM = { tenantId: HOME_TENANT_ID };
+/** The message of a refusal the user can act on, a plain one for anything else. */
+const messageOf = (error: unknown, fallback: string) => (isRefusal(error) ? (error as Error).message : fallback);
 
 /**
- * Whether the viewer may manage this tenant: a platform admin every tenant, anyone else the
- * tenants their platform group reaches. Being a member of a tenant gives no right on the platform.
- * One they may not reads as gone.
+ * The viewer as the rules of `tenant-admin.ts` read them. Whether they look after a tenant is the
+ * reach of their platform group, which those rules read per check.
  */
-async function managesTenant(viewer: { id: string; isPlatformAdmin: boolean }, tenantId: string): Promise<boolean> {
-    return viewer.isPlatformAdmin || platformGroupService.reaches(viewer.id, tenantId);
-}
+const actorOf = (viewer: { id: string; isPlatformAdmin: boolean; tenantId: string | null }): TenantAdminActor => ({ id: viewer.id, isPlatformAdmin: viewer.isPlatformAdmin, tenantId: viewer.tenantId });
 
 /**
  * Makes the session of the viewer work in another tenant. Every page shows that tenant from the
@@ -89,21 +79,16 @@ export async function getTenantSummaries() {
  */
 export async function createTenant(name: string, sharesWithCustomers = false) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
-    const parsed = NameSchema.safeParse(name);
+    const parsed = TenantNameSchema.safeParse(name);
     if (!parsed.success) return { success: false as const, error: parsed.error.issues[0]?.message ?? "Invalid request" };
     if (typeof sharesWithCustomers !== "boolean") return { success: false as const, error: "Invalid request" };
-    // A platform group of some tenants would never reach the tenant it made.
-    if (!viewer.isPlatformAdmin && !(await platformGroupService.reachesAll(viewer.id))) {
-        return { success: false as const, error: "Your platform group reaches some tenants only, so a new one would be out of your reach. A platform admin creates it." };
-    }
 
     try {
-        const tenant = await tenantService.create(parsed.data, sharesWithCustomers);
-        await auditService.log(viewer.id, AUDIT_ACTIONS.CREATE, AUDIT_RESOURCES.TENANT, { name: tenant.name, ...(sharesWithCustomers ? { sharesWithCustomers } : {}) }, tenant.id, PLATFORM);
+        const tenant = await createTenantAs(actorOf(viewer), parsed.data, sharesWithCustomers);
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: tenant };
     } catch (error: unknown) {
-        log.error("Creating a tenant failed", {}, wrapError(error));
+        if (!isRefusal(error)) log.error("Creating a tenant failed", {}, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be created.") };
     }
 }
@@ -116,28 +101,16 @@ export async function setTenantSharing(id: string, on: boolean) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
     const tenantId = IdSchema.safeParse(id);
     if (!tenantId.success || typeof on !== "boolean") return { success: false as const, error: "Invalid request" };
-    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
 
     try {
-        const change = await tenantService.setSharing(tenantId.data, on);
-        if (change.changed) {
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, change: on ? "Shares with customers" : "Shares nothing with customers" }, tenantId.data, PLATFORM);
-        }
+        await setTenantSharingAs(actorOf(viewer), tenantId.data, on);
         revalidatePath("/dashboard", "layout");
         return { success: true as const };
     } catch (error: unknown) {
-        if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Switching the sharing of a tenant failed", { tenantId: tenantId.data }, wrapError(error));
+        if (!isRefusal(error)) log.error("Switching the sharing of a tenant failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be changed.") };
     }
 }
-
-const AllowancesSchema = z.object({
-    databases: z.boolean(),
-    directorySources: z.boolean(),
-    destinations: z.boolean(),
-    channels: z.boolean(),
-    apiKeys: z.boolean(),
-}).partial();
 
 /**
  * Sets what a tenant may add itself: database connections, directory sources, destinations and
@@ -148,33 +121,16 @@ export async function setTenantAllowances(id: string, allowances: Partial<Tenant
     const tenantId = IdSchema.safeParse(id);
     const patch = AllowancesSchema.safeParse(allowances);
     if (!tenantId.success || !patch.success) return { success: false as const, error: "Invalid request" };
-    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
 
     try {
-        const change = await setAllowances(tenantId.data, patch.data);
-        const changes = ALLOWANCE_KINDS.filter((kind) => change.before[kind] !== change.after[kind])
-            .map((kind) => ({ field: `Adds ${ALLOWANCE_NOUNS[kind]}`, from: change.before[kind] ? "Yes" : "No", to: change.after[kind] ? "Yes" : "No" }));
-        if (changes.length > 0) {
-            // The platform's change, and one the tenant learns of in its own log.
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, PLATFORM);
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, { tenantId: tenantId.data });
-        }
+        await setTenantAllowancesAs(actorOf(viewer), tenantId.data, patch.data);
         revalidatePath("/dashboard", "layout");
         return { success: true as const };
     } catch (error: unknown) {
-        if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Changing what a tenant may add failed", { tenantId: tenantId.data }, wrapError(error));
+        if (!isRefusal(error)) log.error("Changing what a tenant may add failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be changed.") };
     }
 }
-
-const NetworkSchema = z.object({
-    blocks: z.boolean(),
-    allowed: z.array(z.string().max(MAX_RANGE_LENGTH)).max(MAX_ALLOWED_RANGES, `A tenant has at most ${MAX_ALLOWED_RANGES} allowed ranges. Allow a wider range instead.`),
-});
-
-/** The setting of the network as the audit log shows it. */
-const networkWords = (network: TenantNetwork) => ({ blocks: network.blocks ? "Blocked" : "Reached", allowed: network.allowed });
-const NETWORK_FIELDS = { blocks: { label: "Local network" }, allowed: { label: "Allowed ranges" } };
 
 /**
  * Sets whether the connections of a tenant reach the local network of the server DBackup runs on,
@@ -187,18 +143,9 @@ export async function setTenantNetwork(id: string, network: TenantNetwork) {
     const input = NetworkSchema.safeParse(network);
     if (!tenantId.success) return { success: false as const, error: "Invalid request" };
     if (!input.success) return { success: false as const, error: input.error.issues[0]?.message ?? "Invalid request" };
-    if (tenantId.data === ALL_TENANTS) return { success: false as const, error: "All tenants is no tenant of its own. Pick the tenant to change." };
-    if (tenantId.data === HOME_TENANT_ID) return { success: false as const, error: "The home tenant is the platform and reaches the network of its server." };
-    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
 
     try {
-        const change = await setNetwork(tenantId.data, input.data);
-        const changes = diffFields(networkWords(change.before), networkWords(change.after), NETWORK_FIELDS);
-        if (changes.length > 0) {
-            // The platform's change, and one the tenant learns of in its own log.
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, PLATFORM);
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, { tenantId: tenantId.data });
-        }
+        await setTenantNetworkAs(actorOf(viewer), tenantId.data, input.data);
         revalidatePath("/dashboard", "layout");
         return { success: true as const };
     } catch (error: unknown) {
@@ -210,19 +157,15 @@ export async function setTenantNetwork(id: string, network: TenantNetwork) {
 export async function renameTenant(id: string, name: string) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
     const tenantId = IdSchema.safeParse(id);
-    const parsed = NameSchema.safeParse(name);
+    const parsed = TenantNameSchema.safeParse(name);
     if (!tenantId.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
-    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
 
     try {
-        const change = await tenantService.rename(tenantId.data, parsed.data);
-        if (change.name !== change.renamedFrom) {
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, renamedFrom: change.renamedFrom }, tenantId.data, PLATFORM);
-        }
+        await renameTenantAs(actorOf(viewer), tenantId.data, parsed.data);
         revalidatePath("/dashboard", "layout");
         return { success: true as const };
     } catch (error: unknown) {
-        log.error("Renaming a tenant failed", { tenantId: tenantId.data }, wrapError(error));
+        if (!isRefusal(error)) log.error("Renaming a tenant failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be renamed.") };
     }
 }
@@ -235,40 +178,18 @@ export async function deleteTenant(id: string) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
     const tenantId = IdSchema.safeParse(id);
     if (!tenantId.success) return { success: false as const, error: "Invalid request" };
-    const refused = await deleteRefused(viewer, tenantId.data);
+    const actor = actorOf(viewer);
+    const refused = await deleteRefusal(actor, tenantId.data);
     if (refused) return { success: false as const, error: refused };
 
     try {
-        const removal = await removeTenant(viewer, tenantId.data);
+        const removal = await removeTenantAs(actor, tenantId.data);
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: removal };
     } catch (error: unknown) {
         if (!isRefusal(error)) log.error("Deleting a tenant failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be deleted.") };
     }
-}
-
-/** Why the viewer may not delete a tenant, null when they may: never the one they work in, never one beyond them. */
-async function deleteRefused(viewer: Viewer, tenantId: string): Promise<string | null> {
-    if (tenantId === viewer.tenantId) return "You work in this tenant. Open another one first.";
-    if (!(await managesTenant(viewer, tenantId))) return "The tenant no longer exists.";
-    return null;
-}
-
-/** Deletes a tenant and writes it into the log of the platform, and what its customers lost into theirs. */
-async function removeTenant(viewer: Viewer, tenantId: string) {
-    const { withdrawn = [], ...removal } = await tenantService.delete(tenantId);
-    await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.TENANT, { ...removal }, tenantId, PLATFORM);
-    // Each customer of what it shared learns in its own log what it lost with it.
-    for (const loss of withdrawn) {
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, loss.kind === "destination" ? AUDIT_RESOURCES.DESTINATION : AUDIT_RESOURCES.ADAPTER, {
-            name: loss.name,
-            action: "unshare",
-            ...(loss.jobs.length > 0 ? { jobs: loss.jobs } : {}),
-            ...(loss.templates.length > 0 ? { templates: loss.templates } : {}),
-        }, loss.configId, { tenantId: loss.tenantId });
-    }
-    return removal;
 }
 
 /**
@@ -281,10 +202,11 @@ export async function bulkDeleteTenants(ids: string[]) {
     const parsed = BulkIdsSchema.safeParse(ids);
     if (!parsed.success) return { success: false as const, error: "Invalid request" };
 
+    const actor = actorOf(viewer);
     const result = emptyBulkResult();
     for (const id of parsed.data) {
         try {
-            const refused = await deleteRefused(viewer, id);
+            const refused = await deleteRefusal(actor, id);
             if (refused) {
                 result.failed.push({ id, error: refused });
                 continue;
@@ -293,7 +215,7 @@ export async function bulkDeleteTenants(ids: string[]) {
                 result.failed.push({ id, error: "It holds connections, jobs or people, or keys, API keys or entries in Recently deleted. Delete it on its own, which asks first." });
                 continue;
             }
-            await removeTenant(viewer, id);
+            await removeTenantAs(actor, id);
             result.succeeded.push(id);
         } catch (error: unknown) {
             if (!isRefusal(error)) log.error("Deleting a tenant failed", { tenantId: id }, wrapError(error));

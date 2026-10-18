@@ -78,7 +78,7 @@ DBackup runs as the service `app` of `lab/compose/e2e.yml`, in the Compose proje
 | Project | Covers |
 | :--- | :--- |
 | `setup` | The first start: the first account through its page, then the rate limits and a Vault key for the other projects |
-| `ui` | A destination, a database with a new login and a job set up through their pages, Run now, and the run page until it is done |
+| `ui` | A destination, a database with a new login and a job set up through their pages, Run now, and the run page until it is done. The tenants of an MSP: customers, an invitation, a database given to a customer with its download and restore, a destination and a channel shared with one, its Recently deleted, a platform group of selected tenants, the local network block and All tenants |
 | `postgres` | PostgreSQL 12 and 18, and 12 over SSH |
 | `mysql` | MySQL 5.7 and 9, MariaDB 10.4 and 11.8, and 5.7 and 10.4 over SSH |
 | `mongodb` | MongoDB 4.4 and 8.0 |

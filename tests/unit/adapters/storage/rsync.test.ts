@@ -1467,7 +1467,30 @@ describe("RsyncAdapter", () => {
         });
     });
 
+    // ===== the login name =====
 
+    describe("the username of the login", () => {
+        it("keeps a plain login name in the remote spec as before", async () => {
+            await RsyncAdapter.upload({ ...agentConfig, username: "backup-01.ops_x" }, "/tmp/a.sql", "Job/a.sql");
 
+            const [, args] = mockSpawn.mock.calls.at(-1)!;
+            expect((args as string[]).at(-1)).toBe("backup-01.ops_x@backup.example.com:/backups/Job/a.sql");
+        });
 
+        it("runs neither ssh nor rsync with a name that would change the host or read as an option", async () => {
+            for (const username of ["evil@10.0.0.5", "a:b", "a/b", "back up", "-oProxyCommand=x", "tab\there"]) {
+                mockSpawn.mockClear();
+                mockExecFileCb.mockClear();
+
+                const uploaded = await RsyncAdapter.upload({ ...agentConfig, username }, "/tmp/a.sql", "Job/a.sql");
+                const tested = await RsyncAdapter.test!({ ...agentConfig, username });
+
+                expect(uploaded, username).toBe(false);
+                expect(tested.success, username).toBe(false);
+                expect(mockSpawn, username).not.toHaveBeenCalled();
+                const sshCalls = mockExecFileCb.mock.calls.filter(([binary]) => binary === "ssh" || binary === "sshpass");
+                expect(sshCalls, username).toEqual([]);
+            }
+        });
+    });
 });

@@ -11,8 +11,11 @@ vi.mock("@/services/dashboard/cache", async (importOriginal) => ({
 
 /** Acme Hosting shares its NAS with Globex and takes only encrypted backups there. */
 const provided = vi.hoisted(() => ({
-    providedTo: vi.fn(async (_tenantId: string, filter: { ids?: readonly string[] }) =>
-        (filter.ids ?? []).includes("acme-nas") ? [{ id: "acme-nas", name: "Acme NAS", encryptedOnly: true, providerName: "Acme Hosting" }] : []),
+    providedTo: vi.fn(async (_tenantId: string, filter: { kind: string; ids?: readonly string[] }) => {
+        const ids = filter.ids ?? [];
+        if (filter.kind === "channel") return ids.includes("acme-mail") ? [{ id: "acme-mail", name: "Acme Mail", providerName: "Acme Hosting" }] : [];
+        return ids.includes("acme-nas") ? [{ id: "acme-nas", name: "Acme NAS", encryptedOnly: true, providerName: "Acme Hosting" }] : [];
+    }),
 }));
 vi.mock("@/services/sharing/provided", () => provided);
 
@@ -106,6 +109,18 @@ describe("a job of a customer on a destination another tenant shares", () => {
             await expect(runAsTenant("globex", () => service.cloneJob("globex-job", "Tenants"))).rejects.toThrow("cannot be called tenants");
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
+    });
+
+    it("names a channel another tenant shares with it", async () => {
+        await expect(runAsTenant("globex", () => service.createJob(job({ notificationIds: ["acme-mail"] })))).resolves.toMatchObject({ id: "globex-job" });
+        const counted = prismaMock.adapterConfig.count.mock.calls.flatMap((call) => (call[0] as { where: { id: { in: string[] } } }).where.id.in);
+        expect(counted).not.toContain("acme-mail");
+    });
+
+    it("cannot name a channel of another tenant nobody shares with it", async () => {
+        prismaMock.adapterConfig.count.mockResolvedValue(0);
+        await expect(runAsTenant("globex", () => service.createJob(job({ notificationIds: ["initech-mail"] })))).rejects.toThrow("does not exist");
+        expect(prismaMock.job.create).not.toHaveBeenCalled();
     });
 
     it("cannot name a destination nobody shares with it", async () => {

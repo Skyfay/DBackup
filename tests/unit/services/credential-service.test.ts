@@ -339,6 +339,31 @@ describe("Credential Service", () => {
             ).rejects.toBeInstanceOf(ConflictError);
         });
 
+        it("refuses an SSH login whose username is no plain name while an rsync destination logs in with it", async () => {
+            const sshProfile = { ...baseRow, type: "SSH_KEY" };
+            (prisma.credentialProfile.findUnique as any).mockResolvedValue(sshProfile);
+            (prisma.credentialProfile.update as any).mockResolvedValue(sshProfile);
+            (prisma.adapterConfig.count as any).mockResolvedValue(1);
+
+            for (const username of ["ops@10.0.0.5", "a:b", "a/b", "a b", "-oProxyCommand=x"]) {
+                await expect(updateCredentialProfile("cred-1", { data: { username, authType: "password", password: "pw" } }), username).rejects.toBeInstanceOf(ValidationError);
+            }
+            expect(prisma.adapterConfig.count).toHaveBeenCalledWith({ where: { primaryCredentialId: "cred-1", adapterId: "rsync" } });
+            expect(prisma.credentialProfile.update).not.toHaveBeenCalled();
+        });
+
+        it("keeps any SSH username for a profile no rsync destination uses, and a plain one for one it does", async () => {
+            const sshProfile = { ...baseRow, type: "SSH_KEY" };
+            (prisma.credentialProfile.findUnique as any).mockResolvedValue(sshProfile);
+            (prisma.credentialProfile.update as any).mockResolvedValue(sshProfile);
+
+            (prisma.adapterConfig.count as any).mockResolvedValue(0);
+            await expect(updateCredentialProfile("cred-1", { data: { username: "ops@corp.example", authType: "password", password: "pw" } })).resolves.toBeDefined();
+
+            (prisma.adapterConfig.count as any).mockResolvedValue(1);
+            await expect(updateCredentialProfile("cred-1", { data: { username: "backup-01.ops", authType: "password", password: "pw" } })).resolves.toBeDefined();
+        });
+
         it("does not re-validate when data not provided", async () => {
             (prisma.credentialProfile.findUnique as any).mockResolvedValue(baseRow);
             (prisma.credentialProfile.update as any).mockResolvedValue(baseRow);

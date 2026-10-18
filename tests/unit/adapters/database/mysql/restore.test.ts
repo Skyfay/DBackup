@@ -118,7 +118,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
             await restore(baseConfig as never, "/tmp/dump.sql", host);
 
             expect(host.calls.spawn[0][0]).toBe("mariadb");
-            expect(host.calls.spawn[0]).toContain("shop");
+            expect(host.calls.spawn[0]).toContain("--database=shop");
         });
 
         it("fails when no target database can be determined", async () => {
@@ -147,7 +147,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
                 host,
             );
 
-            expect(host.calls.spawn[0]).toContain("new");
+            expect(host.calls.spawn[0]).toContain("--database=new");
         });
 
         it("falls back to the original name when the mapping has no target", async () => {
@@ -158,7 +158,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
                 host,
             );
 
-            expect(host.calls.spawn[0]).toContain("old");
+            expect(host.calls.spawn[0]).toContain("--database=old");
         });
 
         it("fails when the client exits non-zero", async () => {
@@ -216,7 +216,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
             const host = restoreHost(kind);
             await restoreOne(baseConfig as never, "/tmp/a.sql", "target", host);
 
-            expect(host.calls.spawn[0]).toContain("target");
+            expect(host.calls.spawn[0]).toContain("--database=target");
         });
 
         it("works without callbacks", async () => {

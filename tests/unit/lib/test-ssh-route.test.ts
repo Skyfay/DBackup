@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
     checkBackupPathShared: vi.fn(),
     exec: vi.fn(),
     dispose: vi.fn(),
+    /** The local network check of the tenant, which passes unless a test says otherwise. */
+    reach: vi.fn(),
+}));
+
+vi.mock("@/services/tenant/tenant-network", () => ({
+    assertHostsReachable: (...args: unknown[]) => mocks.reach(...args),
 }));
 
 vi.mock("next/headers", () => ({ headers: () => mocks.headers() }));
@@ -87,6 +93,7 @@ describe("POST /api/adapters/test-ssh", () => {
         mocks.dispose.mockResolvedValue(undefined);
         mocks.checkBackupPath.mockResolvedValue({ readable: false, writable: false, error: "Path not found" });
         mocks.checkBackupPathShared.mockResolvedValue({ shared: true });
+        mocks.reach.mockResolvedValue(undefined);
     });
 
     it("does not check the SQL Server backup path for other adapters", async () => {
@@ -266,5 +273,51 @@ describe("POST /api/adapters/test-ssh", () => {
 
         expect(response.status).toBe(403);
         expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    describe("the SSH host the login dials", () => {
+        beforeEach(() => {
+            mocks.getAuthContext.mockResolvedValue({ userId: "u1", tenantId: "acme", allTenants: false });
+        });
+
+        it("is checked against the local network of the tenant for every adapter with an SSH mode", async () => {
+            const { sqliteTransport } = await import("@/lib/adapters/database/sqlite/transport");
+            const { mssqlTransport } = await import("@/lib/adapters/database/mssql/transport");
+            const cases: [string, Record<string, unknown>, unknown, string][] = [
+                ["mysql", sshConfig, undefined, "192.168.252.4"],
+                ["postgres", { ...sshConfig, sshHost: "[fd00::4]" }, undefined, "fd00::4"],
+                ["sqlite", { mode: "ssh", host: "10.0.0.4", username: "ops", authType: "password", password: "pw" }, sqliteTransport, "10.0.0.4"],
+                // SQL Server falls back to its database host when no SSH host is set.
+                ["mssql", { connectionMode: "ssh", host: "10.0.0.7", sshUsername: "ops", sshAuthType: "password", sshPassword: "pw" }, mssqlTransport, "10.0.0.7"],
+            ];
+            for (const [adapterId, config, transport, host] of cases) {
+                mocks.reach.mockClear();
+                mocks.registryGet.mockReturnValue({ id: adapterId, transport });
+                await POST(request({ config, adapterId }));
+                expect(mocks.reach, adapterId).toHaveBeenCalledWith("acme", expect.arrayContaining([host]));
+            }
+        });
+
+        it("is refused before any login when the tenant may not reach it", async () => {
+            const { ValidationError } = await import("@/lib/logging/errors");
+            mocks.reach.mockRejectedValueOnce(new ValidationError("Acme reaches no address of the local network, 192.168.252.4 is one."));
+
+            const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+            expect(response.status).toBe(400);
+            expect(await response.json()).toEqual({ success: false, message: "Acme reaches no address of the local network, 192.168.252.4 is one." });
+            expect(mocks.exec).not.toHaveBeenCalled();
+        });
+
+        it("refuses an adapter without an SSH mode, whatever SSH fields its form sends", async () => {
+            mocks.held = ["sources:write", "destinations:write", "notifications:write"];
+            for (const adapterId of ["azure-sql", "s3-generic", "sftp", "smb", "discord"]) {
+                const response = await POST(request({ config: sshConfig, adapterId }));
+                expect(response.status, adapterId).toBe(400);
+                expect((await response.json()).message, adapterId).toBe("This kind of connection has no SSH mode.");
+            }
+            expect(mocks.exec).not.toHaveBeenCalled();
+            expect(mocks.reach).not.toHaveBeenCalled();
+        });
     });
 });

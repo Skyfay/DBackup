@@ -260,17 +260,24 @@ export const PLATFORM_AREAS: PermissionArea[] = [
     },
 ];
 
-/** The areas a key offers in a tenant: those of a group, and in a tenant that shares databases their sharing, see `keyPlatformPermissions`. */
-export function keyAreas(tenantShares: boolean): PermissionArea[] {
-    const keyable = new Set(keyPlatformPermissions(tenantShares));
-    const platform = PLATFORM_AREAS.filter((area) => area.permissions.some((permission) => keyable.has(permission.id)));
+/**
+ * The areas a key offers in a tenant: those of a group, in a tenant that shares databases their
+ * sharing, and in the home tenant the tenants and the accounts, see `keyPlatformPermissions`. Of
+ * the rights of the platform only those that may be stored, never the settings or the sign-in.
+ */
+export function keyAreas(tenantShares: boolean, homeTenant = false): PermissionArea[] {
+    const keyable = new Set(keyPlatformPermissions(tenantShares, homeTenant));
+    const platform = PLATFORM_AREAS.filter((area) => area.id !== "settings" && area.permissions.some((permission) => keyable.has(permission.id)));
     return [...PERMISSION_AREAS, ...platform];
 }
 
-/** The permissions a key may store in a tenant: those of a group DBackup knows, and in a tenant that shares databases their sharing. */
-export function knownKeyPermissions(ids: Iterable<string>, tenantShares: boolean): Permission[] {
+/**
+ * The permissions a key may store in a tenant: those of a group DBackup knows, in a tenant that
+ * shares databases their sharing, and in the home tenant the tenants and the accounts.
+ */
+export function knownKeyPermissions(ids: Iterable<string>, tenantShares: boolean, homeTenant = false): Permission[] {
     const held = new Set(ids);
-    const keyable = keyPlatformPermissions(tenantShares).filter((permission) => held.has(permission)) as Permission[];
+    const keyable = keyPlatformPermissions(tenantShares, homeTenant).filter((permission) => held.has(permission)) as Permission[];
     return [...knownPermissions(held), ...keyable];
 }
 

@@ -8,6 +8,7 @@ import {
     withAuthArgs,
 } from "./args";
 import { connectionClientOf } from "./dump-content";
+import { escapeMysqlIdentifier, escapeMysqlLiteral } from "./sql-quote";
 
 const SYSTEM_DATABASES = ["information_schema", "mysql", "performance_schema", "sys"];
 
@@ -40,7 +41,7 @@ export async function ensureDatabase(
         await withAuthArgs(host, pass, async (authArgs) => {
             const created = await host.exec([
                 mysqlBin, ...authArgs, ...connArgs,
-                "-e", `CREATE DATABASE IF NOT EXISTS \`${dbName}\``,
+                "-e", `CREATE DATABASE IF NOT EXISTS \`${escapeMysqlIdentifier(dbName)}\``,
             ]);
             if (created.code !== 0) {
                 logs.push(`Warning ensures DB '${dbName}': ${created.stderr}`);
@@ -49,9 +50,11 @@ export async function ensureDatabase(
             logs.push(`Database '${dbName}' ensured.`);
 
             if (privileged) {
+                const db = escapeMysqlIdentifier(dbName);
+                const grantee = escapeMysqlLiteral(config.user);
                 const grantQuery =
-                    `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${config.user}'@'%'; ` +
-                    `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;`;
+                    `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'%'; ` +
+                    `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'localhost'; FLUSH PRIVILEGES;`;
                 const granted = await host.exec([mysqlBin, ...authArgs, ...connArgs, "-e", grantQuery]);
                 logs.push(granted.code === 0
                     ? `Permissions granted for '${dbName}'.`

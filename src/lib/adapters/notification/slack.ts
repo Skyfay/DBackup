@@ -3,6 +3,7 @@ import { SlackSchema, SlackConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { NO_REDIRECTS, redirectRefusal } from "./http";
 
 const log = logger.child({ adapter: "slack" });
 
@@ -17,6 +18,7 @@ export const SlackAdapter: NotificationAdapter = {
         try {
             validateOutboundUrl(config.webhookUrl);
             const response = await fetch(config.webhookUrl, {
+                ...NO_REDIRECTS,
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -24,6 +26,8 @@ export const SlackAdapter: NotificationAdapter = {
                 }),
             });
 
+            const redirect = redirectRefusal("Slack", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: "Test notification sent successfully!" };
             } else {
@@ -111,6 +115,7 @@ export const SlackAdapter: NotificationAdapter = {
             }
 
             const response = await fetch(config.webhookUrl, {
+                ...NO_REDIRECTS,
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),

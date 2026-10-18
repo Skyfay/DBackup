@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { WHOLE_JOB_RUNS } from "@/services/history/whole-runs";
 import { subDays } from "date-fns";
 import prisma from "@/lib/prisma";
-import { getJobOverviews, type JobOverview } from "./job-overview";
+import { getJobOverviews, recentRunsOf, type JobOverview } from "./job-overview";
 import { isAirGapped } from "@/lib/core/air-gap";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { currentTenantId } from "@/lib/tenant/current";
@@ -110,8 +110,27 @@ export async function getJobList(): Promise<JobListItem[]> {
         prisma.job.findMany({ select: jobListSelect, orderBy: { createdAt: "desc" } }),
         airGappedDestinations(),
     ]);
-    const overviews = await getJobOverviews(jobs);
+    return toItems(jobs, await getJobOverviews(jobs), airGapped);
+}
 
+/**
+ * These jobs as `getJobList` lists them, in the order of the ids, for a page of the Jobs page. Their
+ * latest runs are read for them alone, not from the cache of every job. An id of a job that is gone
+ * or of another tenant is left out.
+ */
+export async function getJobItems(ids: string[], now = new Date()): Promise<JobListItem[]> {
+    if (ids.length === 0) return [];
+    const [jobs, airGapped, recent] = await Promise.all([
+        prisma.job.findMany({ where: { id: { in: ids } }, select: jobListSelect }),
+        airGappedDestinations(),
+        recentRunsOf(ids),
+    ]);
+    const order = new Map(ids.map((id, index) => [id, index]));
+    jobs.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    return toItems(jobs, await getJobOverviews(jobs, now, recent), airGapped);
+}
+
+function toItems(jobs: JobRow[], overviews: Map<string, JobOverview>, airGapped: Set<string>): JobListItem[] {
     return jobs.map((job) => ({
         ...job,
         // An air-gapped destination that is not connected is away on purpose, never offline.

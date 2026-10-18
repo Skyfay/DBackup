@@ -39,6 +39,28 @@ const blank = (value: unknown) => value === undefined || value === null || Strin
 /** Zod defaults do not run on a stored config, so a missing mode is direct, as at run time. */
 const direct = (config: Record<string, unknown>) => config.connectionMode !== "ssh";
 
+/**
+ * Whether the host field of a database names a Unix socket of the server DBackup runs on: a path.
+ * libpq reads every entry of a comma list on its own, a path or an abstract socket (`@name`) in
+ * any of them, and an empty entry of a list as its default socket. The MongoDB tools and driver
+ * take a host that ends in `.sock` or holds an encoded `/` (`%2F`) as a socket path.
+ */
+function namesSocket(adapterId: string, host: unknown): boolean {
+    if (typeof host !== "string") return false;
+    const value = host.trim();
+    if (value.startsWith("/")) return true;
+    if (adapterId === "postgres") {
+        const entries = value.split(",").map((entry) => entry.trim());
+        return entries.some((entry) => entry.startsWith("/") || entry.startsWith("@")) || (entries.length > 1 && entries.includes(""));
+    }
+    if (adapterId === "mongodb") {
+        // The hosts as `parseMongoTarget` cuts them: after the scheme and the user info, before a path.
+        const hosts = value.replace(/^mongodb(?:\+srv)?:\/\//i, "").split("@").pop()!.split(/[/?#]/)[0];
+        return hosts.split(",").some((entry) => /\.sock(?::\d+)?$/i.test(entry.trim()) || /%2f/i.test(entry));
+    }
+    return false;
+}
+
 /** Whether an adapter reaches the server DBackup runs on in every mode, which a picker of a customer leaves out. */
 export function isAlwaysHostLocal(adapterId: string): boolean {
     return ALWAYS_HOST_LOCAL.has(adapterId);
@@ -67,7 +89,8 @@ function usesHostAgent(adapterId: string, config: Record<string, unknown>): bool
  * - Local Filesystem reads and writes the files of that server in any mode.
  * - Docker Volumes without SSH talk to its Docker socket, which mounts any of its folders.
  * - SQLite in local mode opens a file of it, like the database of DBackup.
- * - A database in direct mode through a socket path, or with additional options for its tools,
+ * - A database in direct mode through a socket, in any entry of a PostgreSQL host list too (see
+ *   `namesSocket`), or with additional options for its tools,
  *   or MongoDB with a connection URI, whose options name files of it.
  * - Rsync with an option that names a file or a command, or without a login of its own.
  * - An SSH login through the agent of that server.
@@ -89,7 +112,7 @@ export function hostLocalReason(adapterId: string, config: Record<string, unknow
     }
 
     if (DATABASE_HOSTS.has(adapterId) && direct(config)) {
-        if (typeof config.host === "string" && config.host.trim().startsWith("/")) {
+        if (namesSocket(adapterId, config.host)) {
             return `${name} through a socket path reaches ${HOST}, which only the platform adds. Connect over the network or over SSH instead.`;
         }
         if (TOOL_OPTIONS.has(adapterId) && !blank(config.options)) {

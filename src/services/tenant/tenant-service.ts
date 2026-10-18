@@ -8,10 +8,11 @@ import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import { tenantNotificationKey } from "@/services/notifications/tenant-notification-settings";
 import { logoUrlOf } from "./tenant-logo-service";
 import { allowancesOfRow } from "./tenant-allowances";
+import { networkOfRow, type TenantNetwork } from "./tenant-network";
 import type { TenantAllowances } from "@/lib/tenant/allowances";
 import { logger } from "@/lib/logging/logger";
 import { sharedKindOf, providedTo } from "@/services/sharing/provided";
-import { deleteTenantBackups, forgetConnection } from "@/services/sharing/share-cleanup";
+import { deleteTenantBackups, forgetConnection, sweepCustomerFolder } from "@/services/sharing/share-cleanup";
 import type { Tx } from "@/lib/prisma-tx";
 import { sharingChanged } from "./shared-servers";
 
@@ -22,6 +23,47 @@ import { seedTenantGroups, seedTenantTemplates } from "./tenant-seed";
 async function assertNoActiveRun(client: typeof prisma | Tx, tenantId: string, name: string): Promise<void> {
     const active = await client.execution.count({ where: { tenantId, status: { in: ["Pending", "Running"] } } });
     if (active > 0) throw new ConflictError(`A run of ${name} waits or runs right now. Delete the tenant once it ended, or cancel it first.`);
+}
+
+/**
+ * Refuses to delete a tenant while a run of a customer writes to one of the destinations it shares or
+ * waits to, which the delete would take from under it. Like `connectionShareService.save`.
+ */
+async function assertNoCustomerRun(client: typeof prisma | Tx, destinationIds: readonly string[], name: string): Promise<void> {
+    if (destinationIds.length === 0) return;
+    const running = await client.execution.findFirst({
+        where: { status: { in: ["Pending", "Running"] }, job: { destinations: { some: { configId: { in: [...destinationIds] } } } } },
+        select: { tenantId: true },
+    });
+    if (!running) return;
+    const customer = await client.tenant.findUnique({ where: { id: running.tenantId }, select: { name: true } });
+    throw new ConflictError(`A run of ${customer?.name ?? "a tenant"} writes to a destination ${name} shares right now or waits to. Delete the tenant once it ended.`);
+}
+
+/**
+ * Deletes the backups of a deleted tenant on a destination another tenant shared with it, in the
+ * background. A destination it was the last tenant of is shared no longer, once whatever is left in
+ * the folder of the customers is gone like when its tenant stops sharing it, so its tenant never
+ * sees a file of a customer. When the storage does not answer, the share stays with nobody on it.
+ */
+async function clearBorrowedDestination(configId: string, tenantId: string): Promise<void> {
+    try {
+        await deleteTenantBackups(configId, tenantId);
+        const nobodyLeft = { id: configId, allTenants: false, tenants: { none: {} } };
+        if (await runAsSystem(() => prisma.connectionShare.count({ where: nobodyLeft })) > 0) {
+            await sweepCustomerFolder(configId);
+            await runAsSystem(() => prisma.connectionShare.deleteMany({ where: nobodyLeft }));
+        }
+    } catch (error: unknown) {
+        log.warn("Could not delete the backups of a deleted tenant on a shared destination", { configId, tenantId }, wrapError(error));
+    }
+    // Its folder counts for nobody any more, whatever the storage took.
+    try {
+        const { refreshStorageStatsCache } = await import("@/services/dashboard-service");
+        await refreshStorageStatsCache({ configIds: [configId] });
+    } catch {
+        // The hourly refresh counts it then.
+    }
 }
 
 /** The settings of the storage alerts of a destination, as `storage-alert-service.ts` keeps them. */
@@ -51,6 +93,8 @@ export interface TenantRow {
      * and how many databases and rules of now set a number of their own instead.
      */
     onDemand: { perDay: number | null; own: number };
+    /** Whether its connections reach the local network, and the ranges they reach anyway. Never blocked for the home tenant. */
+    network: TenantNetwork;
 }
 
 /** A tenant someone may switch to, as the head of the sidebar and All tenants show it. */
@@ -124,6 +168,7 @@ export const tenantService = {
             select: {
                 id: true, name: true, sharesWithCustomers: true, createdAt: true, logo: { select: { updatedAt: true } }, _count: { select: { memberships: true } },
                 addsDatabases: true, addsDirectorySources: true, addsDestinations: true, addsChannels: true, addsApiKeys: true, onDemandPerDay: true,
+                blocksLocalNetwork: true, allowedNetworks: true,
             },
         });
         // The connections and jobs of every tenant at once, counted by tenant, and what is shared.
@@ -165,6 +210,7 @@ export const tenantService = {
                     perDay: tenant.onDemandPerDay,
                     own: (ownDatabases.find((row) => row.tenantId === tenant.id)?._count._all ?? 0) + count(ownRules, tenant.id),
                 },
+                network: networkOfRow(tenant),
             }))
             // The home tenant first, it holds what the platform owns.
             .sort((a, b) => Number(b.isHome) - Number(a.isHome) || a.name.localeCompare(b.name));
@@ -301,26 +347,31 @@ export const tenantService = {
         // A run that waits or runs would lose its row under its feet and leave its followers waiting.
         await runAsSystem(() => assertNoActiveRun(prisma, id, tenant.name));
 
-        // What it shares goes with its connections, so its customers lose every link to them first.
-        // Their backups stay on the storage, which deleting a tenant never touches.
+        // What it shares goes with its connections, so its customers lose every link to them, in the
+        // transaction of the delete, so they keep them when it fails. Their backups stay on the
+        // storage, which deleting a tenant never touches.
         const given = await runAsSystem(() => prisma.connectionShare.findMany({ where: { tenantId: id }, select: { id: true, allTenants: true, tenants: { select: { tenantId: true } }, config: { select: { name: true, type: true, storageRole: true } } } }));
-        const withdrawn: WithdrawnByDelete[] = [];
-        if (given.length > 0) {
-            const everyone = (await prisma.tenant.findMany({ where: { id: { not: id } }, select: { id: true } })).map((other) => other.id);
-            for (const share of given) {
-                const kind = sharedKindOf(share.config);
-                if (!kind) continue;
-                const losses = await forgetConnection(share.id, kind, share.allTenants ? everyone : share.tenants.map((entry) => entry.tenantId), false);
-                withdrawn.push(...losses.map((loss) => ({ configId: share.id, name: share.config.name, kind, tenantId: loss.tenantId, jobs: loss.jobs, templates: loss.templates })));
-            }
-        }
+        const sharedDestinations = given.filter((share) => sharedKindOf(share.config) === "destination").map((share) => share.id);
+        // A run of a customer that writes to one of them would lose it under its feet.
+        await runAsSystem(() => assertNoCustomerRun(prisma, sharedDestinations, tenant.name));
         // Its own backups on destinations other tenants shared with it go once it is gone.
         const borrowed = await providedTo(id, { kind: "destination" });
 
-        const removal = await runAsSystem(() => prisma.$transaction(async (tx) => {
+        const { withdrawn, ...removal } = await runAsSystem(() => prisma.$transaction(async (tx) => {
             const where = { tenantId: id };
-            // Once more inside, since a run may have started while its customers lost what it shared.
+            // Once more inside, since a run may have started meanwhile.
             await assertNoActiveRun(tx, id, tenant.name);
+            await assertNoCustomerRun(tx, sharedDestinations, tenant.name);
+            const withdrawn: WithdrawnByDelete[] = [];
+            if (given.length > 0) {
+                const everyone = (await tx.tenant.findMany({ where: { id: { not: id } }, select: { id: true } })).map((other) => other.id);
+                for (const share of given) {
+                    const kind = sharedKindOf(share.config);
+                    if (!kind) continue;
+                    const losses = await forgetConnection(share.id, kind, share.allTenants ? everyone : share.tenants.map((entry) => entry.tenantId), false, tx);
+                    withdrawn.push(...losses.map((loss) => ({ configId: share.id, name: share.config.name, kind, tenantId: loss.tenantId, jobs: loss.jobs, templates: loss.templates })));
+                }
+            }
             // Children before what they point to: the runs and jobs hold the connections and keys.
             const runs = await tx.execution.deleteMany({ where });
             const jobs = await tx.job.deleteMany({ where });
@@ -375,21 +426,15 @@ export const tenantService = {
             // The memberships and invitations go with the tenant, its groups after them.
             await tx.tenant.delete({ where: { id } });
             await tx.group.deleteMany({ where });
-            return { name: tenant.name, connections: connections.count, jobs: jobs.count, runs: runs.count, keys: keys.count };
+            return { name: tenant.name, connections: connections.count, jobs: jobs.count, runs: runs.count, keys: keys.count, withdrawn };
         }, { timeout: 120_000 }));
 
         invalidateDashboardCache();
         sharingChanged();
         const { scheduler } = await import("@/lib/server/scheduler");
         await scheduler.refresh();
-        // The storage may take a while, so the answer does not wait for it. A destination it was the
-        // last tenant of is shared no longer once its backups there are gone.
-        for (const destination of borrowed) {
-            void deleteTenantBackups(destination.id, id)
-                .then(() => runAsSystem(() => prisma.connectionShare.deleteMany({ where: { id: destination.id, allTenants: false, tenants: { none: {} } } })))
-                .catch((error: unknown) =>
-                    log.warn("Could not delete the backups of a deleted tenant on a shared destination", { configId: destination.id, tenantId: id }, wrapError(error)));
-        }
+        // The storage may take a while, so the answer does not wait for it.
+        for (const destination of borrowed) void clearBorrowedDestination(destination.id, id);
         return { ...removal, withdrawn };
     },
 

@@ -15,6 +15,8 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 import { z } from "zod";
 
 const log = logger.child({ route: "storage/download" });
@@ -80,7 +82,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         // is what keeps a large backup out of the tab's memory.
         const token = searchParams.get("token");
         if (token) {
-            const claim = consumeFileDownloadToken(token, ctx.userId);
+            // Only the request of the tenant and the API key that prepared it collects it, so the
+            // check above held for the tenant of the file.
+            const claim = consumeFileDownloadToken(token, ctx.userId, { tenantId: ctx.tenantId, apiKeyId: ctx.apiKeyId });
             if (!claim || claim.storageId !== params.id) {
                 return NextResponse.json(
                     { error: "This download has expired. Start it again." },
@@ -100,6 +104,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         if (!file || file.includes('..') || file.startsWith('/')) {
              return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
         }
+        const configBackup = await configBackupRefusal(ctx, params.id, file);
+        if (configBackup) return configBackup;
 
         const tempDir = getTempDir();
         // Use random suffix to avoid collision if multiple downloads happen
@@ -123,6 +129,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
              await fsPromises.unlink(tempFile).catch(() => {});
         }
 
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         const keyRequired = keyRequiredResponse(error);
         if (keyRequired) return keyRequired;
 
@@ -176,6 +184,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (file.includes('..') || file.startsWith('/')) {
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
         }
+        const configBackup = await configBackupRefusal(ctx, params.id, file);
+        if (configBackup) return configBackup;
 
         const tempDir = getTempDir();
         const tempName = `${path.basename(file)}_${Date.now()}`;
@@ -199,6 +209,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 storageId: params.id,
                 file,
                 userId: ctx.userId,
+                ...(ctx.tenantId ? { tenantId: ctx.tenantId } : {}),
+                ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
                 tempFile,
                 fileName: result.fileName ?? decryptedFileName(file, isZip),
                 contentType: isZip ? "application/zip" : "application/octet-stream",
@@ -215,6 +227,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             await fsPromises.unlink(tempFile).catch(() => {});
         }
 
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         // Same contract as the GET path, so the key dialog opens for a prepare too.
         const keyRequired = keyRequiredResponse(error);
         if (keyRequired) return keyRequired;

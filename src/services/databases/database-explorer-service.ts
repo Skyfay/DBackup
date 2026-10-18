@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { newestBackupIds, readInChunks } from "@/services/history/newest-runs";
 import { compareVersions } from "@/lib/utils";
 import { extractLastError } from "@/services/dashboard/health";
 import { runsBetween } from "@/services/storage/explorer-plan";
@@ -223,17 +224,19 @@ export class DatabaseExplorerService {
         }));
     }
 
-    /** The newest kept runs of every job, newest first overall. */
+    /**
+     * The newest kept runs of every job, newest first overall. The ids come from one query for every
+     * job, `newestBackupIds`, since a query per job took minutes in All tenants of many tenants, and
+     * the rows through the client of the jobs it read.
+     */
     private async keptRuns(jobs: ExplorerDbJob[]): Promise<KeptRun[]> {
         if (jobs.length === 0) return [];
-        const perJob = await Promise.all(jobs.map((job) => prisma.execution.findMany({
-            where: { jobId: job.id, type: "Backup", status: { in: ["Success", "Partial"] } },
-            orderBy: { startedAt: "desc" },
-            take: LAST_RUNS,
+        const ids = await newestBackupIds(jobs.map((job) => job.id), { take: LAST_RUNS, statuses: ["Success", "Partial"] });
+        const rows = await readInChunks(ids, (chunk) => prisma.execution.findMany({
+            where: { id: { in: chunk } },
             select: { id: true, jobId: true, status: true, startedAt: true, size: true, metadata: true },
-        })));
-        return perJob
-            .flat()
+        }));
+        return rows
             .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
             .map((run) => ({
                 id: run.id,

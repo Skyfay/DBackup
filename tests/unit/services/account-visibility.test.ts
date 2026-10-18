@@ -77,16 +77,29 @@ describe("who sees the picture of an account", () => {
         expect(lastUserWhere()).toContain('"tenants":{"some":{"tenantId":"t-acme"}}');
     });
 
-    it("shows whoever acted in the tenant, read in that tenant", async () => {
+    it("shows a reader of the audit log whoever acted in the tenant, read in that tenant", async () => {
         const scopes: unknown[] = [];
         prismaMock.auditLog.count.mockImplementation((async () => {
             scopes.push(explicitScope());
             return 2;
         }) as never);
 
-        expect(await maySeePicture(member("t-acme"), "former-member")).toBe(true);
+        expect(await maySeePicture(member("t-acme", PERMISSIONS.AUDIT.READ), "former-member")).toBe(true);
         expect(scopes).toEqual([{ kind: "tenant", tenantId: "t-acme" }]);
         expect(prismaMock.auditLog.count).toHaveBeenCalledWith({ where: { userId: "former-member" } });
+    });
+
+    it("shows a member of the home tenant without the audit log nobody who only signed in, since every sign-in lands there", async () => {
+        prismaMock.auditLog.count.mockResolvedValue(3);
+
+        expect(await maySeePicture(member("default"), "someone-of-globex")).toBe(false);
+        expect(prismaMock.auditLog.count).not.toHaveBeenCalled();
+    });
+
+    it("shows whoever owns an API key of the tenant, without the audit log", async () => {
+        prismaMock.apiKey.count.mockResolvedValue(1);
+
+        expect(await maySeePicture(member("t-acme"), "key-owner")).toBe(true);
     });
 
     it("shows nobody of another tenant who never acted in this one", async () => {

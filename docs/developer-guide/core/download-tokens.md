@@ -19,13 +19,15 @@ Download dialog, "A server", Make the link
               ↓
 POST /api/storage/[id]/download-url      (a pick is planned first, so a missing key shows in the dialog)
               ↓
-generateLinkToken({ tenantId, storageId, file, userId, decrypt, pick })
+generateLinkToken({ tenantId, storageId, file, userId, apiKeyId, decrypt, pick })
               ↓
 Returns data.url, data.token, data.fileName
               ↓
 curl / wget / PowerShell on another host: GET /api/storage/public-download?token=...
               ↓
 claimLinkToken()   one request at a time
+              ↓
+makerMayDownload()   its maker, and the API key it was made with, may still download in its tenant
               ↓
 A pick streams through openArchiveDownload(), a whole file through a temp file
               ↓
@@ -41,7 +43,8 @@ All tokens live in `src/lib/auth/download-tokens.ts`, in memory.
 ```typescript
 interface DownloadToken {
     kind?: "link";           // links: the only tokens the public download serves
-    tenantId?: string;       // links and shared dumps: the tenant it was made in and is served in
+    tenantId?: string;       // the tenant it was made in and is served in, which collects it
+    apiKeyId?: string;       // the API key that made it, none for a session
     storageId: string;
     file: string;
     decrypt: boolean;
@@ -71,8 +74,9 @@ interface DownloadToken {
 | `markTokenUsed(token, from?)` | Spends it once the last byte left, with the host |
 | `releaseLinkToken(token)` | Hands it back after a transfer that broke off |
 | `linkStatus(token, userId)` | `open`, `fetched` or `expired` for its maker, `null` for anyone else |
-| `generateSelectionDownloadToken` | A browser download of a pick. Not spent on use, since a browser may retry or resume, and bound to the session instead |
+| `generateSelectionDownloadToken` | A browser download of a pick. Not spent on use, since a browser may retry or resume, and bound to the session instead. Served in `runAsTenant` of its tenant |
 | `generateFileDownloadToken` | A browser download prepared into a temp file first, bound to the session |
+| `madeBy(token, maker)` | Whether a request is the one that made a token: the same tenant and the same API key, or none for a session. `consumeFileDownloadToken` and `consumeSelectionDownloadToken` take the maker of the request and read any other token as ran out, so the permission check of the request that collects it held for the tenant of the file |
 | `generateSharedDownloadToken`, `consumeSharedDownloadToken` | The dump of a shared database a customer collects, bound to the user and the tenant that asked for it. The download of a destination never serves it |
 
 A pick streams the same way as a browser download of it: `openArchiveDownload()` reads each entry by byte range, decrypts it and packs it on the fly, one dump as it is, several as one tar.gz at gzip level 1. Nothing waits on the disk of the DBackup host, and the first byte leaves at once. A link for a whole file, the archive as stored or an older backup decrypted, still goes through a temp file.
@@ -118,7 +122,9 @@ Only the user who made the link gets its status. Anyone else, and a link that wa
 
 ### Public download
 
-**GET** `/api/storage/public-download?token=...`, public on purpose. It serves only a link, inside `runAsTenant` of the tenant it was made in, and answers `401` for a link that is used up, ran out or is being served to another request, and for any token that is no link. A link without a tenant or a maker is refused as well, it never falls back to the home tenant.
+**GET** `/api/storage/public-download?token=...`, public on purpose. It serves only a link, inside `runAsTenant` of the tenant it was made in, and answers `401` for a link that is used up, ran out or is being served to another request, and for any token that is no link. A link without a tenant or a maker is refused as well, it never falls back to the home tenant. No session checks a permission here, so `makerMayDownload` in `src/lib/auth/download-maker.ts` asks again whether its maker may still download in its tenant, and for a link made with an API key whether that key is on, not expired, allowed in its tenant and holds the right its owner still has. It answers `403` otherwise.
+
+A [configuration backup](/developer-guide/advanced/config-backup#who-downloads-it) gets no link: `POST /download-url` refuses one with `403`, whoever asks, and the public download refuses one again before it reads a byte.
 
 ### Shared download
 

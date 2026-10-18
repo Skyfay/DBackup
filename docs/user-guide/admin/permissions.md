@@ -38,7 +38,7 @@ A platform admin passes every check in every tenant. A few tasks are for a platf
 - Make someone a platform admin or take it back, see [Tenants](/user-guide/admin/tenants#platform-admins)
 - Change the account of a platform admin
 - Add, change and delete sign-in providers
-- Restore a configuration backup, which brings back every tenant, user and group
+- Download, open or restore a configuration backup, which holds every tenant, user and group with the keys of the instance
 - Download the database
 - Restore or delete for good, from Recently deleted, the account of a platform admin, of a platform group or of someone who also worked in another tenant
 

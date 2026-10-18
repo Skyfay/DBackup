@@ -5,6 +5,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { toAdapterListItem } from "@/lib/adapters/dto";
@@ -61,6 +62,8 @@ export async function POST(
 
         return NextResponse.json(toAdapterListItem(clone), { status: 201 });
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         log.error("Clone adapter error", { adapterId: params.id }, wrapError(error));
         return NextResponse.json({
             success: false,

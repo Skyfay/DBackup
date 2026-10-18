@@ -10,6 +10,8 @@ import { auditService } from "@/services/audit-service";
 import { userService } from "@/services/user/user-service";
 import { restoreAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 
 const log = logger.child({ route: "storage/restore" });
 
@@ -31,6 +33,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (!file || typeof file !== 'string' || file.includes('..') || file.startsWith('/')) {
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
         }
+        // A configuration backup goes back through the configuration restore, only for a platform admin.
+        const configBackup = await configBackupRefusal(ctx, params.id, file);
+        if (configBackup) return configBackup;
 
         const startedBy = (await userService.nameOf(ctx.userId)) ?? "Unknown";
 
@@ -73,6 +78,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         return NextResponse.json(result, { status: 202 });
 
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         // A malformed request is the caller's to fix, not a server failure.
         if (error instanceof ValidationError) {
             return NextResponse.json({ error: error.message }, { status: 400 });

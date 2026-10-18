@@ -9,6 +9,11 @@ vi.mock("@/services/dashboard/aggregates", () => ({
     getMaxConcurrentJobs: () => Promise.resolve(1),
 }));
 
+// The jobs of the queue of every tenant, here none but those the test lists, whose schedules the plan reads.
+vi.mock("@/services/jobs/queue-snapshot", () => ({
+    queueJobs: async () => [],
+}));
+
 const { getJobTimeline } = await import("@/services/jobs/job-timeline-service");
 
 const now = new Date("2026-10-02T03:12:00Z");

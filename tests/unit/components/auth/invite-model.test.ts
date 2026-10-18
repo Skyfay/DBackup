@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inviteStep, refusalField } from "@/components/auth/invite-model";
+import { inviteSignInHref, inviteStep, refusalField } from "@/components/auth/invite-model";
 
 const INVITATION = { tenantId: "t1", tenantName: "Acme", groupName: "Operators", expiresAt: "2026-10-22T00:00:00.000Z" };
 
@@ -15,6 +15,11 @@ describe("the page of an invitation", () => {
 
     it("offers everyone else the sign-in or a new account", () => {
         expect(inviteStep({ invitation: INVITATION, signedIn: null })).toBe("sign-in");
+    });
+
+    it("signs in on a login page that comes back to the invitation", () => {
+        const href = inviteSignInHref("tok+en/1");
+        expect(new URL(href, "http://localhost").searchParams.get("next")).toBe("/invite?token=tok%2Ben%2F1");
     });
 });
 

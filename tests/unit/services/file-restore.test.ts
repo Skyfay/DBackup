@@ -176,6 +176,21 @@ describe("planFileRestore", () => {
     });
 });
 
+describe("openArchiveForRestore", () => {
+    it("reads the index sidecar in the same view as the archive, the tenant the path is in", async () => {
+        await buildFixture(true);
+        const { openArchiveForRestore } = await import("@/services/restore/file-restore");
+        const { archiveIndexService } = await import("@/services/backup/archive-index-service");
+        const fetchSidecar = vi.spyOn(archiveIndexService, "fetchSidecar");
+
+        const opened = await openArchiveForRestore("storage-1", "backups/job1/backup.tar", undefined, "tenant-1");
+        await opened.dispose();
+
+        expect(fetchSidecar).toHaveBeenCalledWith("storage-1", "backups/job1/backup.tar", ".index", "tenant-1");
+        fetchSidecar.mockRestore();
+    });
+});
+
 describe("streamFileRestore", () => {
     for (const encrypted of [false, true]) {
         it(`streams the selection as a tar.gz (${encrypted ? "encrypted" : "plain"} archive)`, async () => {

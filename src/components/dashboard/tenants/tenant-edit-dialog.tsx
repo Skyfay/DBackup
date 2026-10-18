@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Eye, Loader2, Lock, Pencil, Share2, Users, Zap } from "lucide-react";
+import { Building2, Eye, Loader2, Lock, Network, Pencil, Share2, Users, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { renameTenant, setTenantAllowances, setTenantSharing } from "@/app/actions/tenant/tenant";
+import { renameTenant, setTenantAllowances, setTenantNetwork, setTenantSharing } from "@/app/actions/tenant/tenant";
 import { setTenantOnDemand } from "@/app/actions/tenant/tenant-on-demand";
 import { SectionRail, SectionSelect, type NavEntry } from "@/components/adapter/connection-form-nav";
 import { Button } from "@/components/ui/button";
@@ -17,18 +17,20 @@ import { ON_DEMAND_DEFAULT } from "@/lib/tenant/sharing";
 import { cn } from "@/lib/utils";
 import { AllowancesPane, GeneralPane, OnDemandPane, PaneHead, SharingPane, type OnDemandDraft } from "./tenant-edit-panes";
 import { TenantMembersPane } from "./tenant-members-pane";
-import { allowancesPatch, countOf, type TenantListRow } from "./tenant-words";
+import { NetworkPane } from "./tenant-network-pane";
+import { allowancesPatch, countOf, sameNetwork, type TenantListRow } from "./tenant-words";
 
 const log = logger.child({ component: "tenant-edit-dialog" });
 
 /** The parts of Edit of a tenant, in the order of the list on the left. */
-export type TenantSection = "general" | "members" | "sharing" | "allowances" | "on-demand";
+export type TenantSection = "general" | "members" | "sharing" | "allowances" | "network" | "on-demand";
 
 const SECTIONS: (NavEntry & { id: TenantSection; description: string; customersOnly?: boolean })[] = [
     { id: "general", label: "General", icon: Building2, description: "The name of the tenant." },
     { id: "members", label: "Members", icon: Users, description: "Who works here with which group." },
     { id: "sharing", label: "Sharing", icon: Share2, description: "Whether it gives databases, destinations and channels to other tenants." },
     { id: "allowances", label: "What it may add", icon: Lock, description: "What the tenant adds itself, which the platform decides.", customersOnly: true },
+    { id: "network", label: "Network", icon: Network, description: "Whether its connections reach the local network of the server DBackup runs on.", customersOnly: true },
     { id: "on-demand", label: "Backups on demand", icon: Zap, description: "How many backups a day it may start of every database given to it." },
 ];
 
@@ -47,10 +49,10 @@ interface TenantEditDialogProps {
 
 /**
  * Edit of a tenant, every setting of it in one dialog: a list of the parts on the left, the part on
- * the right, like the form of a connection. The name, sharing, what it may add and backups on demand
- * are saved together with Save changes, the members and Follow change at once. The home tenant has
- * no limits, so it has no part for them. It may still get databases of another tenant that shares,
- * so it keeps Backups on demand.
+ * the right, like the form of a connection. The name, sharing, what it may add, the network and
+ * backups on demand are saved together with Save changes, the members and Follow change at once.
+ * The home tenant has no limits and reaches the network of its server, so it has no part for them.
+ * It may still get databases of another tenant that shares, so it keeps Backups on demand.
  */
 export function TenantEditDialog({ tenant, section = "general", viewerId, canManage, viewerPlatformAdmin, onClose, onChanged }: TenantEditDialogProps) {
     const sections = SECTIONS.filter((entry) => !(entry.customersOnly && tenant.isHome));
@@ -59,6 +61,7 @@ export function TenantEditDialog({ tenant, section = "general", viewerId, canMan
     const [nameError, setNameError] = useState<string | null>(null);
     const [shares, setShares] = useState(tenant.sharesWithCustomers);
     const [allowances, setAllowances] = useState(tenant.allowances);
+    const [network, setNetwork] = useState(tenant.network);
     const [onDemand, setOnDemand] = useState<OnDemandDraft>({ on: tenant.onDemand.perDay !== null, perDay: tenant.onDemand.perDay ?? ON_DEMAND_DEFAULT });
     const [pending, setPending] = useState(false);
     const readOnly = !canManage;
@@ -67,10 +70,12 @@ export function TenantEditDialog({ tenant, section = "general", viewerId, canMan
     const trimmed = name.trim();
     const patch = allowancesPatch(tenant.allowances, allowances);
     const perDay = onDemand.on ? onDemand.perDay : null;
+    const networkChanged = !tenant.isHome && !sameNetwork(tenant.network, network);
     const changes = [
         ...(trimmed !== tenant.name ? ["the name"] : []),
         ...(shares !== tenant.sharesWithCustomers ? ["sharing"] : []),
         ...(Object.keys(patch).length > 0 ? ["what it may add"] : []),
+        ...(networkChanged ? ["the network"] : []),
         ...(perDay !== tenant.onDemand.perDay ? ["backups on demand"] : []),
     ];
 
@@ -96,6 +101,7 @@ export function TenantEditDialog({ tenant, section = "general", viewerId, canMan
             const done = (trimmed === tenant.name || await step("general", () => renameTenant(tenant.id, trimmed)))
                 && (shares === tenant.sharesWithCustomers || await step("sharing", () => setTenantSharing(tenant.id, shares)))
                 && (Object.keys(patch).length === 0 || await step("allowances", () => setTenantAllowances(tenant.id, patch)))
+                && (!networkChanged || await step("network", () => setTenantNetwork(tenant.id, network)))
                 && (perDay === tenant.onDemand.perDay || await step("on-demand", () => setTenantOnDemand(tenant.id, perDay)));
             // What went through before a refusal shows once the list loads again.
             onChanged();
@@ -121,6 +127,8 @@ export function TenantEditDialog({ tenant, section = "general", viewerId, canMan
                 return <SharingPane tenant={tenant} value={shares} onChange={setShares} disabled={disabled} />;
             case "allowances":
                 return <AllowancesPane tenant={tenant} value={allowances} onChange={setAllowances} disabled={disabled} />;
+            case "network":
+                return <NetworkPane tenant={tenant} value={network} onChange={setNetwork} disabled={disabled} />;
             case "on-demand":
                 return <OnDemandPane tenant={tenant} value={onDemand} onChange={setOnDemand} disabled={disabled} canManage={canManage} onChanged={onChanged} />;
         }

@@ -13,11 +13,13 @@ import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { validateStorageRole } from "@/lib/adapters/role-validation";
 import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
-import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { layLoginsOver } from "@/lib/adapters/config-resolver";
 import { hostLocalReason } from "@/lib/adapters/host-local";
 import { currentTenantId } from "@/lib/tenant/current";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
+import { assertTenantReach } from "@/services/tenant/tenant-network";
+import { assertOffSharedPlaces } from "./shared-place";
 
 export interface CreateAdapterInput {
     name: string;
@@ -37,8 +39,9 @@ const KIND_NAMES: Record<string, string> = { database: "source", storage: "desti
  * Checks and stores a new connection with its secrets encrypted.
  *
  * @throws ValidationError for a missing field, a credential profile of the wrong type, a role the
- *   adapter cannot take, a snapshot the server cannot deliver or a connection that reaches the
- *   server DBackup runs on outside the platform.
+ *   adapter cannot take, a snapshot the server cannot deliver, a connection that reaches the
+ *   server DBackup runs on outside the platform or the local network its tenant blocks, or storage
+ *   that overlaps a destination the tenant shares with customers.
  * @throws NotFoundError for a credential profile that does not exist.
  * @throws ConflictError when a connection of the same type has the name already.
  */
@@ -68,6 +71,8 @@ export async function createAdapter(input: CreateAdapterInput): Promise<AdapterC
     const configObject = typeof config === "string" ? JSON.parse(config) : config;
     // Before the snapshot check, which already logs in to the server the config names.
     await assertMayReachHost(adapterId, configObject, { primaryCredentialId, sshCredentialId });
+    // Nor where a destination of the tenant shared with customers keeps their backups.
+    if (type === "storage") await assertOffSharedPlaces(adapterId, configObject, { primaryCredentialId, sshCredentialId });
     // A snapshot-enabled config is only accepted when the server can actually deliver one, the
     // gate of the form alone could be bypassed.
     await validateSnapshotConfig(adapterId, configObject, role, primaryCredentialId, sshCredentialId);
@@ -100,13 +105,14 @@ export interface HostCheckLogins {
 
 /**
  * Refuses a connection that reaches the server DBackup runs on, see `hostLocalReason`, unless the
- * code runs for the home tenant or outside any tenant, like a script or the system scope. Every path
- * that saves a connection or runs one that is not saved yet, like a connection test or a browse of
- * its folders, checks it, since one run is enough to read the key of every secret.
+ * code runs for the home tenant or outside any tenant, like a script or the system scope, and one
+ * whose hosts lie in the local network while its tenant blocks it, see `tenant-network.ts`. Every
+ * path that saves a connection or runs one that is not saved yet, like a connection test or a
+ * browse of its folders, checks it, since one run is enough to read the key of every secret.
  *
  * The config may come as a function, for a caller that would decrypt it only for this check.
  *
- * @throws ValidationError saying what reaches the server.
+ * @throws ValidationError saying what reaches the server or which host lies in the local network.
  */
 export async function assertMayReachHost(
     adapterId: string,
@@ -119,8 +125,10 @@ export async function assertMayReachHost(
     const plain = { ...(typeof config === "function" ? config() : config) };
     const primary = logins.primaryCredentialId ?? null;
     const ssh = logins.sshCredentialId ?? null;
-    // An SSH key profile decides how SSH logs in, through the agent of the server among others.
-    const effective = primary || ssh ? await overlayCredentialsOnConfig(adapterId, plain, primary, ssh) : plain;
+    // An SSH key profile decides how SSH logs in, through the agent of the server among others,
+    // and a webhook profile holds the URL a channel posts to.
+    const effective = primary || ssh ? await layLoginsOver(adapterId, plain, primary, ssh) : plain;
     const reason = hostLocalReason(adapterId, effective);
     if (reason) throw new ValidationError(reason, { field: "config" });
+    await assertTenantReach(tenantId, adapterId, effective);
 }

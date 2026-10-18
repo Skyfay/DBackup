@@ -9,6 +9,8 @@ import { PermissionError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     touched: vi.fn(),
+    /** The words of the refusal, like that All tenants only reads, or the permission when left out. */
+    message: undefined as string | undefined,
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -16,7 +18,7 @@ vi.mock("@/lib/server/request-headers", () => ({ requestHeaders: async () => new
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: async () => ({ userId: "max", permissions: [], isPlatformAdmin: false, authMethod: "session", tenantId: "default", allTenants: false }),
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
-        throw new PermissionError(permission);
+        throw new PermissionError(permission, mocks.message ? { message: mocks.message } : undefined);
     },
     hasPermissionWithContext: () => false,
 }));
@@ -26,7 +28,31 @@ vi.mock("@/services/jobs/job-service", () => ({ jobService: { deleteJob: mocks.t
 vi.mock("@/services/adapters/adapter-list", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/adapters/adapter-list")>()),
     getSavedConnection: mocks.touched,
+    listAdapters: mocks.touched,
+    // The kind of a connection, which decides the permission its routes check.
+    getAdapterType: async () => "database",
 }));
+vi.mock("@/services/adapters/adapter-create", () => ({ createAdapter: mocks.touched }));
+vi.mock("@/services/adapters/adapter-service", () => ({ deleteAdapter: mocks.touched }));
+vi.mock("@/services/adapters/adapter-update", () => ({ updateAdapter: mocks.touched, UnsupportedSettingError: class extends Error {} }));
+vi.mock("@/services/adapters/adapter-clone", () => ({ cloneAdapter: mocks.touched }));
+vi.mock("@/services/auth/credential-service", () => ({
+    listCredentialProfiles: mocks.touched,
+    listCredentialProfilesWithCounts: mocks.touched,
+    getCredentialProfile: mocks.touched,
+    getDecryptedCredentialData: mocks.touched,
+    getCredentialUsage: mocks.touched,
+    createCredentialProfile: mocks.touched,
+    updateCredentialProfile: mocks.touched,
+    deleteCredentialProfile: mocks.touched,
+}));
+vi.mock("@/services/backup/backup-service", () => ({ backupService: { executeJob: mocks.touched } }));
+vi.mock("@/services/system/execution-history-service", () => ({
+    listExecutionHistory: mocks.touched,
+    getExecutionHistoryFacets: mocks.touched,
+    getExecutionHistoryRow: mocks.touched,
+}));
+vi.mock("@/services/dashboard-service", () => ({ getCalendarData: mocks.touched, getCalendarDataForYear: mocks.touched }));
 vi.mock("@/services/system/system-task-settings", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/system/system-task-settings")>()),
     getSystemTaskRows: mocks.touched,
@@ -54,6 +80,19 @@ const loginImage = await import("@/app/api/settings/login-image/route");
 const browse = await import("@/app/api/adapters/[id]/browse/route");
 const databases = await import("@/app/api/adapters/[id]/databases/route");
 const restoreApply = await import("@/app/api/settings/config-backup/restore/apply/route");
+const adapters = await import("@/app/api/adapters/route");
+const adapter = await import("@/app/api/adapters/[id]/route");
+const adapterClone = await import("@/app/api/adapters/[id]/clone/route");
+const credentials = await import("@/app/api/credentials/route");
+const credential = await import("@/app/api/credentials/[id]/route");
+const reveal = await import("@/app/api/credentials/[id]/reveal/route");
+const usage = await import("@/app/api/credentials/[id]/usage/route");
+const jobs = await import("@/app/api/jobs/route");
+const run = await import("@/app/api/jobs/[id]/run/route");
+const history = await import("@/app/api/history/route");
+const historyRun = await import("@/app/api/history/[id]/route");
+const calendar = await import("@/app/api/dashboard/calendar/route");
+const { ALL_TENANTS_REFUSAL } = await vi.importActual<typeof import("@/lib/auth/access-control")>("@/lib/auth/access-control");
 
 const url = "http://localhost/api/x";
 const params = { params: Promise.resolve({ id: "job-1" }) };
@@ -72,16 +111,46 @@ const calls: [string, () => Promise<Response>][] = [
     ["GET /api/adapters/[id]/browse", () => browse.GET(new NextRequest(`${url}?path=`), params)],
     ["GET /api/adapters/[id]/databases", () => databases.GET(new NextRequest(url), params)],
     ["POST /api/settings/config-backup/restore/apply", () => restoreApply.POST(json("POST", { token: "t-1" }))],
+    ["GET /api/adapters", () => adapters.GET(new NextRequest(`${url}?type=database`))],
+    ["POST /api/adapters", () => adapters.POST(json("POST", { name: "Shop", type: "database", adapterId: "mysql", config: {} }))],
+    ["DELETE /api/adapters/[id]", () => adapter.DELETE(new NextRequest(url, { method: "DELETE" }), params)],
+    ["PUT /api/adapters/[id]", () => adapter.PUT(json("PUT", { name: "Shop" }), params)],
+    ["POST /api/adapters/[id]/clone", () => adapterClone.POST(json("POST"), params)],
+    ["GET /api/credentials", () => credentials.GET(new NextRequest(url))],
+    ["POST /api/credentials", () => credentials.POST(json("POST", { name: "Login", type: "USERNAME_PASSWORD", data: {} }))],
+    ["GET /api/credentials/[id]", () => credential.GET(new NextRequest(url), params)],
+    ["PUT /api/credentials/[id]", () => credential.PUT(json("PUT", { name: "Login" }), params)],
+    ["DELETE /api/credentials/[id]", () => credential.DELETE(new NextRequest(url, { method: "DELETE" }), params)],
+    ["GET /api/credentials/[id]/reveal", () => reveal.GET(new NextRequest(url), params)],
+    ["GET /api/credentials/[id]/usage", () => usage.GET(new NextRequest(url), params)],
+    ["POST /api/jobs", () => jobs.POST(json("POST", { name: "Nightly", schedule: "0 2 * * *", destinations: [{ configId: "d-1" }] }))],
+    ["POST /api/jobs/[id]/run", () => run.POST(json("POST"), params)],
+    ["GET /api/history", () => history.GET(new NextRequest(url))],
+    ["GET /api/history/[id]", () => historyRun.GET(new NextRequest(url), params)],
+    ["GET /api/dashboard/calendar", () => calendar.GET(new NextRequest(url))],
 ];
 
 describe.each(calls)("%s", (_name, call) => {
-    beforeEach(() => mocks.touched.mockReset());
+    beforeEach(() => {
+        mocks.touched.mockReset();
+        mocks.message = undefined;
+    });
 
     it("answers 403 to a caller without the permission, and does nothing", async () => {
         const response = await call();
 
         expect(response.status).toBe(403);
         expect(await response.json()).toMatchObject({ success: false });
+        expect(mocks.touched).not.toHaveBeenCalled();
+    });
+
+    it("answers 403 with its reason to All tenants, which only reads, and does nothing", async () => {
+        mocks.message = ALL_TENANTS_REFUSAL;
+
+        const response = await call();
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ error: ALL_TENANTS_REFUSAL });
         expect(mocks.touched).not.toHaveBeenCalled();
     });
 });

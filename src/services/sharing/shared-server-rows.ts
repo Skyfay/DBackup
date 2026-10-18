@@ -240,7 +240,8 @@ export async function sharedServerItems(tenantId: string, options: { backups: bo
         // the key, so a database given or taken back shows at once.
         const [stamp, perDay] = await Promise.all([onDemandStamp(tenantId, now), runAsSystem(() => tenantOnDemand([tenantId]))]);
         const key = `shared-server-rows:${tenantId}:${stamp}:v${sharingVersion()}:${perDay.get(tenantId) ?? "off"}`;
-        rows = await cached(key, ROWS_TTL_MS, () => loadRows(tenantId, now));
+        // The newest backup of each database is a run of the tenant of the server, whose end clears it.
+        rows = await cached(key, ROWS_TTL_MS, () => loadRows(tenantId, now), { readsOtherTenants: true });
     } catch (error: unknown) {
         log.warn("Reading the shared databases of a tenant failed", { tenantId }, wrapError(error));
         return [];

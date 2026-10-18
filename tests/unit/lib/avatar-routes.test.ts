@@ -73,7 +73,7 @@ describe("the routes of the pictures of the people", () => {
 
         expect(await response.json()).toEqual({ success: true, data: { url: "/api/avatar/u1?v=1790000000000" } });
         expect(mocks.save).toHaveBeenCalledWith("u1", expect.any(Uint8Array));
-        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { name: "Manu", changes: [{ field: "Picture", from: null, to: "A new picture" }] }, "u1");
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { name: "Manu", changes: [{ field: "Picture", from: null, to: "A new picture" }] }, "u1", { tenantId: "default" });
     });
 
     it("says why a file is refused, and refuses one larger than 5 MB before reading it", async () => {
@@ -92,7 +92,7 @@ describe("the routes of the pictures of the people", () => {
         mocks.user = { id: "u1", name: "Manu", image: "/api/avatar/u1?v=1" };
         expect((await ownRoute.DELETE()).status).toBe(200);
         expect(mocks.remove).toHaveBeenCalledWith("u1");
-        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { name: "Manu", changes: [{ field: "Picture", from: "A picture", to: null }] }, "u1");
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { name: "Manu", changes: [{ field: "Picture", from: "A picture", to: null }] }, "u1", { tenantId: "default" });
 
         vi.clearAllMocks();
         mocks.user = { id: "u1", name: "Manu", image: null };

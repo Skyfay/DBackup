@@ -180,6 +180,20 @@ describe("the run of a restore a customer starts on a shared server", () => {
         expectNothingOfTheServer(JSON.stringify(runLog()));
     });
 
+    it("names neither another database the server holds nor another host of its domain in an error of its tools", async () => {
+        wire(async () => {
+            throw new Error("ERROR 1049 (42000): Unknown database 'wiki_initech' on replica2.msp.internal");
+        });
+        // The databases the server listed last, which the backup does not hold.
+        prismaMock.databaseListCache.findUnique.mockResolvedValueOnce({ databasesJson: JSON.stringify(["shop_acme", "wiki_initech"]) } as never);
+        await runRestorePipeline("run-1", SHARED);
+
+        const text = JSON.stringify(runLog());
+        expect(text).not.toContain("wiki_initech");
+        expect(text).not.toContain("replica2");
+        expect(runLog().map((entry) => entry.message)).toContain("Failed to restore database 'shop_acme': ERROR 1049 (42000): Unknown database 'another database' on the server");
+    });
+
     it("ends on a line that names nothing of the archive when the destination does not answer, and keeps the error out of the notification", async () => {
         wire(mysqlLike, { archiveAnswers: false });
         await runRestorePipeline("run-1", SHARED);

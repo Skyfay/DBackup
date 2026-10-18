@@ -16,6 +16,8 @@ describe("creating a connection", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
+        // The tenant shares no destination with customers.
+        prismaMock.connectionShare.findMany.mockResolvedValue([]);
         prismaMock.adapterConfig.create.mockImplementation((async (args: { data: Record<string, unknown> }) => ({ id: "new", ...args.data })) as never);
     });
 

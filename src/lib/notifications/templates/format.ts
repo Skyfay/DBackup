@@ -80,13 +80,15 @@ export const TENANT_PARAM = "tenant";
 
 /** A link that names the tenant of its record, so it opens there from any other tenant. */
 function inTenant(href: string, tenantId: string | undefined): string {
-    return tenantId ? `${href}&${TENANT_PARAM}=${encodeURIComponent(tenantId)}` : href;
+    return tenantId ? `${href}${href.includes("?") ? "&" : "?"}${TENANT_PARAM}=${encodeURIComponent(tenantId)}` : href;
 }
 
 /** The pages a notification opens, each with the tenant of its record when the sender knows it. */
 export const paths = {
     run: (id: string, tenantId?: string) => inTenant(`/dashboard/history/run?id=${encodeURIComponent(id)}&from=history`, tenantId),
     job: (id: string, tenantId?: string) => inTenant(`/dashboard/jobs?job=${encodeURIComponent(id)}`, tenantId),
+    /** The Backups page. */
+    backups: (tenantId?: string) => inTenant("/dashboard/backups", tenantId),
     /** A destination on the Backups page, with its alerts and its history. */
     storage: (id: string, tenantId?: string) => inTenant(`/dashboard/backups?tab=destinations&destination=${encodeURIComponent(id)}`, tenantId),
     connection: (kind: "database" | "storage", id: string, tenantId?: string) =>

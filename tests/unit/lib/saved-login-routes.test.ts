@@ -94,7 +94,7 @@ const cases = [
         applied: () => mocks.overlay,
         read: PERMISSIONS.DESTINATIONS.READ,
         manage: PERMISSIONS.DESTINATIONS.WRITE,
-        formOfManagers: false,
+        formOfManagers: true,
     },
     {
         name: "test-ssh",
@@ -102,7 +102,7 @@ const cases = [
         applied: () => mocks.overlay,
         read: PERMISSIONS.SOURCES.VIEW,
         manage: PERMISSIONS.SOURCES.WRITE,
-        formOfManagers: false,
+        formOfManagers: true,
     },
 ] as const;
 
@@ -115,7 +115,7 @@ describe.each(cases)("POST $name with a saved login", ({ send, applied, read, ma
     });
 
     it("refuses it to someone who may only see the connections, and applies nothing", async () => {
-        // test-ssh checks the right to see sources itself, the snapshot check that of destinations.
+        // They may see connections of every kind, but change none of this kind.
         mocks.ctx = someone(read, PERMISSIONS.SOURCES.VIEW);
 
         const response = await send();
@@ -163,6 +163,35 @@ describe("a config of a form", () => {
         expect([tried.status, listed.status]).toEqual([403, 403]);
         expect(mocks.testConnection).not.toHaveBeenCalled();
         expect(mocks.overlay).not.toHaveBeenCalled();
+    });
+
+    it("opens no SSH and asks no server about snapshots for someone who may only see the connections, without a saved login too", async () => {
+        mocks.ctx = someone(PERMISSIONS.SOURCES.VIEW, PERMISSIONS.DESTINATIONS.READ);
+        mocks.offHost.mockReset();
+
+        const responses = await Promise.all([
+            // SQL Server writes a probe file into the folder on the host it names.
+            testSshRoute.POST(post({ adapterId: "mssql", config: { connectionMode: "ssh", sshHost: "files.invalid", sshUsername: "root", backupPath: "/srv" } })),
+            testSshRoute.POST(post({ config: { connectionMode: "ssh", sshHost: "files.invalid", sshUsername: "root" } })),
+            checkSnapshotRoute.POST(post({ adapterId: "smb", config: { address: "//files.invalid/share" } })),
+        ]);
+
+        expect(responses.map((response) => response.status)).toEqual([403, 403, 403]);
+        expect(mocks.offHost).not.toHaveBeenCalled();
+        expect(mocks.overlay).not.toHaveBeenCalled();
+    });
+
+    it("lets someone who may change connections of the kind test SSH of a form, sources:write without an adapter", async () => {
+        mocks.offHost.mockReset();
+        // The check of the host refuses, so nothing connects, and the answer shows the permission passed.
+        mocks.offHost.mockRejectedValue(new ValidationError("An SSH agent login uses the keys of the server DBackup runs on."));
+
+        mocks.ctx = someone(PERMISSIONS.DESTINATIONS.WRITE);
+        expect((await testSshRoute.POST(post({ adapterId: "sftp", config: { host: "files.invalid", authType: "agent" } }))).status).toBe(400);
+        expect((await testSshRoute.POST(post({ config: { sshHost: "files.invalid", sshAuthType: "agent" } }))).status).toBe(403);
+
+        mocks.ctx = someone(PERMISSIONS.SOURCES.WRITE);
+        expect((await testSshRoute.POST(post({ config: { sshHost: "files.invalid", sshAuthType: "agent" } }))).status).toBe(400);
     });
 
     it("keeps it for someone who may change the connection", async () => {

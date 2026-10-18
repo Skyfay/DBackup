@@ -9,6 +9,7 @@ import { explicitScope, runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { hostLocalReason } from "@/lib/adapters/host-local";
 import { requestHeaders } from "@/lib/server/request-headers";
+import { assertReachFromHere, assertTenantReach } from "@/services/tenant/tenant-network";
 import type {
     CredentialData,
     CredentialType,
@@ -63,6 +64,10 @@ export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise
     if (adapter.tenantId && adapter.tenantId !== HOME_TENANT_ID) {
         const reason = hostLocalReason(adapter.adapterId, resolved as Record<string, unknown>);
         if (reason) throw new ConfigurationError(adapter.adapterId, reason);
+        // Nor the local network while its tenant blocks it, also when a name resolves elsewhere
+        // since it was saved or the platform turned the block on later. A connection another
+        // tenant shares follows the setting of that tenant, the one of its row.
+        await assertTenantReach(adapter.tenantId, adapter.adapterId, resolved);
     }
     return resolved;
 }
@@ -154,13 +159,14 @@ export async function mayReachHost(): Promise<boolean> {
 
 /**
  * Refuses a config of a form that reaches the server DBackup runs on, unless the platform runs it,
- * see `mayReachHost`. Every way to try a config before it is saved, like a test or a read of its
- * databases, goes through `overlayCredentialsOnConfig` or calls this, see `host-local.ts`.
+ * see `mayReachHost`, and one whose hosts lie in the local network while the tenant that runs now
+ * blocks it, see `tenant-network.ts`. Every way to try a config before it is saved, like a test or
+ * a read of its databases, goes through `overlayCredentialsOnConfig` or calls this.
  */
 export async function assertConfigOffHost(adapterId: string, config: Record<string, unknown>): Promise<void> {
     const reason = hostLocalReason(adapterId, config);
-    if (!reason || (await mayReachHost())) return;
-    throw new ValidationError(reason, { field: "config" });
+    if (reason && !(await mayReachHost())) throw new ValidationError(reason, { field: "config" });
+    await assertReachFromHere(adapterId, config);
 }
 
 /** The fields of a config that name a program on the server DBackup runs on, like `sqliteBinaryPath`. */
@@ -182,9 +188,26 @@ export function withoutBinaryPaths(config: Record<string, unknown>): Record<stri
  * IDs need to be resolved.
  *
  * Mutates and returns the supplied config. Throws `ConfigurationError` if a
- * required primary slot is missing or has the wrong type.
+ * required primary slot is missing or has the wrong type, and `ValidationError`
+ * from `assertConfigOffHost` for a config the tenant that runs now may not run.
  */
 export async function overlayCredentialsOnConfig(
+    adapterId: string,
+    config: Record<string, unknown>,
+    primaryCredentialId: string | null,
+    sshCredentialId: string | null
+): Promise<Record<string, unknown>> {
+    const merged = await layLoginsOver(adapterId, config, primaryCredentialId, sshCredentialId);
+    await assertConfigOffHost(adapterId, merged);
+    return merged;
+}
+
+/**
+ * Lays the credential profiles over a plaintext config like `overlayCredentialsOnConfig`, without
+ * its checks, for a caller that checks the result itself or only compares it, like where a saved
+ * connection keeps its files. Mutates and returns the supplied config.
+ */
+export async function layLoginsOver(
     adapterId: string,
     config: Record<string, unknown>,
     primaryCredentialId: string | null,
@@ -196,10 +219,7 @@ export async function overlayCredentialsOnConfig(
     }
 
     const requirements = adapterDef.credentials;
-    if (!requirements) {
-        await assertConfigOffHost(adapterId, config);
-        return config;
-    }
+    if (!requirements) return config;
 
     if (requirements.primary && primaryCredentialId) {
         const profile = await loadAndValidate(
@@ -221,7 +241,6 @@ export async function overlayCredentialsOnConfig(
         applySshOverlay(config, profile as SshKeyData, usesPrefixedSshKeys(adapterDef.configSchema));
     }
 
-    await assertConfigOffHost(adapterId, config);
     return config;
 }
 

@@ -38,7 +38,7 @@ describe("the account of the own profile", () => {
                 { field: "Name", from: "Lena Graf", to: "Lena Keller" },
                 { field: "Email", from: "lena@example.ch", to: "lena.keller@example.ch" },
             ],
-        }, "u1");
+        }, "u1", { tenantId: "default" });
     });
 
     it("keeps the name and the email to what the group allows, also when the browser skips the page", async () => {

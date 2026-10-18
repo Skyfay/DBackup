@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import * as credentialService from "@/services/auth/credential-service";
 import { CREDENTIAL_TYPES, type CredentialType } from "@/lib/core/credentials";
@@ -19,7 +20,9 @@ const CreateCredentialSchema = z.object({
     data: z.unknown(),
 });
 
-function errorResponse(error: unknown): NextResponse {
+function errorResponse(error: unknown): Response {
+    const refused = permissionRefusal(error);
+    if (refused) return refused;
     if (error instanceof ValidationError) {
         return NextResponse.json(
             { error: error.message, details: error.details },
@@ -42,6 +45,8 @@ export async function GET(req: NextRequest) {
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ);
+        // The pickers ask in a tenant, All tenants would mix the profiles of every tenant.
+        tenantOf(ctx);
 
         const typeParam = req.nextUrl.searchParams.get("type");
         const type =

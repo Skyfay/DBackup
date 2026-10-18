@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FileInfo, StorageAdapter } from "@/lib/core/interfaces";
-import { SHARED_STORAGE_FAILURE, cleanPath, innerPath, outerFiles, storageView, type StorageViewMode } from "@/lib/tenant/storage-view";
+import { SHARED_STORAGE_FAILURE, cleanPath, innerPath, isTenantsFolderName, outerFiles, storageView, type StorageViewMode } from "@/lib/tenant/storage-view";
 
 vi.mock("@/lib/logging/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) } }));
 
@@ -139,5 +139,37 @@ describe("the adapter of a view", () => {
 describe("a clean path", () => {
     it("drops empty and current segments and turns backslashes around", () => {
         expect(cleanPath("/a//b/./c\\d")).toBe("a/b/c/d");
+    });
+});
+
+describe("a path a storage on Windows reads differently", () => {
+    it("never leaves the folder of a customer by a segment of dots and spaces, which Windows reads as ..", () => {
+        for (const sneaky of [".. /initech/erp/three.tar", "crm/.../x", "... ", "crm/. ./x", "crm/ ../x"]) {
+            expect(() => innerPath(GLOBEX, sneaky), sneaky).toThrow("leaves its folder");
+        }
+        // A name that only starts or ends with a dot is a name.
+        expect(innerPath(GLOBEX, ".hidden/..x/x..")).toBe("tenants/globex/.hidden/..x/x..");
+    });
+
+    it("never reaches the folder of the customers by a letter that turns into its name only in upper case", () => {
+        // The long s is S in upper case and stays itself in lower case.
+        expect(() => innerPath(PROVIDER, "tenantſ/globex/crm/two.tar")).toThrow("tenants/");
+        expect(outerFiles(PROVIDER, [file("TENANTſ/globex/crm/two.tar")])).toEqual([]);
+    });
+
+    it("leaves a listed file out of a view that could never name it, instead of failing the whole listing", () => {
+        expect(outerFiles(PROVIDER, [file("shop/one.tar"), file(".../odd.tar")]).map((entry) => entry.path)).toEqual(["shop/one.tar"]);
+        expect(outerFiles(GLOBEX, [file("tenants/globex/crm/two.tar"), file("tenants/globex/ ../x.tar")]).map((entry) => entry.path)).toEqual(["crm/two.tar"]);
+    });
+});
+
+describe("the name of a job on a shared destination", () => {
+    it("writes into the folder of the customers when it is called like it or starts with it", () => {
+        for (const name of ["tenants", " Tenants. ", "tenants/globex", "TENANTſ\\initech", "./tenants/x"]) {
+            expect(isTenantsFolderName(name), name).toBe(true);
+        }
+        for (const name of ["tenants-archive", "nightly/tenants", "shop"]) {
+            expect(isTenantsFolderName(name), name).toBe(false);
+        }
     });
 });

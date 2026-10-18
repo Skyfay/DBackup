@@ -136,6 +136,23 @@ export function allowancesPatch(before: TenantAllowances, after: TenantAllowance
     return Object.fromEntries(ALLOWANCE_KINDS.filter((kind) => before[kind] !== after[kind]).map((kind) => [kind, after[kind]]));
 }
 
+/** Whether two settings of the network say the same, the ranges in any order. */
+export function sameNetwork(a: TenantRow["network"], b: TenantRow["network"]): boolean {
+    return a.blocks === b.blocks && a.allowed.length === b.allowed.length && a.allowed.every((range) => b.allowed.includes(range));
+}
+
+/**
+ * What a tenant reaches of the local network, for its row: a tag while it reaches it, which is
+ * worth a look, and the words of a block with the ranges it reaches anyway. The home tenant is the
+ * platform and reaches what the server reaches.
+ */
+export function networkNote(row: Pick<TenantRow, "isHome" | "network">): { text: string; detail: string | null; reaches: boolean } {
+    if (row.isHome) return { text: "Platform", detail: null, reaches: false };
+    if (!row.network.blocks) return { text: "Reaches it", detail: null, reaches: true };
+    const count = row.network.allowed.length;
+    return { text: "Blocked", detail: count > 0 ? `${countOf(count, "range")} allowed` : null, reaches: false };
+}
+
 /** "3 a day" or "Off", what a customer may start of every database given to it. */
 export function onDemandWords(perDay: number | null): string {
     return perDay === null ? "Off" : `${perDay} a day`;

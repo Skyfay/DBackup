@@ -4,10 +4,11 @@ import { runAsSystem } from "@/lib/tenant/context";
 import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { TENANTS_FOLDER, isTenantsFolderName } from "@/lib/tenant/storage-view";
 import { sharesWithCustomers } from "@/services/tenant/shared-servers";
+import { assertSharedPlaceAlone } from "@/services/adapters/shared-place";
 import { refreshStorageStatsCache, storageEntriesOf } from "@/services/dashboard-service";
 import { isEmailChannel, sharedKindOf, type SharedKind } from "./provided";
 import { logger } from "@/lib/logging/logger";
-import { PartialLossError, deleteTenantBackups, forgetConnection, sweepCustomerFolder, type TenantLoss } from "./share-cleanup";
+import { PartialLossError, customerFolderFiles, deleteTenantBackups, forgetConnection, sweepCustomerFolder, type TenantLoss } from "./share-cleanup";
 import { boundToReach, shareReachView, type ShareReachView } from "./share-reach";
 
 const log = logger.child({ service: "ConnectionShares" });
@@ -259,6 +260,12 @@ export const connectionShareService = {
         if (config.kind === "destination" && (bound.allTenants || after.length > 0)) {
             const jobs = await prisma.job.findMany({ where: { destinations: { some: { configId } } }, select: { name: true } });
             if (jobs.some((job) => isTenantsFolderName(job.name))) throw new ValidationError(`A job of this tenant is called ${TENANTS_FOLDER} and writes into the folder a shared destination keeps for its customers. Rename it first.`);
+            // Whatever lies there before the first share would read as the backups of a customer.
+            if (!share && (await customerFolderFiles(configId)) > 0) {
+                throw new ValidationError(`${config.name} already holds files in ${TENANTS_FOLDER}/, the folder a shared destination keeps for its customers. Move or delete them first.`);
+            }
+            // A second connection to the same folder would show the customers' backups in the view of this tenant.
+            if (!share) await assertSharedPlaceAlone(configId);
         }
         if (config.kind === "destination" && lost.length > 0 && !options.confirmed) {
             throw new ValidationError("The tenants that lose this destination lose their backups on it. Confirm it first.");

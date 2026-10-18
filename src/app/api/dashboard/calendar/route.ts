@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getCalendarData, getCalendarDataForYear } from "@/services/dashboard-service";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext(await headers());
@@ -29,7 +30,9 @@ export async function GET(req: NextRequest) {
 
     const data = await getCalendarDataForYear(year);
     return NextResponse.json({ success: true, data });
-  } catch {
+  } catch (error: unknown) {
+    const refused = permissionRefusal(error);
+    if (refused) return refused;
     return NextResponse.json({ success: false, error: "Failed to fetch calendar data" }, { status: 500 });
   }
 }

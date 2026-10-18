@@ -10,7 +10,8 @@ import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
 import type { NotificationEventData } from "@/lib/notifications/types";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
-import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { invalidateDashboardCache, invalidateTenantCaches } from "@/services/dashboard/cache";
+import { queueRunEnded } from "@/services/jobs/queue-snapshot";
 import { jobReason } from "@/services/notifications/notification-reason";
 import { loadNotificationBrand } from "@/lib/notifications/brand";
 import { backupEventData } from "./notification-data";
@@ -146,8 +147,13 @@ export async function stepFinalize(ctx: RunnerContext) {
         log.error("Ending the run that follows this one failed", { executionId: ctx.execution?.id }, wrapError(error));
     });
 
-    // The dashboard caches its charts and counts. This run changes them, whatever its outcome.
-    invalidateDashboardCache();
+    // The dashboard caches its charts and counts. This run changes them, whatever its outcome, in
+    // its own tenant and in All tenants. A customer's run that follows it changes those of the
+    // customer too, which the run does not know, so then every tenant's.
+    if (ctx.follower) invalidateDashboardCache();
+    else invalidateTenantCaches([ctx.execution.tenantId]);
+    // The usual length of a run of the job, which the plan of the queue of every tenant reads.
+    queueRunEnded(ctx.execution.jobId);
 
     // 2. Refresh storage statistics cache of the destinations of this run (non-blocking)
     if (ctx.status === "Success" || ctx.status === "Partial") {

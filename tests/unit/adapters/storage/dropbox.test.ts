@@ -466,6 +466,29 @@ describe("DropboxAdapter", () => {
     // list()
     // ====================================================================
     describe("list()", () => {
+        it("strips the folder as Dropbox compares it, whatever its case and however it was typed", async () => {
+            for (const folderPath of ["Backups", "/BACKUPS/", "/backups//"]) {
+                mockDbx.filesListFolder.mockResolvedValue({
+                    result: {
+                        entries: [{
+                            ".tag": "file",
+                            name: "shop.tar",
+                            path_display: "/Backups/tenants/acme/shop.tar",
+                            path_lower: "/backups/tenants/acme/shop.tar",
+                            size: 10,
+                            server_modified: "2025-01-15T10:00:00Z",
+                        }],
+                        has_more: false,
+                        cursor: "cursor1",
+                    },
+                });
+
+                const files = await DropboxAdapter.list({ ...validConfig, folderPath }, "");
+
+                expect(files.map((file) => file.path), folderPath).toEqual(["tenants/acme/shop.tar"]);
+            }
+        });
+
         it("should list files recursively from configured folder", async () => {
             mockDbx.filesListFolder.mockResolvedValue({
                 result: {

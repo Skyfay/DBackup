@@ -90,8 +90,10 @@ export async function maySeeAccount(viewer: AccountViewer, userId: string): Prom
 /**
  * Whether the viewer may see the picture of an account, which shows beside its name wherever the
  * name shows: the accounts of `maySeeAccount`, the people of the sign-in providers they see, the
- * people of the platform who open the tenant, and whoever acted in it, in its audit log or as the
- * owner of one of its API keys.
+ * people of the platform who open the tenant, whoever acted in it as the owner of one of its API
+ * keys, and for a reader of its audit log whoever acted in it there. Every sign-in goes into the
+ * log of the home tenant, so without the right to read the log a member of the home tenant would
+ * get the picture of every account.
  */
 export async function maySeePicture(viewer: AccountViewer, userId: string): Promise<boolean> {
     if (viewer.userId === userId) return true;
@@ -104,8 +106,9 @@ export async function maySeePicture(viewer: AccountViewer, userId: string): Prom
     const known = await prisma.user.count({ where: { AND: [{ id: userId }, { OR: [peopleOf(tenantId), reachesTenant(tenantId)] }] } });
     if (known > 0) return true;
     // Read in the tenant of the viewer, the filter leaves the entries and keys of the others out.
+    const readsLog = hasPermissionWithContext(viewer, PERMISSIONS.AUDIT.READ);
     const [entries, keys] = await runAsTenant(tenantId, () => Promise.all([
-        prisma.auditLog.count({ where: { userId } }),
+        readsLog ? prisma.auditLog.count({ where: { userId } }) : 0,
         prisma.apiKey.count({ where: { userId } }),
     ]));
     return entries + keys > 0;

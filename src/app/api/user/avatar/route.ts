@@ -4,6 +4,7 @@ import { getViewer } from "@/lib/auth/access-control";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ValidationError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
+import { accountLogOrigin } from "@/services/audit/account-log";
 import { AVATAR_MAX_BYTES, removeAvatar, saveAvatar } from "@/services/user/avatar-service";
 import { bodyTooLarge } from "@/lib/server/upload-size";
 
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
         await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, {
             name: user.name,
             changes: [{ field: FIELD, from: user.image ? "A picture" : null, to: "A new picture" }],
-        }, user.id);
+        }, user.id, await accountLogOrigin(user, user.id));
         revalidatePath("/dashboard", "layout");
         return NextResponse.json({ success: true, data: { url } });
     } catch (error: unknown) {
@@ -53,7 +54,7 @@ export async function DELETE() {
     await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, {
         name: user.name,
         changes: [{ field: FIELD, from: "A picture", to: null }],
-    }, user.id);
+    }, user.id, await accountLogOrigin(user, user.id));
     revalidatePath("/dashboard", "layout");
     return NextResponse.json({ success: true });
 }

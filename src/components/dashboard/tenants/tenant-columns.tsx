@@ -1,7 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRightLeft, Building2, Eye, House, Lock, Pencil, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Building2, Eye, House, Lock, Network, Pencil, Trash2 } from "lucide-react";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DateDisplay } from "@/components/utils/date-display";
@@ -9,7 +9,7 @@ import { ALLOWANCE_KINDS } from "@/lib/tenant/allowances";
 import { cn } from "@/lib/utils";
 import type { TenantRow } from "@/services/tenant/tenant-service";
 import { healthNote } from "@/components/layout/tenant-switch";
-import { countOf, deleteRefusal, heldBack, onDemandWords, sharedParts, type TenantListRow } from "./tenant-words";
+import { countOf, deleteRefusal, heldBack, networkNote, onDemandWords, sharedParts, type TenantListRow } from "./tenant-words";
 
 /** The tile of a tenant: its logo, else a house for the home tenant and a building for the others. */
 export function TenantTile({ home = false, logo = null, className }: { home?: boolean; logo?: string | null; className?: string }) {
@@ -122,6 +122,18 @@ export function AllowanceCell({ row }: { row: Pick<TenantListRow, "isHome" | "al
     return <Tag icon={Lock} title={limits.sentence}>{limits.tag}</Tag>;
 }
 
+/** Whether the connections of a tenant reach the local network: a tag while they do, else the words of the block. */
+export function NetworkCell({ row }: { row: Pick<TenantListRow, "isHome" | "network"> }) {
+    const note = networkNote(row);
+    if (note.reaches) return <Tag icon={Network} title="Its connections reach the local network of the server DBackup runs on.">{note.text}</Tag>;
+    return (
+        <div className="min-w-0 text-sm">
+            <p className="truncate text-muted-foreground">{note.text}</p>
+            {note.detail && <p className="truncate text-xs text-muted-foreground">{note.detail}</p>}
+        </div>
+    );
+}
+
 /** A dot after the name while the newest backup of a job of the tenant failed or missed a copy. */
 function HealthDot({ health }: { health: TenantListRow["health"] }) {
     const note = healthNote(health);
@@ -181,6 +193,13 @@ export function tenantColumns(activeTenantId: string | null, onEdit: (row: Tenan
             // The tenants that may add the least sort last.
             accessorFn: (row) => (row.isHome ? 0 : ALLOWANCE_KINDS.filter((kind) => !row.allowances[kind]).length),
             cell: ({ row }) => <AllowanceCell row={row.original} />,
+        },
+        {
+            id: "network",
+            header: "Local network",
+            // The tenants that reach it sort last, the ones of the most allowed ranges before them.
+            accessorFn: (row) => (row.isHome ? -1 : row.network.blocks ? row.network.allowed.length : Number.MAX_SAFE_INTEGER),
+            cell: ({ row }) => <NetworkCell row={row.original} />,
         },
         {
             id: "createdAt",

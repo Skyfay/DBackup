@@ -10,7 +10,7 @@ import type { BulkResult } from "@/lib/core/bulk";
 import type { DatabaseOwnerRow, SourceAssignments } from "@/services/tenant/database-assignments";
 import { assignmentActions, assignmentColumns, assignmentFilters } from "./assignment-columns";
 import { GiveDialog } from "./assignment-give-dialog";
-import { countOf, matchesQuick, quickCounts, type Quick } from "./assignment-model";
+import { countOf, matchesQuick, quickCounts, takeBackRefusal, takeBackText, type Quick } from "./assignment-model";
 import { MoveDialog } from "./assignment-move-dialog";
 import { OnDemandDialog } from "./assignment-on-demand-dialog";
 import type { OwnerChange } from "./assignment-picker";
@@ -85,10 +85,10 @@ export function AssignmentTable({ serverId, serverName, tenantName, data, canAss
             label: () => "Take back",
             icon: Undo2,
             itemName: (row) => row.name,
-            ineligible: (row) => ownerLock(row, data) ?? (row.owner?.via === "assignment" ? null : row.owner ? "A rule gives it. Remove the rule to take it back." : "Nobody else has it."),
+            ineligible: (row) => ownerLock(row, data) ?? takeBackRefusal(row),
             confirm: {
                 title: (picked) => `Take back ${countOf(picked.length, "database")}?`,
-                description: () => `From now on only ${tenantName} sees them. The tenants keep their backups of before.`,
+                description: (picked) => takeBackText(picked, tenantName),
                 confirmLabel: "Take back",
             },
             run: (picked) => sendMany(serverId, picked.map((row) => ({ databaseName: row.name, tenantId: null }))),

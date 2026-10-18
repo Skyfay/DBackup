@@ -37,11 +37,11 @@ Element.prototype.scrollIntoView = vi.fn();
 const ROWS: TenantListRow[] = [
     {
         id: "default", name: "Platform", isHome: true, sharesWithCustomers: true, logo: null, members: 2, connections: 3, jobs: 4, createdAt: "2026-01-01T00:00:00.000Z", databases: 6, health: null,
-        allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 2, channels: 1 }, onDemand: { perDay: null, own: 0 },
+        allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 2, channels: 1 }, onDemand: { perDay: null, own: 0 }, network: { blocks: false, allowed: [] },
     },
     {
         id: "t-acme", name: "Acme", isHome: false, sharesWithCustomers: false, logo: null, members: 1, connections: 0, jobs: 1, createdAt: "2026-10-01T00:00:00.000Z", databases: 0, health: "failed",
-        allowances: { ...ALL_ALLOWED, destinations: false, channels: false }, provided: { destinations: 2, channels: 2 }, gives: { destinations: 0, channels: 0 }, onDemand: { perDay: null, own: 0 },
+        allowances: { ...ALL_ALLOWED, destinations: false, channels: false }, provided: { destinations: 2, channels: 2 }, gives: { destinations: 0, channels: 0 }, onDemand: { perDay: null, own: 0 }, network: { blocks: true, allowed: [] },
     },
 ];
 

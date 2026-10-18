@@ -1,6 +1,7 @@
 /**
- * Sends one notification through one channel and records it in the notification log, which
- * keeps it in the tenant of the channel. Shared by the notifications of the platform and the
+ * Sends one notification through one channel and records it in the notification log, in the
+ * tenant the message was sent for, which is the customer when the channel is one another tenant
+ * shares, else in the tenant of the channel. Shared by the notifications of the platform and the
  * ones of a tenant.
  */
 

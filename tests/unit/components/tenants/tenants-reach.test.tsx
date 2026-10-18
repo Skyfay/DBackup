@@ -38,7 +38,7 @@ Element.prototype.scrollIntoView = vi.fn();
 
 const row = (id: string, name: string): TenantListRow => ({
     id, name, isHome: false, sharesWithCustomers: false, logo: null, members: 0, connections: 0, jobs: 0, createdAt: "2026-10-01T00:00:00.000Z", databases: 0, health: null,
-    allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 0, channels: 0 }, onDemand: { perDay: null, own: 0 },
+    allowances: ALL_ALLOWED, provided: { destinations: 0, channels: 0 }, gives: { destinations: 0, channels: 0 }, onDemand: { perDay: null, own: 0 }, network: { blocks: true, allowed: [] },
 });
 
 /** Acme is reached by the platform group of the viewer, Globex opens only through a membership. */

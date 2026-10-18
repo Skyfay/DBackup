@@ -6,6 +6,10 @@ import { PermissionError } from "@/lib/logging/errors";
 const mocks = vi.hoisted(() => ({
     permissions: [] as string[],
     userId: "u1",
+    isPlatformAdmin: false,
+    apiKeyId: undefined as string | undefined,
+    makerMayDownload: vi.fn(),
+    isConfigBackupFile: vi.fn(),
     planArchiveDownload: vi.fn(),
     openArchiveDownload: vi.fn(),
     auditLog: vi.fn(),
@@ -16,7 +20,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: async () => ({ userId: mocks.userId, permissions: mocks.permissions, isPlatformAdmin: false, tenantId: "acme" }),
+    getAuthContext: async () => ({
+        userId: mocks.userId, permissions: mocks.permissions, isPlatformAdmin: mocks.isPlatformAdmin, tenantId: "acme",
+        authMethod: mocks.apiKeyId ? "apikey" : "session", ...(mocks.apiKeyId ? { apiKeyId: mocks.apiKeyId } : {}),
+    }),
     tenantOf: (ctx: { tenantId: string }) => ctx.tenantId,
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
@@ -29,6 +36,9 @@ vi.mock("@/services/storage/backup-audit", () => ({
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { downloadFile: vi.fn() } }));
 vi.mock("@/services/restore/archive-download", () => ({ planArchiveDownload: mocks.planArchiveDownload, openArchiveDownload: mocks.openArchiveDownload }));
 vi.mock("@/services/sharing/destination-access", () => ({ findDestination: (...args: unknown[]) => mocks.findDestination(...args) }));
+// Whether the maker of a link may still download, which the database decides.
+vi.mock("@/lib/auth/download-maker", () => ({ makerMayDownload: (...args: unknown[]) => mocks.makerMayDownload(...args) }));
+vi.mock("@/services/storage/config-backup-access", () => ({ isConfigBackupFile: (...args: unknown[]) => mocks.isConfigBackupFile(...args) }));
 
 const { POST, GET } = await import("@/app/api/storage/[id]/download-url/route");
 const { GET: FETCH } = await import("@/app/api/storage/public-download/route");
@@ -45,6 +55,10 @@ describe("download links for a pick", () => {
         vi.clearAllMocks();
         mocks.permissions = ["storage:download"];
         mocks.userId = "u1";
+        mocks.isPlatformAdmin = false;
+        mocks.apiKeyId = undefined;
+        mocks.makerMayDownload.mockResolvedValue(true);
+        mocks.isConfigBackupFile.mockResolvedValue(false);
         mocks.findDestination.mockResolvedValue({ row: { id: "nas", name: "NAS" }, mode: { kind: "own" }, tenantId: "acme" });
         mocks.planArchiveDownload.mockResolvedValue({ fileName: "Shop_2026-09-24_2-items.tar.gz", contentType: "application/gzip" });
         mocks.openArchiveDownload.mockImplementation(async () => ({
@@ -162,6 +176,49 @@ describe("download links for a pick", () => {
         const status = await (await statusOf(data.token)).json();
 
         expect(status).toEqual({ success: true, data: { state: "expired" } });
+    });
+
+    it("serves no link once its maker may no longer download in its tenant", async () => {
+        const { data } = await (await makeLink({ file: "Shop/backup.tar", databases: ["billing"] })).json();
+        mocks.makerMayDownload.mockResolvedValue(false);
+
+        const response = await fetchLink(data.url);
+
+        expect(response.status).toBe(403);
+        expect(mocks.makerMayDownload).toHaveBeenCalledWith({ userId: "u1", tenantId: "acme" });
+        expect(mocks.openArchiveDownload).not.toHaveBeenCalled();
+    });
+
+    it("asks again for the API key a link was made with, not only for its owner", async () => {
+        mocks.apiKeyId = "key-ci";
+        const { data } = await (await makeLink({ file: "Shop/backup.tar", databases: ["billing"] })).json();
+
+        await (await fetchLink(data.url)).text();
+
+        expect(mocks.makerMayDownload).toHaveBeenCalledWith({ userId: "u1", tenantId: "acme", apiKeyId: "key-ci" });
+    });
+
+    it("makes no link to a configuration backup, not even for a platform admin, and notes none", async () => {
+        mocks.isPlatformAdmin = true;
+        mocks.isConfigBackupFile.mockResolvedValue(true);
+
+        const response = await makeLink({ file: "config-backups/config_backup_2026-10-18.db.gz.enc", decrypt: true });
+
+        expect(response.status).toBe(403);
+        expect(mocks.isConfigBackupFile).toHaveBeenCalledWith("nas", "config-backups/config_backup_2026-10-18.db.gz.enc", "acme");
+        expect(mocks.auditLogFor).not.toHaveBeenCalled();
+    });
+
+    it("serves no configuration backup through a link, whatever the link names", async () => {
+        const { storageService } = await import("@/services/storage/storage-service");
+        const { data } = await (await makeLink({ file: "nightly/renamed.db.gz.enc", decrypt: true })).json();
+        // The sidecar says it is one, which the link never knew.
+        mocks.isConfigBackupFile.mockResolvedValue(true);
+
+        const response = await fetchLink(data.url);
+
+        expect(response.status).toBe(403);
+        expect(storageService.downloadFile).not.toHaveBeenCalled();
     });
 
     it("hands out no link without the download permission", async () => {

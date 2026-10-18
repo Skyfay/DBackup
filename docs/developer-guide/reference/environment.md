@@ -8,7 +8,7 @@ Complete reference for all environment variables in DBackup.
 
 | Variable | Description | Example |
 | :--- | :--- | :--- |
-| `ENCRYPTION_KEY` | 32-byte hex key for encrypting sensitive data (passwords, API keys) | `openssl rand -hex 32` |
+| `ENCRYPTION_KEY` | 32-byte hex key for encrypting sensitive data (passwords, API keys), 64 characters of 0-9 and a-f, checked at start | `openssl rand -hex 32` |
 | `BETTER_AUTH_SECRET` | Session encryption secret for authentication | `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | **Primary** URL where users access DBackup (for auth redirects) | `https://backup.example.com` |
 

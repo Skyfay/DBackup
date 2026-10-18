@@ -27,6 +27,8 @@ import type { ArchiveRestoreCallbacks } from "./archive-restore";
 import { sharedLogScrubber, type RunLog } from "./shared-restore-log";
 import type { RestoreInput } from "./types";
 import { findDestination } from "@/services/sharing/destination-access";
+import { listedDatabases } from "@/services/tenant/shared-servers";
+import { runAsSystem } from "@/lib/tenant/context";
 
 export type DatabaseMapping = { originalName: string; targetName: string; selected: boolean }[];
 
@@ -60,12 +62,16 @@ async function sharedScrubber(
     names: string[]
 ) {
     const destination = await findDestination(input.storageConfigId, input.shared?.copyTenantId).then((found) => found.row).catch(() => null);
+    // The databases the server listed last, which its tools name in an error as readily as those of the backup.
+    const listed = input.targetSourceId
+        ? await runAsSystem(() => listedDatabases(input.targetSourceId!)).catch(() => [])
+        : [];
     return sharedLogScrubber({
         keep: [...(input.shared ? [input.shared.databaseName] : []), ...names],
         archive: input.file,
         destination: destination?.name,
         connection,
-        otherDatabases: archive.index.databases.map((database) => database.name),
+        otherDatabases: [...archive.index.databases.map((database) => database.name), ...listed.map((database) => database.name)],
     });
 }
 

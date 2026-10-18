@@ -1,6 +1,6 @@
 'use server';
 
-import { checkPermission, checkPlatformAdmin, getUserPermissions, hasPermission } from "@/lib/auth/access-control";
+import { checkPermission, checkPlatformAdmin, hasPermission, tenantRefusal } from "@/lib/auth/access-control";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
@@ -42,10 +42,11 @@ const UpdateEncryptionProfileSchema = z.object({
  * Requires VAULT:READ, VAULT:WRITE, JOBS:READ or JOBS:WRITE permission.
  */
 export async function getEncryptionProfiles() {
-    const permissions = await getUserPermissions();
-    if (!KEY_READERS.some((permission) => permissions.includes(permission))) {
-        return { success: false, error: "Insufficient permissions" };
-    }
+    const viewer = await checkPermission(KEY_READERS).catch(() => null);
+    if (!viewer) return { success: false, error: "Insufficient permissions" };
+    // Keys belong to a tenant and the job form asks in one, All tenants would mix those of every tenant.
+    const refused = tenantRefusal(viewer);
+    if (refused) return { success: false, error: refused };
 
     try {
         const profiles = await encryptionService.getEncryptionProfiles();

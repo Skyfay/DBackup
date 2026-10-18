@@ -8,6 +8,7 @@ import { auditService } from "@/services/audit-service";
 import { VAULT_AUDIT } from "@/services/vault/vault-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -27,38 +28,42 @@ export async function GET(request: NextRequest) {
         return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // Security: exporting master keys is the most sensitive read in the product.
-    checkPermissionWithContext(ctx, PERMISSIONS.VAULT.WRITE);
-
-    const ids = (request.nextUrl.searchParams.get("ids") ?? "")
-        .split(",")
-        .map((id) => id.trim())
-        .filter(Boolean);
-
-    if (ids.length === 0) {
-        return new NextResponse("No encryption profiles selected", { status: 400 });
-    }
-
-    await auditService.logFor(
-        ctx,
-        AUDIT_ACTIONS.EXPORT,
-        AUDIT_RESOURCES.VAULT,
-        { action: VAULT_AUDIT.KIT, profileIds: ids },
-        ids.length === 1 ? ids[0] : undefined
-    );
-
+    let ids: string[] = [];
     try {
-        const profiles: RecoveryKitProfile[] = [];
+        // Security: exporting master keys is the most sensitive read in the product.
+        checkPermissionWithContext(ctx, PERMISSIONS.VAULT.WRITE);
+
+        ids = (request.nextUrl.searchParams.get("ids") ?? "")
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean);
+        if (ids.length === 0) {
+            return new NextResponse("No encryption profiles selected", { status: 400 });
+        }
+
+        // The profiles without their keys first, which name the entry. An unknown id ends here
+        // with nothing logged and no key read.
+        const found: { id: string; name: string }[] = [];
         for (const id of ids) {
             const profile = await encryptionService.getEncryptionProfile(id);
             if (!profile) {
                 return new NextResponse(`Encryption profile ${id} not found`, { status: 404 });
             }
-            profiles.push({
-                id: profile.id,
-                name: profile.name,
-                masterKeyHex: await encryptionService.getDecryptedMasterKey(id),
-            });
+            found.push({ id: profile.id, name: profile.name });
+        }
+
+        // Logged before a key is decrypted, so a kit is never silent.
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.EXPORT,
+            AUDIT_RESOURCES.VAULT,
+            { action: VAULT_AUDIT.KIT, name: found.map((profile) => profile.name).join(", "), profileIds: ids },
+            ids.length === 1 ? ids[0] : undefined
+        );
+
+        const profiles: RecoveryKitProfile[] = [];
+        for (const profile of found) {
+            profiles.push({ ...profile, masterKeyHex: await encryptionService.getDecryptedMasterKey(profile.id) });
         }
 
         const zipBuffer = await buildRecoveryKit({ profiles });
@@ -80,6 +85,8 @@ export async function GET(request: NextRequest) {
             },
         });
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         log.error("Recovery kit generation error", { profileIds: ids }, wrapError(error));
         return new NextResponse("Internal Server Error", { status: 500 });
     }

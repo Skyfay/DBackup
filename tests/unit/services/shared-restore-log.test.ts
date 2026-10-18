@@ -59,6 +59,24 @@ describe("the log of a customer's restore on a shared server", () => {
         expect(text("Access denied for user 'server'@'db7.msp.internal'")).toBe("Access denied for user 'the user'@'the server'");
     });
 
+    it("hides any other host of the domain of the server, like a replica or a node of its cluster", () => {
+        const { text } = scrubber();
+        expect(text("Lost the connection to replica2.msp.internal, retrying on DB8.MSP.INTERNAL and msp.internal"))
+            .toBe("Lost the connection to the server, retrying on the server and the server");
+        // A host of another domain, a name with a dot of the customer and a version stay as they are.
+        expect(text("Fetched from mirror.example.org into shop_acme.orders on 8.0.36")).toBe("Fetched from mirror.example.org into shop_acme.orders on 8.0.36");
+    });
+
+    it("hides nothing more than the host itself when its domain has a single label", () => {
+        const { text } = sharedLogScrubber({ keep: ["shop_acme"], connection: { host: "mongo1.msp" } });
+        expect(text("mongo1.msp is down, mongo2.msp took over")).toBe("the server is down, mongo2.msp took over");
+    });
+
+    it("hides the name of the master of a Sentinel, which names the server too", () => {
+        const { text } = sharedLogScrubber({ keep: ["0"], connection: { sentinelNodes: "10.0.0.5:26379", sentinelMasterName: "msp-redis-main" } });
+        expect(text("Sentinel has no master named msp-redis-main")).toBe("Sentinel has no master named the server");
+    });
+
     it("hides a password that a tool wrote out", () => {
         expect(scrubber().text("Using password s3cret-pw")).toBe("Using password a secret");
     });

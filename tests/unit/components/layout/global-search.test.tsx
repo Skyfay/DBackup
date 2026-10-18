@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { HeaderLinks } from "@/components/layout/header-links";
 import { PermissionsProvider } from "@/components/permissions/permissions-context";
+import { TenantViewProvider, type TenantView } from "@/components/tenant/tenant-view";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { SearchHit } from "@/services/search/search-types";
@@ -35,13 +36,16 @@ function memoryStorage(): Storage {
     };
 }
 
+/** The home tenant open, where the people below were found. */
+const IN_HOME: TenantView = { tenants: [{ id: "default", name: "Home" }], activeTenantId: "default", allTenants: false, isPlatformAdmin: false, tenantCount: 1 };
+
 function renderSearch(permissions: string[] = [PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.EXECUTE, PERMISSIONS.HISTORY.READ], props: React.ComponentProps<typeof GlobalSearch> = {}) {
-    render(<PermissionsProvider permissions={permissions}><GlobalSearch {...props} /></PermissionsProvider>);
+    render(<PermissionsProvider permissions={permissions}><TenantViewProvider value={IN_HOME}><GlobalSearch {...props} /></TenantViewProvider></PermissionsProvider>);
     return userEvent.setup();
 }
 
-/** A person opened from the search before, kept for whoever the key names. */
-const keptUser = { key: "recent:/dashboard/users?tab=users&open=u9", group: "recent", title: "Alex", sub: "alex@example.com · Operators", kind: "User", href: "/dashboard/users?tab=users&open=u9", icon: "user", needs: [PERMISSIONS.USERS.READ] };
+/** A person opened from the search before in the home tenant, kept for whoever the key names. */
+const keptUser = { key: "recent:/dashboard/users?tab=users&open=u9", group: "recent", title: "Alex", sub: "alex@example.com · Operators", kind: "User", href: "/dashboard/users?tab=users&open=u9", icon: "user", needs: [PERMISSIONS.USERS.READ], seenIn: "default" };
 
 async function searchFor(user: ReturnType<typeof userEvent.setup>, text: string) {
     await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));

@@ -12,6 +12,9 @@ import { planFileRestore, restoreFilesToStorage, FileRestoreInput } from "@/serv
 import { openArchiveDownload, planArchiveDownload, type ArchiveDownload } from "@/services/restore/archive-download";
 import { generateSelectionDownloadToken, consumeSelectionDownloadToken } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupRefusal } from "@/lib/server/config-backup-guard";
+import { runAsTenant } from "@/lib/tenant/context";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
@@ -103,6 +106,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 target.kind === "download" ? PERMISSIONS.STORAGE.DOWNLOAD : PERMISSIONS.STORAGE.RESTORE
             );
         }
+        const configBackup = await configBackupRefusal(ctx, id, file);
+        if (configBackup) return configBackup;
 
         const input: FileRestoreInput = {
             storageConfigId: id, file, selections, databases, excludePatterns, target,
@@ -119,8 +124,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             // chain, fails now - as a message the user can read - instead of halfway into a
             // download the browser has already started writing to disk.
             const { fileName, contentType, ...plan } = await planArchiveDownload(input);
+            // The tenant goes with it, since the browser collects it with a request of its own.
             const token = generateSelectionDownloadToken({
                 storageId: id, file, userId: ctx.userId, fileName, contentType,
+                ...(ctx.tenantId ? { tenantId: ctx.tenantId } : {}),
+                ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
                 selections, databases, excludePatterns, profileIdOverride,
             });
 
@@ -154,6 +162,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 : `Restored ${result.restored} file(s), ${result.failed.length} failed`,
         });
     } catch (e: unknown) {
+        const refused = permissionRefusal(e);
+        if (refused) return refused;
         const keyRequired = keyRequiredResponse(e);
         if (keyRequired) return keyRequired;
 
@@ -179,7 +189,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.DOWNLOAD);
 
         const token = req.nextUrl.searchParams.get("token");
-        const claim = token ? consumeSelectionDownloadToken(token, ctx.userId) : null;
+        // Only the request of the tenant and the API key that prepared it collects it, so the check
+        // above held for the tenant of the backup.
+        const claim = token ? consumeSelectionDownloadToken(token, ctx.userId, { tenantId: ctx.tenantId, apiKeyId: ctx.apiKeyId }) : null;
         if (!claim || claim.storageId !== id) {
             return NextResponse.json(
                 { success: false, error: "This download link has expired. Start the download again." },
@@ -187,7 +199,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
             );
         }
 
-        const download = await openArchiveDownload({
+        const open = () => openArchiveDownload({
             storageConfigId: id,
             file: claim.file,
             selections: claim.selection.selections,
@@ -198,6 +210,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 ? { keyOverride: { profileId: claim.selection.profileIdOverride } }
                 : {}),
         });
+        // Served in the tenant it was prepared in, whose view of the destination its path is in.
+        const download = claim.tenantId ? await runAsTenant(claim.tenantId, open) : await open();
 
         await auditService.logFor(
             ctx, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
@@ -213,6 +227,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         // The name the prepare step promised, so the browser saves what the user was shown.
         return downloadResponse({ ...download, fileName: claim.selection.fileName });
     } catch (e: unknown) {
+        const refused = permissionRefusal(e);
+        if (refused) return refused;
         log.error("Prepared file download failed", { configId: id }, wrapError(e));
         return NextResponse.json({ success: false, error: getErrorMessage(e) }, { status: 500 });
     }

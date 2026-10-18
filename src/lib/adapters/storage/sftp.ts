@@ -9,6 +9,7 @@ import {
 } from "@/lib/core/interfaces";
 import { normalizeSshPrivateKey } from "@/lib/transport/pkcs8-compat";
 import { createConnectionPool } from "@/lib/adapters/storage/common/connection-pool";
+import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { canPruneDirectory } from "@/lib/exclude-patterns";
 import { SFTPSchema } from "@/lib/adapters/definitions";
@@ -755,15 +756,8 @@ export const SFTPAdapter: StorageAdapter = {
                     } else if (item.type === '-') {
                         // Calculate UI-friendly relative path
                         // e.g. /home/user/backups/Job1/file.sql -> Job1/file.sql (if prefix is /home/user/backups)
-                        let relativePath = fullPath;
-
-                        // Strip the prefix part to make it relative to the "root" of the adapter
-                        if (prefix && fullPath.startsWith(prefix)) {
-                            relativePath = fullPath.substring(prefix.length);
-                        }
-
-                        // Remove leading slash
-                        if (relativePath.startsWith('/')) relativePath = relativePath.substring(1);
+                        // The prefix is compared as the join above writes it, so /home/user//backups/ strips too.
+                        const relativePath = relativeToPrefix(fullPath, prefix);
 
                         files.push({
                             name: item.name,

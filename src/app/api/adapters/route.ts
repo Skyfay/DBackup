@@ -8,6 +8,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { createAdapter } from "@/services/adapters/adapter-create";
@@ -67,6 +68,8 @@ export async function GET(req: NextRequest) {
         });
         return NextResponse.json(items);
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         const message = error instanceof Error ? error.message : "Failed to fetch adapters";
         return NextResponse.json({ error: message }, { status: 500 });
     }
@@ -114,6 +117,8 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(toAdapterListItem(newAdapter), { status: 201 });
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         log.error("Create adapter error", {}, wrapError(error));
         return NextResponse.json({ error: getErrorMessage(error) || "Failed to create adapter" }, { status: 500 });
     }

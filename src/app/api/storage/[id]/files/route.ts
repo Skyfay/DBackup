@@ -9,6 +9,7 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "storage/files" });
 
@@ -36,6 +37,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         return NextResponse.json(enrichedFiles);
 
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         const resolvedParams = await props.params.catch(() => ({ id: "unknown" }));
         log.error("List files error", { storageId: resolvedParams.id }, wrapError(error));
 
@@ -86,6 +89,8 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
         return NextResponse.json({ success: true });
 
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         // A path that names no file, like the root of the destination, is the caller's to fix.
         if (error instanceof ValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
         const resolvedParams = await props.params.catch(() => ({ id: "unknown" }));

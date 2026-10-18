@@ -490,6 +490,18 @@ describe("FTPAdapter", () => {
             expect(mockUploadFrom).toHaveBeenCalled();
         });
 
+        it("strips a prefix typed with a double slash or a leading dot, so a view finds the folder of the customers", async () => {
+            for (const pathPrefix of ["/srv//backups", "./backups"]) {
+                mockList
+                    .mockResolvedValueOnce([{ name: "tenants", isFile: false, isDirectory: true, size: 0, modifiedAt: new Date() }])
+                    .mockResolvedValueOnce([{ name: "shop.tar", isFile: true, isDirectory: false, size: 10, modifiedAt: new Date() }]);
+
+                const result = await FTPAdapter.list({ ...config, pathPrefix }, "");
+
+                expect(result.map((file) => file.path), pathPrefix).toEqual(["tenants/shop.tar"]);
+            }
+        });
+
         it("list() works without pathPrefix", async () => {
             const noPrefix = { ...config, pathPrefix: undefined };
             mockList.mockResolvedValue([

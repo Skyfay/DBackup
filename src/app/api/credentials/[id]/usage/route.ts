@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import * as credentialService from "@/services/auth/credential-service";
 import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "credentials/[id]/usage" });
 
@@ -15,9 +16,10 @@ export async function GET(
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ));
+    if (refused) return refused;
 
     try {
-        checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ);
         const usage = await credentialService.getCredentialUsage(id);
         return NextResponse.json({ success: true, data: { count: usage.length, references: usage } });
     } catch (e) {

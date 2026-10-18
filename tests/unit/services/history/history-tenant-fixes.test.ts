@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { WHOLE_JOB_RUNS } from "@/services/history/whole-runs";
+import { SINGLE_DATABASES_MARK, WHOLE_JOB_RUNS } from "@/services/history/whole-runs";
 
 vi.mock("@/lib/tenant/current", () => ({ currentTenantId: async () => "acme" }));
 vi.mock("@/services/sharing/provided", () => ({ providedTo: async () => [] }));
@@ -21,8 +21,9 @@ describe("the runs an integrity check is compared with", () => {
 describe("the dot of the History tab", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        prismaMock.job.findMany.mockResolvedValue([{ id: "j1", name: "Nightly" }] as never);
+        prismaMock.$queryRaw.mockResolvedValue([] as never);
         // groupBy is too generic for the mock types, so it is reached as a plain mock.
-        (prismaMock.execution.groupBy as unknown as Mock).mockResolvedValue([{ jobId: "j1", _max: { startedAt: new Date("2026-10-15T10:00:00Z") } }]);
         (prismaMock.notificationLog.groupBy as unknown as Mock).mockResolvedValue([]);
         prismaMock.execution.findMany.mockResolvedValue([] as never);
     });
@@ -30,10 +31,12 @@ describe("the dot of the History tab", () => {
     it("follows the newest run of each job as a whole, never a run of some of its databases a customer started", async () => {
         await getHistoryAttention();
 
-        const newest = (prismaMock.execution.groupBy as unknown as Mock).mock.calls[0][0] as { where: { AND?: unknown[] } };
-        const failed = prismaMock.execution.findMany.mock.calls[0][0] as { where: { AND?: unknown[] } };
-        expect(newest.where.AND).toEqual([WHOLE_JOB_RUNS]);
-        expect(failed.where.AND).toEqual([WHOLE_JOB_RUNS]);
+        // The raw query of the newest run of each job leaves a run of single databases out like WHOLE_JOB_RUNS.
+        const [strings, ...values] = prismaMock.$queryRaw.mock.calls[0] as unknown as [string[], ...unknown[]];
+        const sql = [strings.join("?"), ...values.map((value) => JSON.stringify(value))].join(" ");
+        expect(sql).toContain("metadata IS NULL OR NOT x.metadata LIKE");
+        expect(sql).toContain(SINGLE_DATABASES_MARK.replace(/"/g, '\\"'));
+        expect(WHOLE_JOB_RUNS).toEqual({ OR: [{ metadata: null }, { NOT: { metadata: { contains: SINGLE_DATABASES_MARK } } }] });
     });
 });
 

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { getAuthContext } from "@/lib/auth/access-control";
 import { decrypt } from "@/lib/crypto";
 import { auditService } from "@/services/audit-service";
+import { accountLogOrigin } from "@/services/audit/account-log";
+import { PLATFORM_LOG } from "@/services/system/settings-save";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -57,12 +60,16 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(loginUrl);
     }
 
+    // The new session opens a tenant of its own, where the entry stays only while the account is one
+    // of its people, like every change of an account.
+    const ctx = await getAuthContext(headersList).catch(() => null);
     await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.AUTH,
         { change: "SSO account connected" },
-        session.user.id
+        session.user.id,
+        ctx ? await accountLogOrigin(ctx, session.user.id) : PLATFORM_LOG
     );
 
     const profileUrl = new URL("/dashboard/profile", request.url);

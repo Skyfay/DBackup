@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, currentSessionId, getViewer } from "@/lib/auth/access-control";
+import { checkPermission, currentSessionId, getViewer, tenantRefusal } from "@/lib/auth/access-control";
 import { roleRefusal } from "@/lib/auth/account-access";
 import { isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
@@ -48,7 +48,8 @@ const messageOf = (error: unknown, fallback: string) => {
  */
 export async function createInvitation(input: z.input<typeof InviteSchema>) {
     const viewer = await checkPermission(PERMISSIONS.USERS.WRITE);
-    if (!viewer.tenantId) return { success: false as const, error: "Unauthorized" };
+    // A link adds someone to one tenant, All tenants only reads.
+    if (!viewer.tenantId) return { success: false as const, error: tenantRefusal(viewer) ?? "Unauthorized" };
     const parsed = InviteSchema.safeParse(input);
     if (!parsed.success) return { success: false as const, error: parsed.error.issues[0]?.message ?? "Invalid request" };
 
@@ -78,15 +79,16 @@ export async function createInvitation(input: z.input<typeof InviteSchema>) {
 /** The open links of the caller's tenant. */
 export async function listInvitations(): Promise<{ success: true; data: InvitationRow[] } | { success: false; error: string }> {
     const viewer = await checkPermission(PERMISSIONS.USERS.READ);
-    if (!viewer.tenantId) return { success: false, error: "Unauthorized" };
+    if (!viewer.tenantId) return { success: false, error: tenantRefusal(viewer) ?? "Unauthorized" };
     return { success: true, data: await invitationService.list(viewer.tenantId) };
 }
 
 /** Takes back a link nobody used yet. */
 export async function revokeInvitation(id: string) {
     const viewer = await checkPermission(PERMISSIONS.USERS.WRITE);
+    if (!viewer.tenantId) return { success: false as const, error: tenantRefusal(viewer) ?? "Unauthorized" };
     const parsed = IdSchema.safeParse(id);
-    if (!viewer.tenantId || !parsed.success) return { success: false as const, error: "Invalid request" };
+    if (!parsed.success) return { success: false as const, error: "Invalid request" };
 
     try {
         const revoked = await invitationService.revoke(parsed.data, viewer.tenantId);

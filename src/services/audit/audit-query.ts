@@ -58,10 +58,11 @@ export function whoWhere(key: string): Prisma.AuditLogWhereInput | null {
  * a search never finds an entry by an address its row keeps hidden. In a tenant these are the
  * entries of the home tenant, those without a person and those of its own members. In All tenants
  * the person would have to be a member of the tenant of each row, which a query cannot compare, so
- * only the entries of the home tenant and those without a person.
+ * only the entries of the home tenant and those without a person. A deleted account kept its name
+ * and counts as a person, whose memberships are gone.
  */
 export function addressShownWhere(viewerTenantId: string | null | undefined): Prisma.AuditLogWhereInput {
-    const shown: Prisma.AuditLogWhereInput[] = [{ tenantId: HOME_TENANT_ID }, { userId: null }];
+    const shown: Prisma.AuditLogWhereInput[] = [{ tenantId: HOME_TENANT_ID }, { userId: null, actorName: null }];
     if (viewerTenantId) shown.push({ tenantId: viewerTenantId, user: { is: { memberships: { some: { tenantId: viewerTenantId } } } } });
     return { OR: shown };
 }
@@ -100,7 +101,12 @@ export function buildAuditWhere(filter: AuditFilter, now: Date, omit?: "who" | "
                 { AND: [{ ipAddress: { contains: search } }, addressShownWhere(filter.viewerTenantId)] },
                 { resourceId: { contains: search } },
                 { details: { contains: search } },
-                { user: { is: { email: { contains: search } } } },
+                // The email of a person, who shows by name alone, matches in a tenant only for the
+                // people whose origin the log shows, so the email of someone of the platform cannot
+                // be guessed letter by letter. All tenants is for the platform, which sees every account.
+                filter.viewerTenantId
+                    ? { AND: [{ user: { is: { email: { contains: search } } } }, addressShownWhere(filter.viewerTenantId)] }
+                    : { user: { is: { email: { contains: search } } } },
             ],
         });
     }

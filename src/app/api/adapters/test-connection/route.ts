@@ -6,7 +6,7 @@ import { getManagePermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
 import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { withoutBinaryPaths } from "@/lib/adapters/config-resolver";
-import { PermissionError } from "@/lib/logging/errors";
+import { requestRefusal } from "@/lib/server/permission-refusal";
 import { testConnection } from "@/services/adapters/connection-test";
 
 // Ensure adapters are registered
@@ -66,7 +66,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(outcome.result);
 
     } catch (error: unknown) {
-        if (error instanceof PermissionError) return NextResponse.json({ success: false, message: error.message }, { status: 403 });
+        const refusal = requestRefusal(error);
+        if (refusal) return refusal;
         const message = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json({ success: false, message }, { status: 500 });
     }

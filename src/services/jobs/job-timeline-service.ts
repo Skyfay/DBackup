@@ -1,6 +1,6 @@
 import { getTimezoneOffset } from "date-fns-tz";
 import prisma from "@/lib/prisma";
-import { readCronAtOffset } from "@/lib/core/cron";
+import { offsetReader } from "@/lib/core/cron-window";
 import { planQueue, type QueueItem } from "@/lib/core/queue-plan";
 import { getMaxConcurrentJobs, getRecentRunsByJob, getSchedulerTimezone } from "@/services/dashboard/aggregates";
 import { latestOutcome } from "@/services/dashboard/health";
@@ -8,6 +8,7 @@ import { estimateDuration } from "@/services/dashboard/schedule";
 import { liveProgress } from "./job-overview";
 import type { JobTimeline, TimelinePlannedRun, TimelineRun } from "./job-timeline-types";
 import { anonymousWaits, demandBeside, NO_OTHER_TENANTS, otherJobIds, otherTenantQueue, queueViewer, type Span } from "./other-tenant-queue";
+import { queuePlan, type DueTimes } from "./queue-schedules";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** How far the timeline reaches back and ahead. */
@@ -17,20 +18,7 @@ const MAX_PLANNED_PER_JOB = 7 * 24 * 12;
 
 const plannedKey = (jobId: string, due: number) => `${jobId}@${due}`;
 
-/** When a schedule starts a run from now until `to`, and whether it runs too often to list them all. */
-function plannedTimes(schedule: string | null, offset: number, now: Date, to: Date): { times: number[]; truncated: boolean } {
-    const cron = schedule ? readCronAtOffset(schedule, offset) : null;
-    const times: number[] = [];
-    if (!cron) return { times, truncated: false };
-    let cursor = now;
-    for (let count = 0; ; count++) {
-        const next = cron.nextRun(cursor);
-        if (!next || next.getTime() > to.getTime()) return { times, truncated: false };
-        if (count === MAX_PLANNED_PER_JOB) return { times, truncated: true };
-        times.push(next.getTime());
-        cursor = next;
-    }
-}
+const NOT_PLANNED: DueTimes = { times: [], truncated: false };
 
 /**
  * The runs of every job a week back and a week ahead: what ran with its outcome, what runs and
@@ -68,7 +56,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
         estimates[job.id] = estimateDuration(runs);
         if (latestOutcome(runs)?.status === "Failed") failing.push(job.id);
     }
-    const otherEstimates = new Map(others.jobs.map((job) => [job.id, estimateDuration(job.runs)]));
+    const otherEstimates = new Map(others.jobs.map((job) => [job.id, job.estimatedMs]));
 
     const items: QueueItem[] = [];
     for (const execution of executions) {
@@ -89,10 +77,16 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
 
     const measured = Math.round(getTimezoneOffset(timezone, now) / 60_000);
     const offset = Number.isFinite(measured) ? measured : 0;
+    // When the schedules start a run from now until `to`, and whether one runs too often to list
+    // them all, from the plan of the queue every tenant shares.
+    const schedules = await queuePlan({ offset }, now.getTime(), to.getTime());
+    const read = offsetReader(offset, now.getTime(), to.getTime());
+    const plannedOf = (schedule: string | null) => (schedule ? schedules.due({ schedule }, MAX_PLANNED_PER_JOB, read) ?? NOT_PLANNED : NOT_PLANNED);
+
     const due: { jobId: string; at: number }[] = [];
     const truncated: string[] = [];
     for (const job of jobs) {
-        const times = plannedTimes(job.enabled ? job.schedulePreset?.schedule ?? job.schedule ?? "" : null, offset, now, to);
+        const times = plannedOf(job.enabled ? job.schedulePreset?.schedule ?? job.schedule ?? "" : null);
         if (times.truncated) truncated.push(job.id);
         for (const at of times.times) {
             due.push({ jobId: job.id, at });
@@ -100,7 +94,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
         }
     }
     for (const job of others.jobs) {
-        for (const at of plannedTimes(job.schedule, offset, now, to).times) {
+        for (const at of plannedOf(job.schedule).times) {
             otherItems.push({ key: plannedKey(job.id, at), jobId: job.id, due: at, durationMs: otherEstimates.get(job.id) ?? 0 });
         }
     }

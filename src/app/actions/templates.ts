@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
+import { checkPermission, tenantRefusal, type Viewer } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import * as retentionPolicyService from "@/services/templates/retention-policy-service";
 import * as namingTemplateService from "@/services/templates/naming-template-service";
@@ -24,7 +24,13 @@ import type { RetentionConfiguration } from "@/lib/core/retention";
  */
 const TEMPLATE_READERS = [PERMISSIONS.TEMPLATES.READ, PERMISSIONS.TEMPLATES.WRITE, PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.WRITE];
 
-const mayReadTemplates = (permissions: string[]) => TEMPLATE_READERS.some((permission) => permissions.includes(permission));
+/**
+ * Why the lists of templates stay closed to the viewer, null when they open. Templates belong to a
+ * tenant and every picker asks in one, so All tenants, which would mix those of every tenant, is refused.
+ */
+function readRefusal(viewer: Viewer | null): string | null {
+  return viewer ? tenantRefusal(viewer) : "Insufficient permissions";
+}
 
 const IdSchema = z.string().min(1).max(200);
 
@@ -33,7 +39,8 @@ const IdSchema = z.string().min(1).max(200);
 // ---------------------------------------------------------------------------
 
 export async function getRetentionPolicies() {
-  if (!mayReadTemplates(await getUserPermissions())) return { success: false as const, error: "Insufficient permissions" };
+  const refused = readRefusal(await checkPermission(TEMPLATE_READERS).catch(() => null));
+  if (refused) return { success: false as const, error: refused };
 
   try {
     const data = await retentionPolicyService.getRetentionPolicies();
@@ -152,7 +159,8 @@ export async function setDefaultRetentionPolicy(id: string) {
 // ---------------------------------------------------------------------------
 
 export async function getNamingTemplates() {
-  if (!mayReadTemplates(await getUserPermissions())) return { success: false as const, error: "Insufficient permissions" };
+  const refused = readRefusal(await checkPermission(TEMPLATE_READERS).catch(() => null));
+  if (refused) return { success: false as const, error: refused };
 
   try {
     const data = await namingTemplateService.getNamingTemplates();
@@ -247,7 +255,8 @@ export async function deleteNamingTemplate(id: string) {
 // ---------------------------------------------------------------------------
 
 export async function getSchedulePresets() {
-  if (!mayReadTemplates(await getUserPermissions())) return { success: false as const, error: "Insufficient permissions" };
+  const refused = readRefusal(await checkPermission(TEMPLATE_READERS).catch(() => null));
+  if (refused) return { success: false as const, error: refused };
 
   try {
     const data = await schedulePresetService.getSchedulePresets();
@@ -346,7 +355,8 @@ export async function deleteSchedulePreset(id: string) {
 // ---------------------------------------------------------------------------
 
 export async function getNotificationTemplates() {
-  if (!mayReadTemplates(await getUserPermissions())) return { success: false as const, error: "Insufficient permissions" };
+  const refused = readRefusal(await checkPermission(TEMPLATE_READERS).catch(() => null));
+  if (refused) return { success: false as const, error: refused };
 
   try {
     const data = await notificationTemplateService.getNotificationTemplates();
@@ -486,7 +496,8 @@ export async function unsetDefaultNotificationTemplate() {
 // ---------------------------------------------------------------------------
 
 export async function getExcludePatternPresets() {
-  if (!mayReadTemplates(await getUserPermissions())) return { success: false as const, error: "Insufficient permissions" };
+  const refused = readRefusal(await checkPermission(TEMPLATE_READERS).catch(() => null));
+  if (refused) return { success: false as const, error: refused };
 
   try {
     const data = await excludePatternPresetService.getExcludePatternPresets();

@@ -24,6 +24,12 @@ vi.mock("@/services/dashboard/aggregates", async () => {
 });
 vi.mock("@/services/dashboard-service", () => ({ getLatestJobs: vi.fn().mockResolvedValue([]) }));
 
+// The snapshot of the queue every tenant shares, with the jobs of every tenant and their usual length.
+const queue = vi.hoisted(() => ({ jobs: [] as { id: string; tenantId: string; schedule: string; estimatedMs: number }[] }));
+vi.mock("@/services/jobs/queue-snapshot", () => ({
+    queueJobs: async () => queue.jobs,
+}));
+
 const { getAggregates } = await import("@/services/dashboard/aggregates");
 const { invalidateDashboardCache } = await import("@/services/dashboard/cache");
 const { getDashboardOverview } = await import("@/services/dashboard/overview-service");
@@ -33,8 +39,6 @@ const overviewJob = (id: string, tenantId: string, schedule: string) => ({
     source: { adapterId: "postgres" }, sources: [], destinations: [],
 });
 
-type Where = { tenantId?: { not?: string } } | undefined;
-const forOthers = (args: unknown) => Boolean((args as { where?: Where } | undefined)?.where?.tenantId?.not);
 
 beforeEach(() => {
     vi.useFakeTimers();
@@ -57,14 +61,14 @@ afterEach(() => {
 
 describe("the Upcoming card in a tenant", () => {
     beforeEach(() => {
-        prismaMock.job.findMany.mockImplementation((async (args: unknown) => forOthers(args)
-            ? [
-                // Acme backs up at 03:00 like Beta, and twice at noon, when Beta runs nothing.
-                { id: "acme-erp", schedule: "0 3 * * *", schedulePreset: null },
-                { id: "acme-crm", schedule: "0 12 * * *", schedulePreset: null },
-                { id: "acme-mail", schedule: "0 12 * * *", schedulePreset: null },
-            ]
-            : [overviewJob("beta-shop", "beta", "0 3 * * *")]) as never);
+        queue.jobs = [
+            // Acme backs up at 03:00 like Beta, and twice at noon, when Beta runs nothing.
+            { id: "acme-erp", tenantId: "acme", schedule: "0 3 * * *", estimatedMs: 40 * 60_000 },
+            { id: "acme-crm", tenantId: "acme", schedule: "0 12 * * *", estimatedMs: 30 * 60_000 },
+            { id: "acme-mail", tenantId: "acme", schedule: "0 12 * * *", estimatedMs: 30 * 60_000 },
+            { id: "beta-shop", tenantId: "beta", schedule: "0 3 * * *", estimatedMs: 10 * 60_000 },
+        ];
+        prismaMock.job.findMany.mockResolvedValue([overviewJob("beta-shop", "beta", "0 3 * * *")] as never);
     });
 
     it("marks the overlap of a run of the tenant with a run of another tenant, which the queue has one slot for", async () => {
@@ -88,6 +92,7 @@ describe("the Upcoming card in a tenant", () => {
 
 describe("the Upcoming card in All tenants", () => {
     it("names the tenant of every job, which the card shows beside its name", async () => {
+        queue.jobs = [];
         prismaMock.job.findMany.mockResolvedValue([overviewJob("beta-shop", "beta", "0 3 * * *"), overviewJob("acme-erp", "acme", "0 5 * * *")] as never);
 
         const { upcoming } = await getDashboardOverview();
@@ -95,5 +100,6 @@ describe("the Upcoming card in All tenants", () => {
         expect(Object.fromEntries(upcoming.jobs.map((job) => [job.id, job.tenantId]))).toEqual({ "beta-shop": "beta", "acme-erp": "acme" });
         // All tenants lists every job already, so nothing of other tenants is read on top.
         expect(prismaMock.job.findMany).toHaveBeenCalledTimes(1);
+        expect(prismaMock.execution.findMany).not.toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ tenantId: expect.anything() }) }));
     });
 });

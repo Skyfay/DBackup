@@ -14,6 +14,32 @@ info:
 
     > API keys do not inherit the rights of a platform admin. Only explicitly assigned permissions are available, and a key reads and changes only the tenant it was made in.
 
+    ## API Keys and Tenants
+
+    A key acts in the tenant it was made in, whichever tenant its owner opens in the browser later. It never gets more than its owner may in that tenant, and no right of the platform but `platform-sharing:read` and `platform-sharing:write` in a tenant that shares databases with customers.
+
+    Tenants, their members and invitations, the destinations and channels a tenant shares, what a tenant may add itself and the backups on demand are managed in the web UI only for now. Giving the databases of a shared server to tenants is the exception, see `PUT /adapters/{id}/database-assignments`.
+
+    A few routes answer a signed-in person only and refuse every API key with `403`: the routes under `/platform`, `GET /sso-providers`, the configuration restore under `/settings/config-backup/restore` and the download of the database.
+
+    ## Permissions
+
+    A key holds the permissions picked for it, out of what its owner may in its tenant:
+
+    | Area | Permissions |
+    |---|---|
+    | Jobs | `jobs:read`, `jobs:write`, `jobs:execute` |
+    | Database sources | `sources:view`, `sources:read`, `sources:write` |
+    | Destinations | `destinations:read`, `destinations:write` |
+    | Backups in the Storage Explorer | `storage:read`, `storage:download`, `storage:restore`, `storage:delete` |
+    | History, Dashboard, Audit log | `history:read`, `dashboard:read`, `audit:read` |
+    | Notification channels | `notifications:read`, `notifications:write` |
+    | Vault and saved logins | `vault:read`, `vault:write`, `credentials:read`, `credentials:write`, `credentials:delete`, `credentials:reveal` |
+    | Users, groups, API keys, templates | `users:read`, `users:write`, `groups:read`, `groups:write`, `api-keys:read`, `api-keys:write`, `templates:read`, `templates:write` |
+    | Settings of the instance | `settings:read`, `settings:write`, which count only from the group of the owner in the home tenant |
+    | Settings of the tenant | `tenant-settings:read`, `tenant-settings:write`: the name, logo and notifications of the tenant, and Recently deleted, where a delete that skips it needs `tenant-settings:write` |
+    | Shared databases | `platform-sharing:read`, `platform-sharing:write`, in a tenant that shares with customers |
+
     ## Rate Limits
 
     | Request Type | Default Limit |
@@ -67,6 +93,14 @@ tags:
     description: Encryption profiles, credential profiles, and recovery kits
   - name: Settings
     description: System tasks and configuration
+  - name: Tenants
+    description: The logo of a tenant. Everything else of a tenant is managed in the web UI for now
+  - name: Users & Groups
+    description: The people and groups of the tenant of the request, and the sign-in providers
+  - name: Platform
+    description: Every account and group of the instance, for a signed-in person who may see the accounts of the platform. Never for an API key
+  - name: Sign-in
+    description: What the login page asks before anyone is signed in
   - name: Health
     description: Health check endpoint (public)
 
@@ -578,6 +612,18 @@ paths:
           schema:
             type: string
             maxLength: 200
+        - name: tenant
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: >-
+            ID of a tenant, for a session in All tenants, which lists the runs of every tenant. Inside
+            a tenant, and for an API key, which acts in its tenant, every run is of that tenant and the
+            filter is ignored.
       responses:
         "200":
           description: One page of runs
@@ -976,6 +1022,10 @@ paths:
         Currently only SMB, via MS-FSRVP. The snapshot option cannot be enabled on an
         adapter until this reports `supported: true`, and the same check runs again when
         the adapter is saved.
+
+        **Required permission:** the right to change connections of the kind of the adapter
+        (`destinations:write` for SMB), in a tenant, never All tenants, since the `config`
+        runs as it comes.
       operationId: checkAdapterSnapshot
       security:
         - BearerAuth: []
@@ -1027,6 +1077,11 @@ paths:
         and settings stay with the tenant that shares them. A caller with `platform-sharing:read` also
         gets `share` on each own connection the tenant shares with other tenants.
 
+        With `type=database` and `shared=true` the list ends with the servers of other tenants whose
+        databases the tenant of the caller holds now, one row per server with `sharedServer`. Such a
+        row has an empty `config` and names nothing of the server but its name, its engine and its
+        version. A session in All tenants gets none of them.
+
         **Permission depends on type:**
         - `database` → `sources:view`
         - `storage` → `destinations:read`
@@ -1051,6 +1106,15 @@ paths:
           description: >-
             Narrows storage adapters to one role (case-insensitive). Omit to receive both.
             Ignored for other adapter types.
+        - name: shared
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true"]
+          description: >-
+            With `type=database`, also lists the servers of other tenants whose databases the tenant
+            of the caller holds now. Ignored for other adapter types.
       responses:
         "200":
           description: Adapter list
@@ -1170,7 +1234,7 @@ paths:
                   maxItems: 200
                 permanently:
                   type: boolean
-                  description: A delete skips Recently deleted. Needs `settings:write`.
+                  description: A delete skips Recently deleted. Needs `tenant-settings:write`.
       responses:
         "200":
           description: Deletion or change applied, with per-adapter outcomes
@@ -1741,7 +1805,13 @@ paths:
     post:
       tags: [Connection Testing]
       summary: Test SSH Connection (MSSQL)
-      description: Tests SSH connectivity and verifies backup path access for MSSQL file transfer mode.
+      description: |
+        Tests SSH connectivity and verifies backup path access for MSSQL file transfer mode.
+
+        **Required permission:** the right to change connections of the kind of `adapterId`
+        (`sources:write` for a database, `destinations:write` for a storage), `sources:write`
+        without one, in a tenant, never All tenants, since the `config` opens SSH to the host
+        it names.
       operationId: testSsh
       security:
         - BearerAuth: []
@@ -2084,7 +2154,10 @@ paths:
     get:
       tags: [Storage Explorer]
       summary: Download Backup
-      description: Downloads a backup file. Optionally decrypts the file if it was encrypted.
+      description: |
+        Downloads a backup file. Optionally decrypts the file if it was encrypted.
+
+        **Required permission:** `storage:download`. A configuration backup, a file in `config-backups/` or one whose `.meta.json` says `sourceType: SYSTEM`, answers `403` unless a platform admin is signed in with a session, never for an API key.
       operationId: downloadBackup
       security:
         - BearerAuth: []
@@ -2180,6 +2253,8 @@ paths:
 
         A decrypted link to a seekable archive downloads one database dump rather than the archive. Name it with `database`, which may be omitted when the backup holds exactly one database and no files. The response names the file after the backup and the database, so use `wget --content-disposition` or `curl -OJ` to keep that name.
 
+        A link works only while its maker, and the API key it was made with, may still download in its tenant. A configuration backup gets no link and answers `403`, also for a platform admin.
+
         **Required permission:** `storage:download`
       operationId: generateDownloadUrl
       security:
@@ -2233,7 +2308,7 @@ paths:
     get:
       tags: [Storage Explorer]
       summary: Public Download
-      description: Download a backup using a single-use token. No authentication required. Token is consumed on use.
+      description: Download a backup using a single-use token. No authentication required. Token is consumed on use. It answers `403` once the maker of the link, or the API key it was made with, may no longer download in its tenant, and for a configuration backup.
       operationId: publicDownload
       security: []
       parameters:
@@ -2253,6 +2328,48 @@ paths:
                 format: binary
         "401":
           description: Token invalid or expired
+        "403":
+          description: The maker of the link may no longer download there, or the file is a configuration backup
+
+  /shared/download:
+    get:
+      tags: [Storage Explorer]
+      summary: Download the Dump of a Shared Database
+      description: |
+        Hands a tenant the dump of a database another tenant shares with it, which **Download the
+        dump** in the web UI pulled out of the backup first. The address carries the token alone, so
+        the tenant never learns the destination it came from. The token holds once, for five minutes,
+        for the person and the tenant that asked for it. Getting one is a step of the web UI only for
+        now, so the route serves the browser that asked.
+
+        **Required permission:** `storage:download`
+      operationId: downloadSharedDump
+      security:
+        - SessionAuth: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The dump as a file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "410":
+          description: The token is used, expired, or of another person or tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /storage/{id}/restore:
     post:
@@ -2264,6 +2381,8 @@ paths:
         - `privilegedAuth` provides elevated credentials for `CREATE DATABASE` permissions.
         - A version guard prevents restoring newer dump formats to older database servers.
         - `databaseMapping` allows renaming databases during multi-DB restores.
+
+        **Required permission:** `storage:restore`. A configuration backup, a file in `config-backups/` or one whose `.meta.json` says `sourceType: SYSTEM`, answers `403` unless a platform admin is signed in with a session, never for an API key. Its restore goes through Settings.
       operationId: restoreBackup
       security:
         - BearerAuth: []
@@ -2302,7 +2421,7 @@ paths:
       description: |
         Lists the databases, and for a seekable archive the directory sources, a backup contains. A seekable archive is answered from its index without downloading the backup.
 
-        **Required permission:** `storage:restore` or `storage:download`
+        **Required permission:** `storage:restore` or `storage:download`. A configuration backup, a file in `config-backups/` or one whose `.meta.json` says `sourceType: SYSTEM`, answers `403` unless a platform admin is signed in with a session, never for an API key.
       operationId: analyzeBackup
       security:
         - BearerAuth: []
@@ -2366,7 +2485,9 @@ paths:
 
         The other targets write files back into a storage destination. Database dumps can only be downloaded.
 
-        **Required permission:** `storage:download` for a download, `storage:restore` otherwise
+        A token of `prepare` is collected only by a request of the same tenant and the same API key.
+
+        **Required permission:** `storage:download` for a download, `storage:restore` otherwise. A configuration backup, a file in `config-backups/` or one whose `.meta.json` says `sourceType: SYSTEM`, answers `403` unless a platform admin is signed in with a session, never for an API key.
       operationId: restoreArchiveFiles
       security:
         - BearerAuth: []
@@ -3310,6 +3431,511 @@ paths:
                   executionId:
                     type: string
                     description: The run in History, for a task that writes one
+
+  # ─── Tenants ───────────────────────────────────────────────────
+  /tenants/{id}/logo:
+    get:
+      tags: [Tenants]
+      summary: Tenant Logo
+      description: |
+        The logo of a tenant, for its people, the platform groups that reach it and platform admins,
+        who see every tenant. An API key sees the logo of its own tenant only. Anyone else gets `404`,
+        like for a tenant without a logo. A `v` in the query, the time of the logo, makes the answer
+        cacheable for a year.
+      operationId: getTenantLogo
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: v
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The picture
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Not signed in and no API key
+        "404":
+          description: No logo, or a tenant the caller does not see
+    post:
+      tags: [Tenants]
+      summary: Upload Tenant Logo
+      description: |
+        Replaces the logo of the tenant the request acts in with `file` of a form, PNG, JPEG, GIF or
+        WebP, read from its bytes, at most 1 MB. The logo of another tenant is changed from inside
+        that tenant.
+
+        **Required permission:** `tenant-settings:write`
+      operationId: uploadTenantLogo
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      url:
+                        type: string
+                        description: The address of the new logo
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The permission is missing, or the id names another tenant than the one the request acts in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          description: The request is larger than 1 MB and a form
+    delete:
+      tags: [Tenants]
+      summary: Remove Tenant Logo
+      description: |
+        Removes the logo of the tenant the request acts in, which shows its initials again.
+
+        **Required permission:** `tenant-settings:write`
+      operationId: removeTenantLogo
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Removed, or there was none
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The permission is missing, or the id names another tenant than the one the request acts in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Users & Groups ────────────────────────────────────────────
+  /users:
+    get:
+      tags: [Users & Groups]
+      summary: List Users
+      description: |
+        The Users tab: every person of the tenant of the request with how they sign in, their group
+        and their sessions, never a password hash or a token. In All tenants, a session only, every
+        account of the instance with its group in each tenant.
+
+        `viewerPlatformAdmin` replaced `viewerSuperAdmin` of earlier versions. `superAdmin` of a user
+        marks a platform admin, of a group the group with every permission of its tenant.
+
+        **Required permission:** `users:read`
+      operationId: listUsers
+      responses:
+        "200":
+          description: The people and their groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          type: object
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                      stats:
+                        type: object
+                      viewerPlatformAdmin:
+                        type: boolean
+                        description: The caller is a platform admin, who may give every group and change every account
+                      homeTenant:
+                        type: boolean
+                        description: The request acts in the home tenant, the only one where an account may stay without a group
+                      allTenants:
+                        type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /users/platform-people:
+    get:
+      tags: [Users & Groups]
+      summary: People of the Platform
+      description: |
+        The people who open the tenant of the request through the platform without being members
+        there: the platform admins and the members of each platform group that reaches it, with what
+        they may do there in one line. Empty while the instance has one tenant.
+
+        **Required permission:** `users:read`
+      operationId: listPlatformPeople
+      responses:
+        "200":
+          description: The platform admins and the platform groups that reach the tenant, only those with someone in them
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      home:
+                        type: string
+                        description: The name of the home tenant, whose people they are
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            builtIn:
+                              type: boolean
+                              description: Platform admin, which holds every right
+                            line:
+                              type: string
+                              description: What its members may do in the tenant
+                            members:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                                  name:
+                                    type: string
+                                  email:
+                                    type: string
+                                  image:
+                                    type: [string, "null"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /groups:
+    get:
+      tags: [Users & Groups]
+      summary: List Groups
+      description: |
+        The Groups tab: every group of the tenant of the request with its permissions and members,
+        and the people outside the groups for a caller with `users:read`. In All tenants, a session
+        only, the groups of every tenant, read only.
+
+        `viewerPlatformAdmin` replaced `viewerSuperAdmin` of earlier versions. `superAdmin` of a group
+        marks the group with every permission of its tenant.
+
+        **Required permission:** `groups:read`
+      operationId: listGroups
+      responses:
+        "200":
+          description: The groups of the tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            superAdmin:
+                              type: boolean
+                              description: The group with every permission, which nobody edits or deletes
+                            fromPlatform:
+                              type: boolean
+                              description: A group the platform gives the tenant, which only the platform changes
+                            permissions:
+                              type: array
+                              items:
+                                type: string
+                            members:
+                              type: array
+                              items:
+                                type: object
+                      stats:
+                        type: object
+                      people:
+                        type: [array, "null"]
+                        description: The people of the tenant, null without `users:read`
+                        items:
+                          type: object
+                      viewerPlatformAdmin:
+                        type: boolean
+                        description: The caller is a platform admin, who may give every group
+                      allTenants:
+                        type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /sso-providers:
+    get:
+      tags: [Users & Groups]
+      summary: List Sign-in Providers
+      description: |
+        The sign-in providers with who is linked through each, never the client secret. For a
+        signed-in person only: an API key gets `403`, whatever its permissions.
+
+        **Required permission:** `platform-sign-in:read` or `settings:read`
+      operationId: listSsoProviders
+      security:
+        - SessionAuth: []
+      responses:
+        "200":
+          description: The providers the caller sees
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: An API key, or the permission is missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Platform ──────────────────────────────────────────────────
+  /platform/users:
+    get:
+      tags: [Platform]
+      summary: Every Account
+      description: |
+        Every account of the instance once, with its tenants, its group in each and its platform
+        group, never a password hash or a token. Someone of a platform group of some tenants sees the
+        people of those tenants. For a signed-in person only, an API key gets `403`.
+
+        **Required permission:** `platform-accounts:read`
+      operationId: listPlatformUsers
+      security:
+        - SessionAuth: []
+      responses:
+        "200":
+          description: The accounts, shaped like the answer of `GET /users` in All tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: An API key, or the permission is missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /platform/groups:
+    get:
+      tags: [Platform]
+      summary: Groups of Every Tenant
+      description: |
+        The groups of every tenant with their tenant and members, read only, and the groups the
+        platform makes for tenants. A group is changed in its tenant. Someone of a platform group of
+        some tenants sees the groups of those tenants. For a signed-in person only, an API key gets
+        `403`.
+
+        **Required permission:** `platform-accounts:read`
+      operationId: listPlatformTenantGroups
+      security:
+        - SessionAuth: []
+      responses:
+        "200":
+          description: The groups, shaped like the answer of `GET /groups` with `allTenants` true
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: An API key, or the permission is missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /platform/platform-groups:
+    get:
+      tags: [Platform]
+      summary: Platform Groups
+      description: |
+        Platform admin, built in, and the platform groups of the people of the MSP with their rights,
+        their tenants and their members, and what the caller may give. For a signed-in person only,
+        an API key gets `403`.
+
+        **Required permission:** `platform-accounts:read`
+      operationId: listPlatformGroups
+      security:
+        - SessionAuth: []
+      responses:
+        "200":
+          description: The platform groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: An API key, or the permission is missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Sign-in ───────────────────────────────────────────────────
+  /login/provider:
+    post:
+      tags: [Sign-in]
+      summary: Provider of an Email Domain
+      description: |
+        The sign-in provider that is on and claims the domain of an email, of the platform or of a
+        tenant, for the login page while someone types. Public, since nobody is signed in there. It
+        answers for one domain at a time and never names a tenant. The rate limit of changing
+        requests applies.
+      operationId: findDomainProvider
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain:
+                  type: string
+                  maxLength: 253
+                  example: acme.com
+      responses:
+        "200":
+          description: The provider, null when none claims the domain
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      provider:
+                        type: [object, "null"]
+                        properties:
+                          providerId:
+                            type: string
+                          name:
+                            type: string
+                          adapterId:
+                            type: string
+                          domain:
+                            type: string
+                          allowProvisioning:
+                            type: boolean
+                            description: Whether the provider makes an account for someone new
+        "400":
+          description: The body is not JSON or names no domain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   # ─── Health ────────────────────────────────────────────────────
   /health:
@@ -4346,6 +4972,68 @@ components:
               type: boolean
             ownRecipients:
               type: boolean
+        sharedServer:
+          type: object
+          description: >-
+            Set on the row of a server of another tenant whose databases the tenant of the caller
+            holds, listed with `shared=true` only. Its `id` is not the one of the connection of that
+            server, which the caller never reads.
+          properties:
+            sourceId:
+              type: string
+            serverName:
+              type: string
+            providerName:
+              type: string
+              description: The tenant of the server
+            databases:
+              type: array
+              description: The databases of it the tenant of the caller holds now
+              items:
+                type: object
+                properties:
+                  database:
+                    type: object
+                    description: The database as the Backups page knows it
+                  backups:
+                    type: integer
+                    description: The backups of it made while it belonged to the tenant of the caller
+                  lastBackup:
+                    type: [object, "null"]
+                    properties:
+                      at:
+                        type: string
+                        format: date-time
+                      passed:
+                        type: [boolean, "null"]
+                  newest:
+                    type: [object, "null"]
+                    description: Its newest backup, null before the first one and without `storage:read`, `storage:restore` or `storage:download`
+            backups:
+              type: integer
+            lastBackup:
+              type: [object, "null"]
+              properties:
+                at:
+                  type: string
+                  format: date-time
+                passed:
+                  type: [boolean, "null"]
+            schedule:
+              type: [string, "null"]
+              description: The cron expression of the job of the other tenant that backs them up, null while no enabled job does
+            rules:
+              type: array
+              description: The name patterns by which the other tenant gives every matching database of the server, a new one too
+              items:
+                type: object
+                properties:
+                  pattern:
+                    type: string
+                    example: "shop_*"
+                  perDay:
+                    type: [integer, "null"]
+                    description: The backups on demand a day of each database it gives
 
     CreateAdapterRequest:
       type: object
@@ -4560,6 +5248,14 @@ components:
                   since:
                     type: string
                     format: date-time
+                  onDemandPerDay:
+                    type: [integer, "null"]
+                    description: >-
+                      The backups on demand a day the assignment or the rule stores for it: null to
+                      follow the tenant, 0 for none, else its own number
+                  tenantOnDemand:
+                    type: [integer, "null"]
+                    description: The backups on demand a day the platform lets the tenant start of every database, null for none
               backups:
                 type: integer
                 description: The backups of it the destinations of the server keep, one per backup however many copies
@@ -4575,9 +5271,11 @@ components:
               databaseName:
                 type: string
               tenantId:
-                type: string
+                type: [string, "null"]
+                description: Null when the tenant of the server took the database back
               tenantName:
-                type: string
+                type: [string, "null"]
+                description: Null without a tenant, `A deleted tenant` for a tenant deleted since
               validFrom:
                 type: string
                 format: date-time
@@ -4585,12 +5283,29 @@ components:
                 type: [string, "null"]
                 format: date-time
                 description: Null while it holds
+              createdAt:
+                type: string
+                format: date-time
+                description: When it was given
               byName:
                 type: [string, "null"]
                 description: The user who gave it, null when it came without one or the user is gone
+              movedTo:
+                oneOf:
+                  - $ref: "#/components/schemas/MovePlace"
+                  - type: "null"
+                description: Where the database went, on the assignment its move to another server ended
+              movedFrom:
+                oneOf:
+                  - $ref: "#/components/schemas/MovePlace"
+                  - type: "null"
+                description: Where the database came from, on the assignment a move to this server started
+              onDemandPerDay:
+                type: [integer, "null"]
+                description: The backups on demand a day it stores, null to follow the tenant, 0 for none
         rules:
           type: array
-          description: The rules that give databases away by their name, the highest priority first
+          description: Every rule that gives databases away by their name, the ended ones too, the highest priority first
           items:
             type: object
             properties:
@@ -4609,6 +5324,19 @@ components:
               validFrom:
                 type: string
                 format: date-time
+              validUntil:
+                type: [string, "null"]
+                format: date-time
+                description: When the rule was removed or its tenant deleted, null while it gives. An ended rule still decides the backups of its time
+              createdAt:
+                type: string
+                format: date-time
+              onDemandPerDay:
+                type: [integer, "null"]
+                description: The backups on demand a day it stores for each database it gives, null to follow the tenant, 0 for none
+              tenantOnDemand:
+                type: [integer, "null"]
+                description: The backups on demand a day the platform lets the tenant start of every database, null for none
         customers:
           type: array
           description: |
@@ -4644,6 +5372,17 @@ components:
             items:
               type: string
               format: date-time
+
+    MovePlace:
+      type: object
+      description: A database on a server, one end of a move
+      properties:
+        sourceId:
+          type: string
+        serverName:
+          type: string
+        databaseName:
+          type: string
 
     NotificationLog:
       type: object
@@ -4857,6 +5596,15 @@ components:
               enum: [schedule, manual, api, none]
             label:
               type: string
+        tenantId:
+          type: string
+          description: The tenant of the run
+        someDatabases:
+          type: boolean
+          enum: [true]
+          description: >-
+            Set for a run of some databases of its job alone, like a backup a tenant started of a
+            database another tenant shares with it
 
     RunPage:
       type: object
@@ -4886,6 +5634,11 @@ components:
                 type: integer
             starter:
               type: object
+              additionalProperties:
+                type: integer
+            tenant:
+              type: object
+              description: The runs of each tenant, only in All tenants
               additionalProperties:
                 type: integer
         jobs:

@@ -164,7 +164,8 @@ export async function openArchiveForRestore(
 
     // The index sidecar is the primary path: it is small, and reading it means the archive
     // itself is only ever touched for the entries actually being restored.
-    const sidecarBytes = await archiveIndexService.fetchSidecar(storageConfigId, file, meta.archive.indexFile);
+    // Read in the same view as the archive, which for a shared restore is not the tenant of the request.
+    const sidecarBytes = await archiveIndexService.fetchSidecar(storageConfigId, file, meta.archive.indexFile, viewerTenantId);
 
     let managed = await openStorageArchiveSource(adapter, config, file, undefined);
     try {

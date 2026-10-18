@@ -37,7 +37,7 @@ const SHARED_ROW = { id: "shared:srv-mysql", name: "Shared MySQL 8.0", type: "da
 beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.adapterConfig.findMany.mockResolvedValue([own("own-pg")] as never);
-    prismaMock.databaseListCache.findMany.mockResolvedValue([{ adapterConfigId: "own-pg", databasesJson: JSON.stringify([{ name: "acme_erp" }]) }] as never);
+    prismaMock.databaseListCache.findMany.mockResolvedValue([{ adapterConfigId: "own-pg", databasesJson: JSON.stringify([{ name: "acme_erp" }]), readAt: new Date("2026-10-01T00:00:00Z") }] as never);
     mocks.sharedRows.mockResolvedValue([SHARED_ROW]);
     mocks.overview.mockResolvedValue(new Map([["own-pg", { usedBy: { jobs: 1, templates: 0 } }]]));
     mocks.provided.mockResolvedValue([]);
@@ -87,16 +87,19 @@ describe("the list of database connections", () => {
 
 describe("the databases an own server held at its last read", () => {
     it("are counted with the first names by the alphabet, from servers that were read", async () => {
+        const readAt = new Date("2026-10-01T00:00:00Z");
         prismaMock.databaseListCache.findMany.mockResolvedValue([
-            { adapterConfigId: "big", databasesJson: JSON.stringify(["shop", "crm", "blog", "wiki"].map((name) => ({ name, sizeInBytes: 10 }))) },
-            { adapterConfigId: "broken", databasesJson: "not json" },
+            { adapterConfigId: "big", databasesJson: JSON.stringify(["shop", "crm", "blog", "wiki"].map((name) => ({ name, sizeInBytes: 10 }))), readAt },
+            { adapterConfigId: "broken", databasesJson: "not json", readAt },
+            { adapterConfigId: "unread", databasesJson: JSON.stringify([{ name: "never" }]), readAt: null },
         ] as never);
         const listed = await listedDatabasesOf(["big", "broken", "unread"]);
 
         expect(listed.get("big")).toEqual({ count: 4, names: ["blog", "crm", "shop"] });
         expect(listed.has("broken")).toBe(false);
         expect(listed.has("unread")).toBe(false);
-        expect(prismaMock.databaseListCache.findMany.mock.calls[0][0]?.where).toEqual({ adapterConfigId: { in: ["big", "broken", "unread"] }, readAt: { not: null } });
+        // No negation beside the ids, so Prisma may split a long list of them.
+        expect(prismaMock.databaseListCache.findMany.mock.calls[0][0]?.where).toEqual({ adapterConfigId: { in: ["big", "broken", "unread"] } });
     });
 
     it("ask nothing for no connection", async () => {

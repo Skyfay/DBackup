@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { WHOLE_JOB_RUNS } from "@/services/history/whole-runs";
+import { newestBackupIds, readInChunks } from "@/services/history/newest-runs";
 import { subDays, subHours } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import {
@@ -319,18 +320,20 @@ export function getRecentRunsByJob(): Promise<Record<string, RunSummary[]>> {
 
 async function loadRunsByJob(): Promise<Record<string, RunSummary[]>> {
     const jobs = await prisma.job.findMany({ select: { id: true } });
-    // One indexed lookup per job keeps the cost flat no matter how long the history is.
-    const entries = await Promise.all(jobs.map(async (job) => {
-        // The runs of the whole job: a run of single databases says nothing of its length or its health.
-        const runs = await prisma.execution.findMany({
-            where: { jobId: job.id, type: "Backup", AND: [WHOLE_JOB_RUNS] },
-            orderBy: { startedAt: "desc" },
-            take: RUNS_PER_JOB,
-            select: { id: true, status: true, startedAt: true, endedAt: true },
-        });
-        return [job.id, runs.map(toRunSummary)] as const;
+    // One indexed lookup per job in one query keeps the cost flat no matter how long the history
+    // is. The runs of the whole job: a run of single databases says nothing of its length or its health.
+    const ids = await newestBackupIds(jobs.map((job) => job.id), { take: RUNS_PER_JOB, wholeJob: true });
+    const runs = await readInChunks(ids, (chunk) => prisma.execution.findMany({
+        where: { id: { in: chunk } },
+        select: { id: true, jobId: true, status: true, startedAt: true, endedAt: true },
     }));
-    return Object.fromEntries(entries);
+    runs.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+
+    const byJob: Record<string, RunSummary[]> = Object.fromEntries(jobs.map((job) => [job.id, []]));
+    for (const run of runs) {
+        if (run.jobId) byJob[run.jobId]?.push(toRunSummary(run));
+    }
+    return byJob;
 }
 
 async function loadAggregates(): Promise<Aggregates> {

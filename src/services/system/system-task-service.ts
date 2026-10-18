@@ -216,10 +216,23 @@ export class SystemTaskService {
             return undefined;
         }
 
+        // A start while the task still runs is skipped, like the health check of every minute that
+        // takes longer than a minute on a busy instance. Taken before the first await, so two starts
+        // at once cannot both pass.
+        if (running.has(taskId)) {
+            log.info("Skipping system task, it is still running", { taskId });
+            return undefined;
+        }
+        running.add(taskId);
+
         log.info("Running system task", { taskId });
         const startedAt = new Date();
-        await this.setTaskLastRunAt(taskId, startedAt);
-        running.add(taskId);
+        try {
+            await this.setTaskLastRunAt(taskId, startedAt);
+        } catch (error: unknown) {
+            running.delete(taskId);
+            throw error;
+        }
 
         let outcome: TaskOutcome;
         try {

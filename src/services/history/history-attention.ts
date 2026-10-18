@@ -8,9 +8,10 @@ import prisma from "@/lib/prisma";
 import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import { currentTenantId } from "@/lib/tenant/current";
 import { providedTo } from "@/services/sharing/provided";
-import { WHOLE_JOB_RUNS } from "./whole-runs";
+import { newestBackupIds, readInChunks } from "./newest-runs";
 
 const FINISHED = ["Success", "Failed", "Partial", "Cancelled"];
+const TROUBLED = ["Failed", "Partial"];
 
 export interface HistoryAttention {
     runs?: TabAttention;
@@ -31,49 +32,57 @@ async function channelNames(ids: string[]): Promise<string[]> {
     return [...own, ...shared].map((channel) => channel.name).sort((a, b) => a.localeCompare(b));
 }
 
-export async function getHistoryAttention(): Promise<HistoryAttention> {
-    const [newestRuns, newestMessages] = await Promise.all([
-        // A run of some databases alone, like one a customer started, says nothing of the job as a whole.
-        prisma.execution.groupBy({
-            by: ["jobId"],
-            where: { jobId: { not: null }, type: "Backup", status: { in: FINISHED }, AND: [WHOLE_JOB_RUNS] },
-            _max: { startedAt: true },
-        }),
-        prisma.notificationLog.groupBy({
-            by: ["channelId"],
-            where: { channelId: { not: null } },
-            _max: { sentAt: true },
-        }),
-    ]);
+/** How many channels one query of their newest messages names, far below where SQLite refuses the condition. */
+const CHANNELS_PER_QUERY = 500;
 
-    const [runs, messages] = await Promise.all([
-        newestRuns.length === 0
-            ? []
-            : prisma.execution.findMany({
-                  where: {
-                      type: "Backup",
-                      status: { in: ["Failed", "Partial"] },
-                      OR: newestRuns.map((row) => ({ jobId: row.jobId, startedAt: row._max.startedAt ?? undefined })),
-                      AND: [WHOLE_JOB_RUNS],
-                  },
-                  select: { status: true, job: { select: { name: true } } },
-              }),
-        newestMessages.length === 0
-            ? []
-            : prisma.notificationLog.findMany({
-                  where: {
-                      status: "Failed",
-                      OR: newestMessages.map((row) => ({ channelId: row.channelId, sentAt: row._max.sentAt ?? undefined })),
-                  },
-                  select: { channelId: true },
-              }),
-    ]);
+/**
+ * The channels whose newest message failed. The newest message of each comes from a `groupBy`,
+ * matched in chunks, since a condition with one branch per channel failed past 10,000 with
+ * "Expression tree is too large".
+ */
+async function failedChannels(): Promise<string[]> {
+    const newest = await prisma.notificationLog.groupBy({
+        by: ["channelId"],
+        where: { channelId: { not: null } },
+        _max: { sentAt: true },
+    });
+    const keys = newest.flatMap((row) => (row.channelId && row._max.sentAt ? [{ channelId: row.channelId, sentAt: row._max.sentAt }] : []));
+    const failed: string[] = [];
+    for (let start = 0; start < keys.length; start += CHANNELS_PER_QUERY) {
+        const messages = await prisma.notificationLog.findMany({
+            where: { status: "Failed", OR: keys.slice(start, start + CHANNELS_PER_QUERY) },
+            select: { channelId: true },
+        });
+        for (const message of messages) if (message.channelId) failed.push(message.channelId);
+    }
+    return [...new Set(failed)];
+}
+
+/**
+ * The jobs whose newest finished backup failed or missed a copy, by their name. A run of some
+ * databases alone, like one a customer started, says nothing of the job as a whole.
+ */
+async function troubledJobs(): Promise<{ status: string; name: string }[]> {
+    const jobs = await prisma.job.findMany({ select: { id: true, name: true } });
+    const names = new Map(jobs.map((job) => [job.id, job.name]));
+    const newest = await newestBackupIds([...names.keys()], { statuses: FINISHED, wholeJob: true, keepOnly: TROUBLED });
+    const runs = await readInChunks(newest, (chunk) => prisma.execution.findMany({
+        where: { id: { in: chunk } },
+        select: { status: true, jobId: true },
+    }));
+    return runs.flatMap((run) => {
+        const name = run.jobId ? names.get(run.jobId) : undefined;
+        return name === undefined || !TROUBLED.includes(run.status) ? [] : [{ status: run.status, name }];
+    });
+}
+
+export async function getHistoryAttention(): Promise<HistoryAttention> {
+    const [runs, channelIds] = await Promise.all([troubledJobs(), failedChannels()]);
 
     // The channel by its name of now, and only while it still exists.
-    const channelIds = [...new Set(messages.map((message) => message.channelId).filter((id): id is string => id !== null))];
     const channels = await channelNames(channelIds);
 
-    const jobs = (status: string) => runs.filter((run) => run.status === status && run.job).map((run) => run.job!.name).sort((a, b) => a.localeCompare(b));
+    const jobs = (status: string) => runs.filter((run) => run.status === status).map((run) => run.name).sort((a, b) => a.localeCompare(b));
     return {
         runs: combineAttention(
             attentionOf("destructive", jobs("Failed"), "failed on its last run", "failed on their last run"),

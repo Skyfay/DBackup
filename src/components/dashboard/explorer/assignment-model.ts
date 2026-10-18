@@ -155,6 +155,17 @@ export function giveChanges(rows: readonly DatabaseOwnerRow[], tenantId: string,
     return { changes, unchanged };
 }
 
+/** Why Take back of several databases leaves one out. Like Nobody else in its row, it takes one a rule gives too. */
+export function takeBackRefusal(row: Pick<DatabaseOwnerRow, "owner">): string | null {
+    return row.owner ? null : "Nobody else has it.";
+}
+
+/** What Take back of several databases tells before it runs, with what it means for the ones a rule gives. */
+export function takeBackText(rows: readonly Pick<DatabaseOwnerRow, "owner">[], tenantName: string): string {
+    const byRule = rows.some((row) => row.owner?.via === "rule");
+    return `From now on only ${tenantName} sees them. The tenants keep their backups of before.${byRule ? " No rule gives them again until they are given by name." : ""}`;
+}
+
 /** How many databases of the server a tenant holds once the given ones are its. */
 export function heldAfter(databases: readonly DatabaseOwnerRow[], given: readonly string[], tenantId: string): number {
     return databases.filter((row) => given.includes(row.name) || row.owner?.tenantId === tenantId).length;

@@ -81,11 +81,26 @@ export interface SearchItem {
     needs?: readonly string[];
     /** The tenant of the record, which a platform admin in All tenants opens it in. */
     tenantId?: string;
+    /**
+     * Where a person was found, the tenant or `ALL_TENANTS`. An account belongs to no tenant, so a
+     * person kept as a recent entry shows again only where the search found them, see `recentShows`.
+     */
+    seenIn?: string;
 }
 
 /** Whether the viewer may open what a row leads to, for a recent entry kept from before. */
 export function mayOpen(item: SearchItem, can: (permission: string) => boolean): boolean {
     return (item.needs ?? []).every(can);
+}
+
+/**
+ * Whether a recent entry shows where the search opens now, `here` being the tenant or
+ * `ALL_TENANTS`. A person found in one tenant shows with name and email only in that tenant, never
+ * in another and never one kept without where it was found.
+ */
+export function recentShows(item: SearchItem, here: string | null): boolean {
+    if (item.icon !== "user") return true;
+    return here !== null && item.seenIn === here;
 }
 
 /** The second line of a row: what it is, how it is now and when it happened. */
@@ -130,10 +145,16 @@ const TEMPLATE_WORDS: Record<TemplateKind, string> = { retention: "Retention pol
 const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
 const link = (path: string, params: Record<string, string>) => `${path}?${new URLSearchParams(params).toString()}`;
 
-/** A hit of the server as a row of the search, with what opening it needs and the tenant of its record. */
-export function hitItems(hit: SearchHit): SearchItem[] {
+/**
+ * A hit of the server as a row of the search, with what opening it needs and the tenant of its
+ * record. A person keeps `seenIn`, where the search ran, so it never shows as a recent entry elsewhere.
+ */
+export function hitItems(hit: SearchHit, seenIn?: string | null): SearchItem[] {
     const tenantId = "tenantId" in hit ? hit.tenantId : undefined;
-    return rowsOf(hit).map((item) => (tenantId ? { ...item, tenantId } : item));
+    return rowsOf(hit).map((item) => {
+        const withTenant = tenantId ? { ...item, tenantId } : item;
+        return hit.kind === "user" && seenIn ? { ...withTenant, seenIn } : withTenant;
+    });
 }
 
 /** The second line of a person: the group in the tenant, or in All tenants the tenants they work in. */

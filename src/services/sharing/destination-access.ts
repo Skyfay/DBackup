@@ -4,11 +4,14 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import type { AdapterConfig as ResolvedConfig, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { NotFoundError } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
 import { runAsSystem } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
-import { storageView, type StorageViewMode } from "@/lib/tenant/storage-view";
+import { SHARED_STORAGE_FAILURE, storageView, type StorageViewMode } from "@/lib/tenant/storage-view";
 import { providedConnection, type ProvidedConnection } from "./provided";
+
+const log = logger.child({ service: "DestinationAccess" });
 
 /**
  * Opens a storage connection as the tenant that runs now sees it: its own destination as it is, or
@@ -67,13 +70,23 @@ export async function findDestination(id: string, tenantId?: string | null): Pro
     return { row, mode, tenantId: viewer };
 }
 
-/** The adapter of a row as a mode sees it, with the credentials in its config. */
+/**
+ * The adapter of a row as a mode sees it, with the credentials in its config. A customer never reads
+ * why the settings of a destination another tenant shares could not be used, since the message names
+ * its logins and options, see `SHARED_STORAGE_FAILURE`.
+ */
 export async function openRow(row: AdapterConfig, mode: StorageViewMode): Promise<{ adapter: StorageAdapter; config: ResolvedConfig }> {
-    // The adapters register on the first use, wherever this module is loaded from.
-    if (!registry.get(row.adapterId)) registerAdapters();
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter) throw new NotFoundError("Storage adapter implementation", row.adapterId);
-    return { adapter: storageView(adapter, mode), config: (await resolveAdapterConfig(row)) as ResolvedConfig };
+    try {
+        // The adapters register on the first use, wherever this module is loaded from.
+        if (!registry.get(row.adapterId)) registerAdapters();
+        const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
+        if (!adapter) throw new NotFoundError("Storage adapter implementation", row.adapterId);
+        return { adapter: storageView(adapter, mode), config: (await resolveAdapterConfig(row)) as ResolvedConfig };
+    } catch (error: unknown) {
+        if (mode.kind !== "customer") throw error;
+        log.warn("The settings of a destination shared with a tenant could not be used", { configId: row.id, tenantId: mode.tenantId }, wrapError(error));
+        throw new Error(SHARED_STORAGE_FAILURE);
+    }
 }
 
 /** Opens a storage connection a tenant may use. Throws a NotFoundError for one it may not. */

@@ -1,4 +1,4 @@
-> ⚠️ **Before updating:** This version moves everything an installation holds into its first tenant and cannot be taken back to an earlier version. The first start after the update keeps a copy of the database beside it.
+> ⚠️ **Before updating:** This version moves everything an installation holds into its first tenant. The first start after the update keeps a copy of the database from before, and going back to an earlier version means starting it on that copy, see [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating).
 
 ### ✨ Features
 
@@ -18,6 +18,7 @@
 - **tenants**: A tenant of the MSP shares its destinations and notification channels with other tenants, which back up into a folder of their own there or name their own recipients. It sees the space each tenant takes but never its backups, and taking a destination back deletes the backups of that tenant on it.
 - **tenants**: The platform decides for each tenant whether it adds database connections, directory sources, destinations, notification channels and API keys itself. Switching one off stops new ones, and for API keys also the keys the tenant has.
 - **tenants**: Connections that reach the server DBackup runs on, like Local Filesystem, SQLite without SSH or extra options of a dump tool in direct mode, are added in the home tenant only.
+- **tenants**: The platform blocks the connections of a tenant into the local network and allows chosen address ranges. New tenants start blocked, and a connection over SSH counts by its SSH server.
 
 ### 🐛 Bug Fixes
 
@@ -31,10 +32,17 @@
 - **api**: Routes answer 403 instead of 500 when a permission is missing, cancelling a run among them.
 - **audit**: Cancelling a restore, verifying a backup and switching the passkey as second factor are written to the audit log.
 - **dashboard**: Latest executions names each run like the History does instead of showing Manual Action for a restore.
+- **startup**: An ENCRYPTION_KEY with a character other than 0 to 9 and a to f stops the start with a clear message instead of failing at the first secret it encrypts.
+- **dashboard**: Pages that read 1000 or more jobs or connections, like Backups and the Database Explorer, load instead of failing with an error of the database.
+- **scheduler**: Saving a job or a setting no longer keeps the replaced schedules in memory.
+- **system tasks**: A scheduled system task that still runs is not started a second time.
+- **vault**: Downloading a recovery kit is written to the audit log once it succeeded, with the names of its keys.
+- **storage**: SFTP, FTP and Dropbox list their backups right when their folder is written with a leading `./`, double slashes or another case.
 
 ### 🔒 Security
 
-- **connections**: Testing a connection, checking its access and reading databases, tables or rows from the fields of a form need the right to change that kind of connection. Testing SSH or a snapshot with a saved login the request names needs that right or the right to reveal logins.
+- **connections**: Testing a connection or its SSH login, checking its access or its snapshots and reading databases, tables or rows from the fields of a form need the right to change that kind of connection.
+- **storage**: A configuration backup on a destination is downloaded, opened and restored file by file only by a platform admin who is signed in, and never through a link.
 - **storage**: Connecting Google Drive, Dropbox or OneDrive finishes only for the person and the login that started it.
 - **storage**: Deleting in the Storage Explorer refuses the root folder of a destination.
 - **storage**: A download link opened without signing in only serves a file that was shared as a link.
@@ -47,6 +55,8 @@
 
 - **api**: Pages, Server Actions and API routes read the database only through the services.
 - **docker**: A start that applies database migrations first keeps a copy of the database beside it. The three newest copies stay.
+- **dashboard**: The Overview, the Timeline, the schedule picker, the History and the Connections page load much faster with many jobs and connections.
+- **auth**: A link into the dashboard opened while signed out leads back to its page after signing in.
 - **history**: The Summary of a restore run tells each step like a backup does, with where it read from and how much, and a row for every database and folder it restored. A database row opens to its command and the lines of its tool.
 
 ### 🔄 Changed
@@ -55,6 +65,8 @@
 - **auth**: The right to see the settings no longer lists the encryption keys and the templates.
 - **auth**: The SuperAdmin group became the group Admin with every permission, and its members became platform admins. Only platform admins manage the sign-in providers, restore a configuration and download the database.
 - **auth**: Restoring from Recently deleted and deleting for good need the new permission Tenant settings. Groups that could change the settings get it with the update.
+- **api**: GET /api/sso-providers answers a signed-in person only and refuses API keys.
+- **api**: GET /api/users and GET /api/groups answer viewerPlatformAdmin in place of viewerSuperAdmin.
 
 ### 📝 Documentation
 

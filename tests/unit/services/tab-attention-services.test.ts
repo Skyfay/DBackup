@@ -85,9 +85,12 @@ describe("the dots of the page tabs worked out on the server", () => {
 
     it("marks History by the newest run of each job and the newest message of each channel, not by older failures", async () => {
         const newest = new Date("2026-09-30T03:00:00.000Z");
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([{ jobId: "mysql", _max: { startedAt: newest } }, { jobId: "files", _max: { startedAt: newest } }] as never);
+        prismaMock.job.findMany.mockResolvedValue([{ id: "mysql", name: "Nightly MySQL" }, { id: "files", name: "Files to NAS" }, { id: "redis", name: "Redis" }] as never);
+        // The newest finished backup of each job, found by one raw query.
+        prismaMock.$queryRaw.mockResolvedValue([{ id: "run-mysql" }, { id: "run-files" }, { id: "run-redis" }] as never);
         mocked(prismaMock.notificationLog.groupBy).mockResolvedValue([{ channelId: "slack", _max: { sentAt: newest } }] as never);
-        prismaMock.execution.findMany.mockResolvedValue([{ status: "Failed", job: { name: "Nightly MySQL" } }, { status: "Partial", job: { name: "Files to NAS" } }] as never);
+        // Of those, the client reads the ones that failed or missed a copy.
+        prismaMock.execution.findMany.mockResolvedValue([{ status: "Failed", jobId: "mysql" }, { status: "Partial", jobId: "files" }] as never);
         prismaMock.notificationLog.findMany.mockResolvedValue([{ channelId: "slack" }] as never);
         prismaMock.adapterConfig.findMany.mockResolvedValue([{ name: "Slack ops" }] as never);
 
@@ -96,12 +99,15 @@ describe("the dots of the page tabs worked out on the server", () => {
             notifications: { tone: "destructive", note: "Slack ops failed to send its last message" },
         });
         expect(prismaMock.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({
-            where: expect.objectContaining({ status: { in: ["Failed", "Partial"] }, OR: [{ jobId: "mysql", startedAt: newest }, { jobId: "files", startedAt: newest }] }),
+            where: { id: { in: ["run-mysql", "run-files", "run-redis"] } },
+        }));
+        expect(prismaMock.notificationLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { status: "Failed", OR: [{ channelId: "slack", sentAt: newest }] },
         }));
     });
 
     it("has nothing to say for History without runs or messages", async () => {
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([] as never);
+        prismaMock.job.findMany.mockResolvedValue([] as never);
         mocked(prismaMock.notificationLog.groupBy).mockResolvedValue([] as never);
 
         expect(await getHistoryAttention()).toEqual({ runs: undefined, notifications: undefined });

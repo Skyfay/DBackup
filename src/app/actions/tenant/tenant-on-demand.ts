@@ -10,6 +10,7 @@ import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors"
 import { logger } from "@/lib/logging/logger";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { ON_DEMAND_MAX, ON_DEMAND_MIN } from "@/lib/tenant/sharing";
+import type { PlatformReach } from "@/lib/tenant/sharing-reach";
 import { auditService } from "@/services/audit-service";
 import { tenantOnDemandService, type TenantOnDemand } from "@/services/tenant/tenant-on-demand";
 import { platformGroupService } from "@/services/user/platform-group-service";
@@ -35,6 +36,11 @@ async function reaches(viewer: { id: string; isPlatformAdmin: boolean }, tenantI
     return viewer.isPlatformAdmin || platformGroupService.reaches(viewer.id, tenantId);
 }
 
+/** The tenants the viewer looks after, which also bounds the tenants that share with the customer. */
+async function reachOf(viewer: { id: string; isPlatformAdmin: boolean }): Promise<PlatformReach> {
+    return viewer.isPlatformAdmin ? "all" : platformGroupService.reachOf(viewer.id);
+}
+
 /** The number of a customer and its databases and rules that set their own, for the dialog. */
 export async function getTenantOnDemand(id: string): Promise<{ success: true; data: TenantOnDemand } | { success: false; error: string }> {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_READ);
@@ -42,7 +48,7 @@ export async function getTenantOnDemand(id: string): Promise<{ success: true; da
     if (!tenantId.success) return { success: false, error: "Invalid request" };
     if (!(await reaches(viewer, tenantId.data))) return { success: false, error: GONE };
     try {
-        const found = await tenantOnDemandService.find(tenantId.data);
+        const found = await tenantOnDemandService.find(tenantId.data, await reachOf(viewer));
         return found ? { success: true, data: found } : { success: false, error: GONE };
     } catch (error: unknown) {
         log.error("Reading backups on demand of a tenant failed", { tenantId: tenantId.data }, wrapError(error));
@@ -87,7 +93,7 @@ export async function followTenantOnDemand(id: string, kind: "database" | "rule"
     if (!(await reaches(viewer, tenantId.data))) return { success: false as const, error: GONE };
 
     try {
-        const followed = await tenantOnDemandService.follow(tenantId.data, what.data, entry.data);
+        const followed = await tenantOnDemandService.follow(tenantId.data, what.data, entry.data, await reachOf(viewer));
         const details = {
             change: "Backups on demand", tenant: followed.tenantName, server: followed.serverName,
             ...(followed.kind === "rule" ? { pattern: followed.name } : { database: followed.name }),

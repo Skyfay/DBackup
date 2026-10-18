@@ -41,7 +41,9 @@ A chat or a webhook channel always sends where it is set, its address is the rec
 
 A customer writes under `tenants/` and its tenant id on the destination and sees only that folder. Its Backups page, downloads, restores, retention and integrity checks never reach outside it. Your own backups stay where they are, and your tenant no longer sees `tenants/` on that destination.
 
-A job of yours called `tenants` would write into the folder of the customers, so sharing is refused while one writes to the destination, and no job of yours gets that name while the destination is shared. Rename it first.
+A job of yours called `tenants`, or with a name that starts with `tenants/`, would write into the folder of the customers, so sharing is refused while one writes to the destination, and no job of yours gets such a name while the destination is shared. Rename it first.
+
+A destination is shared the first time only while `tenants/` on it is empty, since a file of yours there would read as a backup of the customer whose id names its folder. Move or delete what lies there first.
 
 ## What You See of Your Customers
 
@@ -64,17 +66,17 @@ The list of the tab has the column **Shared with**: **Only this tenant**, **All 
 
 A confirmation lists each tenant with what it loses first. **Stop sharing with** on a destination also asks you to type the name of the tenant. While a run of that tenant writes to the destination or waits to, the stop waits, try again once the run finished. When the storage stops answering on the way, the tenants that lost everything already are off the share and every other one keeps it as it was.
 
-Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again. When the storage does not answer then, the destination stays shared with nobody and your tenant still does not see `tenants/`. Its share dialog says so in amber, and **Stop sharing** with no tenant picked tries the delete again. Until then the destination counts as shared and cannot be deleted.
+Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again. The same happens when the last customer of a destination is deleted, once its backups there are gone. A folder of a tenant that no longer gets the destination counts for nobody in the numbers of the card. When the storage does not answer then, the destination stays shared with nobody and your tenant still does not see `tenants/`. Its share dialog says so in amber, and **Stop sharing** with no tenant picked tries the delete again. Until then the destination counts as shared and cannot be deleted.
 
 - **A shared connection cannot be deleted.** Stop sharing it first.
 - **Stop sharing with customers** on the tenant is refused while it shares a destination or a channel.
-- **Deleting the tenant that shares** takes its connections from its customers, but leaves their backup files on the storage.
+- **Deleting the tenant that shares** takes its connections from its customers, but leaves their backup files on the storage. It waits while a run of a customer writes to one of its destinations or waits to, and when the delete fails, its customers keep every connection as they had it.
 
 ## What the Customer Sees
 
 The lists under **Connections** show the shared destinations and channels after the customer's own, with the column **From**, **Yours** or the tenant that shares it, and **Provided** among the quick filters after **All**, **Online**, **Issues** and **Unused**. **Backups → Destinations** has the quick filters **All**, **Yours** and **Provided** while one is provided. A destination shows **Address hidden** where its location would be, an email channel the recipients the customer named, and any other channel that the tenant that shares it decides. Its details show **Provided by** and the name instead of the settings: who keeps the address, the customer's own backups there and whether encryption is required.
 
-The customer cannot edit, test, clone or delete a provided connection, and its health checks belong to the tenant that shares it. When the storage fails, the customer reads **The destination did not answer. The tenant that shares it can see why.**, and the log of its runs names nothing of the storage, like its host or bucket. The destination picker of a job and the channel picker of a notification template list them under **Provided by** and the name, after **Yours**, marked **address hidden** and **only encrypted backups**. **Administration → Settings → Notifications** offers the shared channels too. The Encryption part of a job warns when a picked destination takes only encrypted backups and no key is picked.
+The customer cannot edit, test, clone or delete a provided connection, and its health checks belong to the tenant that shares it. When the storage fails, or the settings of the destination cannot be used, like a saved login of the tenant that shares it that was deleted, the customer reads **The destination did not answer. The tenant that shares it can see why.**, and the log of its runs names nothing of the storage, like its host or bucket. A run then writes nothing to that destination and goes on with its other ones. The destination picker of a job and the channel picker of a notification template list them under **Provided by** and the name, after **Yours**, marked **address hidden** and **only encrypted backups**. **Administration → Settings → Notifications** offers the shared channels too. The Encryption part of a job warns when a picked destination takes only encrypted backups and no key is picked.
 
 On the **Backups** page a provided destination shows **provided by** and the name. The customer browses, downloads and restores its backups there like on its own destination, but cannot **Edit alerts**, the alerts of the destination are those of the tenant that shares it.
 

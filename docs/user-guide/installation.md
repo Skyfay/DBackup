@@ -91,7 +91,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 
 | Variable | Required | Description |
 | :--- | :---: | :--- |
-| `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars) for encrypting credentials at rest. |
+| `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars, only 0-9 and a-f) for encrypting credentials at rest. DBackup does not start with another value. |
 | `BETTER_AUTH_SECRET` | ✅ | Base64 secret for authentication sessions. |
 | `BETTER_AUTH_URL` | ✅ | **Primary** URL where users access DBackup (for auth redirects). |
 | `TRUSTED_ORIGINS` | ❌ | Additional access URLs, comma-separated (see below). |

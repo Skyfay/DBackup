@@ -18,13 +18,16 @@ describe("job overview", () => {
         invalidateDashboardCache();
         prismaMock.job.findMany.mockResolvedValue([{ id: "shop" }, { id: "cache" }] as never);
         prismaMock.systemSetting.findUnique.mockResolvedValue({ key: "system.timezone", value: "Europe/Zurich" } as never);
-        (prismaMock.execution.findMany as Mock).mockImplementation((args: { where: { status?: unknown; jobId?: unknown } }) => {
+        // The ids of the newest runs of each job come from one raw query, their rows through the client.
+        const rows = Object.entries(history).flatMap(([jobId, runs]) => runs.map((entry) => ({ ...entry, jobId })));
+        prismaMock.$queryRaw.mockResolvedValue(rows.map((row) => ({ id: row.id })) as never);
+        (prismaMock.execution.findMany as Mock).mockImplementation((args: { where: { status?: unknown; id?: { in: string[] } } }) => {
             if (args.where.status) {
                 return Promise.resolve([
                     { ...run("shop-3", "Running", "2026-09-23T11:59:00Z"), jobId: "shop", metadata: JSON.stringify({ stage: "Uploading", progress: 61.6 }) },
                 ]);
             }
-            return Promise.resolve(history[args.where.jobId as string] ?? []);
+            return Promise.resolve(rows.filter((row) => args.where.id?.in.includes(row.id)));
         });
         prismaMock.execution.findUnique.mockResolvedValue({
             logs: JSON.stringify([{ level: "info", message: "Dumping" }, { level: "error", message: "Connection refused by cache01:6379" }]),

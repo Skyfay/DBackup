@@ -1,5 +1,6 @@
 import type { FileInfo, StorageAdapter, StorageSession } from "@/lib/core/interfaces";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
+import { stripTrailingDotsAndSpaces } from "@/lib/paths";
 import { logger } from "@/lib/logging/logger";
 
 const log = logger.child({ module: "StorageView" });
@@ -28,18 +29,30 @@ export function tenantFolder(tenantId: string): string {
     return `${TENANTS_FOLDER}/${tenantId}`;
 }
 
-/** A path without a leading slash and without `.` segments. A `..` segment would leave the folder of the view, so it is refused. */
+/**
+ * A path without a leading slash and without `.` segments. A `..` segment would leave the folder of
+ * the view, so it is refused, and so is any other segment of dots and spaces alone, like `.. ` or
+ * `...`, which Windows and the storages on it read as `..` once they drop the dots and spaces at
+ * the end of a name.
+ */
 export function cleanPath(remotePath: string): string {
     const parts = remotePath.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".");
-    if (parts.includes("..")) throw new ValidationError(`The path ${remotePath} leaves its folder.`);
+    if (parts.some((part) => /^[. ]+$/.test(part))) throw new ValidationError(`The path ${remotePath} leaves its folder.`);
     return parts.join("/");
 }
 
 /**
- * Whether a path lies in the folder of the customers. Some storages ignore the case, and Windows
- * drops dots and spaces at the end of a name, so `Tenants.` is that folder there too.
+ * Whether a part of a path names the folder of the customers. Some storages ignore the case, and
+ * Windows drops dots and spaces at the end of a name, so `Tenants.` is that folder there too. The
+ * upper case is compared as well, since a letter like `ſ` turns into `S` only that way.
  */
-const inTenantsFolder = (clean: string) => clean.split("/")[0].replace(/[. ]+$/, "").toLowerCase() === TENANTS_FOLDER;
+function isTenantsSegment(part: string): boolean {
+    const name = stripTrailingDotsAndSpaces(part);
+    return name.toLowerCase() === TENANTS_FOLDER || name.toUpperCase() === TENANTS_FOLDER.toUpperCase();
+}
+
+/** Whether a path lies in the folder of the customers, see `isTenantsSegment`. */
+const inTenantsFolder = (clean: string) => isTenantsSegment(clean.split("/")[0]);
 
 /**
  * What a customer reads when the storage of another tenant fails. The message of the storage names
@@ -67,8 +80,14 @@ async function guarded<T>(mode: StorageViewMode, work: () => Promise<T>): Promis
 /** The log of a transfer for the view: as it is, or none for a customer, since its lines name the storage. */
 const logOf = <T>(mode: StorageViewMode, onLog: T | undefined): T | undefined => (mode.kind === "customer" ? undefined : onLog);
 
-/** Whether a job of this name would write into the folder of the customers of a shared destination. */
-export const isTenantsFolderName = (name: string) => name.trim().toLowerCase() === TENANTS_FOLDER;
+/**
+ * Whether a job of this name would write into the folder of the customers of a shared destination.
+ * A job writes into the folder its name gives, so `tenants` does and so does `tenants/acme`.
+ */
+export function isTenantsFolderName(name: string): boolean {
+    const first = name.trim().replace(/\\/g, "/").split("/").find((part) => part !== "" && part !== ".");
+    return first !== undefined && isTenantsSegment(first.trim());
+}
 
 /** Whether a path names the root of what a view sees, like `""`, `/` or `./`, and no file in it. */
 export function isRootPath(remotePath: string): boolean {
@@ -104,12 +123,26 @@ export function innerPath(mode: StorageViewMode, remotePath: string): string {
 /** The entries of a listing the view shows, with their paths as the view sees them. */
 export function outerFiles(mode: StorageViewMode, files: FileInfo[]): FileInfo[] {
     if (mode.kind === "own") return files;
-    if (mode.kind === "provider") return files.filter((file) => !inTenantsFolder(cleanPath(file.path)));
+    if (mode.kind === "provider") {
+        return files.filter((file) => {
+            const clean = addressable(file.path);
+            return clean !== null && !inTenantsFolder(clean);
+        });
+    }
     const prefix = `${tenantFolder(mode.tenantId)}/`;
     return files.flatMap((file) => {
-        const clean = cleanPath(file.path);
-        return clean.startsWith(prefix) ? [{ ...file, path: clean.slice(prefix.length) }] : [];
+        const clean = addressable(file.path);
+        return clean?.startsWith(prefix) ? [{ ...file, path: clean.slice(prefix.length) }] : [];
     });
+}
+
+/** The clean path of a listed file, null for one the view could never name, like a folder called `...`. */
+function addressable(remotePath: string): string | null {
+    try {
+        return cleanPath(remotePath);
+    } catch {
+        return null;
+    }
 }
 
 function sessionView(session: StorageSession, mode: StorageViewMode): StorageSession {

@@ -20,15 +20,21 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 // The real checks, reduced to the permission list of the context.
-vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
-    hasPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => ctx.permissions.includes(permission),
-    checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
-        if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
-    },
-    checkPermission: (...args: unknown[]) => mocks.checkPermission(...args),
-    getUserPermissions: (...args: unknown[]) => mocks.getUserPermissions(...args),
-}));
+vi.mock("@/lib/auth/access-control", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/lib/auth/access-control")>();
+    return {
+        // The real refusals of All tenants and of no tenant.
+        tenantOf: actual.tenantOf,
+        tenantRefusal: actual.tenantRefusal,
+        getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
+        hasPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => ctx.permissions.includes(permission),
+        checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
+            if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
+        },
+        checkPermission: (...args: unknown[]) => mocks.checkPermission(...args),
+        getUserPermissions: (...args: unknown[]) => mocks.getUserPermissions(...args),
+    };
+});
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: (...args: unknown[]) => mocks.getSession(...args) } } }));
 vi.mock("@/services/vault/vault-keys", () => ({ getVaultKeys: (...args: unknown[]) => mocks.getVaultKeys(...args) }));
 vi.mock("@/services/vault/vault-credentials", () => ({ getVaultCredentials: (...args: unknown[]) => mocks.getVaultCredentials(...args) }));
@@ -44,7 +50,7 @@ import { GET as getKeys } from "@/app/api/vault/keys/route";
 import { GET as getCredentials } from "@/app/api/vault/credentials/route";
 import { getEncryptionProfiles, inspectEncryptionKey, revealMasterKey } from "@/app/actions/backup/encryption";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false, tenantId: "default", allTenants: false });
 
 describe("GET /api/vault/keys", () => {
     beforeEach(() => {
@@ -68,6 +74,14 @@ describe("GET /api/vault/keys", () => {
         const response = await getKeys();
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ success: true, data: { keys: [], stats: {}, auditDays: 90 } });
+    });
+
+    it("asks for a tenant in All tenants, which would mix the keys of every tenant", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "root", permissions: [PERMISSIONS.VAULT.READ], isPlatformAdmin: true, tenantId: null, allTenants: true });
+        const response = await getKeys();
+
+        expect(response.status).toBe(403);
+        expect(mocks.getVaultKeys).not.toHaveBeenCalled();
     });
 });
 
@@ -141,15 +155,23 @@ describe("the list of keys", () => {
     });
 
     it("is for the Vault and the job form", async () => {
-        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.JOBS.READ]);
+        mocks.checkPermission.mockResolvedValue({ id: "u1", tenantId: "default", allTenants: false });
 
         expect(await getEncryptionProfiles()).toEqual({ success: true, data: [{ id: "production", name: "Production" }] });
+        expect(mocks.checkPermission).toHaveBeenCalledWith([PERMISSIONS.VAULT.READ, PERMISSIONS.VAULT.WRITE, PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.WRITE]);
     });
 
     it("stays closed to someone who holds only the settings of the instance, which carry into every tenant", async () => {
-        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.SETTINGS.READ, PERMISSIONS.SETTINGS.WRITE]);
+        mocks.checkPermission.mockRejectedValue(new PermissionError(PERMISSIONS.VAULT.READ));
 
         expect(await getEncryptionProfiles()).toEqual({ success: false, error: "Insufficient permissions" });
+        expect(mocks.getEncryptionProfiles).not.toHaveBeenCalled();
+    });
+
+    it("stays closed in All tenants, where the job form would offer the keys of every tenant", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "root", tenantId: null, allTenants: true });
+
+        expect(await getEncryptionProfiles()).toEqual({ success: false, error: expect.stringContaining("All tenants only reads") });
         expect(mocks.getEncryptionProfiles).not.toHaveBeenCalled();
     });
 });

@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
-import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { requestRefusal } from "@/lib/server/permission-refusal";
 import { readDatabaseStats, type StatsRefusal } from "@/services/databases/database-read-service";
 
 // Ensure adapters are registered
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, databases, serverVersion, serverEdition });
 
     } catch (error: unknown) {
-        const refusal = permissionRefusal(error);
+        const refusal = requestRefusal(error);
         if (refusal) return refusal;
         const message = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json({ success: false, message }, { status: 500 });

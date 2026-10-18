@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
         revokeSession: vi.fn(async () => true),
         revokeSessions: vi.fn(async () => 2),
         namesOf: vi.fn(async () => []),
+        emailOf: vi.fn(async (id: string) => `${id}@example.ch`),
     },
     audit: vi.fn(),
 }));
@@ -176,5 +177,26 @@ describe("the passkey as the second factor", () => {
 
         expect(await togglePasskeyTwoFactor("bob", false)).toEqual({ success: false, error: "Only a platform admin changes this account." });
         expect(mocks.audit).not.toHaveBeenCalled();
+    });
+});
+
+describe("the name of another account", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.viewer = NINA;
+        mocks.people = new Map([["acme", new Set(["anna"])], ["globex", new Set(["bob"])]]);
+    });
+
+    it("changes with its own email sent along, which no claimed domain refuses since it stays", async () => {
+        const { claimedEmailRefusal } = await import("@/services/sso/email-domain-claims");
+        vi.mocked(claimedEmailRefusal).mockResolvedValue("The domain of this email signs in through the provider of another tenant.");
+
+        // The form sends Bob's email as it is, which is not Nina's own.
+        expect(await updateUser("bob", { name: "Bob Meier", email: "bob@example.ch" })).toEqual({ success: true });
+        expect(claimedEmailRefusal).not.toHaveBeenCalled();
+
+        // A new email is still checked.
+        expect(await updateUser("bob", { name: "Bob Meier", email: "bob@claimed.example" })).toEqual({ success: false, error: expect.stringContaining("provider of another tenant") });
+        vi.mocked(claimedEmailRefusal).mockResolvedValue(null);
     });
 });

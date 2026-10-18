@@ -10,8 +10,9 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES, type AuditResource } from "@/lib/core/a
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { AuthenticationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { auditService } from "@/services/audit-service";
+import { auditService, type AuditOrigin } from "@/services/audit-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
+import { PLATFORM_LOG } from "@/services/system/settings-save";
 import { latestAccountEntries, latestTrashIds, mayHandle, mayRestoreAccount, purgeFromTrash, restoreFromTrash, trashAccounts, trashEntries, type TrashViewer } from "@/services/trash/trash-service";
 import { TRASH_KINDS, isTrashKind, type TrashKind, type TrashRestoreResult } from "@/services/trash/trash-types";
 import { userService } from "@/services/user/user-service";
@@ -59,17 +60,29 @@ async function allowed(viewer: TrashViewer, ids: string[]): Promise<Entry[]> {
     return (await trashEntries(ids)).flatMap((entry) => (isTrashKind(entry.kind) && mayHandle(viewer, entry) ? [{ ...entry, kind: entry.kind }] : []));
 }
 
+/**
+ * The log of a record that came back. An account waits in its own tenant or in the home tenant,
+ * whichever tenant deleted it, so like the delete its entry stays in the tenant the viewer works in
+ * only while the account waited there, and goes into the log of the platform otherwise.
+ */
+function restoredLog(viewerTenantId: string | null, entry: Entry | undefined): AuditOrigin | undefined {
+    if (entry?.kind !== "user") return undefined;
+    return viewerTenantId && entry.tenantId === viewerTenantId ? { tenantId: viewerTenantId } : PLATFORM_LOG;
+}
+
 /** Writes an entry for every record that came back, and refreshes the pages that list them. */
-async function recordRestored(userId: string, entries: Entry[], result: TrashRestoreResult) {
-    const before = new Map(entries.map((entry) => [entry.id, entry.name]));
+async function recordRestored(viewer: { id: string; tenantId: string | null }, entries: Entry[], result: TrashRestoreResult) {
+    const before = new Map(entries.map((entry) => [entry.id, entry]));
     for (const restored of result.restored) {
-        const originalName = before.get(restored.id);
+        const entry = before.get(restored.id);
+        const originalName = entry?.name;
         await auditService.log(
-            userId,
+            viewer.id,
             AUDIT_ACTIONS.RESTORE,
             RESOURCES[restored.kind],
             { name: restored.name, action: "trash_restore", ...(originalName && originalName !== restored.name ? { originalName } : {}) },
-            restored.recordId
+            restored.recordId,
+            restoredLog(viewer.tenantId, entry)
         );
     }
     // A record comes back on its page, wherever it was listed.
@@ -143,7 +156,7 @@ export async function restoreDeletedAction(ids: string[], newName?: string): Pro
             ? await restoreFromTrash(entries.map((entry) => entry.id), { newName: parsed.data.newName })
             : { restored: [], conflicts: [], failed: [] };
         result.failed.push(...claimed, ...missing(parsed.data.ids, found));
-        await recordRestored(user.id, entries, result);
+        await recordRestored(user, entries, result);
         return { success: true, data: result };
     } catch (error: unknown) {
         log.error("Restoring deleted records failed", {}, wrapError(error));
@@ -189,7 +202,7 @@ export async function undoDeleteAction(kind: TrashKind, recordIds: string[]): Pr
             ? { restored: [], conflicts: [], failed: [] }
             : accounts ? await restoreFromTrash(ids, { anyTenantAccounts: true }) : await restoreFromTrash(ids);
         result.failed.push(...claimed);
-        await recordRestored(user.id, entries, result);
+        await recordRestored(user, entries, result);
         return { success: true, data: result };
     } catch (error: unknown) {
         log.error("Undoing a delete failed", { kind: parsed.data.kind }, wrapError(error));

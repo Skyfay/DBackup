@@ -105,6 +105,25 @@ describe("groups the platform makes for tenants", () => {
         expect(await deleteTenantGroupTemplate("tpl-client")).toEqual({ success: false, error: expect.stringMatching(/may do more than you may/) });
     });
 
+    it("show nobody the tenants, people and groups of one that reaches beyond them, even with a change inside their reach", async () => {
+        // Client reaches Globex too, which Nina's platform group does not. Her change keeps to Acme.
+        mocks.templates.find.mockResolvedValue({ id: "tpl-client", name: "Client", permissions: [P.STORAGE.READ], allTenants: false, tenantIds: ["acme", "globex"] });
+
+        expect(await previewTenantGroupTemplate("tpl-client", values())).toEqual({ success: false, error: expect.stringMatching(/may do more than you may/) });
+        expect(mocks.templates.preview).not.toHaveBeenCalled();
+
+        // A platform admin sees it.
+        mocks.viewer = ROOT;
+        expect(await previewTenantGroupTemplate("tpl-client", values())).toEqual({ success: true, data: { clashes: [], leaving: [] } });
+    });
+
+    it("preview a change of one within their reach, and say when it is gone", async () => {
+        expect(await previewTenantGroupTemplate("tpl-client", values())).toEqual({ success: true, data: { clashes: [], leaving: [] } });
+
+        mocks.templates.find.mockResolvedValue(null);
+        expect(await previewTenantGroupTemplate("tpl-gone", values())).toEqual({ success: false, error: "The group for tenants no longer exists." });
+    });
+
     it("move nobody into a group that may do more than the viewer, nor into the one with every permission", async () => {
         const moved = (moveTo: string) => saveTenantGroupTemplate("tpl-client", values({ tenantIds: [] }), { leaving: { acme: { keep: false, moveTo } } });
         expect(await moved("g-ops")).toEqual({ success: false, error: "Operators may do more than you may, so you cannot move anyone into it." });

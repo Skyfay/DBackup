@@ -9,7 +9,7 @@ import type { DataTableFilterableColumn } from "@/components/ui/data-table";
 import { DateDisplay } from "@/components/utils/date-display";
 import { formatBytes } from "@/lib/utils";
 import type { DatabaseOwnerRow, SourceAssignments } from "@/services/tenant/database-assignments";
-import { NOBODY, howOf, movedText, onDemandLine, ownerKey, type How } from "./assignment-model";
+import { NOBODY, howOf, movedText, onDemandLine, ownerKey, takeBackRefusal, type How } from "./assignment-model";
 import { OnDemandNote } from "./assignment-on-demand-note";
 import { OwnerPicker, type OwnerChange } from "./assignment-picker";
 import { ownerLock } from "./assignment-reach";
@@ -40,7 +40,8 @@ export function assignmentActions(row: DatabaseOwnerRow, { canAssign: mayAssign,
     return [
         { actions: [{ id: "history", label: "Who held it", icon: History, onSelect: () => onHistory(row.name), tone: "neutral" as const }] },
         ...(manage.length > 0 ? [{ actions: manage }] : []),
-        ...(canAssign && byName ? [{ actions: [{ id: "take-back", label: "Take back", icon: Undo2, onSelect: () => void onChange([{ databaseName: row.name, tenantId: null }]), tone: "neutral" as const }] }] : []),
+        // Like Nobody else in the picker, it takes back a database a rule gives too.
+        ...(canAssign && !takeBackRefusal(row) ? [{ actions: [{ id: "take-back", label: "Take back", icon: Undo2, onSelect: () => void onChange([{ databaseName: row.name, tenantId: null }]), tone: "neutral" as const }] }] : []),
     ];
 }
 

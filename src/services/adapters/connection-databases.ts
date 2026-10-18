@@ -30,11 +30,14 @@ function namesOf(json: string): string[] | null {
 export async function listedDatabasesOf(ids: string[]): Promise<Map<string, ListedDatabases>> {
     const result = new Map<string, ListedDatabases>();
     if (ids.length === 0) return result;
+    // Read lists are kept after the query: Prisma splits a long list of ids into several queries
+    // on SQLite, which a negation like `readAt: { not: null }` beside it forbids.
     const lists = await prisma.databaseListCache.findMany({
-        where: { adapterConfigId: { in: ids }, readAt: { not: null } },
-        select: { adapterConfigId: true, databasesJson: true },
+        where: { adapterConfigId: { in: ids } },
+        select: { adapterConfigId: true, databasesJson: true, readAt: true },
     });
     for (const list of lists ?? []) {
+        if (!list.readAt) continue;
         const names = namesOf(list.databasesJson);
         if (!names) continue;
         result.set(list.adapterConfigId, { count: names.length, names: [...names].sort((a, b) => a.localeCompare(b)).slice(0, NAMES_SHOWN) });

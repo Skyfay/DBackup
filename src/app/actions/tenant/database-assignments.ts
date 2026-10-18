@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { checkPermission, hasPermissionWithContext, tenantRefusal } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { diffFields } from "@/lib/core/audit-diff";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -20,7 +20,8 @@ import { platformGroupService } from "@/services/user/platform-group-service";
  * page of the server: assignments, rules, moves to another server and backups on demand. The same
  * assignments come through `PUT /api/adapters/[id]/database-assignments`. Every change needs
  * `SHARE_PERMISSION`, read in one place, and touches only the tenants the platform group of the
- * viewer reaches, which the services check with the reach handed to them.
+ * viewer reaches, which the services check with the reach handed to them. A change happens in the
+ * tenant of the server, so All tenants, which only reads, is refused with `tenantRefusal`.
  */
 
 const log = logger.child({ action: "database-assignments" });
@@ -73,6 +74,8 @@ export async function getSourceAssignments(sourceId: string): Promise<{ success:
 /** Gives databases of the server to customers, or takes them back with a null tenant. */
 export async function assignDatabases(sourceId: string, changes: z.input<typeof ChangeSchema>[]) {
     const viewer = await checkPermission(SHARE_PERMISSION);
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false as const, error: view };
     const id = IdSchema.safeParse(sourceId);
     const parsed = z.array(ChangeSchema).min(1).max(500).safeParse(changes);
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
@@ -95,6 +98,8 @@ export async function assignDatabases(sourceId: string, changes: z.input<typeof 
 
 export async function addAssignmentRule(sourceId: string, input: z.input<typeof RuleSchema>) {
     const viewer = await checkPermission(SHARE_PERMISSION);
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false as const, error: view };
     const id = IdSchema.safeParse(sourceId);
     const parsed = RuleSchema.safeParse(input);
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
@@ -115,6 +120,8 @@ export async function addAssignmentRule(sourceId: string, input: z.input<typeof 
 
 export async function removeAssignmentRule(sourceId: string, ruleId: string) {
     const viewer = await checkPermission(SHARE_PERMISSION);
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false as const, error: view };
     const id = IdSchema.safeParse(sourceId);
     const rule = IdSchema.safeParse(ruleId);
     if (!id.success || !rule.success) return { success: false as const, error: "Invalid request" };
@@ -146,6 +153,8 @@ export async function getMoveTargets(sourceId: string): Promise<{ success: true;
 /** Marks a database of a customer as moved to another server, where its assignment goes on. */
 export async function moveSharedDatabase(sourceId: string, input: z.input<typeof MoveSchema>) {
     const viewer = await checkPermission(SHARE_PERMISSION);
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false as const, error: view };
     const id = IdSchema.safeParse(sourceId);
     const parsed = MoveSchema.safeParse(input);
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
@@ -170,6 +179,8 @@ export async function moveSharedDatabase(sourceId: string, input: z.input<typeof
 /** How many backups a day the customer who holds a database by name may start of it: its own number, none with 0, or as the customer with null. */
 export async function setDatabaseOnDemand(sourceId: string, databaseName: string, perDay: number | null) {
     const viewer = await checkPermission(SHARE_PERMISSION);
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false as const, error: view };
     const id = IdSchema.safeParse(sourceId);
     const name = NameSchema.safeParse(databaseName);
     const value = PerDaySchema.safeParse(perDay);
@@ -192,6 +203,8 @@ export async function setDatabaseOnDemand(sourceId: string, databaseName: string
 /** The same for every database a rule gives. */
 export async function setRuleOnDemand(sourceId: string, ruleId: string, perDay: number | null) {
     const viewer = await checkPermission(SHARE_PERMISSION);
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false as const, error: view };
     const id = IdSchema.safeParse(sourceId);
     const rule = IdSchema.safeParse(ruleId);
     const value = PerDaySchema.safeParse(perDay);

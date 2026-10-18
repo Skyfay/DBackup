@@ -171,6 +171,8 @@ wget --content-disposition "https://your-server/api/storage/public-download?toke
 
 curl gets `-f`, so a link that is used up or ran out fails instead of saving the error as the file.
 
+A link works only while whoever made it may still download backups in that tenant, and the API key it was made with is still on and holds that right. A [configuration backup](/user-guide/features/system-backup#the-file) gets no link, and only a platform admin downloads it in the browser.
+
 ### Verify integrity
 
 **Verify integrity** opens a dialog with every copy of the backup, its last check and how it is checked. **Verify** checks one copy against the checksums in its sidecar, **Verify all** checks every copy in one run, the ones with a native checksum API first: S3, Cloudflare R2, Hetzner, Google Drive, OneDrive and local folders need no download, other destinations download the file. The results are written back and show in the list. See [Backup Verification](/user-guide/features/backup-verification).

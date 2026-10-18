@@ -264,7 +264,7 @@ const OwnPasswordSchema = z.object({
  * Changes the own password with the current one. The new one follows the rules of
  * Settings > Passwords, and every other session of the account ends, so the old password stops
  * working everywhere at once.
- * @no-permission-required - Self-service: Users can always change their own password
+ * @no-permission-required - Self-service: only the own password, as far as `profile:update_password` allows, checked below.
  */
 export async function updateOwnPassword(currentPassword: string, newPassword: string) {
     const currentUser = await getViewer();
@@ -284,6 +284,7 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
         if (!(await authService.verifyPassword(currentUser.id, parsed.data.currentPassword))) {
             return { success: false, error: "Incorrect current password" };
         }
+        const origin = await accountLogOrigin(currentUser, currentUser.id);
         await authService.setPassword(currentUser.id, parsed.data.newPassword);
         const signedOut = await userService.revokeSessions(currentUser.id, await currentSessionId());
 
@@ -292,7 +293,8 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
             { change: "Password Changed", signedOut },
-            currentUser.id
+            currentUser.id,
+            origin
         );
 
         return { success: true, data: { signedOut } };
@@ -308,11 +310,12 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
     if (!currentUser) throw new Error("Unauthorized");
 
     // Allow user to edit their own profile, otherwise require permission
-    const emailChanges = data.email !== undefined && data.email !== currentUser.email;
     if (currentUser.id !== userId) {
         await checkPermission(ACCOUNT_CHANGE);
         const refused = await accountRefused(userId, currentUser);
         if (refused) return { success: false, error: refused };
+        // Compared with the email of the account being changed, so a change of its name alone never meets the check of a claimed domain.
+        const emailChanges = data.email !== undefined && data.email !== (await userService.emailOf(userId));
         if (emailChanges) {
             // Someone of a platform group of some tenants gives the emails their tenants claim, see `emailClaimScope`.
             const scope = emailClaimScope({ ...currentUser, reach: await userService.accountsReachOf(currentUser) });
@@ -320,7 +323,9 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
             if (claimed) return { success: false, error: claimed };
         }
     } else {
+        // @no-permission-required - Self-service: the own account, as far as the `profile:*` permissions below allow.
         // The own name and email change only as far as the profile permissions allow, whatever else the group gives.
+        const emailChanges = data.email !== undefined && data.email !== currentUser.email;
         if (data.name !== undefined && data.name !== currentUser.name && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_NAME))) {
             return { success: false, error: "Your group may not change your name." };
         }
@@ -377,7 +382,8 @@ export async function updateUserPreferences(userId: string, data: { autoRedirect
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
             { preferences: data },
-            userId
+            userId,
+            await accountLogOrigin(currentUser, userId)
         );
 
         return { success: true };

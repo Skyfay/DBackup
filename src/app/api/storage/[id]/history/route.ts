@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getStorageHistory } from "@/services/dashboard-service";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "storage/history" });
 
@@ -39,6 +40,8 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: history });
   } catch (error) {
+    const refused = permissionRefusal(error);
+    if (refused) return refused;
     log.error(
       "Failed to fetch storage history",
       { configId: (await props.params).id },

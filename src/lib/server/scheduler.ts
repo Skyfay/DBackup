@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { runJob } from "@/lib/runner";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { systemTaskService, SYSTEM_TASKS } from "@/services/system/system-task-service";
+import { queueJobsChanged } from "@/services/jobs/queue-snapshot";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -48,6 +49,10 @@ export class BackupScheduler {
     }
 
     async refresh() {
+        // A saved job, preset or setting asks for the refresh, which the plan of the queue the pages
+        // share reads too, so it is read again on the next request.
+        queueJobsChanged();
+
         // Guard against concurrent refresh calls.
         // If a refresh is already running, queue one more to run after it finishes.
         // Any additional queued requests are collapsed into a single pending refresh.
@@ -140,7 +145,16 @@ export class BackupScheduler {
     }
 
     stopAll() {
-        this.tasks.forEach(task => task.stop());
+        for (const [id, task] of this.tasks) {
+            // destroy(), not stop(): node-cron keeps a stopped task in its registry, so every refresh
+            // after a saved job left the tasks of every job behind once more.
+            const failed = (e: unknown) => log.warn("Could not remove a scheduled task", { id }, wrapError(e));
+            try {
+                Promise.resolve(task.destroy()).catch(failed);
+            } catch (e) {
+                failed(e);
+            }
+        }
         this.tasks.clear();
     }
 }

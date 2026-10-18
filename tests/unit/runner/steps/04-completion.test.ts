@@ -72,6 +72,15 @@ vi.mock('@/lib/notifications/brand', () => ({
     loadNotificationBrand: vi.fn().mockResolvedValue({ instanceName: 'Production', baseUrl: null, timeZone: 'UTC' }),
 }));
 
+vi.mock('@/services/dashboard/cache', () => ({
+    invalidateDashboardCache: vi.fn(),
+    invalidateTenantCaches: vi.fn(),
+}));
+
+vi.mock('@/services/jobs/queue-snapshot', () => ({
+    queueRunEnded: vi.fn(),
+}));
+
 // Mock dynamic imports used inside stepFinalize
 vi.mock('@/services/dashboard-service', () => ({
     refreshStorageStatsCache: vi.fn().mockResolvedValue(undefined),
@@ -198,6 +207,29 @@ describe('stepFinalize', () => {
 
         expect(follower.end).toHaveBeenCalledWith({ status: 'Partial', dumps });
         expect(order).toEqual(['update', 'follower']);
+    });
+
+    it('clears the cached numbers of its own tenant and of All tenants only, and marks its job for the plan of the queue', async () => {
+        const { invalidateDashboardCache, invalidateTenantCaches } = await import('@/services/dashboard/cache');
+        const { queueRunEnded } = await import('@/services/jobs/queue-snapshot');
+        const ctx = makeCtx({ execution: { id: 'exec-1', jobId: 'job-1', tenantId: 'acme' } as any });
+
+        await stepFinalize(ctx);
+
+        expect(invalidateTenantCaches).toHaveBeenCalledWith(['acme']);
+        expect(invalidateDashboardCache).not.toHaveBeenCalled();
+        expect(queueRunEnded).toHaveBeenCalledWith('job-1');
+    });
+
+    it("clears the cached numbers of every tenant when a customer's run follows it", async () => {
+        const { invalidateDashboardCache, invalidateTenantCaches } = await import('@/services/dashboard/cache');
+        const follower = { start: vi.fn(), stage: vi.fn(), end: vi.fn(async () => undefined) };
+        const ctx = makeCtx({ execution: { id: 'exec-1', jobId: 'job-1', tenantId: 'acme' } as any, follower } as Partial<RunnerContext>);
+
+        await stepFinalize(ctx);
+
+        expect(invalidateDashboardCache).toHaveBeenCalled();
+        expect(invalidateTenantCaches).not.toHaveBeenCalled();
     });
 
     it('updates the execution record with final status and metadata', async () => {

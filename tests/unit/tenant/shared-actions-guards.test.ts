@@ -12,7 +12,7 @@ import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 const mocks = vi.hoisted(() => ({
     granted: new Set<string>(),
     checked: [] as string[],
-    viewer: { id: "u-lena", name: "Lena Graf", tenantId: "acme" as string | null },
+    viewer: { id: "u-lena", name: "Lena Graf", tenantId: "acme" as string | null, allTenants: false },
     move: vi.fn(),
     targets: vi.fn(),
     setOnDemand: vi.fn(),
@@ -29,7 +29,9 @@ const mocks = vi.hoisted(() => ({
     removeRule: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/access-control", () => ({
+vi.mock("@/lib/auth/access-control", async (importOriginal) => ({
+    // The real refusal of All tenants.
+    tenantRefusal: (await importOriginal<typeof import("@/lib/auth/access-control")>()).tenantRefusal,
     // Any one of a list passes, like the real check.
     checkPermission: vi.fn(async (permission: string | string[]) => {
         const wanted = Array.isArray(permission) ? permission : [permission];
@@ -63,7 +65,7 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.granted = new Set();
     mocks.checked = [];
-    mocks.viewer = { id: "u-lena", name: "Lena Graf", tenantId: "acme" };
+    mocks.viewer = { id: "u-lena", name: "Lena Graf", tenantId: "acme", allTenants: false };
     mocks.reachOf.mockResolvedValue("all");
 });
 
@@ -176,6 +178,22 @@ describe("what the tenant of a shared server changes", () => {
         expect(mocks.setOnDemand).toHaveBeenCalledWith("old", "shop", 2, ["globex"]);
         expect(mocks.setRuleOnDemand).toHaveBeenCalledWith("old", "rule-1", 2, ["globex"]);
         expect(mocks.move).toHaveBeenCalledWith("old", { databaseName: "shop", toSourceId: "new" }, "u-lena", expect.any(Date), ["globex"]);
+    });
+
+    it("changes nothing from All tenants, which only reads, and says so", async () => {
+        mocks.granted.add(SHARE_PERMISSION);
+        mocks.viewer = { id: "u-root", name: "Manu", tenantId: null, allTenants: true };
+        const refused = { success: false, error: "All tenants only reads. Open the tenant of the record to change it." };
+
+        expect(await assignDatabases("old", [{ databaseName: "shop", tenantId: "acme" }])).toEqual(refused);
+        expect(await addAssignmentRule("old", { pattern: "shop_*", tenantId: "acme" })).toEqual(refused);
+        expect(await removeAssignmentRule("old", "rule-1")).toEqual(refused);
+        expect(await moveSharedDatabase("old", { databaseName: "shop", toSourceId: "new" })).toEqual(refused);
+        expect(await setDatabaseOnDemand("old", "shop", 2)).toEqual(refused);
+        expect(await setRuleOnDemand("old", "rule-1", 2)).toEqual(refused);
+        for (const call of [mocks.assign, mocks.addRule, mocks.removeRule, mocks.move, mocks.setOnDemand, mocks.setRuleOnDemand, mocks.audit]) {
+            expect(call).not.toHaveBeenCalled();
+        }
     });
 
     it("says why a change beyond the reach is refused, and logs nothing", async () => {

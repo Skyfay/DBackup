@@ -18,13 +18,14 @@ vi.mock("@/lib/adapters/credential-validation", () => ({ validateCredentialAssig
 vi.mock("@/lib/adapters/snapshot-validation", () => ({ validateSnapshotConfig: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/services/sharing/destination-access", () => ({ isShared: (...args: unknown[]) => mocks.isShared(...args) }));
 // A profile is laid over the config the way the resolver does it, by its id.
-vi.mock("@/lib/adapters/config-resolver", () => ({
-    overlayCredentialsOnConfig: async (_adapterId: string, config: Record<string, unknown>, primary: string | null, ssh: string | null) => ({
+vi.mock("@/lib/adapters/config-resolver", () => {
+    const overlay = async (_adapterId: string, config: Record<string, unknown>, primary: string | null, ssh: string | null) => ({
         ...config,
         ...(primary ? mocks.profiles[primary] : {}),
         ...(ssh ? mocks.profiles[ssh] : {}),
-    }),
-}));
+    });
+    return { overlayCredentialsOnConfig: overlay, layLoginsOver: overlay };
+});
 
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { encryptConfig } from "@/lib/crypto";
@@ -57,6 +58,8 @@ describe("editing a destination shared with other tenants", () => {
         mocks.isShared.mockResolvedValue(true);
         prismaMock.adapterConfig.findUnique.mockResolvedValue(stored() as never);
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
+        // The tenant shares no destination with customers.
+        prismaMock.connectionShare.findMany.mockResolvedValue([]);
         prismaMock.adapterConfig.update.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => ({ ...stored(), ...data })) as never);
         prismaMock.credentialProfile.findMany.mockResolvedValue([]);
         prismaMock.jobDestination.findMany.mockResolvedValue([]);
@@ -126,6 +129,7 @@ describe("changing the role of a storage connection", () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValue(stored() as never);
         prismaMock.adapterConfig.update.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => ({ ...stored(), ...data })) as never);
         prismaMock.credentialProfile.findMany.mockResolvedValue([]);
+        prismaMock.connectionShare.findMany.mockResolvedValue([]);
         prismaMock.jobDestination.findMany.mockResolvedValue([]);
         prismaMock.jobSource.findMany.mockResolvedValue([]);
         prismaMock.tenant.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) => (where.id === HOME_TENANT_ID
@@ -162,6 +166,7 @@ describe("an edit that would reach the server DBackup runs on", () => {
         prismaMock.adapterConfig.findUnique.mockResolvedValue(stored({ adapterId: "docker-volume", storageRole: "SOURCE" }, docker) as never);
         prismaMock.adapterConfig.update.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => ({ ...stored(), ...data })) as never);
         prismaMock.credentialProfile.findMany.mockResolvedValue([]);
+        prismaMock.connectionShare.findMany.mockResolvedValue([]);
     });
 
     it("refuses Docker Volumes switched from SSH to the socket of the server in a customer's tenant", async () => {

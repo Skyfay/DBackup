@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runAsSystem, runAsTenant, type TenantScope } from "@/lib/tenant/context";
-import { cached, invalidateDashboardCache } from "@/services/dashboard/cache";
+import { cached, invalidateDashboardCache, invalidateTenantCaches } from "@/services/dashboard/cache";
 
 // The scope the request being handled names through its session, none outside a request.
 const request = vi.hoisted(() => ({ scope: null as TenantScope | null }));
@@ -91,6 +91,61 @@ describe("dashboard cache", () => {
         expect(await runAsTenant("acme", () => cached("aggregates", 60_000, async () => "acme"))).toBe("acme");
         request.scope = { kind: "tenant", tenantId: "acme" };
         expect(await cached("aggregates", 60_000, async () => "loaded again")).toBe("acme");
+    });
+
+    describe("when a run of one tenant ends", () => {
+        const load = (value: string) => vi.fn().mockResolvedValue(value);
+
+        it("loads again what that tenant and All tenants show, and keeps what every other tenant shows", async () => {
+            await runAsTenant("acme", () => cached("aggregates", 60_000, load("acme")));
+            await runAsTenant("globex", () => cached("aggregates", 60_000, load("globex")));
+            await runAsSystem(() => cached("aggregates", 60_000, load("every tenant")));
+
+            invalidateTenantCaches(["acme"]);
+
+            const acme = load("acme again");
+            const globex = load("globex again");
+            const all = load("every tenant again");
+            expect(await runAsTenant("acme", () => cached("aggregates", 60_000, acme))).toBe("acme again");
+            expect(await runAsTenant("globex", () => cached("aggregates", 60_000, globex))).toBe("globex");
+            expect(await runAsSystem(() => cached("aggregates", 60_000, all))).toBe("every tenant again");
+            expect(globex).not.toHaveBeenCalled();
+        });
+
+        it("loads again what another tenant shows of the tenants it reads too", async () => {
+            await runAsTenant("globex", () => cached("shared-rows", 60_000, load("before"), { readsOtherTenants: true }));
+
+            invalidateTenantCaches(["acme"]);
+
+            expect(await runAsTenant("globex", () => cached("shared-rows", 60_000, load("after"), { readsOtherTenants: true }))).toBe("after");
+        });
+
+        it("keeps out a load of that tenant that was running, and stores one of another tenant", async () => {
+            const finish: Record<string, (value: string) => void> = {};
+            const slow = (tenant: string) => () => new Promise<string>((resolve) => { finish[tenant] = resolve; });
+            const acme = runAsTenant("acme", () => cached("key", 60_000, slow("acme")));
+            const globex = runAsTenant("globex", () => cached("key", 60_000, slow("globex")));
+            // Both loads are reading by now.
+            await vi.waitFor(() => expect(Object.keys(finish).sort()).toEqual(["acme", "globex"]));
+            const finishAcme = finish.acme;
+            const finishGlobex = finish.globex;
+
+            invalidateTenantCaches(["acme"]);
+            finishAcme("stale");
+            finishGlobex("fresh");
+            await Promise.all([acme, globex]);
+
+            expect(await runAsTenant("acme", () => cached("key", 60_000, load("acme again")))).toBe("acme again");
+            expect(await runAsTenant("globex", () => cached("key", 60_000, load("loaded twice")))).toBe("fresh");
+        });
+
+        it("keeps the past days of every tenant", async () => {
+            await runAsTenant("acme", () => cached("calendar-history", 60_000, load("past days"), { survivesInvalidation: true }));
+
+            invalidateTenantCaches(["acme"]);
+
+            expect(await runAsTenant("acme", () => cached("calendar-history", 60_000, load("again"), { survivesInvalidation: true }))).toBe("past days");
+        });
     });
 
     it("does not cache a failed load", async () => {

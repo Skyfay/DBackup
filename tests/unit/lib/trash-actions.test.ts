@@ -91,7 +91,7 @@ describe("the actions of Recently deleted", () => {
                 ],
             },
         });
-        expect(mocks.audit).toHaveBeenCalledWith("lena", "RESTORE", "VAULT", { name: "back", action: "trash_restore", originalName: "Offsite 2025" }, "r-t-key");
+        expect(mocks.audit).toHaveBeenCalledWith("lena", "RESTORE", "VAULT", { name: "back", action: "trash_restore", originalName: "Offsite 2025" }, "r-t-key", undefined);
     });
 
     it("lets a platform admin bring back the account of a platform admin", async () => {

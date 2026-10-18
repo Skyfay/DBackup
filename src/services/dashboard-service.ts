@@ -11,7 +11,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { checkStorageAlerts } from "@/services/storage/storage-alert-service";
 import { isBackupFile } from "@/lib/core/backup-files";
-import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { invalidateDashboardCache, invalidateTenantCaches } from "@/services/dashboard/cache";
 import { isNotConnected } from "@/lib/core/air-gap";
 import { currentTenantId } from "@/lib/tenant/current";
 import { TENANTS_FOLDER } from "@/lib/tenant/storage-view";
@@ -377,20 +377,40 @@ function combined(entries: StorageVolumeEntry[]): StorageVolumeEntry[] {
  * the backups of each of them under tenants/<id>/, which count for that customer, everything else
  * for the tenant of the destination. A destination nobody shares counts for its tenant alone.
  * `customers` start at zero like the tenant of the destination, so a customer whose last backup
- * there is gone counts nothing instead of keeping its last size.
+ * there is gone counts nothing instead of keeping its last size. The folder of a tenant that is no
+ * customer of the destination now, like one that was deleted while its backups wait to go, counts
+ * for nobody.
  */
-function entriesOf(
+async function entriesOf(
   destination: { id: string; name: string; adapterId: string; tenantId: string },
   files: { path: string; size?: number }[],
   shared: boolean,
   customers: readonly string[] = [],
-): StorageVolumeEntry[] {
+): Promise<StorageVolumeEntry[]> {
   const totals = new Map<string, { size: number; count: number }>(
     [destination.tenantId, ...customers].map((tenantId) => [tenantId, { size: 0, count: 0 }]),
   );
+  const folderOf = (path: string) => {
+    const clean = path.replace(/\\/g, "/").replace(/^\/+/, "");
+    return shared ? new RegExp(`^${TENANTS_FOLDER}/([^/]+)/`).exec(clean)?.[1] : undefined;
+  };
+  // A folder of a tenant the count did not know yet is a customer's while the tenant exists and gets
+  // the destination now. When that cannot be read, each counts for its tenant as the folder says.
+  const current = new Set(customers);
+  const unknown = [...new Set(files.map((file) => folderOf(file.path)).filter((id): id is string => id !== undefined && !current.has(id)))];
+  if (unknown.length > 0) {
+    try {
+      const existing = await prisma.tenant.findMany({ where: { id: { in: unknown } }, select: { id: true } });
+      for (const { id } of existing) {
+        if ((await providedIds(id, [destination.id])).has(destination.id)) current.add(id);
+      }
+    } catch {
+      for (const id of unknown) current.add(id);
+    }
+  }
   for (const file of files) {
-    const clean = file.path.replace(/\\/g, "/").replace(/^\/+/, "");
-    const customer = shared ? new RegExp(`^${TENANTS_FOLDER}/([^/]+)/`).exec(clean)?.[1] : undefined;
+    const customer = folderOf(file.path);
+    if (customer !== undefined && !current.has(customer)) continue;
     const holder = customer ?? destination.tenantId;
     const total = totals.get(holder) ?? { size: 0, count: 0 };
     total.size += file.size || 0;
@@ -526,8 +546,16 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
   // Save historical snapshots for storage usage over time charts, of the destinations just listed
   await saveStorageSnapshots(scanned);
 
-  // The dashboard overview caches its storage cards and trends, which this refresh just changed.
-  invalidateDashboardCache();
+  // The dashboard overview caches its storage cards and trends, which this refresh just changed: of
+  // the tenants of the destinations it listed and of the backups on them, before and now, or of
+  // every tenant after a refresh of every destination.
+  if (partial) {
+    const ids = new Set(listed.map((config) => config.id));
+    const holders = [...previous, ...scanned].flatMap((entry) => (entry.configId && ids.has(entry.configId) && entry.tenantId ? [entry.tenantId] : []));
+    invalidateTenantCaches([...listed.map((config) => config.tenantId), ...holders]);
+  } else {
+    invalidateDashboardCache();
+  }
 
   log.info("Storage statistics cache refreshed", {
     destinations: results.length,

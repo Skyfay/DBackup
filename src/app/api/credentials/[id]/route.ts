@@ -10,6 +10,7 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "credentials/[id]" });
 
@@ -19,7 +20,9 @@ const UpdateCredentialSchema = z.object({
     data: z.unknown().optional(),
 });
 
-function errorResponse(error: unknown): NextResponse {
+function errorResponse(error: unknown): Response {
+    const refused = permissionRefusal(error);
+    if (refused) return refused;
     if (error instanceof ValidationError) {
         return NextResponse.json(
             { error: error.message, details: error.details },

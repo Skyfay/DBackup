@@ -2,14 +2,20 @@ import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
 import { ON_DEMAND_MAX, ON_DEMAND_MIN } from "@/lib/tenant/sharing";
+import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { sharingChanged } from "./shared-servers";
 
 /**
  * Backups on demand of a customer as the platform sets them: how many backups a day it may start of
  * each database other tenants give it, and the databases and rules that set a number of their own
  * instead, which the tenant that shares them changes in its Database Explorer. Reads and writes
- * across tenants, so it runs in the system scope and its callers check the platform right.
+ * across tenants, so it runs in the system scope and its callers check the platform right. The
+ * `PlatformReach` of the viewer bounds it: a tenant that shares beyond it shows by no name, and what
+ * it gives is never changed from here.
  */
+
+/** What a tenant that shares beyond the reach of the viewer is called. */
+export const PROVIDER_BEYOND_REACH = "Another tenant";
 
 /** A database given by name or a rule of a customer that sets a number of its own. */
 export interface OnDemandOverride {
@@ -25,6 +31,8 @@ export interface OnDemandOverride {
     name: string;
     /** 0 for none, else its own number a day. */
     perDay: number;
+    /** The server belongs to a tenant beyond the viewer's reach, whose number they do not change. */
+    beyondReach?: boolean;
 }
 
 export interface TenantOnDemand {
@@ -42,8 +50,11 @@ function perDayValue(perDay: number | null): number | null {
 }
 
 export const tenantOnDemandService = {
-    /** The number of a customer and what its databases and rules of now set on their own. */
-    async find(tenantId: string): Promise<TenantOnDemand | null> {
+    /**
+     * The number of a customer and what its databases and rules of now set on their own. A tenant
+     * that shares beyond `reach` shows as `PROVIDER_BEYOND_REACH`, without its id.
+     */
+    async find(tenantId: string, reach: PlatformReach = "all"): Promise<TenantOnDemand | null> {
         return runAsSystem(async () => {
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, onDemandPerDay: true } });
             if (!tenant) return null;
@@ -66,9 +77,13 @@ export const tenantOnDemandService = {
             const providerOf = new Map(providers.map((provider) => [provider.id, provider.name]));
             const place = (sourceId: string) => {
                 const server = serverOf.get(sourceId);
+                const providerId = server && providerOf.has(server.tenantId) ? server.tenantId : null;
+                if (providerId && !reachCovers(reach, providerId)) {
+                    return { serverName: server?.name ?? "A deleted server", providerId: null, providerName: PROVIDER_BEYOND_REACH, beyondReach: true };
+                }
                 return {
                     serverName: server?.name ?? "A deleted server",
-                    providerId: server && providerOf.has(server.tenantId) ? server.tenantId : null,
+                    providerId,
                     providerName: (server && providerOf.get(server.tenantId)) ?? "A deleted tenant",
                 };
             };
@@ -96,12 +111,16 @@ export const tenantOnDemandService = {
 
     /**
      * Lets a database or a rule of the customer follow the number of the customer again. Only one
-     * of now, which the customer holds.
+     * of now, which the customer holds, and only on a server of a tenant `reach` covers, since it
+     * changes what that tenant gave.
      */
-    async follow(tenantId: string, kind: OnDemandOverride["kind"], id: string): Promise<OnDemandOverride & { tenantName: string }> {
+    async follow(tenantId: string, kind: OnDemandOverride["kind"], id: string, reach: PlatformReach = "all"): Promise<OnDemandOverride & { tenantName: string }> {
         const found = await this.find(tenantId);
         const current = found?.overrides.find((entry) => entry.kind === kind && entry.id === id);
         if (!found || !current) throw new NotFoundError(kind === "rule" ? "Rule" : "Database", id);
+        if (reach !== "all" && !(current.providerId && reachCovers(reach, current.providerId))) {
+            throw new ValidationError(OUTSIDE_REACH.provider(current.serverName));
+        }
         await runAsSystem(() => (kind === "rule"
             ? prisma.databaseAssignmentRule.update({ where: { id }, data: { onDemandPerDay: null } })
             : prisma.databaseAssignment.update({ where: { id }, data: { onDemandPerDay: null } })));

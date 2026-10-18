@@ -34,7 +34,8 @@ export function PaneHead({ title, children }: { title: string; children: React.R
     );
 }
 
-function Note({ children }: { children: React.ReactNode }) {
+/** A note under the settings of a part, what they mean or when they count. */
+export function Note({ children }: { children: React.ReactNode }) {
     return (
         <p className="flex gap-2.5 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -260,7 +261,7 @@ export function OnDemandPane({ tenant, value, onChange, disabled, canManage, onC
                                     entry={entry}
                                     tenantName={tenant.name}
                                     busy={following !== null || disabled}
-                                    onFollow={canManage ? () => void follow(entry) : undefined}
+                                    onFollow={canManage && !entry.beyondReach ? () => void follow(entry) : undefined}
                                 />
                             ))}
                         </ul>

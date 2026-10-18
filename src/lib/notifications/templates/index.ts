@@ -64,7 +64,7 @@ export function renderTemplate(event: NotificationEventData, options?: TemplateO
         case NOTIFICATION_EVENTS.DB_VERSION_CHANGED:
             return dbVersionChangedTemplate(event.data, options);
         case NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE:
-            return integrityCheckFailureTemplate(event.data);
+            return integrityCheckFailureTemplate(event.data, options);
         default:
             // Fallback for unknown events
             return {

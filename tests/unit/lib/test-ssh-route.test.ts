@@ -4,6 +4,8 @@ import { PermissionError } from "@/lib/logging/errors";
 const mocks = vi.hoisted(() => ({
     getAuthContext: vi.fn(),
     checkPermissionWithContext: vi.fn(),
+    /** What the caller holds, the right to change sources of every kind unless a test says otherwise. */
+    held: ["sources:write"] as string[],
     headers: vi.fn(),
     registryGet: vi.fn(),
     checkBackupPath: vi.fn(),
@@ -17,6 +19,7 @@ vi.mock("next/headers", () => ({ headers: () => mocks.headers() }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
     checkPermissionWithContext: (...args: unknown[]) => mocks.checkPermissionWithContext(...args),
+    hasPermissionWithContext: (_ctx: unknown, permission: string) => mocks.held.includes(permission),
     tenantOf: (ctx: { tenantId: string | null }) => {
         if (!ctx.tenantId) throw new PermissionError("a tenant");
         return ctx.tenantId;
@@ -77,6 +80,7 @@ describe("POST /api/adapters/test-ssh", () => {
         vi.clearAllMocks();
         mocks.getAuthContext.mockResolvedValue({ userId: "u1", tenantId: "default", allTenants: false });
         mocks.checkPermissionWithContext.mockResolvedValue(undefined);
+        mocks.held = ["sources:write"];
         mocks.headers.mockResolvedValue(new Headers());
         mocks.registryGet.mockReturnValue({ id: "mysql" });
         mocks.exec.mockResolvedValue({ code: 0, stdout: "connected\n", stderr: "" });
@@ -95,6 +99,18 @@ describe("POST /api/adapters/test-ssh", () => {
         expect(mocks.checkBackupPath).not.toHaveBeenCalled();
         expect(body.success).toBe(true);
         expect(body.message).not.toContain("backup path");
+    });
+
+    it("says why the host of a saved SSH login is refused, like one in the local network of the tenant", async () => {
+        const { overlayCredentialsOnConfig } = await import("@/lib/adapters/config-resolver");
+        const { ValidationError } = await import("@/lib/logging/errors");
+        vi.mocked(overlayCredentialsOnConfig).mockRejectedValueOnce(new ValidationError("Acme reaches no address of the local network, db1 is 10.0.0.5."));
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql", sshCredentialId: "login-1" }));
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ success: false, message: "Acme reaches no address of the local network, db1 is 10.0.0.5." });
+        expect(mocks.exec).not.toHaveBeenCalled();
     });
 
     it("does not check it for a SQLite source either", async () => {
@@ -221,14 +237,25 @@ describe("POST /api/adapters/test-ssh", () => {
         expect(body.success).toBe(true);
     });
 
-    it("answers 403, not 500, to someone who may not see the sources", async () => {
-        mocks.checkPermissionWithContext.mockImplementation(() => {
-            throw new PermissionError("sources:view");
-        });
+    it("answers 403, not 500, to someone who may only see the sources, since the config of a form logs in to any host", async () => {
+        mocks.held = ["sources:view"];
 
         const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
 
         expect(response.status).toBe(403);
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("needs the right to change sources for SSH without an adapter", async () => {
+        mocks.checkPermissionWithContext.mockImplementation((_ctx: unknown, permission: string) => {
+            if (!mocks.held.includes(permission)) throw new PermissionError(permission);
+        });
+        mocks.held = ["sources:view", "destinations:write"];
+
+        const response = await POST(request({ config: sshConfig }));
+
+        expect(response.status).toBe(403);
+        expect(mocks.checkPermissionWithContext).toHaveBeenCalledWith(expect.anything(), "sources:write");
         expect(mocks.exec).not.toHaveBeenCalled();
     });
 

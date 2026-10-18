@@ -536,6 +536,33 @@ describe('SystemTaskService', () => {
             });
         });
 
+        it('skips a start while the same task still runs, like a health check that takes longer than its minute', async () => {
+            const { healthCheckService } = await import('@/services/system/healthcheck-service');
+            vi.mocked(healthCheckService.performHealthCheck).mockClear();
+            let finish: () => void = () => {};
+            vi.mocked(healthCheckService.performHealthCheck).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+
+            const first = service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            // The schedule starts it again while the first run is still checking.
+            await service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            await vi.waitFor(() => expect(healthCheckService.performHealthCheck).toHaveBeenCalledTimes(1));
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(true);
+
+            finish();
+            await first;
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(false);
+            await service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            expect(healthCheckService.performHealthCheck).toHaveBeenCalledTimes(2);
+        });
+
+        it('lets the task start again when it could not record its start', async () => {
+            prismaMock.systemSetting.upsert.mockRejectedValueOnce(new Error('database is locked'));
+
+            await expect(service.runTask(SYSTEM_TASKS.HEALTH_CHECK)).rejects.toThrow('database is locked');
+
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(false);
+        });
+
         it('records lastRunAt timestamp when runTask is called', async () => {
             prismaMock.systemSetting.upsert.mockResolvedValue({} as any);
 

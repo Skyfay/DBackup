@@ -19,14 +19,20 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
-    checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
-        if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
-    },
-    checkPermission: (...args: unknown[]) => mocks.checkPermission(...args),
-    getUserPermissions: (...args: unknown[]) => mocks.getUserPermissions(...args),
-}));
+vi.mock("@/lib/auth/access-control", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/lib/auth/access-control")>();
+    return {
+        // The real refusals of All tenants and of no tenant.
+        tenantOf: actual.tenantOf,
+        tenantRefusal: actual.tenantRefusal,
+        getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
+        checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
+            if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
+        },
+        checkPermission: (...args: unknown[]) => mocks.checkPermission(...args),
+        getUserPermissions: (...args: unknown[]) => mocks.getUserPermissions(...args),
+    };
+});
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: (...args: unknown[]) => mocks.getSession(...args) } } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/services/templates/template-audit", () => ({ templateNames: (...args: unknown[]) => mocks.templateNames(...args) }));
@@ -44,7 +50,7 @@ import { getRetentionPolicyTargets } from "@/app/actions/templates-retention";
 import { deleteSchedulePreset, getSchedulePresets } from "@/app/actions/templates";
 import { bulkDeleteSchedulePresets } from "@/app/actions/templates-bulk";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false, tenantId: "default", allTenants: false });
 
 describe("GET /api/templates", () => {
     beforeEach(() => {
@@ -60,6 +66,16 @@ describe("GET /api/templates", () => {
     it("needs the right to read templates", async () => {
         signedIn(PERMISSIONS.JOBS.READ);
         expect((await getTemplates()).status).toBe(403);
+        expect(mocks.getTemplatesModel).not.toHaveBeenCalled();
+    });
+
+    it("asks for a tenant in All tenants, which would mix the templates of every tenant", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [PERMISSIONS.TEMPLATES.READ], isPlatformAdmin: true, tenantId: null, allTenants: true });
+
+        const response = await getTemplates();
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ success: false, error: expect.stringContaining("All tenants only reads") });
         expect(mocks.getTemplatesModel).not.toHaveBeenCalled();
     });
 
@@ -141,6 +157,17 @@ describe("deleting schedule presets", () => {
         });
     });
 
+    it("names the viewer of its permission check in the audit log, without reading the session again", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "lena" });
+        mocks.templateNames.mockResolvedValue(new Map([["3am", "Daily at 3 AM"]]));
+        mocks.deleteSchedulePresetMany.mockResolvedValue({ succeeded: ["3am"], failed: [] });
+
+        await bulkDeleteSchedulePresets(["3am"]);
+
+        expect(mocks.getSession).not.toHaveBeenCalled();
+        expect(mocks.audit).toHaveBeenCalledWith("lena", "DELETE", "TEMPLATE", expect.objectContaining({ bulk: true }));
+    });
+
     it("leaves the scheduler alone when nothing was deleted", async () => {
         mocks.templateNames.mockResolvedValue(new Map([["3am", "Daily at 3 AM"]]));
         mocks.deleteSchedulePresetMany.mockResolvedValue({ succeeded: [], failed: [{ id: "3am", name: "Daily at 3 AM", error: "Not found" }] });
@@ -158,15 +185,23 @@ describe("the lists of templates the job form reads", () => {
     });
 
     it("are for whoever sees the templates or the jobs", async () => {
-        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.JOBS.WRITE]);
+        mocks.checkPermission.mockResolvedValue({ id: "u1", tenantId: "default", allTenants: false });
 
         expect(await getSchedulePresets()).toEqual({ success: true, data: [{ id: "3am", name: "Daily at 3 AM" }] });
+        expect(mocks.checkPermission).toHaveBeenCalledWith([PERMISSIONS.TEMPLATES.READ, PERMISSIONS.TEMPLATES.WRITE, PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.WRITE]);
     });
 
     it("stay closed to someone who holds only the settings of the instance, which carry into every tenant", async () => {
-        mocks.getUserPermissions.mockResolvedValue([PERMISSIONS.SETTINGS.READ]);
+        mocks.checkPermission.mockRejectedValue(new PermissionError(PERMISSIONS.TEMPLATES.READ));
 
         expect(await getSchedulePresets()).toEqual({ success: false, error: "Insufficient permissions" });
+        expect(mocks.getSchedulePresets).not.toHaveBeenCalled();
+    });
+
+    it("stay closed in All tenants, where a picker would offer the templates of every tenant", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "root", tenantId: null, allTenants: true });
+
+        expect(await getSchedulePresets()).toEqual({ success: false, error: expect.stringContaining("All tenants only reads") });
         expect(mocks.getSchedulePresets).not.toHaveBeenCalled();
     });
 

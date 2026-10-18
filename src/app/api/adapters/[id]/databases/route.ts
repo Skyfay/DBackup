@@ -5,7 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { registerAdapters } from "@/lib/adapters";
 import { getSavedConnection } from "@/services/adapters/adapter-list";
 import { listSourceDatabases } from "@/services/databases/database-read-service";
-import { refusedUnless } from "@/lib/server/permission-refusal";
+import { refusedUnless, requestRefusal } from "@/lib/server/permission-refusal";
 
 registerAdapters();
 
@@ -37,6 +37,8 @@ export async function GET(
         const databases = await listSourceDatabases(source);
         return NextResponse.json({ success: true, databases });
     } catch (error: unknown) {
+        const refusal = requestRefusal(error);
+        if (refusal) return refusal;
         const message = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json({ success: false, error: message }, { status: 500 });
     }

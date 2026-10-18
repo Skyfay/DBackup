@@ -3,8 +3,9 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
-import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
+import { getAuthContext } from "@/lib/auth/access-control";
+import { getManagePermissionForAdapter } from "@/lib/auth/adapter-permissions";
+import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
 import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
@@ -36,13 +37,12 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
         }
 
-        const requiredPermission = getPermissionForAdapter(adapterId);
-        if (!requiredPermission) {
+        if (!getManagePermissionForAdapter(adapterId)) {
             return NextResponse.json({ success: false, message: "Unsupported adapter" }, { status: 400 });
         }
-        checkPermissionWithContext(ctx, requiredPermission);
-        // A config of a form runs in one tenant, All tenants belongs to none.
-        tenantOf(ctx);
+        // The config of a form reaches a server of the caller's choosing, so it is for someone who
+        // may change connections of its kind, in one tenant, never All tenants.
+        assertMayReadFormConfig(ctx, adapterId);
         if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
 
         const adapter = registry.get(adapterId) as StorageAdapter | undefined;

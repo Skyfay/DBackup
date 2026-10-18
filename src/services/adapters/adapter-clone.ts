@@ -13,6 +13,7 @@ import { ValidationError } from "@/lib/logging/errors";
 import { isShared } from "@/services/sharing/destination-access";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { assertMayReachHost } from "./adapter-create";
+import { assertOffSharedPlaces } from "./shared-place";
 
 registerAdapters();
 
@@ -32,8 +33,9 @@ export interface AdapterCloneResult {
  * Creates a copy of a connection. Null when the original does not exist.
  *
  * @throws ValidationError for an unknown role, a role the adapter cannot serve, a destination
- *   shared with other tenants, a kind the tenant may not add or a connection that reaches the
- *   server DBackup runs on outside the platform.
+ *   shared with other tenants, a kind the tenant may not add, a connection that reaches the
+ *   server DBackup runs on outside the platform or the local network its tenant blocks, or storage
+ *   that overlaps a destination the tenant shares with customers.
  */
 export async function cloneAdapter(id: string, input: CloneAdapterInput): Promise<AdapterCloneResult | null> {
     const original = await prisma.adapterConfig.findUnique({ where: { id } });
@@ -60,11 +62,14 @@ export async function cloneAdapter(id: string, input: CloneAdapterInput): Promis
     }
     // A copy is a new connection, which the platform may not let the tenant add itself.
     await assertMayAdd(original.type, storageRole);
-    // Nor one that reaches the server DBackup runs on, wherever the original came from.
-    await assertMayReachHost(original.adapterId, () => decryptConfig(JSON.parse(original.config)) as Record<string, unknown>, {
-        primaryCredentialId: original.primaryCredentialId,
-        sshCredentialId: original.sshCredentialId,
-    });
+    // Nor one that reaches the server DBackup runs on or the local network its tenant blocks,
+    // wherever the original came from.
+    const logins = { primaryCredentialId: original.primaryCredentialId, sshCredentialId: original.sshCredentialId };
+    await assertMayReachHost(original.adapterId, () => decryptConfig(JSON.parse(original.config)) as Record<string, unknown>, logins);
+    // Nor one where a destination of the tenant shared with customers keeps their backups.
+    if (original.type === "storage") {
+        await assertOffSharedPlaces(original.adapterId, decryptConfig(JSON.parse(original.config)) as Record<string, unknown>, logins);
+    }
 
     const clone = await prisma.adapterConfig.create({
         data: {

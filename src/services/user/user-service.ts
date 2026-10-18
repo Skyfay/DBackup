@@ -62,6 +62,12 @@ export const userService = {
     return user?.name ?? null;
   },
 
+  /** The email an account signs in with, null once it is gone. */
+  async emailOf(userId: string): Promise<string | null> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    return user?.email ?? null;
+  },
+
   /** The names of users to report them by, the email for one without a name. */
   async namesOf(userIds: string[]): Promise<{ id: string; name: string }[]> {
     const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } });

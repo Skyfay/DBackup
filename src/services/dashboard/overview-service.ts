@@ -7,12 +7,12 @@ import { getLatestJobs, type ActivityDataPoint } from "@/services/dashboard-serv
 import { AGGREGATES_TTL_MS, RUNS_PER_JOB, getAggregates, toRunSummary } from "./aggregates";
 import { cached } from "./cache";
 import { deriveHealth, extractLastError, latestFinishedRun, mergeRuns } from "./health";
-import { buildUpcomingSchedule, type ScheduledJob } from "./schedule";
+import { buildUpcomingSchedule, MAX_RUNS_PER_JOB, UPCOMING_WINDOW_MS, upcomingReader, type ScheduledJob } from "./schedule";
 import { failedTrend, successRateTrend, valueDaysAgo } from "./trends";
 import type { DashboardHealth, DashboardJobRow, DashboardOverview, RunSummary, UnhealthyJob, UpcomingJob, UpcomingSchedule } from "./types";
 import { isAirGapped } from "@/lib/core/air-gap";
-import { OTHER_TENANT_JOB, OTHER_TENANT_JOB_NAME } from "@/services/jobs/job-timeline-types";
 import { NO_OTHER_TENANTS, otherTenantQueue, queueViewer, type OtherTenantJob } from "@/services/jobs/other-tenant-queue";
+import { queuePlan, type DueTimes } from "@/services/jobs/queue-schedules";
 
 /** A job of the Upcoming card with its tenant, which All tenants names. */
 export interface UpcomingTenantJob extends UpcomingJob {
@@ -59,9 +59,15 @@ function effectiveSchedule(job: OverviewJob): string {
     return (job.schedulePreset?.schedule ?? job.schedule ?? "").trim();
 }
 
-function nextRunAt(job: OverviewJob, timezone: string): string | null {
+/** The runs of the next 48 hours of a schedule, from the plan of the queue every tenant shares. */
+type UpcomingDue = (job: { schedule: string }, limit: number) => DueTimes | null;
+
+function nextRunAt(job: OverviewJob, timezone: string, due: UpcomingDue): string | null {
     const schedule = effectiveSchedule(job);
     if (!job.enabled || !schedule) return null;
+    // Within the next two days from the plan, later ones, like of a weekly job, read on their own.
+    const soon = due({ schedule }, 1)?.times[0];
+    if (soon !== undefined) return new Date(soon).toISOString();
     try {
         return new Cron(schedule, { timezone }).nextRun()?.toISOString() ?? null;
     } catch {
@@ -134,24 +140,20 @@ function withJobDetails(job: UnhealthyJob): Promise<UnhealthyJob> {
 /**
  * The runs of the next 48 hours with where they queue up. The queue is one for every tenant, so in
  * a tenant the runs of the other tenants count toward an overlap, without being listed. Only an
- * overlap that a run of this tenant falls into is kept, the others say nothing about its runs.
+ * overlap that a run of this tenant falls into is kept, the others say nothing about its runs. The
+ * schedules of every tenant are read once for every request from the plan of the queue.
  */
-function upcomingOf(own: ScheduledJob[], runsByJob: Map<string, RunSummary[]>, failing: Set<string>, slots: number, timezone: string, now: Date, others: OtherTenantJob[]): UpcomingSchedule {
-    const schedule = buildUpcomingSchedule(own, runsByJob, failing, slots, timezone, now);
-    if (others.length === 0) return schedule;
+function upcomingOf(own: ScheduledJob[], runsByJob: Map<string, RunSummary[]>, failing: Set<string>, slots: number, timezone: string, now: Date, others: OtherTenantJob[], due: UpcomingDue): UpcomingSchedule {
+    const capped = (job: { schedule: string }) => due(job, MAX_RUNS_PER_JOB);
+    const otherRuns = others.flatMap((job) => (capped(job)?.times ?? []).map((start) => ({ start, durationMs: job.estimatedMs })));
+    return buildUpcomingSchedule(own, runsByJob, failing, slots, timezone, now, { due: capped, others: otherRuns });
+}
 
-    const anonymous = others.map((job, index) => ({ id: `${OTHER_TENANT_JOB}:${index + 1}`, name: OTHER_TENANT_JOB_NAME, schedule: job.schedule }));
-    const otherRuns = new Map(anonymous.map((job, index) => [job.id, others[index].runs]));
-    const shared = buildUpcomingSchedule([...own, ...anonymous], new Map([...runsByJob, ...otherRuns]), failing, slots, timezone, now);
-
-    const lengths = new Map(schedule.jobs.map((job) => [job.id, job.estimatedMs]));
-    const ownSpans = schedule.runs.map((run) => ({ from: Date.parse(run.at), to: Date.parse(run.at) + Math.max(lengths.get(run.jobId) ?? 0, 1) }));
-    const conflicts = shared.conflicts.filter((conflict) => {
-        const from = Date.parse(conflict.from);
-        const to = Date.parse(conflict.to);
-        return ownSpans.some((span) => span.from < to && span.to > from);
-    });
-    return { ...schedule, conflicts };
+/** When the schedules start runs over the next 48 hours, read once for the whole page. */
+async function upcomingDue(timezone: string, now: Date): Promise<UpcomingDue> {
+    const plan = await queuePlan({ timezone }, now.getTime(), now.getTime() + UPCOMING_WINDOW_MS);
+    const read = upcomingReader(timezone, now);
+    return (job, limit) => plan.due(job, limit, read);
 }
 
 /** The banner gives each of the first few unhealthy jobs its own row, the rest are counted. */
@@ -197,6 +199,8 @@ export async function getDashboardOverview(): Promise<Overview> {
         liveByJob.set(execution.jobId, list);
     });
 
+    const now = new Date();
+    const due = await upcomingDue(aggregates.timezone, now);
     const runsByJob = new Map<string, RunSummary[]>();
     const rows: DashboardJobRow[] = jobs.map((job) => {
         const live = liveByJob.get(job.id) ?? [];
@@ -213,7 +217,7 @@ export async function getDashboardOverview(): Promise<Overview> {
             status: liveStatus ?? latestFinishedRun(runs)?.status ?? null,
             runs: [...runs].reverse(),
             lastRun: runs[0] ?? null,
-            nextRunAt: nextRunAt(job, aggregates.timezone),
+            nextRunAt: nextRunAt(job, aggregates.timezone, due),
         };
     });
     rows.sort(compareRows);
@@ -228,8 +232,9 @@ export async function getDashboardOverview(): Promise<Overview> {
         failingJobIds,
         aggregates.maxConcurrentJobs,
         aggregates.timezone,
-        new Date(),
+        now,
         others.jobs,
+        due,
     );
     // In All tenants the card names the tenant of each job, like the other lists of the page.
     const tenantOf = new Map(jobs.map((job) => [job.id, job.tenantId]));

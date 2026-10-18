@@ -15,9 +15,10 @@ import { toneAttribute } from "@/components/ui/tone";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { ALL_TENANTS } from "@/lib/tenant/home";
 import { cn } from "@/lib/utils";
 import { MIN_QUERY_LENGTH, type SearchHit } from "@/services/search/search-types";
-import { GROUP_LABELS, GROUP_ORDER, hitItems, iconOf, mayOpen, subLine, visibleChips, type SearchChip, type SearchItem } from "./search-items";
+import { GROUP_LABELS, GROUP_ORDER, hitItems, iconOf, mayOpen, recentShows, subLine, visibleChips, type SearchChip, type SearchItem } from "./search-items";
 import { actionItems, pageItems, settingItems } from "./search-offers";
 import { Kbd, SearchShortcut, useRecentSearches } from "./search-parts";
 
@@ -74,7 +75,9 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
     const { recent, remember } = useRecentSearches(userId);
     // In All tenants a platform admin finds the records of every tenant, each named with its tenant
     // and opened in it.
-    const { allTenants, isPlatformAdmin, tenants, tenantCount, showQuickSetup, ownDatabases } = useTenantView();
+    const { allTenants, activeTenantId, isPlatformAdmin, tenants, tenantCount, showQuickSetup, ownDatabases } = useTenantView();
+    // Where the search runs, which a person found here keeps, see `recentShows`.
+    const here = allTenants ? ALL_TENANTS : activeTenantId;
     const tenantName = useTenantName();
     const openInTenant = useOpenInTenant();
     const mayOpenTenant = useMayOpenTenant();
@@ -122,13 +125,13 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
     const items = useMemo(() => {
         const typed = query.trim().length > 0;
         const all: SearchItem[] = typed
-            ? [...hits.flatMap(hitItems), ...settingItems(query, can(PERMISSIONS.SETTINGS.READ), view), ...pageItems(query, can, view), ...actionItems(query, hits, can)]
-            : [...recent, ...pageItems("", can, view), ...actionItems("", [], can)];
+            ? [...hits.flatMap((hit) => hitItems(hit, here)), ...settingItems(query, can(PERMISSIONS.SETTINGS.READ), view), ...pageItems(query, can, view), ...actionItems(query, hits, can)]
+            : [...recent.filter((item) => recentShows(item, here)), ...pageItems("", can, view), ...actionItems("", [], can)];
         // The server searched only what the viewer may open, a recent entry is from before, maybe of
         // a tenant the viewer may no longer open.
         const allowed = all.filter((item) => mayOpen(item, can) && (!item.tenantId || mayOpenTenant(item.tenantId)));
         return chip === "all" ? allowed : allowed.filter((item) => item.group === chip);
-    }, [query, hits, recent, chip, can, view, mayOpenTenant]);
+    }, [query, hits, recent, chip, can, view, mayOpenTenant, here]);
 
     const groups = GROUP_ORDER.map((group) => ({ group, items: items.filter((item) => item.group === group) })).filter((entry) => entry.items.length > 0);
 

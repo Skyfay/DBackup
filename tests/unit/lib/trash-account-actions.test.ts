@@ -132,6 +132,27 @@ describe("Undo of a deleted account", () => {
         expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { anyTenantAccounts: true });
     });
 
+    it("writes the Undo into the log of the tenant the account waited in, else into the log of the platform", async () => {
+        // A platform admin works in Globex, Carla of Acme waited in Acme. Globex must not read about her.
+        mocks.viewer = { id: "root", isPlatformAdmin: true, tenantId: "globex", permissions: [] };
+        mocks.latest.mockResolvedValue([{ ...CARLA, deletedById: "root" }]);
+        await undoDeleteAction("user", ["u-carla"]);
+        expect(mocks.audit).toHaveBeenLastCalledWith("root", "RESTORE", "USER", expect.objectContaining({ action: "trash_restore" }), "r-t-carla", { tenantId: "default" });
+
+        // The admin of Acme brings her back in Acme, which keeps the entry.
+        mocks.viewer = { id: "nina", isPlatformAdmin: false, tenantId: "acme", permissions: [PERMISSIONS.USERS.WRITE] };
+        mocks.latest.mockResolvedValue([CARLA]);
+        await undoDeleteAction("user", ["u-carla"]);
+        expect(mocks.audit).toHaveBeenLastCalledWith("nina", "RESTORE", "USER", expect.objectContaining({ action: "trash_restore" }), "r-t-carla", { tenantId: "acme" });
+
+        // Tom waited in the home tenant for a platform admin, who undoes it from Acme.
+        mocks.viewer = { id: "root", isPlatformAdmin: true, tenantId: "acme", permissions: [] };
+        mocks.accounts = [];
+        mocks.latest.mockResolvedValue([{ ...TOM, deletedById: "root" }]);
+        await undoDeleteAction("user", ["u-tom"]);
+        expect(mocks.audit).toHaveBeenLastCalledWith("root", "RESTORE", "USER", expect.objectContaining({ action: "trash_restore" }), "r-t-tom", { tenantId: "default" });
+    });
+
     it("leaves an account out whose domain the provider of another tenant claims by now", async () => {
         mocks.viewer = { id: "nina", isPlatformAdmin: false, tenantId: "acme", permissions: [PERMISSIONS.USERS.WRITE] };
         mocks.latest.mockResolvedValue([CARLA]);

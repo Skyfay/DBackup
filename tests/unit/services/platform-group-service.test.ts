@@ -133,6 +133,31 @@ describe("giving an account its platform group", () => {
     });
 });
 
+describe("the people a platform group reaches", () => {
+    const group = (tenantIds: string[]) => db.user.findUnique.mockResolvedValue({
+        platformGroup: { id: "pg-1", platformPermissions: "[]", tenantPermissions: "[]", allTenants: false, tenants: tenantIds.map((tenantId) => ({ tenantId })) },
+    });
+    const where = () => JSON.stringify(db.user.findMany.mock.calls.at(-1)?.[0]?.where);
+
+    it("count an account of no tenant as one of the home tenant, like the Users tab and the checks of an account", async () => {
+        group(["default", "acme"]);
+        db.user.findMany.mockResolvedValue([{ id: "anna" }, { id: "new-hire" }]);
+
+        expect(await platformGroupService.peopleReached("nina")).toEqual(["anna", "new-hire"]);
+        expect(where()).toContain('"memberships":{"none":{}}');
+    });
+
+    it("leave the accounts of no tenant out for a group that does not reach the home tenant", async () => {
+        group(["acme"]);
+        db.user.findMany.mockResolvedValue([]);
+
+        await platformGroupService.peopleReached("nina");
+
+        expect(where()).not.toContain('"none"');
+        expect(where()).toContain('"tenantId":{"in":["acme"]}');
+    });
+});
+
 describe("deleting a platform group", () => {
     it("deletes it and says how many held it, who keep their accounts", async () => {
         db.platformGroup.findUnique.mockResolvedValue({ name: "Support", _count: { members: 3 } });

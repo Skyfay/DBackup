@@ -4,6 +4,7 @@ import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig 
 import type { RateLimitConfig } from "./lib/rate-limit";
 import { logger } from "./lib/logging/logger";
 import { clientAddress, rateLimitKey } from "./lib/core/client-address";
+import { loginHref } from "./lib/auth/sign-in-target";
 
 const log = logger.child({ module: "Middleware" });
 
@@ -144,8 +145,9 @@ export async function middleware(request: NextRequest) {
             request.cookies.get("better-auth.session_token") ||
             request.cookies.get("__Secure-better-auth.session_token");
 
+        // The login page leads back to the page asked for once someone signed in.
         if (!sessionToken) {
-            return NextResponse.redirect(new URL("/", request.url));
+            return NextResponse.redirect(new URL(loginHref(`${request.nextUrl.pathname}${request.nextUrl.search}`), request.url));
         }
     }
 

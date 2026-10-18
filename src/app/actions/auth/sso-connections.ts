@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { getViewer, hasPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
+import { accountLogOrigin } from "@/services/audit/account-log";
 import { countSignInAccounts, listSsoConnections, prepareSsoConnect, type SsoConnections } from "@/services/sso/sso-connections-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
@@ -58,7 +59,8 @@ export async function unlinkMySsoAccount(providerId: string, accountId: string) 
             AUDIT_ACTIONS.DELETE,
             AUDIT_RESOURCES.AUTH,
             { change: "SSO account unlinked", providerId },
-            currentUser.id
+            currentUser.id,
+            await accountLogOrigin(currentUser, currentUser.id)
         );
 
         revalidatePath("/dashboard/profile");

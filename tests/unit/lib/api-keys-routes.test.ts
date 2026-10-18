@@ -12,12 +12,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 // The real check, reduced to the permission list of the context.
-vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
-    checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
-        if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
-    },
-}));
+vi.mock("@/lib/auth/access-control", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/lib/auth/access-control")>();
+    return {
+        // The real refusals of All tenants and of no tenant.
+        tenantOf: actual.tenantOf,
+        tenantRefusal: actual.tenantRefusal,
+        getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
+        checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
+            if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
+        },
+    };
+});
 vi.mock("@/services/auth/api-keys-model", () => ({ getApiKeysModel: (...args: unknown[]) => mocks.getApiKeysModel(...args) }));
 vi.mock("@/services/auth/api-key-details", () => ({ getApiKeyDetails: (...args: unknown[]) => mocks.getApiKeyDetails(...args) }));
 
@@ -52,6 +58,15 @@ describe("GET /api/api-keys", () => {
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ success: true, data: { keys: [], stats: {}, viewer: {} } });
         expect(mocks.getApiKeysModel).toHaveBeenCalledWith({ id: "lena", superAdmin: false, permissions: [PERMISSIONS.API_KEYS.READ, PERMISSIONS.JOBS.EXECUTE] });
+    });
+
+    it("asks for a tenant in All tenants, which would mix the keys of every tenant", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "root", permissions: [PERMISSIONS.API_KEYS.READ], isPlatformAdmin: true, authMethod: "session", tenantId: null, allTenants: true });
+        const response = await getKeys();
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ success: false, error: expect.stringContaining("All tenants only reads") });
+        expect(mocks.getApiKeysModel).not.toHaveBeenCalled();
     });
 });
 

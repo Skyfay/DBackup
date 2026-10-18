@@ -16,6 +16,8 @@ import { clientAddress } from "@/lib/core/client-address";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { runAsTenant } from "@/lib/tenant/context";
+import { makerMayDownload } from "@/lib/auth/download-maker";
+import { configBackupLinkRefusal } from "@/lib/server/config-backup-guard";
 
 const log = logger.child({ route: "storage/public-download" });
 registerAdapters();
@@ -70,7 +72,22 @@ export async function GET(req: NextRequest) {
         // live five minutes in the memory of this process, so none made before an update, which
         // restarts it, is still open, and none goes without a tenant to the home tenant.
         const tenantId = tokenData.tenantId;
+        // Nothing else checks a permission now, so its maker is asked again whether they, or the
+        // API key they made it with, may still download in that tenant.
+        const maker = { userId: tokenData.createdBy, tenantId, ...(tokenData.apiKeyId ? { apiKeyId: tokenData.apiKeyId } : {}) };
+        if (!(await makerMayDownload(maker))) {
+            releaseLinkToken(token);
+            claimed = null;
+            return NextResponse.json({ error: "Whoever made this link may no longer download backups there. Make a new one in DBackup." }, { status: 403 });
+        }
         return await runAsTenant(tenantId, async () => {
+            // Never a configuration backup, whoever made the link.
+            const configBackup = await configBackupLinkRefusal(tokenData.storageId, tokenData.file, tenantId);
+            if (configBackup) {
+                releaseLinkToken(token);
+                claimed = null;
+                return configBackup;
+            }
             const from = requesterOf(req);
             const userAgent = req.headers.get("user-agent");
             const { storageId, file, decrypt, database, pick, createdBy } = tokenData;

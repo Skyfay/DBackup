@@ -18,6 +18,11 @@ import { currentTenantId } from "@/lib/tenant/current";
 import { cached } from "@/services/dashboard/cache";
 import { getStorageVolume } from "@/services/dashboard-service";
 import { providedTo } from "@/services/sharing/provided";
+import { newestBackupIds, readInChunks } from "@/services/history/newest-runs";
+import { checksOf, noChecks, type HealthBucket } from "./connection-health";
+
+// The health of a connection over the last day, kept where the pages and the details import it from.
+export { HEALTH_HOURS, healthBuckets, type HealthBucket } from "./connection-health";
 
 /** A finished backup, with the execution id to link it. */
 export interface FinishedRun {
@@ -25,9 +30,6 @@ export interface FinishedRun {
     at: string;
     status: string;
 }
-
-/** One hour of health checks: all passed, one failed, the connection went offline, or none ran. */
-export type HealthBucket = "ok" | "failed" | "offline" | "none";
 
 export interface ConnectionOverview {
     /** Jobs that use the connection in any role, and notification templates that send through it. */
@@ -49,42 +51,10 @@ export interface ConnectionOverview {
     lastSent: { at: string; status: string } | null;
 }
 
-export const HEALTH_HOURS = 24;
-const HOUR_MS = 60 * 60 * 1000;
 const CACHE_TTL_MS = 60_000;
 const FINISHED_STATUSES = ["Success", "Failed", "Partial"];
-
-/**
- * Groups a day of health checks into hourly buckets. A failed check marks its hour even
- * when the others passed, because one failure is what a person looking for trouble wants to see.
- */
-export function healthBuckets(
-    checks: { status: string; createdAt: Date }[],
-    now: Date,
-): { health: HealthBucket[]; checksPassed: number | null } {
-    const start = now.getTime() - HEALTH_HOURS * HOUR_MS;
-    const health: HealthBucket[] = Array.from({ length: HEALTH_HOURS }, () => "none");
-    let passed = 0;
-    let total = 0;
-
-    for (const check of checks) {
-        const offset = check.createdAt.getTime() - start;
-        if (offset < 0 || offset > HEALTH_HOURS * HOUR_MS) continue;
-        // A check at this very moment belongs to the newest hour, not to one after it.
-        const hour = Math.min(HEALTH_HOURS - 1, Math.floor(offset / HOUR_MS));
-        total++;
-        if (check.status === "ONLINE") {
-            passed++;
-            if (health[hour] === "none") health[hour] = "ok";
-        } else if (check.status === "OFFLINE") {
-            health[hour] = "offline";
-        } else if (health[hour] !== "offline") {
-            health[hour] = "failed";
-        }
-    }
-
-    return { health, checksPassed: total === 0 ? null : Math.round((passed / total) * 1000) / 10 };
-}
+/** How many channels one query of their newest messages names. */
+const CHANNELS_PER_QUERY = 500;
 
 /**
  * The overview for a set of adapter configs, keyed by id. Cached for a minute per set, and
@@ -128,9 +98,7 @@ async function providedConfigs(ids: string[]): Promise<OverviewConfig[]> {
 }
 
 async function loadOverview(ids: string[], now: Date): Promise<[string, ConnectionOverview][]> {
-    const since = new Date(now.getTime() - HEALTH_HOURS * HOUR_MS);
-
-    const [own, sourceJobs, destinationJobs, directoryJobs, notifyingJobs, templateChannels, checks] = await Promise.all([
+    const [own, sourceJobs, destinationJobs, directoryJobs, notifyingJobs, templateChannels] = await Promise.all([
         prisma.adapterConfig.findMany({
             where: { id: { in: ids } },
             select: {
@@ -149,13 +117,10 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
             select: { id: true, notifications: { where: { id: { in: ids } }, select: { id: true } } },
         }),
         prisma.notificationTemplateChannel.findMany({ where: { configId: { in: ids } }, select: { configId: true } }),
-        prisma.healthCheckLog.findMany({
-            where: { adapterConfigId: { in: ids }, createdAt: { gte: since } },
-            select: { adapterConfigId: true, status: true, latencyMs: true, createdAt: true },
-            orderBy: { createdAt: "asc" },
-        }),
     ]);
     const found = new Set(own.map((config) => config.id));
+    // The checks of the own connections only, which the client found in this tenant.
+    const checks = await checksOf([...found], now);
     const configs: OverviewConfig[] = [...own, ...(await providedConfigs(ids.filter((id) => !found.has(id))))];
 
     // A job can reach one connection through several paths, so each config collects job ids once.
@@ -169,13 +134,6 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
     const templatesByConfig = new Map<string, number>();
     for (const channel of templateChannels) {
         templatesByConfig.set(channel.configId, (templatesByConfig.get(channel.configId) ?? 0) + 1);
-    }
-
-    const checksByConfig = new Map<string, typeof checks>();
-    for (const check of checks) {
-        const list = checksByConfig.get(check.adapterConfigId) ?? [];
-        list.push(check);
-        checksByConfig.set(check.adapterConfigId, list);
     }
 
     const jobIds = [...new Set([...jobsByConfig.values()].flatMap((set) => [...set]))];
@@ -192,8 +150,7 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
     return configs.map((config): [string, ConnectionOverview] => {
         const jobs = jobsByConfig.get(config.id) ?? new Set<string>();
         // How the checks of a provided connection went stays with its tenant, the list shows its status.
-        const configChecks = config.provided ? [] : checksByConfig.get(config.id) ?? [];
-        const lastPassed = [...configChecks].reverse().find((check) => check.status === "ONLINE");
+        const configChecks = config.provided ? noChecks() : checks.get(config.id) ?? noChecks();
         const isDestination = config.type === "storage" && config.storageRole === STORAGE_ROLES.DESTINATION;
         const volume = isDestination ? storageById.get(config.id) : undefined;
         // A destination that was never listed has no numbers yet, only placeholders.
@@ -208,8 +165,7 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
         return [config.id, {
             usedBy: { jobs: jobs.size, templates: templatesByConfig.get(config.id) ?? 0 },
             lastBackup,
-            ...healthBuckets(configChecks, now),
-            latencyMs: lastPassed?.latencyMs ?? null,
+            ...configChecks,
             credentialName: config.primaryCredential?.name ?? null,
             retentionName: isDestination ? config.defaultRetentionPolicy?.name ?? null : null,
             stored: volume && scanned ? { size: volume.size, count: volume.count } : null,
@@ -218,23 +174,16 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
     });
 }
 
-/** The newest finished backup of each job. Two queries, however many jobs there are. */
+/** The newest finished backup of each job. One lookup per job in one query, however many jobs there are. */
 export async function latestRunPerJob(jobIds: string[]): Promise<Map<string, FinishedRun>> {
     const result = new Map<string, FinishedRun>();
     if (jobIds.length === 0) return result;
 
-    const newest = await prisma.execution.groupBy({
-        by: ["jobId"],
-        where: { jobId: { in: jobIds }, type: "Backup", status: { in: FINISHED_STATUSES } },
-        _max: { startedAt: true },
-    });
-    const keys = newest.flatMap((row) => (row.jobId && row._max.startedAt ? [{ jobId: row.jobId, startedAt: row._max.startedAt }] : []));
-    if (keys.length === 0) return result;
-
-    const runs = await prisma.execution.findMany({
-        where: { OR: keys, type: "Backup", status: { in: FINISHED_STATUSES } },
+    const ids = await newestBackupIds(jobIds, { statuses: FINISHED_STATUSES });
+    const runs = await readInChunks(ids, (chunk) => prisma.execution.findMany({
+        where: { id: { in: chunk } },
         select: { id: true, jobId: true, status: true, startedAt: true },
-    });
+    }));
     for (const run of runs) {
         if (run.jobId) result.set(run.jobId, { id: run.id, at: run.startedAt.toISOString(), status: run.status });
     }
@@ -254,12 +203,15 @@ async function latestSendPerChannel(channelIds: string[]): Promise<Map<string, {
     const keys = newest.flatMap((row) => (row.channelId && row._max.sentAt ? [{ channelId: row.channelId, sentAt: row._max.sentAt }] : []));
     if (keys.length === 0) return result;
 
-    const sends = await prisma.notificationLog.findMany({
-        where: { OR: keys },
-        select: { channelId: true, status: true, sentAt: true },
-    });
-    for (const send of sends) {
-        if (send.channelId) result.set(send.channelId, { at: send.sentAt.toISOString(), status: send.status });
+    // In chunks, since a condition with one branch per channel failed past 10,000 with "Expression tree is too large".
+    for (let start = 0; start < keys.length; start += CHANNELS_PER_QUERY) {
+        const sends = await prisma.notificationLog.findMany({
+            where: { OR: keys.slice(start, start + CHANNELS_PER_QUERY) },
+            select: { channelId: true, status: true, sentAt: true },
+        });
+        for (const send of sends) {
+            if (send.channelId) result.set(send.channelId, { at: send.sentAt.toISOString(), status: send.status });
+        }
     }
     return result;
 }

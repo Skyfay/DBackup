@@ -16,13 +16,14 @@ vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/adapters/credential-validation", () => ({ validateCredentialAssignments: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/adapters/snapshot-validation", () => ({ validateSnapshotConfig: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/services/sharing/destination-access", () => ({ isShared: (...args: unknown[]) => mocks.isShared(...args) }));
-vi.mock("@/lib/adapters/config-resolver", () => ({
-    overlayCredentialsOnConfig: async (_adapterId: string, config: Record<string, unknown>, primary: string | null, ssh: string | null) => ({
+vi.mock("@/lib/adapters/config-resolver", () => {
+    const overlay = async (_adapterId: string, config: Record<string, unknown>, primary: string | null, ssh: string | null) => ({
         ...config,
         ...(primary ? mocks.profiles[primary] : {}),
         ...(ssh ? mocks.profiles[ssh] : {}),
-    }),
-}));
+    });
+    return { overlayCredentialsOnConfig: overlay, layLoginsOver: overlay };
+});
 
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { encryptConfig } from "@/lib/crypto";
@@ -39,6 +40,8 @@ describe("adding a connection that reaches the server DBackup runs on", () => {
         vi.clearAllMocks();
         mocks.profiles = {};
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
+        // The tenant shares no destination with customers.
+        prismaMock.connectionShare.findMany.mockResolvedValue([]);
         prismaMock.adapterConfig.create.mockImplementation((async (args: { data: Record<string, unknown> }) => ({ id: "new", ...args.data })) as never);
         // Every kind is one the tenants may add themselves.
         prismaMock.tenant.findUnique.mockResolvedValue({ name: "Acme", addsDatabases: true, addsDirectorySources: true, addsDestinations: true, addsChannels: true } as never);
@@ -91,6 +94,8 @@ describe("copying a connection", () => {
         vi.clearAllMocks();
         mocks.isShared.mockResolvedValue(false);
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
+        // The tenant shares no destination with customers.
+        prismaMock.connectionShare.findMany.mockResolvedValue([]);
         prismaMock.adapterConfig.create.mockImplementation((async (args: { data: Record<string, unknown> }) => ({ id: "copy", ...args.data })) as never);
         prismaMock.tenant.findUnique.mockResolvedValue({ name: "Acme", addsDatabases: true, addsDirectorySources: true, addsDestinations: true, addsChannels: true } as never);
     });

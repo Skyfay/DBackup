@@ -13,6 +13,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { invalid, type SaveResult } from "@/services/system/settings-save";
 import { auditService } from "@/services/audit-service";
+import { accountLogOrigin } from "@/services/audit/account-log";
 import { setTaskColors } from "@/services/user/preference-service";
 import { userService } from "@/services/user/user-service";
 
@@ -47,6 +48,9 @@ export async function saveProfileAccountAction(input: { name: string; email: str
     const claimed = email !== user.email ? await userService.ownEmailRefusal(user.id, email) : null;
     if (claimed) return { success: false, error: claimed, field: "email" };
 
+    // A change of the own account goes into the log of the tenant only while the account is one of
+    // its people, so a customer never reads the old and new email of someone of the platform.
+    const origin = await accountLogOrigin(user, user.id);
     try {
         await userService.updateUser(user.id, { name, email });
     } catch (error: unknown) {
@@ -58,7 +62,7 @@ export async function saveProfileAccountAction(input: { name: string; email: str
     }
 
     const changes = diffFields({ name: user.name, email: user.email }, { name, email }, ACCOUNT_FIELDS);
-    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name, changes }, user.id);
+    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name, changes }, user.id, origin);
     revalidatePath("/dashboard", "layout");
     return { success: true };
 }
@@ -95,7 +99,7 @@ export async function saveProfileDatesAction(input: { timezone: string; dateForm
         { ...parsed.data, timezone: parsed.data.timezone || "This browser" },
         DATE_FIELDS
     );
-    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name: user.name, changes }, user.id);
+    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name: user.name, changes }, user.id, await accountLogOrigin(user, user.id));
     revalidatePath("/dashboard", "layout");
     return { success: true };
 }

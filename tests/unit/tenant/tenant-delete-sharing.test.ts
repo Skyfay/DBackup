@@ -17,7 +17,14 @@ import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { ownerAt } from "@/lib/tenant/database-owner";
 import { tenantScopeExtension } from "@/lib/tenant/prisma-scope";
 
-const holder = vi.hoisted(() => ({ client: undefined as unknown }));
+const holder = vi.hoisted(() => ({
+    client: undefined as unknown,
+    /** A tenant whose delete fails late in its transaction, after its customers lost what it shared. */
+    failLateFor: null as string | null,
+    deleteTenantBackups: vi.fn(),
+    sweepCustomerFolder: vi.fn(),
+    refreshStorageStatsCache: vi.fn(),
+}));
 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
@@ -27,6 +34,27 @@ vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: vi.fn(async () => null) } }));
 vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: vi.fn() } }));
 vi.mock("@/services/dashboard/cache", () => ({ invalidateDashboardCache: vi.fn() }));
+// The storage of the destinations, which the delete of a customer empties in the background.
+vi.mock("@/services/sharing/share-cleanup", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/services/sharing/share-cleanup")>()),
+    deleteTenantBackups: (...args: unknown[]) => holder.deleteTenantBackups(...args),
+    sweepCustomerFolder: (...args: unknown[]) => holder.sweepCustomerFolder(...args),
+}));
+vi.mock("@/services/dashboard-service", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/services/dashboard-service")>()),
+    refreshStorageStatsCache: (...args: unknown[]) => holder.refreshStorageStatsCache(...args),
+}));
+// The key of the notifications of a tenant, which the delete names late in its transaction.
+vi.mock("@/services/notifications/tenant-notification-settings", async (importOriginal) => {
+    const original = await importOriginal<typeof import("@/services/notifications/tenant-notification-settings")>();
+    return {
+        ...original,
+        tenantNotificationKey: (tenantId: string) => {
+            if (tenantId === holder.failLateFor) throw new Error("The database went away");
+            return original.tenantNotificationKey(tenantId);
+        },
+    };
+});
 
 const { tenantService } = await import("@/services/tenant/tenant-service");
 const { databaseAssignmentService } = await import("@/services/tenant/database-assignments");
@@ -58,7 +86,7 @@ afterAll(async () => {
 
 /** The home tenant runs the shared MySQL. Acme, Globex and Retail are its customers, MSP Two shares too. */
 beforeEach(async () => {
-    for (const model of ["execution", "databaseAssignment", "databaseAssignmentRule", "sharedServer", "databaseListCache", "job", "adapterConfig", "encryptionProfile", "apiKey", "deletedRecord", "user", "tenant"] as const) {
+    for (const model of ["execution", "databaseAssignment", "databaseAssignmentRule", "sharedServer", "databaseListCache", "job", "connectionShareTenant", "connectionShare", "adapterConfig", "encryptionProfile", "apiKey", "deletedRecord", "user", "tenant"] as const) {
         await (base[model] as unknown as { deleteMany(args: object): Promise<unknown> }).deleteMany({ where: model === "tenant" ? { id: { not: "default" } } : {} });
     }
     for (const [id, name] of [["acme", "Acme"], ["globex", "Globex"], ["retail", "Retail"]]) await base.tenant.create({ data: { id, name } });
@@ -103,6 +131,88 @@ describe("a customer that is deleted", () => {
         await base.execution.updateMany({ data: { status: "Success" } });
         await tenantService.delete("globex");
         expect(await base.tenant.count({ where: { id: "globex" } })).toBe(0);
+    });
+});
+
+describe("a tenant that shares a destination with customers", () => {
+    beforeEach(async () => {
+        holder.failLateFor = null;
+        await base.adapterConfig.create({ data: { tenantId: "msp-two", id: "two-s3", name: "Two S3", type: "storage", adapterId: "s3-generic", config: "{}" } });
+        await base.connectionShare.create({ data: { id: "two-s3", tenantId: "msp-two", tenants: { create: [{ tenantId: "acme" }] } } });
+        await base.adapterConfig.create({ data: { tenantId: "acme", id: "acme-db", name: "Shop", type: "database", adapterId: "mysql", config: "{}" } });
+        await base.job.create({ data: { tenantId: "acme", id: "acme-job", name: "Nightly", schedule: "0 3 * * *", sourceId: "acme-db", destinations: { create: { configId: "two-s3" } } } });
+    });
+
+    it("is refused while a run of a customer writes to it or waits to, and the customer keeps it", async () => {
+        for (const status of ["Pending", "Running"]) {
+            await base.execution.deleteMany({});
+            await base.execution.create({ data: { tenantId: "acme", jobId: "acme-job", status, logs: "[]" } });
+
+            const refused = await tenantService.delete("msp-two").catch((error: unknown) => error);
+
+            expect(refused).toBeInstanceOf(ConflictError);
+            expect((refused as Error).message).toContain("A run of Acme writes to a destination MSP Two shares");
+            expect(await base.tenant.count({ where: { id: "msp-two" } })).toBe(1);
+            expect(await base.jobDestination.count({ where: { jobId: "acme-job", configId: "two-s3" } })).toBe(1);
+        }
+    });
+
+    it("takes it from its customers in the transaction of the delete, so they keep it when the delete fails", async () => {
+        holder.failLateFor = "msp-two";
+
+        await expect(tenantService.delete("msp-two")).rejects.toThrow("The database went away");
+
+        expect(await base.tenant.count({ where: { id: "msp-two" } })).toBe(1);
+        expect(await base.jobDestination.count({ where: { jobId: "acme-job", configId: "two-s3" } })).toBe(1);
+    });
+
+    it("takes it from the jobs of its customers once the delete went through, and names what they lost", async () => {
+        const removal = await tenantService.delete("msp-two");
+
+        expect(removal.withdrawn).toEqual([expect.objectContaining({ configId: "two-s3", tenantId: "acme", jobs: ["Nightly"] })]);
+        expect(await base.jobDestination.count({ where: { jobId: "acme-job" } })).toBe(0);
+        expect(await base.adapterConfig.count({ where: { id: "two-s3" } })).toBe(0);
+    });
+});
+
+describe("the last customer of a shared destination that is deleted", () => {
+    beforeEach(async () => {
+        holder.failLateFor = null;
+        holder.deleteTenantBackups.mockReset().mockResolvedValue(2);
+        holder.sweepCustomerFolder.mockReset().mockResolvedValue(1);
+        holder.refreshStorageStatsCache.mockReset().mockResolvedValue([]);
+        await base.adapterConfig.create({ data: { tenantId: "msp-two", id: "two-s3", name: "Two S3", type: "storage", adapterId: "s3-generic", config: "{}" } });
+        await base.connectionShare.create({ data: { id: "two-s3", tenantId: "msp-two", tenants: { create: [{ tenantId: "acme" }] } } });
+    });
+
+    it("leaves nothing of the customers in its folder before the destination is shared no longer, and counts its space again", async () => {
+        await tenantService.delete("acme");
+
+        await vi.waitFor(() => expect(holder.refreshStorageStatsCache).toHaveBeenCalledWith({ configIds: ["two-s3"] }));
+        expect(holder.deleteTenantBackups).toHaveBeenCalledWith("two-s3", "acme");
+        expect(holder.sweepCustomerFolder).toHaveBeenCalledWith("two-s3");
+        expect(holder.sweepCustomerFolder.mock.invocationCallOrder[0]).toBeGreaterThan(holder.deleteTenantBackups.mock.invocationCallOrder[0]);
+        expect(await base.connectionShare.count({ where: { id: "two-s3" } })).toBe(0);
+    });
+
+    it("stays shared with nobody when the folder cannot be emptied, so its tenant never sees a file of a customer", async () => {
+        holder.sweepCustomerFolder.mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+        await tenantService.delete("acme");
+
+        await vi.waitFor(() => expect(holder.refreshStorageStatsCache).toHaveBeenCalledWith({ configIds: ["two-s3"] }));
+        expect(await base.connectionShare.count({ where: { id: "two-s3" } })).toBe(1);
+        expect(await base.connectionShareTenant.count({ where: { shareId: "two-s3" } })).toBe(0);
+    });
+
+    it("keeps the share and sweeps nothing while another customer still gets it", async () => {
+        await base.connectionShareTenant.create({ data: { shareId: "two-s3", tenantId: "globex" } });
+
+        await tenantService.delete("acme");
+
+        await vi.waitFor(() => expect(holder.refreshStorageStatsCache).toHaveBeenCalled());
+        expect(holder.sweepCustomerFolder).not.toHaveBeenCalled();
+        expect(await base.connectionShare.count({ where: { id: "two-s3" } })).toBe(1);
     });
 });
 
@@ -172,6 +282,31 @@ describe("giving a database to the tenant a rule gives it to already", () => {
         const before = sharingVersion();
         expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: "acme" }], null))).toEqual({ changed: 1 });
         expect(sharingVersion()).toBeGreaterThan(before);
+    });
+});
+
+describe("backups on demand of a customer for a platform group of some tenants", () => {
+    beforeEach(async () => {
+        // MSP Two gives Globex a database with a number of its own.
+        await base.sharedServer.create({ data: { id: "two-db", name: "Two MySQL", adapterId: "mysql", tenantId: "msp-two" } });
+        await base.databaseAssignment.create({ data: { id: "two-crm", sourceId: "two-db", databaseName: "crm", tenantId: "globex", validFrom: day("2026-02-01"), onDemandPerDay: 2 } });
+    });
+
+    it("shows a tenant that shares beyond the reach by no name", async () => {
+        const found = await tenantOnDemandService.find("globex", ["globex"]);
+        expect(found?.overrides).toEqual([expect.objectContaining({ id: "two-crm", serverName: "Two MySQL", providerId: null, providerName: "Another tenant" })]);
+
+        const reached = await tenantOnDemandService.find("globex", ["globex", "msp-two"]);
+        expect(reached?.overrides).toEqual([expect.objectContaining({ providerId: "msp-two", providerName: "MSP Two" })]);
+    });
+
+    it("changes nothing a tenant beyond the reach gave, and what a reached one gave", async () => {
+        await expect(tenantOnDemandService.follow("globex", "database", "two-crm", ["globex"]))
+            .rejects.toThrow("Two MySQL belongs to a tenant your platform group does not reach");
+        expect(await base.databaseAssignment.findUnique({ where: { id: "two-crm" } })).toMatchObject({ onDemandPerDay: 2 });
+
+        await tenantOnDemandService.follow("globex", "database", "two-crm", ["globex", "msp-two"]);
+        expect(await base.databaseAssignment.findUnique({ where: { id: "two-crm" } })).toMatchObject({ onDemandPerDay: null });
     });
 });
 

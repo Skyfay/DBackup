@@ -35,25 +35,23 @@ The middleware runs before any component rendering.
 **Location**: `src/middleware.ts`
 
 ```typescript
-export async function middleware(request: NextRequest) {
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  });
-
-  // Protect dashboard routes
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    if (!session) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+// Only whether a session cookie is there, the layout of the dashboard checks the session itself.
+if (request.nextUrl.pathname.startsWith("/dashboard")) {
+  const sessionToken =
+    request.cookies.get("better-auth.session_token") ||
+    request.cookies.get("__Secure-better-auth.session_token");
+  if (!sessionToken) {
+    // The login page leads back to the page asked for once someone signed in.
+    return NextResponse.redirect(new URL(loginHref(`${request.nextUrl.pathname}${request.nextUrl.search}`), request.url));
   }
-
-  return NextResponse.next();
 }
 ```
 
 ::: warning
 Middleware does NOT check fine-grained permissions (RBAC), only authentication status.
 :::
+
+The login page is `/`. Its `next` parameter names the page a sign-in leads to, like `/?next=%2Finvite%3Ftoken%3D...` from the Sign in of an invitation. `safeNextPath` in `src/lib/auth/sign-in-target.ts` takes only a path of this site: one slash at its start, never two, no backslash and no control character. The login page itself, the bare Overview and `/api` lead nowhere, and anything it refuses falls back to `AFTER_SIGN_IN`, the Overview with its marker for the Quick Setup. The login page checks `next` on the server and hands the form the path, which every way of signing in uses as its target: the password with its second factor, a passkey and a sign-in provider as its `callbackURL`. A provider that refuses comes back with its error alone, so the form keeps the path in the storage of the tab for that (`sign-in-next.ts`) and checks it again.
 
 ### Layer 2: API Route Handlers
 

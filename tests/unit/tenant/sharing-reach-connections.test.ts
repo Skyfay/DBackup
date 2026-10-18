@@ -86,12 +86,15 @@ beforeEach(async () => {
     for (const [id, name] of [["globex", "Globex"], ["initech", "Initech"], ["umbrella", "Umbrella"]]) await base.tenant.create({ data: { id, name } });
     await base.adapterConfig.create({ data: { tenantId: "acme", id: "acme-nas", name: "NAS", type: "storage", adapterId: "local-filesystem", config: "{}" } });
     await base.adapterConfig.create({ data: { tenantId: "acme", id: "acme-mail", name: "Mail", type: "notification", adapterId: "email", config: "{}" } });
-    storage.files = new Map([
-        ["acme-job/one.tar", 10],
-        ["tenants/globex/nightly/two.tar", 20],
-        ["tenants/initech/nightly/three.tar", 30],
-    ]);
+    // The folder of the customers is empty before the first share, their backups come after it.
+    storage.files = new Map([["acme-job/one.tar", 10]]);
 });
+
+/** What the customers wrote once the destination was shared with them. */
+const customerBackups = () => {
+    storage.files.set("tenants/globex/nightly/two.tar", 20);
+    storage.files.set("tenants/initech/nightly/three.tar", 30);
+};
 
 const settingsOf = (tenantIds: string[], terms: Partial<ShareSettings> = {}): ShareSettings => ({ allTenants: false, encryptedOnly: false, ownRecipients: true, ...terms, tenantIds });
 /** A change as someone with the reach makes it in the tenant of the MSP. */
@@ -143,6 +146,7 @@ describe("sharing in a platform group of some tenants", () => {
 
     it("cannot stop sharing with a tenant it does not reach, nor delete its backups there", async () => {
         await share("acme-nas", settingsOf(["globex", "initech"]));
+        customerBackups();
 
         await expect(runAsTenant("acme", () => connectionShareService.stopFor("acme-nas", "initech", { confirmed: true, reach: DESK }))).rejects.toThrow("does not reach Initech");
         await expect(runAsTenant("acme", () => connectionShareService.deleteBackupsOf("acme-nas", "initech", DESK)))

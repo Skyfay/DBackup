@@ -133,7 +133,8 @@ function connectionValues(connection: Record<string, unknown>): Hidden {
     const privileged = (connection.privilegedAuth ?? {}) as Record<string, unknown>;
     const listed = Array.isArray(connection.databases) ? (connection.databases as Record<string, unknown>[]) : [];
     const hidden: Hidden = {
-        hosts: pick("host", "sshHost"),
+        // The name of the master of a Sentinel names the server as much as its host does.
+        hosts: pick("host", "sshHost", "sentinelMasterName"),
         ports: pick("port", "sshPort"),
         users: [...pick("user", "username", "sshUsername"), ...strings(privileged.user)],
         secrets: [...pick("password", "sshPassword", "passphrase"), ...strings(privileged.password)],
@@ -158,6 +159,19 @@ function connectionValues(connection: Record<string, unknown>): Hidden {
         if (port) hidden.ports.push(port);
     }
     return hidden;
+}
+
+/**
+ * The domains of the hosts, like `msp.internal` of `db7.msp.internal`, whose other hosts a line may
+ * name too, like a replica or the node a cluster sent the restore to. A domain of one label, like
+ * `com` or the `msp` of `mongo1.msp`, says too little to hide, and an address has none.
+ */
+function domainsOf(hosts: readonly string[]): string[] {
+    return hosts.flatMap((host) => {
+        const labels = host.toLowerCase().split(".");
+        if (labels.length < 3 || labels.some((label) => !/^[a-z0-9-]+$/.test(label)) || labels.every((label) => /^\d+$/.test(label))) return [];
+        return [labels.slice(1).join(".")];
+    });
 }
 
 /** The archive as a line may name it: its path, its folder, its name and its name without the extension. */
@@ -197,6 +211,7 @@ export function sharedLogScrubber(facts: SharedLogFacts): SharedLogScrubber {
 
     const connection = connectionValues(facts.connection ?? {});
     const hosts = usable(connection.hosts);
+    const domains = [...new Set(domainsOf(hosts))];
     const ports = [...new Set(connection.ports.filter((port) => /^\d+$/.test(port)))];
     const databases = usable([...(facts.otherDatabases ?? []), ...connection.databases])
         .filter((name) => /[A-Za-z]/.test(name) && !SYSTEM_DATABASES.has(name.toLowerCase()));
@@ -216,6 +231,8 @@ export function sharedLogScrubber(facts: SharedLogFacts): SharedLogScrubber {
         { pattern: PATH, as: MARK.path, keepNames: false },
         { pattern: ARCHIVE, as: MARK.archive, keepNames: false },
         ...values(hosts, MARK.server, true, "gi"),
+        // Any other host of the same domain. Only the start of a name is tried, never a part of one.
+        ...(domains.length > 0 ? [{ pattern: new RegExp(`(?<![${NAME}.])(?:[A-Za-z0-9-]+\\.)*(?:${domains.map(escape).join("|")})(?![${NAME}])`, "gi"), as: MARK.server, keepNames: true }] : []),
         { pattern: IPV4, as: MARK.address, keepNames: true },
         { pattern: IPV6, as: MARK.address, keepNames: true },
         // A port after its server, as in host:3306, or named as one, as in "port 5432".

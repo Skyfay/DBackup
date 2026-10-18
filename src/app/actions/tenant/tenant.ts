@@ -8,13 +8,16 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { ALL_TENANTS, HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { platformGroupService } from "@/services/user/platform-group-service";
 import { tenantSummaries } from "@/services/tenant/tenant-summaries";
 import { setAllowances } from "@/services/tenant/tenant-allowances";
+import { setNetwork, type TenantNetwork } from "@/services/tenant/tenant-network";
 import { ALLOWANCE_KINDS, ALLOWANCE_NOUNS, type TenantAllowances } from "@/lib/tenant/allowances";
+import { diffFields } from "@/lib/core/audit-diff";
+import { MAX_ALLOWED_RANGES, MAX_RANGE_LENGTH } from "@/lib/network/local-network";
 import { emptyBulkResult } from "@/lib/core/bulk";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { isEmptyTenant, tenantContents } from "@/services/tenant/tenant-contents";
@@ -160,6 +163,46 @@ export async function setTenantAllowances(id: string, allowances: Partial<Tenant
         return { success: true as const };
     } catch (error: unknown) {
         if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Changing what a tenant may add failed", { tenantId: tenantId.data }, wrapError(error));
+        return { success: false as const, error: messageOf(error, "The tenant could not be changed.") };
+    }
+}
+
+const NetworkSchema = z.object({
+    blocks: z.boolean(),
+    allowed: z.array(z.string().max(MAX_RANGE_LENGTH)).max(MAX_ALLOWED_RANGES, `A tenant has at most ${MAX_ALLOWED_RANGES} allowed ranges. Allow a wider range instead.`),
+});
+
+/** The setting of the network as the audit log shows it. */
+const networkWords = (network: TenantNetwork) => ({ blocks: network.blocks ? "Blocked" : "Reached", allowed: network.allowed });
+const NETWORK_FIELDS = { blocks: { label: "Local network" }, allowed: { label: "Allowed ranges" } };
+
+/**
+ * Sets whether the connections of a tenant reach the local network of the server DBackup runs on,
+ * and the ranges they reach anyway, for whoever may manage the tenants and reaches this one. Never
+ * for the home tenant, which is the platform, nor for All tenants, which is no tenant.
+ */
+export async function setTenantNetwork(id: string, network: TenantNetwork) {
+    const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
+    const tenantId = IdSchema.safeParse(id);
+    const input = NetworkSchema.safeParse(network);
+    if (!tenantId.success) return { success: false as const, error: "Invalid request" };
+    if (!input.success) return { success: false as const, error: input.error.issues[0]?.message ?? "Invalid request" };
+    if (tenantId.data === ALL_TENANTS) return { success: false as const, error: "All tenants is no tenant of its own. Pick the tenant to change." };
+    if (tenantId.data === HOME_TENANT_ID) return { success: false as const, error: "The home tenant is the platform and reaches the network of its server." };
+    if (!(await managesTenant(viewer, tenantId.data))) return { success: false as const, error: "The tenant no longer exists." };
+
+    try {
+        const change = await setNetwork(tenantId.data, input.data);
+        const changes = diffFields(networkWords(change.before), networkWords(change.after), NETWORK_FIELDS);
+        if (changes.length > 0) {
+            // The platform's change, and one the tenant learns of in its own log.
+            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, PLATFORM);
+            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, { tenantId: tenantId.data });
+        }
+        revalidatePath("/dashboard", "layout");
+        return { success: true as const };
+    } catch (error: unknown) {
+        if (!isRefusal(error)) log.error("Changing the network of a tenant failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be changed.") };
     }
 }

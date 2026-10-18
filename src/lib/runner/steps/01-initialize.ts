@@ -7,8 +7,12 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { resolveExcludePatterns, parseJsonStringArray } from "@/lib/exclude-groups";
 import { RetentionConfiguration } from "@/lib/core/retention";
 import { isAirGapped } from "@/lib/core/air-gap";
-import { storageView } from "@/lib/tenant/storage-view";
+import { SHARED_STORAGE_FAILURE, storageView } from "@/lib/tenant/storage-view";
 import { destinationAccess } from "@/services/sharing/destination-access";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+
+const log = logger.child({ step: "initialize" });
 
 // Ensure adapters are loaded
 registerAdapters();
@@ -168,12 +172,25 @@ export async function stepInitialize(ctx: RunnerContext) {
         // A destination another tenant shares takes the backups of this tenant into its folder there,
         // and only while it is shared with it. Without a key a run writes nothing to one that asks for it.
         const { mode, provided } = await destinationAccess(dest.config, job.tenantId);
-        const refusal = !mode
+        let refusal = !mode
             ? `${dest.config.name} is no longer shared with this tenant`
             : provided?.encryptedOnly && !job.encryptionProfileId
                 ? `${dest.config.name} takes only encrypted backups. Pick a key under Encryption`
                 : undefined;
         const adapter = storageView(plain, mode ?? { kind: "own" });
+        // The login of a destination the run may not use is never read. When the settings of a
+        // destination another tenant shares cannot be used, the customer's run reads no word of
+        // them and the upload there is refused, like a storage of that tenant that does not answer.
+        let config: Record<string, unknown> = {};
+        if (!refusal) {
+            try {
+                config = await resolveAdapterConfig(dest.config) as Record<string, unknown>;
+            } catch (error: unknown) {
+                if (mode?.kind !== "customer") throw error;
+                log.warn("The settings of a destination shared with this tenant could not be used", { configId: dest.config.id, tenantId: job.tenantId }, wrapError(error));
+                refusal = SHARED_STORAGE_FAILURE;
+            }
+        }
 
         const destCtx: DestinationContext = {
             configId: dest.config.id,
@@ -181,8 +198,7 @@ export async function stepInitialize(ctx: RunnerContext) {
             adapter,
             refusal,
             ...(mode?.kind === "customer" ? { customer: mode.tenantId } : {}),
-            // The login of a destination the run may not use is never read.
-            config: refusal ? {} : await resolveAdapterConfig(dest.config) as any,
+            config,
             retention,
             retentionPolicyName,
             retentionPolicySource,

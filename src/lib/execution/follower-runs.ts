@@ -19,7 +19,12 @@ const log = logger.child({ module: "FollowerRuns" });
 
 export const FOLLOWS_KEY = "followsRun";
 
-const FOLLOWER_MARK = `"${FOLLOWS_KEY}"`;
+/**
+ * How the stored metadata of a follower names the run it follows: the key with its colon, as
+ * `JSON.stringify` writes it. Without the colon a destination or a database called `followsRun`,
+ * which the metadata of a run names as a value, would turn the run into a follower.
+ */
+const FOLLOWER_MARK = `"${FOLLOWS_KEY}":`;
 
 /** The runs that do their own work, for a query of the executions: the queue and the watchdog read these alone. */
 export const LEADING_RUNS: Prisma.ExecutionWhereInput = {
@@ -53,7 +58,7 @@ export function leaderOf(metadata: string | null | undefined): string | null {
  */
 export function activeFollowersOf(leaderId: string) {
     return runAsSystem(() => prisma.execution.findMany({
-        where: { status: { in: ["Pending", "Running"] }, metadata: { contains: `${FOLLOWER_MARK}:${JSON.stringify(leaderId)}` } },
+        where: { status: { in: ["Pending", "Running"] }, metadata: { contains: `${FOLLOWER_MARK}${JSON.stringify(leaderId)}` } },
         select: { id: true, logs: true, metadata: true, tenantId: true, startedAt: true },
     }));
 }

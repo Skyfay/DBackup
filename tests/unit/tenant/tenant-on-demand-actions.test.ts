@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     viewer: null as unknown as Viewer,
     audit: vi.fn(),
     reaches: vi.fn(),
+    reachOf: vi.fn(),
     service: { find: vi.fn(), set: vi.fn(), follow: vi.fn() },
 }));
 
@@ -29,7 +30,7 @@ vi.mock("@/lib/auth/access-control", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ default: {} }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
-vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reaches: mocks.reaches } }));
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reaches: mocks.reaches, reachOf: mocks.reachOf } }));
 vi.mock("@/services/tenant/tenant-on-demand", () => ({ tenantOnDemandService: mocks.service }));
 
 const { followTenantOnDemand, getTenantOnDemand, setTenantOnDemand } = await import("@/app/actions/tenant/tenant-on-demand");
@@ -39,6 +40,7 @@ beforeEach(() => {
     mocks.viewer = NINA;
     // Nina's platform group reaches Acme, not Globex.
     mocks.reaches.mockImplementation(async (_userId: string, tenantId: string) => tenantId === "acme");
+    mocks.reachOf.mockResolvedValue(["acme"]);
     mocks.service.find.mockResolvedValue({ name: "Acme", perDay: 3, overrides: [] });
     mocks.service.set.mockResolvedValue({ name: "Acme", before: null, after: 3 });
     mocks.service.follow.mockResolvedValue({
@@ -82,10 +84,29 @@ describe("backups on demand of a customer", () => {
 
     it("let a database follow the customer again, logged for the platform and for the tenant that shares the server", async () => {
         expect(await followTenantOnDemand("acme", "database", "a-1")).toEqual({ success: true });
-        expect(mocks.service.follow).toHaveBeenCalledWith("acme", "database", "a-1");
+        expect(mocks.service.follow).toHaveBeenCalledWith("acme", "database", "a-1", ["acme"]);
         const details = expect.objectContaining({ change: "Backups on demand", tenant: "Acme", database: "shop", changes: [{ field: "Backups on demand", from: "Off here", to: "As the tenant" }] });
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "ADAPTER", details, "srv-1", { tenantId: "default" });
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "ADAPTER", details, "srv-1", { tenantId: "msp-2" });
+    });
+});
+
+describe("the tenants that share with a customer", () => {
+    it("are bounded by the reach of the viewer, to read their names and to change what they give", async () => {
+        await getTenantOnDemand("acme");
+        expect(mocks.service.find).toHaveBeenCalledWith("acme", ["acme"]);
+
+        await followTenantOnDemand("acme", "rule", "r-1");
+        expect(mocks.service.follow).toHaveBeenCalledWith("acme", "rule", "r-1", ["acme"]);
+    });
+
+    it("are every tenant for a platform admin", async () => {
+        mocks.viewer = { ...NINA, isPlatformAdmin: true };
+
+        await getTenantOnDemand("globex");
+
+        expect(mocks.service.find).toHaveBeenCalledWith("globex", "all");
+        expect(mocks.reachOf).not.toHaveBeenCalled();
     });
 });
 

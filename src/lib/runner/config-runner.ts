@@ -17,6 +17,7 @@ import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { createConfigCopy, includesHistory } from "@/services/config/database-copy";
 import { describeBackupFromMetadata } from "@/services/storage/backup-file-fields";
+import { CONFIG_BACKUP_FOLDER } from "@/lib/core/config-backup-path";
 import packageJson from "../../../package.json";
 
 const log = logger.child({ runner: "ConfigRunner" });
@@ -24,8 +25,8 @@ const log = logger.child({ runner: "ConfigRunner" });
 /** What a configuration backup did: the file it wrote and where, or why it did not run. */
 export type ConfigBackupResult = { fileName: string; destination: string } | { skipped: string };
 
-/** The folder of the destination the files go into. */
-const REMOTE_FOLDER = "config-backups";
+/** The folder of the destination the files go into, which every download refuses to anyone but a platform admin. */
+const REMOTE_FOLDER = CONFIG_BACKUP_FOLDER;
 
 const CONFIG_KEYS = ["config.backup.enabled", "config.backup.storageId", "config.backup.profileId", "config.backup.includeStatistics", "config.backup.retention"];
 /** Whether the metadata of a backup names who started it, under Settings, Privacy. */

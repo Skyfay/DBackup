@@ -1,9 +1,8 @@
 import prisma from "@/lib/prisma";
 import { explicitScope, runAsSystem } from "@/lib/tenant/context";
 import { requestScope } from "@/lib/tenant/current";
-import { getRecentRunsByJob } from "@/services/dashboard/aggregates";
-import type { RunSummary } from "@/services/dashboard/types";
 import { OTHER_TENANT_JOB } from "./job-timeline-types";
+import { queueJobs } from "./queue-snapshot";
 
 /**
  * The queue is one for every tenant (`processQueue`), so the runs of one tenant wait for the runs of
@@ -26,8 +25,8 @@ export interface OtherTenantJob {
     id: string;
     /** The effective expression, the preset's when the job follows one. */
     schedule: string;
-    /** Its last runs, which tell how long a run takes. */
-    runs: RunSummary[];
+    /** How long a run takes, from its last runs. */
+    estimatedMs: number;
 }
 
 /** A run of another tenant that runs or waits now. */
@@ -45,30 +44,26 @@ export interface OtherTenantQueue {
 
 export const NO_OTHER_TENANTS: OtherTenantQueue = { jobs: [], live: [] };
 
-/** The enabled jobs with a schedule and the runs that run or wait now of every tenant but this one. */
-export function otherTenantQueue(tenantId: string): Promise<OtherTenantQueue> {
-    return runAsSystem(async () => {
-        const [jobs, live, history] = await Promise.all([
-            prisma.job.findMany({
-                where: { tenantId: { not: tenantId }, enabled: true },
-                select: { id: true, schedule: true, schedulePreset: { select: { schedule: true } } },
-            }),
-            prisma.execution.findMany({
-                where: { tenantId: { not: tenantId }, type: "Backup", jobId: { not: null }, status: { in: ["Running", "Pending"] } },
-                orderBy: { startedAt: "asc" },
-                select: { id: true, jobId: true, status: true, startedAt: true },
-            }),
-            // The runs of every tenant, cached once for the system scope and All tenants alike.
-            getRecentRunsByJob(),
-        ]);
-        return {
-            jobs: jobs.flatMap((job) => {
-                const schedule = (job.schedulePreset?.schedule ?? job.schedule ?? "").trim();
-                return schedule ? [{ id: job.id, schedule, runs: history[job.id] ?? [] }] : [];
-            }),
-            live: live.flatMap((run) => (run.jobId ? [{ id: run.id, jobId: run.jobId, status: run.status, startedAt: run.startedAt }] : [])),
-        };
-    });
+/**
+ * The enabled jobs with a schedule and the runs that run or wait now of every tenant but this one.
+ * The jobs come from the snapshot of the queue every tenant shares, the runs of now are read live.
+ */
+export async function otherTenantQueue(tenantId: string): Promise<OtherTenantQueue> {
+    const [jobs, live] = await Promise.all([
+        queueJobs(),
+        // By the status alone, which the index of status and start finds among the few that run or
+        // wait. Asked for the type and an order too, SQLite walked every backup ever by the index of type.
+        runAsSystem(() => prisma.execution.findMany({
+            where: { status: { in: ["Running", "Pending"] } },
+            select: { id: true, jobId: true, status: true, startedAt: true, type: true, tenantId: true },
+        })),
+    ]);
+    return {
+        jobs: jobs.flatMap((job) => (job.tenantId === tenantId ? [] : [{ id: job.id, schedule: job.schedule, estimatedMs: job.estimatedMs }])),
+        live: live
+            .flatMap((run) => (run.jobId && run.type === "Backup" && run.tenantId !== tenantId ? [{ id: run.id, jobId: run.jobId, status: run.status, startedAt: run.startedAt }] : []))
+            .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime()),
+    };
 }
 
 /** The ids of the jobs of other tenants in a plan, the ones `anonymousWaits` hides. */

@@ -9,7 +9,8 @@ import type { Prisma } from "@prisma/client";
  * in `src/lib/runner.ts`.
  */
 
-const SINGLE_DATABASES_MARK = '"onlyDatabases"';
+/** What the metadata of such a run holds, for raw SQL that leaves it out, see `newest-runs.ts`. */
+export const SINGLE_DATABASES_MARK = '"onlyDatabases"';
 
 /** The runs that back up a job as a whole, for a query of the executions. */
 export const WHOLE_JOB_RUNS: Prisma.ExecutionWhereInput = {

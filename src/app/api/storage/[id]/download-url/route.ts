@@ -6,6 +6,7 @@ import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { generateLinkToken, linkStatus } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { configBackupLinkRefusal } from "@/lib/server/config-backup-guard";
 import { planArchiveDownload } from "@/services/restore/archive-download";
 import { auditService } from "@/services/audit-service";
 import { backupAuditDetails } from "@/services/storage/backup-audit";
@@ -59,6 +60,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const { file, decrypt, database, databases, selections, profileIdOverride } = parsed.data;
         // A link names a destination the tenant uses, own or provided, before it is made and noted.
         await findDestination(id, tenantId);
+        // A link is fetched without a session, which never gets a configuration backup.
+        const configBackup = await configBackupLinkRefusal(id, file, tenantId);
+        if (configBackup) return configBackup;
 
         let fileName: string | undefined;
         const pick = databases || selections ? { databases, selections, profileIdOverride } : undefined;
@@ -72,7 +76,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             fileName = plan.fileName;
         }
 
-        const { token, expiresAt } = generateLinkToken({ tenantId, storageId: id, file, userId: ctx.userId, decrypt: pick ? true : decrypt, database, pick });
+        const { token, expiresAt } = generateLinkToken({
+            tenantId, storageId: id, file, userId: ctx.userId, ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
+            decrypt: pick ? true : decrypt, database, pick,
+        });
         const url = `${req.headers.get("origin") || ""}/api/storage/public-download?token=${token}`;
 
         const dumps = databases ?? (database ? [database] : undefined);

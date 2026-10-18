@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PermissionsProvider } from "@/components/permissions/permissions-context";
 import { TenantViewProvider, type TenantView } from "@/components/tenant/tenant-view";
@@ -99,6 +99,37 @@ describe("the search in the header across tenants", () => {
 
         expect(within(recent).getByRole("option", { name: /^Run of Nightly/ })).toBeInTheDocument();
         expect(screen.queryByText("Run of Shop")).not.toBeInTheDocument();
+    });
+
+    it("shows a person only in the tenant the search found them in, never one kept without it", async () => {
+        const IN_ACME: TenantView = { ...IN_HOME, activeTenantId: "acme" };
+        const keptPerson = { key: "recent:/dashboard/users?tab=users&open=u9", group: "recent", title: "Alex", sub: "alex@acme.example · Operators", kind: "User", href: "/dashboard/users?tab=users&open=u9", icon: "user", needs: [PERMISSIONS.USERS.READ] };
+        localStorage.setItem("dbackup.search.recent:u1", JSON.stringify([{ ...keptPerson, seenIn: "acme" }, { ...keptPerson, key: "recent:old", title: "Bea", href: "/dashboard/users?tab=users&open=u8" }]));
+
+        const user = renderSearch(IN_HOME, [PERMISSIONS.USERS.READ]);
+        await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
+        expect(await screen.findByRole("option", { name: /^Users & Groups/ })).toBeInTheDocument();
+        expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+        expect(screen.queryByText(/alex@acme/)).not.toBeInTheDocument();
+        expect(screen.queryByText("Bea")).not.toBeInTheDocument();
+        cleanup();
+
+        const inAcme = renderSearch(IN_ACME, [PERMISSIONS.USERS.READ]);
+        await inAcme.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
+        const recent = await screen.findByRole("group", { name: "Recent" });
+        expect(within(recent).getByRole("option", { name: /^Alex/ })).toBeInTheDocument();
+        expect(screen.queryByText("Bea")).not.toBeInTheDocument();
+    });
+
+    it("remembers where a person was found when one is opened", async () => {
+        mocks.hits = [{ kind: "user", id: "u7", name: "Carla", email: "carla@example.ch", group: "Admin" } satisfies SearchHit];
+        const user = renderSearch(IN_HOME, [PERMISSIONS.USERS.READ]);
+
+        await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
+        await user.type(await screen.findByRole("combobox"), "carla");
+        await user.click(await screen.findByRole("option", { name: /^Carla/ }));
+
+        expect(JSON.parse(localStorage.getItem("dbackup.search.recent:u1") ?? "[]")).toEqual([expect.objectContaining({ title: "Carla", seenIn: "default" })]);
     });
 
     it("offers Quick Setup and the Database Explorer only where the sidebar does", async () => {

@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { logger } from '@/lib/logging/logger'
 import { wrapError } from '@/lib/logging/errors'
 import { tenantScopeExtension } from '@/lib/tenant/prisma-scope'
+import { relationOrderPaging } from '@/lib/prisma-paging'
 
 const log = logger.child({ module: 'Prisma' })
 
@@ -119,7 +120,11 @@ const prismaClientSingleton = () => {
   // ── Tenants ──────────────────────────────────────────────────
   // Every query on a tenant model is narrowed to the tenant of the code that runs now, see
   // src/lib/tenant/prisma-scope.ts. The request is asked lazily, it imports this client itself.
-  return client.$extends(tenantScopeExtension(async () => (await import('./tenant/current')).requestScope()));
+  // A read of more than 999 parents with an ordered relation breaks Prisma on SQLite, so it runs
+  // in pages, see src/lib/prisma-paging.ts. Added last, it runs first and pages the read as asked.
+  return client
+    .$extends(tenantScopeExtension(async () => (await import('./tenant/current')).requestScope()))
+    .$extends(relationOrderPaging);
 }
 
 declare global {

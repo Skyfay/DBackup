@@ -2,8 +2,11 @@ import fs from "fs/promises";
 import path from "path";
 import Client from "ssh2-sftp-client";
 import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { hostsIn } from "@/lib/adapters/dialed-hosts";
 import { DBackupError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { currentTenantId } from "@/lib/tenant/current";
+import { assertHostsReachable } from "@/services/tenant/tenant-network";
 
 const log = logger.child({ service: "FilesystemService" });
 
@@ -129,10 +132,14 @@ export async function listRemoteDirectory({ config, path: requestedPath = "/", a
         try {
             resolved = (await overlayCredentialsOnConfig(adapterId, resolved, null, sshCredentialId)) as Record<string, unknown>;
         } catch (error: unknown) {
+            // A refusal of the config itself says why, a login that does not load stays generic.
+            if (error instanceof ValidationError) throw error;
             log.warn("Failed to overlay SSH credential for file browser", { adapterId, sshCredentialId }, wrapError(error));
             throw new ValidationError("Failed to resolve SSH credential profile");
         }
     }
+    // The browse dials this host whatever mode the form holds, so its tenant's network rule counts for it.
+    await assertHostsReachable(await currentTenantId(), hostsIn(resolved.host));
 
     const sftp = new Client();
     try {

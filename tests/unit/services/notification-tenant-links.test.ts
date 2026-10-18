@@ -97,6 +97,6 @@ describe("the links of a notification and the run its log keeps", () => {
 
         await notify(checkFailed, { executionId: "check-home" });
 
-        expect(sends()).toEqual([{ channel: "ops", links: ["/dashboard/backups"], executionId: "check-home" }]);
+        expect(sends()).toEqual([{ channel: "ops", links: ["/dashboard/backups?tenant=default"], executionId: "check-home" }]);
     });
 });

@@ -21,6 +21,21 @@ const at = (hoursAgo: number) => new Date(NOW.getTime() - hoursAgo * HOUR);
 // Prisma's groupBy overloads are too deep for the mock types, so these two are driven as plain mocks.
 const mocked = (fn: unknown) => fn as Mock;
 
+/** What the raw queries answer: the counts of the health checks per hour, the newest passed check, and the newest backup of each job. */
+interface RawAnswers {
+    hours?: { id: string; hour: number; total: number; passed: number; offline: number }[];
+    latency?: { id: string; latencyMs: number | null }[];
+    newest?: { id: string }[];
+}
+function raw(answers: RawAnswers) {
+    prismaMock.$queryRaw.mockImplementation(((strings: TemplateStringsArray) => {
+        const sql = strings.join("?");
+        if (sql.includes("GROUP BY h.adapterConfigId")) return Promise.resolve(answers.hours ?? []);
+        if (sql.includes("h.latencyMs")) return Promise.resolve(answers.latency ?? []);
+        return Promise.resolve(answers.newest ?? []);
+    }) as never);
+}
+
 describe("healthBuckets", () => {
     it("marks an hour as failed when one of its checks failed", () => {
         const { health } = healthBuckets([
@@ -71,8 +86,7 @@ describe("getConnectionOverview", () => {
         prismaMock.jobDestination.findMany.mockResolvedValue([]);
         prismaMock.jobSource.findMany.mockResolvedValue([]);
         prismaMock.notificationTemplateChannel.findMany.mockResolvedValue([]);
-        prismaMock.healthCheckLog.findMany.mockResolvedValue([]);
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([]);
+        raw({});
         prismaMock.execution.findMany.mockResolvedValue([]);
         mocked(prismaMock.notificationLog.groupBy).mockResolvedValue([]);
         prismaMock.notificationLog.findMany.mockResolvedValue([]);
@@ -99,17 +113,15 @@ describe("getConnectionOverview", () => {
         ] as never);
         prismaMock.job.findMany.mockImplementation(((args: { where: { sourceId?: unknown } }) =>
             Promise.resolve(args.where.sourceId ? [{ id: "nightly", sourceId: "pg" }, { id: "hourly", sourceId: "pg" }] : [])) as never);
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([
-            { jobId: "nightly", _max: { startedAt: at(10) } },
-            { jobId: "hourly", _max: { startedAt: at(1) } },
-        ]);
+        // A passed and a degraded check in the newest hour, counted by SQLite.
+        raw({
+            newest: [{ id: "run-1" }, { id: "run-2" }],
+            hours: [{ id: "pg", hour: 23, total: 2, passed: 1, offline: 0 }],
+            latency: [{ id: "pg", latencyMs: 9 }],
+        });
         prismaMock.execution.findMany.mockResolvedValue([
             { id: "run-1", jobId: "nightly", status: "Success", startedAt: at(10) },
             { id: "run-2", jobId: "hourly", status: "Failed", startedAt: at(1) },
-        ] as never);
-        prismaMock.healthCheckLog.findMany.mockResolvedValue([
-            { adapterConfigId: "pg", status: "ONLINE", latencyMs: 9, createdAt: at(0.5) },
-            { adapterConfigId: "pg", status: "DEGRADED", latencyMs: 5000, createdAt: at(0.2) },
         ] as never);
 
         const overview = (await getConnectionOverview(["pg"])).get("pg");
@@ -118,6 +130,8 @@ describe("getConnectionOverview", () => {
         expect(overview?.lastBackup).toEqual({ id: "run-2", at: at(1).toISOString(), status: "Failed" });
         // The failed check has no meaningful response time, the newest passed one does.
         expect(overview?.latencyMs).toBe(9);
+        expect(overview?.health[23]).toBe("failed");
+        expect(overview?.checksPassed).toBe(50);
         expect(overview?.credentialName).toBe("prod-db");
     });
 
@@ -165,18 +179,22 @@ describe("getConnectionOverview", () => {
             prismaMock.adapterConfig.findMany.mockResolvedValue([]);
             vi.mocked(providedTo).mockResolvedValue([provided("msp-s3", "storage")]);
             prismaMock.jobDestination.findMany.mockResolvedValue([{ configId: "msp-s3", jobId: "acme-nightly" }] as never);
-            mocked(prismaMock.execution.groupBy).mockResolvedValue([{ jobId: "acme-nightly", _max: { startedAt: at(5) } }]);
-            prismaMock.execution.findMany.mockResolvedValue([{ id: "run-acme", jobId: "acme-nightly", status: "Success", startedAt: at(5) }] as never);
             // A check of the destination is the MSP's, even should one reach the read.
-            prismaMock.healthCheckLog.findMany.mockResolvedValue([
-                { adapterConfigId: "msp-s3", status: "DEGRADED", latencyMs: 4000, createdAt: at(0.5) },
-            ] as never);
+            raw({
+                newest: [{ id: "run-acme" }],
+                hours: [{ id: "msp-s3", hour: 23, total: 1, passed: 0, offline: 0 }],
+                latency: [{ id: "msp-s3", latencyMs: 4000 }],
+            });
+            prismaMock.execution.findMany.mockResolvedValue([{ id: "run-acme", jobId: "acme-nightly", status: "Success", startedAt: at(5) }] as never);
             // The storage numbers of the tenant are its own backups on the destination.
             vi.mocked(getStorageVolume).mockResolvedValue([{ configId: "msp-s3", tenantId: "acme", name: "msp-s3", adapterId: "s3", size: 220, count: 2 }]);
 
             const overview = await runAsTenant("acme", () => getConnectionOverview(["msp-s3"]));
 
             expect(providedTo).toHaveBeenCalledWith("acme", { ids: ["msp-s3"] });
+            // The raw count of the checks reads only connections the client found in the tenant.
+            const healthReads = prismaMock.$queryRaw.mock.calls.filter(([strings]) => (strings as unknown as string[]).join("?").includes("HealthCheckLog"));
+            expect(healthReads).toHaveLength(0);
             expect(overview.get("msp-s3")).toEqual({
                 usedBy: { jobs: 1, templates: 0 },
                 lastBackup: { id: "run-acme", at: at(5).toISOString(), status: "Success" },

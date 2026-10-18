@@ -44,16 +44,3 @@ export async function removeAvatar(userId: string): Promise<void> {
         prisma.user.update({ where: { id: userId }, data: { image: null } }),
     ]);
 }
-
-/**
- * The picture a part of its address names: a person's id, or a file name of the versions that kept
- * pictures as files, like `<id>-1727000000000.png`, which a session may still hold for a while.
- */
-export async function findAvatar(name: string): Promise<{ data: Uint8Array; mimeType: ImageType } | null> {
-    const legacy = /^(.+)-\d{10,}(\.[a-z0-9]+)?$/i.exec(name);
-    for (const userId of legacy ? [name, legacy[1]] : [name]) {
-        const row = await prisma.avatar.findUnique({ where: { userId }, select: { data: true, mimeType: true } });
-        if (row) return { data: new Uint8Array(row.data), mimeType: row.mimeType as ImageType };
-    }
-    return null;
-}

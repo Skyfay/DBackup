@@ -29,6 +29,16 @@ describe("the links of a notification", () => {
         expect(hrefs(skipped, "t-acme")).toEqual(["/dashboard/connections?tab=destinations&open=u1&tenant=t-acme", "/dashboard/jobs?job=j1&tenant=t-acme"]);
     });
 
+    it("name the tenant whose copies failed the integrity check, so its Backups page opens there", () => {
+        const failed: NotificationEventData = {
+            eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
+            data: { totalFiles: 3, failed: 1, passed: 2, skipped: 0, triggerType: "Scheduler", errors: [{ file: "a.tar", destination: "NAS", expected: "1", actual: "2" }] },
+        };
+
+        expect(hrefs(failed, "t-acme")).toEqual(["/dashboard/backups?tenant=t-acme"]);
+        expect(hrefs(failed)).toEqual(["/dashboard/backups"]);
+    });
+
     it("stay as they were when the sender knows no tenant", () => {
         const done: NotificationEventData = { eventType: NOTIFICATION_EVENTS.BACKUP_SUCCESS, data: { jobName: "Nightly", jobId: "j1", executionId: "r1", timestamp: AT } };
 

@@ -1,6 +1,7 @@
 import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
 import { FTPSchema } from "@/lib/adapters/definitions";
 import { createConnectionPool } from "@/lib/adapters/storage/common/connection-pool";
+import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
 import { Client, FileInfo as FTPFileInfo, FTPError } from "basic-ftp";
 import { createReadStream, createWriteStream } from "fs";
 import { PassThrough, Readable, Writable } from "stream";
@@ -213,14 +214,11 @@ async function walkFtpTree(
         const symlinkPaths: string[] = [];
         let warnedAboutMissingTimestamp = false;
 
-        /** Path relative to the adapter's configured root, the convention every adapter uses. */
-        const toAdapterPath = (fullPath: string): string => {
-            let relativePath = normalize(fullPath);
-            if (prefix && relativePath.startsWith(prefix)) {
-                relativePath = relativePath.substring(prefix.length);
-            }
-            return relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
-        };
+        /**
+         * Path relative to the adapter's configured root, the convention every adapter uses. The
+         * prefix is compared as `path.posix.join` writes the walk, so `/backups//shop/` strips too.
+         */
+        const toAdapterPath = (fullPath: string): string => relativeToPrefix(normalize(fullPath), prefix);
 
         const walk = async (currentDir: string) => {
             let items: FTPFileInfo[];

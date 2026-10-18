@@ -1,7 +1,9 @@
 import prisma from "@/lib/prisma";
 import { runAsSystem } from "@/lib/tenant/context";
 import { ownerAt } from "@/lib/tenant/database-owner";
-import { parseListed } from "./shared-servers";
+import { cached } from "@/services/dashboard/cache";
+import { newestBackupIds, readInChunks } from "@/services/history/newest-runs";
+import { parseListed, sharingVersion } from "./shared-servers";
 
 /**
  * What the tenant switcher shows of each tenant: how many jobs and databases it holds, and whether
@@ -22,16 +24,12 @@ export interface TenantSummary {
 }
 
 const FINISHED = ["Success", "Failed", "Partial", "Cancelled"];
-
-/** How many databases a server held when it was last read. */
-function listedCount(json: string): number {
-    try {
-        const value: unknown = JSON.parse(json);
-        return Array.isArray(value) ? value.length : 0;
-    } catch {
-        return 0;
-    }
-}
+const TROUBLED = ["Failed", "Partial"];
+/**
+ * How long the summaries are kept. The switcher, Platform > Tenants and the Overview of All tenants
+ * ask for them on every visit, and a run of any tenant ends them early.
+ */
+const SUMMARIES_TTL_MS = 30_000;
 
 const RULE = { sourceId: true, id: true, pattern: true, tenantId: true, priority: true, validFrom: true, validUntil: true, createdAt: true } as const;
 const ASSIGNMENT = { sourceId: true, databaseName: true, tenantId: true, validFrom: true, validUntil: true, movedToSourceId: true, createdAt: true } as const;
@@ -69,44 +67,68 @@ async function sharedCounts(tenantIds: readonly string[], now: Date): Promise<Ma
     return counts;
 }
 
-/** The summaries of the tenants, all at once, in the order of the ids. */
-export function tenantSummaries(tenantIds: readonly string[]): Promise<TenantSummary[]> {
-    if (tenantIds.length === 0) return Promise.resolve([]);
-    return runAsSystem(async () => {
-        const inTenants = { tenantId: { in: [...tenantIds] } };
-        const [jobs, caches, newest, shared] = await Promise.all([
-            prisma.job.groupBy({ by: ["tenantId"], where: inTenants, _count: { _all: true } }),
-            prisma.databaseListCache.findMany({
-                where: { adapterConfig: { ...inTenants, type: "database" } },
-                select: { databasesJson: true, adapterConfig: { select: { tenantId: true } } },
-            }),
-            prisma.execution.groupBy({
-                by: ["jobId"],
-                where: { ...inTenants, jobId: { not: null }, type: "Backup", status: { in: FINISHED } },
-                _max: { startedAt: true },
-            }),
-            sharedCounts(tenantIds, new Date()),
-        ]);
-        const troubled = newest.length === 0
-            ? []
-            : await prisma.execution.findMany({
-                  where: {
-                      type: "Backup",
-                      status: { in: ["Failed", "Partial"] },
-                      OR: newest.map((row) => ({ jobId: row.jobId, startedAt: row._max.startedAt ?? undefined })),
-                  },
-                  select: { tenantId: true, status: true },
-              });
+/**
+ * How many databases each server listed when it was last read, counted by SQLite: a thousand
+ * servers of a few hundred databases each are megabytes of lists that only their length is read of.
+ * Raw SQL for that reason, it reads the lists of the servers the client found, and only numbers.
+ */
+async function listedCounts(serverIds: readonly string[]): Promise<Map<string, number>> {
+    if (serverIds.length === 0) return new Map();
+    const rows = await prisma.$queryRaw<{ id: string; count: number | bigint | null }[]>`
+        SELECT c.adapterConfigId AS id,
+               CASE WHEN json_valid(c.databasesJson) AND json_type(c.databasesJson) = 'array'
+                    THEN json_array_length(c.databasesJson) ELSE 0 END AS count
+        FROM DatabaseListCache c
+        WHERE c.adapterConfigId IN (SELECT value FROM json_each(${JSON.stringify(serverIds)}))`;
+    return new Map(rows.map((row) => [row.id, Number(row.count ?? 0)]));
+}
 
-        return tenantIds.map((id): TenantSummary => {
-            const runs = troubled.filter((run) => run.tenantId === id);
-            return {
-                id,
-                jobs: jobs.find((row) => row.tenantId === id)?._count._all ?? 0,
-                databases: caches.filter((cache) => cache.adapterConfig.tenantId === id).reduce((sum, cache) => sum + listedCount(cache.databasesJson), 0),
-                shared: shared.get(id) ?? 0,
-                health: runs.some((run) => run.status === "Failed") ? "failed" : runs.length > 0 ? "partial" : null,
-            };
-        });
-    });
+function countBy<T>(rows: readonly T[], tenantOf: (row: T) => string, amount: (row: T) => number = () => 1): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const row of rows) counts.set(tenantOf(row), (counts.get(tenantOf(row)) ?? 0) + amount(row));
+    return counts;
+}
+
+async function loadSummaries(tenantIds: readonly string[]): Promise<Record<string, TenantSummary>> {
+    const inTenants = { tenantId: { in: [...tenantIds] } };
+    const [jobs, servers, shared] = await Promise.all([
+        prisma.job.findMany({ where: inTenants, select: { id: true, tenantId: true } }),
+        prisma.adapterConfig.findMany({ where: { ...inTenants, type: "database" }, select: { id: true, tenantId: true } }),
+        sharedCounts(tenantIds, new Date()),
+    ]);
+    const listed = await listedCounts(servers.map((server) => server.id));
+    // The newest finished backup of each job, kept where it failed or missed a copy.
+    const newest = await newestBackupIds(jobs.map((job) => job.id), { statuses: FINISHED, keepOnly: TROUBLED });
+    const runs = await readInChunks(newest, (chunk) => prisma.execution.findMany({
+        where: { id: { in: chunk } },
+        select: { tenantId: true, status: true },
+    }));
+    const troubled = runs.filter((run) => TROUBLED.includes(run.status));
+
+    const jobCounts = countBy(jobs, (job) => job.tenantId);
+    const databaseCounts = countBy(servers, (server) => server.tenantId, (server) => listed.get(server.id) ?? 0);
+    const health = new Map<string, TenantHealth>();
+    for (const run of troubled) {
+        if (health.get(run.tenantId) !== "failed") health.set(run.tenantId, run.status === "Failed" ? "failed" : "partial");
+    }
+    return Object.fromEntries(tenantIds.map((id): [string, TenantSummary] => [id, {
+        id,
+        jobs: jobCounts.get(id) ?? 0,
+        databases: databaseCounts.get(id) ?? 0,
+        shared: shared.get(id) ?? 0,
+        health: health.get(id) ?? null,
+    }]));
+}
+
+/**
+ * The summaries of the tenants, all at once, in the order of the ids. Kept a short while for the
+ * same tenants, in the system scope, whose entries a finished run of any tenant clears, and loaded
+ * again at once when a database of a shared server changes hands.
+ */
+export async function tenantSummaries(tenantIds: readonly string[]): Promise<TenantSummary[]> {
+    if (tenantIds.length === 0) return [];
+    const ids = [...new Set(tenantIds)].sort();
+    const summaries = await runAsSystem(() =>
+        cached(`tenant-summaries:v${sharingVersion()}:${ids.join(",")}`, SUMMARIES_TTL_MS, () => loadSummaries(ids)));
+    return tenantIds.map((id) => summaries[id]);
 }

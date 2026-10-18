@@ -50,10 +50,14 @@ export function parseDetails(details: string | null): Record<string, unknown> {
 /**
  * Whether the tenant of an entry sees where it came from, the address and the browser. Someone of
  * the platform who works in a customer's tenant without being a member there, through a platform
- * group or as a platform admin, keeps them to the platform.
+ * group or as a platform admin, keeps them to the platform. An entry of no person, like a failed
+ * sign-in, shows them. A deleted account keeps only its name (`actorName`), and with its
+ * memberships gone nothing tells whether it worked in the tenant, so a customer's log hides them.
  */
-export function originShown(record: Pick<AuditRecord, "tenantId" | "userId" | "user">): boolean {
-    if (record.tenantId === HOME_TENANT_ID || !record.userId || !record.user) return true;
+export function originShown(record: Pick<AuditRecord, "tenantId" | "userId" | "actorName" | "user">): boolean {
+    if (record.tenantId === HOME_TENANT_ID) return true;
+    if (!record.userId && !record.actorName) return true;
+    if (!record.user) return false;
     return record.user.memberships.some((membership) => membership.tenantId === record.tenantId);
 }
 

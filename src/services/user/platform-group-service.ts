@@ -4,6 +4,7 @@ import type { PlatformGroupShape, PlatformReach } from "@/lib/auth/platform-grou
 import { scopeText } from "@/lib/auth/platform-group-summary";
 import { areaChanges, knownPermissions, knownPlatformPermissions, PLATFORM_AREAS, PLATFORM_GROUP_TENANT_AREAS } from "@/lib/auth/permission-areas";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
+import { membersOfAny } from "@/services/tenant/membership-service";
 import { parsePermissions } from "./users-model";
 import type { PlatformGroupChoice } from "./platform-groups-types";
 
@@ -112,12 +113,15 @@ export const platformGroupService = {
         return shape.allTenants ? "all" : shape.tenantIds;
     },
 
-    /** The accounts that work in a tenant the platform group of an account reaches. */
+    /**
+     * The accounts that work in a tenant the platform group of an account reaches, an account of no
+     * tenant counting as one of the home tenant, see `membersOfAny`.
+     */
     async peopleReached(userId: string): Promise<string[]> {
         const own = await this.shapeOf(userId);
         if (!own) return [];
         const users = await prisma.user.findMany({
-            where: own.shape.allTenants ? {} : { memberships: { some: { tenantId: { in: [...own.shape.tenantIds] } } } },
+            where: own.shape.allTenants ? {} : membersOfAny(own.shape.tenantIds),
             select: { id: true },
         });
         return users.map((user) => user.id);

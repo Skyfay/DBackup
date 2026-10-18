@@ -6,6 +6,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import type { Tx } from "@/lib/prisma-tx";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { connectionOptions } from "@/services/sharing/connection-options";
@@ -37,11 +38,14 @@ export function tenantNotificationKey(tenantId: string): string {
 
 const emptyConfig = (): TenantNotificationConfig => ({ globalChannels: [], events: {} });
 
+/** The client a read or a save goes through, a transaction for a change that runs in one. */
+type SettingsClient = Pick<typeof prisma, "systemSetting"> | Pick<Tx, "systemSetting">;
+
 const ids = (value: unknown): string[] => (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []);
 
 /** The stored config of a tenant, the empty one while it saved none or kept something unreadable. */
-export async function getTenantNotificationConfig(tenantId: string): Promise<TenantNotificationConfig> {
-    const row = await prisma.systemSetting.findUnique({ where: { key: tenantNotificationKey(tenantId) }, select: { value: true } });
+export async function getTenantNotificationConfig(tenantId: string, client: SettingsClient = prisma): Promise<TenantNotificationConfig> {
+    const row = await client.systemSetting.findUnique({ where: { key: tenantNotificationKey(tenantId) }, select: { value: true } });
     if (!row) return emptyConfig();
     try {
         const parsed = JSON.parse(row.value) as Partial<TenantNotificationConfig>;
@@ -57,9 +61,9 @@ export async function getTenantNotificationConfig(tenantId: string): Promise<Ten
     }
 }
 
-export async function saveTenantNotificationConfig(tenantId: string, config: TenantNotificationConfig): Promise<void> {
+export async function saveTenantNotificationConfig(tenantId: string, config: TenantNotificationConfig, client: SettingsClient = prisma): Promise<void> {
     const value = JSON.stringify(config);
-    await prisma.systemSetting.upsert({
+    await client.systemSetting.upsert({
         where: { key: tenantNotificationKey(tenantId) },
         update: { value },
         create: { key: tenantNotificationKey(tenantId), value, description: "The notifications of a tenant (channels & events)" },

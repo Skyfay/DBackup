@@ -22,9 +22,15 @@ interface DownloadToken {
     kind?: "link";
     /**
      * The tenant the token was made in. A link is fetched without a session, so it is served in
-     * this tenant, and no other one finds its destination.
+     * this tenant, and no other one finds its destination. A token a session collects itself is
+     * served in it too, and only to a request of the same tenant.
      */
     tenantId?: string;
+    /**
+     * The API key that made the token, none for a session. A token made with a key is collected
+     * only with that key, and a link only while the key may still download.
+     */
+    apiKeyId?: string;
     storageId: string;
     file: string;
     decrypt: boolean;
@@ -140,6 +146,8 @@ export function generateLinkToken(params: {
     storageId: string;
     file: string;
     userId: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
     decrypt: boolean;
     database?: string;
     pick?: DownloadToken["pick"];
@@ -150,6 +158,7 @@ export function generateLinkToken(params: {
     tokenStore.set(token, {
         kind: "link",
         tenantId: params.tenantId,
+        ...(params.apiKeyId ? { apiKeyId: params.apiKeyId } : {}),
         storageId: params.storageId,
         file: params.file,
         decrypt: params.decrypt,
@@ -162,6 +171,21 @@ export function generateLinkToken(params: {
     });
 
     return { token, expiresAt: now + TOKEN_TTL_MS };
+}
+
+/** Who asks for a token: the tenant of the request and its API key, none for a session. */
+export interface TokenMaker {
+    tenantId: string | null;
+    apiKeyId?: string;
+}
+
+/**
+ * Whether a token was made by a request like this one: in the same tenant and with the same API
+ * key, or with none for a session. A token is collected by the request that asked for it, so one
+ * made in another tenant or with another key reads like one that ran out.
+ */
+export function madeBy(data: Pick<DownloadToken, "tenantId" | "apiKeyId">, maker: TokenMaker): boolean {
+    return (data.tenantId ?? null) === (maker.tenantId ?? null) && (data.apiKeyId ?? null) === (maker.apiKeyId ?? null);
 }
 
 /** A link with the tenant it is served in and the user who made it, which every link carries. */
@@ -241,6 +265,10 @@ export function generateSelectionDownloadToken(params: {
     storageId: string;
     file: string;
     userId: string;
+    /** The tenant of the request, which serves the download. */
+    tenantId?: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
     fileName: string;
     contentType?: string;
     selections?: DownloadSelection[];
@@ -254,6 +282,8 @@ export function generateSelectionDownloadToken(params: {
     tokenStore.set(token, {
         storageId: params.storageId,
         file: params.file,
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        ...(params.apiKeyId ? { apiKeyId: params.apiKeyId } : {}),
         decrypt: false,
         createdAt: now,
         expiresAt: now + TOKEN_TTL_MS,
@@ -277,14 +307,17 @@ export function generateSelectionDownloadToken(params: {
  *
  * Deliberately not consumed on use - a browser that retries or resumes the download would
  * otherwise fail on the second attempt. The short TTL and the owner check bound it instead,
- * so a leaked token is worthless without that user's session.
+ * so a leaked token is worthless without that user's session. With `maker`, only a request in
+ * the tenant and with the API key that made it collects it, see `madeBy`.
  */
 export function consumeSelectionDownloadToken(
     token: string,
-    userId: string
+    userId: string,
+    maker?: TokenMaker
 ): (DownloadToken & { selection: NonNullable<DownloadToken["selection"]> }) | null {
     const data = consumeDownloadToken(token);
     if (!data?.selection || data.selection.userId !== userId) return null;
+    if (maker && !madeBy(data, maker)) return null;
     return data as DownloadToken & { selection: NonNullable<DownloadToken["selection"]> };
 }
 
@@ -301,6 +334,10 @@ export function generateFileDownloadToken(params: {
     storageId: string;
     file: string;
     userId: string;
+    /** The tenant of the request that prepared the file. */
+    tenantId?: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
     tempFile: string;
     fileName: string;
     contentType: string;
@@ -311,6 +348,8 @@ export function generateFileDownloadToken(params: {
     tokenStore.set(token, {
         storageId: params.storageId,
         file: params.file,
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        ...(params.apiKeyId ? { apiKeyId: params.apiKeyId } : {}),
         decrypt: true,
         createdAt: now,
         expiresAt: now + TOKEN_TTL_MS,
@@ -326,13 +365,19 @@ export function generateFileDownloadToken(params: {
     return token;
 }
 
-/** Resolves a prepared-file token for the session presenting it. */
+/**
+ * Resolves a prepared-file token for the session presenting it. With `maker`, only a request in
+ * the tenant and with the API key that prepared it collects it, see `madeBy`, so the permission
+ * check of that request holds for the tenant of the file.
+ */
 export function consumeFileDownloadToken(
     token: string,
-    userId: string
+    userId: string,
+    maker?: TokenMaker
 ): (DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> }) | null {
     const data = consumeDownloadToken(token);
     if (!data?.localFile || data.shared || data.localFile.userId !== userId) return null;
+    if (maker && !madeBy(data, maker)) return null;
     return data as DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> };
 }
 

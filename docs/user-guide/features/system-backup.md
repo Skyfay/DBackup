@@ -56,6 +56,8 @@ config-backups/config_backup_2026-09-29T03-00-00-000Z.db.gz.enc.meta.json
 
 The `.meta.json` beside it names the key and holds what its decryption needs. The Backups page lists both files of every destination under **Config backups**, and **Started by** says **Schedule**, the person behind **Back up now** or the API key that started it. **Name who started a backup in its metadata** under **Settings → Privacy** leaves out the name.
 
+The file is a copy of the whole database with `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` in it, so only a platform admin signed in to DBackup downloads, opens or restores it, like the [database download](/user-guide/admin/data-retention#download-the-database). Everyone else and every API key gets it refused, whatever their rights on the backups, for a file in `config-backups/` and for one whose `.meta.json` says it is a configuration backup. A download link is never made for it.
+
 ## Restore Process
 
 A restore brings back the whole instance, every [tenant](/user-guide/admin/tenants) with its users, groups and sign-in providers, so only a platform admin restores a configuration. The one exception is the first start of a new DBackup, see [On a New Server](#on-a-new-server).

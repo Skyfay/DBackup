@@ -240,14 +240,22 @@ async function listFilesRecursive(
         throw error;
     }
 
+    // Dropbox ignores the case and answers with the case of the folder as it is, so the base folder is
+    // compared with `path_lower`, as a whole folder and as `path.posix.normalize` writes it, and its
+    // parts are taken off the path as Dropbox shows it.
+    const base = basePrefix ? stripTrailingSlashes(path.posix.normalize(`/${basePrefix.replace(/\\/g, "/")}`)).toLowerCase() : "";
+    const baseDepth = base.split("/").filter(Boolean).length;
+    const relativeOf = (display: string, lower: string): string => {
+        if (!base || !(lower === base || lower.startsWith(`${base}/`))) return display;
+        return display.split("/").filter(Boolean).slice(baseDepth).join("/");
+    };
+
     const processEntries = (entries: typeof result.result.entries) => {
         for (const entry of entries) {
             if (entry[".tag"] === "file") {
                 // Build relative path by stripping the base folder path
-                let relativePath = entry.path_display || entry.path_lower || "";
-                if (basePrefix && relativePath.startsWith(basePrefix)) {
-                    relativePath = relativePath.slice(basePrefix.length).replace(/^\//, "");
-                }
+                const display = entry.path_display || entry.path_lower || "";
+                const relativePath = relativeOf(display, entry.path_lower || display.toLowerCase());
 
                 files.push({
                     name: entry.name,

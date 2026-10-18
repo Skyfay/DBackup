@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
         dbVersionHistory: { findMany: vi.fn() },
         databaseListCache: { upsert: vi.fn(), findMany: vi.fn() },
         systemSetting: { findUnique: vi.fn() },
+        // The ids of the newest backups of every job, one query for all of them, see newest-runs.ts.
+        $queryRaw: vi.fn(),
     },
     registryGet: vi.fn(),
 }));
@@ -81,10 +83,13 @@ describe("the page model of the Database Explorer", () => {
             { id: "nightly", name: "Shop nightly", sourceId: "s1", enabled: true, databases: '["shop"]', schedule: "0 3 * * *", schedulePreset: null },
         ]);
         mocks.prisma.execution.findMany.mockReset();
+        mocks.prisma.$queryRaw.mockReset();
+        mocks.prisma.$queryRaw.mockResolvedValue([]);
         mocks.prisma.systemSetting.findUnique.mockResolvedValue(null);
     });
 
     it("lists every database with its server, the job that backs it up and its last backup", async () => {
+        mocks.prisma.$queryRaw.mockResolvedValue([{ id: "r1" }]);
         mocks.prisma.execution.findMany.mockResolvedValue([
             { id: "r1", jobId: "nightly", status: "Success", startedAt: new Date("2026-09-27T03:00:00Z"), size: BigInt(104), metadata: JSON.stringify({ names: ["shop"] }) },
         ]);
@@ -139,7 +144,8 @@ describe("the page model of the Database Explorer", () => {
             { id: "cache-daily", name: "Cache daily", sourceId: "cache", enabled: true, databases: '["0"]', schedule: "0 21 * * *", schedulePreset: null },
             { id: "paused", name: "Paused", sourceId: "cache", enabled: false, databases: null, schedule: null, schedulePreset: null },
         ]);
-        mocks.prisma.execution.findMany.mockImplementation(async ({ where }: { where: { jobId: string } }) => (where.jobId === "cache-daily"
+        mocks.prisma.$queryRaw.mockResolvedValue([{ id: "r7" }]);
+        mocks.prisma.execution.findMany.mockImplementation(async ({ where }: { where: { id?: { in: string[] } } }) => (where.id?.in.includes("r7")
             ? [{ id: "r7", jobId: "cache-daily", status: "Success", startedAt: new Date("2026-09-26T21:00:00Z"), size: BigInt(12), metadata: JSON.stringify({ names: ["0"] }) }]
             : []));
 

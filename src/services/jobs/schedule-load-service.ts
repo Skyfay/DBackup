@@ -38,7 +38,7 @@ export async function getScheduleLoad(): Promise<ScheduleLoad> {
         name: OTHER_TENANT_JOB_NAME,
         schedule: job.schedule,
         presetId: null,
-        estimatedMs: estimateDuration(job.runs),
+        estimatedMs: job.estimatedMs,
     }));
 
     return { timezone, slots, jobs: [...own, ...otherTenants] };

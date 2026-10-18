@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getExecutionHistoryRow } from "@/services/system/execution-history-service";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 /**
  * One execution in the same row shape as the paged list. Lets the History page
@@ -23,7 +24,9 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
             return NextResponse.json({ error: "Execution not found" }, { status: 404 });
         }
         return NextResponse.json({ execution });
-    } catch (_error) {
+    } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         return NextResponse.json({ error: "Failed to fetch execution" }, { status: 500 });
     }
 }

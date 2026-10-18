@@ -6,7 +6,7 @@
  * caller was only not allowed.
  */
 
-import { PermissionError } from "@/lib/logging/errors";
+import { PermissionError, ValidationError } from "@/lib/logging/errors";
 
 /**
  * Turns a caught error into the 403 answer, or returns null when it is something else and the
@@ -16,6 +16,18 @@ export function permissionRefusal(error: unknown): Response | null {
     if (!(error instanceof PermissionError)) return null;
     // Both shapes, since the clients of these routes read `error` or `message`.
     return Response.json({ success: false, error: error.message, message: error.message }, { status: 403 });
+}
+
+/**
+ * Like `permissionRefusal`, and a `ValidationError` answers 400 with its sentence, for a route that
+ * tries a connection, where a refused host, like one in the local network of a tenant that may not
+ * reach it, is the caller's to fix and no failure of DBackup.
+ */
+export function requestRefusal(error: unknown): Response | null {
+    const refusal = permissionRefusal(error);
+    if (refusal) return refusal;
+    if (!(error instanceof ValidationError)) return null;
+    return Response.json({ success: false, error: error.message, message: error.message }, { status: 400 });
 }
 
 /**

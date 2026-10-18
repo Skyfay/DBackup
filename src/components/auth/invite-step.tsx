@@ -15,7 +15,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import type { InvitationPreview } from "@/services/tenant/invitation-service";
 import { InviteAccountForm } from "./invite-account-form";
-import { inviteStep } from "./invite-model";
+import { inviteSignInHref, inviteStep } from "./invite-model";
 import { LoginHeading, LoginNote, OrDivider } from "./login-parts";
 
 const log = logger.child({ component: "invite-step" });
@@ -127,7 +127,7 @@ function JoinStep({ token, invitation, signedIn }: { token: string; invitation: 
 /**
  * The page of an invitation link. It names the tenant and the group, lets someone signed in join
  * with a click, and offers everyone else the sign-in or, while passwords are on, a new account.
- * The login page has no way back to a link, so it says to open the link again after signing in.
+ * The sign-in comes back here, where they join with a click.
  */
 export function InviteStep({ token, invitation, signedIn, passwordSignUp, rules }: InviteStepProps) {
     const step = inviteStep({ invitation, signedIn });
@@ -144,14 +144,14 @@ export function InviteStep({ token, invitation, signedIn, passwordSignUp, rules 
                 <>
                     <div className="mt-5 space-y-2.5">
                         <Button asChild variant={passwordSignUp ? "outline" : "default"} size="lg" className="w-full">
-                            <Link href="/">
+                            <Link href={inviteSignInHref(token)}>
                                 <LogIn />
                                 Sign in
                             </Link>
                         </Button>
                         <p className="text-xs leading-relaxed text-muted-foreground">
-                            Have an account here already? Sign in, then open this link again to join.
-                            {!passwordSignUp && " New here? Sign in with the provider of your organization, then open this link again."}
+                            Have an account here already? Sign in, and you come back here to join.
+                            {!passwordSignUp && " New here? Sign in with the provider of your organization, and you come back here too."}
                         </p>
                     </div>
                     {passwordSignUp && (

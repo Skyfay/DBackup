@@ -2,16 +2,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
-    job: { groupBy: vi.fn() },
-    execution: { groupBy: vi.fn(), findMany: vi.fn() },
+    job: { findMany: vi.fn() },
+    adapterConfig: { findMany: vi.fn() },
+    execution: { findMany: vi.fn() },
     databaseListCache: { findMany: vi.fn() },
     databaseAssignment: { findMany: vi.fn() },
     databaseAssignmentRule: { findMany: vi.fn() },
+    $queryRaw: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({ default: db }));
 
 const { tenantSummaries } = await import("@/services/tenant/tenant-summaries");
+const { invalidateDashboardCache, invalidateTenantCaches } = await import("@/services/dashboard/cache");
+const { sharingChanged } = await import("@/services/tenant/shared-servers");
 
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
@@ -28,16 +32,20 @@ const RULES = [
     { sourceId: "srv", id: "r1", pattern: "shop_*", tenantId: "globex", priority: 0, validFrom: day("2026-01-01"), validUntil: null, createdAt: day("2026-01-01") },
 ];
 
+/** The raw queries: the length of each listed server, and the newest finished backup of each job. */
+const raw = vi.hoisted(() => ({ counts: [] as { id: string; count: number }[], newest: [] as { id: string }[] }));
+
 beforeEach(() => {
     vi.clearAllMocks();
-    db.job.groupBy.mockResolvedValue([]);
-    db.execution.groupBy.mockResolvedValue([]);
+    invalidateDashboardCache();
+    raw.counts = [{ id: "srv", count: 4 }];
+    raw.newest = [];
+    db.job.findMany.mockResolvedValue([]);
+    db.adapterConfig.findMany.mockResolvedValue([{ id: "srv", tenantId: "default" }]);
     db.execution.findMany.mockResolvedValue([]);
-    db.databaseListCache.findMany.mockImplementation((args: { where: Record<string, unknown> }) =>
-        Promise.resolve("adapterConfigId" in args.where
-            ? [{ adapterConfigId: "srv", databasesJson: LISTED }]
-            : [{ databasesJson: LISTED, adapterConfig: { tenantId: "default" } }]),
-    );
+    db.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(strings.join("?").includes("DatabaseListCache") ? raw.counts : raw.newest));
+    db.databaseListCache.findMany.mockResolvedValue([{ adapterConfigId: "srv", databasesJson: LISTED }]);
     db.databaseAssignment.findMany.mockImplementation((args: { distinct?: string[] }) =>
         Promise.resolve(args.distinct ? [{ sourceId: "srv" }] : ASSIGNMENTS),
     );
@@ -64,6 +72,45 @@ describe("the summaries of the tenants", () => {
         const summaries = await tenantSummaries(["acme"]);
 
         expect(summaries[0].shared).toBe(0);
-        expect(db.databaseListCache.findMany).toHaveBeenCalledTimes(1);
+        expect(db.databaseListCache.findMany).not.toHaveBeenCalled();
+    });
+
+    it("count the jobs and mark a tenant by the newest finished backup of its jobs, a failure over a missed copy", async () => {
+        db.job.findMany.mockResolvedValue([
+            { id: "a1", tenantId: "acme" }, { id: "a2", tenantId: "acme" }, { id: "g1", tenantId: "globex" }, { id: "d1", tenantId: "default" },
+        ]);
+        raw.newest = [{ id: "run-a1" }, { id: "run-a2" }, { id: "run-g1" }, { id: "run-d1" }];
+        // Of the newest runs, the client reads those that failed or missed a copy.
+        db.execution.findMany.mockResolvedValue([
+            { tenantId: "acme", status: "Partial" }, { tenantId: "acme", status: "Failed" }, { tenantId: "globex", status: "Partial" },
+        ]);
+
+        const summaries = await tenantSummaries(["default", "acme", "globex"]);
+
+        expect(summaries.map(({ id, jobs, health }) => ({ id, jobs, health }))).toEqual([
+            { id: "default", jobs: 1, health: null },
+            { id: "acme", jobs: 2, health: "failed" },
+            { id: "globex", jobs: 1, health: "partial" },
+        ]);
+        expect(db.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: { in: ["run-a1", "run-a2", "run-g1", "run-d1"] } },
+        }));
+    });
+
+    it("are kept for the same tenants in any order until a run ends or a database changes hands", async () => {
+        await tenantSummaries(["acme", "globex"]);
+        const again = await tenantSummaries(["globex", "acme"]);
+
+        expect(again.map((summary) => summary.id)).toEqual(["globex", "acme"]);
+        expect(db.job.findMany).toHaveBeenCalledTimes(1);
+
+        // A run of any tenant ends, which the system scope of the summaries counts.
+        invalidateTenantCaches(["initech"]);
+        await tenantSummaries(["acme", "globex"]);
+        expect(db.job.findMany).toHaveBeenCalledTimes(2);
+
+        sharingChanged();
+        await tenantSummaries(["acme", "globex"]);
+        expect(db.job.findMany).toHaveBeenCalledTimes(3);
     });
 });

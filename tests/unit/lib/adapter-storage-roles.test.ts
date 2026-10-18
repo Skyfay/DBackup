@@ -63,7 +63,7 @@ vi.mock("@/lib/prisma", () => ({
         jobDestination: { findMany: (...args: any[]) => mockJobDestinationFindMany(...args) },
         jobSource: { findMany: (...args: any[]) => mockJobSourceFindMany(...args) },
         // No connection of these tests is shared with other tenants.
-        connectionShare: { count: vi.fn().mockResolvedValue(0) },
+        connectionShare: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
     },
 }));
 

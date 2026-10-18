@@ -1,8 +1,9 @@
 /**
  * Delivers an event about the data of a tenant to the channels that tenant picked in its own
  * settings, after the platform heard about it. The channels are read in the tenant, so a channel
- * of another tenant never gets it, and the notification log keeps each send in the tenant of its
- * channel. The home tenant hears about its data through the notifications of the platform.
+ * of another tenant never gets it unless that tenant shares it, and the notification log keeps each
+ * send in this tenant, also one through a shared channel. The home tenant hears about its data
+ * through the notifications of the platform.
  */
 
 import prisma from "@/lib/prisma";

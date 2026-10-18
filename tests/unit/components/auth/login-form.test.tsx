@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LoginForm, SKIP_SSO_AUTO_REDIRECT_KEY } from "@/components/auth/login-form";
+import { SSO_NEXT_KEY } from "@/components/auth/sign-in-next";
 import type { LoginProvider } from "@/services/auth/login-page-service";
 
 const mocks = vi.hoisted(() => ({
@@ -259,6 +260,79 @@ describe("the sign-in of the login page", () => {
 
             expect(await screen.findByText("No sign-in provider takes this email. Sign in another way.")).toBeInTheDocument();
             expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+        });
+    });
+
+    describe("a page to go back to, like an invitation", () => {
+        const invitation = "/invite?token=abc123";
+
+        it("goes there after the password instead of the Overview", async () => {
+            const user = renderForm({ next: invitation });
+            answer(mocks.email, {});
+
+            await user.type(screen.getByLabelText("Email"), "manu@example.ch");
+            await user.type(screen.getByLabelText("Password"), "correct horse");
+            await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+            await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(invitation));
+            expect(mocks.email).toHaveBeenCalledWith(expect.objectContaining({ callbackURL: invitation }));
+        });
+
+        it("goes there after the second factor", async () => {
+            const user = renderForm({ next: invitation });
+            answer(mocks.email, { data: { twoFactorRedirect: true, twoFactorMethods: ["totp"] } });
+            answer(mocks.totp, {});
+
+            await user.type(screen.getByLabelText("Email"), "manu@example.ch");
+            await user.type(screen.getByLabelText("Password"), "correct horse");
+            await user.click(screen.getByRole("button", { name: "Sign in" }));
+            await user.type(await screen.findByLabelText("Code"), "482913");
+            await user.click(screen.getByRole("button", { name: "Verify" }));
+
+            await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(invitation));
+        });
+
+        it("sends a provider back there and keeps it in the tab, in case the provider refuses", async () => {
+            const user = renderForm({ next: invitation });
+
+            await user.click(screen.getByRole("button", { name: "Continue with Pocket ID" }));
+
+            await waitFor(() => expect(mocks.sso).toHaveBeenCalledWith(expect.objectContaining({ providerId: "pocket", callbackURL: invitation })));
+            expect(sessionStorage.getItem(SSO_NEXT_KEY)).toBe(invitation);
+        });
+
+        it("still goes there when a provider refused and the login page came back without it", async () => {
+            sessionStorage.setItem(SSO_NEXT_KEY, invitation);
+            const user = renderForm({ errorCode: "sso_access_denied" });
+            answer(mocks.email, {});
+
+            await user.type(screen.getByLabelText("Email"), "manu@example.ch");
+            await user.type(screen.getByLabelText("Password"), "correct horse");
+            await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+            await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(invitation));
+        });
+
+        it("forgets a page of an earlier sign-in through a provider that was meant for none", async () => {
+            sessionStorage.setItem(SSO_NEXT_KEY, invitation);
+            const user = renderForm();
+
+            await user.click(screen.getByRole("button", { name: "Continue with Pocket ID" }));
+
+            await waitFor(() => expect(mocks.sso).toHaveBeenCalledWith(expect.objectContaining({ callbackURL: "/dashboard?from=sign-in" })));
+            expect(sessionStorage.getItem(SSO_NEXT_KEY)).toBeNull();
+        });
+
+        it("never takes a kept page that leads to another site", async () => {
+            sessionStorage.setItem(SSO_NEXT_KEY, "//evil.example");
+            const user = renderForm({ errorCode: "sso_access_denied" });
+            answer(mocks.email, {});
+
+            await user.type(screen.getByLabelText("Email"), "manu@example.ch");
+            await user.type(screen.getByLabelText("Password"), "correct horse");
+            await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+            await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/dashboard?from=sign-in"));
         });
     });
 

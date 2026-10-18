@@ -5,6 +5,7 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getExecutionHistoryFacets, listExecutionHistory } from "@/services/system/execution-history-service";
 import { getTimezone } from "@/services/system/system-settings-service";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 const QuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
@@ -73,7 +74,9 @@ export async function GET(req: NextRequest) {
             ...(facets ? { facets } : {}),
             systemTimezone,
         });
-    } catch (_error) {
+    } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         return NextResponse.json({ error: "Failed to fetch history" }, { status: 500 });
     }
 }

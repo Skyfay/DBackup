@@ -64,7 +64,7 @@ A link in a mail or a chat message of DBackup, like **Open run** or **Open job**
 
 ## All Tenants
 
-All tenants is the view of a platform admin, or of a platform group of all tenants, over every tenant at once. The Overview, Connections, Jobs, Backups, the Database Explorer, History and the search of the header show the records of every tenant, each with its tenant in a column you can filter by.
+All tenants is the view of a platform admin, or of a platform group of all tenants, over every tenant at once. The Overview, Connections, Jobs, Backups, the Database Explorer, History and the search of the header show the records of every tenant, each with its tenant in a column you can filter by. A person you opened from the search shows among the entries you opened last only where you found them, in that tenant or in All tenants.
 
 All tenants only reads. Opening a record, or changing it, first switches into its tenant and says so, so a job never links to the destination or key of another customer. **New** asks which tenant the new record belongs to and lists only the tenants where you may add that kind of record. Without one it does not show. The Vault, Templates, Quick Setup, the tenant settings and the Users & Groups of a tenant belong to one tenant, so in All tenants their entry in the sidebar asks for the tenant right away, like **New**, and opens the page there. Switching to All tenants on one of these pages leads to the Overview.
 
@@ -83,13 +83,14 @@ Inside a customer tenant a platform admin sees under Administration exactly what
 
 ## Managing Tenants
 
-Tenants are managed under **Platform → Tenants**, which **Manage tenants** in the menu of the sidebar head opens too. Seeing it needs `platform-tenants:read`, changing anything `platform-tenants:write`. Someone of a platform group changes the members, the name, the sharing, what it may add or the delete only of the tenants their platform group reaches, never of one they are merely a member of. The list shows every tenant with its members, connections, databases and jobs, and a dot when one of its newest backups failed, the home tenant first. **You work here** marks the tenant you have open, and **Shares with customers** a tenant of the MSP that gives databases, destinations and channels to customers. **Columns** hides and orders the columns, which stay as you left them. Three more columns:
+Tenants are managed under **Platform → Tenants**, which **Manage tenants** in the menu of the sidebar head opens too. Seeing it needs `platform-tenants:read`, changing anything `platform-tenants:write`. Someone of a platform group changes the members, the name, the sharing, what it may add, the network or the delete only of the tenants their platform group reaches, never of one they are merely a member of. The list shows every tenant with its members, connections, databases and jobs, and a dot when one of its newest backups failed, the home tenant first. **You work here** marks the tenant you have open, and **Shares with customers** a tenant of the MSP that gives databases, destinations and channels to customers. **Columns** hides and orders the columns, which stay as you left them. Four more columns:
 
 | Column | Shows |
 | :--- | :--- |
 | **Provided to it** | The destinations and channels other tenants share with it. A tenant that gets none but shares some itself shows what it gives in gray, like **Gives 2 destinations** |
 | **Backups on demand** | How many backups a day a customer may start of each database given to it, and how many databases and rules set their own, see [Backups on Demand](/user-guide/admin/shared-databases#backups-on-demand) |
 | **May add itself** | **Everything**, or a tag like **No own destinations, channels** or **Adds nothing itself**, see [What It May Add](#what-it-may-add) |
+| **Local network** | **Blocked**, with the number of ranges it reaches anyway, or a tag **Reaches it**, see [Network](#network) |
 
 The menu of a tenant, also on a right click, holds **Open**, **Edit** and **Delete**. A click on a tenant opens **Edit**, and someone who may only see the tenants gets **View** in its place.
 
@@ -112,9 +113,10 @@ A new tenant starts with the built-in templates: the retention policies **Keep A
 | **Members** | Who works there with which group, see [Members](#members) |
 | **Sharing** | **Shares with customers**, see [Share with Customers](#share-with-customers) |
 | **What it may add** | A switch per kind, see [What It May Add](#what-it-may-add). Not for the home tenant |
+| **Network** | **Block the local network** and the ranges it reaches anyway, see [Network](#network). Not for the home tenant |
 | **Backups on demand** | How many backups a day it may start of each database given to it, the home tenant too when another tenant shares with it |
 
-**Save changes** saves the name, the sharing, what it may add and the backups on demand together, and the foot says what changed. A change of the members and **Follow** of backups on demand count at once. When the server refuses one part, like sharing that is still in use, the dialog opens that part and keeps the rest of what is not saved yet.
+**Save changes** saves the name, the sharing, what it may add, the network and the backups on demand together, and the foot says what changed. A change of the members and **Follow** of backups on demand count at once. When the server refuses one part, like sharing that is still in use, the dialog opens that part and keeps the rest of what is not saved yet.
 
 ### Members
 
@@ -158,7 +160,7 @@ Off stops new ones only. Its Connections page shows a note that they come from t
 Every change goes into the audit log of the home tenant and of the tenant itself.
 
 ::: warning The server DBackup runs on belongs to the platform
-A connection that reaches the server DBackup runs on is added in the home tenant only, whatever a tenant may add. That server holds the key of every secret and the database of every tenant. Such a connection is:
+A connection that works on the server DBackup runs on itself, with its files, its Docker or the tools it runs there, is added in the home tenant only, whatever a tenant may add. That server holds the key of every secret and the database of every tenant. Such a connection is:
 
 - **Local Filesystem**, which a customer does not even find among the types
 - **Docker Volumes** without SSH, which talks to the Docker of that server
@@ -167,6 +169,34 @@ A connection that reaches the server DBackup runs on is added in the home tenant
 - Rsync options beyond those that only change how files move, and an Rsync or SSH login through the keys or the agent of that server
 
 A customer's save, test or run of such a connection is refused with a message that says why. The file browser of a local path answers only in the home tenant.
+
+This covers what DBackup does on the server itself, not what it reaches over the network. A connection to an address of the server, like `127.0.0.1`, or to another server of its network is a matter of [Network](#network), which blocks it for a tenant made from now on and lets a tenant made before reach it until the platform blocks it.
+:::
+
+### Network
+
+**Network** in **Edit** of a customer decides whether its connections reach the local network of the server DBackup runs on. With **Block the local network** on, no connection of the tenant reaches an address of:
+
+| Range | What it is |
+| :--- | :--- |
+| `127.0.0.0/8`, `::1` | Loopback, the server DBackup runs on itself |
+| `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7` | Private networks |
+| `169.254.0.0/16`, `fe80::/10` | Link-local, the metadata services of the clouds among them |
+| `100.64.0.0/10` | Shared address space, which VPN overlays like NetBird and Tailscale use |
+| `0.0.0.0/8`, `::`, `224.0.0.0/4`, `ff00::/8`, `240.0.0.0/4`, `fec0::/10` | This network, multicast, reserved and broadcast |
+
+An IPv4 address written as IPv6, like `::ffff:10.0.0.5`, counts as its IPv4. DBackup checks every address a host of the connection resolves to: the server of a database or a destination, the S3 endpoint and the host of the bucket on it, the URL of a webhook, of Gotify or of ntfy, the SMTP host of an email channel. Amazon S3, the cloud drives, Telegram and Twilio have public endpoints of their own and need no check.
+
+- **Over SSH** only the SSH server counts. The database behind it, `127.0.0.1` of that server too, is reached from there and never from the server DBackup runs on.
+- **Allowed ranges** let the tenant reach parts of the local network anyway, like `10.10.10.0/24` for the servers of the customer behind a VPN of the MSP, or `fd00:1::/64`. A single address is `10.0.0.5/32`, or just `10.0.0.5`. The field checks a range as you type, **Add** puts it into the list, and the button at the end of a row takes it out. They count while the block is on.
+- Saving, **Test connection**, a browse of folders and every run check it. A connection saved before the block that reaches a blocked address stops working at its next run, with a message like `Acme reaches no address of the local network, db.internal is 10.0.0.5. The platform allows ranges for it under Platform, Tenants.`
+- A destination or a channel another tenant shares follows the setting of that tenant, not the one of its customer.
+- A host that does not resolve passes the check, its connection fails on its own.
+
+A new tenant starts with the block on. A tenant made before the setting existed keeps reaching the local network until the platform switches it on. The home tenant is the platform and reaches what its server reaches, so it has no Network part. Every change goes into the audit log of the home tenant and of the tenant itself.
+
+::: info A guard, not a firewall
+The check reads the answer of the DNS server when it runs, and the connection asks again right after. A name whose answer changes in between on purpose gets past it. What must never be reached belongs behind the firewall of the server.
 :::
 
 ## Groups in Tenants
@@ -204,7 +234,7 @@ When a tenant leaves the group, or the group is deleted, and people hold it ther
 - **Remove it**: the group is gone there, its members move to the group picked for that tenant, or to none, which takes them out of the tenant.
 - **Keep it** as a group of that tenant: its members keep their rights, and the tenant changes and deletes it from then on.
 
-A group nobody holds goes without a question. Every change goes into the audit log of the platform, and what happened to its group into the log of each tenant. A new tenant starts with **Admin** and every group for all tenants, so a **Viewer** or a **Client** made once for all tenants is there from the start. A tenant made before keeps the Viewer it started with.
+A group nobody holds goes without a question. Every change goes into the audit log of the platform, and what happened to its group into the log of each tenant. A new tenant starts with **Admin** and every group for all tenants, so a **Viewer** or a **Client** made once for all tenants is there from the start.
 
 ## People in a Tenant
 
@@ -220,7 +250,7 @@ An email that has an account already cannot get a second one. Invite that person
 
 An email whose domain the [sign-in provider](/user-guide/admin/sso#providers-of-a-tenant) of another tenant claims is refused, since that provider would sign in to the account. A provider of the platform counts as one of the home tenant. Only a platform admin or someone with `platform-accounts:write` gives an account such an email, someone of a platform group of selected tenants only one whose domain the provider of one of those tenants claims. This holds for New user, Edit, the own profile, an invitation that makes an account, and an account restored from Recently deleted, under its own email or a new one.
 
-The pictures of the people show beside their names only to those who reach them. In a tenant you see the pictures of its people, of the people of the platform who open it, and of anyone with an entry in its audit log or an API key there. Someone of a platform group who may see the tenants, the accounts or the sign-in providers also sees the people of the tenants their platform group reaches. A platform admin, All tenants, a platform group of all tenants with one of these rights and whoever reads the settings through the home tenant without a platform group see every picture.
+The pictures of the people show beside their names only to those who reach them. In a tenant you see the pictures of its people, of the people of the platform who open it, of anyone with an API key there, and with `audit:read` of anyone with an entry in its audit log. Someone of a platform group who may see the tenants, the accounts or the sign-in providers also sees the people of the tenants their platform group reaches. A platform admin, All tenants, a platform group of all tenants with one of these rights and whoever reads the settings through the home tenant without a platform group see every picture.
 
 ## Invitations
 
@@ -235,8 +265,8 @@ An invitation is a link that lets one person join the tenant with a group, with 
 The link works once, for whoever opens it first:
 
 - **Signed in**, they see the tenant and the group and click **Join** with the name of the tenant, which opens it. Someone who is a member already keeps their group, and the link is used up.
-- **Not signed in**, they sign in and open the link again, or create an account right there while password sign-in is on. The password follows [Settings → Passwords](/user-guide/admin/settings#passwords), and they sign in on the login page afterwards.
-- With `DISABLE_EMAIL_LOGIN=true` a new person signs in through a [sign-in provider](/user-guide/admin/sso) first, then opens the link again.
+- **Not signed in**, they click **Sign in**, and once they signed in the link opens again for **Join**. Or they create an account right there while password sign-in is on. The password follows [Settings → Passwords](/user-guide/admin/settings#passwords), and they sign in on the login page afterwards.
+- With `DISABLE_EMAIL_LOGIN=true` a new person signs in through a [sign-in provider](/user-guide/admin/sso) from **Sign in** and comes back to the link the same way.
 
 After five failed attempts to create an account with one link, like with an email that has an account already or one whose domain another tenant claims, the link stops working and you make a new one. The link is used up before the account is made, so two requests at once make one account.
 
@@ -252,7 +282,7 @@ An API key belongs to the tenant it was made in and acts only there, whichever t
 
 Every tenant has its own audit log, read by its people with `audit:read`. What belongs to the platform goes into the log of the home tenant, whichever tenant the admin works in: sign-ins, sign-outs and failed sign-ins, the changes of tenants, platform admins, platform groups and sign-in providers, and every change of the settings of the instance, like the system tasks, data retention, the certificate, the login image, the configuration backup and its restore, and the download and optimize of the database. The changes of a group, the members added or removed through **Platform → Tenants**, and the invitations of a tenant show in the log of that tenant.
 
-A change of an account, its password, second factor, sessions, name, email or its delete, goes into the log of the tenant you work in while the account is one of its people. A change of an account of another tenant, or one made in All tenants, goes into the log of the home tenant, so a customer never reads what someone did to an account of another tenant. Those entries show under **Users & Groups → Audit log** while the home tenant is open, and in All tenants under the home tenant.
+A change of an account, your own included, like its password, second factor, sessions, name, email, picture, sign-in accounts, its delete and its restore from Recently deleted, goes into the log of the tenant you work in while the account is one of its people. A change of an account of another tenant, or one made in All tenants, goes into the log of the home tenant, so a customer never reads what someone did to an account of another tenant. Those entries show under **Users & Groups → Audit log** while the home tenant is open. In All tenants, **Users & Groups** asks for a tenant first, so pick the home tenant there.
 
 The system notifications of **Settings → Notifications** belong to the platform as well, whichever tenant an event comes from. Their links open a run or a job in its own tenant, but their notification log, the one of the home tenant, keeps the run of a message only for a run of the home tenant, so **Open run** shows there only for those. The integrity check records a run in the History of each tenant with something to check, with that tenant's copies alone, the home tenant first.
 
@@ -262,8 +292,11 @@ The update to this version moves the whole instance into the home tenant:
 
 - Everything DBackup holds becomes the tenant **Default**.
 - Every user with a group becomes a member of Default with that group. A user without a group stays without one.
-- The SuperAdmin group becomes **Admin**, the group with every permission, and its members become platform admins. When a group named Admin exists already, it becomes **Admin (was SuperAdmin)**.
+- The SuperAdmin group becomes **Admin**, the group with every permission, and its members become platform admins. When a group named Admin exists already, that group keeps its name and the SuperAdmin group becomes **Admin (was SuperAdmin)**.
+- Every API key belongs to Default and keeps its permissions. A key with `settings:read` or `settings:write` also gets `tenant-settings:read` or `tenant-settings:write`, like the groups, so a key that could delete for good still can.
+- Every sign-in provider becomes a provider of the platform. Only platform admins add, change, switch and delete providers, as only the SuperAdmin group did before. Seeing them still needs `settings:read`, and from a browser only, no API key reads them any more.
 - The names of saved logins and templates only need to be unique within a tenant from now on.
+- Sessions, passwords, passkeys, second factors and the settings of the instance stay as they are, so nobody has to sign in again.
 
 A database migration cannot be taken back. A start that is about to apply one first keeps a copy of the database beside it in `/data/db`, named `dbackup.db.before-migrate-<time>`, like `dbackup.db.before-migrate-2026-10-15T08-30-00-000Z`. The three newest copies stay, older ones are deleted. A start without a migration to apply copies nothing.
 
@@ -289,6 +322,10 @@ The account works in another tenant too, or holds a platform group, so only a pl
 ### The Admin of a Customer Has No Settings of the Instance
 
 The settings of the instance count only from the group in the home tenant or from a platform group. A customer manages its people, groups, connections, jobs and its own tenant settings, and the platform keeps the settings of the instance.
+
+### "Acme reaches no address of the local network"
+
+The tenant blocks the local network and a host of the connection resolves into it, like `db.internal is 10.0.0.5`. Connect over a public address or over SSH through a server of the customer, or let the platform allow the range under **Platform → Tenants → Edit → Network**, see [Network](#network).
 
 ### Someone Signs In but Sees Nothing
 

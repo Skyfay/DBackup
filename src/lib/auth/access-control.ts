@@ -259,8 +259,17 @@ export function hasPermissionWithContext(ctx: Pick<AuthContext, "isPlatformAdmin
 
 /** The tenant a caller works in, refusing an account that belongs to none and All tenants. */
 export function tenantOf(ctx: { tenantId: string | null; allTenants?: boolean }): string {
-  if (!ctx.tenantId) throw new PermissionError("a tenant", { message: ctx.allTenants ? ALL_TENANTS_REFUSAL : "You work in no tenant yet." });
+  if (!ctx.tenantId) throw new PermissionError("a tenant", { message: tenantRefusal(ctx) ?? undefined });
   return ctx.tenantId;
+}
+
+/**
+ * Why `tenantOf` refuses a caller, null in a tenant, for a Server Action that answers with an error
+ * instead of throwing.
+ */
+export function tenantRefusal(ctx: { tenantId: string | null; allTenants?: boolean }): string | null {
+  if (ctx.tenantId) return null;
+  return ctx.allTenants ? ALL_TENANTS_REFUSAL : "You work in no tenant yet.";
 }
 
 // ============================================================================

@@ -386,8 +386,17 @@ model Tenant {
   addsDirectorySources Boolean                     @default(true)
   addsDestinations     Boolean                     @default(true)
   addsChannels         Boolean                     @default(true)
-  // Whether it makes API keys itself. Off stops new keys, the ones it has keep working.
+  // Whether it makes API keys itself. Off stops new keys and the keys it has, which work again once
+  // it is on, see src/services/auth/api-key-service.ts.
   addsApiKeys          Boolean                     @default(true)
+  // Whether its connections reach the local network of the server DBackup runs on, set by the
+  // platform: loopback, private, link-local and VPN addresses, see src/lib/network/local-network.ts.
+  // On for a new tenant, off for the tenants made before it existed. The home tenant is the
+  // platform and never blocked, whatever this says, see src/services/tenant/tenant-network.ts.
+  blocksLocalNetwork   Boolean                     @default(true)
+  // The ranges it reaches anyway while it blocks the local network, a JSON array like
+  // ["10.10.10.0/24", "fd00:1::/64"].
+  allowedNetworks      String                      @default("[]")
   // How many backups a day it may start of each database other tenants give it, set by the platform,
   // null for none. A database or a rule that sets its own keeps that, see src/lib/tenant/sharing.ts.
   onDemandPerDay       Int?

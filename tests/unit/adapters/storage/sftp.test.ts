@@ -378,6 +378,20 @@ describe("SFTPAdapter", () => {
             // path should be relative to pathPrefix, not including /backups
             expect(result[0].path).not.toContain("/backups");
         });
+
+        it("strips a prefix typed with a double slash, a dot or a slash at the end, so a view finds the folder of the customers", async () => {
+            for (const pathPrefix of ["/srv//backups/", "/srv/./backups", "/srv/backups/"]) {
+                mockSftpExists.mockResolvedValue("d");
+                mockSftpList
+                    .mockResolvedValueOnce([{ name: "tenants", type: "d", size: 0, modifyTime: Date.now() }])
+                    .mockResolvedValueOnce([{ name: "acme", type: "d", size: 0, modifyTime: Date.now() }])
+                    .mockResolvedValueOnce([{ name: "shop.tar", type: "-", size: 10, modifyTime: Date.now() }]);
+
+                const result = await SFTPAdapter.list({ ...config, pathPrefix }, "");
+
+                expect(result.map((file) => file.path), pathPrefix).toEqual(["tenants/acme/shop.tar"]);
+            }
+        });
     });
 
     // ===== delete() =====

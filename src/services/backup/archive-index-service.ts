@@ -160,9 +160,14 @@ export class ArchiveIndexService {
         return index ? browseLevel(index, jobSourceId, prefix) : null;
     }
 
-    /** Drops any cached index for a backup. Call after the backup is deleted or replaced. */
+    /**
+     * Drops any cached index for a backup, in the view of every tenant, since `load` keeps one per
+     * tenant. Call after the backup is deleted or replaced.
+     */
     invalidate(configId: string, file: string): void {
-        this.cache.delete(`${configId}::${file}`);
+        for (const key of [...this.cache.keys()]) {
+            if (key.startsWith(`${configId}::`) && key.endsWith(`::${file}`)) this.cache.delete(key);
+        }
     }
 
     /**
@@ -288,12 +293,13 @@ export class ArchiveIndexService {
      * Deliberately not using the adapter's `read()` shortcut: it returns a string, and a
      * sealed index is binary, so any text decoding would silently corrupt it.
      *
+     * @param viewerTenantId - The tenant whose view of the destination the path is in, the tenant of the code that runs when left out
      * @returns The raw sidecar bytes, or null when it is missing or unreadable
      */
-    async fetchSidecar(configId: string, file: string, suffix: string): Promise<Buffer | null> {
+    async fetchSidecar(configId: string, file: string, suffix: string, viewerTenantId?: string | null): Promise<Buffer | null> {
         let opened: Awaited<ReturnType<typeof openDestination>>;
         try {
-            opened = await openDestination(configId);
+            opened = await openDestination(configId, viewerTenantId);
         } catch {
             return null;
         }

@@ -146,7 +146,7 @@ export function dbVersionChangedTemplate(data: DbVersionChangedData, options?: T
     };
 }
 
-export function integrityCheckFailureTemplate(data: IntegrityCheckFailureData): NotificationPayload {
+export function integrityCheckFailureTemplate(data: IntegrityCheckFailureData, options?: TemplateOptions): NotificationPayload {
     const shown = data.errors.slice(0, 5);
     const more = data.errors.length > 5 ? ` (+${data.errors.length - 5} more)` : "";
     return {
@@ -178,6 +178,7 @@ export function integrityCheckFailureTemplate(data: IntegrityCheckFailureData): 
             }
             : undefined,
         details: [{ name: "Started", value: data.triggerType === "Scheduler" ? "By schedule" : data.triggerType === "Api" ? "Through the API" : "By hand" }],
-        actions: action("Open backups", "/dashboard/backups", "archive"),
+        // The Backups page of the tenant whose copies failed, so the link opens there from any other tenant.
+        actions: action("Open backups", paths.backups(options?.tenantId), "archive"),
     };
 }

@@ -93,13 +93,16 @@ beforeEach(async () => {
         await base.job.create({ data: { tenantId, id: `${tenantId}-job`, name: `${tenantId} nightly`, schedule: "0 3 * * *", sourceId: `${tenantId}-db` } });
     }
     storage.failOn = null;
-    storage.files = new Map([
-        ["acme-job/one.tar", 10],
-        ["tenants/globex/globex-nightly/two.tar", 20],
-        ["tenants/globex/globex-nightly/two.tar.meta.json", 1],
-        ["tenants/initech/initech-nightly/three.tar", 30],
-    ]);
+    // Only Acme's own backup, the folder of the customers is empty before the first share.
+    storage.files = new Map([["acme-job/one.tar", 10]]);
 });
+
+/** What the customers wrote once the destination was shared with them. */
+const customerBackups = () => {
+    storage.files.set("tenants/globex/globex-nightly/two.tar", 20);
+    storage.files.set("tenants/globex/globex-nightly/two.tar.meta.json", 1);
+    storage.files.set("tenants/initech/initech-nightly/three.tar", 30);
+};
 
 const share = (configId: string, tenantIds: string[], terms: Partial<{ allTenants: boolean; encryptedOnly: boolean; ownRecipients: boolean }> = {}, confirmed = false) =>
     runAsTenant("acme", () => connectionShareService.save(configId, { allTenants: false, encryptedOnly: false, ownRecipients: true, ...terms, tenantIds }, { confirmed }));
@@ -134,10 +137,42 @@ describe("sharing a connection with other tenants", () => {
         expect(await providedIdsOf("globex")).toEqual([]);
     });
 
+    it("refuses the first share of a destination while another connection of its tenant reaches its folder, and shares it once that one points elsewhere", async () => {
+        await base.adapterConfig.update({ where: { id: "acme-nas" }, data: { config: JSON.stringify({ basePath: "/srv/backups" }) } });
+        await base.adapterConfig.create({ data: { tenantId: "acme", id: "acme-inner", name: "Inner folder", type: "storage", adapterId: "local-filesystem", config: JSON.stringify({ basePath: "/srv/backups/tenants" }) } });
+
+        await expect(share("acme-nas", ["globex"])).rejects.toThrow("Inner folder reaches the folder of NAS");
+        expect(await base.connectionShare.count()).toBe(0);
+
+        await base.adapterConfig.update({ where: { id: "acme-inner" }, data: { config: JSON.stringify({ basePath: "/srv/elsewhere" }) } });
+        await share("acme-nas", ["globex"]);
+        expect(await providedIdsOf("globex")).toContain("acme-nas");
+    });
+
     it("refuses a destination while a job of its tenant is called like the folder of the customers", async () => {
         await base.adapterConfig.create({ data: { tenantId: "acme", id: "acme-db", name: "Own", type: "database", adapterId: "mysql", config: "{}" } });
         await base.job.create({ data: { tenantId: "acme", id: "acme-tenants", name: "tenants", schedule: "0 3 * * *", sourceId: "acme-db", destinations: { create: { configId: "acme-nas" } } } });
         await expect(share("acme-nas", ["globex"])).rejects.toThrow("is called tenants");
+    });
+
+    it("refuses a destination while a job of its tenant writes into a folder of a customer by its name", async () => {
+        await base.adapterConfig.create({ data: { tenantId: "acme", id: "acme-db", name: "Own", type: "database", adapterId: "mysql", config: "{}" } });
+        await base.job.create({ data: { tenantId: "acme", id: "acme-tenants", name: "Tenants./globex", schedule: "0 3 * * *", sourceId: "acme-db", destinations: { create: { configId: "acme-nas" } } } });
+        await expect(share("acme-nas", ["globex"])).rejects.toThrow("is called tenants");
+        expect(await base.connectionShare.count()).toBe(0);
+    });
+
+    it("refuses the first share of a destination whose folder of the customers holds files, which would read as the backups of a customer", async () => {
+        // Written by a job of Acme before the destination was shared, in the folder Globex would get.
+        storage.files.set("tenants/globex/report.tar", 5);
+
+        await expect(share("acme-nas", ["globex"])).rejects.toThrow("already holds files in tenants/");
+        expect(await base.connectionShare.count()).toBe(0);
+        expect(await providedIdsOf("globex")).toEqual([]);
+
+        storage.files.delete("tenants/globex/report.tar");
+        await share("acme-nas", ["globex"]);
+        expect(await providedIdsOf("globex")).toEqual(["acme-nas"]);
     });
 
     it("refuses a tenant that does not exist", async () => {
@@ -153,6 +188,7 @@ describe("sharing a connection with other tenants", () => {
 describe("taking a destination back", () => {
     beforeEach(async () => {
         await share("acme-nas", ["globex", "initech"]);
+        customerBackups();
         await base.jobDestination.create({ data: { id: "globex-link", jobId: "globex-job", configId: "acme-nas" } });
         await base.storageListCache.create({ data: { adapterConfigId: "acme-nas", tenantId: "globex", filesJson: "{}" } });
     });

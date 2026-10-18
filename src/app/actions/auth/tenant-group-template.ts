@@ -139,6 +139,13 @@ export async function previewTenantGroupTemplate(id: string | null, input: Tenan
     if (!templateId.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
 
     const actor = await actorOf(viewer);
+    // The preview names the tenants, people and groups the group reaches now, so a group beyond the
+    // viewer stays closed to it like to a save.
+    if (templateId.data) {
+        const current = await tenantGroupTemplates.find(templateId.data);
+        if (!current) return { success: false as const, error: "The group for tenants no longer exists." };
+        if (refusalOf(actor, shapeOf(current))) return { success: false as const, error: BEYOND };
+    }
     const refused = refusalOf(actor, shapeOf(parsed.data));
     if (refused) return { success: false as const, error: refused };
     try {

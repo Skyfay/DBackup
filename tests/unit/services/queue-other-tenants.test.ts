@@ -15,6 +15,12 @@ vi.mock("@/services/dashboard/aggregates", () => ({
     getMaxConcurrentJobs: () => Promise.resolve(1),
 }));
 
+// The snapshot of the queue every tenant shares, with the jobs of every tenant and their usual length.
+const queue = vi.hoisted(() => ({ jobs: [] as { id: string; tenantId: string; schedule: string; estimatedMs: number }[] }));
+vi.mock("@/services/jobs/queue-snapshot", () => ({
+    queueJobs: async () => queue.jobs,
+}));
+
 const { getJobTimeline } = await import("@/services/jobs/job-timeline-service");
 const { getScheduleLoad } = await import("@/services/jobs/schedule-load-service");
 const { anonymousWaits, demandBeside } = await import("@/services/jobs/other-tenant-queue");
@@ -25,22 +31,32 @@ const run = (id: string, start: string, minutes: number) => ({
     id, status: "Success", startedAt: `2026-10-01T${start}:00.000Z`, endedAt: new Date(Date.parse(`2026-10-01T${start}:00Z`) + minutes * MIN).toISOString(),
 });
 
-type Where = { tenantId?: { not?: string } } | undefined;
-const forOthers = (args: unknown) => Boolean((args as { where?: Where } | undefined)?.where?.tenantId?.not);
+/** The read of the runs that run or wait now in every tenant, by their status alone. */
+type Where = { status?: unknown; type?: unknown } | undefined;
+const liveOfEveryTenant = (args: unknown) => {
+    const where = (args as { where?: Where } | undefined)?.where;
+    return Boolean(where?.status && !where.type);
+};
 
 describe("a tenant's plan of the queue", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         for (const key of Object.keys(recent)) delete recent[key];
         // Acme backs up its ERP for 40 minutes at 03:00, Beta its shop for 10 minutes at 03:00.
-        recent["acme-erp"] = [run("a1", "03:00", 40)];
         recent["beta-shop"] = [run("b1", "03:00", 10)];
-        prismaMock.job.findMany.mockImplementation((async (args: unknown) => forOthers(args)
-            ? [{ id: "acme-erp", schedule: "0 3 * * *", schedulePreset: null }]
-            : [{ id: "beta-shop", name: "Shop", enabled: true, schedule: "0 3 * * *", schedulePresetId: null, schedulePreset: null }]) as never);
-        prismaMock.execution.findMany.mockImplementation((async (args: unknown) => forOthers(args)
-            // Acme's run of 02:30 still holds the only slot.
-            ? [{ id: "acme-run", jobId: "acme-erp", status: "Running", startedAt: new Date("2026-10-02T02:30:00Z") }]
+        queue.jobs = [
+            { id: "acme-erp", tenantId: "acme", schedule: "0 3 * * *", estimatedMs: 40 * MIN },
+            { id: "beta-shop", tenantId: "beta", schedule: "0 3 * * *", estimatedMs: 10 * MIN },
+        ];
+        prismaMock.job.findMany.mockResolvedValue([{ id: "beta-shop", name: "Shop", enabled: true, schedule: "0 3 * * *", schedulePresetId: null, schedulePreset: null }] as never);
+        prismaMock.execution.findMany.mockImplementation((async (args: unknown) => liveOfEveryTenant(args)
+            ? [
+                // Acme's run of 02:30 still holds the only slot.
+                { id: "acme-run", jobId: "acme-erp", status: "Running", startedAt: new Date("2026-10-02T02:30:00Z"), type: "Backup", tenantId: "acme" },
+                // Beta's own run, which the timeline reads in the tenant, and a restore of Acme, which is no run of a job.
+                { id: "beta-run", jobId: "beta-shop", status: "Pending", startedAt: new Date("2026-10-02T02:40:00Z"), type: "Backup", tenantId: "beta" },
+                { id: "acme-restore", jobId: null, status: "Running", startedAt: new Date("2026-10-02T02:35:00Z"), type: "Restore", tenantId: "acme" },
+            ]
             : []) as never);
     });
 

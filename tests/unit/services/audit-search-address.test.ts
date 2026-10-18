@@ -50,6 +50,8 @@ const ENTRIES: Entry[] = [
     entry("anna-in-acme", "acme", "10.0.5.8", { userId: "anna", user: ANNA }),
     entry("failed-in-acme", "acme", "10.0.5.9", null),
     entry("nina-at-home", "default", "10.0.5.10", { userId: "nina", user: NINA }),
+    // Tom of the platform worked in Acme, then his account was deleted and the entry kept his name.
+    { ...entry("deleted-tom-in-acme", "acme", "10.0.5.11", null), actorName: "Tom" },
 ];
 
 /** The part of a Prisma filter the audit search writes, applied to one entry. */
@@ -109,7 +111,22 @@ describe("searching the audit log by an address", () => {
         for (const id of found(null)) expect(shown(ENTRIES.find((row) => row.id === id)!)).toBe(true);
     });
 
-    it("still finds the hidden entries by everything else they show", () => {
+    it("finds the address of a deleted account in no customer's log, since nothing tells it worked there", () => {
+        expect(found("acme")).not.toContain("deleted-tom-in-acme");
+        expect(found(null)).not.toContain("deleted-tom-in-acme");
+        expect(shown(ENTRIES.find((row) => row.id === "deleted-tom-in-acme")!)).toBe(false);
+    });
+
+    it("finds in a customer's log by email only the people whose origin it shows", () => {
+        const byEmail = (search: string) => ENTRIES
+            .filter((row) => row.tenantId === "acme" && matches(row, buildAuditWhere({ ...FILTER, search, viewerTenantId: "acme" }, new Date())))
+            .map((row) => row.id);
+
+        expect(byEmail("nina@msp")).toEqual([]);
+        expect(byEmail("anna@acme")).toEqual(["anna-in-acme"]);
+    });
+
+    it("still finds the hidden entries in All tenants by the email of their person, which the platform sees", () => {
         const where = buildAuditWhere({ ...FILTER, search: "nina@msp" }, new Date());
         expect(ENTRIES.filter((row) => row.tenantId === "acme" && matches(row, where)).map((row) => row.id)).toEqual(["nina-in-acme"]);
     });

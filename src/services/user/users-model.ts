@@ -283,12 +283,14 @@ async function beyondReachOf(viewerId: string, userIds: string[]): Promise<Set<s
     const viewer = await prisma.user.findUnique({ where: { id: viewerId }, select: { platformGroup: { select: { allTenants: true, tenants: { select: { tenantId: true } } } } } });
     const group = viewer?.platformGroup;
     if (!group || group.allTenants || userIds.length === 0) return new Set();
-    const reach = group.tenants.map((tenant) => tenant.tenantId);
-    const [outside, placeless] = await Promise.all([
-        prisma.tenantMembership.findMany({ where: { userId: { in: userIds }, tenantId: { notIn: reach } }, select: { userId: true } }),
-        reach.includes(HOME_TENANT_ID) ? [] : prisma.user.findMany({ where: { id: { in: userIds }, memberships: { none: {} } }, select: { id: true } }),
-    ]);
-    return new Set([...outside.map((membership) => membership.userId), ...placeless.map((user) => user.id)]);
+    const reach = new Set(group.tenants.map((tenant) => tenant.tenantId));
+    // Every membership of the accounts, sorted here: Prisma splits a long list of ids into several
+    // queries on SQLite, which a negation like `notIn` or `none` beside it forbids.
+    const memberships = await prisma.tenantMembership.findMany({ where: { userId: { in: userIds } }, select: { userId: true, tenantId: true } });
+    const outside = memberships.filter((membership) => !reach.has(membership.tenantId)).map((membership) => membership.userId);
+    const placed = new Set(memberships.map((membership) => membership.userId));
+    const placeless = reach.has(HOME_TENANT_ID) ? [] : userIds.filter((userId) => !placed.has(userId));
+    return new Set([...outside, ...placeless]);
 }
 
 /** An account that is no platform admin and holds no platform group, which alone needs a group in a tenant to see something. */

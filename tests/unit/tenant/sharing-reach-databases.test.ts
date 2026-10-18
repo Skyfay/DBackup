@@ -29,7 +29,9 @@ vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCac
 vi.mock("@/services/audit-service", () => ({ auditService: { logFor: mocks.audit } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 // The request of an API key, with the checks of the permissions reduced to its list.
-vi.mock("@/lib/auth/access-control", () => ({
+vi.mock("@/lib/auth/access-control", async (importOriginal) => ({
+    // The real refusal of All tenants.
+    tenantOf: (await importOriginal<typeof import("@/lib/auth/access-control")>()).tenantOf,
     getAuthContext: async () => mocks.ctx,
     checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
@@ -246,6 +248,18 @@ describe("the API of a hosting panel with the key of a person of some tenants", 
         expect(mocks.audit).toHaveBeenCalledTimes(1);
         // The route gives from the moment of the request on.
         expect(await holders(new Date())).toEqual({ ...BEFORE, free_db: "acme" });
+    });
+
+    it("changes nothing from All tenants, which only reads, and answers 403 rather than a failure", async () => {
+        mocks.ctx = { userId: "u-msp", permissions: [SHARE_PERMISSION], isPlatformAdmin: true, authMethod: "session", tenantId: null, allTenants: true };
+        app.requestTenant = null;
+
+        const refused = await put([{ database: "free_db", tenantId: "acme" }]);
+
+        expect(refused.status).toBe(403);
+        expect((await refused.json()).error).toBe("All tenants only reads. Open the tenant of the record to change it.");
+        expect(mocks.audit).not.toHaveBeenCalled();
+        expect(await holders(new Date())).toEqual(BEFORE);
     });
 
     it("keeps every tenant for the key of someone of a platform group of all tenants", async () => {

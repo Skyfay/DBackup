@@ -49,7 +49,7 @@ describe("changing the own password under Profile", () => {
 
         expect(mocks.setPassword).toHaveBeenCalledWith("u1", "Harbor-Lamp-42");
         expect(mocks.revokeSessions).toHaveBeenCalledWith("u1", "s-here");
-        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { change: "Password Changed", signedOut: 2 }, "u1");
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { change: "Password Changed", signedOut: 2 }, "u1", { tenantId: "default" });
     });
 
     it("hands on the rule of Settings > Passwords that the new password breaks", async () => {

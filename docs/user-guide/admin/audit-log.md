@@ -4,7 +4,7 @@ The audit log records who signed in, who changed what, and who revealed secrets,
 
 ## The Audit Log Tab
 
-Open **Users & Groups → Audit log**. It needs the `audit:read` permission. Every [tenant](/user-guide/admin/tenants) has its own log, and the tab shows the one of the open tenant. Sign-ins, sign-outs, failed sign-ins, the changes of tenants, platform admins, platform groups and sign-in providers, and every change of the settings of the instance belong to the platform and go into the log of the home tenant, whichever tenant the admin works in. The changes of a group go into the log of its tenant, see [Audit Log](/user-guide/admin/tenants#audit-log) of Tenants.
+Open **Users & Groups → Audit log**. It needs the `audit:read` permission. Every [tenant](/user-guide/admin/tenants) has its own log, and the tab shows the one of the open tenant. Sign-ins, sign-outs, failed sign-ins, the changes of tenants, platform admins, platform groups and sign-in providers, and every change of the settings of the instance belong to the platform and go into the log of the home tenant, whichever tenant the admin works in. The changes of a group go into the log of its tenant. A change of an account, your own included, stays in the log of the open tenant only while the account is one of its people, see [Audit Log](/user-guide/admin/tenants#audit-log) of Tenants.
 
 The strip above the list covers the last 30 days:
 
@@ -16,11 +16,11 @@ The strip above the list covers the last 30 days:
 | **Sensitive** | Revealed secrets and keys, downloads and restores |
 | **Failed sign-ins** | Turned down passwords, with the address of the last one |
 
-Every entry shows as a sentence, like "Changed the group **Operators**", with who did it, the area, and the browser and address the request came from. In the log of a customer's tenant the browser and address of someone who is no member there, like a platform admin or someone of a platform group, stay empty, also in the details and the CSV export. A second line says what changed, like "Backups See to Use". A sign-in from a network the person never signed in from before is marked **New place**.
+Every entry shows as a sentence, like "Changed the group **Operators**", with who did it, the area, and the browser and address the request came from. In the log of a customer's tenant the browser and address of someone who is no member there, like a platform admin or someone of a platform group, stay empty, also in the details and the CSV export. So do those of a deleted account, since nothing tells any more whether it worked there. A second line says what changed, like "Backups See to Use". A sign-in from a network the person never signed in from before is marked **New place**.
 
 ### Filters
 
-- **Search** finds names inside the entries, like a job or a file, people, email addresses and IP addresses. An address finds only the entries that show it.
+- **Search** finds names inside the entries, like a job or a file, people, email addresses and IP addresses. An address finds only the entries that show it, and in a customer's tenant an email only the entries of its own people.
 - **Who** filters by person or API key. A person means what they did themselves, their API keys are listed on their own.
 - **Area** and **Action** pick one or several values, each counted under the other filters.
 - The period reaches back 24 hours, 7, 30 or 90 days, or over everything the log keeps.

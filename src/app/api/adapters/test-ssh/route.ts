@@ -10,6 +10,7 @@ import { MSSQLConfig } from "@/lib/adapters/definitions";
 import { assertConfigOffHost, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { registerAdapters } from "@/lib/adapters";
 import { assertMayApplySavedLogin } from "@/lib/auth/saved-login-access";
+import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 
@@ -40,12 +41,18 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW);
-        // A config of a form runs in one tenant, All tenants belongs to none.
-        tenantOf(ctx);
-
         const body = await req.json();
         const { config, adapterId, sshCredentialId } = body as { config: Record<string, any>; adapterId?: string; sshCredentialId?: string | null };
+
+        // The config of a form opens SSH to any host with the login it names, and for SQL Server
+        // writes a probe file there. So it is for someone who may change connections of its kind,
+        // sources:write for SSH without an adapter, and in one tenant, never All tenants.
+        if (adapterId) {
+            assertMayReadFormConfig(ctx, adapterId);
+        } else {
+            checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.WRITE);
+            tenantOf(ctx);
+        }
 
         if (!config) {
             return NextResponse.json(
@@ -69,6 +76,10 @@ export async function POST(req: NextRequest) {
                     sshCredentialId
                 ) as Record<string, any>;
             } catch (overlayError: unknown) {
+                // A refusal of the host, like one in the local network of a tenant that may not reach it, says why.
+                if (overlayError instanceof ValidationError) {
+                    return NextResponse.json({ success: false, message: overlayError.message }, { status: 400 });
+                }
                 log.warn("Failed to overlay SSH credential", { adapterId, sshCredentialId }, wrapError(overlayError));
                 return NextResponse.json(
                     { success: false, message: "Failed to resolve SSH credential profile" },

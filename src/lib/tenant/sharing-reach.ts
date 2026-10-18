@@ -27,6 +27,8 @@ export const OUTSIDE_REACH = {
     share: (tenant: string) => `Your platform group does not reach ${tenant}, so you cannot share with it or stop sharing with it.`,
     /** Deleting the backups of a tenant on a shared destination. */
     backups: (tenant: string) => `Your platform group does not reach ${tenant}, so you cannot delete its backups.`,
+    /** Letting a database or a rule follow its customer again, on a server of a tenant beyond the reach. */
+    provider: (server: string) => `${server} belongs to a tenant your platform group does not reach, so you cannot change what it gives.`,
     /** Picking All tenants for a destination or a channel. */
     everyTenant: "Your platform group does not reach every tenant, so you cannot share with all tenants.",
     /** Changing or stopping a share with every tenant. */

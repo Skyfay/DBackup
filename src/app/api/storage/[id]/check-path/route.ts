@@ -4,6 +4,7 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { checkRestorePath } from "@/services/storage/restore-path-check";
 import { isMissingStorage } from "@/services/storage/storage-lookup";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 /**
  * Checks whether a directory restore target already has content, for the Overwrite/Empty
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
         return NextResponse.json(await checkRestorePath(params.id, targetPath));
     } catch (e: unknown) {
+        const refused = permissionRefusal(e);
+        if (refused) return refused;
         if (isMissingStorage(e)) {
             return NextResponse.json({ error: "Storage adapter not found" }, { status: 404 });
         }

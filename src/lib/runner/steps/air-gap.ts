@@ -75,8 +75,9 @@ export async function reportSkippedAirGaps(ctx: RunnerContext, skipped: Destinat
         const { notify } = await import("@/services/notifications/system-notification-service");
         let changed = false;
         for (const dest of skipped) {
-            // The event is about the job, so it goes to the tenant of the job, never to the tenant
-            // that shares the destination, which would learn of the job of its customer.
+            // The event is about the job, so it goes to the tenant of the job, not to the channels a
+            // tenant that shares the destination picked. The channels of the platform hear every
+            // event, so with the event on there, a home tenant that shares it reads of the job too.
             const tenantId = ctx.job?.tenantId ?? dest.customer ?? null;
             const key = skipKey(dest.configId, tenantId);
             const connected = await lastConnectedAt(dest.configId);

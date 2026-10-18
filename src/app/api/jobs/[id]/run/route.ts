@@ -11,6 +11,7 @@ import { ApiKeyError, NotFoundError } from "@/lib/logging/errors";
 import { apiKeyService } from "@/services/auth/api-key-service";
 import { jobAuditName } from "@/services/jobs/job-audit";
 import { userService } from "@/services/user/user-service";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 
 const triggerBodySchema = z.object({
     lock: z.boolean().optional(),
@@ -92,11 +93,12 @@ export async function POST(
         if (error instanceof NotFoundError) {
             return NextResponse.json({ success: false, error: "Job not found" }, { status: 404 });
         }
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         const message = error instanceof Error ? error.message : "Unknown error";
-        const status = error instanceof Error && error.message.includes("Permission") ? 403 : 500;
         return NextResponse.json(
             { success: false, error: message },
-            { status }
+            { status: 500 }
         );
     }
 }

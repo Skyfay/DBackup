@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { checkAnyPermissionWithContext, checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
+import { checkAnyPermissionWithContext, checkPermissionWithContext, getAuthContext, tenantOf } from "@/lib/auth/access-control";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -62,6 +62,8 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
     const { id } = await props.params;
     try {
         checkPermissionWithContext(ctx, SHARE_PERMISSION);
+        // A change happens in the tenant of the server, All tenants only reads.
+        tenantOf(ctx);
         const parsed = BodySchema.safeParse(await req.json().catch(() => null));
         if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
 

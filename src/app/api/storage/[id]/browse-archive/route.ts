@@ -4,6 +4,8 @@ import { z } from "zod";
 import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 import { logger } from "@/lib/logging/logger";
 import { NotFoundError, ValidationError, wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { browseArchive } from "@/services/storage/backup-contents";
@@ -45,6 +47,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         }
         const { file, jobSourceId, prefix, profileIdOverride } = parsed.data;
         const keyOverride = profileIdOverride ? { profileId: profileIdOverride } : undefined;
+        const configBackup = await configBackupRefusal(ctx, id, file);
+        if (configBackup) return configBackup;
 
         const listing = await browseArchive(id, file, { jobSourceId, prefix, keyOverride });
         if (!listing) {
@@ -53,6 +57,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
         return NextResponse.json({ success: true, data: listing });
     } catch (e: unknown) {
+        const refused = permissionRefusal(e);
+        if (refused) return refused;
         const keyRequired = keyRequiredResponse(e);
         if (keyRequired) return keyRequired;
 

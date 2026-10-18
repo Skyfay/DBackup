@@ -9,7 +9,7 @@ import { encryptConfig, decryptConfig, mergeSecrets } from "@/lib/crypto";
 import { STORAGE_ROLES, isStorageRole, type StorageRole } from "@/lib/core/storage-roles";
 import type { AuditChange } from "@/lib/core/audit-types";
 import { registerAdapters } from "@/lib/adapters";
-import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { layLoginsOver } from "@/lib/adapters/config-resolver";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { validateStorageRole } from "@/lib/adapters/role-validation";
 import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
@@ -21,6 +21,7 @@ import { isShared } from "@/services/sharing/destination-access";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { connectionChanges } from "./adapter-audit";
 import { assertMayReachHost } from "./adapter-create";
+import { assertOffSharedPlaces } from "./shared-place";
 
 registerAdapters();
 
@@ -79,8 +80,9 @@ const EXISTING_SELECT = {
  *
  * @throws ValidationError for a credential profile of the wrong type, an unknown role, a role
  *   change while a job still depends on the old one or the destination is shared, a new role the
- *   tenant may not add, a config that reaches the server DBackup runs on outside the platform, or a
- *   new place for the files of a shared destination.
+ *   tenant may not add, a config that reaches the server DBackup runs on outside the platform or the
+ *   local network its tenant blocks, a new place for the files of a shared destination, or a place
+ *   that overlaps another destination the tenant shares with customers.
  * @throws UnsupportedSettingError for a role or shadow copies the adapter cannot serve.
  * @throws NotFoundError for a credential profile that does not exist.
  * @throws ConflictError when a connection of the same type has the name already.
@@ -169,6 +171,10 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
         const after = await locationOf(existing.adapterId, mergedConfig ?? readExisting(), logins.primaryCredentialId, logins.sshCredentialId);
         if (movedLocationKeys(before, after).length > 0) throw new ValidationError(SHARED_PLACE_STAYS, { field: "config" });
     }
+    // Nor may it move to where another destination of the tenant shared with customers keeps their backups.
+    if (existing.type === "storage" && placeMayMove) {
+        await assertOffSharedPlaces(existing.adapterId, mergedConfig ?? readExisting(), logins, id);
+    }
 
     // The same gate as on create: the stored config has to be one the server can honour.
     if (mergedConfig !== undefined) {
@@ -243,7 +249,7 @@ function jobsNamed(jobs: { name: string; tenantId?: string | null }[], tenantId:
 async function locationOf(adapterId: string, config: Record<string, unknown>, primaryCredentialId: string | null, sshCredentialId: string | null): Promise<Record<string, unknown>> {
     if (!primaryCredentialId && !sshCredentialId) return config;
     try {
-        return await overlayCredentialsOnConfig(adapterId, { ...config }, primaryCredentialId, sshCredentialId);
+        return await layLoginsOver(adapterId, { ...config }, primaryCredentialId, sshCredentialId);
     } catch (e) {
         log.warn("Failed to read a login of a shared destination, its config alone is compared", { adapterId }, wrapError(e));
         return config;

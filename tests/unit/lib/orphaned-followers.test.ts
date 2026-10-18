@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { endOrphanedFollowers, FOLLOWS_KEY, ORPHAN_GRACE_MS } from "@/lib/execution/follower-runs";
+import { endOrphanedFollowers, FOLLOWS_KEY, LEADING_RUNS, leaderOf, ORPHAN_GRACE_MS } from "@/lib/execution/follower-runs";
 import { sweepStuckExecutions } from "@/services/system/stuck-execution-service";
 
 vi.mock("@/lib/execution/queue-manager", () => ({ processQueue: vi.fn().mockResolvedValue(undefined) }));
@@ -90,6 +90,22 @@ describe("followers whose run is gone or over", () => {
 
         expect(statusOf("customer-backup")).toBe("Pending");
         expect(statusOf("provider-run")).toBe("Running");
+    });
+
+    it("never include a run whose destination or database is called followsRun, which the queue and the watchdog keep", async () => {
+        const own: Row = {
+            id: "own-run", status: "Running", startedAt: minutesAgo(60), endedAt: null, logs: "[]",
+            metadata: JSON.stringify({ destinations: [{ name: FOLLOWS_KEY }], onlyDatabases: [FOLLOWS_KEY], stage: "Uploading" }),
+        };
+        const mark = (LEADING_RUNS.OR as { NOT?: { metadata: { contains: string } } }[])[1].NOT!.metadata.contains;
+
+        expect(own.metadata!.includes(mark)).toBe(false);
+        expect(follower("provider-run", "run-1").metadata!.includes(mark)).toBe(true);
+        expect(leaderOf(own.metadata)).toBeNull();
+
+        rows = [own];
+        expect(await endOrphanedFollowers(NOW)).toBe(0);
+        expect(statusOf("own-run")).toBe("Running");
     });
 
     it("are ended by the stuck run watchdog, which leaves them out of its own sweep", async () => {

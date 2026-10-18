@@ -109,6 +109,9 @@ const ADAPTER_RULES: Rule[] = [
             "host-local.ts":
                 "Not an adapter. It decides whether a tenant may add a connection that runs on the server DBackup runs on, "
                 + "and decides no transport. The adapter pickers load it in the browser, where the resolvers and ssh2 cannot go.",
+            "dialed-hosts.ts":
+                "Not an adapter. It names the hosts DBackup dials for a config, the SSH host alone in SSH mode, for the "
+                + "local network check of a tenant, and decides no transport. It reads the fields the resolvers read.",
         },
         reason: "Transport decisions belong in a TransportResolver, not in adapter bodies.",
     },

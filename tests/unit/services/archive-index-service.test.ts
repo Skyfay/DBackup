@@ -14,6 +14,8 @@ vi.mock("@/services/backup/encryption-service", () => ({
     getProfileMasterKey: vi.fn(),
     getEncryptionProfiles: vi.fn(),
 }));
+const openDestination = vi.hoisted(() => vi.fn());
+vi.mock("@/services/sharing/destination-access", () => ({ openDestination: (...args: unknown[]) => openDestination(...args) }));
 
 const { ArchiveIndexService } = await import("@/services/backup/archive-index-service");
 const encryptionService = await import("@/services/backup/encryption-service");
@@ -160,5 +162,33 @@ describe("ArchiveIndexService.load", () => {
 
         // A result reached with a one-off key is not the answer a plain caller asked for.
         expect(fetchSidecar).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops the index of a deleted or replaced backup in the view of every tenant", async () => {
+        const { runAsTenant } = await import("@/lib/tenant/context");
+        getProfileMasterKey.mockResolvedValue(MASTER_KEY);
+        const bytes = await sealedIndex(MASTER_KEY);
+        const { service, fetchSidecar } = makeService(async () => bytes);
+        const loadAs = (tenantId: string) => runAsTenant(tenantId, () => service.load("dest-1", "FileBackup/inc-001.tar", META));
+
+        await loadAs("acme");
+        await loadAs("globex");
+        service.invalidate("dest-1", "FileBackup/inc-001.tar");
+        await loadAs("acme");
+        await loadAs("globex");
+
+        expect(fetchSidecar).toHaveBeenCalledTimes(4);
+    });
+});
+
+describe("ArchiveIndexService.fetchSidecar", () => {
+    it("reads the sidecar in the view of the tenant the path is in, which for a shared restore is not the tenant that runs", async () => {
+        const download = vi.fn(async () => false);
+        openDestination.mockResolvedValue({ adapter: { download }, config: {} });
+
+        await new ArchiveIndexService().fetchSidecar("dest-1", "FileBackup/inc-001.tar", ".index", "msp");
+
+        expect(openDestination).toHaveBeenCalledWith("dest-1", "msp");
+        expect(download).toHaveBeenCalledWith({}, "FileBackup/inc-001.tar.index", expect.any(String));
     });
 });

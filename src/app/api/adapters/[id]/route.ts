@@ -6,6 +6,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { deleteAdapter } from "@/services/adapters/adapter-service";
@@ -52,6 +53,8 @@ export async function DELETE(
 
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         // Still referenced is the caller's problem to fix, not a server fault.
         if (error instanceof ConflictError) {
             return NextResponse.json({ success: false, error: error.message }, { status: 400 });
@@ -114,7 +117,10 @@ export async function PUT(
         );
 
         return NextResponse.json(toAdapterListItem(adapter));
-    } catch (_error) {
+    } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
+        log.error("Update adapter error", { adapterId: params.id }, wrapError(error));
         return NextResponse.json({ error: "Failed to update adapter" }, { status: 500 });
     }
 }

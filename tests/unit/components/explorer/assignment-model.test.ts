@@ -21,6 +21,8 @@ import {
     rulePreview,
     startLimit,
     startOf,
+    takeBackRefusal,
+    takeBackText,
 } from "@/components/dashboard/explorer/assignment-model";
 import type { AssignmentRow, DatabaseOwnerRow, RuleRow, SourceAssignments } from "@/services/tenant/database-assignments";
 
@@ -223,6 +225,21 @@ describe("giving several databases to one tenant at once", () => {
     it("counts what the tenant holds once they are given", () => {
         const data = server();
         expect(heldAfter([...data.databases, database("internal")], ["internal"], acme.id)).toBe(2);
+    });
+});
+
+describe("taking several databases back at once", () => {
+    it("takes back a database a rule gives like one given by name, as Nobody else in its row does", () => {
+        const data = server();
+        expect(takeBackRefusal(data.databases[0])).toBeNull();
+        expect(takeBackRefusal(data.databases[1])).toBeNull();
+        expect(takeBackRefusal(database("internal"))).toBe("Nobody else has it.");
+    });
+
+    it("says that no rule gives them again only when a rule gave one of them", () => {
+        const data = server();
+        expect(takeBackText([data.databases[1]], "Default")).toBe("From now on only Default sees them. The tenants keep their backups of before.");
+        expect(takeBackText(data.databases, "Default")).toContain("No rule gives them again until they are given by name.");
     });
 });
 

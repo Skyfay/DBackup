@@ -1,7 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRightLeft, Asterisk, Database, EyeOff, History, Tag, Undo2, Zap } from "lucide-react";
+import { ArrowRightLeft, Asterisk, Database, EyeOff, History, Lock, Tag, Undo2, Zap } from "lucide-react";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import { BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { TenantTileMark } from "@/components/tenant/tenant-pick";
@@ -12,10 +12,13 @@ import type { DatabaseOwnerRow, SourceAssignments } from "@/services/tenant/data
 import { NOBODY, howOf, movedText, onDemandLine, ownerKey, type How } from "./assignment-model";
 import { OnDemandNote } from "./assignment-on-demand-note";
 import { OwnerPicker, type OwnerChange } from "./assignment-picker";
+import { ownerLock } from "./assignment-reach";
 
 /** What the menu of a database needs: who may change it and what each entry does. */
 export interface AssignmentActionOptions {
     canAssign: boolean;
+    /** The tenants the viewer reaches, a database of another one stays as it is. */
+    data: Pick<SourceAssignments, "customers">;
     onChange: (changes: OwnerChange[]) => Promise<boolean>;
     onHistory: (name: string) => void;
     onMove: (row: DatabaseOwnerRow) => void;
@@ -25,10 +28,11 @@ export interface AssignmentActionOptions {
 /**
  * What a database of the server can have done to it, for the button at the end of its row and the
  * right click: who held it, and for whoever may give databases away moving it, its backups on
- * demand and taking it back.
+ * demand and taking it back, while its tenant is one they reach.
  */
-export function assignmentActions(row: DatabaseOwnerRow, { canAssign, onChange, onHistory, onMove, onOnDemand }: AssignmentActionOptions): BackupActionGroup[] {
+export function assignmentActions(row: DatabaseOwnerRow, { canAssign: mayAssign, data, onChange, onHistory, onMove, onOnDemand }: AssignmentActionOptions): BackupActionGroup[] {
     const byName = row.owner?.via === "assignment";
+    const canAssign = mayAssign && !ownerLock(row, data);
     const manage = canAssign ? [
         ...(row.owner ? [{ id: "move", label: "Move to another server", icon: ArrowRightLeft, onSelect: () => onMove(row), tone: "edit" as const }] : []),
         ...(byName ? [{ id: "on-demand", label: "Backups on demand", icon: Zap, onSelect: () => onOnDemand(row), tone: "edit" as const }] : []),
@@ -56,8 +60,8 @@ interface ColumnOptions {
     now: Date;
 }
 
-/** The tenant as text, for a viewer who may not change it. */
-function OwnerText({ row }: { row: DatabaseOwnerRow }) {
+/** The tenant as text, for a viewer who may not change it, with why when the tenant lies beyond their reach. */
+function OwnerText({ row, lock }: { row: DatabaseOwnerRow; lock?: string | null }) {
     if (!row.owner) {
         return (
             <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
@@ -67,9 +71,15 @@ function OwnerText({ row }: { row: DatabaseOwnerRow }) {
         );
     }
     return (
-        <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium">
+        <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium" title={lock ?? undefined}>
             <TenantTileMark name={row.owner.tenantName} className="size-5 text-[9px]" />
             <span className="truncate">{row.owner.tenantName}</span>
+            {lock && (
+                <>
+                    <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="sr-only">{lock}</span>
+                </>
+            )}
         </span>
     );
 }
@@ -119,11 +129,17 @@ export function assignmentColumns({ data, tenantName, canAssign, onChange, onHis
             header: "Tenant",
             enableSorting: false,
             filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)),
-            cell: ({ row }) => (
-                <div className="w-44 sm:w-56">
-                    {canAssign ? <OwnerPicker row={row.original} data={data} tenantName={tenantName} onChange={onChange} /> : <OwnerText row={row.original} />}
-                </div>
-            ),
+            cell: ({ row }) => {
+                // A database of a tenant beyond the reach stays as it is, and without a tenant to give to there is nothing to pick.
+                const lock = canAssign ? ownerLock(row.original, data) : null;
+                return (
+                    <div className="w-44 sm:w-56">
+                        {canAssign && !lock && data.customers.length > 0
+                            ? <OwnerPicker row={row.original} data={data} tenantName={tenantName} onChange={onChange} />
+                            : <OwnerText row={row.original} lock={lock} />}
+                    </div>
+                );
+            },
         },
         {
             id: "how",
@@ -144,14 +160,14 @@ export function assignmentColumns({ data, tenantName, canAssign, onChange, onHis
             enableSorting: false,
             cell: ({ row }) => (
                 <div className="flex justify-end">
-                    <BackupRowMenu name={row.original.name} groups={assignmentActions(row.original, { canAssign, onChange, onHistory, onMove, onOnDemand })} />
+                    <BackupRowMenu name={row.original.name} groups={assignmentActions(row.original, { canAssign, data, onChange, onHistory, onMove, onOnDemand })} />
                 </div>
             ),
         },
     ];
 }
 
-/** The filters by tenant and by how a database is given. The table counts the rows. */
+/** The filters by tenant, every one that can hold a database, and by how a database is given. The table counts the rows. */
 export function assignmentFilters(data: SourceAssignments): DataTableFilterableColumn<DatabaseOwnerRow>[] {
     return [
         {
@@ -161,7 +177,7 @@ export function assignmentFilters(data: SourceAssignments): DataTableFilterableC
             unavailableLabel: "No databases with the other filters",
             options: [
                 { value: NOBODY, label: "Nobody else", icon: EyeOff },
-                ...data.customers.map((tenant) => ({ value: tenant.id, label: tenant.name, lead: <TenantTileMark name={tenant.name} className="size-4 rounded-sm border-0 text-[8px]" /> })),
+                ...data.tenants.map((tenant) => ({ value: tenant.id, label: tenant.name, lead: <TenantTileMark name={tenant.name} className="size-4 rounded-sm border-0 text-[8px]" /> })),
             ],
         },
         {

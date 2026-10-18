@@ -29,7 +29,7 @@ const SECTIONS: (NavEntry & { id: TenantSection; description: string; customersO
     { id: "members", label: "Members", icon: Users, description: "Who works here with which group." },
     { id: "sharing", label: "Sharing", icon: Share2, description: "Whether it gives databases, destinations and channels to other tenants." },
     { id: "allowances", label: "What it may add", icon: Lock, description: "What the tenant adds itself, which the platform decides.", customersOnly: true },
-    { id: "on-demand", label: "Backups on demand", icon: Zap, description: "How many backups a day it may start of every database given to it.", customersOnly: true },
+    { id: "on-demand", label: "Backups on demand", icon: Zap, description: "How many backups a day it may start of every database given to it." },
 ];
 
 interface TenantEditDialogProps {
@@ -49,7 +49,8 @@ interface TenantEditDialogProps {
  * Edit of a tenant, every setting of it in one dialog: a list of the parts on the left, the part on
  * the right, like the form of a connection. The name, sharing, what it may add and backups on demand
  * are saved together with Save changes, the members and Follow change at once. The home tenant has
- * no limits and starts no backups on demand, so it has neither part.
+ * no limits, so it has no part for them. It may still get databases of another tenant that shares,
+ * so it keeps Backups on demand.
  */
 export function TenantEditDialog({ tenant, section = "general", viewerId, canManage, viewerPlatformAdmin, onClose, onChanged }: TenantEditDialogProps) {
     const sections = SECTIONS.filter((entry) => !(entry.customersOnly && tenant.isHome));
@@ -70,7 +71,7 @@ export function TenantEditDialog({ tenant, section = "general", viewerId, canMan
         ...(trimmed !== tenant.name ? ["the name"] : []),
         ...(shares !== tenant.sharesWithCustomers ? ["sharing"] : []),
         ...(Object.keys(patch).length > 0 ? ["what it may add"] : []),
-        ...(!tenant.isHome && perDay !== tenant.onDemand.perDay ? ["backups on demand"] : []),
+        ...(perDay !== tenant.onDemand.perDay ? ["backups on demand"] : []),
     ];
 
     /** Runs one save, says why it failed and opens its part. True once it went through. */
@@ -95,7 +96,7 @@ export function TenantEditDialog({ tenant, section = "general", viewerId, canMan
             const done = (trimmed === tenant.name || await step("general", () => renameTenant(tenant.id, trimmed)))
                 && (shares === tenant.sharesWithCustomers || await step("sharing", () => setTenantSharing(tenant.id, shares)))
                 && (Object.keys(patch).length === 0 || await step("allowances", () => setTenantAllowances(tenant.id, patch)))
-                && (tenant.isHome || perDay === tenant.onDemand.perDay || await step("on-demand", () => setTenantOnDemand(tenant.id, perDay)));
+                && (perDay === tenant.onDemand.perDay || await step("on-demand", () => setTenantOnDemand(tenant.id, perDay)));
             // What went through before a refusal shows once the list loads again.
             onChanged();
             if (!done) return;

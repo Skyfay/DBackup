@@ -200,7 +200,7 @@ describe("getLatestJobs - metadata edge cases", () => {
     expect(result[0].jobName).toBe("Fallback Job");
     expect(result[0].sourceName).toBe("Postgres");
     expect(result[0].sourceType).toBe("postgres");
-    expect(result[0].databaseName).toBeNull();
+    expect(result[0].sub).toBe("Backup");
   });
 
   it("does not crash when metadata is an empty string", async () => {
@@ -257,7 +257,7 @@ describe("getLatestJobs - metadata edge cases", () => {
     // Empty strings are falsy - the service uses `if (meta.jobName)` so no override
     expect(result[0].jobName).toBe("Real Job");
     expect(result[0].sourceName).toBe("Real Source");
-    expect(result[0].databaseName).toBeNull(); // empty array, no join
+    expect(result[0].sub).toBe("Backup"); // empty array, no join
   });
 });
 
@@ -309,10 +309,10 @@ describe("getStorageVolume - cache miss behavior", () => {
   it("falls back to the last scanned values when refreshStorageStatsCache throws entirely", async () => {
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
     // First call from refreshStorageStatsCache - throws
-    // Second call from the last-scan fallback - returns an adapter
+    // Then the last-scan fallback and the read of what the scope sees - return an adapter
     prismaMock.adapterConfig.findMany
       .mockRejectedValueOnce(new Error("DB connection error"))
-      .mockResolvedValueOnce([
+      .mockResolvedValue([
         { id: "cfg-db", name: "DB Only", adapterId: "local", type: "storage", tenantId: HOME_TENANT_ID } as any,
       ]);
     prismaMock.storageSnapshot.findFirst.mockResolvedValue({

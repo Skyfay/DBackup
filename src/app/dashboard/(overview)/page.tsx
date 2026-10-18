@@ -15,7 +15,7 @@ import { getUserPermissions, getViewer, hasPermissionWithContext } from "@/lib/a
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canUseQuickSetup } from "@/lib/auth/sign-in-target";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";
-import { hasNothingToBackUp, ownBackupReach } from "@/services/dashboard/start-page";
+import { hasNothingToBackUp, ownBackupReach, quickSetupFits } from "@/services/dashboard/start-page";
 import { listSharedDatabases } from "@/services/tenant/shared-databases";
 import type { ProvidedSummary } from "@/components/dashboard/widgets/status-banner";
 
@@ -42,10 +42,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
     // Right after signing in, someone who may set DBackup up and has nothing to back up yet
     // starts on the Quick Setup. Only then: the Overview stays reachable from the sidebar.
-    // A tenant with nothing to back up itself, whose databases another tenant backs up, never starts there.
+    // A tenant with nothing to back up itself, whose databases another tenant backs up, never starts
+    // there, and neither does one without a database that may add none, since a database is required.
     const reach = await ownBackupReach();
     if ((await searchParams).from === "sign-in") {
-        redirect(reach.jobs && canUseQuickSetup(viewer.permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
+        redirect(quickSetupFits(reach) && canUseQuickSetup(viewer.permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
     }
 
     // In All tenants whoever may see the tenants sees each with how it is doing, the failed ones first.

@@ -6,6 +6,15 @@ import { findVisibleAvatar, maySeeAccount, maySeePicture, type AccountViewer } f
 
 const member = (tenantId: string | null, ...permissions: string[]): AccountViewer => ({ userId: "lena", tenantId, allTenants: false, isPlatformAdmin: false, permissions });
 
+/** The platform group of the viewer, as `platformGroupService` reads it. */
+const platformGroup = (scope: { allTenants: boolean; tenants: { tenantId: string }[] }) =>
+    prismaMock.user.findUnique.mockResolvedValue({ platformRole: null, platformGroup: { id: "pg", platformPermissions: "[]", tenantPermissions: "[]", ...scope } } as never);
+
+beforeEach(() => {
+    prismaMock.user.findUnique.mockReset();
+    prismaMock.user.count.mockReset();
+});
+
 /** The where of the last count of accounts, for the tenant it names. */
 const lastUserWhere = () => JSON.stringify(prismaMock.user.count.mock.calls.at(-1)?.[0]);
 
@@ -27,11 +36,25 @@ describe("who opens the panel of an account", () => {
         expect(await maySeeAccount(member("t-acme", PERMISSIONS.USERS.READ), "someone-of-globex")).toBe(false);
     });
 
-    it("opens every account for a platform admin, whoever may see the accounts of the platform and in All tenants", async () => {
+    it("opens every account for a platform admin, a platform group of all tenants that may see the accounts of the platform and in All tenants", async () => {
+        platformGroup({ allTenants: true, tenants: [] });
         expect(await maySeeAccount({ ...member(null), isPlatformAdmin: true }, "max")).toBe(true);
         expect(await maySeeAccount(member("t-acme", PERMISSIONS.PLATFORM.ACCOUNTS_READ), "max")).toBe(true);
         expect(await maySeeAccount({ ...member(null, PERMISSIONS.PLATFORM.ACCOUNTS_READ), allTenants: true }, "max")).toBe(true);
         expect(prismaMock.user.count).not.toHaveBeenCalled();
+    });
+
+    it("opens for a platform group of some tenants only the accounts that work in one of them", async () => {
+        // Lena's platform group reaches Acme and Shop, she works in Globex.
+        platformGroup({ allTenants: false, tenants: [{ tenantId: "t-acme" }, { tenantId: "t-shop" }] });
+        const viewer = member("t-globex", PERMISSIONS.PLATFORM.ACCOUNTS_READ, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
+
+        prismaMock.user.count.mockResolvedValueOnce(1);
+        expect(await maySeeAccount(viewer, "tom-of-acme")).toBe(true);
+        expect(JSON.stringify(prismaMock.user.count.mock.calls[0][0])).toContain('"tenantId":{"in":["t-acme","t-shop"]}');
+
+        // Neither a member of a tenant it reaches nor one of the tenant she works in.
+        expect(await maySeeAccount(viewer, "someone-of-initech")).toBe(false);
     });
 
     it("opens no other account for someone of no tenant", async () => {
@@ -71,9 +94,19 @@ describe("who sees the picture of an account", () => {
     });
 
     it("shows everyone to whoever lists the people of every tenant", async () => {
-        expect(await maySeePicture(member("t-acme", PERMISSIONS.PLATFORM.TENANTS_READ), "someone-of-globex")).toBe(true);
         expect(await maySeePicture(member("t-acme", PERMISSIONS.PLATFORM.SIGN_IN_READ), "someone-of-globex")).toBe(true);
         expect(prismaMock.user.count).not.toHaveBeenCalled();
+
+        platformGroup({ allTenants: true, tenants: [] });
+        expect(await maySeePicture(member("t-acme", PERMISSIONS.PLATFORM.SIGN_IN_READ), "someone-of-globex")).toBe(true);
+    });
+
+    it("shows a platform group of some tenants the people of the sign-in providers and the accounts of those tenants alone", async () => {
+        platformGroup({ allTenants: false, tenants: [{ tenantId: "t-shop" }] });
+
+        expect(await maySeePicture(member("t-acme", PERMISSIONS.PLATFORM.SIGN_IN_READ), "someone-of-globex")).toBe(false);
+        expect(await maySeePicture(member("t-acme", PERMISSIONS.PLATFORM.ACCOUNTS_READ), "someone-of-globex")).toBe(false);
+        expect(JSON.stringify(prismaMock.user.count.mock.calls[0][0])).toContain('"tenantId":{"in":["t-shop"]}');
     });
 });
 

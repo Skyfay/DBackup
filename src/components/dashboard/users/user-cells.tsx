@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { describeAgent, formatIpAddress } from "@/lib/core/user-agent";
 import { cn } from "@/lib/utils";
 import type { SecondFactor, SignInMethod, UserGroupRef, UserRow } from "@/services/user/users-types";
+import { PlatformOnlyTag } from "./user-tenants";
 
 /** "LG" for Lena Graf, "M" for Manu. */
 export function initialsOf(name: string): string {
@@ -69,8 +70,12 @@ export function UserCell({ user, compact, onOpen }: { user: UserRow; compact: bo
     );
 }
 
-/** The group as a tag, or a dashed amber "No group", since such a user sees nothing. */
-export function GroupTag({ group, className }: { group: UserGroupRef | null; className?: string }) {
+/**
+ * The group as a tag, or a dashed amber "No group", since such a user sees nothing. An account
+ * that runs the platform needs no group, so it gets a quiet "Platform only" instead.
+ */
+export function GroupTag({ group, platform = false, className }: { group: UserGroupRef | null; platform?: boolean; className?: string }) {
+    if (!group && platform) return <PlatformOnlyTag className={className} />;
     return (
         <span
             className={cn(

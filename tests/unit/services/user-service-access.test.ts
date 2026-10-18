@@ -100,4 +100,24 @@ describe("creating a user and ending their sessions", () => {
         expect(await userService.accountOf("root")).toEqual({ isPlatformAdmin: true, tenantIds: [], platformGroup: null });
         expect(await userService.accountOf("gone")).toBeNull();
     });
+
+    it("judges an account by the tenants the caller's platform group reaches when they manage the accounts of the platform", async () => {
+        const nina = { id: "nina", isPlatformAdmin: false, tenantId: "default", permissions: ["platform-accounts:write"] };
+        const ofGlobex = { platformRole: null, platformGroupId: null, memberships: [{ tenantId: "tenant-b" }] };
+        // Nina's platform group reaches tenant A.
+        const support = { platformRole: null, platformGroup: { platformPermissions: "[]", tenantPermissions: "[]", allTenants: false, tenants: [{ tenantId: "tenant-a" }] } };
+        mocks.prisma.user.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === "nina" ? support : ofGlobex));
+
+        expect(await userService.accountsReachOf(nina)).toEqual(["tenant-a"]);
+        expect(await userService.accountRefusalFor(nina, "max")).toMatch(/does not reach/);
+
+        // Of all tenants, she changes it as before.
+        mocks.prisma.user.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+            (where.id === "nina" ? { ...support, platformGroup: { ...support.platformGroup, allTenants: true, tenants: [] } } : ofGlobex));
+        expect(await userService.accountRefusalFor(nina, "max")).toBeNull();
+
+        // Without the right to manage the accounts nothing of the platform counts, and a platform admin reaches every tenant.
+        expect(await userService.accountsReachOf({ ...nina, permissions: ["users:write"] })).toEqual([]);
+        expect(await userService.accountsReachOf({ ...nina, isPlatformAdmin: true })).toBe("all");
+    });
 });

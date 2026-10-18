@@ -1,8 +1,8 @@
 import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
-import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { ON_DEMAND_MAX, ON_DEMAND_MIN } from "@/lib/tenant/sharing";
+import { sharingChanged } from "./shared-servers";
 
 /**
  * Backups on demand of a customer as the platform sets them: how many backups a day it may start of
@@ -80,9 +80,11 @@ export const tenantOnDemandService = {
         });
     },
 
-    /** Sets how many backups a day a customer may start of every database given to it, none with null. */
+    /**
+     * Sets how many backups a day a customer may start of every database given to it, none with
+     * null. Any tenant can get databases of another one that shares, the home tenant too.
+     */
     async set(tenantId: string, perDay: number | null): Promise<{ name: string; before: number | null; after: number | null }> {
-        if (tenantId === HOME_TENANT_ID) throw new ValidationError("The home tenant holds what the platform owns and backs it up with its own jobs.");
         const after = perDayValue(perDay);
         return runAsSystem(async () => {
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, onDemandPerDay: true } });
@@ -103,6 +105,7 @@ export const tenantOnDemandService = {
         await runAsSystem(() => (kind === "rule"
             ? prisma.databaseAssignmentRule.update({ where: { id }, data: { onDemandPerDay: null } })
             : prisma.databaseAssignment.update({ where: { id }, data: { onDemandPerDay: null } })));
+        sharingChanged();
         return { ...current, tenantName: found.name };
     },
 };

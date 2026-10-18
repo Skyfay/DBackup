@@ -14,6 +14,7 @@ import { countOf, matchesQuick, quickCounts, type Quick } from "./assignment-mod
 import { MoveDialog } from "./assignment-move-dialog";
 import { OnDemandDialog } from "./assignment-on-demand-dialog";
 import type { OwnerChange } from "./assignment-picker";
+import { ownerLock } from "./assignment-reach";
 
 interface AssignmentTableProps {
     serverId: string;
@@ -62,6 +63,7 @@ export function AssignmentTable({ serverId, serverName, tenantName, data, canAss
             icon: Building2,
             tone: "pick",
             itemName: (row) => row.name,
+            ineligible: (row) => ownerLock(row, data),
             dialog: ({ rows: picked, onClose, onDone }) => (
                 <GiveDialog
                     rows={picked}
@@ -83,7 +85,7 @@ export function AssignmentTable({ serverId, serverName, tenantName, data, canAss
             label: () => "Take back",
             icon: Undo2,
             itemName: (row) => row.name,
-            ineligible: (row) => (row.owner?.via === "assignment" ? null : row.owner ? "A rule gives it. Remove the rule to take it back." : "Nobody else has it."),
+            ineligible: (row) => ownerLock(row, data) ?? (row.owner?.via === "assignment" ? null : row.owner ? "A rule gives it. Remove the rule to take it back." : "Nobody else has it."),
             confirm: {
                 title: (picked) => `Take back ${countOf(picked.length, "database")}?`,
                 description: () => `From now on only ${tenantName} sees them. The tenants keep their backups of before.`,
@@ -122,7 +124,7 @@ export function AssignmentTable({ serverId, serverName, tenantName, data, canAss
                                 ]}
                             />
                         }
-                        enableRowSelection={canAssign}
+                        enableRowSelection={canAssign && data.customers.length > 0}
                         getRowId={(row) => row.name}
                         bulkActions={bulkActions}
                         onBulkActionComplete={onReload}
@@ -133,7 +135,7 @@ export function AssignmentTable({ serverId, serverName, tenantName, data, canAss
                                 tile={<span className="flex size-7 items-center justify-center rounded-md border bg-muted/50"><Database className="size-3.5 text-muted-foreground" aria-hidden="true" /></span>}
                                 title={row.name}
                                 note={row.owner ? `${row.owner.tenantName} · ${row.owner.via === "assignment" ? "by name" : "by a rule"}` : `Only ${tenantName}`}
-                                groups={assignmentActions(row, { canAssign, onChange, onHistory, onMove: setMoving, onOnDemand: setOnDemand })}
+                                groups={assignmentActions(row, { canAssign, data, onChange, onHistory, onMove: setMoving, onOnDemand: setOnDemand })}
                                 bulk={bulk}
                             />
                         )}

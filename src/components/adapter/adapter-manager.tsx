@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useImperativeHandle, type Ref } from "react";
-import { STORAGE_ROLES, storageRoleLabel, supportsStorageRole, canOfferCounterpart, counterpartStorageRole, type StorageRole } from "@/lib/core/storage-roles";
+import { STORAGE_ROLES, storageRoleLabel, supportsStorageRole, type StorageRole } from "@/lib/core/storage-roles";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
@@ -38,11 +38,13 @@ import { ConnectionCard } from "./connection-card";
 import { ConnectionSplitView } from "./connection-split-view";
 import { adapterTypeIcon } from "./connection-type-icon";
 import { connectionBulkActions, deleteBlocker } from "./connection-bulk-actions";
+import { counterpartRole, selectableForBulk } from "./connection-row-rules";
 import { ConnectionDeleteDialog } from "./connection-delete-dialog";
 import { useTrash } from "@/components/trash/use-trash";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
 import { useTenantColumns } from "@/components/tenant/tenant-column";
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
+import { useMayAdd } from "@/components/tenant/tenant-view";
 import { withTenantColumn } from "@/components/tenant/tenant-rows";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
@@ -107,6 +109,9 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const openRecord = useOpenRecord();
     const shareAccess = useShareAccess();
     const shareable = shareableKind(kind);
+    // Create as directory source or destination adds the other kind, which has a limit of its own.
+    const mayAddSources = useMayAdd("directorySources");
+    const mayAddDestinations = useMayAdd("destinations");
 
     // A storage adapter has exactly one role; a manager instance scoped to one (the
     // "Directory Sources" section, the Destinations page) only shows configs in it -
@@ -238,10 +243,9 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         // Same server and credentials in the other role. An adapter that only works one way
         // round has no counterpart, and the API would refuse the clone.
         const counterpartOf = () => {
-            const current = config.storageRole ?? STORAGE_ROLES.DESTINATION;
-            const counterpart = counterpartStorageRole(current);
-            const definition = ADAPTER_DEFINITIONS.find((d) => d.id === config.adapterId);
-            if (!canOfferCounterpart(definition?.supportedRoles, current)) return undefined;
+            // The copy is of the other kind, which the platform may let the tenant add or not.
+            const counterpart = counterpartRole(config, { directorySources: mayAddSources, destinations: mayAddDestinations });
+            if (!counterpart) return undefined;
             return {
                 label: `Create as ${storageRoleLabel(counterpart).toLowerCase()}`,
                 onSelect: () => setCloneTarget({ id: config.id, name: config.name, role: counterpart }),
@@ -265,7 +269,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             onEdit: !inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
             // A copy is a new connection, which the platform may not let the tenant add itself.
             onClone: canAdd ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
-            counterpart: canAdd && type === "storage" ? counterpartOf() : undefined,
+            counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
             onShare: shareable && shareAccess.share ? () => setSharingId(config.id) : undefined,
             onDelete: canManage ? () => {
                 // The row already knows whether a job or a template still holds the connection.
@@ -275,7 +279,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             } : undefined,
             busy: cloningId === config.id,
         };
-    }, [type, kind, canViewStorage, canManage, canAdd, shareable, shareAccess.share, cloningId, router, inAllTenants, tenantNameOf, openRecord]);
+    }, [type, kind, canViewStorage, canManage, canAdd, mayAddSources, mayAddDestinations, shareable, shareAccess.share, cloningId, router, inAllTenants, tenantNameOf, openRecord]);
 
     const renderActions = useCallback(
         (config: AdapterConfig, inPanel = false) => (config.sharedServer
@@ -378,8 +382,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                         toolbarExtra={<ConnectionStatusFilter value={statusFilter} onChange={setStatusFilter} configs={configs} withHealth={withHealth} />}
                         // Selecting for bulk actions is a table thing. Cards keep to one connection at a time.
                         enableRowSelection={canManage && view === "table"}
-                        // A server of another tenant is changed by that tenant alone.
-                        isRowSelectable={(config) => !config.sharedServer}
+                        // A connection or a server of another tenant is changed by that tenant alone.
+                        isRowSelectable={selectableForBulk}
                         // Load-bearing here: this list is re-fetched by a poll every
                         // 10 seconds, and index-keyed selection would jump each time.
                         getRowId={(config) => config.id}

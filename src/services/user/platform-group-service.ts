@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { PLATFORM_ADMIN_ROLE, PLATFORM_PERMISSIONS } from "@/lib/auth/owner-permissions";
-import type { PlatformGroupShape } from "@/lib/auth/platform-group-caps";
+import type { PlatformGroupShape, PlatformReach } from "@/lib/auth/platform-group-caps";
 import { scopeText } from "@/lib/auth/platform-group-summary";
 import { areaChanges, knownPermissions, knownPlatformPermissions, PLATFORM_AREAS, PLATFORM_GROUP_TENANT_AREAS } from "@/lib/auth/permission-areas";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
@@ -87,9 +87,29 @@ export const platformGroupService = {
         return !!own && (own.shape.allTenants || own.shape.tenantIds.includes(tenantId));
     },
 
+    /** The tenants among these the platform group of an account reaches, the ones it looks after on the platform. */
+    async reachedAmong(userId: string, tenantIds: readonly string[]): Promise<string[]> {
+        const own = await this.shapeOf(userId);
+        if (!own) return [];
+        return own.shape.allTenants ? [...tenantIds] : tenantIds.filter((tenantId) => own.shape.tenantIds.includes(tenantId));
+    },
+
     /** Whether the platform group of an account reaches every tenant, the ones made later too. */
     async reachesAll(userId: string): Promise<boolean> {
         return (await this.shapeOf(userId))?.shape.allTenants ?? false;
+    },
+
+    /**
+     * The tenants an account looks after on the platform, which bounds what its rights of the platform
+     * touch: every tenant for a platform admin and a platform group of all tenants, the tenants of its
+     * platform group otherwise, none without one. An API key reaches what its owner reaches.
+     */
+    async reachOf(userId: string): Promise<PlatformReach> {
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, platformGroup: { select: SHAPE } } });
+        if (user?.platformRole === PLATFORM_ADMIN_ROLE) return "all";
+        if (!user?.platformGroup) return [];
+        const shape = shapeOf(user.platformGroup);
+        return shape.allTenants ? "all" : shape.tenantIds;
     },
 
     /** The accounts that work in a tenant the platform group of an account reaches. */

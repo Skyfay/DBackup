@@ -34,6 +34,10 @@ vi.mock("@/services/user/groups-model", () => ({
     getGroupsModel: (...args: unknown[]) => mocks.getGroupsModel(...args),
     getPlatformGroupsModel: (...args: unknown[]) => mocks.getPlatformGroupsModel(...args),
 }));
+// Every tenant for a platform admin, Acme for Nina's platform group.
+vi.mock("@/services/user/account-visibility", () => ({
+    accountsSeenReach: vi.fn(async (ctx: { isPlatformAdmin: boolean }) => (ctx.isPlatformAdmin ? "all" : ["t-acme"])),
+}));
 
 import { GET as getUsers } from "@/app/api/users/route";
 import { GET as getGroups } from "@/app/api/groups/route";
@@ -144,15 +148,16 @@ describe("Users & Groups of the Platform", () => {
         expect((await getPlatformUsers()).status).toBe(200);
         expect((await getPlatformGroups()).status).toBe(200);
         expect(mocks.getAllUsersModel).toHaveBeenCalledWith("root", true);
-        expect(mocks.getPlatformGroupsModel).toHaveBeenCalledWith("root");
+        expect(mocks.getPlatformGroupsModel).toHaveBeenCalledWith("root", "all");
     });
 
-    it("lists them for someone of a platform group who may see the accounts of the platform, in any tenant", async () => {
+    it("lists them for someone of a platform group who may see the accounts of the platform, in any tenant, for the tenants it reaches", async () => {
         mocks.getAuthContext.mockResolvedValue({ userId: "nina", permissions: [PERMISSIONS.PLATFORM.ACCOUNTS_READ], isPlatformAdmin: false, authMethod: "session", tenantId: "t-acme", allTenants: false });
 
         expect((await getPlatformUsers()).status).toBe(200);
         expect((await getPlatformGroups()).status).toBe(200);
         expect(mocks.getAllUsersModel).toHaveBeenCalledWith("nina", false);
+        expect(mocks.getPlatformGroupsModel).toHaveBeenCalledWith("nina", ["t-acme"]);
     });
 
     it("refuses anyone who may not see the accounts of the platform, the admin of the home tenant and every API key included", async () => {

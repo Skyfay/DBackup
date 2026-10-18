@@ -49,6 +49,15 @@ export async function ownBackupReach(): Promise<OwnBackupReach> {
 }
 
 /**
+ * Whether the Quick Setup can end in a job for a tenant with this reach. Its Database part is
+ * required, so a tenant that backs up folders alone, or has no database and may add none, never
+ * gets past it.
+ */
+export function quickSetupFits(reach: OwnBackupReach): boolean {
+    return reach.jobs && reach.databases;
+}
+
+/**
  * Whether the sidebar offers Quick Setup: while no database is set up, or always once General
  * says so.
  */

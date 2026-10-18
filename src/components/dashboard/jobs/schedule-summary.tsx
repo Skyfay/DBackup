@@ -5,6 +5,7 @@ import { CalendarClock, TriangleAlert } from "lucide-react";
 import { formatInTimeZone } from "date-fns-tz";
 import { DateDisplay } from "@/components/utils/date-display";
 import type { ScheduleClash } from "@/lib/core/schedule-conflicts";
+import { OTHER_TENANT_JOB_NAME } from "@/services/jobs/job-timeline-types";
 
 // Literal patterns on purpose: the times are the scheduler's and 24 hours, like the times the
 // picker takes, and the strip has room for a short date only.
@@ -46,9 +47,15 @@ export function ScheduleSummary({ words, timezone, nextRuns, oneTime }: Schedule
     );
 }
 
-function names(list: string[]): string {
-    if (list.length <= 2) return list.join(" and ");
-    return `${list.slice(0, 2).join(", ")} and ${list.length - 2} more`;
+/**
+ * The jobs ahead in the queue, for the start of a sentence. The jobs of other tenants share one
+ * name, which goes last and starts the sentence only when nothing else is ahead.
+ */
+export function clashNames(list: string[]): string {
+    const others = list.includes(OTHER_TENANT_JOB_NAME);
+    const ordered = others ? [...list.filter((name) => name !== OTHER_TENANT_JOB_NAME), OTHER_TENANT_JOB_NAME] : list;
+    const words = ordered.length <= 2 ? ordered.join(" and ") : `${ordered.slice(0, 2).join(", ")} and ${ordered.length - 2} more`;
+    return ordered[0] === OTHER_TENANT_JOB_NAME ? words.charAt(0).toUpperCase() + words.slice(1) : words;
 }
 
 function about(ms: number): string {
@@ -87,7 +94,7 @@ export function ClashNote({ clash, slots, timezone, together, subject, action }:
             <span className="min-w-0 flex-1">
                 {clash.others.length > 0 ? (
                     <>
-                        {names(clash.others)} also {clash.others.length === 1 ? "runs" : "run"} {when}, and {room}, so {who} about {about(clash.waitMs)} for{" "}
+                        {clashNames(clash.others)} also {clash.others.length === 1 ? "runs" : "run"} {when}, and {room}, so {who} about {about(clash.waitMs)} for{" "}
                         {clash.others.length === 1 ? "it" : "them"}.
                     </>
                 ) : (

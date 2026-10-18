@@ -320,8 +320,8 @@ describe("a user in Recently deleted", () => {
         expect(entry).toMatchObject({ tenantId: HOME_TENANT_ID, superAdminOnly: true });
     });
 
-    it("keeps an account a platform admin deletes in All tenants in the home tenant, for a platform admin to bring back", async () => {
-        // All tenants writes no row of a tenant, the entry of an account goes to the home tenant instead.
+    it("keeps an account of one tenant a platform admin deletes in All tenants in that tenant", async () => {
+        // All tenants writes no row of a tenant, the entry of an account goes to the tenant of the account.
         const everyTenant = openCopy(dbFile).$extends(tenantScopeExtension(async () => ({ kind: "all" as const })));
         try {
             const trashId = await everyTenant.$transaction(async (tx) => {
@@ -330,7 +330,7 @@ describe("a user in Recently deleted", () => {
                 return id;
             });
             const entry = await runAsSystem(() => db.deletedRecord.findUniqueOrThrow({ where: { id: trashId } }));
-            expect(entry).toMatchObject({ tenantId: HOME_TENANT_ID, superAdminOnly: true });
+            expect(entry).toMatchObject({ tenantId: HOME_TENANT_ID, superAdminOnly: false });
         } finally {
             await everyTenant.$disconnect();
         }

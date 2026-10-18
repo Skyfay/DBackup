@@ -165,7 +165,8 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                 {lastRunAt ? <>Last run <RelativeTime date={lastRunAt} />. </> : "No finished runs yet. "}
                 {nextRun ? (
                     <>
-                        Next scheduled run is <span className="font-medium text-foreground">{nextRun.jobName}</span> at{" "}
+                        Next scheduled run is <span className="font-medium text-foreground">{nextRun.jobName}</span>
+                        {allTenants && tenantName(nextRun.tenantId) && <> in {tenantName(nextRun.tenantId)}</>} at{" "}
                         <DateDisplay date={nextRun.at} format={nextIsToday ? "p" : "Pp"} />.
                     </>
                 ) : (

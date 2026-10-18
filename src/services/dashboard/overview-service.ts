@@ -7,10 +7,26 @@ import { getLatestJobs, type ActivityDataPoint } from "@/services/dashboard-serv
 import { AGGREGATES_TTL_MS, RUNS_PER_JOB, getAggregates, toRunSummary } from "./aggregates";
 import { cached } from "./cache";
 import { deriveHealth, extractLastError, latestFinishedRun, mergeRuns } from "./health";
-import { buildUpcomingSchedule } from "./schedule";
+import { buildUpcomingSchedule, type ScheduledJob } from "./schedule";
 import { failedTrend, successRateTrend, valueDaysAgo } from "./trends";
-import type { DashboardHealth, DashboardJobRow, DashboardOverview, RunSummary, UnhealthyJob } from "./types";
+import type { DashboardHealth, DashboardJobRow, DashboardOverview, RunSummary, UnhealthyJob, UpcomingJob, UpcomingSchedule } from "./types";
 import { isAirGapped } from "@/lib/core/air-gap";
+import { OTHER_TENANT_JOB, OTHER_TENANT_JOB_NAME } from "@/services/jobs/job-timeline-types";
+import { NO_OTHER_TENANTS, otherTenantQueue, queueViewer, type OtherTenantJob } from "@/services/jobs/other-tenant-queue";
+
+/** A job of the Upcoming card with its tenant, which All tenants names. */
+export interface UpcomingTenantJob extends UpcomingJob {
+    tenantId: string;
+}
+
+export interface OverviewUpcoming extends UpcomingSchedule {
+    jobs: UpcomingTenantJob[];
+}
+
+/** The overview, with the tenant of every job the Upcoming card lists. */
+export interface Overview extends DashboardOverview {
+    upcoming: OverviewUpcoming;
+}
 
 const JOB_ROWS = 8;
 /** Unhealthy jobs the banner shows with their own error and actions. */
@@ -115,6 +131,29 @@ function withJobDetails(job: UnhealthyJob): Promise<UnhealthyJob> {
     });
 }
 
+/**
+ * The runs of the next 48 hours with where they queue up. The queue is one for every tenant, so in
+ * a tenant the runs of the other tenants count toward an overlap, without being listed. Only an
+ * overlap that a run of this tenant falls into is kept, the others say nothing about its runs.
+ */
+function upcomingOf(own: ScheduledJob[], runsByJob: Map<string, RunSummary[]>, failing: Set<string>, slots: number, timezone: string, now: Date, others: OtherTenantJob[]): UpcomingSchedule {
+    const schedule = buildUpcomingSchedule(own, runsByJob, failing, slots, timezone, now);
+    if (others.length === 0) return schedule;
+
+    const anonymous = others.map((job, index) => ({ id: `${OTHER_TENANT_JOB}:${index + 1}`, name: OTHER_TENANT_JOB_NAME, schedule: job.schedule }));
+    const otherRuns = new Map(anonymous.map((job, index) => [job.id, others[index].runs]));
+    const shared = buildUpcomingSchedule([...own, ...anonymous], new Map([...runsByJob, ...otherRuns]), failing, slots, timezone, now);
+
+    const lengths = new Map(schedule.jobs.map((job) => [job.id, job.estimatedMs]));
+    const ownSpans = schedule.runs.map((run) => ({ from: Date.parse(run.at), to: Date.parse(run.at) + Math.max(lengths.get(run.jobId) ?? 0, 1) }));
+    const conflicts = shared.conflicts.filter((conflict) => {
+        const from = Date.parse(conflict.from);
+        const to = Date.parse(conflict.to);
+        return ownSpans.some((span) => span.from < to && span.to > from);
+    });
+    return { ...schedule, conflicts };
+}
+
 /** The banner gives each of the first few unhealthy jobs its own row, the rest are counted. */
 async function withFailureDetails(health: DashboardHealth): Promise<DashboardHealth> {
     if (health.state !== "failing" && health.state !== "degraded") return health;
@@ -130,8 +169,9 @@ async function withFailureDetails(health: DashboardHealth): Promise<DashboardHea
  * executions, the latest executions and the job list are read live on every call, so the page
  * can poll while a job runs without recomputing the history each time.
  */
-export async function getDashboardOverview(): Promise<DashboardOverview> {
-    const [aggregates, jobs, liveExecutions, latestExecutions, connections, offlineConnections] = await Promise.all([
+export async function getDashboardOverview(): Promise<Overview> {
+    const viewer = await queueViewer();
+    const [aggregates, jobs, liveExecutions, latestExecutions, connections, offlineConnections, others] = await Promise.all([
         getAggregates(),
         prisma.job.findMany({ select: jobSelect, orderBy: { name: "asc" } }),
         prisma.execution.findMany({
@@ -145,6 +185,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
         prisma.adapterConfig
             .findMany({ where: { type: { in: HEALTH_CHECKED_TYPES }, lastStatus: "OFFLINE" }, select: { type: true, storageRole: true, metadata: true } })
             .then((rows) => rows.filter((row) => !isAirGapped(row)).length),
+        viewer ? otherTenantQueue(viewer) : NO_OTHER_TENANTS,
     ]);
 
     const liveRuns = liveExecutions.map(toRunSummary);
@@ -179,7 +220,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 
     const health = await withFailureDetails(deriveHealth(rows, runsByJob));
     const failingJobIds = new Set(health.state === "failing" ? health.jobs.map((job) => job.jobId) : []);
-    const upcoming = buildUpcomingSchedule(
+    const schedule = upcomingOf(
         jobs
             .filter((job) => job.enabled && effectiveSchedule(job))
             .map((job) => ({ id: job.id, name: job.name, schedule: effectiveSchedule(job) })),
@@ -188,7 +229,11 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
         aggregates.maxConcurrentJobs,
         aggregates.timezone,
         new Date(),
+        others.jobs,
     );
+    // In All tenants the card names the tenant of each job, like the other lists of the page.
+    const tenantOf = new Map(jobs.map((job) => [job.id, job.tenantId]));
+    const upcoming: OverviewUpcoming = { ...schedule, jobs: schedule.jobs.map((job) => ({ ...job, tenantId: tenantOf.get(job.id) ?? "" })) };
     const activity = withLiveActivity(aggregates.activity, liveRuns, aggregates.timezone);
     const { storage } = aggregates;
 

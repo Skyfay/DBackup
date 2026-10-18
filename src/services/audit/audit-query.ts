@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { QUICK_ACTIONS, resourcesOfAreas, type AuditQuick } from "@/lib/core/audit-areas";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 /** How far back the list reaches. `all` is everything the log still keeps. */
 export type AuditPeriod = "24h" | "7d" | "30d" | "90d" | "all";
@@ -26,6 +27,11 @@ export interface AuditFilter {
     search?: string;
     /** Ids of the tenants whose log is read, for the Tenant filter of All tenants. Every one the scope reads when empty. */
     tenants?: string[];
+    /**
+     * The tenant whose log the viewer reads, null or left out in All tenants. It decides whose
+     * address a search may match, see `addressShownWhere`. Never read from the query.
+     */
+    viewerTenantId?: string | null;
 }
 
 export interface AuditQuery extends AuditFilter {
@@ -45,6 +51,19 @@ export function whoWhere(key: string): Prisma.AuditLogWhereInput | null {
     if (kind === "key") return { apiKeyId: value };
     if (kind === "deleted") return { userId: null, actorName: value, apiKeyId: null };
     return null;
+}
+
+/**
+ * The entries whose address the log shows, as `originShown` in audit-rows.ts decides it per row, so
+ * a search never finds an entry by an address its row keeps hidden. In a tenant these are the
+ * entries of the home tenant, those without a person and those of its own members. In All tenants
+ * the person would have to be a member of the tenant of each row, which a query cannot compare, so
+ * only the entries of the home tenant and those without a person.
+ */
+export function addressShownWhere(viewerTenantId: string | null | undefined): Prisma.AuditLogWhereInput {
+    const shown: Prisma.AuditLogWhereInput[] = [{ tenantId: HOME_TENANT_ID }, { userId: null }];
+    if (viewerTenantId) shown.push({ tenantId: viewerTenantId, user: { is: { memberships: { some: { tenantId: viewerTenantId } } } } });
+    return { OR: shown };
 }
 
 /**
@@ -78,7 +97,7 @@ export function buildAuditWhere(filter: AuditFilter, now: Date, omit?: "who" | "
             OR: [
                 { actorName: { contains: search } },
                 { apiKeyName: { contains: search } },
-                { ipAddress: { contains: search } },
+                { AND: [{ ipAddress: { contains: search } }, addressShownWhere(filter.viewerTenantId)] },
                 { resourceId: { contains: search } },
                 { details: { contains: search } },
                 { user: { is: { email: { contains: search } } } },

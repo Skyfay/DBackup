@@ -140,6 +140,8 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
                 return { parts: [plain("Started a backup of "), ...(name ? [strong(name)] : [plain("a shared database")])], glyph: "play" };
             }
             if (entry.resource === R.JOB) return { parts: [plain("Started "), ...it], glyph: "play" };
+            // A check of the copies of a backup against their checksums, which changes nothing of them.
+            if (kind === "verify") return { parts: [plain("Checked "), ...it], glyph: "eye" };
             if (kind === "database_vacuum") return { parts: [plain("Compacted the database of DBackup")], glyph: "play" };
             if (kind === "config_backup") return { parts: [plain("Backed up the configuration")], glyph: "play" };
             const task = text(details.task);

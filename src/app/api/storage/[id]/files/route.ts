@@ -8,7 +8,7 @@ import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { ValidationError, wrapError, getErrorMessage } from "@/lib/logging/errors";
 
 const log = logger.child({ route: "storage/files" });
 
@@ -86,6 +86,8 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
         return NextResponse.json({ success: true });
 
     } catch (error: unknown) {
+        // A path that names no file, like the root of the destination, is the caller's to fix.
+        if (error instanceof ValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
         const resolvedParams = await props.params.catch(() => ({ id: "unknown" }));
         log.error("Delete file error", { storageId: resolvedParams.id }, wrapError(error));
          const errorMessage = getErrorMessage(error) || "An unknown error occurred";

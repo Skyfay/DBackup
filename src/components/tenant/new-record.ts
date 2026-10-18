@@ -51,6 +51,28 @@ interface CreatingTenant {
     allowances?: TenantAllowances;
 }
 
+/** What Quick Setup adds in its tenant: a database, a destination and the job that backs it up. */
+const QUICK_SETUP_RIGHTS: readonly string[] = [PERMISSIONS.SOURCES.WRITE, PERMISSIONS.DESTINATIONS.WRITE, PERMISSIONS.JOBS.WRITE];
+
+const QUICK_SETUP_PATH = "/dashboard/setup";
+
+/**
+ * The tenants Quick Setup may open in from All tenants: where the viewer may write sources,
+ * destinations and jobs, every one for a platform admin, and that may add databases themselves,
+ * since the wizard starts with one.
+ */
+export function quickSetupTenants<T extends CreatingTenant>(tenants: readonly T[], isPlatformAdmin: boolean): T[] {
+    return tenants.filter((tenant) => tenant.allowances?.databases !== false
+        && (isPlatformAdmin || QUICK_SETUP_RIGHTS.every((permission) => tenant.writes?.includes(permission) === true)));
+}
+
+/** The tenants the pick of a page of one tenant offers in All tenants: every one, but fewer for Quick Setup. */
+export function tenantsForPage<T extends CreatingTenant>(href: string, tenants: readonly T[], isPlatformAdmin: boolean): T[] {
+    const path = new URL(href, "http://dbackup.invalid").pathname;
+    const setup = path === QUICK_SETUP_PATH || path.startsWith(`${QUICK_SETUP_PATH}/`);
+    return setup ? quickSetupTenants(tenants, isPlatformAdmin) : [...tenants];
+}
+
 /**
  * The tenants the viewer may add a record in with that right: every one for a platform admin,
  * the ones whose rights hold it for anyone else, none for a right nobody names.

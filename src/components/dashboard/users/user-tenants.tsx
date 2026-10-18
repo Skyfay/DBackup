@@ -39,7 +39,7 @@ const tenantIdsOf = (user: UserRow) => {
 };
 
 /** Whether an account runs the platform, as a platform admin or with a platform group, which needs no tenant. */
-export const onPlatform = (user: Pick<UserRow, "superAdmin" | "platformGroup">) => user.superAdmin || Boolean(user.platformGroup);
+export const onPlatform = (user: Pick<UserRow, "superAdmin" | "platformGroup" | "withPlatformGroup">) => user.superAdmin || Boolean(user.platformGroup) || Boolean(user.withPlatformGroup);
 
 /** A quiet "Platform only" for an account of the platform in no tenant, which is fine. */
 export function PlatformOnlyTag({ className }: { className?: string }) {

@@ -19,6 +19,10 @@ vi.mock("@/lib/auth/access-control", () => ({
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: mocks.logFor } }));
 vi.mock("@/services/jobs/job-service", () => ({ jobService: { updateJob: mocks.updateJob } }));
 vi.mock("@/services/restore/restore-service", () => ({ restoreService: { restore: mocks.restore } }));
+// The entry names the destination as the tenant sees it, see backup-audit.ts.
+vi.mock("@/services/sharing/destination-access", () => ({
+    findDestination: async (id: string) => ({ row: { id, name: id === "nas" ? "NAS" : id }, mode: { kind: "own" }, tenantId: "default" }),
+}));
 
 const { PUT } = await import("@/app/api/jobs/[id]/route");
 const { POST: RESTORE } = await import("@/app/api/storage/[id]/restore/route");

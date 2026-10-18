@@ -12,7 +12,7 @@ const RETENTION = [
     { name: "Keep All", description: "Never delete any backups automatically.", config: '{"mode":"NONE"}' },
     { name: "Simple - 14 Days", description: "Keep the last 14 backups.", config: '{"mode":"SIMPLE","simple":{"keepCount":14}}' },
     {
-        name: "Smart GVS (7/4/12/2)",
+        name: "Smart GFS (7/4/12/2)",
         description: "Grandfather-Father-Son: keep 7 daily, 4 weekly, 12 monthly, 2 yearly backups.",
         config: '{"mode":"SMART","smart":{"daily":7,"weekly":4,"monthly":12,"yearly":2}}',
     },

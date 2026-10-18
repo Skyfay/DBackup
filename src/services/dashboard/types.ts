@@ -30,7 +30,8 @@ export type DashboardHealth =
     | {
         state: "healthy";
         lastRunAt: string | null;
-        nextRun: { jobName: string; at: string } | null;
+        /** The next scheduled run, with the tenant of its job, which the banner names in All tenants. */
+        nextRun: { jobName: string; at: string; tenantId?: string } | null;
     }
     | {
         state: "failing" | "degraded";
@@ -115,6 +116,8 @@ export interface UpcomingJob {
     estimatedMs: number;
     /** The job's newest outcome failed. */
     likelyToFail: boolean;
+    /** The tenant of the job, which All tenants names beside it. */
+    tenantId?: string;
 }
 
 /** One scheduled run. The job's name and flags live in `UpcomingSchedule.jobs`, once per job. */

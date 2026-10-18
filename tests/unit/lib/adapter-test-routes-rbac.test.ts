@@ -15,6 +15,8 @@ vi.mock("next/headers", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
   getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
   checkPermissionWithContext: (...args: unknown[]) => mocks.checkPermissionWithContext(...args),
+  hasPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => ctx.permissions.includes(permission),
+  tenantOf: (ctx: { tenantId: string }) => ctx.tenantId,
 }));
 
 vi.mock("@/lib/core/registry", () => ({
@@ -29,6 +31,7 @@ vi.mock("@/lib/adapters", () => ({
 
 vi.mock("@/lib/adapters/config-resolver", () => ({
   overlayCredentialsOnConfig: vi.fn(),
+  withoutBinaryPaths: (config: Record<string, unknown>) => config,
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -48,7 +51,8 @@ vi.mock("@/lib/logging/logger", () => ({
   },
 }));
 
-vi.mock("@/lib/logging/errors", () => ({
+vi.mock("@/lib/logging/errors", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/logging/errors")>()),
   wrapError: vi.fn(),
 }));
 
@@ -60,15 +64,16 @@ const routes = [
   ["access-check", accessCheck],
 ] as const;
 
+// A config of a form runs as it came, so trying one needs the right to change connections of the kind.
 const adapterPermissions = [
-  ["mariadb", PERMISSIONS.SOURCES.VIEW],
-  ["redis", PERMISSIONS.SOURCES.VIEW],
-  ["generic-webhook", PERMISSIONS.NOTIFICATIONS.READ],
-  ["teams", PERMISSIONS.NOTIFICATIONS.READ],
-  ["gotify", PERMISSIONS.NOTIFICATIONS.READ],
-  ["ntfy", PERMISSIONS.NOTIFICATIONS.READ],
-  ["telegram", PERMISSIONS.NOTIFICATIONS.READ],
-  ["twilio-sms", PERMISSIONS.NOTIFICATIONS.READ],
+  ["mariadb", PERMISSIONS.SOURCES.WRITE],
+  ["redis", PERMISSIONS.SOURCES.WRITE],
+  ["generic-webhook", PERMISSIONS.NOTIFICATIONS.WRITE],
+  ["teams", PERMISSIONS.NOTIFICATIONS.WRITE],
+  ["gotify", PERMISSIONS.NOTIFICATIONS.WRITE],
+  ["ntfy", PERMISSIONS.NOTIFICATIONS.WRITE],
+  ["telegram", PERMISSIONS.NOTIFICATIONS.WRITE],
+  ["twilio-sms", PERMISSIONS.NOTIFICATIONS.WRITE],
 ] as const;
 
 describe.each(routes)("POST /api/adapters/%s RBAC", (_name, post) => {
@@ -79,11 +84,12 @@ describe.each(routes)("POST /api/adapters/%s RBAC", (_name, post) => {
       userId: "user-1",
       permissions: [],
       isPlatformAdmin: false,
+      tenantId: "default",
     });
     mocks.registryGet.mockReturnValue(undefined);
   });
 
-  it.each(adapterPermissions)("requires the mapped permission for %s", async (adapterId, permission) => {
+  it.each(adapterPermissions)("requires the right to change connections of the kind for %s", async (adapterId, permission) => {
     await post({
       json: async () => ({ adapterId, config: {} }),
     } as any);

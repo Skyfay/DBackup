@@ -13,7 +13,10 @@ import { namedTenants, onPlatform, tenantFilter, TenantsCell, tenantsAccessor, t
 /** The value of the Group filter for a user without one. */
 export const NO_GROUP = "none";
 
-const groupOf = (user: UserRow) => user.group?.id ?? NO_GROUP;
+/** The value of the Group filter for an account without a group that runs the platform, which needs none. */
+const PLATFORM_ONLY = "platform-only";
+
+const groupOf = (user: UserRow) => user.group?.id ?? (onPlatform(user) ? PLATFORM_ONLY : NO_GROUP);
 
 /** The value of the Platform group filter: Platform admin, the id of the platform group, or none. */
 const PLATFORM_ADMIN = "platform-admin";
@@ -62,7 +65,7 @@ export function userColumns({ onOpen, renderActions, tenantNameOf }: ColumnOptio
         accessorFn: groupOf,
         filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)),
         sortingFn: (a, b) => (a.original.group?.name ?? "").localeCompare(b.original.group?.name ?? ""),
-        cell: ({ row }) => <GroupTag group={row.original.group} />,
+        cell: ({ row }) => <GroupTag group={row.original.group} platform={onPlatform(row.original)} />,
     };
     return [
         {
@@ -159,7 +162,8 @@ export function userFilters(users: UserRow[], tenantNameOf?: TenantNameOf): Data
                 ...[...groups.entries()]
                     .sort((a, b) => a[1].localeCompare(b[1]))
                     .map(([id, name]) => ({ value: id, label: name, lead: <Users className="size-4 shrink-0 text-muted-foreground" /> })),
-                ...(users.some((user) => !user.group) ? [{ value: NO_GROUP, label: "No group", lead: <Users className="size-4 shrink-0 text-warning" /> }] : []),
+                ...(users.some((user) => !user.group && onPlatform(user)) ? [{ value: PLATFORM_ONLY, label: "Platform only", lead: <Globe className="size-4 shrink-0 text-muted-foreground" /> }] : []),
+                ...(users.some((user) => !user.group && !onPlatform(user)) ? [{ value: NO_GROUP, label: "No group", lead: <Users className="size-4 shrink-0 text-warning" /> }] : []),
             ],
         },
         {

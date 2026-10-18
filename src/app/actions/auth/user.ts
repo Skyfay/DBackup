@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { checkPermission, currentSessionId, getViewer, hasPermission, hasPermissionWithContext, type Viewer } from "@/lib/auth/access-control";
-import { ACCOUNT_CHANGE, roleRefusal } from "@/lib/auth/account-access";
+import { ACCOUNT_CHANGE, emailClaimScope, roleRefusal } from "@/lib/auth/account-access";
+import { reachCovers } from "@/lib/auth/platform-group-caps";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { authService } from "@/services/auth/auth-service";
@@ -12,7 +13,9 @@ import { membershipService } from "@/services/tenant/membership-service";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 import { auditService } from "@/services/audit-service";
+import { accountLogOrigin } from "@/services/audit/account-log";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { auditValue } from "@/lib/core/audit-diff";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
@@ -26,6 +29,7 @@ import { z } from "zod";
 const log = logger.child({ action: "user" });
 
 const OUTSIDER = "This account works in another tenant. Add people to this tenant with an invitation.";
+const BEYOND_TENANT = "Your platform group does not reach this tenant, and you may not manage its users.";
 
 /**
  * Why the caller may not change this account, null when they may: the account of a platform admin,
@@ -74,14 +78,22 @@ export async function createUser(input: CreateUserInput) {
     if (!currentUser.isPlatformAdmin && tenantId !== currentUser.tenantId && !(await tenantService.switchable(currentUser.id, false)).some((tenant) => tenant.id === tenantId)) {
         return { success: false, error: "The tenant no longer exists." };
     }
-    const claimed = await claimedEmailRefusal(data.email, [tenantId], !!names);
-    if (claimed) return { success: false, error: claimed };
 
     // A group belongs to its tenant, so it is looked up there, and nobody gives one that may do more
     // than they may in that tenant, which may be another than the one they work in.
     const actor = tenantId === currentUser.tenantId || currentUser.isPlatformAdmin
         ? currentUser
         : { ...currentUser, tenantId, permissions: await userService.permissionsIn(currentUser.id, tenantId) };
+    // The right to manage the accounts of the platform adds people to the tenants it reaches, the
+    // right to manage the users of a tenant to that tenant.
+    const reach = await userService.accountsReachOf(currentUser);
+    if (!currentUser.isPlatformAdmin && !reachCovers(reach, tenantId) && !actor.permissions.includes(PERMISSIONS.USERS.WRITE)) {
+        return { success: false, error: BEYOND_TENANT };
+    }
+    const claimScope = emailClaimScope({ ...currentUser, reach });
+    const claimed = await claimedEmailRefusal(data.email, [tenantId, ...claimScope.tenantIds], claimScope.platformLevel);
+    if (claimed) return { success: false, error: claimed };
+
     const refused = await runAsTenant(tenantId, () => groupRefused(data.groupId, actor));
     if (refused) return { success: false, error: refused };
 
@@ -194,19 +206,20 @@ export async function deleteUser(userId: string, mode?: DeleteMode) {
     if (refused) return { success: false, error: refused };
 
     try {
-        const deleted = await userService.deleteUser(userId, { permanently, by: currentUser?.id });
+        // Read before the delete, which ends the memberships.
+        const origin = await accountLogOrigin(currentUser, userId);
+        const deleted = await userService.deleteUser(userId, { permanently, by: currentUser.id });
         revalidatePath("/dashboard/users");
         revalidatePath("/dashboard/settings");
 
-        if (currentUser) {
-            await auditService.log(
-                currentUser.id,
-                AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.USER,
-                { name: deleted.name || deleted.email, ...(permanently ? { permanently: true } : {}) },
-                userId
-            );
-        }
+        await auditService.log(
+            currentUser.id,
+            AUDIT_ACTIONS.DELETE,
+            AUDIT_RESOURCES.USER,
+            { name: deleted.name || deleted.email, ...(permanently ? { permanently: true } : {}) },
+            userId,
+            origin
+        );
 
         return { success: true };
     } catch (error: unknown) {
@@ -228,8 +241,12 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
     }
 
     try {
-        await userService.togglePasskeyTwoFactor(userId, enabled);
+        const origin = await accountLogOrigin(currentUser, userId);
+        const user = await userService.togglePasskeyTwoFactor(userId, enabled);
         revalidatePath("/dashboard/settings");
+        // The switch of the page turns it the other way.
+        const changes = [{ field: "Passkey as second factor", from: auditValue(!enabled), to: auditValue(enabled) }];
+        await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name: user?.name, changes }, userId, origin);
         return { success: true };
     } catch (error: unknown) {
         log.error("Failed to toggle passkey 2FA", { userId }, wrapError(error));
@@ -296,9 +313,12 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
         await checkPermission(ACCOUNT_CHANGE);
         const refused = await accountRefused(userId, currentUser);
         if (refused) return { success: false, error: refused };
-        const platformLevel = currentUser.isPlatformAdmin || hasPermissionWithContext(currentUser, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
-        const claimed = emailChanges ? await claimedEmailRefusal(data.email!, currentUser.tenantId ? [currentUser.tenantId] : [], platformLevel) : null;
-        if (claimed) return { success: false, error: claimed };
+        if (emailChanges) {
+            // Someone of a platform group of some tenants gives the emails their tenants claim, see `emailClaimScope`.
+            const scope = emailClaimScope({ ...currentUser, reach: await userService.accountsReachOf(currentUser) });
+            const claimed = await claimedEmailRefusal(data.email!, [...(currentUser.tenantId ? [currentUser.tenantId] : []), ...scope.tenantIds], scope.platformLevel);
+            if (claimed) return { success: false, error: claimed };
+        }
     } else {
         // The own name and email change only as far as the profile permissions allow, whatever else the group gives.
         if (data.name !== undefined && data.name !== currentUser.name && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_NAME))) {
@@ -312,6 +332,7 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
     }
 
     try {
+        const origin = await accountLogOrigin(currentUser, userId);
         await userService.updateUser(userId, data);
         revalidatePath("/dashboard/users");
         revalidatePath("/dashboard/settings");
@@ -321,7 +342,8 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
             data,
-            userId
+            userId,
+            origin
         );
 
         return { success: true };
@@ -410,7 +432,9 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
             if (refused) guarded.push({ id, error: refused });
         }
         const deletable = parsed.data.filter((id) => id !== currentUser.id && !guarded.some((user) => user.id === id));
-        const result = await userService.deleteUsers(deletable, { permanently, by: currentUser?.id });
+        // Read before the delete, which ends the memberships.
+        const origin = await accountLogOrigin(currentUser, deletable);
+        const result = await userService.deleteUsers(deletable, { permanently, by: currentUser.id });
 
         if (currentUser && parsed.data.includes(currentUser.id)) {
             result.failed.push({
@@ -427,14 +451,14 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
         revalidatePath("/dashboard/users");
         revalidatePath("/dashboard/settings");
 
-        if (currentUser) {
-            await auditService.log(
-                currentUser.id,
-                AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.USER,
-                { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length, ...(permanently ? { permanently: true } : {}) }
-            );
-        }
+        await auditService.log(
+            currentUser.id,
+            AUDIT_ACTIONS.DELETE,
+            AUDIT_RESOURCES.USER,
+            { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length, ...(permanently ? { permanently: true } : {}) },
+            undefined,
+            origin
+        );
 
         return { success: true as const, data: result };
     } catch (error: unknown) {

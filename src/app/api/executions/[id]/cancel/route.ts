@@ -2,24 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { ConflictError, NotFoundError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, PermissionError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
-import { cancelRun, type CancelledRun, type CancelResult } from "@/services/history/run-cancel";
+import { cancelAuditEntries, cancelRun, type CancelResult } from "@/services/history/run-cancel";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 /**
- * Notes a cancel that went through as a change of the job the run belongs to. A run without a job,
- * like a restore, has no job to note it on.
+ * Notes a cancel that went through: a run of a job on the job, any other run, like a restore or a
+ * customer's run of a backup of a shared database, on what it is of. The viewer's own log keeps it,
+ * and a customer's cancel that stopped the run of the server's tenant is noted in that tenant's log too.
  */
-async function logCancel(ctx: AuthContext, run: CancelledRun) {
-    if (!run.jobId) return;
-    await auditService.logFor(
-        ctx,
-        AUDIT_ACTIONS.UPDATE,
-        AUDIT_RESOURCES.JOB,
-        { action: "cancel", ...(run.job ? { name: run.job.name } : {}), executionId: run.id },
-        run.jobId
-    );
+async function logCancel(ctx: AuthContext, result: CancelResult) {
+    for (const entry of cancelAuditEntries(result)) {
+        const resource = entry.resource === "JOB" ? AUDIT_RESOURCES.JOB : AUDIT_RESOURCES.BACKUP;
+        if (entry.tenantId) {
+            // The log of another tenant, without the API key of the customer, which that tenant does not know.
+            await auditService.log(ctx.userId, AUDIT_ACTIONS.UPDATE, resource, entry.details, entry.resourceId, { tenantId: entry.tenantId });
+        } else {
+            await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, resource, entry.details, entry.resourceId);
+        }
+    }
 }
 
 /**
@@ -37,7 +39,12 @@ export async function POST(
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.EXECUTE);
+    try {
+        checkPermissionWithContext(ctx, PERMISSIONS.JOBS.EXECUTE);
+    } catch (error: unknown) {
+        if (error instanceof PermissionError) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        throw error;
+    }
 
     const { id } = await props.params;
 
@@ -55,6 +62,6 @@ export async function POST(
         throw error;
     }
 
-    await logCancel(ctx, result.run);
+    await logCancel(ctx, result);
     return NextResponse.json({ success: true, message: result.message });
 }

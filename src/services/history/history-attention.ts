@@ -8,6 +8,7 @@ import prisma from "@/lib/prisma";
 import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import { currentTenantId } from "@/lib/tenant/current";
 import { providedTo } from "@/services/sharing/provided";
+import { WHOLE_JOB_RUNS } from "./whole-runs";
 
 const FINISHED = ["Success", "Failed", "Partial", "Cancelled"];
 
@@ -32,9 +33,10 @@ async function channelNames(ids: string[]): Promise<string[]> {
 
 export async function getHistoryAttention(): Promise<HistoryAttention> {
     const [newestRuns, newestMessages] = await Promise.all([
+        // A run of some databases alone, like one a customer started, says nothing of the job as a whole.
         prisma.execution.groupBy({
             by: ["jobId"],
-            where: { jobId: { not: null }, type: "Backup", status: { in: FINISHED } },
+            where: { jobId: { not: null }, type: "Backup", status: { in: FINISHED }, AND: [WHOLE_JOB_RUNS] },
             _max: { startedAt: true },
         }),
         prisma.notificationLog.groupBy({
@@ -52,6 +54,7 @@ export async function getHistoryAttention(): Promise<HistoryAttention> {
                       type: "Backup",
                       status: { in: ["Failed", "Partial"] },
                       OR: newestRuns.map((row) => ({ jobId: row.jobId, startedAt: row._max.startedAt ?? undefined })),
+                      AND: [WHOLE_JOB_RUNS],
                   },
                   select: { status: true, job: { select: { name: true } } },
               }),

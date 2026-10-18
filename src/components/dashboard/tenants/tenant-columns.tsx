@@ -106,7 +106,6 @@ function onDemandNote(row: Pick<TenantListRow, "onDemand">): string {
 
 /** Backups on demand of a customer: the number of every database and how many set their own. The home tenant gives, it starts none. */
 export function OnDemandCell({ row }: { row: Pick<TenantListRow, "isHome" | "onDemand"> }) {
-    if (row.isHome) return <span className="text-sm text-muted-foreground">-</span>;
     const own = row.onDemand.own;
     return (
         <div className="min-w-0 text-sm">

@@ -27,10 +27,16 @@
 - **storage**: SMB, FTP, Dropbox, OneDrive and Rsync list a folder that does not exist yet as empty instead of failing. Google Drive no longer creates a folder by listing it.
 - **history**: The long name of an archive in the page of a restore run breaks inside its card instead of running out of it.
 - **ui**: A button in a toast, like Open the run or Undo, works while a dialog or a side panel is open.
+- **restore**: A restore that fails in the restore tool or restores no entry of an archive sends the Restore failed notification.
+- **api**: Routes answer 403 instead of 500 when a permission is missing, cancelling a run among them.
+- **audit**: Cancelling a restore, verifying a backup and switching the passkey as second factor are written to the audit log.
+- **dashboard**: Latest executions names each run like the History does instead of showing Manual Action for a restore.
 
 ### 🔒 Security
 
-- **connections**: Testing a connection with a saved login that the request names needs the right to change that kind of connection or to reveal logins.
+- **connections**: Testing a connection, checking its access and reading databases, tables or rows from the fields of a form need the right to change that kind of connection. Testing SSH or a snapshot with a saved login the request names needs that right or the right to reveal logins.
+- **storage**: Connecting Google Drive, Dropbox or OneDrive finishes only for the person and the login that started it.
+- **storage**: Deleting in the Storage Explorer refuses the root folder of a destination.
 - **storage**: A download link opened without signing in only serves a file that was shared as a link.
 - **auth**: The own name and email change only as far as the profile permissions allow, also for someone who may change users. The own second factor is reset under Profile only.
 - **uploads**: A picture for a profile or the login page that is larger than allowed is refused before it is read.

@@ -40,6 +40,7 @@ function data(overrides: Partial<SourceAssignments> = {}): SourceAssignments {
         ],
         rules: [{ id: "r-shop", pattern: "shop_*", tenantId: acme.id, tenantName: acme.name, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", validUntil: null, createdAt: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null }],
         customers: [acme, beta],
+        tenants: [acme, beta],
         backupDates: { shop_b: ["2026-09-10T02:00:00.000Z", "2026-10-10T02:00:00.000Z"] },
         ...overrides,
     };
@@ -79,7 +80,7 @@ describe("the databases of a shared server and their tenants", () => {
     });
 
     it("stays out while there is no other tenant to give a database to", async () => {
-        actions.getSourceAssignments.mockResolvedValue({ success: true, data: data({ customers: [] }) });
+        actions.getSourceAssignments.mockResolvedValue({ success: true, data: data({ customers: [], tenants: [] }) });
         card();
 
         await waitFor(() => expect(actions.getSourceAssignments).toHaveBeenCalledWith("s1"));
@@ -213,6 +214,64 @@ describe("the databases of a shared server and their tenants", () => {
         await user.click(within(dialog).getByRole("button", { name: "Save" }));
         await waitFor(() => expect(actions.setDatabaseOnDemand).toHaveBeenCalledWith("s1", "shop_b", null));
         expect(toast.success).toHaveBeenCalledWith("shop_b follows Beta again");
+    });
+
+    describe("for someone of a platform group that reaches Acme alone", () => {
+        // The server lists every tenant for the names, and only Acme among those to give to.
+        const limited = () => data({
+            customers: [acme],
+            databases: [
+                ...data().databases,
+                { name: "beta_db", sizeInBytes: 512, owner: { tenantId: beta.id, tenantName: beta.name, via: "rule", since: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null }, backups: 2 },
+            ],
+            rules: [
+                ...data().rules,
+                { id: "r-beta", pattern: "beta_*", tenantId: beta.id, tenantName: beta.name, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", validUntil: null, createdAt: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null },
+            ],
+        });
+
+        beforeEach(() => {
+            actions.getSourceAssignments.mockResolvedValue({ success: true, data: limited() });
+        });
+
+        it("offers only the tenants it reaches in the picker of a database", async () => {
+            const user = userEvent.setup();
+            card();
+
+            await user.click(await screen.findByRole("combobox", { name: "Who sees crm" }));
+            expect(await screen.findByRole("option", { name: /Acme/ })).toBeInTheDocument();
+            expect(screen.queryByRole("option", { name: /Beta/ })).not.toBeInTheDocument();
+        });
+
+        it("leaves a database of a tenant it does not reach as it is, and says why", async () => {
+            const user = userEvent.setup();
+            card();
+
+            const shopB = await rowOf("shop_b");
+            expect(within(shopB).queryByRole("combobox", { name: "Who sees shop_b" })).not.toBeInTheDocument();
+            expect(within(shopB).getByText("shop_b belongs to Beta, which your platform group does not reach, so you cannot change it.")).toBeInTheDocument();
+            await user.click(within(shopB).getByRole("button", { name: "Open menu for shop_b" }));
+            expect(await screen.findByRole("menuitem", { name: "Who held it" })).toBeInTheDocument();
+            expect(screen.queryByRole("menuitem", { name: "Move to another server" })).not.toBeInTheDocument();
+            expect(screen.queryByRole("menuitem", { name: "Backups on demand" })).not.toBeInTheDocument();
+            expect(screen.queryByRole("menuitem", { name: "Take back" })).not.toBeInTheDocument();
+        });
+
+        it("offers no change of a rule of a tenant it does not reach, and no new rule that would outrank one", async () => {
+            const user = userEvent.setup();
+            card();
+
+            const rules = await screen.findByRole("region", { name: "Rules" });
+            expect(within(rules).getByRole("button", { name: "Open menu for the rule shop_*" })).toBeInTheDocument();
+            expect(within(rules).queryByRole("button", { name: "Open menu for the rule beta_*" })).not.toBeInTheDocument();
+
+            await user.click(within(rules).getByRole("button", { name: "New rule" }));
+            const form = await screen.findByRole("form", { name: "New rule" });
+            await user.type(within(form).getByLabelText("Pattern"), "beta_*");
+            await user.click(within(form).getByRole("button", { name: "Higher priority" }));
+            expect(within(form).getByText("The rule would take beta_db from Beta, which your platform group does not reach. Give it a lower priority or a narrower pattern.")).toBeInTheDocument();
+            expect(within(form).getByRole("button", { name: "Add rule" })).toBeDisabled();
+        });
     });
 
     it("moves a database a tenant holds to another server of the same engine", async () => {

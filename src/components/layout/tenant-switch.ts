@@ -111,10 +111,11 @@ export function breadcrumbTenant(input: Pick<HeadInput, "tenants" | "activeTenan
     return input.tenants.find((tenant) => tenant.id === input.activeTenantId)?.name ?? null;
 }
 
-/** "1 job · 2 databases", the line under a tenant in the menu. */
-export function countLine(summary: { jobs: number; databases: number }): string {
+/** "1 job · 2 databases", and "· 3 shared" for the databases of other tenants it holds, the line under a tenant in the menu. */
+export function countLine(summary: { jobs: number; databases: number; shared?: number }): string {
     const count = (value: number, noun: string) => `${value.toLocaleString("en-US")} ${value === 1 ? noun : `${noun}s`}`;
-    return `${count(summary.jobs, "job")} · ${count(summary.databases, "database")}`;
+    const shared = summary.shared ? ` · ${summary.shared.toLocaleString("en-US")} shared` : "";
+    return `${count(summary.jobs, "job")} · ${count(summary.databases, "database")}${shared}`;
 }
 
 /** What the dot beside a tenant says, none while the newest backup of each job went well. */

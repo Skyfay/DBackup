@@ -8,6 +8,7 @@ import { getViewer, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { tenantSummaries } from "@/services/tenant/tenant-summaries";
+import { platformGroupService } from "@/services/user/platform-group-service";
 import { getTablePreferences } from "@/services/user/preference-service";
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
@@ -30,8 +31,15 @@ export default async function TenantsPage() {
         getTablePreferences(viewer.id, [TENANTS_TABLE_ID]),
     ]);
     const tenants = reachable ? all.filter((tenant) => reachable.some((entry) => entry.id === tenant.id)) : all;
-    const rows = withSummaries(tenants, await tenantSummaries(tenants.map((tenant) => tenant.id)));
     const canManage = hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_WRITE);
+    // A membership opens a tenant, but only a platform admin and the platform group that reaches it
+    // look after it here, and only one who reaches every tenant reaches a new one.
+    const [summaries, managed, reachesAll] = await Promise.all([
+        tenantSummaries(tenants.map((tenant) => tenant.id)),
+        !canManage ? [] : viewer.isPlatformAdmin ? null : platformGroupService.reachedAmong(viewer.id, tenants.map((tenant) => tenant.id)),
+        canManage && !viewer.isPlatformAdmin ? platformGroupService.reachesAll(viewer.id) : false,
+    ]);
+    const rows = withSummaries(tenants, summaries);
 
     return (
         <>
@@ -44,6 +52,8 @@ export default async function TenantsPage() {
                     activeTenantId={viewer.tenantId}
                     viewerId={viewer.id}
                     canManage={canManage}
+                    managedIds={managed}
+                    canCreate={canManage && (viewer.isPlatformAdmin || reachesAll)}
                     viewerPlatformAdmin={viewer.isPlatformAdmin}
                     // Someone of a platform group sees where their view comes from, like "Read only, through Support".
                     through={viewer.platformGroup?.name ?? null}

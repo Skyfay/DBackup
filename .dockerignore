@@ -12,9 +12,10 @@ storage
 db/*.db
 db/*.db-journal
 
-# The dev database of a checkout, which the image would otherwise carry in /app/prisma
+# The dev database of a checkout and the copies kept before a migration, which the image would otherwise carry in /app/prisma
 prisma/*.db
 prisma/*.db-*
+prisma/*.db.*
 
 # The dev lab and the end-to-end tests, never part of the image
 lab

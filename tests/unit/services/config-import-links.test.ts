@@ -166,6 +166,46 @@ describe("restoring a configuration onto a new DBackup", () => {
         expect(result.notes).toEqual(["1 API key was left out, since the user it belongs to is not here."]);
     });
 
+    it("gives a group of a file from before the tenants the rights on the tenant settings a group of the same rights got with the update", async () => {
+        await importConfiguration(backup({
+            groups: [{ id: "g-ops", name: "Ops", permissions: '["settings:read","settings:write","jobs:write"]' }],
+        }), "OVERWRITE");
+
+        expect(JSON.parse(firstCall(prismaMock.group.upsert).permissions as string)).toEqual(
+            ["settings:read", "settings:write", "jobs:write", "tenant-settings:read", "tenant-settings:write"]
+        );
+    });
+
+    it("brings a group of the name of a group the platform makes for the tenants in under a name of its own", async () => {
+        prismaMock.group.findFirst.mockResolvedValueOnce({ id: "g-client", name: "Client", fullAccess: false, templateId: "tpl-1" } as never);
+        prismaMock.group.create.mockResolvedValueOnce({ id: "g-new" } as never);
+
+        const result = await importConfiguration(backup({
+            groups: [{ id: "g-file", name: "Client", permissions: '["jobs:read"]' }],
+        }), "OVERWRITE");
+
+        expect(prismaMock.group.update).not.toHaveBeenCalled();
+        expect(prismaMock.group.create).toHaveBeenCalledWith({ data: { name: "Client (imported)", permissions: '["jobs:read"]' }, select: { id: true } });
+        expect(result.notes).toEqual(["The group Client of the file came in as Client (imported), since Client is a group the platform makes for its tenants."]);
+    });
+
+    it("leaves out a sign-in provider a tenant holds here, and brings one of the platform back as the platform's", async () => {
+        prismaMock.ssoProvider.findUnique.mockImplementation((async ({ where }: { where: { providerId?: string; id?: string } }) =>
+            where.providerId === "acme-entra" ? { id: "sso-acme", tenantId: "acme" } : null) as never);
+
+        const result = await importConfiguration(backup({
+            ssoProviders: [
+                { id: "sso-1", providerId: "acme-entra", name: "Acme Entra", issuer: "https://login.example", domain: "acme.ch", clientId: "id", clientSecret: "secret", defaultGroupId: null },
+                { id: "sso-2", providerId: "authentik", name: "Authentik", issuer: "https://auth.example", domain: null, clientId: "id", clientSecret: "secret", defaultGroupId: null },
+            ],
+        }), "OVERWRITE");
+
+        expect(prismaMock.ssoProvider.update).not.toHaveBeenCalled();
+        expect(prismaMock.ssoProvider.upsert).toHaveBeenCalledTimes(1);
+        expect(firstCall(prismaMock.ssoProvider.upsert)).toMatchObject({ providerId: "authentik", tenantId: null });
+        expect(result.notes).toEqual(["The sign-in provider Acme Entra of the file was left out, since a tenant has a provider of the same name here."]);
+    });
+
     it("changes nothing and says nothing when every link is here, like a restore onto the same DBackup", async () => {
         prismaMock.retentionPolicy.findUnique.mockResolvedValue({ id: "policy-1" } as never);
         prismaMock.namingTemplate.findUnique.mockResolvedValue({ id: "names-1" } as never);

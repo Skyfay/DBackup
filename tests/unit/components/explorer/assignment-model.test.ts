@@ -59,6 +59,7 @@ function server(): SourceAssignments {
         ],
         rules,
         customers: [acme, beta],
+        tenants: [acme, beta],
         backupDates: {},
     };
 }

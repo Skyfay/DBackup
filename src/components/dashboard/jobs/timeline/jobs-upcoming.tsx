@@ -10,7 +10,7 @@ import { stageLabel } from "@/lib/core/logs";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import { FlowCell, JobTenant, ScheduleText, SourceIcon, sourceOf } from "../job-cells";
-import { agendaOf, DAY_MS, horizonOf, ZOOMS, type AgendaRow, type TimelineZoom } from "./job-timeline-model";
+import { agendaOf, DAY_MS, horizonOf, waitNames, waitSentence, ZOOMS, type AgendaRow, type TimelineZoom } from "./job-timeline-model";
 import { aboutLength, useTimelineClock, type TimelineClock } from "./timeline-clock";
 import { ZoomTabs } from "./timeline-controls";
 import type { JobTimelineState } from "./use-job-timeline";
@@ -34,7 +34,7 @@ function JobLabel({ job }: { job: JobListItem }) {
 
 /** The state of a run to come, with one line on why it waits, how far it got or what went wrong last. */
 function RowState({ row, job, now, names }: { row: AgendaRow; job: JobListItem; now: number; names: Map<string, string> }) {
-    const waits = row.waitsFor.map((id) => names.get(id) ?? "another job").join(", ");
+    const waits = waitNames(row.waitsFor, names).join(", ");
     if (row.kind === "running") {
         const run = row.run;
         return (
@@ -50,7 +50,7 @@ function RowState({ row, job, now, names }: { row: AgendaRow; job: JobListItem; 
         return (
             <span className="grid min-w-0 gap-1">
                 <span className={cn(CHIP, "w-fit bg-warning/10 text-warning")}><Hourglass />Waits</span>
-                <span className="truncate text-xs text-muted-foreground">{waits ? `${waits} ${row.waitsFor.length === 1 ? "holds" : "hold"} the queue` : "The queue is full"}</span>
+                <span className="truncate text-xs text-muted-foreground">{waitSentence(row.waitsFor, names)}</span>
             </span>
         );
     }

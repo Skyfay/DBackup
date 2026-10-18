@@ -47,6 +47,8 @@ async function actorIn(viewer: { id: string; isPlatformAdmin: boolean }, tenantI
 
 const GROUP_BEYOND = "This group may do more than you may in this tenant, so you cannot give it to anyone.";
 const HELD_BEYOND = "This account's group may do more than you may in this tenant, so only someone who may do all of it changes it.";
+/** An account the viewer may not see reads as one that does not exist. */
+const ACCOUNT_GONE = "The account no longer exists.";
 
 export interface TenantMembersData {
     members: TenantMember[];
@@ -79,16 +81,21 @@ export async function getTenantMembers(tenantId: string): Promise<{ success: tru
 }
 
 /**
- * The accounts Add member offers: every account for whoever may see the accounts of the platform,
- * else the people of the tenants the viewer's platform group reaches. Never a platform admin or the
- * viewer, whose memberships a platform admin changes.
+ * The accounts Add member offers: every account for a platform admin, else the people of the
+ * tenants the viewer's platform group reaches, every account for a group of all tenants. The right
+ * to see the accounts of the platform reaches no further. Never a platform admin or the viewer,
+ * whose memberships a platform admin changes.
  */
-async function addableAccounts(viewer: { id: string; isPlatformAdmin: boolean; permissions: readonly string[] }) {
+async function addableAccounts(viewer: { id: string; isPlatformAdmin: boolean }) {
     const accounts = await membershipService.accounts();
     if (viewer.isPlatformAdmin) return accounts;
-    const seesAll = viewer.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_READ) || viewer.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
-    const reachable = seesAll ? null : new Set(await platformGroupService.peopleReached(viewer.id));
-    return accounts.filter((account) => !account.platformAdmin && account.id !== viewer.id && (!reachable || reachable.has(account.id)));
+    const reachable = new Set(await platformGroupService.peopleReached(viewer.id));
+    return accounts.filter((account) => !account.platformAdmin && account.id !== viewer.id && reachable.has(account.id));
+}
+
+/** Whether the viewer sees an account: a platform admin every one, anyone else the people of the tenants their platform group reaches. */
+async function seesAccount(viewer: { id: string; isPlatformAdmin: boolean }, userId: string): Promise<boolean> {
+    return viewer.isPlatformAdmin || (await platformGroupService.peopleReached(viewer.id)).includes(userId);
 }
 
 /** Gives an account a group in a tenant, which adds it there, or takes it out of the tenant with null. */
@@ -116,6 +123,9 @@ export async function setTenantMember(tenantId: string, userId: string, groupId:
             if (role && roleRefusal(actor, role)) return { success: false as const, error: GROUP_BEYOND };
             const current = await membershipService.roleOf(user.data, tenant.data);
             if (current && roleRefusal(actor, current)) return { success: false as const, error: HELD_BEYOND };
+            // A new membership adds only an account the viewer may see, like Add member offers it.
+            // Otherwise someone of a platform group of one tenant could pull an account of another in.
+            if (role && !current && !(await seesAccount(viewer, user.data))) return { success: false as const, error: ACCOUNT_GONE };
         }
         // A platform admin manages every tenant, so they may leave one without anyone else who does.
         await membershipService.setRole(user.data, tenant.data, group.data, { platformAdmin: viewer.isPlatformAdmin });

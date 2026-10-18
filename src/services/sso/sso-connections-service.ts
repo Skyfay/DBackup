@@ -31,16 +31,19 @@ export interface SsoConnections {
 interface ConnectingUser {
     email: string;
     platformRole: string | null;
+    /** An account of a platform group, which the sign-in through a provider of a tenant refuses. */
+    platformGroupId: string | null;
     memberships: { tenantId: string }[];
 }
 
 const connectingUser = (userId: string): Promise<ConnectingUser | null> =>
-    prisma.user.findUnique({ where: { id: userId }, select: { email: true, platformRole: true, memberships: { select: { tenantId: true } } } });
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true, platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
 
 /**
  * Whether someone may connect a provider to their account. Any of the platform, and one of a tenant
- * only in a tenant they work in, with an email of its domain and never as a platform admin, which
- * the sign-in through it refuses anyway. The others of tenants stay unlisted.
+ * only in a tenant they work in, with an email of its domain and never as a platform admin or an
+ * account of a platform group, which the sign-in through it refuses anyway. The others of tenants
+ * stay unlisted.
  */
 function mayConnect(provider: { tenantId: string | null; domain: string | null }, user: ConnectingUser | null): boolean {
     if (!provider.tenantId) return true;

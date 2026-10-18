@@ -11,12 +11,15 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/prisma", () => ({ default: { user: { findUnique: vi.fn(async () => ({ name: "Manu" })) } } }));
 vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isPlatformAdmin: false }),
+    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isPlatformAdmin: false, tenantId: "default" }),
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
     },
+    tenantOf: (ctx: { tenantId: string }) => ctx.tenantId,
 }));
 vi.mock("@/services/storage/copy-verification", () => ({ startCopyVerification: mocks.start, readCopyVerification: mocks.read }));
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: vi.fn() } }));
+vi.mock("@/services/storage/backup-audit", () => ({ backupAuditDetails: async (_destinationId: string, file: string) => ({ file }) }));
 
 const { POST, GET } = await import("@/app/api/storage/verify-copies/route");
 

@@ -5,7 +5,7 @@ import { diffFields } from "@/lib/core/audit-diff";
 
 vi.mock("@/services/system/data-retention-service", () => ({ getDataRetentionValues: vi.fn(async () => ({ auditLog: 90 })) }));
 
-const { buildAuditWhere, whoWhere } = await import("@/services/audit/audit-query");
+const { addressShownWhere, buildAuditWhere, whoWhere } = await import("@/services/audit/audit-query");
 const { actorOf, networkOf, newPlacesOf } = await import("@/services/audit/audit-rows");
 const { csvCell } = await import("@/services/audit/audit-export");
 const { parseAuditFilter } = await import("@/services/audit/audit-params");
@@ -34,11 +34,11 @@ describe("what the filters of the audit log keep", () => {
         });
     });
 
-    it("searches the names inside the entries, the address and the email of the person", () => {
+    it("searches the names inside the entries, the address where the log shows it and the email of the person", () => {
         const where = buildAuditWhere({ who: [], areas: [], actions: [], quick: "all", period: "all", search: "Shop nightly" }, NOW) as { AND: { OR?: unknown[] }[] };
 
         expect(where.AND[0].OR).toContainEqual({ details: { contains: "Shop nightly" } });
-        expect(where.AND[0].OR).toContainEqual({ ipAddress: { contains: "Shop nightly" } });
+        expect(where.AND[0].OR).toContainEqual({ AND: [{ ipAddress: { contains: "Shop nightly" } }, addressShownWhere(undefined)] });
         expect(where.AND[0].OR).toContainEqual({ user: { is: { email: { contains: "Shop nightly" } } } });
     });
 

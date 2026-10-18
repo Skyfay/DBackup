@@ -1,9 +1,11 @@
 import prisma from "@/lib/prisma";
 import { ValidationError } from "@/lib/logging/errors";
 import { ownerAt, ruleAt } from "@/lib/tenant/database-owner";
+import { OUTSIDE_REACH, type PlatformReach } from "@/lib/tenant/sharing-reach";
+import { assertReached } from "./assignment-reach";
 import type { AssignmentWithTenant, MovePlace } from "./database-assignments";
 import { factsOf } from "./shared-backups";
-import { listedDatabases, NOT_SHARING, ownSource, rememberServer, serverNames, sharesWithCustomers } from "./shared-servers";
+import { listedDatabases, NOT_SHARING, ownSource, rememberServer, serverNames, sharesWithCustomers, sharingChanged } from "./shared-servers";
 
 /**
  * A database of a shared server that moved to another server of the same tenant, under the same
@@ -71,9 +73,10 @@ export async function moveTargets(sourceId: string): Promise<MoveTarget[]> {
 /**
  * Marks a database of a customer as moved to another server. Only a database a customer holds now
  * moves, only to a server of the same engine, so its backups restore there, and never onto a name
- * that another customer holds on the new server.
+ * that another customer holds on the new server. Someone of a platform group of some tenants moves
+ * only the databases of the tenants it reaches.
  */
-export async function moveDatabase(sourceId: string, input: MoveInput, by: string | null, now = new Date()): Promise<MoveResult> {
+export async function moveDatabase(sourceId: string, input: MoveInput, by: string | null, now = new Date(), reach: PlatformReach = "all"): Promise<MoveResult> {
     const [from, to] = await Promise.all([ownSource(sourceId), ownSource(input.toSourceId)]);
     const databaseName = input.databaseName.trim();
     const toDatabase = (input.toDatabase ?? databaseName).trim();
@@ -85,6 +88,7 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
     const [facts, targetFacts] = await Promise.all([factsOf(from.id), factsOf(to.id)]);
     const holder = ownerAt(facts.assignments, facts.rules, databaseName, now);
     if (!holder) throw new ValidationError(`${databaseName} belongs to no customer now, so it has nothing to take along. Give it to the tenant on ${to.name} instead.`);
+    await assertReached(prisma, reach, holder, (tenant) => OUTSIDE_REACH.holder(databaseName, tenant));
     const there = ownerAt(targetFacts.assignments, targetFacts.rules, toDatabase, now);
     const tenant = await prisma.tenant.findUnique({ where: { id: holder }, select: { name: true } });
     if (there && there !== holder) {
@@ -131,5 +135,6 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
         await tx.databaseAssignment.create({ data: { sourceId: to.id, databaseName: toDatabase, tenantId: holder, validFrom: now, onDemandPerDay, createdById: by, createdAt: now } });
     });
 
+    sharingChanged();
     return { tenantName: tenant?.name ?? "The tenant", toServerName: to.name, toDatabase };
 }

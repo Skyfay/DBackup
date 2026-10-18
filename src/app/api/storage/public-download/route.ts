@@ -78,10 +78,12 @@ export async function GET(req: NextRequest) {
                 markTokenUsed(token, from);
                 if (createdBy) {
                     // The entry belongs to the maker of the link and says where it was fetched from. It is
-                    // written after the response went out, so the address and browser are handed over.
+                    // written after the response went out, so the address and browser are handed over,
+                    // as the origin of the entry and never in its details, where `originShown` decides
+                    // who sees them.
                     void backupAuditDetails(storageId, file).then((backup) => auditService.log(
                         createdBy, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
-                        { action: "download_link", ...backup, databases: pick?.databases ?? (database ? [database] : undefined), selections: pick?.selections, from },
+                        { action: "download_link", ...backup, databases: pick?.databases ?? (database ? [database] : undefined), selections: pick?.selections },
                         storageId,
                         { ipAddress: from ?? null, userAgent, tenantId }
                     ));

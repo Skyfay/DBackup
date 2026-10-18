@@ -28,6 +28,9 @@ const NameSchema = z.string().trim().min(1, "Give the tenant a name.").max(60, "
 const messageOf = (error: unknown, fallback: string) =>
     error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError ? error.message : fallback;
 
+/** A refusal the user can act on, which is no failure for the log. */
+const isRefusal = (error: unknown) => error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError;
+
 /** A change of the tenants is the platform's, so its entry goes into the log of the home tenant. */
 const PLATFORM = { tenantId: HOME_TENANT_ID };
 
@@ -183,7 +186,7 @@ export async function renameTenant(id: string, name: string) {
 
 /**
  * Deletes a tenant with everything it holds. The backups at its destinations stay, and so do the
- * accounts, which lose their membership there.
+ * accounts, which lose their membership there. Refused while a run of the tenant waits or runs.
  */
 export async function deleteTenant(id: string) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
@@ -197,7 +200,7 @@ export async function deleteTenant(id: string) {
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: removal };
     } catch (error: unknown) {
-        log.error("Deleting a tenant failed", { tenantId: tenantId.data }, wrapError(error));
+        if (!isRefusal(error)) log.error("Deleting a tenant failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be deleted.") };
     }
 }
@@ -226,8 +229,9 @@ async function removeTenant(viewer: Viewer, tenantId: string) {
 }
 
 /**
- * Deletes several empty tenants at once: no connection, no job, nobody working in them. One that
- * holds any of it stays, with why, since Delete of one asks first what goes with it.
+ * Deletes several empty tenants at once: no connection, no job, nobody working in them, no key, no
+ * API key and nothing in Recently deleted. One that holds any of it stays, with why, since Delete of
+ * one asks first what goes with it, like the recovery kits of its keys.
  */
 export async function bulkDeleteTenants(ids: string[]) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
@@ -243,13 +247,13 @@ export async function bulkDeleteTenants(ids: string[]) {
                 continue;
             }
             if (!isEmptyTenant(await tenantContents(id))) {
-                result.failed.push({ id, error: "It holds connections, jobs or people. Delete it on its own, which asks first." });
+                result.failed.push({ id, error: "It holds connections, jobs or people, or keys, API keys or entries in Recently deleted. Delete it on its own, which asks first." });
                 continue;
             }
             await removeTenant(viewer, id);
             result.succeeded.push(id);
         } catch (error: unknown) {
-            if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Deleting a tenant failed", { tenantId: id }, wrapError(error));
+            if (!isRefusal(error)) log.error("Deleting a tenant failed", { tenantId: id }, wrapError(error));
             result.failed.push({ id, error: messageOf(error, "The tenant could not be deleted.") });
         }
     }

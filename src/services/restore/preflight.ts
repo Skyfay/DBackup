@@ -96,7 +96,7 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
 
     // Version Compatibility Check
     // A destination that cannot be opened skips the check, the restore itself reports why.
-    const storage = await openDestination(storageConfigId).catch((error: unknown) => {
+    const storage = await openDestination(storageConfigId, input.shared?.copyTenantId).catch((error: unknown) => {
         svcLog.warn("Version check skipped, the destination could not be opened", { storageConfigId }, wrapError(error));
         return null;
     });

@@ -15,12 +15,14 @@ Only the servers of a [tenant that shares with customers](#tenants-that-share), 
 A tenant of the MSP shares with customers, a customer does not. The home tenant shares from the start, any other tenant once the platform switches it on: **Shares with customers** under **Sharing** in **Edit** of the tenant under **Platform → Tenants**, or the tick **Shares with customers** in **New tenant**. The list marks such a tenant with **Shares with customers**. The same switch lets it share its destinations and channels, see [Shared Destinations and Channels](/user-guide/admin/shared-connections). Switching needs `platform-tenants:write`, someone of a platform group switches only the tenants their platform group reaches, and every switch goes into the audit log of the home tenant.
 
 - **A tenant that shares can also get databases** of another tenant that shares. It never passes them on, a database it gets is no server of its own.
-- **Stop sharing with customers** is refused while the servers of the tenant give databases away, or while it shares a destination or a channel. Take them back and end its rules first, so no customer loses anything by the switch.
+- **Stop sharing with customers** is refused while the servers of the tenant give databases away, or while it shares a destination or a channel. Take them back and end its rules first, so no customer loses anything by the switch. What a server whose connection was deleted gave away holds nothing back, it ends with the switch.
 - **A customer's own servers never share**, whoever holds **Share with customers**. That is what the switch tells apart.
 
 ## Giving Databases Away
 
 The [page of a database server](/user-guide/features/database-explorer#the-page-of-a-server) in the **Database Explorer**, and the page of the database connection, show **Databases and tenants**: the databases DBackup last read from the server, the tenant each belongs to now, how it got there and how many backups it has. Quick filters show all, the given ones or the ones only you see. It shows in a tenant that shares with customers while there is another tenant, to whoever holds **See what is shared** (`platform-sharing:read`), and changing it needs **Share with customers** (`platform-sharing:write`). Both are rights of the platform in the area **Sharing**, which a [platform group](/user-guide/admin/tenants#platform-groups) gives and a platform admin holds, never the group of a tenant. Every other tenant can get one, also one that shares with customers itself.
+
+Someone of a platform group of selected tenants gives databases to those tenants only and takes them only from them. A database another tenant holds, by name or by a rule, shows its tenant with a lock and stays as it is: it is neither taken back, given to another tenant, moved nor changed in its backups on demand. The rules of such a tenant stay as they are too, and a new rule that would rank above one of them for a database of the server is refused. The pickers offer only the tenants they reach, and so does their [API key](#through-the-api). A platform group of all tenants and a platform admin reach every tenant.
 
 ### By Hand
 
@@ -65,9 +67,9 @@ curl -s -X PUT "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments" \
 | `tenantId` | The tenant it belongs to, or `null` to take it back |
 | `validFrom` | An ISO date or time the customer's backups start, now when left out |
 
-The answer counts the databases whose owner changed, as `{ "success": true, "data": { "changed": 2 } }`. A database that belongs to the tenant already stays as it is, its start included. The name may be one DBackup has not read from the server yet, like a database the panel just created. A start in the future, a server of a tenant that does not share with customers, the tenant of the server itself or a tenant that does not exist answers `400`, a server of another tenant `404`.
+The answer counts the databases whose owner changed, as `{ "success": true, "data": { "changed": 2 } }`. A database that belongs to the tenant already stays as it is, its start included. The name may be one DBackup has not read from the server yet, like a database the panel just created. A start in the future, a server of a tenant that does not share with customers, the tenant of the server itself or a tenant that does not exist answers `400`, and so does a database given to or taken from a tenant the platform group of the owner of the key does not reach. Nothing changes then. A server of another tenant answers `404`.
 
-`GET` on the same address needs `platform-sharing:read` or `platform-sharing:write` and answers with the databases of the server and their owner now, every assignment and rule with its start and end, and the tenants a database can go to under `customers`. The IDs of the tenants for the `PUT` come from there.
+`GET` on the same address needs `platform-sharing:read` or `platform-sharing:write` and answers with the databases of the server and their owner now, every assignment and rule with its start and end, the tenants a database can go to under `customers`, those the owner of the key reaches, and every other tenant under `tenants`. The IDs of the tenants for the `PUT` come from `customers`.
 
 ```bash
 curl -s "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments" \
@@ -85,7 +87,7 @@ A backup belongs to whoever had its database when the backup was made, never to 
 - **An ended assignment** keeps the backups made until then with its customer.
 - **A name used again**, after another customer had it, stays with whoever had it at the time of each backup.
 - **A renamed database** has a new name, which belongs to nobody until it is given away again or a rule matches it.
-- **A deleted tenant** keeps its assignments and rules as ended ones. The backups of its time belong to nobody from then on and never fall to another tenant's rule.
+- **A deleted tenant** keeps its assignments and rules as ended ones. The backups of its time belong to nobody from then on and never fall to another tenant's rule. A database it held by name goes back to the tenant of the server, like with **Nobody else**, so no rule gives it away until it is given by name again.
 
 ### Who Held Each Database
 
@@ -142,6 +144,8 @@ A right click on a shared backup offers only what the customer may do with it: *
 A restore shows in the History of the customer's tenant, and every download and restore in its audit log. The run names the database alone, never the address, port or user of the server, the archive, the destination or another database, and the other databases of the backup are never read. The restore notifications to the customer's channels name the database instead of the archive, without the destination, and a failure with a general message. A download goes through an address that holds a token alone, never the destination. When the first destination of a backup does not answer, a download or restore takes the next copy.
 
 The tenant of the server sees every restore of a customer too. Its History gets a run of the same restore, **Restore onto** the server with **Restore of** the database **for** the customer below it, started by the customer and the person, like *Acme · Sara*. That run holds the whole log, with the archive, the commands and the errors of the server's tools, and ends with the same status as the customer's run. **Cancel** in either History stops the restore. Its audit log keeps the restore as well, with the database, the server and the customer. When a restore fails, the customer's run ends with a line that says the tenant of the server sees the full run in its History, so the customer knows whom to ask.
+
+The customer's short run of a backup and the provider's run of a restore each follow another run. When that run is gone or ended without them, the [Stuck run watchdog](/user-guide/jobs/#stuck-job-timeout), while it is on, ends them 10 minutes later with the outcome of that run, or as failed when it is gone.
 
 ::: info Backups of DBackup 3.4 and later
 Only an archive with an index lets one database out without the others. That is every backup of DBackup 3.4 or later. Older backups hold all databases in one piece and stay with the tenant of the server.

@@ -39,7 +39,11 @@ A platform group gives the people of the MSP rights without making them platform
 
 Someone holds at most one platform group, picked with **Runs the platform** in **New user**, in **Edit** or in the panel of the account, and changes their own profile through it, also without a group in any tenant. In a tenant of its scope they may do what their group there gives plus what the platform group gives there, it never takes anything away, and they open such a tenant without being a member. A platform group of all tenants that sees something there also opens [All tenants](#all-tenants). The section **Platform** of the sidebar shows them only what their rights on the platform open.
 
-Nobody makes, changes or gives a platform group that may do more than they may themselves, on the platform or in the tenants of its scope. The account of someone in a platform group is changed only by a platform admin, or by someone with `platform-accounts:write` who may give that platform group, never by the admin of a tenant. An API key of someone in a platform group gets its rights in the tenants, never the ones on the platform, but for **Sharing** in a key of a tenant that shares with customers, see [API Keys](#api-keys).
+Two rights on the platform count only in the tenants of its scope as well. **Share with customers** gives databases, destinations and channels to the tenants a platform group of selected tenants reaches, takes them only from those and changes only their rules and backups on demand, see [Shared Databases](/user-guide/admin/shared-databases#giving-databases-away) and [Shared Destinations and Channels](/user-guide/admin/shared-connections#who-may-share). **See the sign-in providers** shows the providers of the platform and of those tenants, see [SSO](/user-guide/admin/sso). A platform group of all tenants and a platform admin reach every tenant.
+
+The accounts count only in the tenants of its scope as well. With a platform group of selected tenants, **See the accounts** lists the people who work in one of them, each with only those of its tenants, the accounts of no tenant while the home tenant is one of them, and the own account. The members of the platform groups show as far as it sees their accounts. **Manage the accounts** changes an account only while every tenant it works in is one of them, an account of no tenant counting as one of the home tenant. It gives a platform group only to such an account and makes a new account only in those tenants. An account that **Runs the platform** in no tenant is made by a platform admin or someone of a platform group of all tenants. Beyond its tenants someone makes and changes accounts only as the admin of a tenant, and changes only one that works in that tenant alone.
+
+Nobody makes, changes or gives a platform group that may do more than they may themselves, on the platform or in the tenants of its scope. The account of someone in a platform group is changed only by a platform admin, or by someone with `platform-accounts:write` who may give that platform group and reaches its tenants, never by the admin of a tenant. An API key of someone in a platform group gets its rights in the tenants, never the ones on the platform, but for **Sharing** in a key of a tenant that shares with customers, see [API Keys](#api-keys).
 
 ## Switching Tenants
 
@@ -52,15 +56,19 @@ The head of the sidebar, at the very top left, always names where you work. Some
 | Someone in one of several tenants they may open | The tenant and its place, like **Tenant 3 of 14** |
 | A customer with one tenant to open | Their tenant and **Your backups** |
 
-The menu has a search **Find a tenant** and lists the tenants. For whoever may see the tenants each tenant also shows its jobs and databases and a dot when the newest backup of one of its jobs failed (red) or missed a copy (amber). Whoever may open All tenants finds it at the top. Whoever may see the tenants finds **Manage tenants** at the bottom, and **New tenant** above it while they may create tenants.
+The menu has a search **Find a tenant** and lists the tenants. For whoever may see the tenants each tenant also shows its jobs and databases, how many databases of other tenants it holds as **shared**, and a dot when the newest backup of one of its jobs failed (red) or missed a copy (amber). Whoever may open All tenants finds it at the top. Whoever may see the tenants finds **Manage tenants** at the bottom, and **New tenant** above it while they may create tenants.
 
 Inside a tenant the breadcrumb of the header starts with its name. The pick holds for the session and so for every tab of the browser: when one tab switches, the other tabs load their page again in the new tenant. A tenant deleted meanwhile says so when picked and leaves the list. A platform admin, and a platform group that opens All tenants, start in All tenants while there is more than one tenant, anyone else in the home tenant, or in the first tenant they joined when they are no member of the home tenant. A switch on the page of one record, like a run or a database server, leads to the Overview, since the next tenant does not hold that record.
+
+A link in a mail or a chat message of DBackup, like **Open run** or **Open job**, names the tenant of its record. Opening it switches into that tenant first, when you may open it, and then opens the record. All tenants opens it right there.
 
 ## All Tenants
 
 All tenants is the view of a platform admin, or of a platform group of all tenants, over every tenant at once. The Overview, Connections, Jobs, Backups, the Database Explorer, History and the search of the header show the records of every tenant, each with its tenant in a column you can filter by.
 
 All tenants only reads. Opening a record, or changing it, first switches into its tenant and says so, so a job never links to the destination or key of another customer. **New** asks which tenant the new record belongs to and lists only the tenants where you may add that kind of record. Without one it does not show. The Vault, Templates, Quick Setup, the tenant settings and the Users & Groups of a tenant belong to one tenant, so in All tenants their entry in the sidebar asks for the tenant right away, like **New**, and opens the page there. Switching to All tenants on one of these pages leads to the Overview.
+
+**Backups** in All tenants shows each destination as its own tenant sees it. The backups a customer keeps on a destination another tenant shares with it show once that customer's tenant is open. **Storage by destination** on the Overview counts the backups of every tenant on a destination together and names the tenant of the destination.
 
 ## The Sections Administration and Platform
 
@@ -92,7 +100,7 @@ The menu of a tenant, also on a right click, holds **Open**, **Edit** and **Dele
 3. Tick **Shares with customers** for a tenant of the MSP that gives single databases, destinations and notification channels to other tenants, see [Share with Customers](#share-with-customers)
 4. Click **Create tenant**
 
-A new tenant starts with the built-in templates: the retention policies **Keep All**, **Simple - 14 Days** and **Smart GVS (7/4/12/2)**, the naming template **Standard**, five schedule presets and the exclude preset **System Junk Files**. Nobody works in it yet, so **Edit** opens next on its members.
+A new tenant starts with the built-in templates: the retention policies **Keep All**, **Simple - 14 Days** and **Smart GFS (7/4/12/2)**, the naming template **Standard**, five schedule presets and the exclude preset **System Junk Files**. Nobody works in it yet, so **Edit** opens next on its members.
 
 ### Edit a Tenant
 
@@ -104,7 +112,7 @@ A new tenant starts with the built-in templates: the retention policies **Keep A
 | **Members** | Who works there with which group, see [Members](#members) |
 | **Sharing** | **Shares with customers**, see [Share with Customers](#share-with-customers) |
 | **What it may add** | A switch per kind, see [What It May Add](#what-it-may-add). Not for the home tenant |
-| **Backups on demand** | How many backups a day it may start of each database given to it. Not for the home tenant |
+| **Backups on demand** | How many backups a day it may start of each database given to it, the home tenant too when another tenant shares with it |
 
 **Save changes** saves the name, the sharing, what it may add and the backups on demand together, and the foot says what changed. A change of the members and **Follow** of backups on demand count at once. When the server refuses one part, like sharing that is still in use, the dialog opens that part and keeps the rest of what is not saved yet.
 
@@ -112,7 +120,7 @@ A new tenant starts with the built-in templates: the retention policies **Keep A
 
 **Members** in **Edit** lists who works there with which group.
 
-- **Add member** picks an account and its group in this tenant. It lists every account to a platform admin. Someone of a platform group sees every account with `platform-accounts:read`, else the people of the tenants their platform group reaches, and never a platform admin or themselves, whose memberships a platform admin changes.
+- **Add member** picks an account and its group in this tenant. It lists every account to a platform admin. Someone of a platform group sees the people of the tenants their platform group reaches, every account with a platform group of all tenants, and never a platform admin or themselves, whose memberships a platform admin changes.
 - The group of a member changes as soon as it is picked. Someone of a platform group gives and takes only a group that may do no more than they may in that tenant.
 - The menu of a member offers **Remove from** the tenant. The account and its other tenants stay, and its sessions that worked in the tenant pick another one. A platform admin also finds **Make platform admin** or **No platform admin any more** there, never on their own row.
 
@@ -131,9 +139,9 @@ Add one person of the customer with a group that may manage users. They invite e
 - **The backups at its own destinations.** DBackup does not touch them. The encryption keys are gone with the tenant, so its encrypted backups only open with a [recovery kit](/user-guide/security/recovery-kit).
 - **The accounts.** They only lose their place in the tenant. An account that worked there alone belongs to no tenant afterwards and shows in the home tenant with **No group**.
 
-The dialog lists what goes and waits for the tick **I have the recovery kits of its keys, or do not need its backups**. The home tenant and the tenant you work in cannot be deleted.
+The dialog lists what goes and waits for the tick **I have the recovery kits of its keys, or do not need its backups**. The home tenant and the tenant you work in cannot be deleted. Neither can a tenant while one of its runs waits or runs, so cancel the run or delete the tenant once it ended.
 
-Ticked tenants go together with **Delete** above the list, as long as they are empty: no connections, no jobs and nobody working in them. A tenant that holds any of it is deleted on its own, where the dialog asks first.
+Ticked tenants go together with **Delete** above the list, as long as they are empty: no connections, no jobs, nobody working in them, no encryption keys, no API keys and nothing in Recently deleted. A tenant that holds any of it is deleted on its own, where the dialog asks first.
 
 ### Share with Customers
 
@@ -189,6 +197,8 @@ A name is used once inside a tenant, everything else goes by the id of a group. 
 - **Take over** that group: its members keep it, its permissions become the ones of the platform, which the dialog lists.
 - **Leave the tenant out**: it keeps its own group, and once the name is free, it can be picked again.
 
+A group with every permission is never taken over. Someone of a platform group cannot take over a group that may do more than they may in its tenant either, it shows **May do more than you** and the tenant stays out.
+
 When a tenant leaves the group, or the group is deleted, and people hold it there, it asks too:
 
 - **Remove it**: the group is gone there, its members move to the group picked for that tenant, or to none, which takes them out of the tenant.
@@ -202,13 +212,15 @@ Someone whose group in the tenant holds `users:write` manages its people:
 
 - **New user** creates an account that joins the open tenant with the group picked. Outside the home tenant the group is required, since an account without one would belong to no tenant and show only in the home tenant.
 - **Change group** gives someone of the tenant another group. **No group** takes them out of the tenant, the account stays. The people of a tenant are its members, and in the home tenant also the accounts of no tenant. Anyone else joins with an [invitation](#invitations) or through **Platform → Tenants**.
-- The account itself, its password, second factor, sessions, name, email or the delete of it, changes only when it works in this tenant alone. An account belongs to every tenant it works in, so an account that also works in another tenant is changed by a platform admin or by whoever holds `platform-accounts:write`. The account of a platform admin is changed by a platform admin only, and an account of a platform group as [Platform Groups](#platform-groups) says. The Users tab counts both as working elsewhere.
+- The account itself, its password, second factor, sessions, name, email or the delete of it, changes only when it works in this tenant alone. An account belongs to every tenant it works in, so an account that also works in another tenant is changed by a platform admin or by whoever holds `platform-accounts:write` through a platform group that reaches all of its tenants. The account of a platform admin is changed by a platform admin only, and an account of a platform group as [Platform Groups](#platform-groups) says. The Users tab counts both as working elsewhere.
 
 Nobody gives a group that may do more than they may, and nobody takes one away from someone whose group may do more than they may. The group lists leave such groups out.
 
 An email that has an account already cannot get a second one. Invite that person instead, they join with the account they have.
 
-An email whose domain the [sign-in provider](/user-guide/admin/sso#providers-of-a-tenant) of another tenant claims is refused, since that provider would sign in to the account. A provider of the platform counts as one of the home tenant. Only a platform admin or someone with `platform-accounts:write` gives an account such an email. This holds for New user, Edit, the own profile, an invitation that makes an account, and a restore from Recently deleted under a new email.
+An email whose domain the [sign-in provider](/user-guide/admin/sso#providers-of-a-tenant) of another tenant claims is refused, since that provider would sign in to the account. A provider of the platform counts as one of the home tenant. Only a platform admin or someone with `platform-accounts:write` gives an account such an email, someone of a platform group of selected tenants only one whose domain the provider of one of those tenants claims. This holds for New user, Edit, the own profile, an invitation that makes an account, and an account restored from Recently deleted, under its own email or a new one.
+
+The pictures of the people show beside their names only to those who reach them. In a tenant you see the pictures of its people, of the people of the platform who open it, and of anyone with an entry in its audit log or an API key there. Someone of a platform group who may see the tenants, the accounts or the sign-in providers also sees the people of the tenants their platform group reaches. A platform admin, All tenants, a platform group of all tenants with one of these rights and whoever reads the settings through the home tenant without a platform group see every picture.
 
 ## Invitations
 
@@ -234,13 +246,15 @@ The links nobody used yet show in a banner above the list of users, with their g
 
 ## API Keys
 
-An API key belongs to the tenant it was made in and acts only there, whichever tenant its owner opens later. The API keys tab lists the keys of the open tenant. A key never does more than its owner may in that tenant, and never carries what a platform group gives on the platform, the settings of the instance included. A key made in a tenant that [shares with customers](#share-with-customers) may hold **Sharing** while its owner does, for a hosting panel, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api) and [API Keys](/user-guide/features/api-keys).
+An API key belongs to the tenant it was made in and acts only there, whichever tenant its owner opens later. The API keys tab lists the keys of the open tenant. A key never does more than its owner may in that tenant, and never carries what a platform group gives on the platform, the settings of the instance included. A key made in a tenant that [shares with customers](#share-with-customers) may hold **Sharing** while its owner does, for a hosting panel, and gives to and takes from only the tenants the platform group of its owner reaches, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api) and [API Keys](/user-guide/features/api-keys).
 
 ## Audit Log
 
 Every tenant has its own audit log, read by its people with `audit:read`. What belongs to the platform goes into the log of the home tenant, whichever tenant the admin works in: sign-ins, sign-outs and failed sign-ins, the changes of tenants, platform admins, platform groups and sign-in providers, and every change of the settings of the instance, like the system tasks, data retention, the certificate, the login image, the configuration backup and its restore, and the download and optimize of the database. The changes of a group, the members added or removed through **Platform → Tenants**, and the invitations of a tenant show in the log of that tenant.
 
-The system notifications of **Settings → Notifications** belong to the platform as well, whichever tenant an event comes from. The integrity check records a run in the History of each tenant with something to check, with that tenant's copies alone, the home tenant first.
+A change of an account, its password, second factor, sessions, name, email or its delete, goes into the log of the tenant you work in while the account is one of its people. A change of an account of another tenant, or one made in All tenants, goes into the log of the home tenant, so a customer never reads what someone did to an account of another tenant. Those entries show under **Users & Groups → Audit log** while the home tenant is open, and in All tenants under the home tenant.
+
+The system notifications of **Settings → Notifications** belong to the platform as well, whichever tenant an event comes from. Their links open a run or a job in its own tenant, but their notification log, the one of the home tenant, keeps the run of a message only for a run of the home tenant, so **Open run** shows there only for those. The integrity check records a run in the History of each tenant with something to check, with that tenant's copies alone, the home tenant first.
 
 ## Before Updating
 

@@ -2,12 +2,15 @@
  * Asks a database server what it holds right now: its databases, the tables of one and the rows
  * of a table. A request names a saved source, or brings the adapter and the config of a form.
  * Unlike the cached lists of `database-list-service.ts`, every call here reaches the server.
+ *
+ * A config of a form is for someone who may change connections of its kind, which the route
+ * checks. It runs without the program a request names, see `formConfig`.
  */
 
 import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { registerAdapters } from "@/lib/adapters";
-import { assertConfigOffHost, resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { assertConfigOffHost, resolveAdapterConfig, withoutBinaryPaths } from "@/lib/adapters/config-resolver";
 import type { DatabaseAdapter, DatabaseInfo, TableDataOptions, TableDataResult, TableInfo } from "@/lib/core/interfaces";
 import { registry } from "@/lib/core/registry";
 import { withHost } from "@/lib/transport";
@@ -63,8 +66,7 @@ export async function readDatabaseStats(input: DatabaseStatsInput): Promise<Read
         config = await resolveAdapterConfig(source);
     }
     if (!adapterId || !config) return refused("incomplete");
-    // A config of a form is run as it is, so a customer's never reaches the server DBackup runs on.
-    if (input.config) await assertConfigOffHost(adapterId, input.config as Record<string, unknown>);
+    if (input.config) config = await formConfig(adapterId, input.config);
 
     const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;
     if (!adapter) return refused("adapter-missing");
@@ -128,6 +130,17 @@ export async function readTableData(target: DatabaseTarget, options: TableDataOp
     return { ok: true, value: result };
 }
 
+/**
+ * The config of a form as a read runs it: without a path to a program like `sqliteBinaryPath`, so
+ * a read never runs a program the request picked, and never on the server DBackup runs on while a
+ * customer, All tenants or an account of no tenant asks.
+ */
+async function formConfig(adapterId: string, submitted: unknown): Promise<Record<string, unknown>> {
+    const config = withoutBinaryPaths(submitted && typeof submitted === "object" ? (submitted as Record<string, unknown>) : {});
+    await assertConfigOffHost(adapterId, config);
+    return config;
+}
+
 /** The adapter a target reads with and its config in plain text, with the logins of a saved source on top. */
 async function resolveTarget(target: DatabaseTarget): Promise<ReadOutcome<{ adapter: DatabaseAdapter; config: unknown }>> {
     let adapterId: string;
@@ -139,9 +152,7 @@ async function resolveTarget(target: DatabaseTarget): Promise<ReadOutcome<{ adap
         config = await resolveAdapterConfig(source);
     } else {
         adapterId = target.adapterId;
-        config = target.config;
-        // A config of a form is run as it is, so a customer's never reaches the server DBackup runs on.
-        await assertConfigOffHost(adapterId, (config ?? {}) as Record<string, unknown>);
+        config = await formConfig(adapterId, target.config);
     }
 
     const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;

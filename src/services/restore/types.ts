@@ -36,6 +36,11 @@ export interface SharedRestore {
      * whole log, and the names of both tenants. Left out, only the customer's run is written.
      */
     provider?: { tenantId: string; name: string; customer: string };
+    /**
+     * The tenant whose view of the destination the path of the copy is in, the tenant of the server.
+     * A copy on a destination another tenant provides to it lies in that tenant's folder there.
+     */
+    copyTenantId?: string;
 }
 
 export interface RestoreInput {

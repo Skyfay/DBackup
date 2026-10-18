@@ -57,6 +57,7 @@ const PAGE = "/dashboard/platform/users";
 const OWN_GROUP = "You are in this platform group. Another admin changes it.";
 const GROUP_BEYOND = "This platform group may do more than you may, so only someone who may do all of it changes it.";
 const ONLY_ADMIN = "Only a platform admin gives or takes the platform admin role.";
+const ONLY_ALL_TENANTS = "An account that runs the platform is made by a platform admin or someone of a platform group of all tenants. Make it in a tenant your platform group reaches.";
 
 /** The message of a refusal the user can act on, a plain one for anything else. */
 const messageOf = (error: unknown, fallback: string) => (error instanceof ValidationError || error instanceof NotFoundError ? error.message : fallback);
@@ -209,6 +210,13 @@ export async function setUserPlatformGroup(userId: string, choice: PlatformGroup
         if (current && platformGroupRefusal(actor, current.shape)) {
             return { success: false as const, error: "Their platform group may do more than you may, so only someone who may do all of it changes it." };
         }
+        // Someone of a platform group of some tenants gives a platform group only to an account they
+        // may change, one whose tenants their platform group all reaches, see `accountRefusal`.
+        const reach = await platformGroupService.reachOf(viewer.id);
+        if (reach !== "all") {
+            const refused = await userService.accountRefusalFor({ ...viewer, reach }, user.data);
+            if (refused) return { success: false as const, error: refused };
+        }
     }
     if (picked.data.kind === "group") {
         const group = await platformGroupService.find(picked.data.id);
@@ -250,6 +258,8 @@ export async function createPlatformUser(input: PlatformUserInput) {
     const { platformGroup, ...data } = parsed.data;
 
     if (platformGroup.kind === "admin" && !viewer.isPlatformAdmin) return { success: false as const, error: ONLY_ADMIN };
+    // An account of no tenant belongs to the platform, which a platform group of some tenants does not look after.
+    if (!viewer.isPlatformAdmin && (await platformGroupService.reachOf(viewer.id)) !== "all") return { success: false as const, error: ONLY_ALL_TENANTS };
     let groupName = "Platform admin";
     if (platformGroup.kind === "group") {
         const group = await platformGroupService.find(platformGroup.id);

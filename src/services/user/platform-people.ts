@@ -3,6 +3,7 @@ import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { tenantLine } from "@/lib/auth/platform-group-summary";
 import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { peopleOf } from "@/services/tenant/membership-service";
 import { parsePermissions } from "./users-model";
 
 /**
@@ -38,16 +39,21 @@ export interface PlatformPeople {
 
 const PERSON = { id: true, name: true, email: true, image: true } as const;
 
-/** The people of the MSP who open the tenant through the platform. None while the instance has one tenant. */
+/**
+ * The people of the MSP who open the tenant through the platform. None while the instance has one
+ * tenant. The people of the tenant itself are left out, its Users tab lists them already, in the
+ * home tenant the accounts of no tenant too.
+ */
 export async function platformPeopleOf(tenantId: string): Promise<PlatformPeople> {
+    const outside = { NOT: peopleOf(tenantId) };
     return runAsSystem(async () => {
         const [tenants, home, admins, groups] = await Promise.all([
             prisma.tenant.count(),
             prisma.tenant.findUnique({ where: { id: HOME_TENANT_ID }, select: { name: true } }),
-            prisma.user.findMany({ where: { platformRole: PLATFORM_ADMIN_ROLE }, select: PERSON, orderBy: { name: "asc" } }),
+            prisma.user.findMany({ where: { platformRole: PLATFORM_ADMIN_ROLE, ...outside }, select: PERSON, orderBy: { name: "asc" } }),
             prisma.platformGroup.findMany({
                 where: { OR: [{ allTenants: true }, { tenants: { some: { tenantId } } }] },
-                select: { id: true, name: true, tenantPermissions: true, members: { select: PERSON, orderBy: { name: "asc" } } },
+                select: { id: true, name: true, tenantPermissions: true, members: { where: outside, select: PERSON, orderBy: { name: "asc" } } },
                 orderBy: { name: "asc" },
             }),
         ]);

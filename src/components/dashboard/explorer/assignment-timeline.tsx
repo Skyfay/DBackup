@@ -81,7 +81,7 @@ export function AssignmentTimeline({ id, data, lines, tenantName, now, picked, o
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value={EVERY}>Every tenant</SelectItem>
-                            {data.customers.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
+                            {data.tenants.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
                         </SelectContent>
                     </Select>
                     <Tabs value={range} onValueChange={(value) => setRange(value as TimelineRange)}>

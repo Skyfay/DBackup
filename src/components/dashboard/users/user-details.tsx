@@ -38,6 +38,10 @@ interface UserDetailsProps {
     onChanged: () => void;
     /** In All tenants, whether the viewer gives and takes the group of each tenant, which whoever may manage the tenants does. */
     canManageTenants?: boolean;
+    /** The tenants whose members the viewer looks after there, null for every tenant. */
+    managedTenants?: string[] | null;
+    /** The groups the viewer may give there, null for every group. */
+    givableGroups?: string[] | null;
     /** On the list of every account, whether the viewer gives platform groups, which whoever may manage the accounts of the platform does. */
     canManagePlatformGroup?: boolean;
     /** Bumped after a change elsewhere, so the panel loads again. */
@@ -59,7 +63,7 @@ export function UserDetails(props: UserDetailsProps) {
     );
 }
 
-function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut, lock, groupsMenu, onChanged, canManageTenants = false, canManagePlatformGroup = false, version }: UserDetailsProps & { user: UserRow }) {
+function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut, lock, groupsMenu, onChanged, canManageTenants = false, managedTenants = null, givableGroups = null, canManagePlatformGroup = false, version }: UserDetailsProps & { user: UserRow }) {
     // The version is part of the address, so a change elsewhere loads the panel again.
     const { model: details, refresh } = usePageModel<UserDetailsModel>(`/api/users/${encodeURIComponent(user.id)}?v=${version}`, "The user could not be loaded.");
     // A panel that still shows the user before holds nothing about this one.
@@ -79,7 +83,7 @@ function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <SheetTitle className="truncate text-lg font-semibold">{user.name}</SheetTitle>
                             {/* In All tenants the account has a group per tenant, which the section below lists. */}
-                            {!user.tenants ? <GroupTag group={user.group} /> : user.tenants.length === 0 && !onPlatform(user) && <NoTenantTag />}
+                            {!user.tenants ? <GroupTag group={user.group} platform={onPlatform(user)} /> : user.tenants.length === 0 && !onPlatform(user) && <NoTenantTag />}
                             {user.superAdmin && <PlatformAdminTag />}
                             {!user.superAdmin && user.platformGroup && <PlatformGroupTag user={user} />}
                             {user.isYou && <YouTag />}
@@ -112,7 +116,7 @@ function Content({ user, groups, onEdit, onPassword, onResetTwoFactor, onSignOut
                 <div className="space-y-6 p-5">
                     {user.platformGroup !== undefined && <UserPlatformGroupSection user={user} canManage={canManagePlatformGroup} onChanged={changed} />}
                     {user.tenants ? (
-                        <UserTenantsSection user={user} groups={groups} canManage={canManageTenants} onChanged={changed} />
+                        <UserTenantsSection user={user} groups={groups} canManage={canManageTenants} managedTenants={managedTenants} givableGroups={givableGroups} onChanged={changed} />
                     ) : (
                         <AccessSection user={user} groups={groups} onChangeGroup={onEdit && !user.isYou ? () => onEdit(user) : undefined} />
                     )}

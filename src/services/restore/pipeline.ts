@@ -142,6 +142,23 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
     let resolvedSourceType: string | undefined;
     let resolvedStorageName: string | undefined;
 
+    // Every way a restore ends Failed tells the channels. A customer's restore says it in neutral
+    // words, since the error can name its archive or the server.
+    const notifyFailure = (error: string, fallbackName?: string) => {
+        notify({
+            eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE,
+            data: {
+                sourceName: resolvedSourceName ?? fallbackName ?? targetSourceId,
+                databaseType: resolvedSourceType,
+                ...backupFacts(input, resolvedStorageName),
+                error: input.shared ? sharedFailure(input.shared.databaseName) : error,
+                duration: Date.now() - restoreStartTime,
+                executionId,
+                timestamp: new Date().toISOString(),
+            },
+        }).catch(() => {});
+    };
+
     try {
         if (!file) {
             throw new Error("Missing file");
@@ -151,7 +168,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
         // 1. Get Storage Adapter
         // Says which part is missing, or why the destination cannot be opened.
-        const storage = await openDestination(storageConfigId);
+        const storage = await openDestination(storageConfigId, input.shared?.copyTenantId);
         const storageConfig = storage.row;
         resolvedStorageName = storageConfig.name;
         record.from(storageConfig.name, storageConfig.adapterId);
@@ -297,13 +314,15 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             });
 
             if (result.status === "Failed") {
+                const reason = `no entries could be restored (${result.errors.map(e => e.error).join('; ')})`;
                 logs.split(
                     input.shared ? `Restore failed: ${input.shared.databaseName} could not be restored.` : null,
-                    `Restore failed: no entries could be restored (${result.errors.map(e => e.error).join('; ')})`,
+                    `Restore failed: ${reason}`,
                     'error'
                 );
                 setStage(RESTORE_STAGES.FAILED);
                 await logs.finish('Failed');
+                notifyFailure(`Restore failed: ${reason}`, "Combined archive");
             } else {
                 if (result.status === "Partial") {
                     // "not restored" rather than "failed": the list holds anything missing from
@@ -628,6 +647,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             log(`Restore adapter reported failure. Check logs above.`, 'error');
             setStage(RESTORE_STAGES.FAILED);
             await logs.finish('Failed');
+            notifyFailure(restoreResult.error || "The restore adapter reported a failure.");
         } else {
             log(`Restore completed successfully.`, 'success');
             setStage(RESTORE_STAGES.COMPLETED);
@@ -665,20 +685,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 'error'
             );
             await logs.finish('Failed');
-
-            // System notification (fire-and-forget)
-            notify({
-                eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE,
-                data: {
-                    sourceName: resolvedSourceName ?? targetSourceId,
-                    databaseType: resolvedSourceType,
-                    ...backupFacts(input, resolvedStorageName),
-                    error: input.shared ? sharedFailure(input.shared.databaseName) : getErrorMessage(error),
-                    duration: Date.now() - restoreStartTime,
-                    executionId,
-                    timestamp: new Date().toISOString(),
-                },
-            }).catch(() => {});
+            notifyFailure(getErrorMessage(error));
         }
     } finally {
         if (tempFile) {

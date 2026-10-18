@@ -4,6 +4,7 @@ import { getAuthContext, hasPermissionWithContext } from "@/lib/auth/access-cont
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { accountsSeenReach } from "@/services/user/account-visibility";
 import { getPlatformGroupsModel } from "@/services/user/groups-model";
 
 const log = logger.child({ route: "platform/groups" });
@@ -11,7 +12,8 @@ const log = logger.child({ route: "platform/groups" });
 /**
  * The Groups tab of Users & Groups under Platform: the groups of every tenant with their tenant
  * and members, read only, from whichever tenant the viewer opens it. A group is changed
- * in its tenant. For whoever may see the accounts of the platform, never an API key.
+ * in its tenant. For whoever may see the accounts of the platform, never an API key. Someone of a
+ * platform group of some tenants sees the groups of those tenants alone.
  */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
@@ -21,7 +23,7 @@ export async function GET() {
     }
 
     try {
-        return NextResponse.json({ success: true, data: await getPlatformGroupsModel(ctx.userId) });
+        return NextResponse.json({ success: true, data: await getPlatformGroupsModel(ctx.userId, await accountsSeenReach(ctx)) });
     } catch (error: unknown) {
         log.error("Loading the groups of every tenant failed", {}, wrapError(error));
         return NextResponse.json({ success: false, error: "The groups could not be loaded" }, { status: 500 });

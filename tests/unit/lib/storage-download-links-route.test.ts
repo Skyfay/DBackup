@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     openArchiveDownload: vi.fn(),
     auditLog: vi.fn(),
     auditLogFor: vi.fn(),
+    findDestination: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -27,6 +28,7 @@ vi.mock("@/services/storage/backup-audit", () => ({
 }));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { downloadFile: vi.fn() } }));
 vi.mock("@/services/restore/archive-download", () => ({ planArchiveDownload: mocks.planArchiveDownload, openArchiveDownload: mocks.openArchiveDownload }));
+vi.mock("@/services/sharing/destination-access", () => ({ findDestination: (...args: unknown[]) => mocks.findDestination(...args) }));
 
 const { POST, GET } = await import("@/app/api/storage/[id]/download-url/route");
 const { GET: FETCH } = await import("@/app/api/storage/public-download/route");
@@ -43,6 +45,7 @@ describe("download links for a pick", () => {
         vi.clearAllMocks();
         mocks.permissions = ["storage:download"];
         mocks.userId = "u1";
+        mocks.findDestination.mockResolvedValue({ row: { id: "nas", name: "NAS" }, mode: { kind: "own" }, tenantId: "acme" });
         mocks.planArchiveDownload.mockResolvedValue({ fileName: "Shop_2026-09-24_2-items.tar.gz", contentType: "application/gzip" });
         mocks.openArchiveDownload.mockImplementation(async () => ({
             stream: Readable.from([Buffer.from("tar "), Buffer.from("bytes")]),
@@ -74,7 +77,7 @@ describe("download links for a pick", () => {
         expect((await fetchLink(data.url)).status).toBe(401);
     });
 
-    it("notes the link as made by its maker, and its download as fetched from the host that ran the command", async () => {
+    it("notes the link as made by its maker, and its download as fetched from the host that ran the command, as the origin of the entry", async () => {
         const { data } = await (await makeLink({ file: "Shop/backup.tar", databases: ["billing"] })).json();
 
         expect(mocks.auditLogFor).toHaveBeenCalledWith(
@@ -91,10 +94,23 @@ describe("download links for a pick", () => {
             "u1",
             "EXPORT",
             "BACKUP",
-            expect.objectContaining({ action: "download_link", file: "Shop/backup.tar", destination: "NAS", databases: ["billing"], from: "10.0.0.5" }),
+            expect.objectContaining({ action: "download_link", file: "Shop/backup.tar", destination: "NAS", databases: ["billing"] }),
             "nas",
             { ipAddress: "10.0.0.5", userAgent: "curl/8.7.1", tenantId: "acme" }
         ));
+        // The address stays where `originShown` hides it from the log of a customer, never in the details.
+        expect(mocks.auditLog.mock.calls[0][3]).not.toHaveProperty("from");
+    });
+
+    it("makes no link and notes none for a destination the tenant does not use", async () => {
+        const { NotFoundError } = await import("@/lib/logging/errors");
+        mocks.findDestination.mockRejectedValue(new NotFoundError("Storage adapter", "nas"));
+
+        const response = await makeLink({ file: "Shop/backup.tar" });
+
+        expect(response.status).toBe(404);
+        expect(mocks.findDestination).toHaveBeenCalledWith("nas", "acme");
+        expect(mocks.auditLogFor).not.toHaveBeenCalled();
     });
 
     it("serves a link in the tenant it was made in, since the command has no session", async () => {

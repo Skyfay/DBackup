@@ -25,7 +25,7 @@ The tenants, the accounts of every tenant, the sign-in providers and the sharing
 | Area | See | Change |
 | :--- | :--- | :--- |
 | **Tenants** | `platform-tenants:read`: every tenant and All tenants | `platform-tenants:write`: create, rename and delete tenants, decide who works in them, which of them share with customers and what each adds itself |
-| **Accounts** | `platform-accounts:read`: every account and the platform groups | `platform-accounts:write`: change any account but a platform admin's, the account of a platform group only when you may give that platform group, give platform groups, and give an account an email whose domain another tenant's sign-in provider claims |
+| **Accounts** | `platform-accounts:read`: the accounts and the platform groups, with a platform group of selected tenants the people of those tenants | `platform-accounts:write`: change any account but a platform admin's whose tenants your platform group all reaches, the account of a platform group only when you may give that platform group, give platform groups, and give an account an email whose domain the sign-in provider of a tenant you reach claims |
 | **Sign-in providers** | `platform-sign-in:read`, also given by `settings:read` | A platform admin only, since a provider signs in as anyone of its emails |
 | **Sharing** | `platform-sharing:read`, **See what is shared**: who holds which database, and which tenants get a destination or a channel with the space each takes | `platform-sharing:write`, **Share with customers**: give databases away, move them, allow backups on demand, share destinations and channels and delete the backups of a tenant on a shared destination, in a tenant that shares with customers |
 

@@ -9,9 +9,10 @@ import { PermissionError, wrapError } from "@/lib/logging/errors";
 const log = logger.child({ route: "storage/explorer/execution" });
 
 /**
- * GET /api/storage/explorer/execution?path=...
+ * GET /api/storage/explorer/execution?path=...&tenant=...
  * The run that made one backup while History still has it, or null. The details of a backup ask for
- * it when they open.
+ * it when they open. In All tenants `tenant` names the tenant of the backup, since two tenants can
+ * hold a backup of the same path.
  */
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.READ);
         const path = req.nextUrl.searchParams.get("path");
         if (!path) return NextResponse.json({ success: false, error: "The path of a backup is required" }, { status: 400 });
-        const data = await storageExplorerService.getExecution(path);
+        const data = await storageExplorerService.getExecution(path, req.nextUrl.searchParams.get("tenant"));
         return NextResponse.json({ success: true, data });
     } catch (error: unknown) {
         if (error instanceof PermissionError) {

@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { currentTenantId } from "@/lib/tenant/current";
 import { AUDIT_AREAS, areaOfResource, QUICK_ACTIONS, type AuditQuick } from "@/lib/core/audit-areas";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getDataRetentionValues } from "@/services/system/data-retention-service";
@@ -12,7 +13,7 @@ export const AUDIT_STATS_DAYS = 30;
 
 /** One page of entries, newest first, with every entry in words. */
 export async function listAudit(query: AuditQuery, now = new Date()): Promise<{ rows: AuditRow[]; total: number }> {
-    const where = buildAuditWhere(query, now);
+    const where = buildAuditWhere({ ...query, viewerTenantId: await currentTenantId() }, now);
     const [records, total] = await Promise.all([
         prisma.auditLog.findMany({
             where,
@@ -34,7 +35,8 @@ const whoKey = (group: { userId: string | null; actorName: string | null; apiKey
  * How many entries each value of every filter keeps under the other filters. `byTenant` counts
  * the tenants too, for the Tenant filter of All tenants.
  */
-export async function getAuditFacets(filter: AuditFilter, now = new Date(), byTenant = false): Promise<AuditFacets> {
+export async function getAuditFacets(query: AuditFilter, now = new Date(), byTenant = false): Promise<AuditFacets> {
+    const filter = { ...query, viewerTenantId: await currentTenantId() };
     const [who, area, action, quick, tenant] = await Promise.all([
         prisma.auditLog.groupBy({ by: ["userId", "actorName", "apiKeyId"], where: buildAuditWhere(filter, now, "who"), _count: { _all: true } }),
         prisma.auditLog.groupBy({ by: ["resource"], where: buildAuditWhere(filter, now, "area"), _count: { _all: true } }),

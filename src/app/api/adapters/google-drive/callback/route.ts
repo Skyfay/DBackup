@@ -1,54 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
-import { getDecryptedCredentialData, updateCredentialProfile } from "@/services/auth/credential-service";
+import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
 
 const log = logger.child({ route: "adapters/google-drive/callback" });
 
 /**
  * GET /api/adapters/google-drive/callback
  * Handles the OAuth callback from Google.
- * `state` is the OAUTH credential profile id; the refresh token is written back
- * into that profile, so every destination referencing it becomes authorized.
+ * `state` is the one the auth route made, bound to the person, the tenant and the OAUTH credential
+ * profile, see `oauthCallbackCaller`. The refresh token is written back into that profile, so every
+ * destination referencing it becomes authorized.
  * Redirects back to the destinations page with success/error status.
  */
 export async function GET(req: NextRequest) {
     const origin = process.env.BETTER_AUTH_URL || req.nextUrl.origin;
-
-    // Verify the user is authenticated before processing the OAuth callback
-    const session = await auth.api.getSession({ headers: await headers() });
-    if (!session?.user) {
-        log.warn("Unauthenticated Google OAuth callback attempt");
-        return NextResponse.redirect(
-            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Authentication required. Please log in and try again.")}`
-        );
-    }
+    const fail = (message: string) =>
+        NextResponse.redirect(`${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(message)}`);
 
     const code = req.nextUrl.searchParams.get("code");
-    const state = req.nextUrl.searchParams.get("state"); // OAUTH credential profile id
+    const state = req.nextUrl.searchParams.get("state");
     const error = req.nextUrl.searchParams.get("error");
 
     // Handle user denial
     if (error) {
         log.warn("Google OAuth denied by user", { error });
-        return NextResponse.redirect(
-            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Authorization was denied by the user.")}`
-        );
+        return fail("Authorization was denied by the user.");
     }
 
     if (!code || !state) {
         log.warn("Missing code or state in Google OAuth callback");
-        return NextResponse.redirect(
-            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Missing authorization code or state.")}`
-        );
+        return fail("Missing authorization code or state.");
     }
 
+    // Who brings the code back, and the login the authorization was started for.
+    const caller = await oauthCallbackCaller("google-drive", state);
+    if (!caller.ok) {
+        log.warn("Refused a Google OAuth callback", { reason: caller.message });
+        return fail(caller.message);
+    }
+    const { ctx, credentialId } = caller;
+
     try {
-        // `state` is the OAUTH credential profile id. Load its clientId + secret.
-        const profile = (await getDecryptedCredentialData(state, "OAUTH")) as OAuthData;
+        // The clientId and secret of the login the authorization was started for.
+        const profile = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 
         const redirectUri = `${origin}/api/adapters/google-drive/callback`;
 
@@ -62,27 +59,19 @@ export async function GET(req: NextRequest) {
         const { tokens } = await oauth2Client.getToken(code);
 
         if (!tokens.refresh_token) {
-            log.warn("No refresh token received from Google", { credentialId: state });
-            return NextResponse.redirect(
-                `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("No refresh token received. Please revoke app access in your Google Account settings and try again.")}`
-            );
+            log.warn("No refresh token received from Google", { credentialId });
+            return fail("No refresh token received. Please revoke app access in your Google Account settings and try again.");
         }
 
-        // Store the refresh token in the credential profile.
-        await updateCredentialProfile(state, {
-            data: { clientId: profile.clientId, clientSecret: profile.clientSecret, refreshToken: tokens.refresh_token } satisfies OAuthData,
-        });
+        await saveRefreshToken(ctx, credentialId, profile, tokens.refresh_token);
 
-        log.info("Google Drive OAuth completed successfully", { credentialId: state });
+        log.info("Google Drive OAuth completed successfully", { credentialId });
 
         return NextResponse.redirect(
             `${origin}/dashboard/connections?tab=destinations&oauth=success&message=${encodeURIComponent("Google Drive authorized successfully!")}`
         );
     } catch (err) {
         log.error("Google OAuth callback failed", {}, err instanceof Error ? err : undefined);
-        const message = err instanceof Error ? err.message : "OAuth callback failed";
-        return NextResponse.redirect(
-            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(message)}`
-        );
+        return fail(err instanceof Error ? err.message : "OAuth callback failed");
     }
 }

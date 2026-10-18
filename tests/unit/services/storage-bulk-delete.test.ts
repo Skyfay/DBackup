@@ -84,6 +84,17 @@ describe('deleteBackupsBulk', () => {
         expect(mocks.adapterDelete).not.toHaveBeenCalled();
     });
 
+    it('never deletes the root of the destination, which takes every folder along', async () => {
+        mocks.listFilesWithMetadata.mockResolvedValue([file('backups/a.sql.gz')]);
+
+        const result = await deleteBackupsBulk('dest-1', ['/', './', 'backups/a.sql.gz']);
+
+        expect(result.succeeded).toEqual(['backups/a.sql.gz']);
+        expect(result.failed.map((entry) => entry.error)).toEqual([expect.stringContaining('root'), expect.stringContaining('root')]);
+        expect(mocks.adapterDelete).not.toHaveBeenCalledWith(expect.anything(), '/');
+        expect(mocks.adapterDelete).not.toHaveBeenCalledWith(expect.anything(), './');
+    });
+
     it('deletes the unlocked backups in a mixed selection', async () => {
         mocks.listFilesWithMetadata.mockResolvedValue([
             file('backups/a.sql.gz'),

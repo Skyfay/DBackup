@@ -20,7 +20,7 @@ Every entry shows as a sentence, like "Changed the group **Operators**", with wh
 
 ### Filters
 
-- **Search** finds names inside the entries, like a job or a file, people, email addresses and IP addresses.
+- **Search** finds names inside the entries, like a job or a file, people, email addresses and IP addresses. An address finds only the entries that show it.
 - **Who** filters by person or API key. A person means what they did themselves, their API keys are listed on their own.
 - **Area** and **Action** pick one or several values, each counted under the other filters.
 - The period reaches back 24 hours, 7, 30 or 90 days, or over everything the log keeps.
@@ -51,7 +51,7 @@ The view switch shows the timeline above the list: a row per person and API key,
 | Sign-in | Sign-ins with a password, a passkey, a second factor or single sign-on, sign-ups through a sign-in provider, sign-outs, failed password sign-ins, linked and unlinked sign-in accounts, sign-in providers |
 | Connections | Created, changed, cloned and deleted connections, storage alerts |
 | Jobs | Created, changed, cloned and deleted jobs, runs started by hand or through the API, cancelled runs |
-| Backups | Downloads, download links, restores, restored files, locked and deleted backups |
+| Backups | Downloads, download links, restores, restored files, checked, locked and deleted backups, cancelled restores and backups on demand |
 | Vault | Encryption keys, revealed keys and secrets, recovery kits, credential profiles |
 | Templates | Created, changed and deleted templates |
 | Users, Groups, API keys | Every change, set passwords, reset second factors, ended sessions, rotated keys, invitations |

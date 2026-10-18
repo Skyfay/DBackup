@@ -15,7 +15,8 @@ import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import { isNotConnected } from "@/lib/core/air-gap";
 import { currentTenantId } from "@/lib/tenant/current";
 import { TENANTS_FOLDER } from "@/lib/tenant/storage-view";
-import { providedIds } from "@/services/sharing/provided";
+import { providedIds, providedTo } from "@/services/sharing/provided";
+import { nameAndSub, parseMetadata } from "@/services/history/run-row";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -42,7 +43,8 @@ export interface StorageVolumeEntry {
   /**
    * The tenant whose backups the entry counts: the tenant of the destination, or on a destination it
    * shares with customers one of them, whose backups sit under tenants/<id>/. Entries of an older
-   * version lack it and count for the tenant of their destination.
+   * version lack it and count for the tenant of their destination. The one entry of a destination in
+   * All tenants, with the backups of every tenant on it, names the tenant of the destination.
    */
   tenantId?: string;
   name: string;
@@ -68,10 +70,14 @@ export interface LatestJobEntry {
   id: string;
   type: string;
   status: string;
-  jobName: string | null;
+  /** What the run is called, the name the History page gives it. */
+  jobName: string;
+  /** What the run did, like "Backup · shop, billing" or "Restore of shop", as the History page says it. */
+  sub: string;
+  /** The tenant of the run, which the list names in All tenants. */
+  tenantId?: string;
   sourceName: string | null;
   sourceType: string | null;
-  databaseName: string | null;
   startedAt: Date;
   duration: number;
   /** Bytes stored by the run, null while it runs or when it stored nothing. */
@@ -327,7 +333,8 @@ async function visibleEntries(entries: StorageVolumeEntry[]): Promise<StorageVol
   const ids = [...new Set(entries.flatMap((entry) => (entry.configId ? [entry.configId] : [])))];
   const own = new Map((await prisma.adapterConfig.findMany({ where: { id: { in: ids } }, select: { id: true, tenantId: true } })).map((config) => [config.id, config.tenantId]));
   const tenantId = await currentTenantId();
-  if (!tenantId) return combined(entries.filter((entry) => entry.configId && own.has(entry.configId)));
+  // Named for the tenant of the destination, which All tenants shows beside it.
+  if (!tenantId) return destinationTotals(entries.filter((entry) => entry.configId && own.has(entry.configId)), own);
   const provided = await providedIds(tenantId, ids.filter((id) => !own.has(id)));
   return entries.filter((entry) => {
     if (!entry.configId) return false;
@@ -369,13 +376,18 @@ function combined(entries: StorageVolumeEntry[]): StorageVolumeEntry[] {
  * What a destination holds for each tenant. A destination its tenant shares with customers keeps
  * the backups of each of them under tenants/<id>/, which count for that customer, everything else
  * for the tenant of the destination. A destination nobody shares counts for its tenant alone.
+ * `customers` start at zero like the tenant of the destination, so a customer whose last backup
+ * there is gone counts nothing instead of keeping its last size.
  */
 function entriesOf(
   destination: { id: string; name: string; adapterId: string; tenantId: string },
   files: { path: string; size?: number }[],
   shared: boolean,
+  customers: readonly string[] = [],
 ): StorageVolumeEntry[] {
-  const totals = new Map<string, { size: number; count: number }>([[destination.tenantId, { size: 0, count: 0 }]]);
+  const totals = new Map<string, { size: number; count: number }>(
+    [destination.tenantId, ...customers].map((tenantId) => [tenantId, { size: 0, count: 0 }]),
+  );
   for (const file of files) {
     const clean = file.path.replace(/\\/g, "/").replace(/^\/+/, "");
     const customer = shared ? new RegExp(`^${TENANTS_FOLDER}/([^/]+)/`).exec(clean)?.[1] : undefined;
@@ -465,14 +477,16 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
   }
 
   const shared = new Set((await prisma.connectionShare.findMany({ where: { id: { in: storageAdapters.map((config) => config.id) } }, select: { id: true } })).map((share) => share.id));
+  const previous = await readStorageCache() ?? [];
 
   // Listing every destination after every backup made a busy instance write a snapshot of each
   // destination a few times an hour, and the dashboard read hundreds of thousands of them.
   const partial = scope.configIds ? new Set(scope.configIds) : null;
-  const known = partial ? new Set((await readStorageCache() ?? []).map((entry) => entry.configId)) : null;
+  const known = partial ? new Set(previous.map((entry) => entry.configId)) : null;
   const listed = partial && known
     ? storageAdapters.filter((adapterConfig) => partial.has(adapterConfig.id) || !known.has(adapterConfig.id))
     : storageAdapters;
+  const customers = await customersBefore(previous, listed.filter((adapterConfig) => shared.has(adapterConfig.id)));
 
   // Query the adapters in parallel for maximum speed
   const promises = listed.map(async (adapterConfig) => {
@@ -490,7 +504,7 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
 
       // Sidecars (.meta.json, .index) are not backup data and must not be counted.
       const backupFiles = files.filter((f) => isBackupFile(f.name));
-      return entriesOf(adapterConfig, backupFiles, shared.has(adapterConfig.id));
+      return entriesOf(adapterConfig, backupFiles, shared.has(adapterConfig.id), customers.get(adapterConfig.id));
     } catch (error) {
       log.warn("Failed to query storage adapter, keeping its last scanned values", {
         adapter: adapterConfig.name,
@@ -523,6 +537,24 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
   });
 
   return results;
+}
+
+/**
+ * The customers each shared destination counted at the previous refresh that still get it. Each
+ * starts at zero in the next count of the destination, so one whose backups there are all gone gets
+ * an entry and a snapshot of nothing. A tenant that lost the destination or is gone drops out.
+ */
+async function customersBefore(previous: StorageVolumeEntry[], destinations: { id: string; tenantId: string }[]): Promise<Map<string, string[]>> {
+  const ownerOf = new Map(destinations.map((destination) => [destination.id, destination.tenantId]));
+  const counted = previous.filter((entry) => entry.configId && entry.tenantId && ownerOf.has(entry.configId) && entry.tenantId !== ownerOf.get(entry.configId));
+  if (counted.length === 0) return new Map();
+  const tenants = await prisma.tenant.findMany({ where: { id: { in: [...new Set(counted.map((entry) => entry.tenantId!))] } }, select: { id: true } });
+  const result = new Map<string, string[]>();
+  for (const { id: tenantId } of tenants) {
+    const ids = [...new Set(counted.filter((entry) => entry.tenantId === tenantId).map((entry) => entry.configId!))];
+    for (const configId of await providedIds(tenantId, ids)) result.set(configId, [...(result.get(configId) ?? []), tenantId]);
+  }
+  return result;
 }
 
 /**
@@ -573,12 +605,22 @@ async function lastScannedEntries(adapterConfig: { id: string; name: string; ada
   return Promise.all([...tenants].map((tenantId) => lastScannedEntry(adapterConfig, tenantId)));
 }
 
-/** Used when no cache exists yet and the live refresh failed as a whole. */
+/**
+ * Used when no cache exists yet and the live refresh failed as a whole: the last scan of the
+ * destinations the code that runs now sees, its own and the ones other tenants share with it,
+ * filtered like the cache. All tenants gets the last scan of every tenant on each destination.
+ */
 async function getLastScannedStorageVolume(): Promise<StorageVolumeEntry[]> {
-  const storageAdapters = await prisma.adapterConfig.findMany({
-    where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-  });
-  return Promise.all(storageAdapters.map((config) => lastScannedEntry(config, config.tenantId)));
+  const tenantId = await currentTenantId();
+  const [own, provided] = await Promise.all([
+    prisma.adapterConfig.findMany({ where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION } }),
+    tenantId ? providedTo(tenantId, { kind: "destination" }) : Promise.resolve([]),
+  ]);
+  const entries = await Promise.all([
+    ...own.map((config) => lastScannedEntries(config)),
+    ...provided.map(async (config) => [await lastScannedEntry(config, tenantId!)]),
+  ]);
+  return visibleEntries(entries.flat());
 }
 
 /**
@@ -610,7 +652,8 @@ async function saveStorageCache(data: StorageVolumeEntry[]): Promise<void> {
 }
 
 /**
- * Fetches the latest job executions for the activity list.
+ * Fetches the latest executions for the activity list, named like the History page names them, so a
+ * customer's backup or restore of a shared database reads as one and never as a nameless action.
  */
 export async function getLatestJobs(limit: number = 7): Promise<LatestJobEntry[]> {
   const executions = await prisma.execution.findMany({
@@ -620,32 +663,16 @@ export async function getLatestJobs(limit: number = 7): Promise<LatestJobEntry[]
       job: {
         include: {
           source: true,
-          destinations: { include: { config: true } },
+          sources: { select: { config: { select: { adapterId: true } } }, orderBy: { priority: "asc" }, take: 1 },
         },
       },
     },
   });
 
   return executions.map((exec) => {
-    let jobName = exec.job?.name ?? null;
-    let sourceName = exec.job?.source?.name ?? null;
-    let sourceType = exec.job?.source?.type ?? null;
-    let databaseName: string | null = null;
-
-    // Extract metadata if available
-    if (exec.metadata) {
-      try {
-        const meta = JSON.parse(exec.metadata);
-        if (meta.jobName) jobName = meta.jobName;
-        if (meta.sourceName) sourceName = meta.sourceName;
-        if (meta.sourceType) sourceType = meta.sourceType;
-        if (meta.databases?.length) {
-          databaseName = meta.databases.join(", ");
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    }
+    const metadata = parseMetadata(exec.metadata);
+    const { name, sub } = nameAndSub(exec, metadata);
+    const stored = metadata as { sourceName?: unknown; sourceType?: unknown };
 
     const duration = exec.endedAt
       ? exec.endedAt.getTime() - exec.startedAt.getTime()
@@ -655,10 +682,11 @@ export async function getLatestJobs(limit: number = 7): Promise<LatestJobEntry[]
       id: exec.id,
       type: exec.type,
       status: exec.status,
-      jobName: jobName ?? (exec.jobId ? "Deleted Job" : "Manual Action"),
-      sourceName,
-      sourceType,
-      databaseName,
+      jobName: name,
+      sub,
+      ...(exec.tenantId ? { tenantId: exec.tenantId } : {}),
+      sourceName: typeof stored.sourceName === "string" && stored.sourceName ? stored.sourceName : exec.job?.source?.name ?? null,
+      sourceType: typeof stored.sourceType === "string" && stored.sourceType ? stored.sourceType : exec.job?.source?.type ?? null,
       startedAt: exec.startedAt,
       duration,
       size: exec.size != null ? Number(exec.size) : null,

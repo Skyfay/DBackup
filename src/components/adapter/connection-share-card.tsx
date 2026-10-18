@@ -38,8 +38,21 @@ export const shareableKind = (kind: ConnectionKind) => kind === "destination" ||
 
 const plural = (count: number, one: string, many: string) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
 
-function UseRow({ use, kind, canShare, onStop, onDelete }: { use: ShareTenantUse; kind: ConnectionKind; canShare: boolean; onStop: () => void; onDelete: () => void }) {
+/**
+ * Why the viewer may not change who gets a connection at all, null when they may: it is shared with
+ * every tenant, and their platform group does not reach every tenant.
+ */
+export const shareLock = (view: ConnectionShareView): string | null => (view.settings.allTenants ? view.reach.allTenants : null);
+
+/** What the viewer may do at the line of one tenant: stop sharing with it, and delete its backups on a destination. */
+function rightsAt(view: ConnectionShareView, use: ShareTenantUse, canShare: boolean) {
+    const reached = canShare && !view.reach.outside.some((tenant) => tenant.id === use.tenantId);
+    return { stop: reached && !shareLock(view), deleteBackups: reached };
+}
+
+function UseRow({ view, use, kind, canShare, onStop, onDelete }: { view: ConnectionShareView; use: ShareTenantUse; kind: ConnectionKind; canShare: boolean; onStop: () => void; onDelete: () => void }) {
     const destination = kind === "destination";
+    const rights = rightsAt(view, use, canShare);
     return (
         <li className="flex min-w-0 items-center gap-3 py-2.5">
             <div className="min-w-0 flex-1">
@@ -53,7 +66,7 @@ function UseRow({ use, kind, canShare, onStop, onDelete }: { use: ShareTenantUse
                 </p>
             </div>
             {destination && <span className="shrink-0 text-sm font-medium tabular-nums">{use.size === null ? "-" : formatBytes(use.size, 1)}</span>}
-            {canShare && (
+            {(rights.stop || (destination && rights.deleteBackups)) && (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="size-8 shrink-0 p-0" aria-label={`What to do with ${use.name}`}>
@@ -61,16 +74,18 @@ function UseRow({ use, kind, canShare, onStop, onDelete }: { use: ShareTenantUse
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                        {destination && (
+                        {destination && rights.deleteBackups && (
                             <DropdownMenuItem tone="destructive" onSelect={onDelete}>
                                 <Trash2 />
                                 Delete its backups here
                             </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem tone={destination ? "destructive" : "warning"} onSelect={onStop}>
-                            <Unlink />
-                            Stop sharing with {use.name}
-                        </DropdownMenuItem>
+                        {rights.stop && (
+                            <DropdownMenuItem tone={destination ? "destructive" : "warning"} onSelect={onStop}>
+                                <Unlink />
+                                Stop sharing with {use.name}
+                            </DropdownMenuItem>
+                        )}
                     </DropdownMenuContent>
                 </DropdownMenu>
             )}
@@ -111,9 +126,11 @@ export function ShareDialogLoader({ configId, onClose, onSaved }: { configId: st
         getConnectionShare(configId)
             .then((result) => {
                 if (ignore) return;
-                if (result.success) setView(result.data);
+                // A share with every tenant changes only with a reach of every tenant.
+                const refusal = result.success ? shareLock(result.data) : result.error;
+                if (result.success && !refusal) setView(result.data);
                 else {
-                    toast.error(result.error);
+                    toast.error(refusal);
                     close.current();
                 }
             })
@@ -171,7 +188,7 @@ export function ConnectionShareCard({ config, kind, onChanged }: { config: Adapt
     return (
         <Section
             title="Shared with tenants"
-            aside={access.share && view ? (
+            aside={access.share && view && !shareLock(view) ? (
                 <Button variant="outline" size="sm" tone="edit" onClick={() => setEditing(true)}>
                     <Share2 />
                     Change
@@ -202,10 +219,11 @@ export function ConnectionShareCard({ config, kind, onChanged }: { config: Adapt
                     {view.uses.length > 0 && (
                         <ul className="divide-y">
                             {view.uses.map((use) => (
-                                <UseRow key={use.tenantId} use={use} kind={kind} canShare={access.share} onStop={() => setStopping(use)} onDelete={() => setDeleting(use)} />
+                                <UseRow key={use.tenantId} view={view} use={use} kind={kind} canShare={access.share} onStop={() => setStopping(use)} onDelete={() => setDeleting(use)} />
                             ))}
                         </ul>
                     )}
+                    {access.share && shareLock(view) && <p className="text-xs text-muted-foreground">{shareLock(view)}</p>}
                     <p className="text-xs text-muted-foreground">
                         {view.kind === "destination"
                             ? "You see the space a tenant takes, never its backups. A tenant writes to tenants/ and its id here, your own backups stay where they are."

@@ -26,7 +26,7 @@ export interface TrashRow {
     deletedByName: string | null;
     /** When Clean old data removes it for good. */
     expiresAt: string;
-    /** The tenant it was deleted in, where it is restored. Users wait in the home tenant. */
+    /** The tenant whose Recently deleted keeps it, where it is restored. An account of one tenant waits there, any other account in the home tenant. */
     tenantId: string;
 }
 

@@ -40,6 +40,7 @@ describe("an entry of the audit log as a sentence", () => {
     it("takes the name of the record from the caller when the entry did not keep it", () => {
         expect(auditSentence(entry("EXECUTE", "JOB", { executionId: "e1", trigger: "manual" }))).toBe("Started a job");
         expect(auditSentence(entry("EXECUTE", "JOB", { executionId: "e1" }), "Shop nightly")).toBe("Started the job Shop nightly");
+        expect(auditSentence(entry("EXECUTE", "BACKUP", { action: "verify", file: "nightly.tar" }))).toMatch(/^Checked /);
         expect(auditSentence(entry("UPDATE", "USER", { change: "Password Set" }), "Lena Graf")).toBe("Set a new password for Lena Graf");
         expect(auditSentence(entry("UPDATE", "USER", { change: "Sessions Revoked", count: 2 }), "Lena Graf")).toBe("Signed out Lena Graf everywhere");
     });

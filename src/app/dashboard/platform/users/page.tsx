@@ -18,7 +18,8 @@ export const metadata: Metadata = { title: "Users & Groups of the platform" };
  * Users & Groups under Platform: every account of the instance once with its tenants, its group in
  * each and its platform group, the platform groups and the groups of every tenant, and the sign-in
  * providers. Whoever may see the accounts of the platform opens the first two tabs, whoever may see
- * the sign-in providers the third, from any tenant. Every list loads in the browser and reads every tenant.
+ * the sign-in providers the third, from any tenant. Every list loads in the browser and reads every
+ * tenant, or for someone of a platform group of some tenants the tenants it reaches.
  */
 export default async function PlatformUsersPage() {
     const viewer = await getViewer();

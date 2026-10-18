@@ -48,8 +48,13 @@ await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.JOB, { name
 - The service reads the address and the browser from the request it runs in and snapshots the names of the user and the key. Callers never pass them. Outside a request, like in a scheduled task, they stay empty.
 - `log` never throws. A failed write is logged, the action goes on.
 - The entry goes into the log of `origin.tenantId` when the caller names one, else of `currentTenantId()`, else of the home tenant, and is written in `runAsSystem`. A group belongs to its tenant, so its changes go into the log of that tenant. What belongs to the platform names the home tenant itself, whichever tenant the admin works in: the tenants, platform admins, platform groups and sign-in providers, and the settings of the instance, the system tasks, data retention, the certificate, the download and optimize of the database, the configuration backup and its restore, the login image and the notification settings. An action passes `PLATFORM_LOG` from `src/services/system/settings-save.ts` as the last argument, a route `platformLogFor(ctx)`, which also names the API key of the request, and `savePart` does it for the parts of the Settings page that save through it. A sign-in has no tenant in its request yet and lands there as well. See [Tenants](/developer-guide/advanced/tenants).
+- A change of an account, its password, second factor, sessions, name, email or its delete, names its log with `accountLogOrigin(viewer, userIds)` from `src/services/audit/account-log.ts`, read before the change, since a delete ends the memberships. The tenant the viewer works in keeps the entry while every account is one of its people (`membershipService.isPersonOf`), anything else, a change made in All tenants included, goes into the home tenant with `PLATFORM_LOG`. So a customer never reads what someone did to an account of another tenant. The actions in `user.ts` and `user-security.ts` pass it, `togglePasskeyTwoFactor` among them, which writes `UPDATE USER` with the change `Passkey as second factor`.
 
 Sign-ins, failed sign-ins and sign-outs are written by the server around the endpoints of better-auth, in `src/lib/auth/sign-in-audit.ts`: the `after` hook turns a new session into `LOGIN` with its method (`password`, `passkey`, `two-factor`, `sso` with the name of the provider in `provider` and its ID in `providerId`) and a turned down password into `LOGIN_FAILED`, the `before` hook of `/sign-out` writes `LOGOUT`. A password sign-in of someone with a second factor is written by the second step. Someone a sign-in provider adds is written as `CREATE USER` with `via: "sso"`, the provider and the group it put them in, by `placeSsoUser` in `src/lib/auth/sso-guard.ts`.
+
+Cancelling a run through `POST /api/executions/{id}/cancel` writes `UPDATE` with `action: "cancel"` and the `executionId`, as `cancelAuditEntries` in `src/services/history/run-cancel.ts` lays it out: on the job for a run of a job, and on `BACKUP` with the `name` of what the run is of (`subjectOf`, the database of a shared one, else the archive or the server) for a run without a job, like a restore. A customer's cancel that stopped the run of the job of the server's tenant also writes an entry on that job into the log of that tenant, without the API key of the customer.
+
+The checks of a backup against its checksums, `POST /api/storage/{id}/verify`, `verify-async` and `/api/storage/verify-copies`, write `EXECUTE BACKUP` with `action: "verify"`, the backup from `backupAuditDetails` and the `status` or the `executionId`, one entry per copy. `describeEntry` reads it as "Checked" and the backup. They refuse All tenants, since a check keeps its result in the `.meta.json` of the copy.
 
 ### Details
 
@@ -62,7 +67,7 @@ The Audit log tab turns an entry into a sentence with `describeEntry` in `src/li
 | `changes` | `AuditChange[]` from `diffFields` in `src/lib/core/audit-diff.ts`: each field before and after as a person reads it |
 | `renamedFrom`, `clonedFromName` | The old name, the name of the original |
 | `added`, `removed`, `areas` | Permissions of a group or an API key, and the level of each area before and after |
-| `action` | A variant, like `restore`, `download`, `download_link_created`, `lock`, `cancel`, `rotate`, `config_restore`, `audit_export`, `trash_restore` and `trash_purge` for Recently deleted |
+| `action` | A variant, like `restore`, `download`, `download_link_created`, `lock`, `cancel`, `verify`, `rotate`, `config_restore`, `audit_export`, `trash_restore` and `trash_purge` for Recently deleted |
 | `permanently` | For a delete that skipped Recently deleted |
 | `originalName` | For a restore from Recently deleted under another name, the name it had |
 | `area` | For `UPDATE SYSTEM`: the settings part a person sees, like `Data retention` |
@@ -87,6 +92,8 @@ A secret never goes into the details with its value. Mark its field with `secret
 A sign-in counts as from a new place when the person signed in before, but never from its network: the first three parts of an IPv4 address or the first half of an IPv6 address.
 
 `originShown(record)` in `audit-rows.ts` decides whether a tenant sees where an entry came from. In a customer's tenant the address and the browser of someone who is no member there, like a platform admin or someone of a platform group, stay empty in the rows, the panel and the CSV export. The home tenant sees every one.
+
+The search matches an address only where the row shows it, through `addressShownWhere(viewerTenantId)` in `audit-query.ts`: in a tenant the entries of the home tenant, those without a person and those of its own members, in All tenants only the entries of the home tenant and those without a person, since a query cannot compare the person with the tenant of each row. `listAudit`, `getAuditFacets`, `getAuditTimeline` and `auditCsv` set `viewerTenantId` from `currentTenantId()`, never from the query.
 
 ## API Endpoints
 

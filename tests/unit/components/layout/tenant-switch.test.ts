@@ -105,6 +105,11 @@ describe("the menu of the head", () => {
         expect(countLine({ jobs: 0, databases: 0 })).toBe("0 jobs · 0 databases");
     });
 
+    it("adds the databases a tenant holds of the shared servers of others, and nothing when it holds none", () => {
+        expect(countLine({ jobs: 0, databases: 0, shared: 2 })).toBe("0 jobs · 0 databases · 2 shared");
+        expect(countLine({ jobs: 3, databases: 5, shared: 0 })).toBe("3 jobs · 5 databases");
+    });
+
     it("marks a tenant whose newest backup of a job failed or missed a copy, and nothing while all went through", () => {
         expect(healthNote("failed")).toMatch(/failed/);
         expect(healthNote("partial")).toMatch(/missed a copy/);

@@ -337,6 +337,7 @@ export async function restoreSharedBackup(tenantId: string, ref: SharedBackupRef
         const found = await restoreTarget(tenantId, ref, checked.createdAt, now);
         if (!found.target) throw new ValidationError(found.reason ?? "This backup can only be downloaded.");
         const serverTenantId = await serverTenantOf(ref.sourceId);
+        if (checked.copies.length === 0) throw new ValidationError("This backup can only be downloaded.");
         // A database that moved is restored into the server of now, whose tenant sees the run.
         const providerTenantId = found.target.sourceId === ref.sourceId ? serverTenantId : await serverTenantOf(found.target.sourceId);
         return { backup: checked, target: found.target, serverTenantId, providerTenantId, names: await restoreNames(tenantId, providerTenantId, found.target.sourceId) };
@@ -351,7 +352,8 @@ export async function restoreSharedBackup(tenantId: string, ref: SharedBackupRef
             databaseMapping: [{ originalName: ref.databaseName, targetName: target.databaseName, selected: true }],
             ...(keyOverride ? { keyOverride } : {}),
             triggerInfo: { type: "Manual", label: triggerLabel },
-            shared: { databaseName: target.databaseName, provider: { tenantId: providerTenantId, name: names.providerName, customer: names.customerName } },
+            // The path of the copy is in the view of the server's tenant, also on a destination another tenant provides to it.
+            shared: { databaseName: target.databaseName, provider: { tenantId: providerTenantId, name: names.providerName, customer: names.customerName }, copyTenantId: serverTenantId },
         },
         tenantId
     );

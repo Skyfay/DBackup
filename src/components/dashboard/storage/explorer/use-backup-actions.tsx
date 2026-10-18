@@ -8,7 +8,7 @@ import { lockBackup } from "@/app/actions/storage/lock";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
 import { DownloadDialog } from "@/components/dashboard/storage/download/download-dialog";
 import { IntegrityDialog } from "@/components/dashboard/storage/integrity/integrity-dialog";
-import type { RestoreMode } from "@/components/dashboard/storage/restore-scope";
+import { restoreHref, type RestoreMode } from "@/components/dashboard/storage/restore-scope";
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { ConfirmDialog, DialogItemList } from "@/components/ui/confirm-dialog";
@@ -71,7 +71,7 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
     const router = useRouter();
     const keyRecovery = useEncryptionKeyRecovery();
     // In All tenants a backup is only read. A check writes a run, so it waits for the tenant of the backup.
-    const { allTenants } = useTenantView();
+    const { allTenants, activeTenantId } = useTenantView();
     const tenantName = useTenantName();
     const openRecord = useOpenRecord();
     /** Which backup the key dialog is about, so a typed key can be checked against it. */
@@ -81,14 +81,16 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
     const [deleting, setDeleting] = useState<{ targets: BackupTarget[]; title: string } | null>(null);
     const [deletePending, setDeletePending] = useState(false);
 
-    /** Opens the restore page, with only the databases in `pick` ticked when given. */
+    /**
+     * Opens the restore page, with only the databases in `pick` ticked when given. Only a backup
+     * holding databases and folders gets a scope, everything else has one thing to restore. The
+     * address names the tenant of the backup, which on a destination another tenant shares is the
+     * tenant whose listing holds it, not the tenant of the destination.
+     */
     const restore = useCallback((target: BackupTarget, mode?: RestoreMode, pick: string[] = []) => {
-        const encoded = encodeUrlPayload(target.file);
-        // Only a backup holding databases and folders gets a scope, everything else has one thing to restore.
-        const modeParam = mode && mode !== "all" ? `&mode=${mode}` : "";
-        const pickParams = pick.map((name) => `&pick=${encodeURIComponent(name)}`).join("");
-        router.push(`/dashboard/backups/restore?destinationId=${encodeURIComponent(target.destinationId)}&file=${encodeURIComponent(encoded)}${modeParam}${pickParams}`);
-    }, [router]);
+        const tenantId = destinations.get(target.destinationId)?.tenantId ?? activeTenantId;
+        router.push(restoreHref({ destinationId: target.destinationId, file: encodeUrlPayload(target.file), tenantId, mode, pick }));
+    }, [router, destinations, activeTenantId]);
 
     const downloadDecrypted = useCallback(async (target: BackupTarget, keyResolution: KeyResolutionResult | null) => {
         const baseUrl = `/api/storage/${target.destinationId}/download`;

@@ -5,10 +5,10 @@ import { ConfigurationError, NotFoundError, ValidationError, wrapError } from "@
 import { logger } from "@/lib/logging/logger";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import { usesPrefixedSshKeys } from "@/lib/adapters/ssh-key-convention";
-import { runAsTenant } from "@/lib/tenant/context";
+import { explicitScope, runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { hostLocalReason } from "@/lib/adapters/host-local";
-import { currentTenantId } from "@/lib/tenant/current";
+import { requestHeaders } from "@/lib/server/request-headers";
 import type {
     CredentialData,
     CredentialType,
@@ -130,15 +130,49 @@ async function resolveConfig(adapter: AdapterConfigInput): Promise<Record<string
 }
 
 /**
- * Refuses a config of a form that reaches the server DBackup runs on, while a customer runs it.
- * Every way to try a config before it is saved, like a test or a read of its databases, goes
- * through `overlayCredentialsOnConfig` or calls this, see `host-local.ts`.
+ * Whether the code that runs now may run a config that reaches the server DBackup runs on: the
+ * home tenant, the system scope, and code outside a request, like a script or the start of the
+ * server. A customer may not, and neither may All tenants or an account of no tenant, which act
+ * for no tenant at all.
+ */
+export async function mayReachHost(): Promise<boolean> {
+    const scope = explicitScope();
+    if (scope) return scope.kind === "system" || (scope.kind === "tenant" && scope.tenantId === HOME_TENANT_ID);
+
+    let headers: Headers;
+    try {
+        headers = await requestHeaders();
+    } catch {
+        // No request, and no scope either: a script or the start of the server.
+        return true;
+    }
+    // Loaded here like in `tenant/current.ts`, the access control reads the database itself.
+    const { getAuthContext } = await import("@/lib/auth/access-control");
+    const ctx = await getAuthContext(headers).catch(() => null);
+    return !!ctx && !ctx.allTenants && ctx.tenantId === HOME_TENANT_ID;
+}
+
+/**
+ * Refuses a config of a form that reaches the server DBackup runs on, unless the platform runs it,
+ * see `mayReachHost`. Every way to try a config before it is saved, like a test or a read of its
+ * databases, goes through `overlayCredentialsOnConfig` or calls this, see `host-local.ts`.
  */
 export async function assertConfigOffHost(adapterId: string, config: Record<string, unknown>): Promise<void> {
-    const tenantId = await currentTenantId();
-    if (!tenantId || tenantId === HOME_TENANT_ID) return;
     const reason = hostLocalReason(adapterId, config);
-    if (reason) throw new ValidationError(reason, { field: "config" });
+    if (!reason || (await mayReachHost())) return;
+    throw new ValidationError(reason, { field: "config" });
+}
+
+/** The fields of a config that name a program on the server DBackup runs on, like `sqliteBinaryPath`. */
+const BINARY_PATH = /BinaryPath$/;
+
+/**
+ * A config of a form without the fields that pick the program it runs with. A read of tables or
+ * rows runs the program the saved connection names, or the default one, never one a
+ * request brings along.
+ */
+export function withoutBinaryPaths(config: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(config).filter(([key]) => !BINARY_PATH.test(key)));
 }
 
 /**

@@ -5,6 +5,7 @@ import { auditService } from "@/services/audit-service";
 import { emailOfDomain } from "@/lib/auth/sso-domain";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 
 /**
  * Single sign-on as the saved providers decide it, not the browser. better-auth signs anyone in
@@ -25,10 +26,20 @@ export interface SsoHookContext {
 /** The login page sends people here when a provider is off, with a message it knows. */
 export const DISABLED_PROVIDER_URL = "/?error=sso_access_denied";
 
+/**
+ * Whether an endpoint is a callback of a provider, where better-auth signs someone in: the one of
+ * each provider with its ID in the path, and the shared one without it, which better-auth keeps
+ * for a setting DBackup does not use.
+ */
+export function isSsoCallback(path: string | undefined): boolean {
+    if (!path) return false;
+    return path === "/sso/callback" || path.startsWith("/sso/callback/") || path.startsWith("/sso/saml2/callback/") || path.startsWith("/sso/saml2/sp/acs/");
+}
+
 /** The provider an endpoint signs in through, when it has one in its path, like the callback. */
 export function ssoProviderIdOf(ctx: SsoHookContext | null | undefined): string | null {
     const path = ctx?.path;
-    if (!path || !(path.startsWith("/sso/callback/") || path.startsWith("/sso/saml2/"))) return null;
+    if (!path || !(isSsoCallback(path) || path.startsWith("/sso/saml2/"))) return null;
     return ctx.params?.providerId || null;
 }
 
@@ -47,6 +58,8 @@ function requestedProviderId(ctx: SsoHookContext): string | null {
 export async function refuseDisabledProvider(ctx: SsoHookContext, redirect: (url: string) => unknown): Promise<void> {
     const starting = requestedProviderId(ctx);
     const providerId = starting ?? ssoProviderIdOf(ctx);
+    // A callback that names no provider would pass every check that reads the provider, so it signs nobody in.
+    if (!providerId && isSsoCallback(ctx.path)) throw redirect(DISABLED_PROVIDER_URL);
     if (!providerId) return;
     const provider = await prisma.ssoProvider.findUnique({ where: { providerId }, select: { enabled: true } });
     // A provider that does not exist is refused by better-auth itself.
@@ -84,6 +97,25 @@ export async function refuseSsoSignUp(context: SsoHookContext | null | undefined
     // A provider of a tenant adds people only into a group of its tenant, never as accounts of no tenant.
     if (provider.tenantId && !provider.defaultGroupId) throw new APIError("FORBIDDEN", { message: "signup disabled" });
     if (provider.tenantId && !emailOfDomain(user?.email, provider.domain)) throw new APIError("FORBIDDEN", { message: TENANT_SIGN_UP_REFUSED });
+}
+
+/** What better-auth hands on when an email belongs to a tenant with a provider of its own, which the login page turns into its message. */
+export const TENANT_DOMAIN_SIGN_UP_REFUSED = "sign in through your tenant";
+
+/**
+ * Runs before better-auth adds a user, after `refuseSsoSignUp`. A provider of the platform adds
+ * people to the home tenant, so it adds nobody whose email has a domain that the provider of a
+ * tenant claims. That person signs in through the provider of their tenant, which the login page
+ * picks by the email.
+ */
+export async function refuseClaimedSsoSignUp(context: SsoHookContext | null | undefined, user?: { email?: string | null }): Promise<void> {
+    const providerId = ssoProviderIdOf(context);
+    if (!providerId) return;
+    const provider = await prisma.ssoProvider.findUnique({ where: { providerId }, select: { tenantId: true } });
+    // A provider of a tenant adds only emails of its own domain, see refuseSsoSignUp.
+    if (!provider || provider.tenantId) return;
+    if (!user?.email) throw new APIError("FORBIDDEN", { message: "signup disabled" });
+    if (await claimedEmailRefusal(user.email, [HOME_TENANT_ID], false)) throw new APIError("FORBIDDEN", { message: TENANT_DOMAIN_SIGN_UP_REFUSED });
 }
 
 /**

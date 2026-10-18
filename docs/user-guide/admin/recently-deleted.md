@@ -1,6 +1,6 @@
 # Recently Deleted
 
-A deleted encryption key, saved login, connection, job or user is not gone at once. It waits under **Settings → Recently deleted** for 30 days, where it can be restored with everything that belonged to it or deleted for good. Every [tenant](/user-guide/admin/tenants) has its own list, with what was deleted while it was open.
+A deleted encryption key, saved login, connection, job or user is not gone at once. It waits under **Settings → Recently deleted** for 30 days, where it can be restored with everything that belonged to it or deleted for good. Every [tenant](/user-guide/admin/tenants) has its own list, with what was deleted while it was open. A deleted user waits in the list of the one tenant they worked in, and any other user in the list of the home tenant: a platform admin, someone of a platform group, of several tenants or of none, or with API keys in another tenant.
 
 ## What a Delete Keeps
 
@@ -24,7 +24,7 @@ Someone who may change the tenant settings sees **Delete it permanently now** in
 
 ### Undo
 
-After a delete a message offers **Undo** for a few seconds, which brings back what was just deleted. It works for several records deleted together as well. Undo brings back only your own delete of the last 5 minutes, anything else is restored from the list.
+After a delete a message offers **Undo** for a few seconds, which brings back what was just deleted. It works for several records deleted together as well. Undo brings back only your own delete of the last 5 minutes, anything else is restored from the list. A user comes back with Undo from whichever list they wait in, as long as you may change their account there.
 
 ## The List
 
@@ -38,7 +38,7 @@ Only the kinds you may change show here:
 | **Saved login** | `credentials:delete` |
 | **Connection** | Write access to its kind: `sources:write`, `destinations:write` or `notifications:write` |
 | **Job** | `jobs:write` |
-| **User** | `users:write`, and a platform admin for the account of a platform admin, of a platform group or of someone who also worked in another tenant |
+| **User** | `users:write`, and a platform admin for a user who waits in the home tenant for one of the reasons at the top of this page |
 
 The page needs `tenant-settings:read`, which shows the list without its buttons. **Restore** and **Delete permanently** need `tenant-settings:write` as well. Both count in the open tenant, so the admin of a customer manages the Recently deleted of that customer, see [Groups & Permissions](/user-guide/admin/permissions#settings-count-in-the-home-tenant).
 
@@ -46,7 +46,7 @@ The page needs `tenant-settings:read`, which shows the list without its buttons.
 
 **Restore** brings a record back under its own id, so jobs, backups and links that name it find it again. Tick several rows to restore them together.
 
-- **A name taken meanwhile.** A key, login, connection or job whose name another one took, or a user whose email another account took, opens **Restore** with a field for another name or email. A new email whose domain the sign-in provider of another tenant claims needs a platform admin or `platform-accounts:write`, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant).
+- **A name taken meanwhile.** A key, login, connection or job whose name another one took, or a user whose email another account took, opens **Restore** with a field for another name or email. A user whose email, their own or a new one, has a domain the sign-in provider of another tenant claims comes back only through a platform admin or someone with `platform-accounts:write` whose platform group reaches that tenant, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant).
 - **Links that are gone.** A record whose links point to something deleted meanwhile comes back without them, and the message after the restore names each:
 
 | Gone meanwhile | What the restore does |
@@ -58,6 +58,8 @@ The page needs `tenant-settings:read`, which shows the list without its buttons.
 | The login of a connection | The connection comes back without it, pick one again before it connects |
 | The group of a user, or a tenant they worked in | The user comes back without that membership, and sees nothing until they get a group when none is left |
 | The platform group of a user | The user comes back without a platform group |
+
+The API keys of a user stay out in a tenant that may make no API keys any more, see [What It May Add](/user-guide/admin/tenants#what-it-may-add), and the message says so.
 
 ### Delete for Good
 

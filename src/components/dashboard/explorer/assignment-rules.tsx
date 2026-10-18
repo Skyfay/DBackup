@@ -11,6 +11,7 @@ import { activeRules, countOf, onDemandLine, ruleGives } from "./assignment-mode
 import { OnDemandNote } from "./assignment-on-demand-note";
 import { OnDemandDialog } from "./assignment-on-demand-dialog";
 import { RuleForm } from "./assignment-rule-form";
+import { ruleLock } from "./assignment-reach";
 import { RuleRemoveDialog } from "./assignment-rule-remove";
 
 interface AssignmentRulesProps {
@@ -97,7 +98,7 @@ export function AssignmentRules({ serverId, serverName, data, canAssign, now, ch
                     <h3 className="font-semibold">Rules</h3>
                     <p className="text-sm text-muted-foreground">Give every database whose name matches, also the ones the server gets later. The higher priority wins, a database given by name beats every rule.</p>
                 </div>
-                {canAssign && !adding && (
+                {canAssign && data.customers.length > 0 && !adding && (
                     <Button tone="create" variant="outline" size="sm" onClick={() => setAdding(true)} className="shrink-0">
                         <Plus />
                         New rule
@@ -123,7 +124,8 @@ export function AssignmentRules({ serverId, serverName, data, canAssign, now, ch
             ) : (
                 <ul>
                     {rules.map((rule) => (
-                        <RuleItem key={rule.id} rule={rule} gives={gives.get(rule.id) ?? []} canAssign={canAssign} onRemove={() => setRemoving(rule)} onOnDemand={() => setOnDemand(rule)} />
+                        // A rule of a tenant beyond the reach of the viewer stays as it is.
+                        <RuleItem key={rule.id} rule={rule} gives={gives.get(rule.id) ?? []} canAssign={canAssign && !ruleLock(rule, data)} onRemove={() => setRemoving(rule)} onOnDemand={() => setOnDemand(rule)} />
                     ))}
                 </ul>
             )}

@@ -99,7 +99,7 @@ export function ServerAssignments({ serverId, serverName, tenantName, canAssign 
                 return false;
             }
             const [first] = list;
-            const tenant = first.tenantId ? data.customers.find((entry) => entry.id === first.tenantId)?.name ?? null : null;
+            const tenant = first.tenantId ? data.tenants.find((entry) => entry.id === first.tenantId)?.name ?? null : null;
             const before = data.databases.find((row) => row.name === first.databaseName)?.owner?.tenantName ?? null;
             const description = tenant
                 ? (first.validFrom ? `Its backups from ${formatDate(first.validFrom, "Pp")} on show there.` : "Its backups from now on show there.")
@@ -123,7 +123,7 @@ export function ServerAssignments({ serverId, serverName, tenantName, canAssign 
     }, [lines, showTimeline]);
 
     // With no other tenant there is nobody to give a database to, and the cards stay out.
-    if (data && data.customers.length === 0) return null;
+    if (data && data.tenants.length === 0) return null;
 
     return (
         <section aria-label="Shared with tenants" className="@container min-w-0 space-y-4 md:space-y-6">

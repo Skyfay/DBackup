@@ -49,6 +49,11 @@ export interface RunRow {
     starter: RunStarter;
     /** The tenant of the run, which All tenants shows and filters by. */
     tenantId?: string;
+    /**
+     * Set for a run of some databases of its job alone, like a backup a customer started of a shared
+     * database. Running its job again backs up every database of the job, not these.
+     */
+    someDatabases?: true;
 }
 
 export interface RunFacets {

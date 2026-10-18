@@ -3,7 +3,7 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { logger } from "@/lib/logging/logger";
@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, message: "Unsupported adapter" }, { status: 400 });
         }
         checkPermissionWithContext(ctx, requiredPermission);
+        // A config of a form runs in one tenant, All tenants belongs to none.
+        tenantOf(ctx);
         if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
 
         const adapter = registry.get(adapterId) as StorageAdapter | undefined;

@@ -1,7 +1,18 @@
 /**
  * What the Timeline and Upcoming views of the Jobs page show: the runs of every job a week back
- * and a week ahead, with where the queue makes one wait. Shared with the browser, so types only.
+ * and a week ahead, with where the queue makes one wait. Shared with the browser, so types and two
+ * names only.
  */
+
+/**
+ * Stands for any job of another tenant in what a tenant reads of the queue, like `waitsFor`. The
+ * queue is one for every tenant, so a run can wait for the run of another tenant, whose job it
+ * never learns by name or id.
+ */
+export const OTHER_TENANT_JOB = "other-tenant";
+
+/** How the pages name such a job. */
+export const OTHER_TENANT_JOB_NAME = "a job of another tenant";
 
 /** A run that happened, runs now or waits in the queue. */
 export interface TimelineRun {
@@ -17,8 +28,15 @@ export interface TimelineRun {
     /** For a run that runs or waits: when it is expected to start and to end. */
     expectedStart: string | null;
     expectedEnd: string | null;
-    /** For a run that waits: the jobs whose runs hold the slots. */
+    /** For a run that waits: the jobs whose runs hold the slots, `OTHER_TENANT_JOB` last for those of other tenants. */
     waitsFor: string[];
+}
+
+/** A stretch of time with one count of runs. */
+export interface TimelineStretch {
+    from: string;
+    to: string;
+    count: number;
 }
 
 /** A run the schedule of a job plans, with where the queue puts it. */
@@ -49,4 +67,9 @@ export interface JobTimeline {
     planned: TimelinePlannedRun[];
     /** Jobs that run so often their plan was cut short. */
     truncated: string[];
+    /**
+     * How many runs of other tenants run or wait while a run of this tenant does, which the queue
+     * takes beside them. Left out in All tenants, which lists every run.
+     */
+    otherTenants?: TimelineStretch[];
 }

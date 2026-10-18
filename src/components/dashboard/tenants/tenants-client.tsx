@@ -20,7 +20,7 @@ import type { TablePreferences } from "@/lib/core/table-preferences";
 import { TenantTile, tenantActions, tenantColumns, tenantNote, type TenantHandlers } from "./tenant-columns";
 import { NewTenantDialog, TenantDeleteDialog } from "./tenant-dialogs";
 import { TenantEditDialog, type TenantSection } from "./tenant-edit-dialog";
-import { countOf, deleteRefusal, troubledTenants, type TenantListRow } from "./tenant-words";
+import { countOf, deleteRefusal, managesTenant, troubledTenants, type TenantListRow } from "./tenant-words";
 import { TenantsStrip } from "./tenants-strip";
 
 interface TenantsClientProps {
@@ -30,6 +30,13 @@ interface TenantsClientProps {
     viewerId: string;
     /** May create, change and delete tenants and their members. Otherwise the page only shows them. */
     canManage: boolean;
+    /**
+     * The tenants the viewer looks after here, those their platform group reaches. A membership opens
+     * a tenant but gives no right on the platform. Null or left out for every tenant listed.
+     */
+    managedIds?: readonly string[] | null;
+    /** May create a tenant: a platform admin or a platform group of all tenants, the only ones who reach a new one. Follows `canManage` when left out. */
+    canCreate?: boolean;
     /** A platform admin, who alone makes someone one and changes the memberships of a platform admin. */
     viewerPlatformAdmin: boolean;
     /** The platform group the viewer sees the tenants through, none for a platform admin. */
@@ -48,7 +55,7 @@ const holdsNothing = (row: TenantListRow) => row.connections === 0 && row.jobs =
  * them deletes one, or several empty ones at once. The home tenant holds what the platform owns and
  * stays. `?open=<id>` opens the members of a tenant, like after New tenant in the head of the sidebar.
  */
-export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewerPlatformAdmin, through = null, initialLayout = null }: TenantsClientProps) {
+export function TenantsClient({ rows, activeTenantId, viewerId, canManage, managedIds = null, canCreate = canManage, viewerPlatformAdmin, through = null, initialLayout = null }: TenantsClientProps) {
     const router = useRouter();
     const openInTenant = useOpenInTenant();
     const layout = useTableLayout(TENANTS_TABLE_ID, initialLayout);
@@ -66,12 +73,19 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
         }
     }, [openInTenant]);
 
+    // Edit, Delete and the members only where the viewer looks after the tenant, else the server refuses.
+    const manages = useCallback((row: Pick<TenantListRow, "id">) => managesTenant(row, canManage, managedIds), [canManage, managedIds]);
     const handlers = useMemo<TenantHandlers>(() => ({
         onOpen: (row) => void open(row),
         onEdit: (row) => setEditing({ id: row.id, section: "general" }),
         canManage,
         ...(canManage ? { onDelete: setDeleting } : {}),
     }), [open, canManage]);
+    const handlersOf = useCallback((row: TenantListRow): TenantHandlers => {
+        if (manages(row)) return handlers;
+        const { onDelete: _onDelete, ...rest } = handlers;
+        return { ...rest, canManage: false };
+    }, [handlers, manages]);
 
     // A link opens the members of a tenant, like the one after New tenant.
     useOpenFromLink(rows, (row) => setEditing({ id: row.id, section: "members" }));
@@ -84,11 +98,12 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
                     Open
                 </Button>
             )}
-            <BackupRowMenu name={row.name} groups={tenantActions(row, activeTenantId, handlers)} />
+            <BackupRowMenu name={row.name} groups={tenantActions(row, activeTenantId, handlersOf(row))} />
         </>
-    )), [activeTenantId, handlers, opening]);
+    )), [activeTenantId, handlers, handlersOf, opening]);
 
-    const bulkActions = useMemo<BulkAction<TenantListRow>[]>(() => canManage ? [{
+    const managesAny = rows.some(manages);
+    const bulkActions = useMemo<BulkAction<TenantListRow>[]>(() => managesAny ? [{
         id: "delete",
         labels: { verb: "delete", verbPast: "deleted", noun: "tenant" },
         icon: Trash,
@@ -103,7 +118,7 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
             confirmLabel: "Delete",
         },
         run: (picked) => unwrapBulkAction(bulkDeleteTenants(picked.map((row) => row.id))),
-    }] : [], [canManage, activeTenantId]);
+    }] : [], [managesAny, activeTenantId]);
 
     const { failed, partial } = troubledTenants(rows);
     const attention = attentionOf("destructive", failed, "had a backup fail", "had a backup fail") ?? attentionOf("warning", partial, "missed a copy", "missed a copy");
@@ -118,12 +133,12 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
                     <PageTabs tabs={[{ value: "tenants", label: "Tenants", icon: Building2, attention }]} value="tenants" onValueChange={() => undefined} label="Tenant list" />
                 </Tabs>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
-                    {canManage ? (
+                    {canCreate ? (
                         <Button tone="create" onClick={() => setCreating(true)} aria-label="New tenant">
                             <Plus />
                             <span className="hidden sm:inline">New tenant</span>
                         </Button>
-                    ) : (
+                    ) : canManage ? null : (
                         <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                             <Eye className="size-4" aria-hidden="true" />
                             {through ? `Read only, through ${through}` : "Read only"}
@@ -140,8 +155,8 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
                 searchKey="name"
                 searchPlaceholder="Search tenants"
                 getRowId={(row) => row.id}
-                enableRowSelection={canManage}
-                isRowSelectable={(row) => !row.isHome && row.id !== activeTenantId}
+                enableRowSelection={managesAny}
+                isRowSelectable={(row) => !row.isHome && row.id !== activeTenantId && manages(row)}
                 bulkActions={bulkActions}
                 onBulkActionComplete={() => router.refresh()}
                 columnLayout={layout}
@@ -149,7 +164,7 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
                 activeRowId={editing?.id ?? null}
                 onRefresh={() => router.refresh()}
                 renderRowMenu={(row, bulk) => (
-                    <BackupContextMenu tile={<TenantTile home={row.isHome} logo={row.logo} />} title={row.name} note={tenantNote(row)} groups={tenantActions(row, activeTenantId, handlers)} bulk={bulk} />
+                    <BackupContextMenu tile={<TenantTile home={row.isHome} logo={row.logo} />} title={row.name} note={tenantNote(row)} groups={tenantActions(row, activeTenantId, handlersOf(row))} bulk={bulk} />
                 )}
             />
 
@@ -170,7 +185,7 @@ export function TenantsClient({ rows, activeTenantId, viewerId, canManage, viewe
                     tenant={edited}
                     section={editing.section}
                     viewerId={viewerId}
-                    canManage={canManage}
+                    canManage={manages(edited)}
                     viewerPlatformAdmin={viewerPlatformAdmin}
                     onClose={() => setEditing(null)}
                     onChanged={() => router.refresh()}

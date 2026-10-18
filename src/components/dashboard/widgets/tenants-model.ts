@@ -11,6 +11,8 @@ export interface TenantOverviewRow {
     name: string;
     jobs: number;
     databases: number;
+    /** The databases of other tenants it holds now. */
+    shared: number;
     health: TenantHealth;
 }
 
@@ -25,7 +27,7 @@ export function tenantOverviewRows(tenants: readonly { id: string; name: string 
     return tenants
         .map((tenant) => {
             const summary = byId.get(tenant.id);
-            return { id: tenant.id, name: tenant.name, jobs: summary?.jobs ?? 0, databases: summary?.databases ?? 0, health: summary?.health ?? null };
+            return { id: tenant.id, name: tenant.name, jobs: summary?.jobs ?? 0, databases: summary?.databases ?? 0, shared: summary?.shared ?? 0, health: summary?.health ?? null };
         })
         .sort((a, b) => HEALTH_ORDER[a.health ?? "fine"] - HEALTH_ORDER[b.health ?? "fine"] || a.name.localeCompare(b.name));
 }

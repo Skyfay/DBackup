@@ -3,6 +3,8 @@ import { registerAdapters } from "@/lib/adapters";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { readDatabaseStats, type StatsRefusal } from "@/services/databases/database-read-service";
 
 // Ensure adapters are registered
@@ -20,7 +22,8 @@ const REFUSALS: Record<StatsRefusal, { message: string; status: number }> = {
  * POST /api/adapters/database-stats
  *
  * Returns databases with size and table count information for a given source.
- * Accepts either raw config (adapterId + config) or a saved source ID (sourceId).
+ * Accepts either raw config (adapterId + config) or a saved source ID (sourceId). A raw config
+ * needs the right to change connections of its kind, see `assertMayReadFormConfig`.
  */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -29,11 +32,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW);
-
     try {
+        checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW);
+
         const body = await req.json();
         const { adapterId, config, sourceId } = body;
+        // The service runs a config that comes along in place of the saved source.
+        if (config) {
+            if (typeof adapterId !== "string" || !adapterId) return NextResponse.json({ success: false, message: REFUSALS.incomplete.message }, { status: 400 });
+            assertMayReadFormConfig(ctx, adapterId);
+        }
 
         const outcome = await readDatabaseStats({ adapterId, config, sourceId });
         if (!outcome.ok) {
@@ -45,6 +53,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, databases, serverVersion, serverEdition });
 
     } catch (error: unknown) {
+        const refusal = permissionRefusal(error);
+        if (refusal) return refusal;
         const message = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json({ success: false, message }, { status: 500 });
     }

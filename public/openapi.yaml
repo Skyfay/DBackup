@@ -1468,6 +1468,8 @@ paths:
         `platform-sharing:write`, a right on the platform that a platform group gives. An API key
         holds it only when it was made in a tenant that shares with customers by someone who holds it,
         like the key of a hosting panel. The server belongs to a tenant that shares with customers.
+        The key of someone of a platform group of selected tenants gives databases to those tenants
+        only and takes them only from them.
       operationId: assignDatabases
       security:
         - BearerAuth: []
@@ -1528,7 +1530,7 @@ paths:
                         description: The databases whose tenant changed. One that belongs to the tenant already is left as it is
                         example: 2
         "400":
-          description: Invalid body, a start in the future, the tenant of the server itself or a tenant that does not exist
+          description: Invalid body, a start in the future, the tenant of the server itself, a tenant that does not exist, or a database given to or taken from a tenant the platform group of the owner of the key does not reach. Nothing changes
           content:
             application/json:
               schema:
@@ -1549,7 +1551,14 @@ paths:
     post:
       tags: [Connection Testing]
       summary: Test Connection
-      description: Tests connectivity for a given adapter configuration. If `configId` is provided and the test succeeds, the adapter metadata is updated.
+      description: |
+        Tests connectivity for the configuration of a connection form. The config runs as it comes, so the
+        request needs the right to change connections of the kind of the adapter: `sources:write` for a
+        database, `destinations:write` for a storage adapter, `notifications:write` for a channel. It runs in
+        the tenant of the caller, All tenants tests nothing.
+
+        With `configId` the saved secrets of that connection fill the empty fields, and a successful test keeps
+        the version it found in the metadata of the connection.
       operationId: testConnection
       security:
         - BearerAuth: []
@@ -1581,7 +1590,17 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: The caller may not change connections of this kind, works in All tenants, or may not use a saved login the request names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
         "200":
           description: Connection result
           content:
@@ -1602,7 +1621,10 @@ paths:
     post:
       tags: [Connection Testing]
       summary: Access Check (List Databases)
-      description: Tests connection and discovers available databases.
+      description: |
+        Tests the connection of a database form and discovers the databases it reaches. The config runs as
+        it comes, so the request needs `sources:write`, the right to change database connections. It runs in
+        the tenant of the caller, All tenants checks nothing.
       operationId: accessCheck
       security:
         - BearerAuth: []
@@ -1623,7 +1645,17 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: The caller may not change connections of this kind, works in All tenants, or may not use a saved login the request names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
         "200":
           description: Databases found
           content:
@@ -1645,6 +1677,10 @@ paths:
       summary: Database Statistics
       description: |
         Fetches database size and table count information. Provide either `sourceId` (existing adapter) or `adapterId` + `config` (ad-hoc connection).
+
+        Needs `sources:view`. A `config` runs as it comes, with a host and a login of the caller's choosing, so it
+        also needs the right to change connections of the kind of the adapter (`sources:write` for a database)
+        and a tenant, never All tenants. A saved `sourceId` needs no more.
       operationId: getDatabaseStats
       security:
         - BearerAuth: []
@@ -1668,7 +1704,19 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: The caller lacks the read permission, or sends `adapterId` and `config` without the right to change connections of that kind or from All tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                  message:
+                    type: string
         "200":
           description: Database statistics
           content:
@@ -1733,6 +1781,9 @@ paths:
       description: |
         Lists tables/collections inside a database for a given source. Provide either
         `sourceId` (existing adapter) or `adapterId` + `config` (ad-hoc connection).
+
+        Needs `sources:read`. A `config` runs as it comes, so it also needs the right to change connections
+        of the kind of the adapter (`sources:write` for a database) and a tenant, never All tenants.
       operationId: listDatabaseTables
       security:
         - BearerAuth: []
@@ -1762,7 +1813,19 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: The caller lacks the read permission, or sends `adapterId` and `config` without the right to change connections of that kind or from All tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                  message:
+                    type: string
         "404":
           $ref: "#/components/responses/NotFound"
         "200":
@@ -1786,6 +1849,9 @@ paths:
       description: |
         Returns paginated row data from a table or collection for a given source. Provide
         either `sourceId` (existing adapter) or `adapterId` + `config` (ad-hoc connection).
+
+        Needs `sources:read`. A `config` runs as it comes, so it also needs the right to change connections
+        of the kind of the adapter (`sources:write` for a database) and a tenant, never All tenants.
       operationId: getDatabaseTableData
       security:
         - BearerAuth: []
@@ -1837,7 +1903,19 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: The caller lacks the read permission, or sends `adapterId` and `config` without the right to change connections of that kind or from All tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                  message:
+                    type: string
         "404":
           $ref: "#/components/responses/NotFound"
         "200":
@@ -4533,7 +4611,22 @@ components:
                 format: date-time
         customers:
           type: array
-          description: The tenants a database can be given to, every tenant but the one of the server
+          description: |
+            The tenants a database can be given to, every tenant but the one of the server that the
+            platform group of the caller reaches. For a platform admin, a platform group of all tenants
+            and their keys every tenant but the one of the server
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: cm2x8k1q40000acme
+              name:
+                type: string
+                example: Acme Corp
+        tenants:
+          type: array
+          description: Every tenant but the one of the server, by name
           items:
             type: object
             properties:

@@ -631,21 +631,18 @@ case "webdav":
 
 Return a plain string. The table styles it, and `null` shows a dash.
 
-#### 8. RBAC: Permission regex (`src/app/api/adapters/`)
+#### 8. RBAC: Permission map (`src/lib/auth/adapter-permissions.ts`)
 
-Two API routes use regex to map adapter IDs to permission groups. Add your adapter ID to the storage regex in **both** files:
-
-- `src/app/api/adapters/test-connection/route.ts`
-- `src/app/api/adapters/access-check/route.ts`
+Every route that tries or reads a connection by its adapter ID looks up the permission in `ADAPTER_PERMISSIONS`. Add your adapter ID there with the permission to see destinations:
 
 ```typescript
-} else if (/local-filesystem|s3|sftp|smb|webdav|ftp|rsync/i.test(adapterId)) {
-    return PERMISSIONS.DESTINATIONS.READ;
-}
+"your-adapter": PERMISSIONS.DESTINATIONS.READ,
 ```
 
+`getManagePermissionForAdapter` derives the permission to change it from that entry, which Test connection and the access check need.
+
 ::: warning
-If your adapter ID is missing from this regex, the test-connection endpoint will skip RBAC permission checks for your adapter. Health checks may also behave unexpectedly.
+An adapter missing from the map gets no permission, so Test connection answers `Unsupported adapter` for it.
 :::
 
 #### 9. Dockerfile (if CLI tools needed)
@@ -678,12 +675,11 @@ brew install your-package
 | 5 | `src/components/adapter/form-constants.ts` | `STORAGE_CONNECTION_KEYS`, `STORAGE_CONFIG_KEYS`, `STORAGE_LOCATION_KEYS`, `PLACEHOLDERS` |
 | 6 | `src/components/adapter/utils.ts` | `ADAPTER_ICON_MAP` + optional `ADAPTER_COLOR_MAP` ([Icon System](/developer-guide/core/icons)) |
 | 7 | `src/lib/adapters/connection-summary.ts` | `connectionAddress()` case for the Location column |
-| 8 | `src/app/api/adapters/test-connection/route.ts` | Add ID to storage permission regex |
-| 9 | `src/app/api/adapters/access-check/route.ts` | Add ID to storage permission regex |
-| 10 | `Dockerfile` | System CLI tools (if needed) |
-| 11 | `scripts/setup-dev-macos.sh` | Local dev CLI setup (if needed) |
-| 12 | `docs/` | User guide + developer guide |
-| 13 | `changelog/unreleased/<branch>.md` | Changelog entry, which the release moves into `docs/changelog.md` |
+| 8 | `src/lib/auth/adapter-permissions.ts` | Add ID to `ADAPTER_PERMISSIONS` |
+| 9 | `Dockerfile` | System CLI tools (if needed) |
+| 10 | `scripts/setup-dev-macos.sh` | Local dev CLI setup (if needed) |
+| 11 | `docs/` | User guide + developer guide |
+| 12 | `changelog/unreleased/<branch>.md` | Changelog entry, which the release moves into `docs/changelog.md` |
 
 ### OAuth-Specific Additional Steps
 
@@ -691,8 +687,8 @@ If the new adapter requires browser-based OAuth (e.g., Google Drive, Dropbox, On
 
 | # | File | What to do |
 | :--- | :--- | :--- |
-| 13 | `src/app/api/adapters/<name>/auth/route.ts` | OAuth authorization URL generation endpoint |
-| 14 | `src/app/api/adapters/<name>/callback/route.ts` | OAuth callback - exchange code for tokens, store refresh token encrypted |
+| 13 | `src/app/api/adapters/<name>/auth/route.ts` | OAuth authorization URL generation endpoint. Its `state` is `createOAuthState({ provider, userId, tenantId, credentialId })` from `src/lib/auth/oauth-state.ts`, a random nonce bound to the person, the tenant and the saved login, never the id of the login itself |
+| 14 | `src/app/api/adapters/<name>/callback/route.ts` | OAuth callback - exchange code for tokens, store refresh token encrypted. `oauthCallbackCaller(provider, state)` from `src/lib/server/oauth-callback.ts` takes the `state` once, within 15 minutes and only for the same person signed in to the same tenant with `credentials:write`, and returns the saved login it was made for. `saveRefreshToken` keeps the token and writes the audit entry |
 | 15 | `src/components/adapter/oauth-authorization.tsx` | An entry in `PROVIDERS` with the drive's name, whose sign-in page opens and the segment of its routes. An adapter whose primary credential is `OAUTH` gets the authorization box and the Location folder field on its own. |
 | 16 | `src/components/adapter/cloud-folder-field.tsx` | An entry in `DRIVES` with the provider's name and the body key of its browse route, if it has one. The field opens the shared `FolderPickerDialog` with it. |
 | 17 | `src/lib/crypto.ts` | Add OAuth secret fields to `SENSITIVE_KEYS` (e.g., `clientSecret`, `refreshToken`) |

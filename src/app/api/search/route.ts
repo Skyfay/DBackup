@@ -10,7 +10,7 @@ import type { ConnectionType, SearchScope } from "@/services/search/search-types
  * is searched only while the viewer may open the page that lists it, the jobs with jobs:read, their
  * backups with storage:read, the connections by the permission of their tab, the databases of the
  * servers with sources:view, the runs with history:read, the people, groups and API keys by the
- * permission of their tab, the templates with templates:read, the encryption keys with vault:read
+ * permission of their tab, in All tenants the people with platform-accounts:read, the templates with templates:read, the encryption keys with vault:read
  * and the saved logins with vault:read and credentials:read. Someone who may see none of them gets
  * no hits.
  */
@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
         runs: can(PERMISSIONS.HISTORY.READ),
         databases: can(PERMISSIONS.SOURCES.VIEW),
         connections,
-        users: can(PERMISSIONS.USERS.READ),
+        // In All tenants a person opens on the accounts of the platform, which need their own right.
+        users: ctx.allTenants ? can(PERMISSIONS.PLATFORM.ACCOUNTS_READ) : can(PERMISSIONS.USERS.READ),
         groups: can(PERMISSIONS.GROUPS.READ),
         apiKeys: can(PERMISSIONS.API_KEYS.READ),
         templates: can(PERMISSIONS.TEMPLATES.READ),

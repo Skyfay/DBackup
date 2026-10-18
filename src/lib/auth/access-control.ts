@@ -211,13 +211,27 @@ export function forgetAuthContext(headersObj: Headers): void {
   contexts().delete(headersObj);
 }
 
+/** What a refusal in All tenants says: it reads every tenant and changes none, wherever the caller may change it. */
+export const ALL_TENANTS_REFUSAL = "All tenants only reads. Open the tenant of the record to change it.";
+
+/**
+ * The refusal of a check. In All tenants a right the view never holds, like one that changes
+ * something, says that All tenants only reads instead of naming the right, since a platform admin
+ * holds it in every tenant and only the view is wrong.
+ */
+function refusal(ctx: Pick<AuthContext, "allTenants">, wanted: readonly Permission[]): PermissionError {
+  const required = wanted.join(" or ");
+  const viewOnly = ctx.allTenants && !wanted.some((permission) => ALL_TENANTS_PERMISSIONS.includes(permission));
+  return new PermissionError(required, viewOnly ? { message: ALL_TENANTS_REFUSAL } : undefined);
+}
+
 /**
  * Check a specific permission against an AuthContext.
  * Throws PermissionError if the context does not have the required permission.
  */
 export function checkPermissionWithContext(ctx: AuthContext, permission: Permission): void {
   if (!hasPermissionWithContext(ctx, permission)) {
-    throw new PermissionError(permission);
+    throw refusal(ctx, [permission]);
   }
 }
 
@@ -229,7 +243,7 @@ export function checkPermissionWithContext(ctx: AuthContext, permission: Permiss
  */
 export function checkAnyPermissionWithContext(ctx: AuthContext, permissions: readonly Permission[]): void {
   if (!permissions.some((permission) => hasPermissionWithContext(ctx, permission))) {
-    throw new PermissionError(permissions.join(" or "));
+    throw refusal(ctx, permissions);
   }
 }
 
@@ -244,8 +258,8 @@ export function hasPermissionWithContext(ctx: Pick<AuthContext, "isPlatformAdmin
 }
 
 /** The tenant a caller works in, refusing an account that belongs to none and All tenants. */
-export function tenantOf(ctx: { tenantId: string | null }): string {
-  if (!ctx.tenantId) throw new PermissionError("a tenant");
+export function tenantOf(ctx: { tenantId: string | null; allTenants?: boolean }): string {
+  if (!ctx.tenantId) throw new PermissionError("a tenant", { message: ctx.allTenants ? ALL_TENANTS_REFUSAL : "You work in no tenant yet." });
   return ctx.tenantId;
 }
 
@@ -338,7 +352,7 @@ export async function checkPermission(permission: Permission | readonly Permissi
 
     const wanted: readonly Permission[] = typeof permission === "string" ? [permission] : permission;
     if (!wanted.some((entry) => hasPermissionWithContext(viewer, entry))) {
-        throw new PermissionError(wanted.join(" or "));
+        throw refusal(viewer, wanted);
     }
 
     return viewer;

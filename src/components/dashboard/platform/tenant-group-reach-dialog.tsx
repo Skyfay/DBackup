@@ -41,7 +41,7 @@ const label = (permission: string) => permissionInfo(permission)?.label ?? permi
  */
 export function TenantGroupReachDialog({ name, preview, confirmLabel, pending, onBack, onConfirm }: TenantGroupReachDialogProps) {
     const [clashes, setClashes] = useState<Record<string, ClashChoice>>(() =>
-        Object.fromEntries(preview.clashes.map((clash) => [clash.tenantId, clash.fullAccess ? "leaveOut" : "takeOver"])));
+        Object.fromEntries(preview.clashes.map((clash) => [clash.tenantId, clash.fullAccess || clash.beyondYou ? "leaveOut" : "takeOver"])));
     const leaving = preview.leaving.filter((entry) => entry.members.length > 0);
     const [keep, setKeep] = useState<Record<string, boolean>>(() => Object.fromEntries(leaving.map((entry) => [entry.tenantId, false])));
     const [moveTo, setMoveTo] = useState<Record<string, string>>({});
@@ -132,8 +132,9 @@ function ClashBlock({ name, clash, value, onChange }: { name: string; clash: Rea
                         value: "takeOver",
                         title: `Take over the ${name} of ${clash.tenantName}`,
                         description: "It becomes this group: its members keep it, the platform changes it from now on.",
-                        disabled: clash.fullAccess,
-                        ...(clash.fullAccess ? { badge: "Holds every permission" } : {}),
+                        // Nobody takes over a group that may do more than they may, the server refuses it too.
+                        disabled: clash.fullAccess || clash.beyondYou,
+                        ...(clash.fullAccess ? { badge: "Holds every permission" } : clash.beyondYou ? { badge: "May do more than you" } : {}),
                     },
                     { value: "leaveOut", title: `Leave ${clash.tenantName} out`, description: `It keeps its own ${name}. Once that name is free, pick ${clash.tenantName} again.` },
                 ]}

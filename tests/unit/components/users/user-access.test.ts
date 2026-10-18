@@ -42,10 +42,18 @@ describe("what a tenant admin may change of an account", () => {
     });
 
     it("lets whoever manages the accounts of the platform change an account of other tenants too, never that of a platform admin, like the server", () => {
-        const manager = { isPlatformAdmin: false, tenantId: "t1", permissions: [PERMISSIONS.PLATFORM.ACCOUNTS_WRITE] };
+        const manager = { isPlatformAdmin: false, tenantId: "t1", permissions: [PERMISSIONS.PLATFORM.ACCOUNTS_WRITE], reach: "all" as const };
         expect(accountLock(person({ elsewhere: true }), false, true)).toBeNull();
         expect(accountRefusal(manager, { isPlatformAdmin: false, tenantIds: ["t1", "t2"] })).toBeNull();
         expect(accountLock(person({ superAdmin: true }), false, true)).toBe(accountRefusal(manager, { isPlatformAdmin: true, tenantIds: ["t1"] }));
+    });
+
+    it("locks an account beyond the tenants of the manager's platform group, like the server", () => {
+        const manager = { isPlatformAdmin: false, tenantId: "t1", permissions: [PERMISSIONS.PLATFORM.ACCOUNTS_WRITE], reach: ["t1"] };
+        expect(accountLock({ ...person({ elsewhere: true }), beyondReach: true }, false, true)).toBe(accountRefusal(manager, { isPlatformAdmin: false, tenantIds: ["t1", "t2"] }));
+        expect(accountLock({ ...person({ elsewhere: true }), beyondReach: false }, false, true)).toBeNull();
+        // A tenant admin of a customer that holds such a platform group too keeps the account of their tenant alone.
+        expect(accountLock({ ...person(), beyondReach: true }, false, true)).toBeNull();
     });
 
     it("says what the server says when it refuses", () => {

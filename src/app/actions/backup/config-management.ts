@@ -4,9 +4,8 @@ import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { ConfigService } from "@/services/config/config-service";
 import { RestoreOptions } from "@/lib/types/config-backup";
-import { runConfigBackup } from "@/lib/runner/config-runner";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
 import { connectionName } from "@/services/adapters/adapter-audit";
 import { auditService } from "@/services/audit-service";
 import { PLATFORM_LOG } from "@/services/system/settings-save";
@@ -23,23 +22,6 @@ const configService = new ConfigService();
  * `/api/settings/config-backup/restore`, since a Server Action takes at most 1 MB.
  */
 const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a platform admin restores a configuration backup." };
-
-/**
- * Trigger the Automated Config Backup Logic Manually
- */
-export async function triggerManualConfigBackupAction() {
-    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
-    try {
-        // Trigger the runner async (fire & forget from UI perspective, but we await completion to inform user)
-        // Actually, runConfigBackup is async.
-        await runConfigBackup();
-        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { action: "config_backup" }, undefined, PLATFORM_LOG);
-        return { success: true };
-    } catch (e: unknown) {
-        log.error("Manual config backup failed", {}, wrapError(e));
-        return { success: false, error: getErrorMessage(e) };
-    }
-}
 
 /**
  * Restores a configuration backup from storage.

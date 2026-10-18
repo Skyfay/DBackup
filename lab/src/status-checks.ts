@@ -64,8 +64,13 @@ export async function checkDevDatabase(config: LabConfig, workspace: string): Pr
             section.next.push("pnpm lab:seed    adds the admin and every lab connection");
         }
 
-        const connections = await prisma.adapterConfig.findMany({ where: { name: { startsWith: "Lab " } }, select: { name: true, config: true } });
-        const jobs = await prisma.job.count({ where: { name: { startsWith: "Lab " } } });
+        // The seed puts the lab into the home tenant, and a connection or a job is only read inside a tenant.
+        const { runAsTenant } = await import("@/lib/tenant/context");
+        const { HOME_TENANT_ID } = await import("@/lib/tenant/home");
+        const [connections, jobs] = await runAsTenant(HOME_TENANT_ID, async () => [
+            await prisma.adapterConfig.findMany({ where: { name: { startsWith: "Lab " } }, select: { name: true, config: true } }),
+            await prisma.job.count({ where: { name: { startsWith: "Lab " } } }),
+        ] as const);
         if (connections.length === 0) {
             section.rows.push({ mark: "fail", name: "lab", detail: "no lab connections, the seed never ran here" });
             section.next.push("pnpm lab:seed    adds the admin and every lab connection");

@@ -14,6 +14,7 @@ import { getSystemTaskRows, saveSystemTask, startSystemTask } from "@/services/s
 import { getGeneralSettings } from "@/services/system/system-settings-service";
 import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
 import { platformLogFor } from "@/services/system/settings-save";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "system-tasks" });
 
@@ -29,7 +30,8 @@ const updateSchema = z.object({
 export async function GET(_req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ));
+    if (refused) return refused;
 
     const { timezone } = await getGeneralSettings();
     const rows = await getSystemTaskRows(timezone);
@@ -45,7 +47,8 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
+    if (refused) return refused;
 
     const parsed = updateSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success || !isSystemTaskId(parsed.data.taskId)) {
@@ -87,7 +90,8 @@ export async function PUT(req: NextRequest) {
     // Run Task immediately manual trigger
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
+    if (refused) return refused;
 
     const parsed = z.object({ taskId }).safeParse(await req.json().catch(() => null));
     if (!parsed.success || !isSystemTaskId(parsed.data.taskId)) {

@@ -15,6 +15,7 @@ import { EncryptionKeyRequiredError, getErrorMessage, wrapError } from "@/lib/lo
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
 import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
+import { assertFilePath } from "@/lib/tenant/storage-view";
 import { isBackupFile, sidecarPathsFor, chainFolderOf, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 import { dependentsOf, fileNameOf } from "./bulk-delete-order";
 
@@ -805,9 +806,11 @@ export class StorageService {
     }
 
     /**
-     * Deletes a file via a specific storage adapter configuration.
+     * Deletes a file via a specific storage adapter configuration. Never the root of a destination,
+     * which some storages delete with everything in it.
      */
     async deleteFile(adapterConfigId: string, filePath: string): Promise<boolean> {
+        assertFilePath(filePath);
         const { adapter, config } = await openDestination(adapterConfigId);
 
         // Refuse to gut an incremental chain. Later snapshots reference bytes that live in

@@ -7,6 +7,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 export async function DELETE(
     req: NextRequest,
@@ -17,7 +18,8 @@ export async function DELETE(
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     try {
@@ -44,7 +46,8 @@ export async function PUT(
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     try {

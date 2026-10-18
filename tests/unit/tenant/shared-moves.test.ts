@@ -177,7 +177,7 @@ describe("a database that moves to another server", () => {
             file: "Backups/o-mar.tar",
             targetSourceId: "new-mysql",
             databaseMapping: [{ originalName: "shop", targetName: "shop2", selected: true }],
-            shared: { databaseName: "shop2", provider: { tenantId: "default", name: "Default", customer: "Acme" } },
+            shared: { databaseName: "shop2", provider: { tenantId: "default", name: "Default", customer: "Acme" }, copyTenantId: "default" },
         }), "acme");
     });
 
@@ -418,10 +418,11 @@ describe("backups a customer starts on demand", () => {
         await expect(tenantOnDemandService.follow("globex", "database", found!.overrides[0].id)).rejects.toBeInstanceOf(NotFoundError);
     });
 
-    it("keeps the number of a customer within the limits, and none for the home tenant", async () => {
+    it("keeps the number of a customer within the limits, the home tenant as a customer of another included", async () => {
         await expect(tenantOnDemandService.set("globex", 25)).rejects.toBeInstanceOf(ValidationError);
         await expect(tenantOnDemandService.set("globex", 0)).rejects.toBeInstanceOf(ValidationError);
-        await expect(tenantOnDemandService.set(HOME, 3)).rejects.toThrow(/home tenant/);
+        expect(await tenantOnDemandService.set(HOME, 3)).toEqual(expect.objectContaining({ after: 3 }));
+        await tenantOnDemandService.set(HOME, null);
         expect(await tenantOnDemandService.set("globex", 4)).toEqual({ name: "Globex", before: null, after: 4 });
         expect(await tenantOnDemandService.set("globex", null)).toEqual({ name: "Globex", before: 4, after: null });
     });

@@ -7,6 +7,7 @@ import { Building2, DoorOpen, Link2Off, Loader2, LogIn, Users } from "lucide-rea
 import { toast } from "sonner";
 import { acceptInvitation } from "@/app/actions/tenant/invitation";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { announceTenantSwitch } from "@/components/tenant/tenant-sync";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/auth/client";
 import type { PasswordRules } from "@/lib/auth/password-policy";
@@ -86,6 +87,8 @@ function JoinStep({ token, invitation, signedIn }: { token: string; invitation: 
             toast.success(result.data.joined ? `You work in ${result.data.tenantName} now` : `You work in ${result.data.tenantName} already`, {
                 description: result.data.joined ? undefined : "You keep the group you have there.",
             });
+            // The session works in the tenant now, in every tab, so the others load it too.
+            announceTenantSwitch(result.data.tenantId, result.data.tenantName);
             router.push("/dashboard");
             router.refresh();
         } catch (error: unknown) {

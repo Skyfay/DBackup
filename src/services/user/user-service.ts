@@ -5,6 +5,8 @@ import { ValidationError } from "@/lib/logging/errors";
 import { authService } from "@/services/auth/auth-service";
 import { accountRefusal, type AccountActor, type AccountTarget } from "@/lib/auth/account-access";
 import { EVERY_PERMISSION, PLATFORM_ADMIN_ROLE, permissionsIn } from "@/lib/auth/owner-permissions";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
@@ -121,7 +123,17 @@ export const userService = {
     if (!target) return null;
     // Only an account of a platform group needs the caller's own platform group to compare.
     const platformGroupShape = target.platformGroup && !caller.isPlatformAdmin ? (await platformGroupService.shapeOf(caller.id))?.shape ?? null : null;
-    return accountRefusal({ ...caller, platformGroupShape }, target);
+    return accountRefusal({ ...caller, platformGroupShape, reach: caller.reach ?? (await this.accountsReachOf(caller)) }, target);
+  },
+
+  /**
+   * The tenants whose accounts the caller changes with the right to manage the accounts of the
+   * platform, see `accountRefusal`: every tenant for a platform admin, the reach of their platform
+   * group while they hold the right, none otherwise.
+   */
+  async accountsReachOf(caller: { id: string; isPlatformAdmin: boolean; permissions: readonly string[] }): Promise<PlatformReach> {
+    if (caller.isPlatformAdmin) return "all";
+    return caller.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE) ? platformGroupService.reachOf(caller.id) : [];
   },
 
   /** Ends one session of a user. False when the user holds no such session. */

@@ -1,6 +1,7 @@
 import { checkPermissionWithContext, getAuthContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { requestHeaders } from "@/lib/server/request-headers";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 /**
  * The guard of every route of a configuration restore. A restore writes the whole database, every
@@ -11,7 +12,8 @@ import { requestHeaders } from "@/lib/server/request-headers";
 export async function requireConfigRestorer(): Promise<AuthContext | Response> {
     const ctx = await getAuthContext(await requestHeaders());
     if (!ctx) return Response.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
+    if (refused) return refused;
     if (!ctx.isPlatformAdmin || ctx.authMethod !== "session") {
         return Response.json({ success: false, error: "Only a platform admin restores a configuration backup." }, { status: 403 });
     }

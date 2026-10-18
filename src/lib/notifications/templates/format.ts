@@ -75,13 +75,22 @@ export function startedBy(trigger: string | undefined): string | undefined {
     return trigger;
 }
 
+/** The parameter of a link that names the tenant of its record, which the dashboard switches into. */
+export const TENANT_PARAM = "tenant";
+
+/** A link that names the tenant of its record, so it opens there from any other tenant. */
+function inTenant(href: string, tenantId: string | undefined): string {
+    return tenantId ? `${href}&${TENANT_PARAM}=${encodeURIComponent(tenantId)}` : href;
+}
+
+/** The pages a notification opens, each with the tenant of its record when the sender knows it. */
 export const paths = {
-    run: (id: string) => `/dashboard/history/run?id=${encodeURIComponent(id)}&from=history`,
-    job: (id: string) => `/dashboard/jobs?job=${encodeURIComponent(id)}`,
+    run: (id: string, tenantId?: string) => inTenant(`/dashboard/history/run?id=${encodeURIComponent(id)}&from=history`, tenantId),
+    job: (id: string, tenantId?: string) => inTenant(`/dashboard/jobs?job=${encodeURIComponent(id)}`, tenantId),
     /** A destination on the Backups page, with its alerts and its history. */
-    storage: (id: string) => `/dashboard/backups?tab=destinations&destination=${encodeURIComponent(id)}`,
-    connection: (kind: "database" | "storage", id: string) =>
-        `/dashboard/connections?tab=${kind === "database" ? "databases" : "destinations"}&open=${encodeURIComponent(id)}`,
+    storage: (id: string, tenantId?: string) => inTenant(`/dashboard/backups?tab=destinations&destination=${encodeURIComponent(id)}`, tenantId),
+    connection: (kind: "database" | "storage", id: string, tenantId?: string) =>
+        inTenant(`/dashboard/connections?tab=${kind === "database" ? "databases" : "destinations"}&open=${encodeURIComponent(id)}`, tenantId),
 };
 
 export function action(label: string, href: string | undefined, icon: NotificationAction["icon"]): NotificationAction[] {

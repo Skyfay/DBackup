@@ -99,7 +99,12 @@ export function ConnectionStep({ number, step, picked, onSkip, onDone }: Connect
                             type="button"
                             variant="outline"
                             disabled={!selectedEntry}
-                            onClick={() => selectedEntry && onDone({ id: selectedEntry.id, name: selectedEntry.name, adapterId: selectedEntry.adapterId })}
+                            onClick={() => selectedEntry && onDone({
+                                id: selectedEntry.id,
+                                name: selectedEntry.name,
+                                adapterId: selectedEntry.adapterId,
+                                ...(selectedEntry.encryptedOnly ? { encryptedOnly: true } : {}),
+                            })}
                         >
                             Use this {kind.noun}
                         </Button>

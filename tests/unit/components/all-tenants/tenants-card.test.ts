@@ -20,11 +20,11 @@ describe("the card Tenants of the Overview in All tenants", () => {
         ]);
 
         expect(rows.map((row) => row.name)).toEqual(["Globex", "Initech", "Acme GmbH", "Home", "Umbrella"]);
-        expect(rows[2]).toEqual({ id: "acme", name: "Acme GmbH", jobs: 4, databases: 12, health: "partial" });
+        expect(rows[2]).toEqual({ id: "acme", name: "Acme GmbH", jobs: 4, databases: 12, shared: 0, health: "partial" });
     });
 
     it("counts nothing for a tenant without a summary yet, like one created a moment ago", () => {
-        expect(tenantOverviewRows([{ id: "new", name: "New tenant" }], [])).toEqual([{ id: "new", name: "New tenant", jobs: 0, databases: 0, health: null }]);
+        expect(tenantOverviewRows([{ id: "new", name: "New tenant" }], [])).toEqual([{ id: "new", name: "New tenant", jobs: 0, databases: 0, shared: 0, health: null }]);
     });
 
     it("says how many tenants there are and how many need a look", () => {

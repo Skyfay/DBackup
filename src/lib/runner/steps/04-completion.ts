@@ -231,7 +231,8 @@ export async function stepFinalize(ctx: RunnerContext) {
             log.warn("Could not gather the details of the run for its notification", { jobId: job.id }, wrapError(e));
             return { jobName: job.name, jobId: job.id, executionId: ctx.execution?.id, timestamp: new Date().toISOString() };
         });
-        const basePayload = renderTemplate({ eventType, data }, { timeZone: brand.timeZone });
+        // Its links name the tenant of the job, so they open the run there from any other tenant.
+        const basePayload = renderTemplate({ eventType, data }, { timeZone: brand.timeZone, tenantId });
 
         for (const { channel, events } of channelsToNotify) {
             try {

@@ -288,7 +288,7 @@ describe("what a customer does with a backup", () => {
                 keyOverride: { profileId: "msp-key" },
                 triggerInfo: { type: "Manual", label: "Ana" },
                 // The run in the customer's History names the database, never the archive of the server.
-                shared: { databaseName: "shop_acme", provider: { tenantId: "default", name: "Default", customer: "Acme" } },
+                shared: { databaseName: "shop_acme", provider: { tenantId: "default", name: "Default", customer: "Acme" }, copyTenantId: "default" },
             },
             "acme"
         );
@@ -449,15 +449,16 @@ describe("tenants of the MSP that share databases", () => {
 
 describe("a customer that is deleted", () => {
     it("keeps the backups of its time away from a tenant whose rule matches the name, and ends what it held", async () => {
-        // Retail gets every shop_ database by a rule, Acme holds shop_acme by name since March.
+        // Retail gets every shop_ database by a rule since January, Acme holds shop_acme by name
+        // since March. The backup of February was Retail's, the later ones Acme's.
         await base.tenant.create({ data: { id: "retail", name: "Retail" } });
         await base.databaseAssignmentRule.create({ data: { sourceId: "shared-mysql", pattern: "shop_*", tenantId: "retail", validFrom: day("2026-01-01") } });
-        expect((await overview("retail")).backups.filter((entry) => entry.databaseName === "shop_acme")).toEqual([]);
+        expect(daysOf(await overview("retail"), "shop_acme")).toEqual(["2026-02-10"]);
 
         await tenantService.delete("acme");
 
-        expect((await overview("retail")).backups.filter((entry) => entry.databaseName === "shop_acme")).toEqual([]);
-        const kept = await base.databaseAssignment.findFirst({ where: { databaseName: "shop_acme" } });
+        expect(daysOf(await overview("retail"), "shop_acme")).toEqual(["2026-02-10"]);
+        const kept = await base.databaseAssignment.findFirst({ where: { databaseName: "shop_acme", tenantId: "acme" } });
         expect(kept?.tenantId).toBe("acme");
         expect(kept?.validUntil).not.toBeNull();
     });

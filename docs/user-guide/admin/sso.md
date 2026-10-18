@@ -16,7 +16,7 @@ The four named providers read their endpoints from the OpenID configuration of t
 
 ## The SSO Tab
 
-Open **Users & Groups → SSO**, with more than one tenant **Platform → Users & Groups → Sign-in providers**. Seeing it needs `settings:read` from the group in the home tenant or `platform-sign-in:read` from a [platform group](/user-guide/admin/tenants#platform-groups). Only a platform admin adds, changes, switches and deletes providers, since a provider signs in as anyone of its emails.
+Open **Users & Groups → SSO**, with more than one tenant **Platform → Users & Groups → Sign-in providers**. Seeing it needs `settings:read` from the group in the home tenant or `platform-sign-in:read` from a [platform group](/user-guide/admin/tenants#platform-groups). `settings:read` of someone without a platform group shows every provider. Someone of a platform group of selected tenants, whichever of the two they hold, sees the providers of the platform and of those tenants, each with the people who work there, and the numbers above the list count only those. Only a platform admin adds, changes, switches and deletes providers, since a provider signs in as anyone of its emails.
 
 ::: warning A provider holds the keys to every account
 A provider that names the email of a user in DBackup signs in as that user, and DBackup asks no second factor after a sign-in through a provider. That is why only a platform admin adds or changes one. Add only providers you run or trust.
@@ -63,7 +63,7 @@ Without it only people who already have an account in DBackup sign in through th
 
 Deleting a group moves the new people of its providers where its members go. With **No group** a provider of the platform adds them without a group, and a provider of a tenant stops adding people, since it adds them into a group of its tenant only.
 
-A provider of the platform links an account that works only in customer tenants just for someone signed in to that account already, who clicks **Link** beside the provider under **Profile**. A first sign-in through it never takes over such an account by its email.
+A provider of the platform links an account that works only in customer tenants just for someone signed in to that account already, who clicks **Link** beside the provider under **Profile**. A first sign-in through it never takes over such an account by its email, and ends on the login page with **Account not linked**. A provider signs in only accounts linked to it.
 
 ## Providers of a Tenant
 
@@ -73,7 +73,8 @@ A provider belongs to the platform or to one [tenant](/user-guide/admin/tenants)
 - It needs an **Email domain**, and while it adds new people, a group of its tenant. Without a group it adds nobody. One domain belongs to one provider, also among the providers of the platform.
 - It signs in only emails of exactly its domain, never a subdomain, a platform admin or an account of a platform group.
 - New people land in its tenant with its group. An existing account of its domain that works in no tenant yet joins the tenant with that group on its first sign-in through it, while the provider adds new people. Without that, only members of the tenant sign in through it.
-- It never links an account that works in other tenants but not in its own, since another tenant made that account.
+- It never links or signs in an account that works in other tenants but not in its own, also one linked before, since another tenant made that account.
+- A provider of the platform adds nobody whose email has its domain. The login page then says **Your organization has its own sign-in**, and the person enters their email to sign in through the provider of their tenant.
 - An account outside its tenant gets an email of its domain only from a platform admin or someone who manages the accounts of the platform, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant), so the admin of another tenant never makes an account it would sign in to.
 - Deleting the tenant deletes its providers and the links to them. The accounts stay.
 
@@ -139,7 +140,7 @@ Create the first administrator and configure your provider **before** setting th
 OIDC_AUTO_REDIRECT=authentik
 ```
 
-The redirect is skipped after a failed sign-in, so the error is readable instead of looping, and on the page load right after signing out, so signing out works. An ID matching no enabled provider logs an error at startup and leaves the redirect off rather than stopping the application.
+The redirect is skipped after a failed sign-in, so the error is readable instead of looping, and on the page load right after signing out, so signing out works. An ID matching no enabled provider, or a provider of a tenant, logs an error at startup and leaves the redirect off rather than stopping the application.
 
 While it waits for the provider, the page offers **Sign in another way**, which shows the login form for that one visit.
 

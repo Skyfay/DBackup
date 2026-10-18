@@ -148,9 +148,11 @@ async function assertChainComplete(
 export async function openArchiveForRestore(
     storageConfigId: string,
     file: string,
-    override?: KeyOverride
+    override?: KeyOverride,
+    /** The tenant whose view of the destination the path is in, the tenant of the code that runs when left out. */
+    viewerTenantId?: string | null
 ): Promise<OpenedArchive> {
-    const { adapter, config } = await resolveStorageAdapter(storageConfigId);
+    const { adapter, config } = await resolveStorageAdapter(storageConfigId, viewerTenantId);
     const meta = await readBackupMetadata(adapter, config, file);
 
     if (meta.archive?.formatVersion !== 2) {

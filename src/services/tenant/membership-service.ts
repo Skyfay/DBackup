@@ -17,6 +17,17 @@ export function peopleOf(tenantId: string): Prisma.UserWhereInput {
         : { memberships: { some: { tenantId } } };
 }
 
+/**
+ * The accounts with a membership in one of these tenants: the people a platform group of some
+ * tenants sees on the platform. An account in no tenant, one of the platform alone too, counts as
+ * one of the home tenant, where it shows and whose admins give it a group, like `accountRefusal`
+ * counts it for a change.
+ */
+export function membersOfAny(tenantIds: readonly string[]): Prisma.UserWhereInput {
+    const working: Prisma.UserWhereInput = { memberships: { some: { tenantId: { in: [...tenantIds] } } } };
+    return tenantIds.includes(HOME_TENANT_ID) ? { OR: [working, { memberships: { none: {} } }] } : working;
+}
+
 /** The membership of an account in one tenant, as a select that leaves the others out. */
 export function roleIn(tenantId: string) {
     return {

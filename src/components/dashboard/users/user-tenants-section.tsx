@@ -14,7 +14,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { UserRow, UsersGroup } from "@/services/user/users-types";
-import { groupsOfTenant } from "./user-access";
+import { givableIn, type TenantReach } from "./user-access";
 import { GroupPicker } from "./user-group-picker";
 import { TenantField, tenantGroupsMeta } from "./user-tenant-field";
 import { namedTenants, onPlatform, type NamedTenantRole } from "./user-tenants";
@@ -25,8 +25,12 @@ interface UserTenantsSectionProps {
     /** A row of All tenants, which names every tenant of the account. */
     user: UserRow;
     groups: UsersGroup[];
-    /** A platform admin who may change users gives and takes the group of each tenant. */
+    /** Whoever may manage the tenants gives and takes the group of each tenant they look after. */
     canManage: boolean;
+    /** The tenants whose members the viewer looks after, those their platform group reaches. Null for every tenant. */
+    managedTenants?: readonly string[] | null;
+    /** The groups the viewer may give, each in its tenant. Null for every group. */
+    givableGroups?: readonly string[] | null;
     onChanged: () => void;
 }
 
@@ -34,10 +38,11 @@ interface UserTenantsSectionProps {
  * The tenants of an account on the list of every account, in place of the access of one group:
  * each tenant with the group there, picked from the groups of that tenant, Remove from the tenant,
  * and Add to a tenant with one of its groups. Each change is one membership, written into the log
- * of that tenant. Only a platform admin makes it, who manages every tenant, so a tenant may be left
- * without anyone else who manages its members, or without members at all.
+ * of that tenant. A platform admin changes every tenant, so a tenant may be left without anyone
+ * else who manages its members, or without members at all. Someone of a platform group changes only
+ * the tenants it reaches, with the groups that may do no more than they may there, like the server.
  */
-export function UserTenantsSection({ user, groups, canManage, onChanged }: UserTenantsSectionProps) {
+export function UserTenantsSection({ user, groups, canManage, managedTenants = null, givableGroups = null, onChanged }: UserTenantsSectionProps) {
     const nameOf = useTenantName();
     const { tenants } = useTenantView();
     const roles = namedTenants(user.tenants ?? [], nameOf);
@@ -47,7 +52,11 @@ export function UserTenantsSection({ user, groups, canManage, onChanged }: UserT
     const [newTenant, setNewTenant] = useState("");
     const [newGroup, setNewGroup] = useState("");
 
-    const open = tenants.filter((tenant) => !roles.some((role) => role.tenantId === tenant.id));
+    const reach: TenantReach = { managedTenants, givableGroups };
+    // A tenant to add to is one the viewer looks after and may give a group in.
+    const open = canManage ? tenants.filter((tenant) => !roles.some((role) => role.tenantId === tenant.id) && givableIn(groups, tenant.id, reach).length > 0) : [];
+    // A group the viewer may not give they may not take either, so its row stays as it is.
+    const changeable = (role: NamedTenantRole) => canManage && givableIn(groups, role.tenantId, reach).some((group) => group.id === role.group.id);
 
     /** Gives the group in a tenant, or takes the account out of it with null. True when it went through. */
     const save = async (tenantId: string, groupId: string | null, done: string): Promise<boolean> => {
@@ -111,7 +120,8 @@ export function UserTenantsSection({ user, groups, canManage, onChanged }: UserT
                 <ul className="divide-y border-y">
                     {roles.map((role) => {
                         const group = groups.find((entry) => entry.id === role.group.id);
-                        const offered = groupsOfTenant(groups, role.tenantId);
+                        // Only the groups the viewer may give there, which the server checks the same.
+                        const offered = givableIn(groups, role.tenantId, reach);
                         return (
                             <li key={role.tenantId} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
                                 <TenantTileMark name={role.tenantName} className="size-8 rounded-lg" />
@@ -124,11 +134,12 @@ export function UserTenantsSection({ user, groups, canManage, onChanged }: UserT
                                         {group ? accessLine(summarizeAccess(group.permissions, group.superAdmin)) : role.group.name}
                                     </div>
                                 </div>
-                                {canManage ? (
+                                {changeable(role) ? (
                                     <div className="flex w-full min-w-0 items-center gap-2 sm:w-56">
                                         <div className="min-w-0 flex-1">
                                             <GroupPicker
                                                 groups={offered}
+                                                // The groups are those the viewer may give in that tenant already, see `givableIn`.
                                                 viewerPlatformAdmin
                                                 allowNone={false}
                                                 value={role.group.id}
@@ -180,7 +191,8 @@ export function UserTenantsSection({ user, groups, canManage, onChanged }: UserT
                             aria-label="The tenant"
                         />
                         <GroupPicker
-                            groups={newTenant ? groupsOfTenant(groups, newTenant) : []}
+                            groups={newTenant ? givableIn(groups, newTenant, reach) : []}
+                            // The groups are those the viewer may give in that tenant already, see `givableIn`.
                             viewerPlatformAdmin
                             allowNone={false}
                             value={newGroup}

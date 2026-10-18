@@ -290,15 +290,16 @@ export class StorageExplorerService {
 
     /**
      * The run that made a backup while History still has it. Asked for one backup at a time, when its
-     * details open, since History keeps no index by path.
+     * details open, since History keeps no index by path. In All tenants two tenants can each have a
+     * backup at the same path, so the tenant of the backup is named there.
      */
-    async getExecution(path: string): Promise<RunExecution | null> {
+    async getExecution(path: string, tenantId?: string | null): Promise<RunExecution | null> {
         const normalized = normalizePath(path);
-        return (await this.executionsFor([normalized])).get(normalized) ?? null;
+        return (await this.executionsFor([normalized], tenantId ?? undefined)).get(normalized) ?? null;
     }
 
-    /** The runs History still holds for these backups, by path. */
-    private async executionsFor(paths: string[]): Promise<Map<string, RunExecution>> {
+    /** The runs History still holds for these backups, by path, only of the tenant given. */
+    private async executionsFor(paths: string[], tenantId?: string): Promise<Map<string, RunExecution>> {
         if (paths.length === 0) return new Map();
         // The runner records the path without a leading slash, older runs may have one.
         const candidates = paths.flatMap((path) => [path, `/${path}`]);
@@ -306,7 +307,7 @@ export class StorageExplorerService {
         // In slices, so a long list of backups stays under SQLite's limit of variables.
         for (let start = 0; start < candidates.length; start += EXECUTION_LOOKUP_SLICE) {
             rows.push(...await prisma.execution.findMany({
-                where: { path: { in: candidates.slice(start, start + EXECUTION_LOOKUP_SLICE) } },
+                where: { path: { in: candidates.slice(start, start + EXECUTION_LOOKUP_SLICE) }, ...(tenantId ? { tenantId } : {}) },
                 select: { id: true, status: true, startedAt: true, endedAt: true, path: true },
             }));
         }

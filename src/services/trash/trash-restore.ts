@@ -250,12 +250,22 @@ async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): P
     for (const account of snapshot.accounts) await tx.account.create({ data: account });
     if (snapshot.twoFactor) await tx.twoFactor.create({ data: snapshot.twoFactor });
     for (const passkey of snapshot.passkeys) await tx.passkey.create({ data: passkey });
-    // Its keys go back into the tenants they were made in, the home tenant for an earlier version.
+    // Its keys go back into the tenants they were made in, the home tenant for an earlier version. A
+    // key that comes back is one more of the tenant, which the platform may not let it make, like
+    // `assertMayAddKind` asks for a new one.
+    const keysRefused = new Map<string, number>();
     for (const apiKey of snapshot.apiKeys) {
         const tenantId = (apiKey as { tenantId?: string }).tenantId ?? HOME_TENANT_ID;
-        if (await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } })) {
-            await runAsSystem(() => tx.apiKey.create({ data: { ...apiKey, tenantId } }));
+        const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { name: true, addsApiKeys: true } });
+        if (!tenant) continue;
+        if (!tenant.addsApiKeys) {
+            keysRefused.set(tenant.name, (keysRefused.get(tenant.name) ?? 0) + 1);
+            continue;
         }
+        await runAsSystem(() => tx.apiKey.create({ data: { ...apiKey, tenantId } }));
+    }
+    for (const [tenant, count] of keysRefused) {
+        notes.push(`${plural(count, "API key is", "API keys are")} left out, ${tenant} makes no API keys.`);
     }
     for (const preference of snapshot.preferences) await tx.userPreference.create({ data: preference });
     if (snapshot.avatar) {

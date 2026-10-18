@@ -21,14 +21,14 @@ Go to **Users & Groups** in the sidebar. The **Users** tab lists the people of t
 | Column | Shows |
 | :--- | :--- |
 | **User** | Name and email. Your own row is marked **You**, a platform admin **Platform admin** |
-| **Group** | The group of the user in the open tenant, or **No group** in amber |
+| **Group** | The group of the user in the open tenant, or **No group** in amber. A platform admin or someone of a platform group without one shows **Platform only**, since the platform decides what they open |
 | **Signs in with** | Password, passkeys and the SSO providers linked to the account |
 | **2FA** | **App** or **Passkey** when DBackup asks for a second factor, **Via SSO** for a user who only signs in through SSO, **Off** otherwise |
 | **Last sign-in** | When and with which browser, from the audit log and the sessions |
 | **Sessions** | Browsers signed in as the user right now |
 | **API keys** | Keys the user owns |
 
-The numbers above the list count the users without a group, the users who sign in with a password alone, who signed in during the last 30 days and the open sessions. The quick filters **No second factor** and **No group** find the users that need a look. On a phone the users show as cards.
+The numbers above the list count the users without a group, leaving out those marked **Platform only**, the users who sign in with a password alone, who signed in during the last 30 days and the open sessions. The quick filters **No second factor** and **No group** find the users that need a look. On a phone the users show as cards.
 
 ## Create a User
 
@@ -38,7 +38,7 @@ The numbers above the list count the users without a group, the users who sign i
 4. Pick the group from the list. Each row says what the group lets its members do, and the search finds a group by its name or by those words
 5. Click **Create user**
 
-The user joins the open tenant with that group, can sign in right away and changes the password under **Profile → Security**. An email that has an account already cannot get a second one, invite that person instead. An email whose domain the sign-in provider of another tenant claims is refused, unless you are a platform admin or hold `platform-accounts:write`, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant). The same holds for Edit and for the own profile.
+The user joins the open tenant with that group, can sign in right away and changes the password under **Profile → Security**. An email that has an account already cannot get a second one, invite that person instead. An email whose domain the sign-in provider of another tenant claims is refused, unless you are a platform admin or hold `platform-accounts:write` through a platform group that reaches that tenant, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant). The same holds for Edit and for the own profile.
 
 ::: info No group and platform admins
 **No group** creates a user who signs in but sees and does nothing until someone picks a group. Such an account belongs to no tenant and shows in the home tenant, so pick a group when you create one in another tenant. The list leaves out every group that may do more than you may. Only a platform admin makes someone a platform admin, on the page [Tenants](/user-guide/admin/tenants#members).
@@ -62,7 +62,7 @@ A click on a user opens a panel:
 
 ## Admin Actions
 
-All of them need the permission to manage users, or to manage the accounts of the platform (`platform-accounts:write`), and are written to the audit log. An account belongs to every tenant it works in, so the admin of a tenant changes its password, second factor, sessions, name and email, and deletes it, only while it works in that tenant alone. An account that also works in another tenant is changed by a platform admin or by whoever holds `platform-accounts:write`. The account of a platform admin is changed by a platform admin only, and an account of a [platform group](/user-guide/admin/tenants#platform-groups) by a platform admin or by someone with `platform-accounts:write` who may give that platform group.
+All of them need the permission to manage users, or to manage the accounts of the platform (`platform-accounts:write`), and are written to the audit log. An account belongs to every tenant it works in, so the admin of a tenant changes its password, second factor, sessions, name and email, and deletes it, only while it works in that tenant alone. An account that also works in another tenant is changed by a platform admin or by whoever holds `platform-accounts:write`, someone of a platform group of selected tenants only while their platform group reaches every tenant the account works in. The account of a platform admin is changed by a platform admin only, and an account of a [platform group](/user-guide/admin/tenants#platform-groups) by a platform admin or by someone with `platform-accounts:write` who may give that platform group.
 
 Your own account follows your profile: Edit changes your own name and email only as far as the **Own profile** permissions of your group allow, whatever else it gives, and your own second factor changes under **Profile → Security**, never with **Reset 2FA**.
 
@@ -95,9 +95,9 @@ A deleted user waits in [Recently deleted](/user-guide/admin/recently-deleted) f
 
 ## Every Account of the Instance
 
-With more than one tenant, **Users & Groups** under **Administration** is about the open tenant, and every account of the instance is under **Platform → Users & Groups**, for a platform admin and whoever holds `platform-accounts:read`. In [All tenants](/user-guide/admin/tenants#all-tenants) the **Users & Groups** of Administration asks for the tenant to open. The list shows every account once. The column **Tenants** names each tenant the account works in with its group there, and **No tenant** marks an account that works in none and so sees nothing. A platform admin or someone of a platform group in no tenant shows **Platform only** instead, since the platform group decides which tenants they open.
+With more than one tenant, **Users & Groups** under **Administration** is about the open tenant, and every account of the instance is under **Platform → Users & Groups**, for a platform admin and whoever holds `platform-accounts:read`. In [All tenants](/user-guide/admin/tenants#all-tenants) the **Users & Groups** of Administration asks for the tenant to open. The list shows every account once. The column **Tenants** names each tenant the account works in with its group there, and **No tenant** marks an account that works in none and so sees nothing. A platform admin or someone of a platform group in no tenant shows **Platform only** instead, since the platform group decides which tenants they open. Someone of a platform group of selected tenants sees the people who work in those tenants and their own account, each with only those of its tenants, see [Platform Groups](/user-guide/admin/tenants#platform-groups).
 
-- **New user** asks who the account is for. **Works in a tenant** is for the people of a customer, with the tenant and the group the account starts with. Outside the home tenant a group is required, and someone of a platform group picks only a tenant they may open. **Runs the platform** is for the people of the MSP, with a [platform group](/user-guide/admin/tenants#platform-groups) like Platform admin and no tenant. It shows to whoever may give platform groups, Platform admin only to a platform admin, and asks once more before it makes one.
+- **New user** asks who the account is for. **Works in a tenant** is for the people of a customer, with the tenant and the group the account starts with. Outside the home tenant a group is required. Someone of a platform group picks only a tenant their platform group reaches with `platform-accounts:write` or one whose users they manage, and only a group they may give there. **Runs the platform** is for the people of the MSP, with a [platform group](/user-guide/admin/tenants#platform-groups) like Platform admin and no tenant. It shows to a platform admin and to someone of a platform group of all tenants who may give platform groups, Platform admin only to a platform admin, and asks once more before it makes one.
 - **Edit** changes the name, the email, the [platform group](/user-guide/admin/tenants#platform-groups) and the tenants: each tenant with the group there, **Remove** and **Add to a tenant**. Every row says what **Save changes** does there, and nothing changes before it. The section **Tenants** of the panel of a user does the same at once. Both follow the rules of [Members](/user-guide/admin/tenants#members), and giving or taking Platform admin asks first.
 - The tab **Tenant groups** lists the groups of every tenant read only, each with its tenant. **Open in its tenant** in the menu of a row switches there, where the admins of that tenant change and delete its groups.
 - **Platform groups** and **Tenant groups** select rows for **Delete**. A group for tenants that people hold is deleted on its own, where its dialog asks where they go. **Columns** hides and orders the columns of both, which stay as you left them.
@@ -166,6 +166,10 @@ The user has no group in the open tenant. Open the user and click **Change group
 ### "This account also works in other tenants"
 
 The account works in another tenant as well, or holds a platform group, so only a platform admin or someone who manages the accounts of the platform changes it. See [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant).
+
+### "This account works in a tenant your platform group does not reach"
+
+Your platform group manages the accounts of selected tenants, and the account also works in another one, or in none while the home tenant is not one of them. Only a platform admin or someone whose platform group reaches all of its tenants changes it. See [Platform Groups](/user-guide/admin/tenants#platform-groups).
 
 ## Next Steps
 

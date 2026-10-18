@@ -12,6 +12,7 @@ const log = logger.child({ route: "platform/users" });
  * The Users tab of Users & Groups under Platform: every account of the instance once, with its
  * tenants, its group in each and its platform group, from whichever tenant the viewer opens it.
  * For whoever may see the accounts of the platform, never an API key. Never a password hash or a token.
+ * Someone of a platform group of some tenants sees the people of those tenants, see `getAllUsersModel`.
  */
 export async function GET() {
     const ctx = await getAuthContext(await headers());

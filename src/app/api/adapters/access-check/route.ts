@@ -5,8 +5,8 @@ import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import { registerAdapters } from "@/lib/adapters";
 import { applyStoredSecrets, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
+import { getManagePermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
 import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { PermissionError } from "@/lib/logging/errors";
@@ -29,11 +29,15 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
         }
 
-        const requiredPermission = getPermissionForAdapter(adapterId);
+        // A config of a form runs as it came, with the options and programs it names, so only
+        // someone who may change connections of the kind tries one.
+        const requiredPermission = getManagePermissionForAdapter(adapterId);
         if (!requiredPermission) {
             return NextResponse.json({ success: false, message: "Unsupported adapter" }, { status: 400 });
         }
         checkPermissionWithContext(ctx, requiredPermission);
+        // A config of a form runs in one tenant, All tenants belongs to none.
+        tenantOf(ctx);
         if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
 
         const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;

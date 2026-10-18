@@ -22,12 +22,18 @@ export interface ExistingEntry {
     detail: string;
     /** The adapter of a connection. A key has none. */
     adapterId?: string;
+    /** A destination another tenant shares that takes only encrypted backups. */
+    encryptedOnly?: boolean;
 }
 
-function toEntry(config: AdapterConfig): ExistingEntry {
+export function toEntry(config: AdapterConfig): ExistingEntry {
     const type = getAdapterDefinition(config.adapterId)?.name ?? config.adapterId;
     // Where a connection another tenant shares points stays with that tenant.
-    if (config.provided) return { id: config.id, name: config.name, adapterId: config.adapterId, detail: `${type} · provided by ${config.provided.providerName}` };
+    if (config.provided) {
+        const encryptedOnly = config.provided.encryptedOnly && config.type === "storage";
+        const detail = `${type} · provided by ${config.provided.providerName}${encryptedOnly ? " · only encrypted backups" : ""}`;
+        return { id: config.id, name: config.name, adapterId: config.adapterId, detail, ...(encryptedOnly ? { encryptedOnly } : {}) };
+    }
     const address = connectionAddress(config.adapterId, config.config);
     return { id: config.id, name: config.name, adapterId: config.adapterId, detail: address ? `${type} · ${address}` : type };
 }

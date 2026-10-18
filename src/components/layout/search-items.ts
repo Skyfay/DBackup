@@ -178,7 +178,10 @@ function rowsOf(hit: SearchHit): SearchItem[] {
         case "run":
             return [{ key: `run:${hit.id}`, group: "runs", title: `Run of ${hit.name}`, sub: "", state: RUN_WORDS[hit.status] ?? hit.status, at: hit.startedAt, kind: "Run", href: runHref(hit.id), adapterId: hit.adapterId, needs: [PERMISSIONS.HISTORY.READ] }];
         case "user":
-            return [{ key: `user:${hit.id}`, group: "access", title: hit.name, sub: personLine(hit), kind: "User", href: link("/dashboard/users", { tab: "users", open: hit.id }), icon: "user", needs: [PERMISSIONS.USERS.READ] }];
+            // In All tenants (`tenants` set) an account of the whole instance, which Platform lists.
+            return [hit.tenants !== undefined
+                ? { key: `user:${hit.id}`, group: "access", title: hit.name, sub: personLine(hit), kind: "User", href: link("/dashboard/platform/users", { tab: "users", open: hit.id }), icon: "user", needs: [PERMISSIONS.PLATFORM.ACCOUNTS_READ] }
+                : { key: `user:${hit.id}`, group: "access", title: hit.name, sub: personLine(hit), kind: "User", href: link("/dashboard/users", { tab: "users", open: hit.id }), icon: "user", needs: [PERMISSIONS.USERS.READ] }];
         case "group":
             return [{ key: `group:${hit.id}`, group: "access", title: hit.name, sub: count(hit.people, "person", "people"), kind: "Group", href: link("/dashboard/users", { tab: "groups", open: hit.id }), icon: "group", needs: [PERMISSIONS.GROUPS.READ] }];
         case "apiKey":

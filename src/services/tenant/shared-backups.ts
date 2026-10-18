@@ -4,6 +4,7 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { matchesPattern, ownerAt, type AssignmentFact, type RuleFact } from "@/lib/tenant/database-owner";
 import { normalizePath } from "@/services/storage/explorer-model";
 import { storageService, type RichFileInfo } from "@/services/storage/storage-service";
+import { providedTo } from "@/services/sharing/provided";
 
 /**
  * The backups of a shared server as plain records: every backup of the server at the destinations
@@ -40,23 +41,26 @@ function fromServer(file: RichFileInfo, sourceId: string, jobsOfServer: Set<stri
 
 /**
  * Every backup of a server that lets one database out on its own, at every destination of the
- * server's tenant, so a backup of a job deleted since still counts. An archive of earlier versions
- * holds the whole server in one file and is left out. A deleted server that shared databases still
- * has its backups, found by the server they name.
+ * server's tenant and every destination another tenant shares with it, so a backup of a job deleted
+ * since still counts. An archive of earlier versions holds the whole server in one file and is left
+ * out. A deleted server that shared databases still has its backups, found by the server they name.
  */
 export async function serverBackupFiles(sourceId: string): Promise<ServerBackupFile[]> {
     const source = (await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { tenantId: true } }))
         ?? (await prisma.sharedServer.findUnique({ where: { id: sourceId }, select: { tenantId: true } }));
     if (!source) return [];
-    const [jobs, destinations] = await Promise.all([
+    const [jobs, own, provided] = await Promise.all([
         prisma.job.findMany({ where: { sourceId }, select: { id: true } }),
         prisma.adapterConfig.findMany({ where: { tenantId: source.tenantId, type: "storage", storageRole: STORAGE_ROLES.DESTINATION }, select: { id: true }, orderBy: { name: "asc" } }),
+        providedTo(source.tenantId, { kind: "destination" }),
     ]);
     const jobsOfServer = new Set(jobs.map((job) => job.id));
+    const destinations = [...own, ...provided.map((destination) => ({ id: destination.id }))];
 
     const found: ServerBackupFile[] = [];
     for (const destination of destinations) {
-        // The listing of the server's tenant, never one of a customer the destination is shared with.
+        // The listing of the server's tenant, never one of a customer the destination is shared
+        // with. On a destination another tenant shares, it holds the folder of the server's tenant.
         const listing = await storageService.readCachedListing(destination.id, source.tenantId);
         for (const file of listing?.files ?? []) {
             if (!file.hasFileIndex || !file.createdAt || !file.databases?.length) continue;

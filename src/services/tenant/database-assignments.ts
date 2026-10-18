@@ -1,9 +1,11 @@
 import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { holderAt, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
+import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
+import { assertChangesReached, assertReached, assertRuleReached } from "./assignment-reach";
 import { movesOf } from "./database-moves";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
-import { assertCustomer, listedDatabases, onDemandValue, ownSource, rememberServer, sharesWithCustomers, tenantOnDemand } from "./shared-servers";
+import { assertCustomer, listedDatabases, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
 
 export { listedDatabases, sharesWithCustomers };
 
@@ -14,7 +16,9 @@ export { listedDatabases, sharesWithCustomers };
  * reads them through `shared-databases.ts`.
  *
  * Only a server of a tenant that shares databases, one of the MSP's own, is shared. A customer
- * keeps their servers to themselves and never learns which other tenants exist.
+ * keeps their servers to themselves and never learns which other tenants exist. Every change takes
+ * the `PlatformReach` of the person, so someone of a platform group of some tenants gives to and
+ * takes from the tenants it reaches only, see `assignment-reach.ts`.
  */
 
 /** A database on a server, the other end of a move. */
@@ -78,8 +82,10 @@ export interface SourceAssignments {
     assignments: AssignmentRow[];
     /** Every rule, the ended ones too, which still decide the backups of their time. */
     rules: RuleRow[];
-    /** The tenants a database can be given to: every tenant but the one of the server. */
+    /** The tenants the viewer may give a database to: every tenant but the one of the server that the platform group of the viewer reaches. */
     customers: { id: string; name: string }[];
+    /** Every tenant but the one of the server, for the names of the filters. */
+    tenants: { id: string; name: string }[];
     /** When each database a tenant ever held was backed up, of the backups kept, oldest first, by its name. */
     backupDates: Record<string, string[]>;
 }
@@ -113,7 +119,7 @@ async function tenantNames(ids: readonly (string | null)[]): Promise<(id: string
 
 export const databaseAssignmentService = {
     /** The databases of a server with who each belongs to, the assignments and the rules. */
-    async forSource(sourceId: string, now = new Date()): Promise<SourceAssignments> {
+    async forSource(sourceId: string, now = new Date(), reach: PlatformReach = "all"): Promise<SourceAssignments> {
         const source = await ownSource(sourceId);
         const [listed, assignments, rules, tenants, files] = await Promise.all([
             listedDatabases(sourceId),
@@ -172,7 +178,8 @@ export const databaseAssignmentService = {
                 onDemandPerDay: assignment.onDemandPerDay,
             })),
             rules: rules.map((rule) => ruleRow(rule, nameOf(rule.tenantId), perDay.get(rule.tenantId) ?? null)),
-            customers: tenants,
+            customers: tenants.filter((tenant) => reachCovers(reach, tenant.id)),
+            tenants,
             // Only of the databases a tenant ever held, whose timeline counts the backups of each time.
             backupDates: Object.fromEntries([...dates].filter(([name]) =>
                 assignments.some((assignment) => assignment.databaseName === name) || rules.some((rule) => matchesPattern(rule.pattern, name)))),
@@ -185,9 +192,11 @@ export const databaseAssignmentService = {
      * the customer they belonged to then. Taking a database back is recorded too, so it belongs to
      * the server's tenant alone from then on, also when a rule matches its name. A start in the past
      * shows older backups, but only of times no other customer held the database, see `holderAt`.
-     * Returns how many changed.
+     * A database the tenant holds already, by name or by a rule, stays as it is, its start and its
+     * backups on demand included. A change that gives to or takes from a tenant beyond the reach is
+     * refused, and nothing changes. Returns how many changed.
      */
-    async assign(sourceId: string, changes: AssignmentChange[], by: string | null, now = new Date()): Promise<{ changed: number }> {
+    async assign(sourceId: string, changes: AssignmentChange[], by: string | null, now = new Date(), reach: PlatformReach = "all"): Promise<{ changed: number }> {
         const source = await ownSource(sourceId);
         for (const change of changes) {
             if (!change.databaseName.trim()) throw new ValidationError("Name the database.");
@@ -197,14 +206,16 @@ export const databaseAssignmentService = {
 
         let changed = 0;
         await prisma.$transaction(async (tx) => {
-            if (changes.length > 0) await rememberServer(tx, source);
             const rules = await tx.databaseAssignmentRule.findMany({ where: { sourceId } });
+            await assertChangesReached(tx, sourceId, changes, rules, reach, now);
+            if (changes.length > 0) await rememberServer(tx, source);
             for (const change of changes) {
                 const assignments = await tx.databaseAssignment.findMany({ where: { sourceId, databaseName: change.databaseName } });
                 const current = assignments.find((assignment) => assignment.validUntil === null) ?? null;
                 if (current && current.tenantId === change.tenantId) continue;
-                // Taking back what nobody holds changes nothing.
-                if (!change.tenantId && !current && ownerAt(assignments, rules, change.databaseName, now) === null) continue;
+                // Giving it to the tenant a rule gives it to already, or taking back what nobody
+                // holds, changes nothing.
+                if (!current && ownerAt(assignments, rules, change.databaseName, now) === change.tenantId) continue;
                 if (current) await tx.databaseAssignment.update({ where: { id: current.id }, data: { validUntil: now } });
                 // Never earlier than the end of the one before, or a backup would belong to two customers.
                 const ended = assignments.reduce<Date | null>((latest, assignment) => {
@@ -219,17 +230,19 @@ export const databaseAssignmentService = {
                 changed++;
             }
         });
+        if (changed > 0) sharingChanged();
         return { changed };
     },
 
     /** Adds a rule that gives the databases whose names match the pattern to a customer. */
-    async addRule(sourceId: string, input: { pattern: string; tenantId: string; priority?: number; validFrom?: Date; onDemandPerDay?: number | null }, now = new Date()): Promise<RuleRow> {
+    async addRule(sourceId: string, input: { pattern: string; tenantId: string; priority?: number; validFrom?: Date; onDemandPerDay?: number | null }, now = new Date(), reach: PlatformReach = "all"): Promise<RuleRow> {
         const source = await ownSource(sourceId);
         const pattern = input.pattern.trim();
         if (!pattern) throw new ValidationError("Enter a pattern, like shop_*.");
         if (pattern.length > PATTERN_MAX) throw new ValidationError(`A pattern can have at most ${PATTERN_MAX} characters.`);
         await assertCustomer(input.tenantId, source.tenantId);
         if (input.validFrom && input.validFrom.getTime() > now.getTime()) throw new ValidationError("A rule starts today or earlier.");
+        await assertRuleReached(sourceId, { pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now }, reach, now);
         const onDemandPerDay = onDemandValue(input.onDemandPerDay);
         const rule = await prisma.$transaction(async (tx) => {
             await rememberServer(tx, source);
@@ -237,6 +250,7 @@ export const databaseAssignmentService = {
                 data: { sourceId, pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now, onDemandPerDay, createdAt: now },
             });
         });
+        sharingChanged();
         return ruleRow(rule, (await tenantNames([rule.tenantId]))(rule.tenantId), (await tenantOnDemand([rule.tenantId])).get(rule.tenantId) ?? null);
     },
 
@@ -245,11 +259,13 @@ export const databaseAssignmentService = {
      * takes them. The rule stays for the backups of its time, which stay with the customer it gave
      * them to, like those of an ended assignment.
      */
-    async removeRule(sourceId: string, ruleId: string, now = new Date()): Promise<{ pattern: string; tenantName: string }> {
+    async removeRule(sourceId: string, ruleId: string, now = new Date(), reach: PlatformReach = "all"): Promise<{ pattern: string; tenantName: string }> {
         await ownSource(sourceId);
         const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId, validUntil: null } });
         if (!rule) throw new NotFoundError("Rule", ruleId);
+        await assertReached(prisma, reach, rule.tenantId, (tenant) => OUTSIDE_REACH.rule(rule.pattern, tenant));
         await prisma.databaseAssignmentRule.update({ where: { id: ruleId }, data: { validUntil: now } });
+        sharingChanged();
         return { pattern: rule.pattern, tenantName: (await tenantNames([rule.tenantId]))(rule.tenantId) };
     },
 
@@ -258,22 +274,26 @@ export const databaseAssignmentService = {
      * its own, none with 0, or as many as the customer may of every database with null. It belongs
      * to the assignment of now, a later one starts as the customer.
      */
-    async setOnDemand(sourceId: string, databaseName: string, perDay: number | null): Promise<{ tenantName: string; before: number | null }> {
+    async setOnDemand(sourceId: string, databaseName: string, perDay: number | null, reach: PlatformReach = "all"): Promise<{ tenantName: string; before: number | null }> {
         await ownSource(sourceId);
         const value = onDemandValue(perDay);
         const current = await prisma.databaseAssignment.findFirst({ where: { sourceId, databaseName, validUntil: null, tenantId: { not: null } } });
-        if (!current?.tenantId) throw new ValidationError(`${databaseName} is given to no tenant by name. Switch backups on demand on for the rule that gives it, or give it by name first.`);
+        if (!current?.tenantId) throw new ValidationError(`${databaseName} is given to no tenant by name. Set backups on demand for the rule that gives it.`);
+        await assertReached(prisma, reach, current.tenantId, (tenant) => OUTSIDE_REACH.holder(databaseName, tenant));
         await prisma.databaseAssignment.update({ where: { id: current.id }, data: { onDemandPerDay: value } });
+        sharingChanged();
         return { tenantName: (await tenantNames([current.tenantId]))(current.tenantId), before: current.onDemandPerDay };
     },
 
     /** The same for every database a rule gives: `perDay` of its own, none with 0, or as the customer with null. */
-    async setRuleOnDemand(sourceId: string, ruleId: string, perDay: number | null): Promise<{ pattern: string; tenantName: string; before: number | null }> {
+    async setRuleOnDemand(sourceId: string, ruleId: string, perDay: number | null, reach: PlatformReach = "all"): Promise<{ pattern: string; tenantName: string; before: number | null }> {
         await ownSource(sourceId);
         const value = onDemandValue(perDay);
         const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId, validUntil: null } });
         if (!rule) throw new NotFoundError("Rule", ruleId);
+        await assertReached(prisma, reach, rule.tenantId, (tenant) => OUTSIDE_REACH.rule(rule.pattern, tenant));
         await prisma.databaseAssignmentRule.update({ where: { id: ruleId }, data: { onDemandPerDay: value } });
+        sharingChanged();
         return { pattern: rule.pattern, tenantName: (await tenantNames([rule.tenantId]))(rule.tenantId), before: rule.onDemandPerDay };
     },
 };

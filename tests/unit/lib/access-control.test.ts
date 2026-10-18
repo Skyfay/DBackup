@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AuthContext, checkAnyPermissionWithContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { ALL_TENANTS_REFUSAL, AuthContext, checkAnyPermissionWithContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PermissionError, ApiKeyError, AuthenticationError } from "@/lib/logging/errors";
 import { PERMISSIONS, AVAILABLE_PERMISSIONS, PLATFORM_ONLY_PERMISSIONS } from "@/lib/auth/permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
@@ -588,6 +588,19 @@ describe("Access Control", () => {
       expect(() => {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
       }).toThrow(PermissionError);
+    });
+
+    it("tells a platform admin in All tenants that the view only reads, instead of naming a right they hold in every tenant", () => {
+      const ctx = ctxOf({ isPlatformAdmin: true, allTenants: true, tenantId: null, authMethod: "session", permissions: [PERMISSIONS.SOURCES.READ] });
+
+      expect(() => checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.WRITE)).toThrow(ALL_TENANTS_REFUSAL);
+      expect(() => tenantOf(ctx)).toThrow(ALL_TENANTS_REFUSAL);
+    });
+
+    it("names the right that is missing outside All tenants, and for a read in All tenants", () => {
+      expect(() => checkPermissionWithContext(ctxOf({ permissions: [] }), PERMISSIONS.SOURCES.WRITE)).toThrow("Permission denied: sources:write required");
+      expect(() => checkPermissionWithContext(ctxOf({ allTenants: true, tenantId: null, permissions: [] }), PERMISSIONS.SOURCES.READ)).toThrow("Permission denied: sources:read required");
+      expect(() => tenantOf({ tenantId: null })).toThrow("You work in no tenant yet.");
     });
   });
 

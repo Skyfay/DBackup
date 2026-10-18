@@ -39,7 +39,7 @@ export function UserCard({ user, onOpen, actions }: UserCardProps) {
                 <div className="-mt-1 -mr-2">{actions}</div>
             </div>
             <div className="flex min-w-0 items-center gap-3">
-                {user.tenants ? <TenantsCell tenants={user.tenants} nameOf={tenantName} platform={onPlatform(user)} className="min-w-0" /> : <GroupTag group={user.group} />}
+                {user.tenants ? <TenantsCell tenants={user.tenants} nameOf={tenantName} platform={onPlatform(user)} className="min-w-0" /> : <GroupTag group={user.group} platform={onPlatform(user)} />}
                 <SecondFactorCell value={user.secondFactor} />
             </div>
             <MethodsCell methods={user.methods} />

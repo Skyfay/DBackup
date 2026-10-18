@@ -131,8 +131,9 @@ export function createRestoreLogs(options: RestoreLogsOptions): RestoreLogs {
             const endedAt = new Date();
             await end(executionId, status, endedAt, own);
             if (!providerRun || !full) return;
-            // The customer's run counts. The provider's run that cannot be ended is left to the
-            // watchdog, which fails it once its progress stops.
+            // The customer's run counts. The provider's run that cannot be ended here follows the
+            // customer's run, so the watchdog fails it a while after that run ended, see
+            // `endOrphanedFollowers`.
             await end(providerRun.id, status, endedAt, full).catch((error: unknown) => {
                 svcLog.error("Ending the provider's run of a restore failed", { executionId, providerRunId: providerRun.id }, wrapError(error));
             });

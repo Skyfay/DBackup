@@ -135,7 +135,8 @@ export async function acceptInvitation(token: string) {
         const sessionId = await currentSessionId();
         if (sessionId) await tenantService.setActive(sessionId, viewer.id, accepted.tenantId, viewer.isPlatformAdmin);
         revalidatePath("/dashboard", "layout");
-        return { success: true as const, data: { tenantName: accepted.tenantName, joined: accepted.joined } };
+        // The tenant by its id too, so the page tells the other tabs of the browser about the switch.
+        return { success: true as const, data: { tenantId: accepted.tenantId, tenantName: accepted.tenantName, joined: accepted.joined } };
     } catch (error: unknown) {
         if (!(error instanceof NotFoundError)) log.error("Accepting an invitation failed", {}, wrapError(error));
         return { success: false as const, error: messageOf(error, "The invitation could not be accepted.") };

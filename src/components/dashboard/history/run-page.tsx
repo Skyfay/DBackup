@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ScrollText } from "lucide-react";
 import { AllTenantsNotice } from "@/components/tenant/all-tenants-notice";
-import { useTenantView } from "@/components/tenant/tenant-view";
+import { useSwitchFromLink } from "@/components/tenant/tenant-from-link";
+import { useSeveralTenants, useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,6 +44,16 @@ function RunSkeleton() {
 }
 
 /**
+ * Why a run is not found. With several tenants it may be one of another tenant than the one the
+ * viewer works in, which All tenants would show.
+ */
+export function missingRunText(otherTenants: boolean): string {
+    return otherTenants
+        ? "It may belong to another tenant than the one you work in, or data retention may have removed it."
+        : "Data retention may have removed it.";
+}
+
+/**
  * A run as a page of its own: its steps on the left with every copy and notification, in the middle
  * what it did in plain words and its log as a second tab, and on the right how long it still takes
  * while it is live, or what to look at after. An integrity check and a verification show every copy
@@ -53,11 +64,14 @@ function RunSkeleton() {
  */
 export function RunPage({ access: given }: { access: RunAccess }) {
     const { allTenants } = useTenantView();
+    const severalTenants = useSeveralTenants();
     // Nothing of a tenant changes in All tenants. Its permissions lack the right to run jobs anyway.
     const access = allTenants ? { ...given, canExecute: false } : given;
     const searchParams = useSearchParams();
-    const id = searchParams.get("id");
-    const { run, error, loading, speed, reload } = useRun(id);
+    // A link of a notification that names another tenant waits until the dashboard switched into it.
+    const switching = useSwitchFromLink();
+    const id = switching ? null : searchParams.get("id");
+    const { run, error, missing, loading, speed, reload } = useRun(id);
     const [picked, setPicked] = useState<string | null>(null);
     const [focused, setFocused] = useState<string | null>(null);
     const now = useNow(run?.status === "Running" || run?.status === "Pending");
@@ -74,7 +88,7 @@ export function RunPage({ access: given }: { access: RunAccess }) {
             <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center">
                 <ScrollText className="size-8 text-muted-foreground" aria-hidden="true" />
                 <p className="font-medium">This run could not be found</p>
-                <p className="max-w-md text-sm text-muted-foreground">{error ?? "Data retention may have removed it."}</p>
+                <p className="max-w-md text-sm text-muted-foreground">{missing || !error ? missingRunText(severalTenants && !allTenants) : error}</p>
                 <Button variant="outline" asChild><Link href={origin.href}><ArrowLeft />Back to {origin.label}</Link></Button>
             </div>
         );

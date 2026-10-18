@@ -1,6 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { backupAuditDetails, fileRestoreTarget, restoreAuditDetails } from "@/services/storage/backup-audit";
+import { NotFoundError } from "@/lib/logging/errors";
+
+const mocks = vi.hoisted(() => ({ findDestination: vi.fn() }));
+
+vi.mock("@/services/sharing/destination-access", () => ({ findDestination: (...args: unknown[]) => mocks.findDestination(...args) }));
+
+const { backupAuditDetails, destinationAuditName, fileRestoreTarget, restoreAuditDetails } = await import("@/services/storage/backup-audit");
 
 const connections = [
     { id: "nas", name: "NAS" },
@@ -8,12 +14,21 @@ const connections = [
     { id: "local", name: "Local files" },
 ];
 
+/** A destination the platform shares with the tenant, which its filtered reads never find. */
+const PROVIDED = { id: "msp-s3", name: "MSP S3" };
+
 describe("what the audit log names of a backup", () => {
     beforeEach(() => {
         prismaMock.adapterConfig.findMany.mockImplementation((async (args: { where: { id: { in: string[] } } }) =>
             connections.filter((connection) => args.where.id.in.includes(connection.id))) as never);
         prismaMock.job.findFirst.mockImplementation((async (args: { where: { name: string } }) =>
             (args.where.name === "Shop" ? { name: "Shop" } : null)) as never);
+        // The destinations the tenant uses, its own and the one shared with it.
+        mocks.findDestination.mockImplementation(async (id: string) => {
+            const row = [...connections, PROVIDED].find((connection) => connection.id === id);
+            if (!row) throw new NotFoundError("Storage adapter", id);
+            return { row, mode: { kind: "own" }, tenantId: "acme" };
+        });
     });
 
     it("names the destination and the job whose folder the backup lies in, also in a chain folder", async () => {
@@ -31,8 +46,19 @@ describe("what the audit log names of a backup", () => {
         expect(await backupAuditDetails("nas", "Old name/shop.sql.gz")).toEqual({ file: "Old name/shop.sql.gz", destination: "NAS" });
     });
 
+    it("names a destination another tenant provides, which the filtered reads of the tenant never find", async () => {
+        expect(await backupAuditDetails("msp-s3", "Shop/shop.tar")).toEqual({ file: "Shop/shop.tar", destination: "MSP S3", job: "Shop" });
+        expect(await destinationAuditName("msp-s3")).toBe("MSP S3");
+        expect(mocks.findDestination).toHaveBeenCalledWith("msp-s3");
+    });
+
+    it("names no destination the tenant may not use", async () => {
+        expect(await backupAuditDetails("stranger", "Shop/shop.tar")).toEqual({ file: "Shop/shop.tar", job: "Shop" });
+    });
+
     it("still names the backup when the database cannot be read", async () => {
         prismaMock.adapterConfig.findMany.mockRejectedValue(new Error("database is locked"));
+        mocks.findDestination.mockRejectedValue(new Error("database is locked"));
         prismaMock.job.findFirst.mockRejectedValue(new Error("database is locked"));
 
         expect(await backupAuditDetails("nas", "Shop/shop.sql.gz")).toEqual({ file: "Shop/shop.sql.gz" });

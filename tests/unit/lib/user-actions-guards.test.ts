@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
     mayChangeSettings: true,
     viewer: null as unknown as TestViewer,
     viewerSession: "s-admin",
+    /** The tenants the platform group of the viewer reaches, which bounds the right to manage the accounts of the platform. */
+    reach: [] as "all" | string[],
     service: {
         createUser: vi.fn(),
         accountOf: vi.fn(),
@@ -37,6 +39,7 @@ const mocks = vi.hoisted(() => ({
         revokeSessions: vi.fn(),
         permissionsIn: vi.fn(),
         accountRefusalFor: vi.fn(),
+        accountsReachOf: vi.fn(),
     },
     groups: { find: vi.fn() },
     memberships: { setRole: vi.fn(), roleOf: vi.fn(), isPersonOf: vi.fn(), isPlatformAdmin: vi.fn() },
@@ -71,18 +74,21 @@ vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.f
 
 const { accountRefusal } = await vi.importActual<typeof import("@/lib/auth/account-access")>("@/lib/auth/account-access");
 
-/** The service decides with the real rule, from the accounts of the test. */
+/** The service decides with the real rule, from the accounts of the test and the reach of the viewer. */
 function decideAccounts() {
+    mocks.reach = [];
+    mocks.service.accountsReachOf.mockImplementation(async (caller: TestViewer) =>
+        caller.isPlatformAdmin ? "all" : caller.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE) ? mocks.reach : []);
     mocks.service.accountRefusalFor.mockImplementation(async (caller: TestViewer, id: string) => {
         const target = await mocks.service.accountOf(id);
-        return target ? accountRefusal({ ...caller, platformGroupShape: null }, target) : null;
+        return target ? accountRefusal({ ...caller, platformGroupShape: null, reach: await mocks.service.accountsReachOf(caller) }, target) : null;
     });
     mocks.memberships.isPersonOf.mockResolvedValue(true);
     mocks.memberships.isPlatformAdmin.mockResolvedValue(false);
     mocks.tenants.switchable.mockResolvedValue([{ id: HOME_TENANT_ID, name: "Home" }, { id: "tenant-a", name: "A" }]);
 }
 
-const { bulkDeleteUsers, createUser, deleteUser, updateUserGroup } = await import("@/app/actions/auth/user");
+const { bulkDeleteUsers, createUser, deleteUser, updateUser, updateUserGroup } = await import("@/app/actions/auth/user");
 const { resetUserTwoFactor, revokeUserSession, revokeUserSessions, setUserPassword } = await import("@/app/actions/auth/user-security");
 
 /** Manages the users of the home tenant, without every permission. */
@@ -130,6 +136,10 @@ const ACCOUNTS: Record<string, { isPlatformAdmin: boolean; tenantIds: string[]; 
     tech: { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID, "tenant-a"] },
     // Works for the customer alone.
     "cust-user": { isPlatformAdmin: false, tenantIds: ["tenant-a"] },
+    // Works for another customer alone.
+    "globex-user": { isPlatformAdmin: false, tenantIds: ["tenant-b"] },
+    // Works in no tenant yet, which counts as the home tenant.
+    fresh: { isPlatformAdmin: false, tenantIds: [] },
 };
 
 const PLATFORM_ONLY = "Only a platform admin can change the account of a platform admin.";
@@ -284,7 +294,7 @@ describe("what an admin may do to other users", () => {
         expect(result).toEqual({ success: true, data: { signedOut: 2 } });
         expect(mocks.setPassword).toHaveBeenCalledWith("lena", "a new password");
         expect(mocks.service.revokeSessions).toHaveBeenCalledWith("lena");
-        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Password Set", signedOut: 2 }, "lena");
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Password Set", signedOut: 2 }, "lena", { tenantId: HOME_TENANT_ID });
     });
 
     it("keeps the sessions when the admin says so", async () => {
@@ -408,6 +418,7 @@ describe("users in All tenants, where a platform admin opens no tenant", () => {
     it("creates a user in the tenant someone of a platform group names, with a group capped by what they may there", async () => {
         // Nina manages the accounts of the platform and works in the home tenant, where she may run jobs.
         mocks.viewer = { ...ADMIN, id: "nina", permissions: [PERMISSIONS.PLATFORM.ACCOUNTS_WRITE, PERMISSIONS.JOBS.READ] };
+        mocks.reach = ["tenant-a"];
         mocks.service.permissionsIn.mockResolvedValue([PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.EXECUTE]);
 
         expect(await createUser({ name: "Sara Nguyen", email: "sara@example.ch", password: "correct horse", groupId: "g-view", tenantId: "tenant-a" })).toEqual({ success: true, data: { id: "u-new" } });
@@ -438,5 +449,98 @@ describe("users in All tenants, where a platform admin opens no tenant", () => {
         expect(await setUserPassword("platform-tech", { password: "correct horse", signOut: true })).toEqual({ success: false, error: "This account holds a platform group. Only someone who may give that platform group can change it." });
         expect(await resetUserTwoFactor("platform-tech")).toEqual(expect.objectContaining({ success: false }));
         expect(mocks.setPassword).not.toHaveBeenCalled();
+    });
+});
+
+describe("the accounts someone of a platform group of some tenants changes", () => {
+    /** Nina manages the accounts of the platform with a platform group that reaches tenant A. She works in the home tenant, where she runs jobs. */
+    const NINA: TestViewer = { ...ADMIN, id: "nina", name: "Nina", permissions: [PERMISSIONS.PLATFORM.ACCOUNTS_READ, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE, PERMISSIONS.JOBS.READ] };
+    const BEYOND = "This account works in a tenant your platform group does not reach. Only someone who reaches all of its tenants can change it.";
+    const NEW_USER = { name: "Sara Nguyen", email: "sara@example.ch", password: "correct horse", groupId: "g-view" };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.allowed = true;
+        mocks.mayChangeSettings = true;
+        mocks.viewer = NINA;
+        mocks.service.accountOf.mockImplementation(async (id: string) => ACCOUNTS[id] ?? { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID] });
+        decideAccounts();
+        mocks.reach = ["tenant-a"];
+        mocks.tenants.switchable.mockResolvedValue([{ id: HOME_TENANT_ID, name: "Home" }, { id: "tenant-a", name: "A" }, { id: "tenant-b", name: "B" }]);
+        mocks.service.deleteUser.mockResolvedValue({ name: "Someone", email: "someone@example.ch" });
+        mocks.service.deleteUsers.mockImplementation(async (ids: string[]) => ({ succeeded: ids, failed: [] }));
+        mocks.service.namesOf.mockImplementation(async (ids: string[]) => ids.map((id) => ({ id, name: id })));
+        mocks.service.revokeSessions.mockResolvedValue(1);
+        mocks.service.createUser.mockResolvedValue({ id: "u-new" });
+        mocks.service.permissionsIn.mockResolvedValue([PERMISSIONS.JOBS.READ]);
+        mocks.groups.find.mockImplementation(async (id: string) => [VIEWERS, FULL_ACCESS, DELETERS].find((group) => group.id === id) ?? null);
+    });
+
+    it("refuses the password, second factor, sessions, name and delete of an account of a tenant beyond her platform group", async () => {
+        expect(await setUserPassword("globex-user", { password: "a new password", signOut: true })).toEqual({ success: false, error: BEYOND });
+        expect(await resetUserTwoFactor("globex-user")).toEqual({ success: false, error: BEYOND });
+        expect(await revokeUserSessions("globex-user")).toEqual({ success: false, error: BEYOND });
+        expect(await updateUser("globex-user", { name: "Renamed" })).toEqual({ success: false, error: BEYOND });
+        expect(await deleteUser("globex-user")).toEqual({ success: false, error: BEYOND });
+        // One tenant beyond her platform group is enough, the account belongs to all of them.
+        expect(await setUserPassword("tech", { password: "a new password", signOut: true })).toEqual({ success: false, error: BEYOND });
+        expect(mocks.setPassword).not.toHaveBeenCalled();
+        expect(mocks.service.resetTwoFactor).not.toHaveBeenCalled();
+        expect(mocks.service.revokeSessions).not.toHaveBeenCalled();
+        expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+    });
+
+    it("refuses an account of no tenant unless her platform group reaches the home tenant", async () => {
+        expect(await setUserPassword("fresh", { password: "a new password", signOut: true })).toEqual({ success: false, error: BEYOND });
+        expect(await deleteUser("fresh")).toEqual({ success: false, error: BEYOND });
+
+        mocks.reach = [HOME_TENANT_ID, "tenant-a"];
+        expect(await deleteUser("fresh")).toEqual({ success: true });
+    });
+
+    it("changes an account of a tenant her platform group reaches", async () => {
+        expect((await setUserPassword("cust-user", { password: "a new password", signOut: true })).success).toBe(true);
+        expect(mocks.setPassword).toHaveBeenCalledWith("cust-user", "a new password");
+        expect(await deleteUser("cust-user")).toEqual({ success: true });
+    });
+
+    it("reports an account beyond her platform group in a bulk delete instead of sending it", async () => {
+        const result = await bulkDeleteUsers(["cust-user", "globex-user"]);
+
+        expect(mocks.service.deleteUsers).toHaveBeenCalledWith(["cust-user"], { permanently: false, by: "nina" });
+        expect(result).toEqual({ success: true, data: { succeeded: ["cust-user"], failed: [{ id: "globex-user", name: "globex-user", error: BEYOND }] } });
+    });
+
+    it("keeps what she may as the admin of her own tenant, an account of that tenant alone", async () => {
+        mocks.viewer = { ...NINA, permissions: [...NINA.permissions, PERMISSIONS.USERS.WRITE] };
+
+        expect(await deleteUser("lena")).toEqual({ success: true });
+        expect(await deleteUser("tech")).toEqual({ success: false, error: BEYOND });
+    });
+
+    it("changes every account but a platform admin's for a platform group of all tenants and a platform admin, as before", async () => {
+        mocks.reach = "all";
+        for (const id of ["globex-user", "fresh", "tech", "cust-user"]) expect(await deleteUser(id)).toEqual({ success: true });
+        expect(await deleteUser("root")).toEqual({ success: false, error: PLATFORM_ONLY });
+
+        mocks.viewer = PLATFORM_ADMIN;
+        expect(await setUserPassword("globex-user", { password: "a new password", signOut: false })).toEqual(expect.objectContaining({ success: true }));
+    });
+
+    it("makes a new account only in a tenant her platform group reaches, or one whose users she manages", async () => {
+        const refused = { success: false, error: "Your platform group does not reach this tenant, and you may not manage its users." };
+        expect(await createUser({ ...NEW_USER, tenantId: "tenant-b" })).toEqual(refused);
+        expect(mocks.service.createUser).not.toHaveBeenCalled();
+
+        expect(await createUser({ ...NEW_USER, tenantId: "tenant-a" })).toEqual({ success: true, data: { id: "u-new" } });
+
+        // In tenant B she is a member whose group manages the users.
+        mocks.service.permissionsIn.mockResolvedValue([PERMISSIONS.USERS.WRITE, PERMISSIONS.JOBS.READ]);
+        expect(await createUser({ ...NEW_USER, tenantId: "tenant-b" })).toEqual({ success: true, data: { id: "u-new" } });
+    });
+
+    it("makes a new account in any tenant for a platform group of all tenants, as before", async () => {
+        mocks.reach = "all";
+        expect(await createUser({ ...NEW_USER, tenantId: "tenant-b" })).toEqual({ success: true, data: { id: "u-new" } });
     });
 });

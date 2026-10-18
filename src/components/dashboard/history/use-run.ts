@@ -27,6 +27,8 @@ function isLive(run: RunDetail | null): boolean {
 export function useRun(id: string | null) {
     const [run, setRun] = useState<RunDetail | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // The run is not in the tenant the viewer works in: gone, or one of another tenant.
+    const [missing, setMissing] = useState(false);
     const [loading, setLoading] = useState(true);
     const [speed, setSpeed] = useState<SpeedSample[]>([]);
     const last = useRef<{ at: number; bytes: number; configId: string } | null>(null);
@@ -38,11 +40,13 @@ export function useRun(id: string | null) {
             const body = await response.json();
             if (!response.ok || !body.success) {
                 setError(body.error ?? "The run could not be loaded.");
+                setMissing(response.status === 404);
                 return;
             }
             const next = body.data as RunDetail;
             setRun(next);
             setError(null);
+            setMissing(false);
             const uploading = next.uploads.find((upload) => upload.state === "uploading" && upload.bytes !== null);
             if (uploading) {
                 const now = Date.now();
@@ -65,6 +69,7 @@ export function useRun(id: string | null) {
 
     useEffect(() => {
         setRun(null);
+        setMissing(false);
         setLoading(true);
         setSpeed([]);
         last.current = null;
@@ -81,5 +86,5 @@ export function useRun(id: string | null) {
         return () => clearInterval(timer);
     }, [live, fetchRun]);
 
-    return { run, error, loading, speed, reload: fetchRun };
+    return { run, error, missing, loading, speed, reload: fetchRun };
 }

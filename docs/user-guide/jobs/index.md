@@ -35,6 +35,8 @@ The **Timeline** draws a row per job over the hours, the last 6 and the next 24,
 
 Both views show the jobs the search and the filters leave.
 
+The queue is one for every [tenant](/user-guide/admin/tenants), so the runs of other tenants take its slots too. **Every job** counts them where they run beside a run of your tenant, and a run that waits for one names **a job of another tenant**, never which one. All tenants shows the jobs of every tenant anyway.
+
 A click on a job opens its details: the last run and how often the last 30 days succeeded, the next run, the size of the last backup, the last 30 runs as bars, what goes in, the destinations with what each keeps, and the settings.
 
 ## Creating a Job

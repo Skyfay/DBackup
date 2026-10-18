@@ -40,6 +40,15 @@ export function listText(items: string[]): string {
     return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/**
+ * Whether the viewer looks after a tenant on the Tenants page: they may manage the tenants and,
+ * unless `managedIds` is null for every tenant, their platform group reaches it. A membership opens
+ * a tenant but gives no right on the platform, so Edit and Delete would only be refused there.
+ */
+export function managesTenant(row: Pick<TenantRow, "id">, canManage: boolean, managedIds: readonly string[] | null): boolean {
+    return canManage && (managedIds === null || managedIds.includes(row.id));
+}
+
 /** Why a tenant stays, or null when a platform admin may delete it. */
 export function deleteRefusal(row: Pick<TenantRow, "id" | "isHome">, activeTenantId: string | null): string | null {
     if (row.isHome) return "The home tenant holds what the platform owns and is never deleted.";

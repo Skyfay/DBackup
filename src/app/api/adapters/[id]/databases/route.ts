@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { registerAdapters } from "@/lib/adapters";
 import { getSavedConnection } from "@/services/adapters/adapter-list";
 import { listSourceDatabases } from "@/services/databases/database-read-service";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 registerAdapters();
 
@@ -21,7 +22,8 @@ export async function GET(
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW));
+    if (refused) return refused;
 
     const params = await props.params;
 

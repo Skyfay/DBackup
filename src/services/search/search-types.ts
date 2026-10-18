@@ -35,7 +35,7 @@ export interface SearchScope {
 
 /**
  * The tenant a hit belongs to. A platform admin in All tenants searches every tenant, and a hit opens
- * in its tenant. People and groups belong to the whole instance and carry none.
+ * in its tenant. People belong to the whole instance and carry none.
  */
 interface InTenant {
     tenantId?: string;
@@ -49,7 +49,7 @@ export type SearchHit =
     | ({ kind: "run"; id: string; name: string; status: string; startedAt: string; adapterId: string | null } & InTenant)
     /** `group` is the group in the tenant searched. In All tenants `tenants` counts the tenants of the account instead. */
     | { kind: "user"; id: string; name: string; email: string; group: string | null; tenants?: number }
-    | { kind: "group"; id: string; name: string; people: number }
+    | ({ kind: "group"; id: string; name: string; people: number } & InTenant)
     | ({ kind: "apiKey"; id: string; name: string; prefix: string; owner: string; enabled: boolean; expired: boolean } & InTenant)
     /** `detail` is the pattern of a file name, the cron of a schedule and the description of the others. */
     | ({ kind: "template"; id: string; name: string; template: TemplateKind; detail: string | null } & InTenant)

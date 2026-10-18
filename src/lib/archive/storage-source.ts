@@ -36,9 +36,11 @@ export interface ManagedArchiveSource {
  * runs now sees it, see `src/services/sharing/destination-access.ts`.
  */
 export async function resolveStorageAdapter(
-    configId: string
+    configId: string,
+    /** The tenant whose view of the destination to open, the tenant of the code that runs when left out. */
+    tenantId?: string | null
 ): Promise<{ adapter: StorageAdapter; config: AdapterConfigType }> {
-    const { adapter, config } = await openDestination(configId);
+    const { adapter, config } = await openDestination(configId, tenantId);
     return { adapter, config };
 }
 

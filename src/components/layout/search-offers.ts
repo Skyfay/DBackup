@@ -16,6 +16,10 @@ export interface SearchView {
     allTenants?: boolean;
     /** May read the settings of the open tenant. */
     canTenantSettings?: boolean;
+    /** Whether the sidebar offers Quick Setup. Left out, the search does not. */
+    showQuickSetup?: boolean;
+    /** Whether the open tenant has or may add a database connection, which the Database Explorer needs. */
+    ownDatabases?: boolean;
 }
 
 /**
@@ -30,9 +34,18 @@ function matches(text: string, query: string): boolean {
     return terms.length > 0 && terms.every((term) => words.some((word) => word.startsWith(term)));
 }
 
-/** The pages of the sidebar the viewer may open, all while the search is empty. The pages of Platform say so. */
+/**
+ * The pages of the sidebar the viewer may open, all while the search is empty, by the same rules as
+ * the sidebar, so neither offers a page the other hides. The pages of Platform say so.
+ */
 export function pageItems(query: string, can: (permission: string) => boolean, view: SearchView = {}): SearchItem[] {
-    const sections = navSections({ tenantCount: view.tenantCount ?? 1, isPlatformAdmin: view.isPlatformAdmin ?? false, allTenants: view.allTenants }, can);
+    const sections = navSections({
+        tenantCount: view.tenantCount ?? 1,
+        isPlatformAdmin: view.isPlatformAdmin ?? false,
+        allTenants: view.allTenants,
+        showQuickSetup: view.showQuickSetup,
+        ownDatabases: view.ownDatabases,
+    }, can);
     const pages = sections.flatMap((group) => group.items.map((item) => ({ item, platform: group.platform === true })));
     const all: SearchItem[] = [
         ...pages.map(({ item, platform }): SearchItem => ({

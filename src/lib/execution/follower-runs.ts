@@ -11,7 +11,8 @@ import { wrapError } from "@/lib/logging/errors";
  * database, with a short log of its own (`src/services/tenant/shared-backup-runs.ts`). Its metadata
  * names the run it follows under `followsRun`. The run it follows holds the slot of the queue and
  * the watchdog watches it, so both leave a follower out, and whatever ends that run early ends its
- * followers too.
+ * followers too. A follower whose run is gone or ended without it is ended by the watchdog through
+ * `endOrphanedFollowers`.
  */
 
 const log = logger.child({ module: "FollowerRuns" });
@@ -60,17 +61,22 @@ export function activeFollowersOf(leaderId: string) {
 /** What a customer's failed run says of the provider's run, which they cannot open. */
 export const providerHint = (provider: string) => `${provider} sees the full run in its History.`;
 
-const ENDED_LINE: Record<string, string> = {
+const ENDED_LINE: Record<FollowerEnd, string> = {
     Cancelled: "The run was cancelled.",
     Failed: "The run stopped before it finished.",
+    Success: "The run it follows ended, so this one ends with it.",
+    Partial: "The run it follows ended with something missing, so this one ends with it.",
 };
+
+/** How a follower ends: like its run when that one ended, failed or cancelled otherwise. */
+export type FollowerEnd = "Failed" | "Cancelled" | "Success" | "Partial";
 
 /**
  * Ends the followers of a run that ended without its own steps to tell them, like one the watchdog
  * stopped or one cancelled before it started. The line says nothing of the run it follows, since
  * the follower may be in the History of a customer.
  */
-export async function endFollowers(leaderId: string, status: "Failed" | "Cancelled"): Promise<void> {
+export async function endFollowers(leaderId: string, status: FollowerEnd): Promise<void> {
     try {
         const followers = await activeFollowersOf(leaderId);
         for (const follower of followers) {
@@ -78,7 +84,8 @@ export async function endFollowers(leaderId: string, status: "Failed" | "Cancell
             try {
                 lines = follower.logs ? JSON.parse(follower.logs) : [];
             } catch { /* a broken log starts again */ }
-            lines.push({ timestamp: new Date().toISOString(), level: status === "Failed" ? "error" : "warning", type: "general", message: ENDED_LINE[status], stage: status });
+            const level = status === "Failed" ? "error" : status === "Success" ? "success" : "warning";
+            lines.push({ timestamp: new Date().toISOString(), level, type: "general", message: ENDED_LINE[status], stage: status === "Success" || status === "Partial" ? "Completed" : status });
             await runAsSystem(() => prisma.execution.updateMany({
                 where: { id: follower.id, status: { in: ["Pending", "Running"] } },
                 data: { status, endedAt: new Date(), logs: JSON.stringify(lines) },
@@ -86,5 +93,58 @@ export async function endFollowers(leaderId: string, status: "Failed" | "Cancell
         }
     } catch (error: unknown) {
         log.error("Ending the followers of a run failed", { leaderId }, wrapError(error));
+    }
+}
+
+/**
+ * How long a follower may wait for the run it follows to show up, or to end it. The customer's run
+ * of a backup is recorded right before the run it follows, and a run that just ended may still be
+ * writing its followers.
+ */
+export const ORPHAN_GRACE_MS = 10 * 60_000;
+
+const LIVE = new Set(["Pending", "Running"]);
+/** The ends of a run a follower takes over. */
+const ENDED = new Set(["Success", "Partial", "Failed", "Cancelled"]);
+
+/**
+ * Ends the followers, waiting or running in any tenant, whose run is gone, like one of a tenant that
+ * was deleted, or ended without them, like a restore whose write of the provider's run failed. A
+ * follower of a cancelled run is cancelled, any other one fails. Returns how many followers it ended.
+ */
+export async function endOrphanedFollowers(now: number = Date.now()): Promise<number> {
+    try {
+        const followers = await runAsSystem(() => prisma.execution.findMany({
+            where: { status: { in: ["Pending", "Running"] }, metadata: { contains: FOLLOWER_MARK } },
+            select: { id: true, metadata: true, startedAt: true },
+        }));
+        const byLeader = new Map<string, Date[]>();
+        for (const follower of followers) {
+            const leaderId = leaderOf(follower.metadata);
+            if (leaderId) byLeader.set(leaderId, [...(byLeader.get(leaderId) ?? []), follower.startedAt]);
+        }
+        if (byLeader.size === 0) return 0;
+
+        const leaders = await runAsSystem(() => prisma.execution.findMany({
+            where: { id: { in: [...byLeader.keys()] } },
+            select: { id: true, status: true, endedAt: true },
+        }));
+        const found = new Map(leaders.map((leader) => [leader.id, leader]));
+        let ended = 0;
+        for (const [leaderId, started] of byLeader) {
+            const leader = found.get(leaderId);
+            if (leader && LIVE.has(leader.status)) continue;
+            // A run that is gone counts from the follower that waited longest, one that ended from its end.
+            const since = leader?.endedAt?.getTime() ?? Math.min(...started.map((date) => date.getTime()));
+            if (now - since < ORPHAN_GRACE_MS) continue;
+            // A run that ended takes its followers along with its outcome, one that is gone fails them.
+            await endFollowers(leaderId, leader && ENDED.has(leader.status) ? (leader.status as FollowerEnd) : "Failed");
+            ended += started.length;
+        }
+        if (ended > 0) log.warn("Ended runs whose run they follow is gone or over", { ended });
+        return ended;
+    } catch (error: unknown) {
+        log.error("Ending the followers of runs that are over failed", {}, wrapError(error));
+        return 0;
     }
 }

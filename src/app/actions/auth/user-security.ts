@@ -9,12 +9,14 @@ import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { getErrorMessage, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
+import { accountLogOrigin } from "@/services/audit/account-log";
 import { authService } from "@/services/auth/auth-service";
 import { userService } from "@/services/user/user-service";
 
 /**
  * What an admin does to how another user signs in: a new password, a reset of the second factor
- * and signing out their sessions. Each is written to the audit log.
+ * and signing out their sessions. Each is written to the audit log, of the home tenant for an
+ * account of another tenant, see `accountLogOrigin`.
  */
 
 const log = logger.child({ action: "user-security" });
@@ -61,9 +63,10 @@ export async function setUserPassword(userId: string, input: z.input<typeof Pass
     if (refused) return { success: false, error: refused };
 
     try {
+        const origin = await accountLogOrigin(currentUser, id.data);
         await authService.setPassword(id.data, parsed.data.password);
         const signedOut = parsed.data.signOut ? await userService.revokeSessions(id.data) : 0;
-        await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Password Set", signedOut }, id.data);
+        await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Password Set", signedOut }, id.data, origin);
         revalidatePath("/dashboard/users");
         return { success: true, data: { signedOut } };
     } catch (error: unknown) {
@@ -86,13 +89,12 @@ export async function resetUserTwoFactor(userId: string) {
     if (currentUser?.id === id.data) return { success: false, error: "Change your own second factor under Profile." };
 
     const refused = await refusal(id.data, currentUser);
-    if (refused) return { success: false, error: refused };
+    if (refused || !currentUser) return { success: false, error: refused ?? "Unauthorized" };
 
     try {
+        const origin = await accountLogOrigin(currentUser, id.data);
         await userService.resetTwoFactor(id.data);
-        if (currentUser) {
-            await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Two-Factor Reset" }, id.data);
-        }
+        await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Two-Factor Reset" }, id.data, origin);
         revalidatePath("/dashboard/users");
         return { success: true };
     } catch (error: unknown) {
@@ -113,18 +115,17 @@ export async function revokeUserSession(userId: string, sessionId: string) {
     const currentUser = await getViewer();
 
     const refused = await refusal(id.data, currentUser);
-    if (refused) return { success: false, error: refused };
+    if (refused || !currentUser) return { success: false, error: refused ?? "Unauthorized" };
 
     if (session.data === (await currentSessionId())) {
         return { success: false, error: "This is the session you are using. Sign out from the menu instead." };
     }
 
     try {
+        const origin = await accountLogOrigin(currentUser, id.data);
         const ended = await userService.revokeSession(id.data, session.data);
         if (!ended) return { success: false, error: "The session has ended already." };
-        if (currentUser) {
-            await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Sessions Revoked", count: 1 }, id.data);
-        }
+        await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Sessions Revoked", count: 1 }, id.data, origin);
         revalidatePath("/dashboard/users");
         return { success: true };
     } catch (error: unknown) {
@@ -144,14 +145,13 @@ export async function revokeUserSessions(userId: string) {
     const currentUser = await getViewer();
 
     const refused = await refusal(id.data, currentUser);
-    if (refused) return { success: false, error: refused };
+    if (refused || !currentUser) return { success: false, error: refused ?? "Unauthorized" };
 
     try {
-        const keep = currentUser?.id === id.data ? await currentSessionId() : null;
+        const origin = await accountLogOrigin(currentUser, id.data);
+        const keep = currentUser.id === id.data ? await currentSessionId() : null;
         const count = await userService.revokeSessions(id.data, keep);
-        if (currentUser) {
-            await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Sessions Revoked", count }, id.data);
-        }
+        await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Sessions Revoked", count }, id.data, origin);
         revalidatePath("/dashboard/users");
         return { success: true, data: { count } };
     } catch (error: unknown) {

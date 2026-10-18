@@ -2,9 +2,11 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getOidcAutoRedirectProviderId, isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import { groupPermissions } from "@/lib/auth/owner-permissions";
+import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 import { AUDIT_ACTIONS } from "@/lib/core/audit-types";
 import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { membersOfAny } from "@/services/tenant/membership-service";
 import { CREDENTIAL_PROVIDER } from "@/services/user/users-model";
 import { OIDC_ADAPTERS } from "./oidc-registry";
 import { configOf, placeOf, ssoCallbackBase } from "./sso-provider-config";
@@ -203,31 +205,62 @@ export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
 }
 
 /**
+ * Whose providers the tab lists: every one, or for someone of a platform group of some tenants those
+ * of the platform and of the tenants it reaches, with only the people of those tenants beside them.
+ */
+export interface SsoProvidersScope {
+    reach: PlatformReach;
+    /** The viewer, who sees their own account among the people in any case. */
+    viewerId: string | null;
+}
+
+const EVERY_PROVIDER: SsoProvidersScope = { reach: "all", viewerId: null };
+
+/**
+ * The accounts a viewer of some tenants sees: those with a membership in a tenant they reach, like
+ * the accounts of the platform show them (`membersOfAny`), and their own.
+ */
+function peopleReached(reached: readonly string[], viewerId: string | null): Prisma.UserWhereInput {
+    return { OR: [...(viewerId ? [{ id: viewerId }] : []), membersOfAny(reached)] };
+}
+
+/**
  * Loads the SSO tab. The client secret never leaves the database. A platform admin sees the
  * providers of every tenant with the groups of every tenant, read as the system since the admin
- * may work inside any tenant. Anyone else sees the providers of the platform only.
+ * may work inside any tenant. Anyone else sees the providers of the platform only. A scope of some
+ * tenants narrows it to the providers of the platform and of those tenants, the groups they name
+ * and the accounts that work there, see `SsoProvidersScope`.
  */
-export async function getSsoProvidersModel(canManage: boolean): Promise<SsoProvidersModel> {
+export async function getSsoProvidersModel(canManage: boolean, scope: SsoProvidersScope = EVERY_PROVIDER): Promise<SsoProvidersModel> {
     const since = new Date(Date.now() - SIGN_IN_WINDOW_MS);
+    const reached = scope.reach === "all" ? null : scope.reach;
     return runAsSystem(async () => {
-        const [providers, groups, tenants, signIns, passkeySetting] = await Promise.all([
-            prisma.ssoProvider.findMany({ where: canManage ? undefined : { tenantId: null }, select: PROVIDER_SELECT }),
-            // A group belongs to one tenant, so all of its memberships are in that tenant.
-            prisma.group.findMany({
-                where: canManage ? undefined : { tenantId: HOME_TENANT_ID },
-                select: { id: true, name: true, permissions: true, fullAccess: true, tenantId: true, _count: { select: { memberships: true } } },
-                orderBy: { name: "asc" },
+        const [providers, tenants, passkeySetting] = await Promise.all([
+            prisma.ssoProvider.findMany({
+                where: !canManage ? { tenantId: null } : reached ? { OR: [{ tenantId: null }, { tenantId: { in: [...reached] } }] } : undefined,
+                select: PROVIDER_SELECT,
             }),
-            prisma.tenant.findMany({ where: canManage ? undefined : { id: HOME_TENANT_ID }, select: { id: true, name: true } }),
-            // The sign-in entries keep their method in the details, written as JSON without spaces. A
-            // sign-in belongs to no tenant, the count covers them all.
-            prisma.auditLog.count({ where: { action: AUDIT_ACTIONS.LOGIN, createdAt: { gte: since }, details: { contains: '"method":"sso"' } } }),
+            prisma.tenant.findMany({
+                where: !canManage ? { id: HOME_TENANT_ID } : reached ? { id: { in: [HOME_TENANT_ID, ...reached] } } : undefined,
+                select: { id: true, name: true },
+            }),
             prisma.systemSetting.findUnique({ where: { key: "auth.disablePasskeyLogin" }, select: { value: true } }),
         ]);
+        // The groups of the tenants reached, and those the providers of the platform place people in.
+        const platformGroups = providers.flatMap((provider) => (!provider.tenantId && provider.defaultGroupId ? [provider.defaultGroupId] : []));
+        const groups = await prisma.group.findMany({
+            // A group belongs to one tenant, so all of its memberships are in that tenant.
+            where: !canManage ? { tenantId: HOME_TENANT_ID } : reached ? { OR: [{ tenantId: { in: [...reached] } }, { id: { in: platformGroups } }] } : undefined,
+            select: { id: true, name: true, permissions: true, fullAccess: true, tenantId: true, _count: { select: { memberships: true } } },
+            orderBy: { name: "asc" },
+        });
         const people = providers.length === 0
             ? []
             : await prisma.user.findMany({
-                  where: { accounts: { some: { providerId: { in: providers.map((provider) => provider.providerId) } } } },
+                  where: {
+                      accounts: { some: { providerId: { in: providers.map((provider) => provider.providerId) } } },
+                      ...(reached ? peopleReached(reached, scope.viewerId) : {}),
+                  },
                   select: {
                       id: true,
                       name: true,
@@ -237,6 +270,16 @@ export async function getSsoProvidersModel(canManage: boolean): Promise<SsoProvi
                       _count: { select: { passkeys: true } },
                   },
               });
+        // The sign-in entries keep their method in the details, written as JSON without spaces. A
+        // sign-in belongs to no tenant, the count covers them all, or the people shown.
+        const signIns = await prisma.auditLog.count({
+            where: {
+                action: AUDIT_ACTIONS.LOGIN,
+                createdAt: { gte: since },
+                details: { contains: '"method":"sso"' },
+                ...(reached ? { userId: { in: people.map((person) => person.id) } } : {}),
+            },
+        });
 
         return buildSsoProvidersModel({
             providers,

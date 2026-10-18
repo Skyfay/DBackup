@@ -25,7 +25,7 @@ import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import { PLATFORM_ADMIN_GROUP_ID, type PlatformGroupsModel } from "@/services/user/platform-groups-types";
 import type { UserRow, UsersGroup } from "@/services/user/users-types";
-import { accountLock, groupLock, groupsOfTenant } from "./user-access";
+import { accountLock, groupLock, groupsOfTenant, newUserChoices, type TenantReach } from "./user-access";
 import { accessNote, platformChange, saveAccess, useAccessEdit, UserAccessFields } from "./user-dialog-access";
 import { AccountKindFields, createAccount } from "./user-dialog-kind";
 import { NO_GROUP } from "./user-columns";
@@ -35,6 +35,9 @@ import { schemaFor, type Values } from "./user-dialog-schema";
 import { TenantField, tenantGroupsMeta } from "./user-tenant-field";
 
 const log = logger.child({ component: "user-dialog" });
+
+/** Every tenant and every group, like for a platform admin. */
+const EVERY_TENANT: TenantReach = { managedTenants: null, givableGroups: null };
 
 /** Leaves room for the head and the foot on a short screen. */
 const BODY_SCROLL = "min-h-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-9.5rem)]";
@@ -58,6 +61,13 @@ interface UserDialogProps {
     allTenants?: boolean;
     /** May give and take the group of an account in each tenant, in All tenants. */
     manageTenants?: boolean;
+    /** The tenants and groups the viewer changes in All tenants, those their platform group reaches. Every one when left out. */
+    tenantReach?: TenantReach;
+    /**
+     * The tenants New user makes an account in on the list of every account, and the groups it
+     * gives there, like `createUser` checks them. Every one when left out.
+     */
+    newUserReach?: TenantReach;
     /** May give platform groups, under Platform. */
     managePlatformGroup?: boolean;
     onOpenChange: (open: boolean) => void;
@@ -71,7 +81,7 @@ interface UserDialogProps {
  * and the group in each tenant in place of the group, all saved with Save. The name and the email of
  * an account the viewer may not change stay as they are, the group can still change.
  */
-export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAdmin, allowNoGroup, allTenants = false, manageTenants = false, managePlatformGroup = false, onOpenChange, onSaved }: UserDialogProps) {
+export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAdmin, allowNoGroup, allTenants = false, manageTenants = false, tenantReach, newUserReach = EVERY_TENANT, managePlatformGroup = false, onOpenChange, onSaved }: UserDialogProps) {
     const creating = user === null;
     const tone = creating ? "create" : "edit";
     const pickTenant = creating && allTenants;
@@ -83,13 +93,16 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
         defaultValues: { name: "", email: "", password: "", kind: "tenant", tenantId: "", groupId: "", platform: "" },
     });
     const [name, email, password, tenantId, kind] = useWatch({ control: form.control, name: ["name", "email", "password", "tenantId", "kind"] });
-    // Whoever gives platform groups also makes an account of the platform with New user under Platform.
-    const choosesKind = pickTenant && managePlatformGroup;
+    // Whoever gives platform groups also makes an account of the platform with New user under
+    // Platform, unless their platform group reaches only some tenants, since such an account is in none.
+    const choosesKind = pickTenant && managePlatformGroup && (tenantReach?.managedTenants ?? null) === null;
     const forPlatform = choosesKind && kind === "platform";
     const { model: newPlatformModel } = usePageModel<PlatformGroupsModel>(open && choosesKind ? "/api/platform/platform-groups" : null, "The platform groups could not be loaded.");
-    const { tenants } = useTenantView();
-    // A group belongs to one tenant, so a new account of the list of every account picks from the groups of its tenant.
-    const offered = pickTenant ? (tenantId ? groupsOfTenant(groups, tenantId) : []) : groups;
+    const { tenants: viewTenants } = useTenantView();
+    // A new account of the list of every account goes to a tenant the viewer adds people to, with a
+    // group of that tenant they may give there.
+    const choices = newUserChoices(viewTenants, groups, newUserReach);
+    const offered = pickTenant ? (tenantId ? groupsOfTenant(choices.groups, tenantId) : []) : groups;
 
     // In All tenants Edit also holds the platform group and the tenants, for whoever may change them.
     const { withAccess, parts, platformModel, access, setAccess, line: accessLine } = useAccessEdit({ open, user, allTenants, manageTenants, managePlatformGroup, viewerPlatformAdmin });
@@ -245,8 +258,8 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                                                 <FormLabel>Tenant</FormLabel>
                                                 <FormControl>
                                                     <TenantField
-                                                        tenants={tenants}
-                                                        metaOf={tenantGroupsMeta(groups)}
+                                                        tenants={choices.tenants}
+                                                        metaOf={tenantGroupsMeta(choices.groups)}
                                                         value={field.value}
                                                         onChange={(next) => {
                                                             if (next !== field.value) form.setValue("groupId", "");
@@ -264,7 +277,7 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
                                 )}
 
                                 {user && withAccess && (
-                                    <UserAccessFields user={user} groups={groups} platformModel={platformModel} parts={parts} value={access} onChange={setAccess} disabled={saving} />
+                                    <UserAccessFields user={user} groups={groups} platformModel={platformModel} parts={parts} value={access} onChange={setAccess} disabled={saving} tenantReach={tenantReach} />
                                 )}
 
                                 {withGroup && !forPlatform && (

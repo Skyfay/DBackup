@@ -22,6 +22,11 @@ const mocks = vi.hoisted(() => ({
     audit: vi.fn(),
     customers: vi.fn(),
     restore: vi.fn(),
+    reachOf: vi.fn(),
+    assign: vi.fn(),
+    forSource: vi.fn(),
+    addRule: vi.fn(),
+    removeRule: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
@@ -39,14 +44,19 @@ vi.mock("@/lib/prisma", () => ({ default: {} }));
 vi.mock("@/lib/logging/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/tenant/database-assignments", () => ({
-    databaseAssignmentService: { setOnDemand: mocks.setOnDemand, setRuleOnDemand: mocks.setRuleOnDemand },
+    databaseAssignmentService: {
+        setOnDemand: mocks.setOnDemand, setRuleOnDemand: mocks.setRuleOnDemand, assign: mocks.assign,
+        forSource: mocks.forSource, addRule: mocks.addRule, removeRule: mocks.removeRule,
+    },
 }));
+// The tenants the platform group of the viewer reaches, which every service call gets.
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reachOf: mocks.reachOf } }));
 vi.mock("@/services/tenant/database-moves", () => ({ moveDatabase: mocks.move, moveTargets: mocks.targets }));
 vi.mock("@/services/tenant/shared-servers", () => ({ customersOfServer: mocks.customers }));
 vi.mock("@/services/tenant/shared-databases", () => ({ sharedOverview: vi.fn(), prepareSharedDownload: vi.fn(), restoreSharedBackup: mocks.restore }));
 vi.mock("@/services/tenant/shared-on-demand", () => ({ requestSharedBackup: mocks.request, sharedBackupRun: mocks.run }));
 
-const { moveSharedDatabase, getMoveTargets, setDatabaseOnDemand, setRuleOnDemand, getSourceAssignments, assignDatabases, getServerCustomers } = await import("@/app/actions/tenant/database-assignments");
+const { moveSharedDatabase, getMoveTargets, setDatabaseOnDemand, setRuleOnDemand, getSourceAssignments, assignDatabases, getServerCustomers, addAssignmentRule, removeAssignmentRule } = await import("@/app/actions/tenant/database-assignments");
 const { backUpSharedDatabase, getSharedBackupRun, restoreSharedDatabase } = await import("@/app/actions/tenant/shared-databases");
 
 beforeEach(() => {
@@ -54,6 +64,7 @@ beforeEach(() => {
     mocks.granted = new Set();
     mocks.checked = [];
     mocks.viewer = { id: "u-lena", name: "Lena Graf", tenantId: "acme" };
+    mocks.reachOf.mockResolvedValue("all");
 });
 
 describe("who shares the databases of a shared server", () => {
@@ -124,7 +135,7 @@ describe("what the tenant of a shared server changes", () => {
 
         mocks.setOnDemand.mockResolvedValue({ tenantName: "Acme", before: null });
         expect(await setDatabaseOnDemand("old", "shop", 0)).toEqual(expect.objectContaining({ success: true }));
-        expect(mocks.setOnDemand).toHaveBeenCalledWith("old", "shop", 0);
+        expect(mocks.setOnDemand).toHaveBeenCalledWith("old", "shop", 0, "all");
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "ADAPTER", expect.objectContaining({
             change: "Backups on demand", changes: [expect.objectContaining({ from: "As the tenant", to: "Off here" })],
         }), "old");
@@ -134,8 +145,48 @@ describe("what the tenant of a shared server changes", () => {
         mocks.granted.add(SHARE_PERMISSION);
         mocks.move.mockResolvedValue({ tenantName: "Acme", toServerName: "New MySQL", toDatabase: "shop2" });
         expect(await moveSharedDatabase("old", { databaseName: "shop", toSourceId: "new", toDatabase: "shop2" })).toEqual(expect.objectContaining({ success: true }));
-        expect(mocks.move).toHaveBeenCalledWith("old", { databaseName: "shop", toSourceId: "new", toDatabase: "shop2" }, "u-lena");
+        expect(mocks.move).toHaveBeenCalledWith("old", { databaseName: "shop", toSourceId: "new", toDatabase: "shop2" }, "u-lena", expect.any(Date), "all");
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "ADAPTER", expect.objectContaining({ change: "Database moved", to: "New MySQL", tenant: "Acme" }), "old");
+    });
+
+    it("hands the tenants the platform group of the viewer reaches to every change and to the pickers", async () => {
+        mocks.granted.add(SHARE_PERMISSION);
+        mocks.reachOf.mockResolvedValue(["globex"]);
+        mocks.assign.mockResolvedValue({ changed: 0 });
+        mocks.forSource.mockResolvedValue({ databases: [] });
+        mocks.addRule.mockResolvedValue({ pattern: "shop_*", tenantName: "Globex", onDemandPerDay: null });
+        mocks.removeRule.mockResolvedValue({ pattern: "shop_*", tenantName: "Globex" });
+        mocks.setOnDemand.mockResolvedValue({ tenantName: "Globex", before: null });
+        mocks.setRuleOnDemand.mockResolvedValue({ pattern: "shop_*", tenantName: "Globex", before: null });
+        mocks.move.mockResolvedValue({ tenantName: "Globex", toServerName: "New MySQL", toDatabase: "shop" });
+
+        await getSourceAssignments("old");
+        await assignDatabases("old", [{ databaseName: "shop", tenantId: "globex" }]);
+        await addAssignmentRule("old", { pattern: "shop_*", tenantId: "globex" });
+        await removeAssignmentRule("old", "rule-1");
+        await setDatabaseOnDemand("old", "shop", 2);
+        await setRuleOnDemand("old", "rule-1", 2);
+        await moveSharedDatabase("old", { databaseName: "shop", toSourceId: "new" });
+
+        expect(mocks.reachOf).toHaveBeenCalledWith("u-lena");
+        expect(mocks.forSource).toHaveBeenCalledWith("old", expect.any(Date), ["globex"]);
+        expect(mocks.assign).toHaveBeenCalledWith("old", [{ databaseName: "shop", tenantId: "globex" }], "u-lena", expect.any(Date), ["globex"]);
+        expect(mocks.addRule).toHaveBeenCalledWith("old", expect.objectContaining({ pattern: "shop_*", tenantId: "globex" }), expect.any(Date), ["globex"]);
+        expect(mocks.removeRule).toHaveBeenCalledWith("old", "rule-1", expect.any(Date), ["globex"]);
+        expect(mocks.setOnDemand).toHaveBeenCalledWith("old", "shop", 2, ["globex"]);
+        expect(mocks.setRuleOnDemand).toHaveBeenCalledWith("old", "rule-1", 2, ["globex"]);
+        expect(mocks.move).toHaveBeenCalledWith("old", { databaseName: "shop", toSourceId: "new" }, "u-lena", expect.any(Date), ["globex"]);
+    });
+
+    it("says why a change beyond the reach is refused, and logs nothing", async () => {
+        mocks.granted.add(SHARE_PERMISSION);
+        mocks.reachOf.mockResolvedValue(["globex"]);
+        mocks.assign.mockRejectedValue(new ValidationError("shop belongs to Acme, which your platform group does not reach, so you cannot change it."));
+
+        expect(await assignDatabases("old", [{ databaseName: "shop", tenantId: null }])).toEqual({
+            success: false, error: "shop belongs to Acme, which your platform group does not reach, so you cannot change it.",
+        });
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 });
 

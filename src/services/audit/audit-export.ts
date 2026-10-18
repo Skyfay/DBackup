@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { currentTenantId } from "@/lib/tenant/current";
 import { buildAuditWhere, type AuditFilter } from "./audit-query";
 import { AUDIT_ROW_SELECT, originShown, resolveTargets, toRow } from "./audit-rows";
 
@@ -20,7 +21,7 @@ export function csvCell(value: string | null | undefined): string {
 /** The entries a filter keeps as a CSV file, one line each, with the sentence the list shows. */
 export async function auditCsv(filter: AuditFilter, now = new Date()): Promise<{ csv: string; count: number }> {
     const records = await prisma.auditLog.findMany({
-        where: buildAuditWhere(filter, now),
+        where: buildAuditWhere({ ...filter, viewerTenantId: await currentTenantId() }, now),
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: AUDIT_EXPORT_LIMIT,
         select: AUDIT_ROW_SELECT,

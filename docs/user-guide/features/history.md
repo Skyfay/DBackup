@@ -99,6 +99,18 @@ A click opens the message in a side panel:
 - The run it was sent for, which **Open run** opens
 - The other channels that got the same message
 
+## Tenants
+
+With several [tenants](/user-guide/admin/tenants) every tenant has its own History. A run belongs to the tenant of its job, and a restore or a verification to the tenant it was started in. The integrity check records a run in each tenant with copies to check, and the other system tasks belong to the home tenant. [All tenants](/user-guide/admin/tenants#all-tenants) lists the runs of every tenant, with the tenant in a column you can filter by.
+
+A database another tenant [shares](/user-guide/admin/shared-databases) shows in both Histories:
+
+- A backup a customer starts is a run of the job of the server's tenant for that database alone, with the whole log there. Like every run of some databases of a job, it offers **Run the job** in place of **Run again**, which backs up every database of the job. The customer gets a short run of its own that follows it.
+- A restore by a customer shows in both Histories as **Restore onto** the server with **Restore of** the database below it. The run of the server's tenant adds **for** the customer and holds the whole log.
+- A short run that follows another one ends with it. When the run it follows is gone or ended without it, the **Stuck run watchdog** ends it 10 minutes later, see [What the Customer Sees](/user-guide/admin/shared-databases#what-the-customer-sees).
+
+The notification log of the home tenant opens the run of a message only for a run of the home tenant, see [Audit Log](/user-guide/admin/tenants#audit-log) of Tenants.
+
 ## Required Permissions
 
 | Permission | What it grants |

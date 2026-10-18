@@ -130,7 +130,7 @@ Each database adapter can optionally return size and table count information. Th
 
 `POST /api/adapters/database-stats`
 
-Accepts either a saved source ID or raw adapter config:
+Accepts either a saved source ID or raw adapter config. Both need `sources:view`. A raw config runs with a host and a login of the caller's choosing, so `assertMayReadFormConfig` in `src/lib/auth/form-config-access.ts` also asks for `sources:write` and a tenant, the same as for `database-tables` and `database-table-data`:
 
 ```json
 // By source ID (loads config from database)

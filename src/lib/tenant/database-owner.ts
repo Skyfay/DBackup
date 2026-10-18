@@ -29,11 +29,21 @@ export interface RuleFact {
     createdAt: Date;
 }
 
+/** The compiled patterns, since every backup of a server asks the rules of its databases again. */
+const matchers = new Map<string, Minimatch>();
+const MATCHERS_MAX = 1000;
+
 /** Whether a name matches the pattern of a rule, like `shop_*`. Names are compared as they are. */
 export function matchesPattern(pattern: string, databaseName: string): boolean {
     const trimmed = pattern.trim();
     if (!trimmed) return false;
-    return new Minimatch(trimmed, { dot: true, nocomment: true, nonegate: true }).match(databaseName);
+    let matcher = matchers.get(trimmed);
+    if (!matcher) {
+        if (matchers.size >= MATCHERS_MAX) matchers.clear();
+        matcher = new Minimatch(trimmed, { dot: true, nocomment: true, nonegate: true });
+        matchers.set(trimmed, matcher);
+    }
+    return matcher.match(databaseName);
 }
 
 /** The assignment of the name that holds at the time, if any. */

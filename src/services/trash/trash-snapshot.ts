@@ -11,7 +11,6 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { keyIdOf } from "@/services/vault/key-id";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { runAsSystem } from "@/lib/tenant/context";
-import { currentTenantId } from "@/lib/tenant/current";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { TrashKind } from "./trash-types";
 
@@ -58,6 +57,8 @@ interface Snapshot {
     detail: string | null;
     data: unknown;
     permission: string;
+    /** The tenant whose Recently deleted keeps it, the one of the record. */
+    tenantId: string;
     superAdminOnly?: boolean;
 }
 
@@ -89,13 +90,13 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
             // Listed without its Key ID.
         }
         const data: KeySnapshot = { record };
-        return { name: record.name, detail: keyId ? `Key ID ${keyId}` : null, data, permission: PERMISSIONS.VAULT.WRITE };
+        return { name: record.name, detail: keyId ? `Key ID ${keyId}` : null, data, permission: PERMISSIONS.VAULT.WRITE, tenantId: record.tenantId };
     },
 
     async credential(tx, id) {
         const record = await tx.credentialProfile.findUniqueOrThrow({ where: { id } });
         const data: CredentialSnapshot = { record };
-        return { name: record.name, detail: CREDENTIAL_TYPES[record.type] ?? record.type, data, permission: PERMISSIONS.CREDENTIALS.DELETE };
+        return { name: record.name, detail: CREDENTIAL_TYPES[record.type] ?? record.type, data, permission: PERMISSIONS.CREDENTIALS.DELETE, tenantId: record.tenantId };
     },
 
     async connection(tx, id) {
@@ -103,7 +104,7 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
         // The assignments of its databases stay where they are, see shared-servers.ts.
         const versionHistory = await tx.dbVersionHistory.findMany({ where: { adapterConfigId: id } });
         const data: ConnectionSnapshot = { record, versionHistory };
-        return { name: record.name, detail: `${connectionKind(record)} · ${record.adapterId}`, data, permission: getWritePermissionForAdapterType(record.type) };
+        return { name: record.name, detail: `${connectionKind(record)} · ${record.adapterId}`, data, permission: getWritePermissionForAdapterType(record.type), tenantId: record.tenantId };
     },
 
     async job(tx, id) {
@@ -127,7 +128,7 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
         const from = source?.name ?? (sources.length > 0 ? plural(sources.length, "folder", "folders") : null);
         const to = destinations.map((destination) => destination.config.name).join(", ");
         const detail = [from, to].filter(Boolean).join(" to ") || null;
-        return { name: record.name, detail, data, permission: PERMISSIONS.JOBS.WRITE };
+        return { name: record.name, detail, data, permission: PERMISSIONS.JOBS.WRITE, tenantId: record.tenantId };
     },
 
     async user(tx, id) {
@@ -141,17 +142,20 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
         const picture = avatar && { mimeType: avatar.mimeType, size: avatar.size, data: Buffer.from(avatar.data).toString("base64"), updatedAt: avatar.updatedAt };
         const data: UserSnapshot = { record, memberships, accounts, twoFactor, passkeys, apiKeys, preferences, avatar: picture };
         const platformAdmin = record.platformRole === PLATFORM_ADMIN_ROLE;
-        // Bringing back a platform admin makes someone a platform admin, bringing back an account of
-        // a platform group gives it that group again, and bringing back an account that also worked
-        // in another tenant puts it back there. Only a platform admin decides any of it.
-        const here = await currentTenantId();
-        const elsewhere = !!record.platformGroupId || memberships.some((membership) => membership.tenantId !== here);
+        // An account belongs to no tenant, so where it waits depends on the account, never on the
+        // tenant it was deleted from. One of exactly one tenant, with no platform role, no platform
+        // group and no keys elsewhere, waits in that tenant for its admins. Bringing back any other
+        // account makes someone a platform admin, gives a platform group again, or puts it back into
+        // several tenants or into none. Only a platform admin decides that, in the home tenant.
+        const only = memberships.length === 1 ? memberships[0].tenantId : null;
+        const ofOneTenant = !!only && !platformAdmin && !record.platformGroupId && apiKeys.every((key) => key.tenantId === only);
         return {
             name: record.name || record.email,
             detail: [record.email, platformAdmin ? "platform admin" : plural(memberships.length, "tenant", "tenants")].join(" · "),
             data,
             permission: PERMISSIONS.USERS.WRITE,
-            superAdminOnly: platformAdmin || elsewhere,
+            tenantId: ofOneTenant && only ? only : HOME_TENANT_ID,
+            superAdminOnly: !ofOneTenant,
         };
     },
 };
@@ -174,12 +178,9 @@ export async function keepInTrash(tx: Tx, kind: TrashKind, id: string, by?: stri
         deletedById: by ?? null,
         deletedByName: actor ? actor.name || actor.email : null,
     };
-    // An account belongs to no tenant. One only a platform admin brings back, a platform admin or an
-    // account of other tenants too, is kept in the home tenant, and so is one deleted outside a
-    // tenant, like in All tenants. An account of one tenant stays with that tenant's admins.
-    if (kind === "user" && (snapshot.superAdminOnly || !(await currentTenantId()))) {
-        return (await runAsSystem(() => tx.deletedRecord.create({ data: { ...data, tenantId: HOME_TENANT_ID } }))).id;
-    }
-    const row = await tx.deletedRecord.create({ data });
+    // The entry of an account may wait in another tenant than the one deleting it, so it is written
+    // in the system scope, which also works in All tenants. Any other record waits in its own tenant.
+    if (kind === "user") return (await runAsSystem(() => tx.deletedRecord.create({ data: { ...data, tenantId: snapshot.tenantId } }))).id;
+    const row = await tx.deletedRecord.create({ data: { ...data, tenantId: snapshot.tenantId } });
     return row.id;
 }

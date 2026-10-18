@@ -8,7 +8,7 @@ import { useTheme } from "next-themes";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { startRun } from "@/components/dashboard/history/run-actions";
 import { useViewerPermissions } from "@/components/permissions/permissions-context";
-import { useOpenInTenant, useTenantName, useTenantView } from "@/components/tenant/tenant-view";
+import { useMayOpenTenant, useOpenInTenant, useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { toneAttribute } from "@/components/ui/tone";
@@ -74,9 +74,10 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
     const { recent, remember } = useRecentSearches(userId);
     // In All tenants a platform admin finds the records of every tenant, each named with its tenant
     // and opened in it.
-    const { allTenants, isPlatformAdmin, tenants, tenantCount } = useTenantView();
+    const { allTenants, isPlatformAdmin, tenants, tenantCount, showQuickSetup, ownDatabases } = useTenantView();
     const tenantName = useTenantName();
     const openInTenant = useOpenInTenant();
+    const mayOpenTenant = useMayOpenTenant();
     const lineOf = (item: SearchItem) => {
         const tenant = allTenants ? tenantName(item.tenantId) : null;
         return tenant ? `${tenant} · ${subLine(item)}` : subLine(item);
@@ -112,20 +113,22 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
         };
     }, [query]);
 
-    // With more than one tenant the pages and settings split into the tenant's and the platform's.
+    // With more than one tenant the pages and settings split into the tenant's and the platform's,
+    // and the pages are the ones the sidebar offers.
     const view = useMemo(
-        () => ({ tenantCount: tenantCount ?? tenants.length, isPlatformAdmin, allTenants, canTenantSettings: can(PERMISSIONS.TENANT_SETTINGS.READ) }),
-        [tenantCount, tenants.length, isPlatformAdmin, allTenants, can]
+        () => ({ tenantCount: tenantCount ?? tenants.length, isPlatformAdmin, allTenants, canTenantSettings: can(PERMISSIONS.TENANT_SETTINGS.READ), showQuickSetup, ownDatabases }),
+        [tenantCount, tenants.length, isPlatformAdmin, allTenants, can, showQuickSetup, ownDatabases]
     );
     const items = useMemo(() => {
         const typed = query.trim().length > 0;
         const all: SearchItem[] = typed
             ? [...hits.flatMap(hitItems), ...settingItems(query, can(PERMISSIONS.SETTINGS.READ), view), ...pageItems(query, can, view), ...actionItems(query, hits, can)]
             : [...recent, ...pageItems("", can, view), ...actionItems("", [], can)];
-        // The server searched only what the viewer may open, a recent entry is from before.
-        const allowed = all.filter((item) => mayOpen(item, can));
+        // The server searched only what the viewer may open, a recent entry is from before, maybe of
+        // a tenant the viewer may no longer open.
+        const allowed = all.filter((item) => mayOpen(item, can) && (!item.tenantId || mayOpenTenant(item.tenantId)));
         return chip === "all" ? allowed : allowed.filter((item) => item.group === chip);
-    }, [query, hits, recent, chip, can, view]);
+    }, [query, hits, recent, chip, can, view, mayOpenTenant]);
 
     const groups = GROUP_ORDER.map((group) => ({ group, items: items.filter((item) => item.group === group) })).filter((entry) => entry.items.length > 0);
 
@@ -143,7 +146,8 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
         if (item.href) {
             // The pages show while the search is empty anyway.
             if (item.group !== "pages") remember(item);
-            if (allTenants && item.tenantId) void openInTenant(item.tenantId, item.href);
+            // A record of another tenant, a recent one or any in All tenants, opens in its tenant.
+            if (item.tenantId) void openInTenant(item.tenantId, item.href);
             else router.push(item.href);
         }
     };

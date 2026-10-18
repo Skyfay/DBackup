@@ -131,10 +131,13 @@ function appliesTo(step: string, job: { source: unknown; sources: unknown[] } | 
     return true;
 }
 
-/** The runs a run is compared with: those of its job, or for a system task those of the same task. */
-function scopeOf(record: { jobId: string | null; type: string }): Prisma.ExecutionWhereInput | null {
+/**
+ * The runs a run is compared with: those of its job, or for a system task those of the same task in
+ * the same tenant, since All tenants reads the checks of every tenant.
+ */
+export function scopeOf(record: { jobId: string | null; type: string; tenantId: string }): Prisma.ExecutionWhereInput | null {
     if (record.jobId) return { jobId: record.jobId };
-    return record.type === "IntegrityCheck" || record.type === "Verification" ? { type: record.type, jobId: null } : null;
+    return record.type === "IntegrityCheck" || record.type === "Verification" ? { type: record.type, jobId: null, tenantId: record.tenantId } : null;
 }
 
 async function usualStepsOf(scope: Prisma.ExecutionWhereInput, exclude: string) {

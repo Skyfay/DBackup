@@ -9,10 +9,13 @@ import { accessLine, summarizeAccess } from "@/lib/auth/access-summary";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { cn } from "@/lib/utils";
 import type { UserTenantRole, UsersGroup } from "@/services/user/users-types";
-import { groupsOfTenant } from "./user-access";
+import { givableIn, type TenantReach } from "./user-access";
 import { GroupPicker } from "./user-group-picker";
 import { TenantField, tenantGroupsMeta } from "./user-tenant-field";
 import { tenantRoleRows, type TenantRoleDraft, type TenantRoleState } from "./user-tenant-roles";
+
+/** Every tenant and every group, for a platform admin. */
+const EVERY_TENANT: TenantReach = { managedTenants: null, givableGroups: null };
 
 const STATE_TAGS: Record<Exclude<TenantRoleState, "same">, { label: string; className: string }> = {
     new: { label: "Joins on save", className: "bg-success/10 text-success" },
@@ -31,6 +34,8 @@ interface TenantRolesFieldProps {
     /** Runs the platform, so no tenant is fine. */
     platform?: boolean;
     disabled?: boolean;
+    /** The tenants and groups the viewer changes, those their platform group reaches. Every one when left out. */
+    reach?: TenantReach;
 }
 
 /**
@@ -38,7 +43,7 @@ interface TenantRolesFieldProps {
  * the groups of that tenant, Remove, and Add to a tenant with one of its groups. Nothing changes
  * before Save, and every row says what Save does there.
  */
-export function TenantRolesField({ before, value, onChange, groups, lock, platform = false, disabled = false }: TenantRolesFieldProps) {
+export function TenantRolesField({ before, value, onChange, groups, lock, platform = false, disabled = false, reach = EVERY_TENANT }: TenantRolesFieldProps) {
     const nameOf = useTenantName();
     const { tenants } = useTenantView();
     const [adding, setAdding] = useState(false);
@@ -46,8 +51,15 @@ export function TenantRolesField({ before, value, onChange, groups, lock, platfo
     const [newGroup, setNewGroup] = useState("");
     const rows = tenantRoleRows(before, value, nameOf);
     const kept = new Set(value.map((role) => role.tenantId));
-    const open = tenants.filter((tenant) => !kept.has(tenant.id));
+    // Only the tenants the viewer looks after, with the groups they may give there, like the server checks it.
+    const open = tenants.filter((tenant) => !kept.has(tenant.id) && givableIn(groups, tenant.id, reach).length > 0);
     const locked = disabled || lock !== null;
+    /** A tenant whose group the viewer may give and take, which a group beyond them stays out of. */
+    const changeable = (tenantId: string) => {
+        const offered = givableIn(groups, tenantId, reach);
+        const held = before.find((role) => role.tenantId === tenantId)?.group.id;
+        return offered.length > 0 && (!held || offered.some((group) => group.id === held));
+    };
 
     const setGroup = (tenantId: string, groupId: string) => onChange(value.map((role) => (role.tenantId === tenantId ? { ...role, groupId } : role)));
     const remove = (tenantId: string) => onChange(value.filter((role) => role.tenantId !== tenantId));
@@ -109,7 +121,7 @@ export function TenantRolesField({ before, value, onChange, groups, lock, platfo
                                     </div>
                                 </div>
                                 {removed ? (
-                                    <Button type="button" variant="ghost" size="sm" disabled={locked} onClick={() => keep(row.tenantId, row.groupId)}>
+                                    <Button type="button" variant="ghost" size="sm" disabled={locked || !changeable(row.tenantId)} onClick={() => keep(row.tenantId, row.groupId)}>
                                         <RotateCcw />
                                         Keep
                                     </Button>
@@ -117,11 +129,12 @@ export function TenantRolesField({ before, value, onChange, groups, lock, platfo
                                     <div className="flex w-full min-w-0 items-center gap-2 sm:w-80">
                                         <div className="min-w-0 flex-1">
                                             <GroupPicker
-                                                groups={groupsOfTenant(groups, row.tenantId)}
+                                                groups={changeable(row.tenantId) ? givableIn(groups, row.tenantId, reach) : groups.filter((entry) => entry.id === row.groupId)}
+                                                // The groups are those the viewer may give in that tenant already, see `givableIn`.
                                                 viewerPlatformAdmin
                                                 allowNone={false}
                                                 value={row.groupId}
-                                                disabled={locked}
+                                                disabled={locked || !changeable(row.tenantId)}
                                                 aria-label={`Group in ${row.tenantName}`}
                                                 onChange={(groupId) => setGroup(row.tenantId, groupId)}
                                             />
@@ -131,7 +144,7 @@ export function TenantRolesField({ before, value, onChange, groups, lock, platfo
                                             variant="ghost-destructive"
                                             size="icon-sm"
                                             className="shrink-0"
-                                            disabled={locked}
+                                            disabled={locked || !changeable(row.tenantId)}
                                             onClick={() => remove(row.tenantId)}
                                             aria-label={`Remove from ${row.tenantName}`}
                                         >
@@ -164,7 +177,8 @@ export function TenantRolesField({ before, value, onChange, groups, lock, platfo
                             aria-label="The tenant"
                         />
                         <GroupPicker
-                            groups={newTenant ? groupsOfTenant(groups, newTenant) : []}
+                            groups={newTenant ? givableIn(groups, newTenant, reach) : []}
+                            // The groups are those the viewer may give in that tenant already, see `givableIn`.
                             viewerPlatformAdmin
                             allowNone={false}
                             value={newGroup}

@@ -70,6 +70,26 @@ const logOf = <T>(mode: StorageViewMode, onLog: T | undefined): T | undefined =>
 /** Whether a job of this name would write into the folder of the customers of a shared destination. */
 export const isTenantsFolderName = (name: string) => name.trim().toLowerCase() === TENANTS_FOLDER;
 
+/** Whether a path names the root of what a view sees, like `""`, `/` or `./`, and no file in it. */
+export function isRootPath(remotePath: string): boolean {
+    return remotePath.replace(/\\/g, "/").split("/").every((part) => part === "" || part === ".");
+}
+
+/**
+ * Refuses the root as the target of a delete or an upload. A storage like WebDAV deletes a folder
+ * with everything in it, so the root of a customer would take its folder along, and the root of the
+ * tenant that shares a destination the folder of every customer.
+ */
+export function assertFilePath(remotePath: string): void {
+    if (isRootPath(remotePath)) throw new ValidationError("Name a file. The root of a destination is never deleted or written as a whole.");
+}
+
+/** The path of a file on the destination for a delete or an upload, never the root of the view. */
+function filePath(mode: StorageViewMode, remotePath: string): string {
+    assertFilePath(remotePath);
+    return innerPath(mode, remotePath);
+}
+
 /** The path on the destination for a path of the view. */
 export function innerPath(mode: StorageViewMode, remotePath: string): string {
     if (mode.kind === "own") return remotePath;
@@ -95,7 +115,7 @@ export function outerFiles(mode: StorageViewMode, files: FileInfo[]): FileInfo[]
 function sessionView(session: StorageSession, mode: StorageViewMode): StorageSession {
     return {
         upload: (localPath, remotePath, onProgress, onLog, options) => {
-            const inner = innerPath(mode, remotePath);
+            const inner = filePath(mode, remotePath);
             return guarded(mode, () => session.upload(localPath, inner, onProgress, logOf(mode, onLog), options));
         },
         ...(session.download
@@ -124,7 +144,7 @@ export function storageView(adapter: StorageAdapter, mode: StorageViewMode): Sto
     const view = Object.create(adapter) as StorageAdapter;
     Object.assign(view, {
         upload: (config: Config, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: Log, options?: Parameters<StorageAdapter["upload"]>[5]) => {
-            const inner = at(remotePath);
+            const inner = filePath(mode, remotePath);
             return guarded(mode, () => adapter.upload(config, localPath, inner, onProgress, logOf(mode, onLog), options));
         },
         download: (config: Config, remotePath: string, localPath: string, onProgress?: (processed: number, total: number) => void, onLog?: Log) => {
@@ -136,7 +156,7 @@ export function storageView(adapter: StorageAdapter, mode: StorageViewMode): Sto
             return guarded(mode, async () => outerFiles(mode, await adapter.list(config, inner)));
         },
         delete: (config: Config, remotePath: string) => {
-            const inner = at(remotePath);
+            const inner = filePath(mode, remotePath);
             return guarded(mode, () => adapter.delete(config, inner));
         },
         read: adapter.read

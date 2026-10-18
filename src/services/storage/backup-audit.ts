@@ -1,7 +1,8 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { normalizeDatabaseMapping } from "@/services/restore/database-mapping";
+import { findDestination } from "@/services/sharing/destination-access";
 import type { FileRestoreTarget } from "@/services/restore/file-restore";
 import type { RestoreScope } from "@/services/restore/types";
 
@@ -43,9 +44,18 @@ async function connectionNames(ids: string[]): Promise<Map<string, string>> {
     }
 }
 
-/** The name of a destination, for an entry about several backups at it. Null when it could not be read. */
+/**
+ * The name of a destination as the tenant that runs now sees it, also one another tenant provides
+ * to it, which the tenant filter keeps out of `connectionNames`. Null when it could not be read.
+ */
 export async function destinationAuditName(destinationId: string): Promise<string | null> {
-    return (await connectionNames([destinationId])).get(destinationId) ?? null;
+    try {
+        return (await findDestination(destinationId)).row.name;
+    } catch (error) {
+        // A destination the tenant may not use reads like one that is gone, without a name.
+        if (!(error instanceof NotFoundError)) log.warn("Could not name a destination for the audit log", { destinationId }, wrapError(error));
+        return null;
+    }
 }
 
 /** The job a backup belongs to, by the folder it lies in. Null when no job has that name any more. */
@@ -62,8 +72,7 @@ async function jobOfFolder(folder: string | null): Promise<string | null> {
 
 /** A backup by its path, the name of its destination and the job it belongs to. */
 export async function backupAuditDetails(destinationId: string, file: string): Promise<BackupAuditDetails> {
-    const [names, job] = await Promise.all([connectionNames([destinationId]), jobOfFolder(jobFolderOf(file))]);
-    const destination = names.get(destinationId);
+    const [destination, job] = await Promise.all([destinationAuditName(destinationId), jobOfFolder(jobFolderOf(file))]);
     return { file, ...(destination ? { destination } : {}), ...(job ? { job } : {}) };
 }
 

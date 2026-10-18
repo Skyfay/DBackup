@@ -10,8 +10,8 @@ import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
 import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
-import { isSsoManagementRequest, placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/auth/sso-guard";
-import { allowTenantSsoLink, joinSsoTenant, refuseTenantSsoSession } from "@/lib/auth/sso-tenant-guard";
+import { isSsoManagementRequest, refuseDisabledProvider } from "@/lib/auth/sso-guard";
+import { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser } from "@/lib/auth/sso-hooks";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { DEFAULT_SESSION_DURATION, SESSION_OPTIONS, sessionDurationOf, sessionEndsAt } from "@/lib/auth/session-lifetime";
@@ -266,7 +266,7 @@ export const auth = betterAuth({
             create: {
                 before: async (user, context) => {
                     // The browser asks better-auth to add someone new, the provider decides.
-                    await refuseSsoSignUp(context, user);
+                    await beforeSsoUser(user, context);
                     // Email verification is not used as a feature anywhere in DBackup
                     // (no verification emails are sent, no login gating on this flag).
                     // Its only remaining effect is better-auth's SSO account-linking check
@@ -279,33 +279,22 @@ export const auth = betterAuth({
                         },
                     };
                 },
-                after: async (user, context) => {
-                    try {
-                        await placeSsoUser(user, context);
-                    } catch (error) {
-                        log.warn("Putting a new user of a sign-in provider into its group failed", { userId: user.id }, wrapError(error));
-                    }
-                },
+                // Someone a provider added starts in its group.
+                after: afterSsoUser,
             },
         },
         account: {
             create: {
-                // A provider of a tenant links no account it may not sign in, see sso-tenant-guard.ts.
-                before: async (account, context) => ((await allowTenantSsoLink(account, context)) ? undefined : false),
-                after: async (account, context) => {
-                    try {
-                        await joinSsoTenant(account, context);
-                    } catch (error) {
-                        log.warn("Adding an account to the tenant of its sign-in provider failed", { userId: account.userId }, wrapError(error));
-                    }
-                },
+                // A provider links no account it may not sign in, see sso-tenant-guard.ts.
+                before: beforeSsoLink,
+                after: afterSsoLink,
             },
         },
         session: {
             create: {
                 before: async (session, context) => {
-                    // A provider of a tenant signs in only the accounts it may, whenever they linked.
-                    await refuseTenantSsoSession(session, context, (url) => context?.redirect(url) ?? new APIError("FORBIDDEN"));
+                    // A provider signs in only an account linked to it that it may sign in, whenever it linked.
+                    await beforeSsoSession(session, context);
                     // The end of every session, from the length the owner set.
                     const expiresAt = sessionEndsAt(await getSessionDuration());
                     return {

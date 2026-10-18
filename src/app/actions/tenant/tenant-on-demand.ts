@@ -62,9 +62,12 @@ export async function setTenantOnDemand(id: string, perDay: number | null) {
         const change = await tenantOnDemandService.set(tenantId.data, value.data);
         if (change.before !== change.after) {
             const changes = diffFields({ perDay: words(change.before) }, { perDay: words(change.after) }, { perDay: { label: "Backups on demand" } });
-            // The platform's change, and one the tenant learns of in its own log.
+            // The platform's change, and one the tenant learns of in its own log, which is the same
+            // log for the home tenant.
             await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, PLATFORM);
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, { tenantId: tenantId.data });
+            if (tenantId.data !== HOME_TENANT_ID) {
+                await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, changes }, tenantId.data, { tenantId: tenantId.data });
+            }
         }
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: change };

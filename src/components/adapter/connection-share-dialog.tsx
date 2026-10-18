@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2, Share2, Trash2, Unlink } from "lucide-react";
+import { Loader2, Lock, Share2, Trash2, TriangleAlert, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { deleteSharedBackups, previewShareLoss, saveConnectionShare, stopSharingWith } from "@/app/actions/tenant/connection-share";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,9 @@ function LossList({ losing, destination }: { losing: ShareTenantUse[]; destinati
 
 /**
  * Who gets a destination or a channel, and on what terms. Saving it for fewer tenants asks first
- * and says what each of them loses, on a destination its backups there.
+ * and says what each of them loses, on a destination its backups there. Someone of a platform group
+ * of some tenants ticks the tenants it reaches, and the tenants beyond it that get the connection
+ * already stay ticked as they are, with the terms that hold for them too.
  */
 export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: ConnectionShareView; onOpenChange: (open: boolean) => void; onSaved: () => void }) {
     const destination = view.kind === "destination";
@@ -54,6 +56,7 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
     const [losing, setLosing] = useState<ShareTenantUse[] | null>(null);
     const picked = useMemo(() => new Set(settings.tenantIds), [settings.tenantIds]);
     const count = settings.allTenants ? view.candidates.length : settings.tenantIds.length;
+    const { reach } = view;
 
     const toggle = (id: string, on: boolean) =>
         setSettings((current) => ({ ...current, tenantIds: on ? [...current.tenantIds, id] : current.tenantIds.filter((entry) => entry !== id) }));
@@ -96,16 +99,29 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                     </DialogHead>
                     <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-9.5rem)]">
                         <div className="space-y-5 p-5">
+                            {view.cleanupPending && (
+                                <p className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/5 px-3 py-2.5 text-sm">
+                                    <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                                    Nobody gets {view.name} any more, but what its customers left in it could not be deleted yet. Save with nobody picked to try again.
+                                </p>
+                            )}
                             <div className="space-y-2.5">
                                 <Label>Who sees it</Label>
                                 <ChoiceCards
                                     value={settings.allTenants ? "all" : "picked"}
                                     onValueChange={(value) => setSettings((current) => ({ ...current, allTenants: value === "all" }))}
                                     options={[
-                                        { value: "all", title: "All tenants", description: `The ${view.candidates.length} of today and every new one.` },
+                                        {
+                                            value: "all",
+                                            title: "All tenants",
+                                            description: reach.allTenants ? "Every tenant of today and every new one." : `The ${view.candidates.length} of today and every new one.`,
+                                            disabled: Boolean(reach.allTenants),
+                                            badge: reach.allTenants ? "Beyond your reach" : undefined,
+                                        },
                                         { value: "picked", title: "Picked tenants", description: "Only the tenants ticked below." },
                                     ]}
                                 />
+                                {reach.allTenants && <p className="text-xs text-muted-foreground">{reach.allTenants}</p>}
                                 {!settings.allTenants && (
                                     <ul className="divide-y rounded-lg border">
                                         {view.candidates.map((tenant) => {
@@ -122,6 +138,16 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                                                 </li>
                                             );
                                         })}
+                                        {reach.outside.map((tenant) => (
+                                            <li key={tenant.id} className="flex items-center gap-3 px-3 py-2.5" title="Your platform group does not reach it, so it keeps the connection as it is.">
+                                                <Checkbox checked disabled aria-label={`${tenant.name}, beyond your reach`} />
+                                                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{tenant.name}</span>
+                                                <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                                                    <Lock className="size-3" aria-hidden="true" />
+                                                    stays, beyond your reach
+                                                </span>
+                                            </li>
+                                        ))}
                                     </ul>
                                 )}
                             </div>
@@ -132,8 +158,9 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                                     <SwitchList>
                                         <SwitchRow
                                             title="Only encrypted backups"
-                                            description="A job of a tenant writes to it only with a key of its own Vault. Off, each tenant decides."
+                                            description={reach.terms ?? "A job of a tenant writes to it only with a key of its own Vault. Off, each tenant decides."}
                                             checked={settings.encryptedOnly}
+                                            disabled={Boolean(reach.terms)}
                                             onCheckedChange={(on) => setSettings((current) => ({ ...current, encryptedOnly: on }))}
                                         />
                                     </SwitchList>
@@ -150,10 +177,11 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                                         value={settings.ownRecipients ? "own" : "fixed"}
                                         onValueChange={(value) => setSettings((current) => ({ ...current, ownRecipients: value === "own" }))}
                                         options={[
-                                            { value: "own", title: "The recipients each tenant picks", description: "The server, the login and the sender stay with this tenant. A tenant names its own addresses." },
-                                            { value: "fixed", title: "The recipients set here", description: "The mail comes to this tenant, about the runs of the jobs of a tenant that names it." },
+                                            { value: "own", title: "The recipients each tenant picks", description: "The server, the login and the sender stay with this tenant. A tenant names its own addresses.", disabled: Boolean(reach.terms) },
+                                            { value: "fixed", title: "The recipients set here", description: "The mail comes to this tenant, about the runs of the jobs of a tenant that names it.", disabled: Boolean(reach.terms) },
                                         ]}
                                     />
+                                    {reach.terms && <p className="text-xs text-muted-foreground">{reach.terms}</p>}
                                 </div>
                             ) : (
                                 <p className="text-xs text-muted-foreground">A chat or a webhook sends where it is set here, its address is the recipient.</p>
@@ -162,7 +190,7 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                     </ScrollArea>
                     <div className={cn(DIALOG_FOOTER, "flex items-center justify-end gap-2")}>
                         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-                        <Button onClick={submit} disabled={saving || (!settings.allTenants && settings.tenantIds.length === 0 && view.uses.length === 0)}>
+                        <Button onClick={submit} disabled={saving || (!settings.allTenants && settings.tenantIds.length === 0 && view.uses.length === 0 && !view.cleanupPending)}>
                             {saving && <Loader2 className="animate-spin" />}
                             {count > 0 ? `Share with ${plural(count, "tenant", "tenants")}` : "Stop sharing"}
                         </Button>

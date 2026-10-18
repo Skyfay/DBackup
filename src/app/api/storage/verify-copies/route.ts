@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { readCopyVerification, startCopyVerification } from "@/services/storage/copy-verification";
 import { userService } from "@/services/user/user-service";
+import { auditService } from "@/services/audit-service";
+import { backupAuditDetails } from "@/services/storage/backup-audit";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 const log = logger.child({ route: "storage/verify-copies" });
 
@@ -25,7 +28,9 @@ function failure(error: unknown, what: string): NextResponse {
 
 /**
  * Checks copies of a backup against their checksums, one after the other in one run in History.
- * Answers with the run at once, which `GET` then follows.
+ * Answers with the run at once, which `GET` then follows. Whoever may see the backups checks them,
+ * in one tenant, since each check keeps its result in the `.meta.json` of the copy, and the audit
+ * log gets an entry per copy.
  */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -33,6 +38,7 @@ export async function POST(req: NextRequest) {
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.READ);
+        tenantOf(ctx);
 
         const parsed = StartSchema.safeParse(await req.json());
         if (!parsed.success) {
@@ -41,6 +47,15 @@ export async function POST(req: NextRequest) {
 
         const startedBy = (await userService.nameOf(ctx.userId)) ?? "Manual";
         const { executionId } = await startCopyVerification(parsed.data.copies, startedBy);
+        for (const copy of parsed.data.copies) {
+            await auditService.logFor(
+                ctx,
+                AUDIT_ACTIONS.EXECUTE,
+                AUDIT_RESOURCES.BACKUP,
+                { action: "verify", ...(await backupAuditDetails(copy.destinationId, copy.file)), executionId },
+                copy.destinationId
+            );
+        }
         return NextResponse.json({ success: true, data: { executionId } });
     } catch (error: unknown) {
         return failure(error, "Starting a copy verification failed");

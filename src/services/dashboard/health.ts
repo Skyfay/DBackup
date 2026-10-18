@@ -96,7 +96,7 @@ export function deriveHealth(jobs: HealthJob[], runsByJob: Map<string, RunSummar
     return {
         state: "healthy",
         lastRunAt,
-        nextRun: next ? { jobName: next.name, at: next.nextRunAt! } : null,
+        nextRun: next ? { jobName: next.name, at: next.nextRunAt!, ...(next.tenantId ? { tenantId: next.tenantId } : {}) } : null,
     };
 }
 

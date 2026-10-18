@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
-import { assignmentAt, followMoves, matchesPattern, ownerAt, ruleAt, type DatabasePlace, type PlacedAssignment } from "@/lib/tenant/database-owner";
+import { assignmentAt, followMoves, holderAt, matchesPattern, ownerAt, ruleAt, type DatabasePlace, type PlacedAssignment } from "@/lib/tenant/database-owner";
 import { effectiveOnDemand } from "@/lib/tenant/sharing";
-import { factsOf, serverBackupFiles, type OwnerFacts } from "./shared-backups";
+import { backupDatesByDatabase, factsOf, serverBackupFiles, type OwnerFacts } from "./shared-backups";
 import { listedDatabases, tenantOnDemand } from "./shared-servers";
 
 /**
@@ -57,15 +57,31 @@ async function serversOf(ids: string[]): Promise<Map<string, PlaceServer>> {
     return servers;
 }
 
-/** The names a rule of a deleted server gave the tenant, read from the backups of that server, since its list of databases is gone. */
-async function namesFromBackups(sourceId: string, pattern: string, facts: OwnerFacts, tenantId: string): Promise<string[]> {
-    const names = new Set<string>();
-    for (const { file } of await serverBackupFiles(sourceId)) {
-        for (const name of file.databases ?? []) {
-            if (matchesPattern(pattern, name) && ownerAt(facts.assignments, facts.rules, name, new Date(file.createdAt)) === tenantId) names.add(name);
-        }
+/**
+ * The names a rule gave the tenant, read from the backups of the server: what a rule of a deleted
+ * server gave, whose list of databases is gone, and what a rule gave that the server no longer lists
+ * or that is someone else's now. Only a backup a rule of the tenant gave counts.
+ */
+function namesFromBackups(dates: ReadonlyMap<string, readonly string[]>, pattern: string, facts: OwnerFacts, tenantId: string): string[] {
+    const names: string[] = [];
+    for (const [name, made] of dates) {
+        if (!matchesPattern(pattern, name)) continue;
+        const given = made.some((createdAt) => {
+            const holder = holderAt(facts.assignments, facts.rules, name, new Date(createdAt));
+            return holder?.via === "rule" && holder.fact.tenantId === tenantId;
+        });
+        if (given) names.push(name);
     }
-    return [...names];
+    return names;
+}
+
+/** When a name stopped being the tenant's: when what holds it now took it over. */
+function lostAt(facts: OwnerFacts, name: string, now: Date): Date {
+    const holder = holderAt(facts.assignments, facts.rules, name, now);
+    if (!holder) return now;
+    if (holder.via === "moved") return holder.fact.validUntil ?? now;
+    // Given later with a start in the past, it only took over from when it was given.
+    return new Date(Math.max(holder.fact.validFrom.getTime(), holder.fact.createdAt.getTime()));
 }
 
 /** Every place of the databases a tenant holds or held on the shared servers of other tenants. */
@@ -112,21 +128,39 @@ export async function tenantPlaces(tenantId: string, now: Date): Promise<TenantP
 
     // A rule gives the databases the server holds now that match it and nobody else holds. Of a
     // deleted server, whose list is gone, and of a rule that ended, the ones its backups show it
-    // gave, which stay the customer's like those of an ended assignment.
+    // gave, which stay the customer's like those of an ended assignment. So do the ones a live rule
+    // gave that are someone else's now, and the ones the server no longer lists stay the customer's.
     const facts = new Map<string, OwnerFacts>();
+    // The backups of a server are read once, however many rules of it there are, as the days each
+    // of its databases was backed up.
+    const dates = new Map<string, Map<string, string[]>>();
+    const datesOf = async (sourceId: string) => {
+        const known = dates.get(sourceId);
+        if (known) return known;
+        const read = backupDatesByDatabase(await serverBackupFiles(sourceId));
+        dates.set(sourceId, read);
+        return read;
+    };
     for (const rule of rules) {
         const sourceFacts = facts.get(rule.sourceId) ?? (await factsOf(rule.sourceId));
         facts.set(rule.sourceId, sourceFacts);
+        const owned = (name: string) => ownerAt(sourceFacts.assignments, sourceFacts.rules, name, now) === tenantId;
         if (servers.get(rule.sourceId)?.live && !rule.validUntil) {
+            const listed = new Set<string>();
             for (const { name } of await listedDatabases(rule.sourceId)) {
-                if (!matchesPattern(rule.pattern, name) || ownerAt(sourceFacts.assignments, sourceFacts.rules, name, now) !== tenantId) continue;
+                if (!matchesPattern(rule.pattern, name) || !owned(name)) continue;
+                listed.add(name);
                 // What it allows comes from the holding that wins: the name itself, else the rule of the highest priority.
                 const held = assignmentAt(assignments.filter((entry) => entry.sourceId === rule.sourceId), name, now)
                     ?? ruleAt(rules.filter((entry) => entry.sourceId === rule.sourceId), name, now);
                 hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, null, held ? allowed(held.onDemandPerDay) : null);
             }
+            for (const name of namesFromBackups(await datesOf(rule.sourceId), rule.pattern, sourceFacts, tenantId)) {
+                if (listed.has(name)) continue;
+                hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, owned(name) ? null : lostAt(sourceFacts, name, now), null);
+            }
         } else {
-            for (const name of await namesFromBackups(rule.sourceId, rule.pattern, sourceFacts, tenantId)) {
+            for (const name of namesFromBackups(await datesOf(rule.sourceId), rule.pattern, sourceFacts, tenantId)) {
                 hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, rule.validUntil, null);
             }
         }

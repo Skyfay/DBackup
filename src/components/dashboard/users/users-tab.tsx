@@ -46,8 +46,8 @@ export interface UsersTabHandle {
 
 type Quick = "all" | "no-factor" | "no-group";
 
-/** Sees nothing: no group in the tenant, or in All tenants no tenant at all and nothing on the platform. */
-const placeless = (user: UserRow) => (user.tenants ? user.tenants.length === 0 && !onPlatform(user) : !user.group);
+/** Sees nothing: no group in the tenant, or in All tenants no tenant at all, and nothing on the platform. */
+const placeless = (user: UserRow) => (user.tenants ? user.tenants.length === 0 : !user.group) && !onPlatform(user);
 
 const QUICK: { value: Quick; label: string; keep: (user: UserRow) => boolean }[] = [
     { value: "all", label: "All", keep: () => true },
@@ -262,6 +262,8 @@ export function UsersTab({ ref, cards, canManage, initialLayout, source = "/api/
                 groupsMenu={shown ? userActions(shown, shownHandlers, true) : []}
                 onChanged={afterChange}
                 canManageTenants={allTenants && managesTenants}
+                managedTenants={model?.managedTenants ?? null}
+                givableGroups={model?.givableGroups ?? null}
                 canManagePlatformGroup={platformRole && canManage}
                 version={version}
             />
@@ -275,6 +277,8 @@ export function UsersTab({ ref, cards, canManage, initialLayout, source = "/api/
                 allowNoGroup={model?.homeTenant ?? true}
                 allTenants={allTenants}
                 manageTenants={allTenants && managesTenants}
+                tenantReach={{ managedTenants: model?.managedTenants ?? null, givableGroups: model?.givableGroups ?? null }}
+                newUserReach={{ managedTenants: model?.newUserTenants ?? null, givableGroups: model?.newUserGroups ?? null }}
                 managePlatformGroup={platformRole && canManage}
                 onOpenChange={(next) => setForm((current) => ({ ...current, open: next }))}
                 onSaved={afterChange}

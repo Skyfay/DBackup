@@ -3,6 +3,8 @@ import { registerAdapters } from "@/lib/adapters";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { z } from "zod";
 import { listTables, type ReadRefusal } from "@/services/databases/database-read-service";
 
@@ -24,7 +26,8 @@ const REFUSALS: Record<ReadRefusal, { message: string; status: number }> = {
  * POST /api/adapters/database-tables
  *
  * Returns the list of tables/collections inside a database for a given source.
- * Accepts either a saved sourceId or a raw adapterId + config pair.
+ * Accepts either a saved sourceId or a raw adapterId + config pair. A raw config needs the right
+ * to change connections of its kind, see `assertMayReadFormConfig`.
  */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -33,9 +36,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.READ);
-
     try {
+        checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.READ);
+
         const raw = await req.json();
         const parsed = BodySchema.safeParse(raw);
 
@@ -44,6 +47,7 @@ export async function POST(req: NextRequest) {
         }
 
         const body = parsed.data;
+        if (!("sourceId" in body)) assertMayReadFormConfig(ctx, body.adapterId);
         const target = "sourceId" in body ? { sourceId: body.sourceId } : { adapterId: body.adapterId, config: body.config };
 
         const outcome = await listTables(target, body.database);
@@ -55,6 +59,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, tables: outcome.value });
 
     } catch (error: unknown) {
+        const refusal = permissionRefusal(error);
+        if (refusal) return refusal;
         const message = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json({ success: false, message }, { status: 500 });
     }

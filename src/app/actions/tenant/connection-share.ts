@@ -12,11 +12,13 @@ import { auditService } from "@/services/audit-service";
 import { ShareChangeError, connectionShareService, type ShareChange, type ShareSettings } from "@/services/sharing/connection-shares";
 import { setRecipients } from "@/services/sharing/channel-recipients";
 import { sendRecipientsTest } from "@/services/sharing/recipients-test";
+import { platformGroupService } from "@/services/user/platform-group-service";
 
 /**
  * Sharing a destination or a channel with other tenants, and naming the recipients of an email
  * channel another tenant shares. Who shares holds Share with customers, a right of the platform, in
- * a tenant that shares with customers. Each action works in one tenant, never in All tenants.
+ * a tenant that shares with customers. Each action works in one tenant, never in All tenants, and
+ * shares with and takes from only the tenants the platform group of the viewer reaches.
  */
 
 const log = logger.child({ action: "connection-share" });
@@ -43,7 +45,7 @@ export async function getConnectionShare(configId: string) {
     if (!id.success) return { success: false as const, error: "Invalid request" };
     if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
     try {
-        return { success: true as const, data: await connectionShareService.view(id.data) };
+        return { success: true as const, data: await connectionShareService.view(id.data, await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
         return { success: false as const, error: messageOf(error, "The sharing of this connection could not be read.") };
     }
@@ -57,7 +59,7 @@ export async function previewShareLoss(configId: string, settings: Pick<ShareSet
     if (!id.success || !parsed.success) return { success: false as const, error: "Invalid request" };
     if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
     try {
-        return { success: true as const, data: await connectionShareService.losing(id.data, parsed.data) };
+        return { success: true as const, data: await connectionShareService.losing(id.data, parsed.data, await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
         return { success: false as const, error: messageOf(error, "The change could not be checked.") };
     }
@@ -95,7 +97,7 @@ export async function saveConnectionShare(configId: string, settings: ShareSetti
     if (!id.success || !parsed.success || typeof confirmed !== "boolean") return { success: false as const, error: "Invalid request" };
     if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
     try {
-        const result = await connectionShareService.save(id.data, parsed.data, { confirmed });
+        const result = await connectionShareService.save(id.data, parsed.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
         const view = await connectionShareService.view(id.data);
         await logChange(viewer.id, id.data, result, parsed.data, view.uses.map((use) => use.name));
         revalidatePath("/dashboard/connections");
@@ -116,7 +118,7 @@ export async function stopSharingWith(configId: string, tenantId: string, confir
     if (!id.success || !customer.success || typeof confirmed !== "boolean") return { success: false as const, error: "Invalid request" };
     if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
     try {
-        const result = await connectionShareService.stopFor(id.data, customer.data, { confirmed });
+        const result = await connectionShareService.stopFor(id.data, customer.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
         const view = await connectionShareService.view(id.data);
         await logChange(viewer.id, id.data, result, { ...view.settings }, view.uses.map((use) => use.name));
         revalidatePath("/dashboard/connections");
@@ -136,7 +138,7 @@ export async function deleteSharedBackups(configId: string, tenantId: string) {
     if (!id.success || !customer.success) return { success: false as const, error: "Invalid request" };
     if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
     try {
-        const result = await connectionShareService.deleteBackupsOf(id.data, customer.data);
+        const result = await connectionShareService.deleteBackupsOf(id.data, customer.data, await platformGroupService.reachOf(viewer.id));
         const details = { name: result.name, action: "tenantBackups", tenant: result.tenantName, backups: result.backups };
         await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.DESTINATION, details, id.data);
         await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.DESTINATION, details, id.data, { tenantId: customer.data });

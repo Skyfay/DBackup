@@ -222,10 +222,10 @@ export const PLATFORM_AREAS: PermissionArea[] = [
     {
         id: "platform-accounts",
         label: "Accounts",
-        summary: "See: every account · Change: change them and give platform groups",
+        summary: "See: the accounts · Change: change them and give platform groups",
         permissions: [
-            { id: P.PLATFORM.ACCOUNTS_READ, label: "See every account", description: "Every account of the instance with its tenants and groups, and the platform groups" },
-            { id: P.PLATFORM.ACCOUNTS_WRITE, label: "Manage the accounts", description: "Change accounts of every tenant and give platform groups that may do no more than you", needs: [P.PLATFORM.ACCOUNTS_READ] },
+            { id: P.PLATFORM.ACCOUNTS_READ, label: "See the accounts", description: "The accounts of the tenants the platform group reaches with their tenants and groups, every account for all tenants, and the platform groups" },
+            { id: P.PLATFORM.ACCOUNTS_WRITE, label: "Manage the accounts", description: "Change the accounts of the tenants the platform group reaches and give platform groups that may do no more than you", needs: [P.PLATFORM.ACCOUNTS_READ] },
         ],
         levels: { see: [P.PLATFORM.ACCOUNTS_READ], change: [P.PLATFORM.ACCOUNTS_READ, P.PLATFORM.ACCOUNTS_WRITE] },
     },
@@ -235,7 +235,7 @@ export const PLATFORM_AREAS: PermissionArea[] = [
         label: "Sign-in providers",
         summary: "See: the providers · Changing them is for a platform admin",
         permissions: [
-            { id: P.PLATFORM.SIGN_IN_READ, label: "See the sign-in providers", description: "The providers of the platform and of the tenants. Only a platform admin changes them, since a provider signs in as anyone of its emails" },
+            { id: P.PLATFORM.SIGN_IN_READ, label: "See the sign-in providers", description: "The providers of the platform and of the tenants the platform group reaches. Only a platform admin changes them, since a provider signs in as anyone of its emails" },
         ],
         levels: { see: [P.PLATFORM.SIGN_IN_READ] },
     },
@@ -252,7 +252,7 @@ export const PLATFORM_AREAS: PermissionArea[] = [
             {
                 id: P.PLATFORM.SHARING_WRITE,
                 label: "Share with customers",
-                description: "Give databases to tenants, by hand or by rules, move them and allow backups on demand, share destinations and channels, and delete the backups of a tenant on a shared destination",
+                description: "Give databases to the tenants the platform group reaches, by hand or by rules, move them and allow backups on demand, share destinations and channels with them, and delete their backups on a shared destination",
                 needs: [P.PLATFORM.SHARING_READ],
             },
         ],

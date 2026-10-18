@@ -20,6 +20,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { UserActivity, UserApiKey, UserDetails, UserRow, UsersGroup } from "@/services/user/users-types";
+import { onPlatform } from "./user-tenants";
 
 const log = logger.child({ component: "user-details" });
 
@@ -80,6 +81,17 @@ export function AccessSection({ user, groups, onChangeGroup }: { user: UserRow; 
             Change group
         </button>
     );
+
+    // An account that runs the platform needs no group here to see something.
+    if (!user.group && onPlatform(user)) {
+        return (
+            <Section title="Access" aside={aside}>
+                <p className="text-sm text-muted-foreground">
+                    No group here. {user.superAdmin ? "As a platform admin it sees and changes every tenant." : "Its platform group decides what it may do in the tenants it reaches."}
+                </p>
+            </Section>
+        );
+    }
 
     if (!user.group || !group) {
         return (

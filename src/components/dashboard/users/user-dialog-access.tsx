@@ -9,6 +9,7 @@ import { useTenantName } from "@/components/tenant/tenant-view";
 import { usePageModel } from "@/hooks/use-page-model";
 import { PLATFORM_ADMIN_GROUP_ID, type PlatformGroupsModel } from "@/services/user/platform-groups-types";
 import type { UserRow, UsersGroup } from "@/services/user/users-types";
+import type { TenantReach } from "./user-access";
 import { TenantRolesField } from "./user-tenant-roles-field";
 import { draftsOf, tenantChangeLine, tenantRoleChanges, type TenantRoleDraft } from "./user-tenant-roles";
 
@@ -118,10 +119,12 @@ interface UserAccessFieldsProps {
     value: AccessEdit;
     onChange: (next: AccessEdit) => void;
     disabled: boolean;
+    /** The tenants and groups the viewer changes, every one when left out. */
+    tenantReach?: TenantReach;
 }
 
 /** The platform group and the tenants of an account, below its name and email in Edit user. */
-export function UserAccessFields({ user, groups, platformModel, parts, value, onChange, disabled }: UserAccessFieldsProps) {
+export function UserAccessFields({ user, groups, platformModel, parts, value, onChange, disabled, tenantReach }: UserAccessFieldsProps) {
     return (
         <>
             {parts.platform && (
@@ -148,6 +151,7 @@ export function UserAccessFields({ user, groups, platformModel, parts, value, on
                     lock={parts.tenantLock}
                     platform={value.platform !== NO_PLATFORM_GROUP}
                     disabled={disabled}
+                    reach={tenantReach}
                 />
             )}
         </>

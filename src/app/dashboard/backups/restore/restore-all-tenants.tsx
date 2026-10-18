@@ -16,8 +16,11 @@ import type { ExplorerIndex } from "@/services/storage/explorer-types";
 /**
  * The restore page in All tenants, like from a bookmark. A restore writes into a server of one
  * tenant, so the page only says what would be restored and offers to open it in the tenant of the
- * destination that holds the backup, where the restore starts. Nothing here reads the archive or
- * starts a run.
+ * backup, where the restore starts. Nothing here reads the archive or starts a run.
+ *
+ * The address names that tenant. A customer's backup on a destination another tenant shares
+ * belongs to the customer, while the destination belongs to the tenant that shares it, so the
+ * tenant of the destination only answers for an address without one, like an older bookmark.
  */
 export function RestoreAllTenants() {
     const router = useRouter();
@@ -26,11 +29,12 @@ export function RestoreAllTenants() {
     const destinationId = searchParams.get("destinationId") ?? "";
     const mode = searchParams.get("mode");
     const { wantsDatabases, wantsFiles } = parseRestoreScope(mode);
-    // The destination names the tenant of the backup.
+    const named = searchParams.get("tenant");
     const index = useExplorerData<ExplorerIndex>(file && destinationId ? "/api/storage/explorer" : null);
     const destination = index.data?.destinations.find((entry) => entry.id === destinationId) ?? null;
+    const tenantId = named || destination?.tenantId;
     const nameOf = useTenantName();
-    const tenantName = nameOf(destination?.tenantId);
+    const tenantName = nameOf(tenantId);
     const back = () => router.push(destinationId ? `/dashboard/backups?at=${encodeURIComponent(destinationId)}` : "/dashboard/backups");
 
     if (!file || !destinationId) {
@@ -43,7 +47,7 @@ export function RestoreAllTenants() {
 
     return (
         <div className="space-y-4 md:space-y-6">
-            <AllTenantsNotice tenantId={destination?.tenantId} />
+            <AllTenantsNotice tenantId={tenantId} />
             <RestoreHead
                 file={file}
                 destinationId={destinationId}

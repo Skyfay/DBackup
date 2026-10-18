@@ -81,7 +81,7 @@ The redirect is skipped in two situations, both deliberate:
 - **After sign-in fails at the provider.** The error is shown instead, otherwise the failure would loop and hide its own message.
 - **Right after signing out.** Without this, the still-valid session at the identity provider signs you straight back in and signing out becomes impossible.
 
-If the ID matches no provider, or the provider is disabled, DBackup logs an error at startup and runs with the redirect switched off - it does not refuse to start, because that would take the instance down exactly when you need to reach the login page.
+If the ID matches no provider, the provider is disabled or it belongs to a tenant, DBackup logs an error at startup and runs with the redirect switched off - it does not refuse to start, because that would take the instance down exactly when you need to reach the login page.
 
 ::: warning No way past it from the browser
 While this is set there is no query parameter or key combination that reaches the login form. If the identity provider is unreachable or misconfigured, remove the variable and restart.

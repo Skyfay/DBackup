@@ -8,9 +8,15 @@ import prisma from "@/lib/prisma";
 import { getDataRetentionSetting, parseRetentionDays } from "@/lib/core/data-retention";
 import { ConflictError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { runAsTenant } from "@/lib/tenant/context";
+import { accountRefusal } from "@/lib/auth/account-access";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { PlatformReach } from "@/lib/auth/platform-group-caps";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
+import { sharingChanged } from "@/services/tenant/shared-servers";
 import { restoreSnapshot } from "./trash-restore";
+import type { UserSnapshot } from "./trash-snapshot";
 import { isTrashKind, type TrashKind, type TrashPart, type TrashRestoreResult, type TrashRow } from "./trash-types";
 
 const log = logger.child({ service: "TrashService" });
@@ -27,6 +33,21 @@ export interface TrashViewer {
 export function mayHandle(viewer: TrashViewer, entry: { permission: string; superAdminOnly: boolean }): boolean {
     if (viewer.isPlatformAdmin) return true;
     return !entry.superAdminOnly && viewer.permissions.includes(entry.permission);
+}
+
+/**
+ * Whether a viewer may bring back a deleted account wherever its entry waits, for Undo: a platform
+ * admin any, and one only a platform admin brings back no one else. Any other account works in the
+ * tenant of its entry alone, so the viewer has to be allowed to change such an account, see
+ * `accountRefusal`: whoever manages the accounts of the platform in a reach that covers that
+ * tenant, or the admin of that tenant.
+ */
+export function mayRestoreAccount(viewer: TrashViewer & { tenantId: string | null; reach?: PlatformReach }, entry: { permission: string; superAdminOnly: boolean; tenantId: string }): boolean {
+    if (viewer.isPlatformAdmin) return true;
+    if (entry.superAdminOnly) return false;
+    const mayChange = viewer.permissions.includes(entry.permission) || viewer.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
+    const actor = { isPlatformAdmin: false, tenantId: viewer.tenantId, permissions: viewer.permissions, reach: viewer.reach };
+    return mayChange && !accountRefusal(actor, { isPlatformAdmin: false, tenantIds: [entry.tenantId] });
 }
 
 /** How long a deleted record stays, from Data retention. */
@@ -67,11 +88,42 @@ export async function getTrashPart(viewer: TrashViewer & { canManage: boolean })
     return { rows: await listTrash(viewer), canManage: viewer.canManage };
 }
 
+const ENTRY_SELECT = { id: true, kind: true, recordId: true, name: true, permission: true, superAdminOnly: true, deletedById: true, deletedAt: true, tenantId: true } as const;
+
 /** The deleted records of these ids, for the permission check of an action. */
 export async function trashEntries(ids: string[]) {
-    return prisma.deletedRecord.findMany({
-        where: { id: { in: ids } },
-        select: { id: true, kind: true, recordId: true, name: true, permission: true, superAdminOnly: true, deletedById: true, deletedAt: true },
+    return prisma.deletedRecord.findMany({ where: { id: { in: ids } }, select: ENTRY_SELECT });
+}
+
+/**
+ * The newest deleted account of each of these ids, in whichever tenant it waits, for Undo right
+ * after a delete. An account waits in its own tenant or in the home tenant, never by the tenant it
+ * was deleted from (see `keepInTrash`), so the tenant of the request may not hold it.
+ */
+export async function latestAccountEntries(recordIds: string[]) {
+    const rows = await runAsSystem(() => prisma.deletedRecord.findMany({
+        where: { kind: "user", recordId: { in: recordIds } },
+        orderBy: { deletedAt: "desc" },
+        select: ENTRY_SELECT,
+    }));
+    const newest = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) if (!newest.has(row.recordId)) newest.set(row.recordId, row);
+    return [...newest.values()];
+}
+
+/**
+ * The email each deleted account of these entries comes back with and the tenants it works in
+ * then, for the check of a domain the provider of another tenant claims. The people of the
+ * platform and an account of no tenant count as people of the home tenant, like `ownEmailRefusal`.
+ */
+export async function trashAccounts(ids: string[], options: { anyTenant?: boolean } = {}): Promise<{ id: string; email: string; tenantIds: string[] }[]> {
+    const read = () => prisma.deletedRecord.findMany({ where: { id: { in: ids }, kind: "user" }, select: { id: true, data: true } });
+    const rows = options.anyTenant ? await runAsSystem(read) : await read();
+    return rows.map((row) => {
+        const snapshot = JSON.parse(row.data) as UserSnapshot;
+        const tenantIds = [...new Set((snapshot.memberships ?? []).map((membership) => membership.tenantId))];
+        if (snapshot.record.platformGroupId || tenantIds.length === 0) tenantIds.push(HOME_TENANT_ID);
+        return { id: row.id, email: snapshot.record.email, tenantIds };
     });
 }
 
@@ -88,15 +140,26 @@ export async function latestTrashIds(kind: TrashKind, recordIds: string[]): Prom
 }
 
 /**
+ * The deleted record of an id. With `anyTenantAccounts` an account is also found in another tenant
+ * than the one of the request, for an Undo whose caller checked the entry `latestAccountEntries` read.
+ */
+async function findEntry(id: string, anyTenantAccounts: boolean) {
+    const entry = await prisma.deletedRecord.findUnique({ where: { id } });
+    if (entry || !anyTenantAccounts) return entry;
+    const account = await runAsSystem(() => prisma.deletedRecord.findUnique({ where: { id } }));
+    return account?.kind === "user" ? account : null;
+}
+
+/**
  * Restores deleted records under their own ids, each in a transaction of its own. A name someone took
  * meanwhile comes back as a conflict, and `newName` restores a single record under another one.
  */
-export async function restoreFromTrash(ids: string[], options: { newName?: string } = {}): Promise<TrashRestoreResult> {
+export async function restoreFromTrash(ids: string[], options: { newName?: string; anyTenantAccounts?: boolean } = {}): Promise<TrashRestoreResult> {
     const result: TrashRestoreResult = { restored: [], conflicts: [], failed: [] };
     const newName = ids.length === 1 ? options.newName?.trim() || undefined : undefined;
 
     for (const id of ids) {
-        const entry = await prisma.deletedRecord.findUnique({ where: { id } });
+        const entry = await findEntry(id, options.anyTenantAccounts ?? false);
         if (!entry || !isTrashKind(entry.kind)) {
             result.failed.push({ id, name: entry?.name ?? id, error: "It is gone from Recently deleted." });
             continue;
@@ -114,8 +177,8 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
                 const { record } = JSON.parse(entry.data) as { record: { type: string; storageRole?: string | null } };
                 await assertMayAdd(record.type, record.storageRole);
             }
-            // An account belongs to no tenant, so its Undo also works in All tenants, which changes
-            // no tenant. Its entry lives in the tenant that keeps it, the home tenant from there.
+            // An account belongs to no tenant, so its Undo also works in All tenants and in another
+            // tenant, which changes no tenant. Its entry lives in the tenant that keeps it.
             const restored = kind === "user" ? await runAsTenant(entry.tenantId, restore) : await restore();
             result.restored.push({ id, recordId: entry.recordId, kind, name: restored.name, notes: restored.notes });
         } catch (error: unknown) {
@@ -128,6 +191,9 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
         }
     }
 
+    // A restored connection of a shared server brings its assignments and rules back, which the
+    // cached rows of its customers count.
+    if (result.restored.some((entry) => entry.kind === "connection")) sharingChanged();
     // A restored job runs on its schedule again.
     if (result.restored.some((entry) => entry.kind === "job")) {
         import("@/lib/server/scheduler")

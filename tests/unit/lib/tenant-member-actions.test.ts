@@ -126,6 +126,8 @@ describe("the members of a tenant, changed through a platform group", () => {
     });
 
     it("gives a group in a tenant the platform group reaches, with the guard that keeps someone who manages the members", async () => {
+        // Tom works in a tenant her platform group reaches, so she sees his account.
+        mocks.platformGroups.peopleReached.mockResolvedValue(["tom"]);
         expect(await setTenantMember("tenant-a", "tom", "g-ops")).toEqual({ success: true });
         expect(mocks.memberships.setRole).toHaveBeenCalledWith("tom", "tenant-a", "g-ops", { platformAdmin: false });
     });

@@ -21,9 +21,11 @@ const mocks = vi.hoisted(() => ({
     viewer: null as unknown as Viewer,
     audit: vi.fn(),
     createPlatformUser: vi.fn(),
+    accountRefusalFor: vi.fn(),
     notify: vi.fn(),
     service: {
         shapeOf: vi.fn(),
+        reachOf: vi.fn(),
         find: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
@@ -44,10 +46,21 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ default: {} }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: mocks.service }));
-vi.mock("@/services/user/user-service", () => ({ userService: { createPlatformUser: mocks.createPlatformUser } }));
+vi.mock("@/services/user/user-service", () => ({ userService: { createPlatformUser: mocks.createPlatformUser, accountRefusalFor: mocks.accountRefusalFor } }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: mocks.notify }));
 
+const { accountRefusal } = await vi.importActual<typeof import("@/lib/auth/account-access")>("@/lib/auth/account-access");
 const { bulkDeletePlatformGroups, createPlatformGroup, createPlatformUser, deletePlatformGroup, setUserPlatformGroup, updatePlatformGroup } = await import("@/app/actions/auth/platform-group");
+
+/** The tenants of the accounts the tests give a platform group to. */
+const TENANTS_OF: Record<string, string[]> = {
+    lena: ["acme"],
+    // Works for Acme and for Globex, which Support does not reach.
+    sam: ["acme", "globex"],
+    "max-of-globex": ["globex"],
+    // Works in no tenant yet, which counts as the home tenant.
+    fresh: [],
+};
 
 const values = (over: Partial<{ platformPermissions: string[]; tenantPermissions: string[]; allTenants: boolean; tenantIds: string[] }> = {}) => ({
     name: "Helpdesk",
@@ -74,6 +87,11 @@ beforeEach(() => {
     } as Record<string, unknown>)[id] ?? null);
     mocks.service.setFor.mockResolvedValue({ from: "No platform group", to: "Helpdesk" });
     mocks.service.holderOf.mockResolvedValue({ platformAdmin: false, groupId: null });
+    // Support reaches Acme and Shop.
+    mocks.service.reachOf.mockImplementation(async (id: string) => (id === "nina" ? SUPPORT.tenantIds : "all"));
+    // The service decides with the real rule, from the tenants of the account.
+    mocks.accountRefusalFor.mockImplementation(async (caller: Viewer & { reach?: readonly string[] | "all" }, id: string) =>
+        accountRefusal({ ...caller, tenantId: null, platformGroupShape: SUPPORT }, { isPlatformAdmin: false, tenantIds: TENANTS_OF[id] ?? [] }));
 });
 
 describe("making and changing platform groups", () => {
@@ -150,6 +168,32 @@ describe("giving someone a platform group", () => {
         expect(await setUserPlatformGroup("root", { kind: "none" })).toEqual({ success: false, error: "Another admin changes your own platform group." });
         expect(mocks.service.setFor).not.toHaveBeenCalled();
     });
+
+    it("lets someone of a platform group of some tenants give a platform group only to an account of those tenants", async () => {
+        const beyond = { success: false, error: "This account works in a tenant your platform group does not reach. Only someone who reaches all of its tenants can change it." };
+
+        // Max works for Globex alone, Sam also for Globex, and a fresh account counts as one of the home tenant.
+        expect(await setUserPlatformGroup("max-of-globex", { kind: "group", id: "pg-helpdesk" })).toEqual(beyond);
+        expect(await setUserPlatformGroup("sam", { kind: "group", id: "pg-helpdesk" })).toEqual(beyond);
+        expect(await setUserPlatformGroup("fresh", { kind: "group", id: "pg-helpdesk" })).toEqual(beyond);
+        expect(await setUserPlatformGroup("sam", { kind: "none" })).toEqual(beyond);
+        expect(mocks.service.setFor).not.toHaveBeenCalled();
+        expect(mocks.accountRefusalFor).toHaveBeenCalledWith(expect.objectContaining({ id: "nina", reach: ["acme", "shop"] }), "sam");
+
+        expect(await setUserPlatformGroup("lena", { kind: "group", id: "pg-helpdesk" })).toEqual(expect.objectContaining({ success: true }));
+    });
+
+    it("leaves a platform admin and a platform group of all tenants as they were", async () => {
+        mocks.viewer = ROOT;
+        expect(await setUserPlatformGroup("max-of-globex", { kind: "group", id: "pg-helpdesk" })).toEqual(expect.objectContaining({ success: true }));
+
+        mocks.viewer = NINA;
+        mocks.service.reachOf.mockResolvedValue("all");
+        mocks.service.shapeOf.mockResolvedValue({ id: "pg-support", shape: { ...SUPPORT, allTenants: true, tenantIds: [] } });
+        expect(await setUserPlatformGroup("max-of-globex", { kind: "group", id: "pg-helpdesk" })).toEqual(expect.objectContaining({ success: true }));
+        expect(await setUserPlatformGroup("fresh", { kind: "group", id: "pg-helpdesk" })).toEqual(expect.objectContaining({ success: true }));
+        expect(mocks.accountRefusalFor).not.toHaveBeenCalled();
+    });
 });
 
 describe("deleting several platform groups at once", () => {
@@ -184,6 +228,17 @@ describe("a new account of the platform", () => {
     beforeEach(() => {
         mocks.createPlatformUser.mockResolvedValue({ id: "u-lena" });
         mocks.notify.mockResolvedValue(undefined);
+        // An account of no tenant is for whoever looks after every tenant, so Support reaches all of them here.
+        mocks.service.reachOf.mockResolvedValue("all");
+        mocks.service.shapeOf.mockResolvedValue({ id: "pg-support", shape: { ...SUPPORT, allTenants: true, tenantIds: [] } });
+    });
+
+    it("is for a platform admin or a platform group of all tenants, never one of some tenants", async () => {
+        mocks.service.reachOf.mockResolvedValue(SUPPORT.tenantIds);
+        mocks.service.shapeOf.mockResolvedValue({ id: "pg-support", shape: SUPPORT });
+
+        expect(await createPlatformUser(account({ kind: "group", id: "pg-helpdesk" }))).toEqual({ success: false, error: expect.stringMatching(/platform group of all tenants/) });
+        expect(mocks.createPlatformUser).not.toHaveBeenCalled();
     });
 
     it("needs the right to manage the accounts of the platform", async () => {

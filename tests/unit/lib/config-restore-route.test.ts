@@ -81,8 +81,12 @@ describe("the restore routes in Settings", () => {
         mocks.context.mockReturnValue(null);
         expect((await upload.POST(postForm("/settings/config-backup/restore", form()))).status).toBe(401);
 
+        // A refused permission answers 403, it used to escape as a 500.
         mocks.context.mockReturnValue({ userId: "max", permissions: [], isPlatformAdmin: false, authMethod: "session", tenantId: "default" });
-        await expect(apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }))).rejects.toBeInstanceOf(PermissionError);
+        expect((await apply.POST(postJson("/settings/config-backup/restore/apply", { token: "t-1" }))).status).toBe(403);
+        expect((await upload.POST(postForm("/settings/config-backup/restore", form()))).status).toBe(403);
+        expect((await destination.POST(postJson("/settings/config-backup/restore/destination", { destinationId: "nas", file: "f" }))).status).toBe(403);
+        expect(mocks.apply).not.toHaveBeenCalled();
     });
 
     it("refuse an upload the middleware would cut off, before reading it", async () => {

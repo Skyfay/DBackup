@@ -43,34 +43,45 @@ async function tenantOfRecord(model: "adapterConfig" | "execution" | "job", id: 
     return row?.tenantId ?? null;
 }
 
+/** The tenant of a run, read in every tenant, null for a run that is gone. */
+export function tenantOfRun(executionId: string): Promise<string | null> {
+    return tenantOfRecord("execution", executionId);
+}
+
 /**
- * The tenant an event is about, other than the home tenant, null for none. A caller may name it,
- * else the event tells it by what it names: a connection, a destination or a server, a run or a
- * job. Without any of them it is the tenant the code runs for, like a run of a job. Only an event
- * a tenant can hear about has one.
+ * The tenant whose records an event is about, the home tenant included, which its links name. Null
+ * for none, and for an event of the platform alone. A caller may name it, else the event tells it by
+ * what it names: a connection, a destination or a server, a run or a job. Without any of them it is
+ * the tenant the code runs for, like a run of a job.
+ */
+export async function recordTenant(event: NotificationEventData, opts: { tenantId?: string | null; executionId?: string } = {}): Promise<string | null> {
+    if (!getTenantEventDefinition(event.eventType)) return null;
+    if (opts.tenantId !== undefined) return opts.tenantId;
+    const data = event.data as unknown as Record<string, unknown>;
+    const connectionId = idOf(data.configId) ?? idOf(data.storageId) ?? idOf(data.sourceId);
+    if (connectionId) {
+        const tenantId = await tenantOfRecord("adapterConfig", connectionId);
+        if (tenantId) return tenantId;
+    }
+    const executionId = opts.executionId ?? idOf(data.executionId);
+    if (executionId) {
+        const tenantId = await tenantOfRecord("execution", executionId);
+        if (tenantId) return tenantId;
+    }
+    const jobId = idOf(data.jobId);
+    if (jobId) {
+        const tenantId = await tenantOfRecord("job", jobId);
+        if (tenantId) return tenantId;
+    }
+    return currentTenantId();
+}
+
+/**
+ * The tenant an event is about, other than the home tenant, null for none. Only an event a tenant
+ * can hear about has one, see `recordTenant`.
  */
 export async function eventTenant(event: NotificationEventData, opts: { tenantId?: string | null; executionId?: string } = {}): Promise<string | null> {
-    if (!getTenantEventDefinition(event.eventType)) return null;
-    const found = await (async () => {
-        if (opts.tenantId !== undefined) return opts.tenantId;
-        const data = event.data as unknown as Record<string, unknown>;
-        const connectionId = idOf(data.configId) ?? idOf(data.storageId) ?? idOf(data.sourceId);
-        if (connectionId) {
-            const tenantId = await tenantOfRecord("adapterConfig", connectionId);
-            if (tenantId) return tenantId;
-        }
-        const executionId = opts.executionId ?? idOf(data.executionId);
-        if (executionId) {
-            const tenantId = await tenantOfRecord("execution", executionId);
-            if (tenantId) return tenantId;
-        }
-        const jobId = idOf(data.jobId);
-        if (jobId) {
-            const tenantId = await tenantOfRecord("job", jobId);
-            if (tenantId) return tenantId;
-        }
-        return currentTenantId();
-    })();
+    const found = await recordTenant(event, opts);
     return found && found !== HOME_TENANT_ID ? found : null;
 }
 
@@ -101,7 +112,8 @@ export async function deliverToTenant(event: NotificationEventData, tenantId: st
         if (channels.length === 0) return undefined;
         registerAdapters();
         const brand = await loadNotificationBrand();
-        const payload = { ...renderTemplate(event, { timeZone: brand.timeZone }), reason: tenantReason(definition.name, opts.test === true) };
+        // Its links name the tenant, so they open there from any other tenant of the reader.
+        const payload = { ...renderTemplate(event, { timeZone: brand.timeZone, tenantId }), reason: tenantReason(definition.name, opts.test === true) };
 
         let succeeded = 0;
         let failed = 0;

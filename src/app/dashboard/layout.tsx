@@ -1,7 +1,9 @@
-import { Fragment } from "react"
+import { Fragment, Suspense } from "react"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { PermissionsProvider } from "@/components/permissions/permissions-context"
+import { TenantFromLink } from "@/components/tenant/tenant-from-link"
 import { TenantViewProvider } from "@/components/tenant/tenant-view"
+import { quickSetupTenants } from "@/components/tenant/new-record"
 import { TrashDaysProvider } from "@/components/trash/trash-days"
 import { Header } from "@/components/layout/header"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -60,11 +62,12 @@ export default async function DashboardLayout({
         tenantService.count(),
         // The last answer of GitHub, so a page never waits for it.
         updateService.getUpdateInfo(),
-        // Quick Setup builds a job of the tenant's own, which a tenant with nothing to back up itself cannot.
+        // Quick Setup adds a database and builds a job of the tenant's own, which a tenant that may
+        // add no database, or has nothing to back up itself, cannot.
         inTenantLoad.then(async (inTenant) => {
             if (!inTenant) return { quickSetup: false, databases: true };
             const [shows, own] = await Promise.all([showsQuickSetup(), ownBackupReach()]);
-            return { quickSetup: shows && own.jobs, databases: own.databases };
+            return { quickSetup: shows && own.databases && own.jobs, databases: own.databases };
         }),
         cookies(),
         getTableDefaults(session.user.id),
@@ -81,6 +84,8 @@ export default async function DashboardLayout({
     const colorCss = taskColorCss(taskColors);
     const activeTenantId = viewer?.tenantId ?? null;
     const allTenants = viewer?.allTenants ?? false;
+    // In All tenants Quick Setup asks for its tenant, so it shows while one of them could take it.
+    const showQuickSetup = reach.quickSetup && (!allTenants || quickSetupTenants(tenants, viewer?.isPlatformAdmin ?? false).length > 0);
     // What the head of the sidebar offers of the tenants: All tenants for whoever may open it, the
     // numbers and Manage tenants for whoever may see them, New tenant for whoever may create them.
     // A platform group that reaches only some tenants would create one it can never open.
@@ -101,7 +106,9 @@ export default async function DashboardLayout({
                 table start with the rows per page and the row height of the viewer's profile, and every
                 delete say how long Recently deleted keeps what it deletes. */}
             <PermissionsProvider permissions={permissions}>
-                <TenantViewProvider value={{ tenants, activeTenantId, allTenants, isPlatformAdmin: viewer?.isPlatformAdmin ?? false, tenantCount, platformName: platform?.name }}>
+                <TenantViewProvider value={{ tenants, activeTenantId, allTenants, isPlatformAdmin: viewer?.isPlatformAdmin ?? false, tenantCount, platformName: platform?.name, showQuickSetup, ownDatabases: reach.databases }}>
+                {/* A link of a notification names the tenant of its record, which opens before the page looks for it. */}
+                <Suspense fallback={null}><TenantFromLink /></Suspense>
                 <TableDefaultsProvider defaults={tableDefaults}>
                     <TrashDaysProvider days={trashDays}>
                         {/* Clip, not hidden: a hidden box can still be scrolled by code. A screen-reader text, which is
@@ -113,7 +120,7 @@ export default async function DashboardLayout({
                                 isPlatformAdmin={viewer?.isPlatformAdmin ?? false}
                                 currentVersion={updateInfo.currentVersion}
                                 instanceName={instanceName || undefined}
-                                showQuickSetup={reach.quickSetup}
+                                showQuickSetup={showQuickSetup}
                                 ownDatabases={reach.databases}
                                 groupName={groupName}
                                 tenants={tenants}

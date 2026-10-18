@@ -7,6 +7,7 @@ import { latestOutcome } from "@/services/dashboard/health";
 import { estimateDuration } from "@/services/dashboard/schedule";
 import { liveProgress } from "./job-overview";
 import type { JobTimeline, TimelinePlannedRun, TimelineRun } from "./job-timeline-types";
+import { anonymousWaits, demandBeside, NO_OTHER_TENANTS, otherJobIds, otherTenantQueue, queueViewer, type Span } from "./other-tenant-queue";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** How far the timeline reaches back and ahead. */
@@ -16,10 +17,29 @@ const MAX_PLANNED_PER_JOB = 7 * 24 * 12;
 
 const plannedKey = (jobId: string, due: number) => `${jobId}@${due}`;
 
+/** When a schedule starts a run from now until `to`, and whether it runs too often to list them all. */
+function plannedTimes(schedule: string | null, offset: number, now: Date, to: Date): { times: number[]; truncated: boolean } {
+    const cron = schedule ? readCronAtOffset(schedule, offset) : null;
+    const times: number[] = [];
+    if (!cron) return { times, truncated: false };
+    let cursor = now;
+    for (let count = 0; ; count++) {
+        const next = cron.nextRun(cursor);
+        if (!next || next.getTime() > to.getTime()) return { times, truncated: false };
+        if (count === MAX_PLANNED_PER_JOB) return { times, truncated: true };
+        times.push(next.getTime());
+        cursor = next;
+    }
+}
+
 /**
  * The runs of every job a week back and a week ahead: what ran with its outcome, what runs and
  * waits now, and what the schedules plan with their usual length. The queue is played through so
  * each planned run knows when it is expected to start and which jobs it waits for.
+ *
+ * The queue is one for every tenant, so in a tenant the runs of the other tenants take their slots
+ * too. They are planned alongside and never listed, a run that waits for one names
+ * `OTHER_TENANT_JOB`, and `otherTenants` counts them where a run of the tenant shares the queue.
  *
  * The schedules are read at the offset the scheduler's time zone has now, which is far faster than
  * the zone itself, so runs after a change to summer time show an hour off until then.
@@ -27,7 +47,8 @@ const plannedKey = (jobId: string, due: number) => `${jobId}@${due}`;
 export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
     const from = new Date(now.getTime() - TIMELINE_REACH_MS);
     const to = new Date(now.getTime() + TIMELINE_REACH_MS);
-    const [jobs, executions, history, timezone, slots] = await Promise.all([
+    const viewer = await queueViewer();
+    const [jobs, executions, history, timezone, slots, others] = await Promise.all([
         prisma.job.findMany({ select: { id: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } } } }),
         prisma.execution.findMany({
             where: { type: "Backup", jobId: { not: null }, OR: [{ startedAt: { gte: from } }, { status: { in: ["Running", "Pending"] } }] },
@@ -37,6 +58,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
         getRecentRunsByJob(),
         getSchedulerTimezone(),
         getMaxConcurrentJobs(),
+        viewer ? otherTenantQueue(viewer) : NO_OTHER_TENANTS,
     ]);
 
     const estimates: Record<string, number> = {};
@@ -46,6 +68,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
         estimates[job.id] = estimateDuration(runs);
         if (latestOutcome(runs)?.status === "Failed") failing.push(job.id);
     }
+    const otherEstimates = new Map(others.jobs.map((job) => [job.id, estimateDuration(job.runs)]));
 
     const items: QueueItem[] = [];
     for (const execution of executions) {
@@ -59,29 +82,32 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
             startedAt: execution.status === "Running" ? time : undefined,
         });
     }
+    const otherItems: QueueItem[] = others.live.map((run) => {
+        const time = run.startedAt.getTime();
+        return { key: run.id, jobId: run.jobId, due: time, durationMs: otherEstimates.get(run.jobId) ?? 0, startedAt: run.status === "Running" ? time : undefined };
+    });
 
-    const offset = Math.round(getTimezoneOffset(timezone, now) / 60_000);
+    const measured = Math.round(getTimezoneOffset(timezone, now) / 60_000);
+    const offset = Number.isFinite(measured) ? measured : 0;
     const due: { jobId: string; at: number }[] = [];
     const truncated: string[] = [];
     for (const job of jobs) {
-        const cron = job.enabled ? readCronAtOffset(job.schedulePreset?.schedule ?? job.schedule ?? "", Number.isFinite(offset) ? offset : 0) : null;
-        if (!cron) continue;
-        let cursor = now;
-        for (let count = 0; ; count++) {
-            const next = cron.nextRun(cursor);
-            if (!next || next.getTime() > to.getTime()) break;
-            if (count === MAX_PLANNED_PER_JOB) {
-                truncated.push(job.id);
-                break;
-            }
-            due.push({ jobId: job.id, at: next.getTime() });
-            items.push({ key: plannedKey(job.id, next.getTime()), jobId: job.id, due: next.getTime(), durationMs: estimates[job.id] ?? 0 });
-            cursor = next;
+        const times = plannedTimes(job.enabled ? job.schedulePreset?.schedule ?? job.schedule ?? "" : null, offset, now, to);
+        if (times.truncated) truncated.push(job.id);
+        for (const at of times.times) {
+            due.push({ jobId: job.id, at });
+            items.push({ key: plannedKey(job.id, at), jobId: job.id, due: at, durationMs: estimates[job.id] ?? 0 });
+        }
+    }
+    for (const job of others.jobs) {
+        for (const at of plannedTimes(job.schedule, offset, now, to).times) {
+            otherItems.push({ key: plannedKey(job.id, at), jobId: job.id, due: at, durationMs: otherEstimates.get(job.id) ?? 0 });
         }
     }
 
-    const plan = planQueue(items, slots, now.getTime());
+    const plan = planQueue([...items, ...otherItems], slots, now.getTime());
     const iso = (time: number | undefined) => (time === undefined ? null : new Date(time).toISOString());
+    const otherJobs = otherJobIds(others);
 
     const runs: TimelineRun[] = executions.flatMap((execution) => {
         if (!execution.jobId) return [];
@@ -95,7 +121,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
             ...(execution.status === "Running" ? liveProgress(execution.metadata) : { stage: null, progress: null }),
             expectedStart: iso(queued?.start),
             expectedEnd: iso(queued?.end),
-            waitsFor: queued?.waitsFor ?? [],
+            waitsFor: anonymousWaits(queued?.waitsFor ?? [], otherJobs),
         }];
     });
 
@@ -108,9 +134,15 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
                 due: new Date(at).toISOString(),
                 start: new Date(queued?.start ?? at).toISOString(),
                 end: new Date(queued?.end ?? at + (estimates[jobId] ?? 0)).toISOString(),
-                waitsFor: queued?.waitsFor ?? [],
+                waitsFor: anonymousWaits(queued?.waitsFor ?? [], otherJobs),
             };
         });
 
-    return { now: now.toISOString(), from: from.toISOString(), to: to.toISOString(), slots, estimates, failing, runs, planned, truncated };
+    const timeline: JobTimeline = { now: now.toISOString(), from: from.toISOString(), to: to.toISOString(), slots, estimates, failing, runs, planned, truncated };
+    if (!viewer) return timeline;
+    // A run that waits counts from when it was due, like the Every job row counts the bars.
+    const spanOf = (item: QueueItem): Span => ({ from: item.due, to: plan.get(item.key)?.end ?? item.due });
+    const otherTenants = demandBeside(otherItems.map(spanOf), items.map(spanOf))
+        .map((stretch) => ({ from: new Date(stretch.from).toISOString(), to: new Date(stretch.to).toISOString(), count: stretch.count }));
+    return { ...timeline, otherTenants };
 }

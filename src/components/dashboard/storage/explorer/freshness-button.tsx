@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, ChevronDown, ClockAlert, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -61,12 +62,16 @@ function StateLine({ destination, state }: { destination: ExplorerDestination; s
 function DestinationRow({ destination }: { destination: ExplorerDestination }) {
     const state = freshnessOf(destination);
     const reason = state === "behind" ? behindReason(destination) : undefined;
+    // In All tenants the list holds the destinations of every tenant, so each names its tenant.
+    const { allTenants } = useTenantView();
+    const tenant = useTenantName()(allTenants ? destination.tenantId : null);
     return (
         <li className="flex items-center gap-3 px-3 py-2" title={reason}>
             <DestinationTile destination={destination} />
             <div className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{destination.name}</span>
                 <span className={cn("block truncate text-xs", state === "behind" ? "text-warning" : "text-muted-foreground")}>
+                    {tenant && <>{tenant} · </>}
                     <StateLine destination={destination} state={state} />
                 </span>
             </div>

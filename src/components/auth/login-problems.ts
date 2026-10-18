@@ -41,6 +41,10 @@ const SSO_PROBLEMS: Record<string, LoginProblem> = {
         title: "Not through this provider",
         text: "This provider signs in only emails of its own domain, and never a platform admin. Sign in another way.",
     },
+    sso_tenant_domain: {
+        title: "Your organization has its own sign-in",
+        text: "Your email belongs to an organization that signs in through its own provider. Enter your email above to sign in through it.",
+    },
     sso_error: { title: "Sign-in failed", text: "The provider answered with an error. Try again." },
 };
 

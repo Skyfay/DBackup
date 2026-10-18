@@ -14,7 +14,7 @@ import { filterText, filterValues, usePagedList, type PagedQuery } from "@/hooks
 import type { RunPage, RunRow } from "@/services/history/run-types";
 import { CancelRunDialog } from "./cancel-run-dialog";
 import { RunsStrip } from "./history-strips";
-import { startRun } from "./run-actions";
+import { runAgainLabel, startRun } from "./run-actions";
 import { RunCard } from "./run-card";
 import { RunTile } from "./run-cells";
 import { runColumns } from "./run-columns";
@@ -101,7 +101,7 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
                     ? [{ id: "backups", label: "Open backups", icon: Archive, onSelect: () => router.push(`/dashboard/backups?job=${encodeURIComponent(row.jobId!)}`), tone: "neutral" as const }]
                     : []),
                 ...(row.jobId && row.type === "Backup" && canExecute && !live
-                    ? [{ id: "again", label: "Run again", icon: Play, onSelect: () => void startRun(row.jobId!, row.name).then(() => list.refresh()), tone: "neutral" as const }]
+                    ? [{ id: "again", label: runAgainLabel(row), icon: Play, onSelect: () => void startRun(row.jobId!, row.name).then(() => list.refresh()), tone: "neutral" as const }]
                     : []),
                 ...(live && canExecute
                     ? [{ id: "cancel", label: "Cancel run", icon: Square, onSelect: () => setCancelling(row), tone: "destructive" as const }]

@@ -43,6 +43,10 @@ export interface TenantView {
     tenantCount?: number;
     /** The name of the home tenant, the platform, which decides what a tenant adds itself. */
     platformName?: string;
+    /** Whether the sidebar offers Quick Setup, which the search of pages follows. */
+    showQuickSetup?: boolean;
+    /** Whether the open tenant has or may add a database connection, which the Database Explorer needs. */
+    ownDatabases?: boolean;
 }
 
 const OUTSIDE: TenantView = { tenants: [], activeTenantId: null, allTenants: false, isPlatformAdmin: false, tenantCount: 1 };
@@ -117,14 +121,16 @@ export function useMayOpenTenant(): (tenantId: string | null | undefined) => boo
  * Opens a page in the tenant of the record it shows. In All tenants the session first switches into
  * that tenant, since a change of a record happens in its tenant, then the page opens, says where
  * and tells the other tabs. Anywhere else it is a plain navigation. A tenant that is gone or closed
- * meanwhile says so and loads the tenants again.
+ * meanwhile says so and loads the tenants again. `replace` takes the place of the address in the
+ * history of the browser, for a link that only switches the tenant of the page it opened.
  */
-export function useOpenInTenant(): (tenantId: string, href: string) => Promise<boolean> {
+export function useOpenInTenant(): (tenantId: string, href: string, options?: { replace?: boolean }) => Promise<boolean> {
     const router = useRouter();
     const { allTenants, activeTenantId } = useTenantView();
-    return useCallback(async (tenantId: string, href: string) => {
+    return useCallback(async (tenantId: string, href: string, options?: { replace?: boolean }) => {
+        const go = (target: string) => (options?.replace ? router.replace(target) : router.push(target));
         if (!allTenants && tenantId === activeTenantId) {
-            router.push(href);
+            go(href);
             return true;
         }
         try {
@@ -137,7 +143,7 @@ export function useOpenInTenant(): (tenantId: string, href: string) => Promise<b
             }
             toast.success(`You work in ${result.data.name} now`);
             announceTenantSwitch(tenantId, result.data.name);
-            router.push(href);
+            go(href);
             router.refresh();
             return true;
         } catch (error: unknown) {

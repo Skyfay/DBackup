@@ -19,6 +19,8 @@ Only a [tenant that shares with customers](/user-guide/admin/shared-databases#te
 
 Both are rights of the platform in the area **Sharing**, which a [platform group](/user-guide/admin/tenants#platform-groups) gives and a platform admin holds, never the group of a tenant. They count only in a tenant that shares with customers while there is another tenant, and never in All tenants, so open the tenant of the connection first.
 
+Someone of a platform group of selected tenants shares with those tenants only. Its share dialog lists only them to tick, and the tenants beyond them that get the connection already stay ticked and keep it, whatever is saved. **All tenants** is not for them, and a connection shared with all tenants does not change for them, they see its card without **Change**. **Stop sharing with** and **Delete its backups here** show only at the tenants they reach, and the terms, **Only encrypted backups** or who gets the mail, stay as they are while a tenant beyond their reach gets the connection. A platform group of all tenants and a platform admin reach every tenant.
+
 ## Share a Destination or a Channel
 
 1. Go to **Connections**, tab **Destinations** or **Channels**
@@ -60,9 +62,9 @@ The list of the tab has the column **Shared with**: **Only this tenant**, **All 
 | Destination | Its backups there are deleted, and the destination leaves its jobs |
 | Channel | The channel leaves its notification templates, its jobs, the channels of its notifications under **Administration → Settings → Notifications** and its recipients |
 
-A confirmation lists each tenant with what it loses first. **Stop sharing with** on a destination also asks you to type the name of the tenant. While a run of that tenant writes to the destination, the stop waits, try again once the run finished. When the storage stops answering on the way, the tenants that lost everything already are off the share and every other one keeps it as it was.
+A confirmation lists each tenant with what it loses first. **Stop sharing with** on a destination also asks you to type the name of the tenant. While a run of that tenant writes to the destination or waits to, the stop waits, try again once the run finished. When the storage stops answering on the way, the tenants that lost everything already are off the share and every other one keeps it as it was.
 
-Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again.
+Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again. When the storage does not answer then, the destination stays shared with nobody and your tenant still does not see `tenants/`. Its share dialog says so in amber, and **Stop sharing** with no tenant picked tries the delete again. Until then the destination counts as shared and cannot be deleted.
 
 - **A shared connection cannot be deleted.** Stop sharing it first.
 - **Stop sharing with customers** on the tenant is refused while it shares a destination or a channel.

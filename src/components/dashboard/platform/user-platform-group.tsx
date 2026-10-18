@@ -8,6 +8,7 @@ import { Section } from "@/components/adapter/connection-details-sections";
 import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BEYOND_REACH_ACCOUNT } from "@/components/dashboard/users/user-access";
 import { usePageModel } from "@/hooks/use-page-model";
 import { pickerLine, scopeText } from "@/lib/auth/platform-group-summary";
 import { wrapError } from "@/lib/logging/errors";
@@ -40,13 +41,15 @@ export const asksFirst = (user: Pick<UserRow, "superAdmin">, id: string) => id =
 
 /**
  * Why the viewer may not change the platform group of an account, null when they may: never the
- * own account, a platform admin's only a platform admin, and a group beyond the viewer stays.
+ * own account, a platform admin's only a platform admin, one that works beyond the tenants of the
+ * viewer's platform group stays, and so does a group beyond the viewer.
  */
-export function platformGroupLock(user: Pick<UserRow, "isYou" | "superAdmin" | "platformGroup">, model: PlatformGroupsModel | null): string | null {
+export function platformGroupLock(user: Pick<UserRow, "isYou" | "superAdmin" | "platformGroup" | "beyondReach">, model: PlatformGroupsModel | null): string | null {
     const viewer = model?.viewer;
     const current = model?.groups.find((group) => group.id === platformGroupOf(user));
     if (user.isYou) return "Another admin changes your own platform group.";
     if (user.superAdmin && viewer && !viewer.platformAdmin) return "Only a platform admin takes the platform admin role.";
+    if (user.beyondReach && !viewer?.platformAdmin) return BEYOND_REACH_ACCOUNT;
     if (current && viewer && !givableBy(current, viewer)) return "Their platform group may do more than you may.";
     return null;
 }

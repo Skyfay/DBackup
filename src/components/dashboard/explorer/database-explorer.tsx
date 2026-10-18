@@ -14,6 +14,7 @@ import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { useMayAdd, useTenantView } from "@/components/tenant/tenant-view";
 import { withTenantColumn } from "@/components/tenant/tenant-rows";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -95,6 +96,9 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
     const docked = useMediaQuery("(min-width: 1280px)");
 
     const isMobile = useIsMobileState();
+    // The platform may not let the tenant add a database itself, then the empty list says who does.
+    const mayAddDatabases = useMayAdd("databases");
+    const { platformName } = useTenantView();
     const coverage = data?.coverage ?? false;
     const shownView = isMobile === undefined ? undefined : isMobile ? "cards" : coverage ? view : "table";
     const changeView = useCallback((next: ViewMode) => {
@@ -149,7 +153,13 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
         );
     }
     if (data.servers.length === 0) {
-        return <DatabasesEmpty title="No database connections yet">Add a database on the Connections page, then its databases show here with the jobs that back them up.</DatabasesEmpty>;
+        return (
+            <DatabasesEmpty title="No database connections yet">
+                {mayAddDatabases
+                    ? "Add a database on the Connections page, then its databases show here with the jobs that back them up."
+                    : `${platformName ?? "The platform"} adds the database connections of this tenant. Once one is added, its databases show here with the jobs that back them up.`}
+            </DatabasesEmpty>
+        );
     }
 
     const dayPanel = pick && shownView === "timeline"

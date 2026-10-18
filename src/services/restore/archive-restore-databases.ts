@@ -59,7 +59,7 @@ async function sharedScrubber(
     connection: Record<string, unknown>,
     names: string[]
 ) {
-    const destination = await findDestination(input.storageConfigId).then((found) => found.row).catch(() => null);
+    const destination = await findDestination(input.storageConfigId, input.shared?.copyTenantId).then((found) => found.row).catch(() => null);
     return sharedLogScrubber({
         keep: [...(input.shared ? [input.shared.databaseName] : []), ...names],
         archive: input.file,

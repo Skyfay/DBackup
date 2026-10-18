@@ -4,6 +4,7 @@ import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { membersOfAny } from "@/services/tenant/membership-service";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { tenantSummaries } from "@/services/tenant/tenant-summaries";
 import type { GroupActor } from "./groups-types";
@@ -48,11 +49,15 @@ const ADMIN_TENANT = AVAILABLE_PERMISSIONS.map((permission) => permission.id).fi
  * The platform groups of Users & Groups under Platform: Platform admin first, built in with the
  * platform admins as its members, then the others by name, each with its rights, its scope, its
  * members and when it was made and changed. With the tenants a scope can pick, all of them for a
- * platform admin and the ones they may open for anyone else, and what the viewer may give. Read
- * as the system, since the viewer may open it from inside any tenant.
+ * platform admin and the ones they may open for anyone else, and what the viewer may give. Someone
+ * of a platform group of some tenants sees only the members whose accounts they see, see
+ * `membersOfAny`. Read as the system, since the viewer may open it from inside any tenant.
  */
 export async function getPlatformGroupListModel(viewer: PlatformGroupsViewerInput): Promise<PlatformGroupsModel> {
     return runAsSystem(async () => {
+        // Someone of a platform group of some tenants sees the accounts of its tenants and their own, members of a platform group too.
+        const reach = viewer.platformAdmin ? "all" : await platformGroupService.reachOf(viewer.id);
+        const seenWhere = reach === "all" ? undefined : { OR: [{ id: viewer.id }, membersOfAny(reach)] };
         const [groups, admins, tenants, accounts, audit, own] = await Promise.all([
             platformGroupService.list(),
             platformGroupService.platformAdmins(),
@@ -60,12 +65,18 @@ export async function getPlatformGroupListModel(viewer: PlatformGroupsViewerInpu
             viewer.platformAdmin
                 ? prisma.tenant.findMany({ select: { id: true, name: true } })
                 : tenantService.switchable(viewer.id, false).then((list) => list.map((tenant) => ({ id: tenant.id, name: tenant.name }))),
-            prisma.user.count(),
+            prisma.user.count({ where: seenWhere }),
             madeAndChanged(),
             viewer.platformAdmin ? null : platformGroupService.shapeOf(viewer.id),
         ]);
         const summaries = new Map((await tenantSummaries(tenants.map((tenant) => tenant.id))).map((summary) => [summary.id, summary]));
-        const member = (user: { id: string; name: string; email: string; image: string | null }) => ({ ...user, isYou: user.id === viewer.id });
+        const memberIds = [...new Set([...admins, ...groups.flatMap((group) => group.members)].map((user) => user.id))];
+        const seen = seenWhere
+            ? new Set((await prisma.user.findMany({ where: { AND: [{ id: { in: memberIds } }, seenWhere] }, select: { id: true } })).map((user) => user.id))
+            : null;
+        type Member = { id: string; name: string; email: string; image: string | null };
+        const member = (user: Member) => ({ ...user, isYou: user.id === viewer.id });
+        const membersOf = (users: Member[]) => users.filter((user) => !seen || seen.has(user.id)).map(member);
 
         const builtIn: PlatformGroupRow = {
             id: PLATFORM_ADMIN_GROUP_ID,
@@ -75,7 +86,7 @@ export async function getPlatformGroupListModel(viewer: PlatformGroupsViewerInpu
             tenantPermissions: ADMIN_TENANT,
             allTenants: true,
             tenantIds: [],
-            members: admins.map(member),
+            members: membersOf(admins),
             createdAt: new Date(0).toISOString(),
             made: null,
             changed: null,
@@ -88,7 +99,7 @@ export async function getPlatformGroupListModel(viewer: PlatformGroupsViewerInpu
             tenantPermissions: [...group.tenantPermissions],
             allTenants: group.allTenants,
             tenantIds: [...group.tenantIds],
-            members: group.members.map(member),
+            members: membersOf(group.members),
             createdAt: group.createdAt.toISOString(),
             made: audit.made.get(group.id) ?? null,
             changed: audit.changed.get(group.id) ?? null,

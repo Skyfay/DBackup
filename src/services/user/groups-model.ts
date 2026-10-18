@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { reachCovers, type PlatformReach } from "@/lib/auth/platform-group-caps";
 import { peopleOf, roleIn } from "@/services/tenant/membership-service";
 import { runAsSystem } from "@/lib/tenant/context";
 import { parsePermissions } from "./users-model";
@@ -114,10 +115,14 @@ export function buildGroupsModel({ groups, people, audit, viewerId, viewerPlatfo
     };
 }
 
-/** The entries of the audit log that made or changed a group, newest first, wherever they were written. */
-function groupAudit() {
+/**
+ * The entries of the audit log that made or changed a group, newest first, wherever they were
+ * written. With `ids` only those of these groups, so the entries of other tenants never push the
+ * ones of a tenant out of the newest that are read.
+ */
+function groupAudit(ids?: readonly string[]) {
     return runAsSystem(() => prisma.auditLog.findMany({
-        where: { resource: AUDIT_RESOURCES.GROUP, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] } },
+        where: { resource: AUDIT_RESOURCES.GROUP, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] }, ...(ids ? { resourceId: { in: [...ids] } } : {}) },
         orderBy: { createdAt: "desc" },
         take: AUDIT_LIMIT,
         select: { resourceId: true, action: true, createdAt: true, actorName: true, user: { select: { name: true } } },
@@ -127,11 +132,14 @@ function groupAudit() {
 /**
  * The groups of every tenant for Users & Groups of the Platform, each with its tenant and its
  * members, read only. Whoever may see the accounts of the platform opens it from any tenant, so it
- * reads every tenant, also the ones they may not open, which `platformTenantNames` names.
+ * reads every tenant, also the ones they may not open, which `platformTenantNames` names. Someone
+ * of a platform group of some tenants sees the groups of those tenants alone, `reach`.
  */
-export async function getPlatformGroupsModel(viewerId: string | null): Promise<GroupsModel> {
+export async function getPlatformGroupsModel(viewerId: string | null, reach: PlatformReach = "all"): Promise<GroupsModel> {
+    const inReach = (tenantId: string) => reachCovers(reach, tenantId);
     const [listed, audit, templates] = await runAsSystem(() => Promise.all([
         prisma.group.findMany({
+            where: reach === "all" ? undefined : { tenantId: { in: [...reach] } },
             select: {
                 id: true,
                 name: true,
@@ -163,7 +171,7 @@ export async function getPlatformGroupsModel(viewerId: string | null): Promise<G
         permissions: template.permissions,
         allTenants: template.allTenants,
         tenantIds: template.tenantIds,
-        groups: template.groups.map((group) => ({
+        groups: template.groups.filter((group) => inReach(group.tenantId)).map((group) => ({
             tenantId: group.tenantId,
             groupId: group.id,
             members: group.members.map((user) => ({ ...user, isYou: user.id === viewerId })).sort((a, b) => a.name.localeCompare(b.name)),
@@ -186,7 +194,7 @@ export async function platformTenantNames(): Promise<{ id: string; name: string 
 
 /** Loads the Groups tab with the groups of a tenant and their members, read in that tenant. */
 export async function getGroupsModel(viewerId: string | null, viewerPlatformAdmin: boolean, withPeople: boolean, tenantId: string): Promise<GroupsModel> {
-    const [listed, people, audit] = await Promise.all([
+    const [listed, people] = await Promise.all([
         prisma.group.findMany({
             where: { tenantId },
             select: {
@@ -208,9 +216,10 @@ export async function getGroupsModel(viewerId: string | null, viewerPlatformAdmi
                 groupId: user.memberships[0]?.group.id ?? null,
                 platformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE,
             }))),
-        // A group belongs to its tenant, whose log holds its entries, read for every tenant at once.
-        groupAudit(),
     ]);
+    // A group belongs to its tenant, whose log holds its entries. Read wherever they were written,
+    // but only those of the groups of this tenant.
+    const audit = await groupAudit(listed.map((group) => group.id));
     const groups = listed.map(({ memberships, ...group }) => ({ ...group, users: memberships.map((membership) => membership.user) }));
     return buildGroupsModel({ groups, people, audit, viewerId, viewerPlatformAdmin, withPeople });
 }

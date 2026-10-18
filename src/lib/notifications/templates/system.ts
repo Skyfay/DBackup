@@ -84,7 +84,7 @@ export function connectionOfflineTemplate(data: ConnectionOfflineData, options?:
             ? problemOf(data.lastError, data.adapterName, "Health check", data.adapterType === "database" ? "source" : "destination", `Health check · ${formatterFor(options).clock(data.timestamp)}`)
             : undefined,
         details: [{ name: label, value: data.adapterName }],
-        actions: action(`Open ${label.toLowerCase()}`, data.configId ? paths.connection(data.adapterType, data.configId) : undefined, "database"),
+        actions: action(`Open ${label.toLowerCase()}`, data.configId ? paths.connection(data.adapterType, data.configId, options?.tenantId) : undefined, "database"),
         timestamp: data.timestamp,
     };
 }
@@ -111,7 +111,7 @@ export function connectionOnlineTemplate(data: ConnectionOnlineData, options?: T
             { label: "Back at", value: formatterFor(options).time(data.timestamp) ?? "" },
         ],
         details: [{ name: label, value: data.adapterName }],
-        actions: action(`Open ${label.toLowerCase()}`, data.configId ? paths.connection(data.adapterType, data.configId) : undefined, "database"),
+        actions: action(`Open ${label.toLowerCase()}`, data.configId ? paths.connection(data.adapterType, data.configId, options?.tenantId) : undefined, "database"),
         timestamp: data.timestamp,
     };
 }
@@ -141,7 +141,7 @@ export function dbVersionChangedTemplate(data: DbVersionChangedData, options?: T
             ...(data.edition ? [{ label: "Edition", value: data.edition }] : []),
         ],
         details: [{ name: "Source", value: data.sourceName }],
-        actions: action("Open source", paths.connection("database", data.sourceId), "database"),
+        actions: action("Open source", paths.connection("database", data.sourceId, options?.tenantId), "database"),
         timestamp: data.timestamp,
     };
 }

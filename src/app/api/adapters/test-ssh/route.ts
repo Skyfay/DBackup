@@ -3,7 +3,7 @@ import { registry } from "@/lib/core/registry";
 import { SshHost, createHost, resolveTransport, type TransportSpec, type SshConnectionConfig } from "@/lib/transport";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { checkBackupPath, checkBackupPathShared } from "@/lib/adapters/database/mssql/preflight";
 import { MSSQLConfig } from "@/lib/adapters/definitions";
@@ -39,9 +39,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW);
-
     try {
+        checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW);
+        // A config of a form runs in one tenant, All tenants belongs to none.
+        tenantOf(ctx);
+
         const body = await req.json();
         const { config, adapterId, sshCredentialId } = body as { config: Record<string, any>; adapterId?: string; sshCredentialId?: string | null };
 

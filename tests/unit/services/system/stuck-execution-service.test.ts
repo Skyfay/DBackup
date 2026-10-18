@@ -19,7 +19,7 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 vi.mock('@/lib/execution/abort', () => ({ abortExecution: vi.fn() }));
-vi.mock('@/lib/execution/follower-runs', () => ({ LEADING_RUNS: { leading: true }, endFollowers: vi.fn() }));
+vi.mock('@/lib/execution/follower-runs', () => ({ LEADING_RUNS: { leading: true }, endFollowers: vi.fn(), endOrphanedFollowers: vi.fn().mockResolvedValue(0) }));
 vi.mock('@/lib/execution/queue-manager', () => ({ processQueue: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock('@/lib/logging/logger', () => ({

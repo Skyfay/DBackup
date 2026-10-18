@@ -179,3 +179,86 @@ describe("loading every account and every group for the Platform", () => {
         expect(model.people).toBeNull();
     });
 });
+
+describe("the accounts a platform group of some tenants sees on the Platform", () => {
+    /** Nina's platform group sees and manages the accounts of tenant A, where it reads the jobs. She is also the admin of tenant C. */
+    const NINA = {
+        memberships: [{ tenantId: "tenant-c", group: { permissions: JSON.stringify(["users:read", "users:write", "jobs:read"]), fullAccess: false } }],
+        platformGroup: { platformPermissions: JSON.stringify(["platform-accounts:read", "platform-accounts:write"]), tenantPermissions: JSON.stringify(["jobs:read"]), allTenants: false, tenants: [{ tenantId: "tenant-a" }] },
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        prismaMock.ssoProvider.findMany.mockResolvedValue([] as never);
+        prismaMock.auditLog.findMany.mockResolvedValue([] as never);
+        prismaMock.user.findUnique.mockResolvedValue(NINA as never);
+        prismaMock.group.findMany.mockResolvedValue([
+            { id: "g-a", name: "Operators", permissions: JSON.stringify(["jobs:read"]), fullAccess: false, tenantId: "tenant-a", _count: { memberships: 2 } },
+            { id: "g-c", name: "Viewers", permissions: JSON.stringify(["jobs:read"]), fullAccess: false, tenantId: "tenant-c", _count: { memberships: 1 } },
+        ] as never);
+        // What the database answers for the filter of the query: the people of tenant A and her own account.
+        prismaMock.user.findMany.mockResolvedValue([
+            account({ id: "tech", name: "Tom Tech", memberships: [{ tenantId: "default", group: OPERATORS }, { tenantId: "tenant-a", group: VIEWERS }] }),
+            account({ id: "carla", name: "Carla", memberships: [{ tenantId: "tenant-a", group: OPERATORS }] }),
+        ] as never);
+    });
+
+    it("lists the people of the tenants it reaches and the own account, never an account of no tenant or of other tenants alone", async () => {
+        await getAllUsersModel("nina", false);
+
+        const query = prismaMock.user.findMany.mock.calls[0][0] as { where?: unknown; select: { _count: unknown } };
+        expect(query.where).toEqual({ OR: [{ id: "nina" }, { memberships: { some: { tenantId: { in: ["tenant-a"] } } } }] });
+        // The keys of the tenants it reaches alone.
+        expect(query.select._count).toEqual({ select: { apiKeys: { where: { tenantId: { in: ["tenant-a"] } } }, passkeys: true } });
+        // The groups of the tenants it reaches and of the tenant whose users she manages.
+        expect(prismaMock.group.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: { in: ["tenant-a", "tenant-c"] } } }));
+    });
+
+    it("names only the tenants it reaches of an account, and marks one that works beyond them as not changed by it", async () => {
+        const model = await getAllUsersModel("nina", false);
+        const byId = new Map(model.users.map((row) => [row.id, row]));
+
+        expect(byId.get("tech")?.tenants).toEqual([{ tenantId: "tenant-a", group: VIEWERS }]);
+        expect(byId.get("tech")).toEqual(expect.objectContaining({ beyondReach: true, elsewhere: true }));
+        expect(byId.get("carla")?.tenants).toEqual([{ tenantId: "tenant-a", group: OPERATORS }]);
+        expect(byId.get("carla")).not.toHaveProperty("beyondReach");
+    });
+
+    it("offers New user the tenants it reaches and the one whose users she manages", async () => {
+        const model = await getAllUsersModel("nina", false);
+
+        expect(model.newUserTenants).toEqual(["tenant-a", "tenant-c"]);
+        expect(model.newUserGroups).toEqual(["g-a", "g-c"]);
+        expect(model.managedTenants).toEqual(["tenant-a"]);
+    });
+
+    it("leaves a group out of New user that may do more than she may in its tenant", async () => {
+        prismaMock.user.findUnique.mockResolvedValue({ ...NINA, platformGroup: { ...NINA.platformGroup, tenantPermissions: "[]" } } as never);
+
+        expect((await getAllUsersModel("nina", false)).newUserGroups).toEqual(["g-c"]);
+    });
+
+    it("reads every account for a platform group of all tenants, as for a platform admin", async () => {
+        prismaMock.user.findUnique.mockResolvedValue({ ...NINA, platformGroup: { ...NINA.platformGroup, allTenants: true, tenants: [] } } as never);
+
+        const model = await getAllUsersModel("nina", false);
+
+        const query = prismaMock.user.findMany.mock.calls[0][0] as { where?: unknown };
+        expect(query.where).toBeUndefined();
+        expect(prismaMock.group.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
+        expect(model.users.find((row) => row.id === "tech")?.tenants).toHaveLength(2);
+        expect(model.users.some((row) => row.beyondReach)).toBe(false);
+        expect(model.newUserTenants).toBeNull();
+    });
+
+    it("lists the groups of the tenants it reaches alone on the Groups tab", async () => {
+        prismaMock.tenantGroupTemplate.findMany.mockResolvedValue([] as never);
+        prismaMock.group.findMany.mockResolvedValue([] as never);
+
+        await getPlatformGroupsModel("nina", ["tenant-a"]);
+        expect(prismaMock.group.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: { in: ["tenant-a"] } } }));
+
+        await getPlatformGroupsModel("root");
+        expect(prismaMock.group.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: undefined }));
+    });
+});

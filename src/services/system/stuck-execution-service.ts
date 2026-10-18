@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { abortExecution } from "@/lib/execution/abort";
-import { LEADING_RUNS, endFollowers } from "@/lib/execution/follower-runs";
+import { LEADING_RUNS, endFollowers, endOrphanedFollowers } from "@/lib/execution/follower-runs";
 import { HEARTBEAT_KEY } from "@/lib/execution/log-flusher";
 import { processQueue } from "@/lib/execution/queue-manager";
 import { LogEntry } from "@/lib/core/logs";
@@ -93,7 +93,9 @@ export async function sweepStuckExecutions(): Promise<StuckExecutionSweep> {
         return { checked: 0, cancelled: 0 };
     }
 
-    // A run that follows another one makes no progress of its own. It ends with the run it follows.
+    // A run that follows another one makes no progress of its own. It ends with the run it follows,
+    // or here once that run is gone or ended without it.
+    await endOrphanedFollowers();
     const running = await prisma.execution.findMany({
         where: { status: "Running", AND: [LEADING_RUNS] },
         select: { id: true, jobId: true, metadata: true, logs: true, startedAt: true },

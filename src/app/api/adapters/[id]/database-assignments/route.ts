@@ -8,6 +8,7 @@ import { logger } from "@/lib/logging/logger";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { auditService } from "@/services/audit-service";
 import { databaseAssignmentService } from "@/services/tenant/database-assignments";
+import { platformGroupService } from "@/services/user/platform-group-service";
 
 const log = logger.child({ route: "adapters/[id]/database-assignments" });
 
@@ -33,7 +34,8 @@ function failure(error: unknown, fallback: string) {
  * GET /api/adapters/[id]/database-assignments
  * The databases of a shared server with the tenant each belongs to, the assignments and the rules,
  * for whoever may see the shared databases: a session, or an API key made in a tenant that shares, see
- * `keyPlatformPermissions`.
+ * `keyPlatformPermissions`. `customers` lists the tenants the caller may give a database to, those
+ * the platform group of the person or of the owner of the key reaches.
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
@@ -41,7 +43,8 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
     const { id } = await props.params;
     try {
         checkAnyPermissionWithContext(ctx, [SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
-        return NextResponse.json({ success: true, data: await databaseAssignmentService.forSource(id) });
+        const reach = await platformGroupService.reachOf(ctx.userId);
+        return NextResponse.json({ success: true, data: await databaseAssignmentService.forSource(id, new Date(), reach) });
     } catch (error: unknown) {
         return failure(error, "The assignments could not be read");
     }
@@ -50,7 +53,8 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 /**
  * PUT /api/adapters/[id]/database-assignments
  * Gives databases of a shared server to tenants, many at once, for a hosting panel that creates
- * them. A null tenant takes a database back.
+ * them. A null tenant takes a database back. Someone of a platform group of some tenants, and a
+ * key of theirs, gives to and takes from the tenants it reaches only.
  */
 export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
@@ -62,7 +66,8 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
         if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
 
         const changes = parsed.data.assignments.map((entry) => ({ databaseName: entry.database, tenantId: entry.tenantId, validFrom: entry.validFrom }));
-        const result = await databaseAssignmentService.assign(id, changes, ctx.userId);
+        const reach = await platformGroupService.reachOf(ctx.userId);
+        const result = await databaseAssignmentService.assign(id, changes, ctx.userId, new Date(), reach);
         if (result.changed > 0) {
             await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
                 change: "Databases assigned",

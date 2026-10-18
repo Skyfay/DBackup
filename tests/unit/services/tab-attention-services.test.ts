@@ -31,8 +31,9 @@ describe("the dots of the page tabs worked out on the server", () => {
             users: { tone: "warning", note: "Sara Nguyen has no group and sees nothing" },
             apikeys: { tone: "warning", note: "CI deploy and Backup bot run out within two weeks" },
         });
-        // An account without a group anywhere shows in the home tenant, whose admins give it one.
-        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} } } }));
+        // An account without a group anywhere shows in the home tenant, whose admins give it one,
+        // unless it runs the platform, which needs no group.
+        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} }, platformRole: null, platformGroupId: null } }));
         expect(prismaMock.apiKey.findMany).toHaveBeenCalledWith(expect.objectContaining({
             where: { enabled: true, expiresAt: { gt: new Date(NOW), lte: new Date(NOW + 14 * 86_400_000) } },
         }));
@@ -46,7 +47,7 @@ describe("the dots of the page tabs worked out on the server", () => {
             users: { tone: "warning", note: "Sara Nguyen and Tom Weber work in no tenant and see nothing" },
             apikeys: { tone: "warning", note: "CI deploy runs out within two weeks" },
         });
-        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} } } }));
+        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} }, platformRole: null, platformGroupId: null } }));
     });
 
     it("names the accounts without a group only to the home tenant, never to a customer", async () => {

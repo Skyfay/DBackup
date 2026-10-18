@@ -357,6 +357,8 @@ type CheckedCopy = Omit<IntegrityCopy, "index">;
 
 /** How the check of the copies of one tenant went. No result when it failed as a whole. */
 interface TenantCheck {
+    /** The tenant whose run checked the copies, the tenant of the backups whatever destination holds them. */
+    tenantId: string;
     result: IntegrityCheckResult | null;
     copies: CheckedCopy[];
     error?: string;
@@ -367,7 +369,7 @@ interface TenantCheck {
  * that tenant: the plan, every copy with the last state it reached, the logs and the outcome.
  * Never throws, a check that fails as a whole fails its run.
  */
-async function checkCopiesOfTenant(runner: SystemTaskRunner, note?: string): Promise<TenantCheck> {
+async function checkCopiesOfTenant(tenantId: string, runner: SystemTaskRunner, note?: string): Promise<TenantCheck> {
     const { integrityService } = await import("@/services/backup/integrity-service");
     const { INTEGRITY_CHECK_STAGES } = await import("@/lib/core/logs");
 
@@ -402,13 +404,13 @@ async function checkCopiesOfTenant(runner: SystemTaskRunner, note?: string): Pro
             failed: result.failed,
             skipped: result.skipped,
         });
-        return { result, copies };
+        return { tenantId, result, copies };
     } catch (e: unknown) {
         runner.logEntry(getErrorMessage(e), "error");
         runner.setStage(INTEGRITY_CHECK_STAGES.FAILED);
         await runner.finish("Failed");
         log.error("Integrity check failed", { executionId: runner.id }, wrapError(e));
-        return { result: null, copies, error: getErrorMessage(e) };
+        return { tenantId, result: null, copies, error: getErrorMessage(e) };
     }
 }
 
@@ -426,7 +428,7 @@ function integrityOutcome(checks: TenantCheck[], unread: boolean): TaskOutcome {
     return { summary: `${plural(checked, "backup", "backups")} passed` };
 }
 
-/** Tells the platform about every copy that failed, and each tenant about the copies at its own destinations. */
+/** Tells the platform about every copy that failed, and each tenant about the copies its own run checked. */
 async function reportIntegrityFailures(checks: TenantCheck[], triggerType: "Manual" | "Scheduler" | "Api", homeRunId: string): Promise<void> {
     const results = checks.flatMap((check) => (check.result ? [check.result] : []));
     const failed = results.reduce((total, result) => total + result.failed, 0);
@@ -442,9 +444,11 @@ async function reportIntegrityFailures(checks: TenantCheck[], triggerType: "Manu
             errors: results.flatMap((result) => result.errors),
         },
     }, { executionId: homeRunId });
-    // Each tenant hears about the copies at its own destinations too, on its own channels.
+    // Each tenant hears about its own copies too, on its own channels. A customer's copy on a destination
+    // another tenant shares is the customer's, whose run checked it, never the tenant's of the destination.
     const { notifyTenantsOfIntegrity } = await import("@/services/notifications/tenant-integrity");
-    await notifyTenantsOfIntegrity(checks.flatMap((check) => check.copies), triggerType).catch((error: unknown) => {
+    const copies = checks.flatMap((check) => check.copies.map((copy) => ({ ...copy, tenantId: check.tenantId })));
+    await notifyTenantsOfIntegrity(copies, triggerType).catch((error: unknown) => {
         log.warn("Telling the tenants about the integrity check failed", { executionId: homeRunId }, wrapError(error));
     });
 }
@@ -484,11 +488,11 @@ export async function startIntegrityCheck(
             }
             // The other runs are made when their turn comes, a waiting run would be taken for a queued backup.
             const note = others.length > 0 ? `The copies of ${plural(others.length, "other tenant", "other tenants")} are checked in runs of their own` : undefined;
-            const checks = [await runAsTenant(HOME_TENANT_ID, () => checkCopiesOfTenant(home, note))];
+            const checks = [await runAsTenant(HOME_TENANT_ID, () => checkCopiesOfTenant(HOME_TENANT_ID, home, note))];
             for (const tenantId of others) {
-                const check = await runAsTenant(tenantId, async () => checkCopiesOfTenant(await newRun())).catch((e: unknown) => {
+                const check = await runAsTenant(tenantId, async () => checkCopiesOfTenant(tenantId, await newRun())).catch((e: unknown) => {
                     log.error("Starting the integrity check of a tenant failed", { tenantId }, wrapError(e));
-                    const failed: TenantCheck = { result: null, copies: [], error: getErrorMessage(e) };
+                    const failed: TenantCheck = { tenantId, result: null, copies: [], error: getErrorMessage(e) };
                     return failed;
                 });
                 checks.push(check);

@@ -13,7 +13,7 @@ import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { formatBytes, formatDuration } from "@/lib/utils";
 import type { RunDetail, RunNeighbour } from "@/services/history/run-types";
 import { CancelRunDialog } from "./cancel-run-dialog";
-import { startRun } from "./run-actions";
+import { runAgainLabel, startRun } from "./run-actions";
 import { RunTile } from "./run-cells";
 import { typeLabel } from "./run-format";
 import { originOf, runHref, type RunOrigin } from "./run-links";
@@ -116,7 +116,7 @@ export function RunPageHead({ run, access, onChanged }: { run: RunDetail; access
                     <Button variant="outline" size="sm" asChild><Link href="/dashboard/backups"><Archive />Open backups</Link></Button>
                 )}
                 {run.job && run.type === "Backup" && access.canExecute && !live && (
-                    <Button variant="outline" size="sm" onClick={() => void startRun(run.job!.id, run.job!.name).then((id) => (id ? go(id) : onChanged()))}><Play />Run again</Button>
+                    <Button variant="outline" size="sm" onClick={() => void startRun(run.job!.id, run.job!.name).then((id) => (id ? go(id) : onChanged()))}><Play />{runAgainLabel(run)}</Button>
                 )}
                 {live && access.canExecute && (
                     <Button variant="outline" size="sm" tone="destructive" className="border-tone/50 text-tone hover:text-tone" onClick={() => setCancelling(true)}><Square />Cancel run</Button>

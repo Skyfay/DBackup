@@ -87,6 +87,16 @@ describe("the route of the global search", () => {
         expect(response.status).toBe(200);
     });
 
+    it("finds people in All tenants only with the right to see the accounts of the platform, where they open", async () => {
+        mocks.ctx = { permissions: ["users:read"], isPlatformAdmin: false, tenantId: null, allTenants: true };
+        await GET(request("anna"));
+        expect(mocks.search).toHaveBeenLastCalledWith("anna", expect.objectContaining({ users: false }), null);
+
+        mocks.ctx = { permissions: ["platform-accounts:read"], isPlatformAdmin: false, tenantId: null, allTenants: true };
+        await GET(request("anna"));
+        expect(mocks.search).toHaveBeenLastCalledWith("anna", expect.objectContaining({ users: true }), null);
+    });
+
     it("finds nothing for an account that works in no tenant", async () => {
         mocks.ctx = { permissions: ["jobs:read"], isPlatformAdmin: false, tenantId: null };
 

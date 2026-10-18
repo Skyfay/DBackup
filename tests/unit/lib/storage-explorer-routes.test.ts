@@ -115,7 +115,7 @@ describe("Backups page API", () => {
 
         expect((await execution()).status).toBe(400);
         const response = await execution("Shop nightly/a b.tar");
-        expect(mocks.getExecution).toHaveBeenCalledWith("Shop nightly/a b.tar");
+        expect(mocks.getExecution).toHaveBeenCalledWith("Shop nightly/a b.tar", null);
         expect(await response.json()).toMatchObject({ success: true, data: { id: "exec-1", status: "Partial" } });
     });
 

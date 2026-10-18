@@ -170,6 +170,7 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
             sessions: open.length,
             apiKeys: user._count.apiKeys,
             isYou: user.id === viewerId,
+            ...(user.platformGroupId ? { withPlatformGroup: true } : {}),
         };
     });
     rows.sort((a, b) => a.name.localeCompare(b.name));
@@ -187,9 +188,9 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
         .sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin) || a.name.localeCompare(b.name));
 
     const passwordOnly = rows.filter((row) => row.secondFactor === "none").map((row) => row.name);
-    // In All tenants an account sees something once it works in some tenant, or runs the platform
-    // as a platform admin or with a platform group, which needs no tenant.
-    const placed = (row: UserRow) => (row.tenants ? row.tenants.length > 0 || row.superAdmin || Boolean(row.platformGroup) : row.group !== null);
+    // An account sees something once it has a group, in All tenants in some tenant, or runs the
+    // platform as a platform admin or with a platform group, which needs no group in a tenant.
+    const placed = (row: UserRow) => (row.tenants ? row.tenants.length > 0 : row.group !== null) || row.superAdmin || Boolean(row.withPlatformGroup);
     return {
         users: rows,
         groups: groupRows,
@@ -263,8 +264,35 @@ export async function getUsersModel(viewerId: string | null, viewerPlatformAdmin
         viewerId,
         viewerPlatformAdmin,
     });
-    return { ...model, passwordPolicy, homeTenant: tenantId === HOME_TENANT_ID };
+    const beyond = viewerId && !viewerPlatformAdmin ? await beyondReachOf(viewerId, users.map((user) => user.id)) : new Set<string>();
+    return {
+        ...model,
+        users: beyond.size > 0 ? model.users.map((row) => (beyond.has(row.id) ? { ...row, beyondReach: true } : row)) : model.users,
+        passwordPolicy,
+        homeTenant: tenantId === HOME_TENANT_ID,
+    };
 }
+
+/**
+ * The accounts among these that work in a tenant the platform group of the viewer does not reach,
+ * which their right to manage the accounts of the platform does not change, see `accountRefusal`.
+ * An account of no tenant counts as one of the home tenant. None for a viewer without a platform
+ * group or with one of all tenants.
+ */
+async function beyondReachOf(viewerId: string, userIds: string[]): Promise<Set<string>> {
+    const viewer = await prisma.user.findUnique({ where: { id: viewerId }, select: { platformGroup: { select: { allTenants: true, tenants: { select: { tenantId: true } } } } } });
+    const group = viewer?.platformGroup;
+    if (!group || group.allTenants || userIds.length === 0) return new Set();
+    const reach = group.tenants.map((tenant) => tenant.tenantId);
+    const [outside, placeless] = await Promise.all([
+        prisma.tenantMembership.findMany({ where: { userId: { in: userIds }, tenantId: { notIn: reach } }, select: { userId: true } }),
+        reach.includes(HOME_TENANT_ID) ? [] : prisma.user.findMany({ where: { id: { in: userIds }, memberships: { none: {} } }, select: { id: true } }),
+    ]);
+    return new Set([...outside.map((membership) => membership.userId), ...placeless.map((user) => user.id)]);
+}
+
+/** An account that is no platform admin and holds no platform group, which alone needs a group in a tenant to see something. */
+const OFF_PLATFORM = { platformRole: null, platformGroupId: null } as const;
 
 /**
  * What needs a look in the tabs of the page: someone without a group, who signs in and sees
@@ -276,7 +304,7 @@ export async function getUsersPageAttention(tenantId: string | null, now = Date.
     const [grouplessUsers, endingKeys] = await Promise.all([
         // An account of no tenant shows in the home tenant and in All tenants alone, see `peopleOf`.
         tenantId === HOME_TENANT_ID || tenantId === null
-            ? prisma.user.findMany({ where: { memberships: { none: {} } }, select: { name: true }, orderBy: { name: "asc" } })
+            ? prisma.user.findMany({ where: { memberships: { none: {} }, ...OFF_PLATFORM }, select: { name: true }, orderBy: { name: "asc" } })
             : [],
         prisma.apiKey.findMany({
             where: { enabled: true, expiresAt: { gt: new Date(now), lte: new Date(now + SOON_MS) } },

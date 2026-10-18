@@ -10,6 +10,7 @@ import { platformLogFor } from "@/services/system/settings-save";
 import { getLoginImageInfo, LOGIN_IMAGE_MAX_BYTES, readLoginImage, removeLoginImage, saveLoginImage } from "@/services/system/login-image-service";
 import { getSignInSettings } from "@/services/system/system-settings-service";
 import { bodyTooLarge } from "@/lib/server/upload-size";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 const FIELD = "Login image";
 
@@ -17,7 +18,8 @@ const FIELD = "Login image";
 export async function GET() {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ));
+    if (refused) return refused;
 
     const image = await readLoginImage();
     if (!image) return NextResponse.json({ success: false, error: "No picture" }, { status: 404 });
@@ -30,7 +32,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
+    if (refused) return refused;
 
     if (bodyTooLarge(req.headers, LOGIN_IMAGE_MAX_BYTES)) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
     const form = await req.formData().catch(() => null);
@@ -56,7 +59,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE() {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
+    if (refused) return refused;
 
     const [before, { loginLook }] = await Promise.all([getLoginImageInfo(), getSignInSettings()]);
     if (!before) return NextResponse.json({ success: true });

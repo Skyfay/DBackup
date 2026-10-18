@@ -16,6 +16,7 @@ import { emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { storageService, type RichFileInfo } from "./storage-service";
 import { orderPathsForDelete, dependentsOf, fileNameOf } from "./bulk-delete-order";
 import { openDestination } from "@/services/sharing/destination-access";
+import { assertFilePath } from "@/lib/tenant/storage-view";
 
 const log = logger.child({ service: "StorageBulkDelete" });
 
@@ -67,6 +68,8 @@ export async function deleteBackupsBulk(adapterConfigId: string, filePaths: stri
         const name = () => listing.get(filePath)?.name ?? fileNameOf(filePath);
 
         try {
+            // A storage like WebDAV deletes a folder with everything in it, so the root never goes.
+            assertFilePath(filePath);
             if (listing.get(filePath)?.locked) {
                 throw new Error("This backup is locked. Unlock it before deleting.");
             }

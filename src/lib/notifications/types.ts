@@ -143,6 +143,11 @@ export interface TemplateOptions {
   timeZone?: string;
   /** "user" for the mail to the person a sign-in or a new account is about. */
   audience?: "channel" | "user";
+  /**
+   * The tenant of the records the event is about, which its links name, so a run or a job opens in
+   * its tenant from any other one. Left out, the links name none.
+   */
+  tenantId?: string;
 }
 
 /** Data passed to template functions per event type */

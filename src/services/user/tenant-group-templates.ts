@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import type { Tx } from "@/lib/prisma-tx";
-import { PLATFORM_PERMISSIONS } from "@/lib/auth/owner-permissions";
+import { groupPermissions, PLATFORM_PERMISSIONS } from "@/lib/auth/owner-permissions";
 import { areaChanges, knownPermissions, TENANT_GROUP_AREAS } from "@/lib/auth/permission-areas";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
@@ -56,6 +56,8 @@ export interface ReachClash {
     /** What its members gain and lose when the platform takes it over. */
     added: string[];
     removed: string[];
+    /** It may do more than the viewer may, so they leave the tenant out. Set by the caller, who knows the viewer. */
+    beyondYou?: boolean;
 }
 
 /** A tenant the group leaves, with its members and the other groups of that tenant they could move to. */
@@ -188,6 +190,32 @@ export const tenantGroupTemplates = {
                 createdAt: template.createdAt,
                 updatedAt: template.updatedAt,
                 groups: template.groups.map((group) => ({ id: group.id, tenantId: group.tenantId, members: group.memberships.map((membership) => membership.user) })),
+            }));
+        });
+    },
+
+    /**
+     * The groups by this name in these tenants, which a save takes over where the answer says so,
+     * with what each lets its members do, for the caller to check against what the viewer may give.
+     */
+    async groupsNamed(name: string, tenantIds: readonly string[]): Promise<{ id: string; tenantId: string; tenantName: string; name: string; permissions: string[]; fullAccess: boolean }[]> {
+        if (tenantIds.length === 0) return [];
+        return runAsSystem(async () => {
+            const [groups, tenants] = await Promise.all([
+                prisma.group.findMany({
+                    where: { tenantId: { in: [...tenantIds] }, name: name.trim() },
+                    select: { id: true, tenantId: true, name: true, permissions: true, fullAccess: true },
+                }),
+                prisma.tenant.findMany({ where: { id: { in: [...tenantIds] } }, select: { id: true, name: true } }),
+            ]);
+            const tenantName = new Map(tenants.map((tenant) => [tenant.id, tenant.name]));
+            return groups.map((group) => ({
+                id: group.id,
+                tenantId: group.tenantId,
+                tenantName: tenantName.get(group.tenantId) ?? group.tenantId,
+                name: group.name,
+                permissions: groupPermissions(group),
+                fullAccess: group.fullAccess,
             }));
         });
     },

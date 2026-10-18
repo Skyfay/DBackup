@@ -58,9 +58,8 @@ const firstIssue = (error: z.ZodError) => error.issues[0]?.message ?? "Invalid r
 
 /**
  * Whoever controls a sign-in provider signs in as anyone whose email it names, and the second
- * factor is not asked after it. So only someone who may manage the sign-in providers of the
- * platform, a right only a platform group gives and a platform admin holds, adds, changes,
- * switches and deletes one.
+ * factor is not asked after it. So only a platform admin adds, changes, switches and deletes one:
+ * no group and no platform group gives this right, see `ADMIN_ONLY` in owner-permissions.ts.
  */
 const MANAGE = PERMISSIONS.PLATFORM.SIGN_IN_WRITE;
 

@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 import { getSavedConnection } from "@/services/adapters/adapter-list";
 import { browseSavedFolders } from "@/services/adapters/location-browse-service";
 
@@ -29,7 +30,8 @@ export async function GET(
         return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.READ);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.READ));
+    if (refused) return refused;
 
     const params = await props.params;
     const subPath = req.nextUrl.searchParams.get("path") ?? "";

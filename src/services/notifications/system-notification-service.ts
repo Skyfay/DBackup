@@ -24,7 +24,7 @@ import {
 import { loadNotificationBrand } from "@/lib/notifications/brand";
 import { eventReason, userReason } from "@/services/notifications/notification-reason";
 import { EMAIL_ADAPTER_IDS, sendThroughChannel } from "./channel-send";
-import { deliverToTenant, eventTenant, type DeliveryResult } from "./tenant-notification-delivery";
+import { deliverToTenant, recordTenant, tenantOfRun, type DeliveryResult } from "./tenant-notification-delivery";
 
 const log = logger.child({ service: "SystemNotificationService" });
 
@@ -106,6 +106,20 @@ export interface NotifyOptions {
   skipChannelIds?: readonly string[];
 }
 
+/**
+ * The run the log of the platform keeps with a message, only one of the home tenant, where the
+ * platform's channels keep their log. A customer's run, like a check of its backup, stays out, or
+ * Open run would lead nowhere there.
+ */
+async function platformRun(executionId: string | undefined): Promise<string | undefined> {
+  if (!executionId) return undefined;
+  const tenantId = await tenantOfRun(executionId).catch((err: unknown) => {
+    log.warn("Finding the tenant of a run failed", { executionId }, wrapError(err));
+    return null;
+  });
+  return tenantId === HOME_TENANT_ID ? executionId : undefined;
+}
+
 /** Both deliveries as one answer, none while neither had anywhere to send to. */
 function combined(first: DeliveryResult | undefined, second: DeliveryResult | undefined): DeliveryResult | undefined {
   if (!first && !second) return undefined;
@@ -119,12 +133,18 @@ function combined(first: DeliveryResult | undefined, second: DeliveryResult | un
  * tenant, see `deliverToTenant`. Never throws, a caller is never held up by a channel.
  */
 export async function notify(event: NotificationEventData, opts: NotifyOptions = {}): Promise<DeliveryResult | undefined> {
-  // Found before the system scope of the platform, which would hide the tenant of a run.
-  const tenantId = opts.test ? null : await eventTenant(event, opts).catch((err: unknown) => {
+  // Found before the system scope of the platform, which would hide the tenant of a run. The links
+  // name it, the home tenant too, so they open in the tenant of their records from any other one.
+  const about = opts.test ? null : await recordTenant(event, opts).catch((err: unknown) => {
     log.warn("Finding the tenant of a notification failed", { eventType: event.eventType }, wrapError(err));
     return null;
   });
-  const platform = opts.platform === false ? undefined : await runAsSystem(() => notifyChannels(event, opts));
+  const tenantId = about && about !== HOME_TENANT_ID ? about : null;
+  const platform = opts.platform === false ? undefined : await runAsSystem(async () => notifyChannels(event, {
+    ...opts,
+    // The log of the platform is the one of the home tenant, which cannot open the run of another one.
+    executionId: await platformRun(opts.executionId),
+  }, about ?? undefined));
   const tenant = tenantId
     ? await deliverToTenant(event, tenantId, { executionId: opts.executionId, skipChannelIds: opts.skipChannelIds }).catch((err: unknown) => {
         log.error("Tenant notification dispatch failed", { eventType: event.eventType, tenantId }, wrapError(err));
@@ -149,7 +169,9 @@ export async function notify(event: NotificationEventData, opts: NotifyOptions =
  */
 async function notifyChannels(
   event: NotificationEventData,
-  opts?: NotifyOptions
+  opts?: NotifyOptions,
+  /** The tenant of the records the event is about, which the links name. */
+  linkTenant?: string
 ): Promise<DeliveryResult | undefined> {
   let succeeded = 0;
   let failed = 0;
@@ -186,7 +208,7 @@ async function notifyChannels(
     const brand = await loadNotificationBrand();
     const reminderHours = eventConfig?.reminderIntervalHours ?? eventDef?.defaultReminderHours;
     const payload = {
-      ...renderTemplate(event, { timeZone: brand.timeZone }),
+      ...renderTemplate(event, { timeZone: brand.timeZone, tenantId: linkTenant }),
       reason: eventReason(eventDef, reminderHours, !!opts?.test),
     };
     // The channels of the platform send as they are set, whichever tenant the event is about.
@@ -241,7 +263,7 @@ async function notifyChannels(
 
       // The person gets the words meant for them, and the reason they get it.
       const userPayload = {
-        ...renderTemplate(event, { timeZone: brand.timeZone, audience: "user" }),
+        ...renderTemplate(event, { timeZone: brand.timeZone, audience: "user", tenantId: linkTenant }),
         reason: userReason(event.eventType, brand.instanceName),
       };
 

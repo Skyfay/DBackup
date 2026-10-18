@@ -1,6 +1,7 @@
 import type { RunCopies, RunLive, RunRow, RunStarter, RunStatus, RunUpload } from "./run-types";
 import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
 import { backupOf } from "@/services/tenant/shared-backup-runs";
+import { isSingleDatabaseRun } from "./whole-runs";
 
 /**
  * A run as the History page shows it, out of its execution record. Pure, so the list, the page
@@ -228,5 +229,6 @@ export function runRow(record: RunRecord, usualMs: number | null, error: string 
         live: running ? live : null,
         starter: starterOf(record.triggerType, record.triggerLabel),
         tenantId: record.tenantId,
+        ...(isSingleDatabaseRun(record.metadata) ? { someDatabases: true as const } : {}),
     };
 }

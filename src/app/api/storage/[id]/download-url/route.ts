@@ -9,9 +9,10 @@ import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { planArchiveDownload } from "@/services/restore/archive-download";
 import { auditService } from "@/services/audit-service";
 import { backupAuditDetails } from "@/services/storage/backup-audit";
+import { findDestination } from "@/services/sharing/destination-access";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 
 registerAdapters();
 
@@ -32,6 +33,7 @@ const LinkSchema = z.object({
 
 function failure(error: unknown, storageId: string, what: string): NextResponse {
     if (error instanceof PermissionError) return NextResponse.json({ success: false, error: "Permission denied" }, { status: 403 });
+    if (error instanceof NotFoundError) return NextResponse.json({ success: false, error: "Destination not found" }, { status: 404 });
     log.error(what, { storageId }, wrapError(error));
     return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
 }
@@ -48,12 +50,15 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.DOWNLOAD);
+        const tenantId = tenantOf(ctx);
 
         const parsed = LinkSchema.safeParse(await req.json());
         if (!parsed.success) {
             return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
         }
         const { file, decrypt, database, databases, selections, profileIdOverride } = parsed.data;
+        // A link names a destination the tenant uses, own or provided, before it is made and noted.
+        await findDestination(id, tenantId);
 
         let fileName: string | undefined;
         const pick = databases || selections ? { databases, selections, profileIdOverride } : undefined;
@@ -67,7 +72,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             fileName = plan.fileName;
         }
 
-        const { token, expiresAt } = generateLinkToken({ tenantId: tenantOf(ctx), storageId: id, file, userId: ctx.userId, decrypt: pick ? true : decrypt, database, pick });
+        const { token, expiresAt } = generateLinkToken({ tenantId, storageId: id, file, userId: ctx.userId, decrypt: pick ? true : decrypt, database, pick });
         const url = `${req.headers.get("origin") || ""}/api/storage/public-download?token=${token}`;
 
         const dumps = databases ?? (database ? [database] : undefined);

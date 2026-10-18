@@ -61,7 +61,8 @@ export function onDemandValue(perDay: number | null | undefined): number | null 
     return perDay;
 }
 
-function parseListed(json: string): { name: string; sizeInBytes: number | null }[] {
+/** The databases of a stored list of a server, by name with their size when it was read. */
+export function parseListed(json: string): { name: string; sizeInBytes: number | null }[] {
     try {
         const value: unknown = JSON.parse(json);
         if (!Array.isArray(value)) return [];
@@ -130,6 +131,22 @@ export async function customersOfServer(sourceId: string): Promise<string[]> {
     const tenants = await prisma.tenant.findMany({ where: { id: { in: ids } }, select: { name: true } });
     return tenants.map((tenant) => tenant.name).sort((a, b) => a.localeCompare(b));
 }
+
+// On globalThis, so the pages and the actions of every module graph count the same changes.
+const globalForSharing = globalThis as unknown as { __dbackupSharingVersion?: { value: number } };
+const version = (globalForSharing.__dbackupSharingVersion ??= { value: 0 });
+
+/**
+ * Counts a change of who holds a database of a shared server: an assignment, a rule, a move, its
+ * backups on demand or a deleted tenant. A cache of what a customer holds names the count in its
+ * key, so a change shows at once. Called once the change is stored.
+ */
+export function sharingChanged(): void {
+    version.value++;
+}
+
+/** How many changes of who holds a database this process saw, see `sharingChanged`. */
+export const sharingVersion = (): number => version.value;
 
 /** The backups a day the platform lets each customer start of every database given to it, by tenant, null for none. */
 export async function tenantOnDemand(tenantIds: readonly string[]): Promise<Map<string, number | null>> {

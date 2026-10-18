@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import type { SourceAssignments } from "@/services/tenant/database-assignments";
 import { countOf, dayAllowed, rulePreview, startOf } from "./assignment-model";
 import { useTenantEntries } from "./assignment-picker";
+import { ruleTakeover } from "./assignment-reach";
 import { StartChoice } from "./assignment-start";
 
 const log = logger.child({ component: "assignment-rule-form" });
@@ -28,7 +29,7 @@ const PATTERN_MAX = 100;
 const PRIORITY_MIN = -1000;
 const PRIORITY_MAX = 1000;
 
-/** The tenant a rule gives to, from every tenant but the one of the server. */
+/** The tenant a rule gives to, from the tenants the viewer reaches but the one of the server. */
 function TenantField({ id, data, value, onChange }: { id: string; data: SourceAssignments; value: string | null; onChange: (id: string) => void }) {
     const [open, setOpen] = useState(false);
     const entries = useTenantEntries(data);
@@ -87,7 +88,9 @@ export function RuleForm({ serverId, serverName, data, onCancel, onAdded }: Rule
     const tenant = data.customers.find((entry) => entry.id === tenantId) ?? null;
     const effects = useMemo(() => rulePreview(data, { pattern, tenantId, priority }, now), [data, pattern, tenantId, priority, now]);
     const gains = effects.filter((effect) => effect.outcome === "gains").length;
-    const ready = pattern.trim().length > 0 && tenant !== null;
+    // The server refuses a rule that takes a database from a tenant beyond the reach of the viewer.
+    const takeover = useMemo(() => ruleTakeover(data, effects), [data, effects]);
+    const ready = pattern.trim().length > 0 && tenant !== null && !takeover;
     const fromLabel = start ? `From ${formatDate(start, "MMM d")}` : "From now";
 
     const submit = async (event: React.FormEvent) => {
@@ -146,8 +149,8 @@ export function RuleForm({ serverId, serverName, data, onCancel, onAdded }: Rule
                 </div>
                 <StartChoice label="Starts" day={day} onChange={setDay} isAllowed={(candidate) => dayAllowed(candidate, timezone, now)} />
             </div>
-            <p id={`${ids.pattern}-message`} className={cn("text-xs", error ? "text-destructive" : "text-muted-foreground")}>
-                {error ?? "* stands for any characters and ? for one. Capitals count. Where rules overlap the higher priority wins, and a name given by hand beats every rule."}
+            <p id={`${ids.pattern}-message`} className={cn("text-xs", error || takeover ? "text-destructive" : "text-muted-foreground")}>
+                {error ?? takeover ?? "* stands for any characters and ? for one. Capitals count. Where rules overlap the higher priority wins, and a name given by hand beats every rule."}
             </p>
 
             <div className="space-y-1.5">

@@ -9,7 +9,7 @@ import { runAsSystem } from "@/lib/tenant/context";
 import { effectiveOnDemand } from "@/lib/tenant/sharing";
 import { cached } from "@/services/dashboard/cache";
 import { sharedOverview, type SharedBackup, type SharedDatabase, type SharedOverview } from "@/services/tenant/shared-databases";
-import { tenantOnDemand } from "@/services/tenant/shared-servers";
+import { sharingVersion, tenantOnDemand } from "@/services/tenant/shared-servers";
 
 /**
  * The servers of other tenants that hold databases a tenant has now, as rows of its list of
@@ -236,9 +236,11 @@ export async function sharedServerItems(tenantId: string, options: { backups: bo
     let rows: SharedServerItem[];
     try {
         if (!(await mayHoldSharedDatabases(tenantId, now))) return [];
-        // What the platform lets the customer start goes into the key, so a change of it shows at once.
+        // What the platform lets the customer start and every change of who holds a database go into
+        // the key, so a database given or taken back shows at once.
         const [stamp, perDay] = await Promise.all([onDemandStamp(tenantId, now), runAsSystem(() => tenantOnDemand([tenantId]))]);
-        rows = await cached(`shared-server-rows:${tenantId}:${stamp}:${perDay.get(tenantId) ?? "off"}`, ROWS_TTL_MS, () => loadRows(tenantId, now));
+        const key = `shared-server-rows:${tenantId}:${stamp}:v${sharingVersion()}:${perDay.get(tenantId) ?? "off"}`;
+        rows = await cached(key, ROWS_TTL_MS, () => loadRows(tenantId, now));
     } catch (error: unknown) {
         log.warn("Reading the shared databases of a tenant failed", { tenantId }, wrapError(error));
         return [];

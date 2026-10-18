@@ -80,9 +80,10 @@ export async function getProfileModel(userId: string, viewer: { permissions: str
     const { memberships, ...rest } = user;
     const group = memberships[0]?.group ?? null;
     // All tenants reads every tenant and changes none, so a platform admin there holds what that
-    // view allows, not everything.
+    // view allows, not everything. Only a platform admin has every permission in a tenant opened
+    // from there, someone of a platform group what their groups give in it.
     const access = allTenants
-        ? [...accessSentences(summarizeAccess(permissions, false)), ALL_TENANTS_NOTE]
+        ? [...accessSentences(summarizeAccess(permissions, false)), ...(isPlatformAdmin ? [ALL_TENANTS_NOTE] : [])]
         : accessSentences(summarizeAccess(permissions, isPlatformAdmin));
 
     return {

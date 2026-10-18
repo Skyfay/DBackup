@@ -36,7 +36,8 @@ export async function users(query: string, tenantId: string | null): Promise<Sea
 
 /**
  * The groups with the number of people who hold them in the tenant. In All tenants (`tenantId` null)
- * the people who hold them in any tenant, each once.
+ * the groups of every tenant, each with the people who hold it, once each, and its tenant, which
+ * it opens in.
  */
 export async function groups(query: string, tenantId: string | null): Promise<SearchHit[]> {
     if (tenantId === null) {
@@ -44,17 +45,19 @@ export async function groups(query: string, tenantId: string | null): Promise<Se
             where: { name: { contains: query } },
             orderBy: { name: "asc" },
             take: PER_KIND,
-            select: { id: true, name: true, memberships: { select: { userId: true } } },
+            select: { id: true, name: true, tenantId: true, memberships: { select: { userId: true } } },
         });
-        return everywhere.map((group) => ({ kind: "group", id: group.id, name: group.name, people: new Set(group.memberships.map((entry) => entry.userId)).size }));
+        return everywhere.map((group) => ({
+            kind: "group", id: group.id, name: group.name, people: new Set(group.memberships.map((entry) => entry.userId)).size, tenantId: group.tenantId,
+        }));
     }
     const found = await prisma.group.findMany({
         where: { name: { contains: query } },
         orderBy: { name: "asc" },
         take: PER_KIND,
-        select: { id: true, name: true, _count: { select: { memberships: { where: { tenantId } } } } },
+        select: { id: true, name: true, tenantId: true, _count: { select: { memberships: { where: { tenantId } } } } },
     });
-    return found.map((group) => ({ kind: "group", id: group.id, name: group.name, people: group._count.memberships }));
+    return found.map((group) => ({ kind: "group", id: group.id, name: group.name, people: group._count.memberships, tenantId: group.tenantId }));
 }
 
 /** Every API key, like the API keys tab lists them for someone who may read them. */

@@ -19,6 +19,16 @@ export interface PlatformGroupShape {
     tenantIds: readonly string[];
 }
 
+/**
+ * The tenants someone looks after on the platform: `"all"` for a platform admin and a platform group
+ * of all tenants, the tenants of their platform group otherwise. Their rights of the platform, like
+ * the accounts, the sharing and the sign-in providers, touch only these tenants and their people.
+ */
+export type PlatformReach = "all" | readonly string[];
+
+/** Whether a reach covers a tenant. */
+export const reachCovers = (reach: PlatformReach, tenantId: string): boolean => reach === "all" || reach.includes(tenantId);
+
 /** Who makes, changes or gives a platform group. */
 export interface PlatformGroupActor {
     isPlatformAdmin: boolean;

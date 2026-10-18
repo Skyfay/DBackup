@@ -44,8 +44,15 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys && !showsSignIn) redirect("/dashboard");
 
     // All tenants changes no tenant: the members, groups and keys belong to one, every account is under Platform.
+    // The tab and the record the address names open in the tenant picked, like the part of Settings.
     if (user.allTenants) {
-        return <PickTenantPage href="/dashboard/users" />;
+        const kept = new URLSearchParams();
+        for (const key of ["tab", "open"]) {
+            const value = firstOf(params, key);
+            if (value) kept.set(key, value);
+        }
+        const query = kept.toString();
+        return <PickTenantPage href={query ? `/dashboard/users?${query}` : "/dashboard/users"} />;
     }
 
     const [attention, layouts, groupsView, apiKeysView, auditView, signInView] = await Promise.all([

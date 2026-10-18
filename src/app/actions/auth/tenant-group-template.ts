@@ -16,13 +16,14 @@ import { auditService } from "@/services/audit-service";
 import { groupService } from "@/services/user/group-service";
 import { platformGroupService } from "@/services/user/platform-group-service";
 import { parsePermissions } from "@/services/user/users-model";
-import { templateRights, tenantGroupTemplates, type LeaveChoice, type ReachPlan, type ReachReport } from "@/services/user/tenant-group-templates";
+import { templateRights, tenantGroupTemplates, type ClashChoice, type LeaveChoice, type ReachPlan, type ReachReport } from "@/services/user/tenant-group-templates";
 
 /**
  * Groups the platform makes once for tenants, under Platform, Users & Groups, Tenant groups. Each
  * needs the right to manage the accounts of the platform. Nobody makes or changes one that may do
  * more in a tenant than their own platform group gives there, or that reaches a tenant their own
- * platform group does not, and nobody moves people into a group that may do more than they may.
+ * platform group does not, and nobody moves people into a group or takes over a group of a tenant
+ * that may do more than they may.
  * The platform's log keeps the group, the log of each tenant what happened to its group there.
  */
 
@@ -93,6 +94,24 @@ async function moveRefusal(actor: PlatformGroupActor, leaving: Record<string, Le
     return null;
 }
 
+/** Whether a group of a tenant may do more than the actor may give in the tenants: every permission there, or one their platform group does not give. */
+function beyondActor(actor: PlatformGroupActor, group: { permissions: readonly string[]; fullAccess: boolean }): boolean {
+    if (actor.isPlatformAdmin) return false;
+    return group.fullAccess || group.permissions.some((permission) => lockedTenantRight(actor, permission) !== null);
+}
+
+/**
+ * Nobody takes over a group of a tenant that may do more than they may: the take-over sets what its
+ * members may do and hands the group to the platform, which a change of that group in its tenant
+ * would refuse them too.
+ */
+async function takeOverRefusal(actor: PlatformGroupActor, name: string, clashes: Record<string, ClashChoice> | undefined): Promise<string | null> {
+    if (actor.isPlatformAdmin || !clashes) return null;
+    const tenantIds = Object.entries(clashes).filter(([, choice]) => choice === "takeOver").map(([tenantId]) => tenantId);
+    const beyond = (await tenantGroupTemplates.groupsNamed(name, tenantIds)).find((group) => beyondActor(actor, group));
+    return beyond ? `${beyond.name} of ${beyond.tenantName} may do more than you may, so you cannot take it over. Leave ${beyond.tenantName} out.` : null;
+}
+
 /** One entry in the log of every tenant whose group changed, in the words of a change of a group there. */
 async function logTenants(viewer: Viewer, name: string, report: ReachReport, extra: Record<string, unknown> = {}) {
     const entries: [string[], string, Record<string, unknown>][] = [
@@ -119,10 +138,16 @@ export async function previewTenantGroupTemplate(id: string | null, input: Tenan
     const parsed = TemplateSchema.safeParse(input);
     if (!templateId.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
 
-    const refused = refusalOf(await actorOf(viewer), shapeOf(parsed.data));
+    const actor = await actorOf(viewer);
+    const refused = refusalOf(actor, shapeOf(parsed.data));
     if (refused) return { success: false as const, error: refused };
     try {
-        return { success: true as const, data: await tenantGroupTemplates.preview(templateId.data, parsed.data) };
+        const preview = await tenantGroupTemplates.preview(templateId.data, parsed.data);
+        // A group of a tenant that may do more than the viewer is left out, never taken over.
+        const beyond = actor.isPlatformAdmin || preview.clashes.length === 0
+            ? new Set<string>()
+            : new Set((await tenantGroupTemplates.groupsNamed(parsed.data.name, preview.clashes.map((clash) => clash.tenantId))).filter((group) => beyondActor(actor, group)).map((group) => group.id));
+        return { success: true as const, data: { ...preview, clashes: preview.clashes.map((clash) => (beyond.has(clash.groupId) ? { ...clash, beyondYou: true } : clash)) } };
     } catch (error: unknown) {
         if (!(error instanceof ValidationError)) log.error("Previewing a group for tenants failed", { templateId: templateId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The group could not be checked.") };
@@ -143,7 +168,7 @@ export async function saveTenantGroupTemplate(id: string | null, input: TenantGr
         if (!current) return { success: false as const, error: "The group for tenants no longer exists." };
         if (refusalOf(actor, shapeOf(current))) return { success: false as const, error: BEYOND };
     }
-    const refused = refusalOf(actor, shapeOf(parsed.data)) ?? await moveRefusal(actor, answers.data.leaving);
+    const refused = refusalOf(actor, shapeOf(parsed.data)) ?? await moveRefusal(actor, answers.data.leaving) ?? await takeOverRefusal(actor, parsed.data.name, answers.data.clashes);
     if (refused) return { success: false as const, error: refused };
 
     try {

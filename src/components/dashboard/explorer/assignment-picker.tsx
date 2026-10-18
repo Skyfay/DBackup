@@ -84,7 +84,8 @@ export function OwnerPicker({ row, data, tenantName, onChange }: OwnerPickerProp
             else toggle(false);
             return;
         }
-        if (owner?.via === "assignment" && owner.tenantId === id) return toggle(false);
+        // The tenant that holds it already, by name or by a rule, gets nothing new.
+        if (owner?.tenantId === id) return toggle(false);
         const validFrom = startOf(day, timezone, new Date(), from);
         void save({ databaseName: row.name, tenantId: id, ...(validFrom ? { validFrom } : {}) });
     };

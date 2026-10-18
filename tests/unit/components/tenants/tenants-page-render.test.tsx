@@ -138,14 +138,14 @@ describe("the Tenants page", () => {
         expect(toast.success).toHaveBeenCalledWith("Acme saved");
     });
 
-    it("never offers to limit the home tenant or its backups on demand, and keeps its sharing on", async () => {
+    it("never offers to limit the home tenant, keeps its sharing on and offers its backups on demand", async () => {
         const user = userEvent.setup();
         render(<TenantsClient rows={ROWS} activeTenantId="default" viewerId="u1" canManage viewerPlatformAdmin />);
 
         await user.click(screen.getByRole("button", { name: "Open menu for Platform" }));
         await user.click(await screen.findByRole("menuitem", { name: /^Edit/ }));
         const dialog = await screen.findByRole("dialog", { name: "Edit Platform" });
-        expect(within(dialog).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["General", "Members", "Sharing"]);
+        expect(within(dialog).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["General", "Members", "Sharing", "Backups on demand"]);
         await user.click(within(dialog).getByRole("tab", { name: "Sharing" }));
         expect(within(dialog).getByRole("switch", { name: "Shares with customers" })).toBeDisabled();
     });

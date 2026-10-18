@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PermissionError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     getAuthContext: vi.fn(),
@@ -16,6 +17,10 @@ vi.mock("next/headers", () => ({ headers: () => mocks.headers() }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
     checkPermissionWithContext: (...args: unknown[]) => mocks.checkPermissionWithContext(...args),
+    tenantOf: (ctx: { tenantId: string | null }) => {
+        if (!ctx.tenantId) throw new PermissionError("a tenant");
+        return ctx.tenantId;
+    },
 }));
 
 vi.mock("@/lib/core/registry", () => ({
@@ -70,7 +75,7 @@ const sshConfig = {
 describe("POST /api/adapters/test-ssh", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1" });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", tenantId: "default", allTenants: false });
         mocks.checkPermissionWithContext.mockResolvedValue(undefined);
         mocks.headers.mockResolvedValue(new Headers());
         mocks.registryGet.mockReturnValue({ id: "mysql" });
@@ -214,5 +219,25 @@ describe("POST /api/adapters/test-ssh", () => {
 
         expect(mocks.checkBackupPath).toHaveBeenCalled();
         expect(body.success).toBe(true);
+    });
+
+    it("answers 403, not 500, to someone who may not see the sources", async () => {
+        mocks.checkPermissionWithContext.mockImplementation(() => {
+            throw new PermissionError("sources:view");
+        });
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        expect(response.status).toBe(403);
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("tries no SSH login in All tenants, which belongs to no tenant", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "root", tenantId: null, allTenants: true, isPlatformAdmin: true });
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        expect(response.status).toBe(403);
+        expect(mocks.exec).not.toHaveBeenCalled();
     });
 });

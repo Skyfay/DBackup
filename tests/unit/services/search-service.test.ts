@@ -102,9 +102,9 @@ describe("the search over the records of DBackup", () => {
         expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
             where: { AND: [{ memberships: { some: { tenantId: "tenant-a" } } }, { OR: [{ name: { contains: "ops" } }, { email: { contains: "ops" } }] }] },
         }));
-        // Groups are the same everywhere, but who holds them is counted in the tenant alone.
+        // A group belongs to its tenant, which opens it in All tenants, and who holds it is counted there.
         expect(prismaMock.group.findMany).toHaveBeenCalledWith(expect.objectContaining({
-            select: { id: true, name: true, _count: { select: { memberships: { where: { tenantId: "tenant-a" } } } } },
+            select: { id: true, name: true, tenantId: true, _count: { select: { memberships: { where: { tenantId: "tenant-a" } } } } },
         }));
         expect(selected(prismaMock.apiKey.findMany)).not.toContain("hashedKey");
         expect(hits).toEqual([

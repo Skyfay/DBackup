@@ -264,7 +264,7 @@ describe("getStorageVolume", () => {
       expect(result).toEqual([cache[1]]);
     });
 
-    it("shows each destination once outside a tenant, with the backups of every tenant on it", async () => {
+    it("shows each destination once outside a tenant, with the backups of every tenant on it, named for the tenant of the destination", async () => {
       prismaMock.adapterConfig.findMany.mockResolvedValue([
         { id: "acme-nas", tenantId: "acme" },
         { id: "msp-s3", tenantId: "msp" },
@@ -273,10 +273,11 @@ describe("getStorageVolume", () => {
 
       const result = await getStorageVolume();
 
+      // All tenants names the tenant of each, so two destinations of the same name stay apart.
       expect(result.map((entry) => [entry.configId, entry.tenantId, entry.size, entry.count])).toEqual([
-        ["acme-nas", undefined, 500, 3],
-        ["msp-s3", undefined, 350, 7],
-        ["shop-ftp", undefined, 900, 9],
+        ["acme-nas", "acme", 500, 3],
+        ["msp-s3", "msp", 350, 7],
+        ["shop-ftp", "shop", 900, 9],
       ]);
       expect(providedIds).not.toHaveBeenCalled();
     });
@@ -307,9 +308,10 @@ describe("getStorageVolume", () => {
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
     prismaMock.adapterConfig.findMany
       .mockRejectedValueOnce(new Error("Refresh failed")) // triggers fallback
-      .mockResolvedValueOnce([
+      .mockResolvedValue([ // the fallback, then the read of what the scope sees
         { id: "cfg-1", name: "Local", adapterId: "local", type: "storage" } as any,
       ]);
+    prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
     prismaMock.storageSnapshot.findFirst.mockResolvedValue({
       size: BigInt(3072),
       count: 2,
@@ -664,7 +666,7 @@ describe("getLatestJobs", () => {
     expect(result[0].duration).toBe(5 * 60 * 1000);
   });
 
-  it("overrides fields from metadata when available", async () => {
+  it("names a backup like the History page, with the databases it held, and keeps the source of its metadata", async () => {
     prismaMock.execution.findMany.mockResolvedValue([
       {
         id: "exec-2",
@@ -676,27 +678,27 @@ describe("getLatestJobs", () => {
           jobName: "Meta Job",
           sourceName: "PG Primary",
           sourceType: "postgres",
-          databases: ["db1", "db2"],
+          names: ["db1", "db2"],
         }),
         jobId: "job-2",
-        job: { name: "Old Name", source: null, destinations: [] },
+        job: { name: "Old Name", source: null, sources: [] },
       },
     ] as any);
 
     const result = await getLatestJobs(1);
 
-    expect(result[0].jobName).toBe("Meta Job");
+    expect(result[0].jobName).toBe("Old Name");
+    expect(result[0].sub).toBe("Backup · db1, db2");
     expect(result[0].sourceName).toBe("PG Primary");
     expect(result[0].sourceType).toBe("postgres");
-    expect(result[0].databaseName).toBe("db1, db2");
     expect(result[0].duration).toBe(0); // no endedAt
   });
 
-  it("uses 'Deleted Job' when job relation is null but jobId is set", async () => {
+  it("names the backup of a deleted job like the History page", async () => {
     prismaMock.execution.findMany.mockResolvedValue([
       {
         id: "exec-3",
-        type: "Restore",
+        type: "Backup",
         status: "Running",
         startedAt: new Date(),
         endedAt: null,
@@ -708,10 +710,10 @@ describe("getLatestJobs", () => {
 
     const result = await getLatestJobs(1);
 
-    expect(result[0].jobName).toBe("Deleted Job");
+    expect(result[0].jobName).toBe("A deleted job");
   });
 
-  it("uses 'Manual Action' when both job and jobId are null", async () => {
+  it("names a restore without a job like the History page, never as a manual action", async () => {
     prismaMock.execution.findMany.mockResolvedValue([
       {
         id: "exec-4",
@@ -727,7 +729,7 @@ describe("getLatestJobs", () => {
 
     const result = await getLatestJobs(1);
 
-    expect(result[0].jobName).toBe("Manual Action");
+    expect(result[0]).toEqual(expect.objectContaining({ jobName: "Restore", sub: "Restore" }));
   });
 
   it("does not crash on invalid metadata JSON", async () => {

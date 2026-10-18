@@ -8,6 +8,7 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "jobs/[id]/clone" });
 
@@ -20,7 +21,8 @@ export async function POST(
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     let body: { name?: string } = {};

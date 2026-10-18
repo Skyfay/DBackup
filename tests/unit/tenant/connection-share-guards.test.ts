@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     setRecipients: vi.fn(),
     sendTest: vi.fn(),
     audit: vi.fn(),
+    reachOf: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
@@ -44,6 +45,8 @@ vi.mock("@/services/sharing/connection-shares", async () => {
 });
 vi.mock("@/services/sharing/channel-recipients", () => ({ setRecipients: mocks.setRecipients }));
 vi.mock("@/services/sharing/recipients-test", () => ({ sendRecipientsTest: mocks.sendTest }));
+// The tenants the platform group of the viewer reaches, which every service call gets.
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reachOf: mocks.reachOf } }));
 
 const actions = await import("@/app/actions/tenant/connection-share");
 
@@ -55,6 +58,7 @@ beforeEach(() => {
     mocks.viewer = { id: "u-lena", name: "Lena Graf", tenantId: "acme" };
     mocks.service.view.mockResolvedValue({ uses: [], settings: SETTINGS });
     mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: ["Globex"], losses: [] });
+    mocks.reachOf.mockResolvedValue("all");
 });
 
 describe("what is shared with customers", () => {
@@ -82,7 +86,7 @@ describe("what is shared with customers", () => {
     it("is changed with Share with customers, and logged", async () => {
         mocks.granted.add(SHARE_PERMISSION);
         await expect(actions.saveConnectionShare("acme-nas", SETTINGS)).resolves.toMatchObject({ success: true });
-        expect(mocks.service.save).toHaveBeenCalledWith("acme-nas", SETTINGS, { confirmed: false });
+        expect(mocks.service.save).toHaveBeenCalledWith("acme-nas", SETTINGS, { confirmed: false, reach: "all" });
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", expect.objectContaining({ name: "NAS", action: "share" }), "acme-nas");
     });
 
@@ -106,6 +110,27 @@ describe("what is shared with customers", () => {
         }));
         await expect(actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: [] }, true)).resolves.toMatchObject({ success: false, error: "Could not take it away from a tenant: timeout" });
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", { name: "NAS", action: "unshare", tenants: "Globex", backups: 2 }, "acme-nas", { tenantId: "globex" });
+    });
+
+    it("hands the tenants the platform group of the viewer reaches to the view and every change", async () => {
+        mocks.granted = new Set([SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
+        mocks.reachOf.mockResolvedValue(["globex"]);
+        mocks.service.losing.mockResolvedValue([]);
+        mocks.service.stopFor.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], losses: [] });
+        mocks.service.deleteBackupsOf.mockResolvedValue({ name: "NAS", tenantName: "Globex", backups: 1 });
+
+        await actions.getConnectionShare("acme-nas");
+        await actions.previewShareLoss("acme-nas", SETTINGS);
+        await actions.saveConnectionShare("acme-nas", SETTINGS, true);
+        await actions.stopSharingWith("acme-nas", "globex", true);
+        await actions.deleteSharedBackups("acme-nas", "globex");
+
+        expect(mocks.reachOf).toHaveBeenCalledWith("u-lena");
+        expect(mocks.service.view).toHaveBeenCalledWith("acme-nas", ["globex"]);
+        expect(mocks.service.losing).toHaveBeenCalledWith("acme-nas", { allTenants: false, tenantIds: ["globex"] }, ["globex"]);
+        expect(mocks.service.save).toHaveBeenCalledWith("acme-nas", SETTINGS, { confirmed: true, reach: ["globex"] });
+        expect(mocks.service.stopFor).toHaveBeenCalledWith("acme-nas", "globex", { confirmed: true, reach: ["globex"] });
+        expect(mocks.service.deleteBackupsOf).toHaveBeenCalledWith("acme-nas", "globex", ["globex"]);
     });
 
     it("is changed in one tenant, never in All tenants", async () => {

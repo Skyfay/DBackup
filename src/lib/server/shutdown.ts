@@ -1,5 +1,6 @@
 import { logger } from "@/lib/logging/logger";
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
 
 const log = logger.child({ module: "Shutdown" });
 
@@ -78,7 +79,9 @@ export function registerShutdownHandlers(): void {
         isShuttingDown = true;
         log.info(`Received ${signal} - starting graceful shutdown...`);
 
-        performShutdown(signal).then(() => {
+        // A signal arrives outside the scope the listeners were registered in, and the runs of
+        // every tenant count, so the shutdown names its scope itself.
+        runAsSystem(() => performShutdown(signal)).then(() => {
             log.info("Graceful shutdown complete");
             process.exit(0);
         }).catch((error) => {

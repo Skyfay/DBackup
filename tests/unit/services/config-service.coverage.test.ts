@@ -362,7 +362,7 @@ describe('import.ts - uncovered branches', () => {
       update: { groupId: 'db-group-id' },
     });
     // A member of an ordinary group stays no platform admin
-    expect(prismaMock.user.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { platformRole: 'ADMIN' } }));
+    expect(prismaMock.user.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ platformRole: 'ADMIN' }) }));
     // AuditLog was upserted with remapped userId (line 365)
     const auditCall = (prismaMock.auditLog.upsert as any).mock.calls[0][0];
     expect(auditCall.create.userId).toBe('db-user-id');
@@ -385,16 +385,16 @@ describe('import.ts - uncovered branches', () => {
     expect(prismaMock.tenantMembership.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: { userId: 'u-root', tenantId: 'default', groupId: 'db-full-access' },
     }));
-    expect(prismaMock.user.update).toHaveBeenCalledWith({ where: { id: 'u-root' }, data: { platformRole: 'ADMIN' } });
+    expect(prismaMock.user.update).toHaveBeenCalledWith({ where: { id: 'u-root' }, data: { platformRole: 'ADMIN', platformGroupId: null } });
   });
 
   it('keeps an ordinary group of a file apart from the group with every permission that shares its name', async () => {
-    // The file's Admin finds the full access Admin here by name, then a free name for itself,
-    // then the check that the group its member goes into exists.
+    // The file's Admin finds the full access Admin here by name, no group by its id, then a free
+    // name for itself, then the check that the group its member goes into exists.
     prismaMock.group.findFirst
       .mockResolvedValueOnce({ id: 'db-full-access', name: 'Admin', permissions: '[]', fullAccess: true } as any)
       .mockResolvedValueOnce(null);
-    prismaMock.group.findUnique.mockResolvedValueOnce({ id: 'db-imported' } as any);
+    prismaMock.group.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'db-imported' } as any);
     prismaMock.group.create.mockResolvedValueOnce({ id: 'db-imported' } as any);
 
     const backup = makeBackup({
@@ -409,7 +409,7 @@ describe('import.ts - uncovered branches', () => {
     expect(prismaMock.tenantMembership.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: { userId: 'u-lena', tenantId: 'default', groupId: 'db-imported' },
     }));
-    expect(prismaMock.user.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { platformRole: 'ADMIN' } }));
+    expect(prismaMock.user.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ platformRole: 'ADMIN' }) }));
     expect(notes).toContain('The group Admin of the file came in as Admin (imported), since Admin holds every permission here.');
   });
 

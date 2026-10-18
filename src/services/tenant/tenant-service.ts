@@ -12,9 +12,17 @@ import type { TenantAllowances } from "@/lib/tenant/allowances";
 import { logger } from "@/lib/logging/logger";
 import { sharedKindOf, providedTo } from "@/services/sharing/provided";
 import { deleteTenantBackups, forgetConnection } from "@/services/sharing/share-cleanup";
+import type { Tx } from "@/lib/prisma-tx";
+import { sharingChanged } from "./shared-servers";
 
 const log = logger.child({ service: "TenantService" });
 import { seedTenantGroups, seedTenantTemplates } from "./tenant-seed";
+
+/** Refuses to delete a tenant while a run of it waits or runs, which a delete would pull away under it. */
+async function assertNoActiveRun(client: typeof prisma | Tx, tenantId: string, name: string): Promise<void> {
+    const active = await client.execution.count({ where: { tenantId, status: { in: ["Pending", "Running"] } } });
+    if (active > 0) throw new ConflictError(`A run of ${name} waits or runs right now. Delete the tenant once it ended, or cancel it first.`);
+}
 
 /** The settings of the storage alerts of a destination, as `storage-alert-service.ts` keeps them. */
 const alertKeysOf = (destinationId: string) => [`storage.alerts.${destinationId}`, `storage.alerts.${destinationId}.state`];
@@ -231,25 +239,38 @@ export const tenantService = {
      * Switches whether a tenant shares with customers: the databases of its servers, its destinations
      * and its channels. One that gives anything away keeps sharing until it took it back, since
      * without the switch nobody could manage what it gave, and no customer loses anything by a
+     * switch. Only servers whose connection exists count, what a deleted one gave ends with the
      * switch. A tenant may share its own and get what another one shares at once.
      */
-    async setSharing(id: string, on: boolean): Promise<{ name: string; changed: boolean }> {
+    async setSharing(id: string, on: boolean, now = new Date()): Promise<{ name: string; changed: boolean }> {
         const tenant = await prisma.tenant.findUnique({ where: { id }, select: { name: true, sharesWithCustomers: true } });
         if (!tenant) throw new NotFoundError("Tenant", id);
         if (tenant.sharesWithCustomers === on) return { name: tenant.name, changed: false };
         await runAsSystem(async () => {
             if (!on) {
-                const servers = { server: { tenantId: id } };
+                // Only a server whose connection still exists counts. What a deleted one gave away
+                // nobody could take back, since that needs its connection, so it ends with the switch.
+                const servers = (await prisma.sharedServer.findMany({ where: { tenantId: id }, select: { id: true } })).map((server) => server.id);
+                const live = new Set((await prisma.adapterConfig.findMany({ where: { id: { in: servers }, type: "database" }, select: { id: true } })).map((server) => server.id));
+                const liveIds = servers.filter((server) => live.has(server));
+                const goneIds = servers.filter((server) => !live.has(server));
                 const [given, byRule] = await Promise.all([
-                    prisma.databaseAssignment.count({ where: { ...servers, validUntil: null, tenantId: { not: null } } }),
-                    prisma.databaseAssignmentRule.count({ where: { ...servers, validUntil: null } }),
+                    prisma.databaseAssignment.count({ where: { sourceId: { in: liveIds }, validUntil: null, tenantId: { not: null } } }),
+                    prisma.databaseAssignmentRule.count({ where: { sourceId: { in: liveIds }, validUntil: null } }),
                 ]);
                 if (given + byRule > 0) throw new ValidationError(`${tenant.name} gives databases to other tenants. Take them back and end its rules first.`);
                 const connections = await prisma.connectionShare.count({ where: { tenantId: id } });
                 if (connections > 0) throw new ValidationError(`${tenant.name} shares destinations or channels with other tenants. Stop sharing them first.`);
+                await prisma.$transaction([
+                    prisma.databaseAssignment.updateMany({ where: { sourceId: { in: goneIds }, validUntil: null, tenantId: { not: null } }, data: { validUntil: now } }),
+                    prisma.databaseAssignmentRule.updateMany({ where: { sourceId: { in: goneIds }, validUntil: null }, data: { validUntil: now } }),
+                    prisma.tenant.update({ where: { id }, data: { sharesWithCustomers: on } }),
+                ]);
+                return;
             }
             await prisma.tenant.update({ where: { id }, data: { sharesWithCustomers: on } });
         });
+        sharingChanged();
         return { name: tenant.name, changed: true };
     },
 
@@ -266,16 +287,19 @@ export const tenantService = {
      * Deletes a tenant with everything it holds: its connections, jobs, runs, keys, logins,
      * templates, API keys and logs, and the memberships in it. The backups at its destinations stay
      * where they are, and an account that worked only there stays without a tenant. The home
-     * tenant is never deleted.
+     * tenant is never deleted, and no tenant while a run of it waits or runs.
      *
      * The databases of shared servers it held end with it, but its assignments and rules stay with
      * its id: the backups of its time belong to nobody from then on, never to whoever another rule
-     * names, see `holderAt` in `database-owner.ts`.
+     * names, see `holderAt` in `database-owner.ts`. A database it held by name is taken back, so no
+     * rule of another tenant takes it from then on either.
      */
     async delete(id: string, now = new Date()): Promise<TenantRemoval & { withdrawn: WithdrawnByDelete[] }> {
         if (id === HOME_TENANT_ID) throw new ValidationError("The home tenant holds what the platform owns and cannot be deleted.");
         const tenant = await prisma.tenant.findUnique({ where: { id }, select: { name: true } });
         if (!tenant) throw new NotFoundError("Tenant", id);
+        // A run that waits or runs would lose its row under its feet and leave its followers waiting.
+        await runAsSystem(() => assertNoActiveRun(prisma, id, tenant.name));
 
         // What it shares goes with its connections, so its customers lose every link to them first.
         // Their backups stay on the storage, which deleting a tenant never touches.
@@ -295,6 +319,8 @@ export const tenantService = {
 
         const removal = await runAsSystem(() => prisma.$transaction(async (tx) => {
             const where = { tenantId: id };
+            // Once more inside, since a run may have started while its customers lost what it shared.
+            await assertNoActiveRun(tx, id, tenant.name);
             // Children before what they point to: the runs and jobs hold the connections and keys.
             const runs = await tx.execution.deleteMany({ where });
             const jobs = await tx.job.deleteMany({ where });
@@ -323,8 +349,16 @@ export const tenantService = {
             await tx.connectionShare.deleteMany({ where: { allTenants: false, tenants: { none: {} }, config: { type: "notification" } } });
             await tx.channelRecipients.deleteMany({ where });
             await tx.storageListCache.deleteMany({ where });
-            // What it held of other tenants' servers ends now and keeps its id for the time before.
+            // What it held of other tenants' servers ends now and keeps its id for the time before. A
+            // database it held by name is taken back like with Nobody else, so it belongs to the tenant
+            // of its server alone from now on and never falls to another tenant's rule.
+            const held = await tx.databaseAssignment.findMany({ where: { tenantId: id, validUntil: null }, select: { sourceId: true, databaseName: true } });
             await tx.databaseAssignment.updateMany({ where: { tenantId: id, validUntil: null }, data: { validUntil: now } });
+            if (held.length > 0) {
+                await tx.databaseAssignment.createMany({
+                    data: held.map((assignment) => ({ sourceId: assignment.sourceId, databaseName: assignment.databaseName, tenantId: null, validFrom: now, createdAt: now })),
+                });
+            }
             await tx.databaseAssignmentRule.updateMany({ where: { tenantId: id, validUntil: null }, data: { validUntil: now } });
             // Its settings kept by key: its own notifications and the alerts of its destinations.
             await tx.systemSetting.deleteMany({
@@ -345,6 +379,7 @@ export const tenantService = {
         }, { timeout: 120_000 }));
 
         invalidateDashboardCache();
+        sharingChanged();
         const { scheduler } = await import("@/lib/server/scheduler");
         await scheduler.refresh();
         // The storage may take a while, so the answer does not wait for it. A destination it was the

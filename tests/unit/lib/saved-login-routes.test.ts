@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { PermissionError } from "@/lib/logging/errors";
+import { PermissionError, ValidationError } from "@/lib/logging/errors";
 
 type Ctx = { userId: string; tenantId: string | null; allTenants: boolean; isPlatformAdmin: boolean; permissions: string[]; authMethod: "session" };
 
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     testConnection: vi.fn(),
     listRemote: vi.fn(),
     registryGet: vi.fn(),
+    offHost: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -45,6 +46,8 @@ vi.mock("@/lib/core/registry", () => ({ registry: { get: (...args: unknown[]) =>
 vi.mock("@/lib/adapters/config-resolver", () => ({
     overlayCredentialsOnConfig: (...args: unknown[]) => mocks.overlay(...args),
     applyStoredSecrets: vi.fn(async (_adapterId: string, _id: string, config: unknown) => config),
+    assertConfigOffHost: (...args: unknown[]) => mocks.offHost(...args),
+    withoutBinaryPaths: (config: Record<string, unknown>) => Object.fromEntries(Object.entries(config).filter(([key]) => !key.endsWith("BinaryPath"))),
 }));
 vi.mock("@/lib/transport", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/lib/transport")>()),
@@ -74,6 +77,8 @@ const cases = [
         applied: () => mocks.testConnection,
         read: PERMISSIONS.SOURCES.VIEW,
         manage: PERMISSIONS.SOURCES.WRITE,
+        // A config of a form is tried only by someone who may change connections of the kind.
+        formOfManagers: true,
     },
     {
         name: "access-check",
@@ -81,6 +86,7 @@ const cases = [
         applied: () => mocks.overlay,
         read: PERMISSIONS.SOURCES.VIEW,
         manage: PERMISSIONS.SOURCES.WRITE,
+        formOfManagers: true,
     },
     {
         name: "check-snapshot",
@@ -88,6 +94,7 @@ const cases = [
         applied: () => mocks.overlay,
         read: PERMISSIONS.DESTINATIONS.READ,
         manage: PERMISSIONS.DESTINATIONS.WRITE,
+        formOfManagers: false,
     },
     {
         name: "test-ssh",
@@ -95,17 +102,11 @@ const cases = [
         applied: () => mocks.overlay,
         read: PERMISSIONS.SOURCES.VIEW,
         manage: PERMISSIONS.SOURCES.WRITE,
-    },
-    {
-        name: "filesystem/remote",
-        send: () => remoteRoute.POST(post({ adapterId: "mysql", config: { host: "evil.example" }, path: "/", sshCredentialId: "login-1" })),
-        applied: () => mocks.listRemote,
-        read: PERMISSIONS.SETTINGS.READ,
-        manage: PERMISSIONS.SOURCES.WRITE,
+        formOfManagers: false,
     },
 ] as const;
 
-describe.each(cases)("POST $name with a saved login", ({ send, applied, read, manage }) => {
+describe.each(cases)("POST $name with a saved login", ({ send, applied, read, manage, formOfManagers }) => {
     beforeEach(() => {
         mocks.overlay.mockImplementation(async (_adapterId: string, config: unknown) => config);
         mocks.testConnection.mockResolvedValue({ ok: true, result: { success: true, message: "ok" } });
@@ -132,11 +133,11 @@ describe.each(cases)("POST $name with a saved login", ({ send, applied, read, ma
         expect(applied()).toHaveBeenCalled();
     });
 
-    it("applies it for someone who may reveal the saved logins anyway", async () => {
+    it("applies it for someone who may reveal the saved logins anyway, where seeing the connections is enough to try one", async () => {
         mocks.ctx = someone(read, PERMISSIONS.CREDENTIALS.REVEAL, PERMISSIONS.SOURCES.VIEW);
 
-        expect((await send()).status).not.toBe(403);
-        expect(applied()).toHaveBeenCalled();
+        expect((await send()).status === 403).toBe(formOfManagers);
+        expect(applied().mock.calls.length > 0).toBe(!formOfManagers);
     });
 
     it("refuses it in All tenants, which reads the saved logins of every tenant", async () => {
@@ -147,14 +148,90 @@ describe.each(cases)("POST $name with a saved login", ({ send, applied, read, ma
     });
 });
 
-describe("a config without a saved login", () => {
-    it("is still tested with the right to see the connections alone", async () => {
+describe("a config of a form", () => {
+    beforeEach(() => {
+        mocks.testConnection.mockReset();
+        mocks.testConnection.mockResolvedValue({ ok: true, result: { success: true, message: "ok", version: "8.0" } });
+    });
+
+    it("is tried only by someone who may change connections of the kind, since it runs as it came", async () => {
         mocks.ctx = someone(PERMISSIONS.SOURCES.VIEW);
-        mocks.testConnection.mockResolvedValue({ ok: true, result: { success: true, message: "ok" } });
+
+        const tried = await testConnectionRoute.POST(post({ adapterId: "sqlite", config: { mode: "ssh", path: "/srv/app.db", sqliteBinaryPath: "/tmp/evil" } }));
+        const listed = await accessCheckRoute.POST(post({ adapterId: "mysql", config: { host: "db.example" } }));
+
+        expect([tried.status, listed.status]).toEqual([403, 403]);
+        expect(mocks.testConnection).not.toHaveBeenCalled();
+        expect(mocks.overlay).not.toHaveBeenCalled();
+    });
+
+    it("keeps it for someone who may change the connection", async () => {
+        mocks.ctx = someone(PERMISSIONS.SOURCES.VIEW, PERMISSIONS.SOURCES.WRITE);
+
+        await testConnectionRoute.POST(post({ adapterId: "mysql", config: { host: "db.example" }, configId: "src-1" }));
+
+        expect(mocks.testConnection).toHaveBeenCalledWith(expect.objectContaining({ configId: "src-1", storedConfigId: "src-1" }));
+    });
+
+    it("tests nothing in All tenants", async () => {
+        mocks.ctx = allTenants();
 
         const response = await testConnectionRoute.POST(post({ adapterId: "mysql", config: { host: "db.example" } }));
 
+        expect(response.status).toBe(403);
+        expect(mocks.testConnection).not.toHaveBeenCalled();
+    });
+});
+
+describe("POST filesystem/remote", () => {
+    const browse = (body: Record<string, unknown> = {}) =>
+        remoteRoute.POST(post({ adapterId: "sqlite", config: { mode: "ssh", host: "files.acme", username: "ops" }, path: "/", ...body }));
+
+    beforeEach(() => {
+        mocks.listRemote.mockReset();
+        mocks.listRemote.mockResolvedValue({ path: "/", entries: [] });
+        mocks.offHost.mockReset();
+        mocks.offHost.mockResolvedValue(undefined);
+    });
+
+    it("lists for someone who may change that kind of connection in a customer's tenant, without the settings of the instance", async () => {
+        mocks.ctx = someone(PERMISSIONS.SOURCES.WRITE);
+
+        const response = await browse();
+
         expect(response.status).toBe(200);
-        expect(mocks.testConnection).toHaveBeenCalledWith(expect.objectContaining({ storedConfigId: undefined }));
+        expect(mocks.listRemote).toHaveBeenCalled();
+    });
+
+    it("refuses someone who may only see the connections or the settings", async () => {
+        mocks.ctx = someone(PERMISSIONS.SOURCES.VIEW, PERMISSIONS.SETTINGS.READ);
+
+        expect((await browse()).status).toBe(403);
+        expect(mocks.listRemote).not.toHaveBeenCalled();
+    });
+
+    it("refuses All tenants", async () => {
+        mocks.ctx = allTenants();
+
+        expect((await browse()).status).toBe(403);
+        expect(mocks.listRemote).not.toHaveBeenCalled();
+    });
+
+    it("applies a saved login for someone who may change the connections", async () => {
+        mocks.ctx = someone(PERMISSIONS.SOURCES.WRITE);
+
+        expect((await browse({ sshCredentialId: "login-1" })).status).toBe(200);
+        expect(mocks.listRemote).toHaveBeenCalledWith(expect.objectContaining({ sshCredentialId: "login-1" }));
+    });
+
+    it("checks the config against the server DBackup runs on before it connects", async () => {
+        mocks.ctx = someone(PERMISSIONS.SOURCES.WRITE);
+        mocks.offHost.mockRejectedValue(new ValidationError("An SSH agent login uses the keys of the server DBackup runs on."));
+
+        const response = await browse({ config: { mode: "ssh", host: "files.acme", authType: "agent" } });
+
+        expect(response.status).toBe(400);
+        expect(mocks.offHost).toHaveBeenCalledWith("sqlite", { mode: "ssh", host: "files.acme", authType: "agent" });
+        expect(mocks.listRemote).not.toHaveBeenCalled();
     });
 });

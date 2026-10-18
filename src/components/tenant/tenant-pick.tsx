@@ -10,6 +10,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { tenantsForPage } from "./new-record";
 import { oneTenantPage } from "./one-tenant-pages";
 import { useOpenInTenant, useTenantView, type ViewTenant } from "./tenant-view";
 
@@ -77,7 +78,10 @@ interface TenantPickDialogProps {
     description: string;
     /** The page that opens in the picked tenant, like the form of a new job or the Vault. */
     href: string;
-    /** The tenants to offer, like the ones where the viewer may add the record. Every tenant of the view when left out. */
+    /**
+     * The tenants to offer, like the ones where the viewer may add the record. Left out, every tenant
+     * of the view the page can open in, see `tenantsForPage`.
+     */
     tenants?: ViewTenant[];
 }
 
@@ -87,7 +91,7 @@ interface TenantPickDialogProps {
  */
 export function TenantPickDialog({ open, onOpenChange, title, description, href, tenants: offered }: TenantPickDialogProps) {
     const view = useTenantView();
-    const tenants = offered ?? view.tenants;
+    const tenants = offered ?? tenantsForPage(href, view.tenants, view.isPlatformAdmin);
     const openInTenant = useOpenInTenant();
     const [busyId, setBusyId] = useState<string | null>(null);
 

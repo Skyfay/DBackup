@@ -13,12 +13,14 @@ import { auditService } from "@/services/audit-service";
 import { databaseAssignmentService, type SourceAssignments } from "@/services/tenant/database-assignments";
 import { moveDatabase, moveTargets, type MoveTarget } from "@/services/tenant/database-moves";
 import { customersOfServer } from "@/services/tenant/shared-servers";
+import { platformGroupService } from "@/services/user/platform-group-service";
 
 /**
  * Who the databases of a shared server belong to, as the tenant of the server decides it on the
  * page of the server: assignments, rules, moves to another server and backups on demand. The same
  * assignments come through `PUT /api/adapters/[id]/database-assignments`. Every change needs
- * `SHARE_PERMISSION`, read in one place.
+ * `SHARE_PERMISSION`, read in one place, and touches only the tenants the platform group of the
+ * viewer reaches, which the services check with the reach handed to them.
  */
 
 const log = logger.child({ action: "database-assignments" });
@@ -56,11 +58,12 @@ const onDemandChanges = (before: number | null, after: number | null) =>
 
 /** The databases of a shared server with who holds each, the rules and their history, for whoever may see the shared databases. */
 export async function getSourceAssignments(sourceId: string): Promise<{ success: true; data: SourceAssignments } | { success: false; error: string }> {
-    await checkPermission([SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
+    const viewer = await checkPermission([SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {
-        return { success: true, data: await databaseAssignmentService.forSource(id.data) };
+        // The pickers offer the tenants the viewer reaches, every holder still shows by its name.
+        return { success: true, data: await databaseAssignmentService.forSource(id.data, new Date(), await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
         if (!(error instanceof NotFoundError)) log.error("Reading the assignments failed", { sourceId: id.data }, wrapError(error));
         return { success: false, error: messageOf(error, "The assignments could not be read.") };
@@ -75,7 +78,7 @@ export async function assignDatabases(sourceId: string, changes: z.input<typeof 
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
 
     try {
-        const result = await databaseAssignmentService.assign(id.data, parsed.data, viewer.id);
+        const result = await databaseAssignmentService.assign(id.data, parsed.data, viewer.id, new Date(), await platformGroupService.reachOf(viewer.id));
         if (result.changed > 0) {
             await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
                 change: "Databases assigned",
@@ -97,7 +100,7 @@ export async function addAssignmentRule(sourceId: string, input: z.input<typeof 
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
 
     try {
-        const rule = await databaseAssignmentService.addRule(id.data, parsed.data);
+        const rule = await databaseAssignmentService.addRule(id.data, parsed.data, new Date(), await platformGroupService.reachOf(viewer.id));
         await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
             change: "Assignment rule added", pattern: rule.pattern, tenant: rule.tenantName,
             ...(rule.onDemandPerDay !== null ? { onDemandPerDay: rule.onDemandPerDay } : {}),
@@ -117,12 +120,12 @@ export async function removeAssignmentRule(sourceId: string, ruleId: string) {
     if (!id.success || !rule.success) return { success: false as const, error: "Invalid request" };
 
     try {
-        const removed = await databaseAssignmentService.removeRule(id.data, rule.data);
+        const removed = await databaseAssignmentService.removeRule(id.data, rule.data, new Date(), await platformGroupService.reachOf(viewer.id));
         await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, { change: "Assignment rule removed", pattern: removed.pattern, tenant: removed.tenantName }, id.data);
         revalidatePath("/dashboard/explorer");
         return { success: true as const };
     } catch (error: unknown) {
-        if (!(error instanceof NotFoundError)) log.error("Removing a rule failed", { sourceId: id.data }, wrapError(error));
+        if (!expected(error)) log.error("Removing a rule failed", { sourceId: id.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The rule could not be removed.") };
     }
 }
@@ -148,7 +151,7 @@ export async function moveSharedDatabase(sourceId: string, input: z.input<typeof
     if (!id.success || !parsed.success) return { success: false as const, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
 
     try {
-        const moved = await moveDatabase(id.data, parsed.data, viewer.id);
+        const moved = await moveDatabase(id.data, parsed.data, viewer.id, new Date(), await platformGroupService.reachOf(viewer.id));
         await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
             change: "Database moved",
             database: parsed.data.databaseName,
@@ -173,7 +176,7 @@ export async function setDatabaseOnDemand(sourceId: string, databaseName: string
     if (!id.success || !name.success || !value.success) return { success: false as const, error: value.error?.issues[0]?.message ?? "Invalid request" };
 
     try {
-        const changed = await databaseAssignmentService.setOnDemand(id.data, name.data, value.data);
+        const changed = await databaseAssignmentService.setOnDemand(id.data, name.data, value.data, await platformGroupService.reachOf(viewer.id));
         await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
             change: "Backups on demand", database: name.data, tenant: changed.tenantName,
             changes: onDemandChanges(changed.before, value.data),
@@ -195,7 +198,7 @@ export async function setRuleOnDemand(sourceId: string, ruleId: string, perDay: 
     if (!id.success || !rule.success || !value.success) return { success: false as const, error: value.error?.issues[0]?.message ?? "Invalid request" };
 
     try {
-        const changed = await databaseAssignmentService.setRuleOnDemand(id.data, rule.data, value.data);
+        const changed = await databaseAssignmentService.setRuleOnDemand(id.data, rule.data, value.data, await platformGroupService.reachOf(viewer.id));
         await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
             change: "Backups on demand", pattern: changed.pattern, tenant: changed.tenantName,
             changes: onDemandChanges(changed.before, value.data),

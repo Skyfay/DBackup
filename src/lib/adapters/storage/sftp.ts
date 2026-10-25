@@ -891,6 +891,24 @@ export const SFTPAdapter: StorageAdapter = {
         }
     },
 
+    async deleteEmptyFolder(config: SFTPConfig, remotePath: string): Promise<boolean> {
+        // The folder the destination is set to stays, whatever is in it.
+        if (path.posix.normalize(`/${remotePath}`) === "/") return false;
+        let sftp: Client | null = null;
+        try {
+            sftp = await connectSFTP(config);
+            const target = config.pathPrefix ? path.posix.join(config.pathPrefix, remotePath) : remotePath;
+            // Not recursive, so the server refuses a folder that holds anything.
+            await sftp.rmdir(target, false);
+            return true;
+        } catch (error) {
+            log.debug("SFTP folder not removed", { host: config.host, remotePath, reason: wrapError(error).message });
+            return false;
+        } finally {
+            if (sftp) await endSftpClient(sftp);
+        }
+    },
+
     async ping(config: SFTPConfig): Promise<{ success: boolean; message: string }> {
         let sftp: Client | null = null;
         try {

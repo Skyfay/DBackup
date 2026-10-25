@@ -9,6 +9,7 @@ import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { prepareSharedDownload, restoreSharedBackup, sharedOverview, type SharedOverview } from "@/services/tenant/shared-databases";
 import { requestSharedBackup, sharedBackupRun, type SharedRunStatus } from "@/services/tenant/shared-on-demand";
+import { SharedRestoreRefused } from "@/services/restore/refused-restore";
 
 /**
  * The databases another tenant's shared server holds for the viewer's tenant, the tab Shared with
@@ -86,6 +87,10 @@ export async function restoreSharedDatabase(input: z.input<typeof RefSchema>) {
     } catch (error: unknown) {
         if (error instanceof NotFoundError) return { success: false as const, error: GONE };
         if (error instanceof ValidationError) return { success: false as const, error: error.message };
+        // Refused before it started: its failed run in the History of either tenant says why.
+        if (error instanceof SharedRestoreRefused) {
+            return { success: false as const, error: `The restore was refused: ${error.reason}`, ...(error.executionId ? { executionId: error.executionId } : {}) };
+        }
         log.error("Starting a shared restore failed", { sourceId: parsed.data.sourceId }, wrapError(error));
         return { success: false as const, error: "The restore could not be started." };
     }

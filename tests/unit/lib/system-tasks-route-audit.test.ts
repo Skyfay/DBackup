@@ -91,4 +91,40 @@ describe("the audit entries of system tasks", () => {
         expect(mocks.runTask).toHaveBeenCalledWith("system.clean_audit_logs", "Api", "CI deploy");
         expect(mocks.log).toHaveBeenCalledWith("u1", "EXECUTE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data" }, "system.clean_audit_logs", { tenantId: "default", apiKeyId: "k1" });
     });
+
+    it("names the key of a change made through the API, in the log of the home tenant", async () => {
+        mocks.ctx = { userId: "u1", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "apikey", apiKeyId: "k1" } as typeof mocks.ctx;
+
+        await POST(request("POST", { taskId: "system.clean_audit_logs", enabled: false }));
+
+        expect(mocks.log).toHaveBeenCalledWith("u1", "UPDATE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data", enabled: false }, "system.clean_audit_logs", { tenantId: "default", apiKeyId: "k1" });
+    });
+
+    describe("the configuration backup, which only a platform admin with a session changes or starts", () => {
+        const TASK = "system.config_backup";
+
+        it.each([
+            ["someone who may change the settings", { userId: "u1", permissions: ["settings:write"], isPlatformAdmin: false, authMethod: "session" }],
+            ["an API key of a platform admin", { userId: "root", permissions: ["settings:write"], isPlatformAdmin: true, authMethod: "apikey", apiKeyId: "k1" }],
+        ])("refuses its schedule, its switch and Run now to %s", async (_who, ctx) => {
+            mocks.ctx = ctx as typeof mocks.ctx;
+
+            expect((await POST(request("POST", { taskId: TASK, schedule: "* * * * *" }))).status).toBe(403);
+            expect((await POST(request("POST", { taskId: TASK, enabled: true }))).status).toBe(403);
+            expect((await PUT(request("PUT", { taskId: TASK }))).status).toBe(403);
+
+            expect(mocks.settings.size).toBe(0);
+            expect(mocks.runTask).not.toHaveBeenCalled();
+            expect(mocks.log).not.toHaveBeenCalled();
+        });
+
+        it("lets a platform admin with a session change its schedule", async () => {
+            mocks.ctx = { userId: "root", permissions: ["settings:write"], isPlatformAdmin: true, authMethod: "session" };
+
+            expect((await POST(request("POST", { taskId: TASK, schedule: "0 4 * * *" }))).status).toBe(200);
+
+            expect(mocks.settings.get(TASK)?.schedule).toBe("0 4 * * *");
+        });
+    });
 });
+

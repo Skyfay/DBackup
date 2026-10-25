@@ -19,6 +19,7 @@ vi.mock("@/lib/auth/access-control", () => ({
 }));
 vi.mock("@/services/storage/copy-verification", () => ({ startCopyVerification: mocks.start, readCopyVerification: mocks.read }));
 vi.mock("@/services/audit-service", () => ({ auditService: { logFor: vi.fn() } }));
+vi.mock("@/services/sharing/destination-access", () => ({ findDestinationPath: vi.fn(async (id: string) => ({ row: { id }, mode: { kind: "own" }, tenantId: "default" })) }));
 vi.mock("@/services/storage/backup-audit", () => ({ backupAuditDetails: async (_destinationId: string, file: string) => ({ file }) }));
 
 const { POST, GET } = await import("@/app/api/storage/verify-copies/route");

@@ -26,7 +26,7 @@ Someone who may only read the settings sees every value and a line on top that s
 | :--- | :--- | :--- |
 | **Name** | Shown on top of the sidebar and in the browser tab as `DBackup \| Name`. Empty shows DBackup alone. | Empty |
 | **Time zone** | The clock of every schedule, of the file names and of the retention. The line below it says what 03:00 there is in UTC. | UTC |
-| **Runs at the same time** | How many backups run at once. A running restore or integrity check takes a run too. | 1 |
+| **Runs at the same time** | How many backups run at once, in every tenant together. A restore, an integrity check or a check of copies runs beside them and takes none of these runs. | 1 |
 | **Fail a run that stops reporting after** | Fails a backup or restore that reports no progress for this long, so it gives its run back. **Never** turns it off. | 6 hours |
 | **Look for new versions** | Asks GitHub for the newest release, marks a new version with a blue dot on the right of the header and reports it once a day. Off, DBackup never asks. | On |
 | **Show Quick Setup in the sidebar** | Keeps Quick Setup in the sidebar. It shows by itself while no database is set up. | Off |
@@ -141,5 +141,5 @@ How many requests one address may make in a time window. See [Rate Limits](/user
 
 - `settings:read` shows the page, `settings:write` changes it, starts the system tasks, sends test notifications and optimizes the database.
 - **New channel** under Notifications also needs `notifications:write`.
-- Only a platform admin restores a configuration backup and downloads the database, see [Groups & Permissions](/user-guide/admin/permissions#what-only-a-platform-admin-does). The tenants are managed with the rights of the platform, see [Managing Tenants](/user-guide/admin/tenants#managing-tenants).
+- Only a platform admin sets up, starts and restores the configuration backup and downloads the database, everyone else sees the part and the row of its system task read-only, see [Groups & Permissions](/user-guide/admin/permissions#what-only-a-platform-admin-does). The tenants are managed with the rights of the platform, see [Managing Tenants](/user-guide/admin/tenants#managing-tenants).
 - Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) of the home tenant with the values before and after, whichever tenant you have open.

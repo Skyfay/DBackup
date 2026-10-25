@@ -37,7 +37,8 @@ describe("the settings of the tenant a page shows", () => {
         expect(await saveTenantNotificationEventsAction("acme", ["restore.failed"], { enabled: false })).toEqual({ success: true });
         expect((await sendTenantTestNotificationAction("acme", "restore.failed")).success).toBe(true);
 
-        expect(mocks.rename).toHaveBeenCalledWith("acme", "Acme AG");
+        // As the tenant itself, whose refusal of a taken name never names another tenant.
+        expect(mocks.rename).toHaveBeenCalledWith("acme", "Acme AG", { ownTenant: true });
         expect(mocks.saveDefaults).toHaveBeenCalledWith("acme", ["mail"]);
         expect(mocks.sendTest).toHaveBeenCalledWith("acme", "restore.failed");
     });

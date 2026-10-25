@@ -35,7 +35,18 @@ vi.mock("@/services/storage/backup-audit", () => ({
 }));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { downloadFile: vi.fn() } }));
 vi.mock("@/services/restore/archive-download", () => ({ planArchiveDownload: mocks.planArchiveDownload, openArchiveDownload: mocks.openArchiveDownload }));
-vi.mock("@/services/sharing/destination-access", () => ({ findDestination: (...args: unknown[]) => mocks.findDestination(...args) }));
+vi.mock("@/services/sharing/destination-access", async () => {
+    const { innerPath } = await import("@/lib/tenant/storage-view");
+    return {
+        findDestination: (...args: unknown[]) => mocks.findDestination(...args),
+        // The path through the view the destination has, as the real one does.
+        findDestinationPath: async (id: string, remotePath: string, tenantId?: string) => {
+            const found = await mocks.findDestination(id, tenantId);
+            innerPath(found.mode, remotePath);
+            return found;
+        },
+    };
+});
 // Whether the maker of a link may still download, which the database decides.
 vi.mock("@/lib/auth/download-maker", () => ({ makerMayDownload: (...args: unknown[]) => mocks.makerMayDownload(...args) }));
 vi.mock("@/services/storage/config-backup-access", () => ({ isConfigBackupFile: (...args: unknown[]) => mocks.isConfigBackupFile(...args) }));
@@ -124,6 +135,16 @@ describe("download links for a pick", () => {
 
         expect(response.status).toBe(404);
         expect(mocks.findDestination).toHaveBeenCalledWith("nas", "acme");
+        expect(mocks.auditLogFor).not.toHaveBeenCalled();
+    });
+
+    it("makes no link and notes none for a file in the folder of the customers of a destination its tenant shares", async () => {
+        mocks.findDestination.mockResolvedValue({ row: { id: "nas", name: "NAS" }, mode: { kind: "provider" }, tenantId: "acme" });
+
+        const response = await makeLink({ file: "tenants/globex/Shop/backup.tar" });
+
+        expect(response.status).toBe(400);
+        expect(mocks.planArchiveDownload).not.toHaveBeenCalled();
         expect(mocks.auditLogFor).not.toHaveBeenCalled();
     });
 

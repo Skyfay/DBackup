@@ -151,6 +151,14 @@ describe("a path a storage on Windows reads differently", () => {
         expect(innerPath(GLOBEX, ".hidden/..x/x..")).toBe("tenants/globex/.hidden/..x/x..");
     });
 
+    it("never leaves the folder of a customer by a segment a storage reads as .. inside a URL", () => {
+        for (const sneaky of ["%2e%2e/initech/erp/three.tar", "crm/%2E%2E/x", "crm/.%2e/x"]) {
+            expect(() => innerPath(GLOBEX, sneaky), sneaky).toThrow("leaves its folder");
+        }
+        // A name that holds an escape but no dots alone stays a name.
+        expect(innerPath(GLOBEX, "crm/50%25 off/x")).toBe("tenants/globex/crm/50%25 off/x");
+    });
+
     it("never reaches the folder of the customers by a letter that turns into its name only in upper case", () => {
         // The long s is S in upper case and stays itself in lower case.
         expect(() => innerPath(PROVIDER, "tenantſ/globex/crm/two.tar")).toThrow("tenants/");

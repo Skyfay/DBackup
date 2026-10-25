@@ -8,11 +8,20 @@ import { troubledTenants, type TenantListRow } from "./tenant-words";
 const sum = (rows: readonly TenantListRow[], pick: (row: TenantListRow) => number) => rows.reduce((total, row) => total + pick(row), 0);
 
 /**
+ * What the count of tenants holds, of the tenants the viewer sees: the home tenant only when it is
+ * among them, since someone of a platform group of some customers never sees it.
+ */
+export function tenantsCountLine(rows: readonly Pick<TenantListRow, "isHome">[]): string {
+    const customers = rows.filter((row) => !row.isHome).length;
+    const counted = `${customers.toLocaleString()} ${customers === 1 ? "customer" : "customers"}`;
+    return rows.some((row) => row.isHome) ? `the home tenant and ${counted}` : counted;
+}
+
+/**
  * The numbers above the tenants: how many there are, their memberships, their databases and jobs,
  * and the tenants whose newest backup of a job failed or missed a copy. Worked out from the list.
  */
 export function TenantsStrip({ rows }: { rows: readonly TenantListRow[] }) {
-    const customers = rows.filter((row) => !row.isHome).length;
     const { failed, partial } = troubledTenants(rows);
     const attention = [
         ...(failed.length > 0 ? [`${namesFor(failed)} had a backup fail`] : []),
@@ -27,7 +36,7 @@ export function TenantsStrip({ rows }: { rows: readonly TenantListRow[] }) {
                     label: "Tenants",
                     icon: Building2,
                     value: rows.length.toLocaleString(),
-                    extra: `the home tenant and ${customers.toLocaleString()} ${customers === 1 ? "customer" : "customers"}`,
+                    extra: tenantsCountLine(rows),
                 },
                 {
                     label: "Memberships",

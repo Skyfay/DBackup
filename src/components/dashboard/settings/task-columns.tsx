@@ -119,14 +119,15 @@ export function taskActions(task: SystemTaskRow, handlers: TaskHandlers): Backup
 }
 
 interface ColumnOptions {
-    handlers: TaskHandlers;
+    /** What may be done to a task, less for one the viewer may only look at. */
+    handlersOf: (task: SystemTaskRow) => TaskHandlers;
     /** The task whose switch is being saved. */
     switching: string | null;
     renderActions: (task: SystemTaskRow) => React.ReactNode;
 }
 
 /** The columns of the system tasks. */
-export function taskColumns({ handlers, switching, renderActions }: ColumnOptions): ColumnDef<SystemTaskRow>[] {
+export function taskColumns({ handlersOf, switching, renderActions }: ColumnOptions): ColumnDef<SystemTaskRow>[] {
     return [
         {
             accessorKey: "name",
@@ -139,8 +140,8 @@ export function taskColumns({ handlers, switching, renderActions }: ColumnOption
                 <div className="flex min-w-0 items-center gap-3">
                     <TaskTile taskId={row.original.id} />
                     <div className="min-w-0 max-w-md">
-                        {handlers.onEdit ? (
-                            <button type="button" onClick={() => handlers.onEdit?.(row.original)} className="truncate text-left text-sm font-medium outline-none hover:underline focus-visible:underline">
+                        {handlersOf(row.original).onEdit ? (
+                            <button type="button" onClick={() => handlersOf(row.original).onEdit?.(row.original)} className="truncate text-left text-sm font-medium outline-none hover:underline focus-visible:underline">
                                 {row.original.name}
                             </button>
                         ) : (
@@ -177,8 +178,8 @@ export function taskColumns({ handlers, switching, renderActions }: ColumnOption
             cell: ({ row }) => (
                 <Switch
                     checked={row.original.enabled}
-                    onCheckedChange={(checked) => handlers.onSwitch?.(row.original, checked)}
-                    disabled={!handlers.onSwitch || switching === row.original.id}
+                    onCheckedChange={(checked) => handlersOf(row.original).onSwitch?.(row.original, checked)}
+                    disabled={!handlersOf(row.original).onSwitch || switching === row.original.id}
                     aria-label={`${row.original.name} on its schedule`}
                 />
             ),

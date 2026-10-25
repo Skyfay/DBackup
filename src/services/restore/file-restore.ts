@@ -23,6 +23,8 @@ import { BackupMetadata, StorageAdapter, AdapterConfig } from "@/lib/core/interf
 import { openStorageArchiveSource, resolveStorageAdapter, ManagedArchiveSource } from "@/lib/archive/storage-source";
 import { parseArchiveIndex, readArchiveManifest, readEmbeddedIndexBytes } from "@/lib/archive/reader";
 import { createDestinationSessions } from "./destination-sessions";
+import { findRestoreTarget } from "./restore-target";
+import { openRow } from "@/services/sharing/destination-access";
 import { forEachSnapshotFile, ChainReaderOptions } from "@/lib/archive/chain-source";
 import { hashingStream } from "@/lib/archive/hashing";
 import { checkChainCompleteness } from "@/lib/archive/chain";
@@ -374,13 +376,14 @@ async function resolveTargets(
     const targets = new Map<string, { adapter: StorageAdapter; config: AdapterConfig; basePath: string; label: string }>();
 
     if (input.target.kind === "storage") {
-        const { adapter, config } = await resolveStorageAdapter(input.target.configId);
-        const row = await prisma.adapterConfig.findUnique({ where: { id: input.target.configId } });
+        // Never a destination shared with the tenant that takes only encrypted backups, see `findRestoreTarget`.
+        const found = await findRestoreTarget(input.target.configId);
+        const { adapter, config } = await openRow(found.row, found.mode);
         for (const src of sourceIds) {
             targets.set(src, {
                 adapter, config,
                 basePath: input.target.basePath,
-                label: `${row?.name ?? input.target.configId}:${input.target.basePath}`,
+                label: `${found.row.name}:${input.target.basePath}`,
             });
         }
         return targets;
@@ -398,7 +401,8 @@ async function resolveTargets(
                 `${src} - it was deleted since this backup was taken, so its original location is unknown. Restore to a chosen destination instead.`
             );
         }
-        const { adapter, config } = await resolveStorageAdapter(jobSource.configId);
+        const origin = await findRestoreTarget(jobSource.configId);
+        const { adapter, config } = await openRow(origin.row, origin.mode);
         targets.set(src, {
             adapter, config,
             basePath: jobSource.path,

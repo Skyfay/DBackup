@@ -8,12 +8,14 @@ import { compareVersions } from "@/lib/utils";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
 import type { RestoreInput } from "./types";
-import { findDestination, openDestination } from "@/services/sharing/destination-access";
+import { findDestinationPath, openRow } from "@/services/sharing/destination-access";
+import { findRestoreTarget } from "./restore-target";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
 /**
  * Pre-flight checks before kicking off a restore:
+ *  - the archive lies in the caller's view of its destination, checked before anything else
  *  - prepareRestore() permission probe (CREATE DATABASE / overwrite rights)
  *  - cross-vendor type guard (e.g. MySQL → MariaDB rejected)
  *  - engine version compatibility (newer dump on older server is blocked)
@@ -43,6 +45,11 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
         ? await prisma.adapterConfig.findUnique({ where: { id: targetSourceId } })
         : null;
     if (targetSourceId && !targetConfig) throw new Error("Target source not found");
+
+    // The archive first, the way the download reads it: a destination the caller may not use, or a
+    // path outside its view of it, refuses the restore before anything touches a target, so a
+    // refused restore never creates a database or writes a probe file.
+    const destination = await findDestinationPath(storageConfigId, file, input.shared?.copyTenantId);
 
     if (targetConfig && targetConfig.type === 'database') {
         const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
@@ -84,7 +91,7 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
         for (const targetConfigId of selectedTargetConfigIds) {
             // Found the way the restore opens it, see `openDirectoryTarget`: a storage of another
             // tenant only when that tenant shares it with this one.
-            const found = await findDestination(targetConfigId).catch((error: unknown) => {
+            const found = await findRestoreTarget(targetConfigId).catch((error: unknown) => {
                 if (error instanceof NotFoundError) {
                     throw new Error(`Invalid restore target for a directory entry: adapter '${targetConfigId}' not found`);
                 }
@@ -108,8 +115,8 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
     }
 
     // Version Compatibility Check
-    // A destination that cannot be opened skips the check, the restore itself reports why.
-    const storage = await openDestination(storageConfigId, input.shared?.copyTenantId).catch((error: unknown) => {
+    // A destination whose settings cannot be used skips the check, the restore itself reports why.
+    const storage = await openRow(destination.row, destination.mode).catch((error: unknown) => {
         svcLog.warn("Version check skipped, the destination could not be opened", { storageConfigId }, wrapError(error));
         return null;
     });

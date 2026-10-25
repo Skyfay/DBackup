@@ -52,6 +52,7 @@ beforeEach(() => {
     mocks.tenants.create.mockResolvedValue({ id: "new", name: "New" });
     mocks.tenants.rename.mockResolvedValue({ name: "Acme AG", renamedFrom: "Acme GmbH" });
     mocks.tenants.delete.mockResolvedValue({ name: "Acme GmbH", connections: 0, jobs: 0, runs: 0, keys: 0 });
+    mocks.contents.mockResolvedValue({ connections: 0, jobs: 0, members: 0 });
 });
 
 describe("the tenants through a platform group", () => {
@@ -107,6 +108,29 @@ describe("the tenants through a platform group", () => {
         mocks.viewer = { id: "root", isPlatformAdmin: true, tenantId: "default", permissions: [] };
         expect(await deleteTenant("praxis")).toEqual(expect.objectContaining({ success: true }));
         expect(mocks.tenants.switchable).not.toHaveBeenCalled();
+    });
+});
+
+describe("deleting a tenant that holds something", () => {
+    beforeEach(() => {
+        mocks.viewer = { ...SUPPORT, permissions: [P.PLATFORM.TENANTS_READ, P.PLATFORM.TENANTS_WRITE] };
+        mocks.contents.mockResolvedValue({ connections: 2, jobs: 1, members: 3 });
+    });
+
+    it("refuses it until the dialog confirmed what goes with it, like the API", async () => {
+        expect(await deleteTenant("acme")).toEqual({ success: false, error: expect.stringMatching(/Confirm what goes with it first/) });
+        expect(mocks.tenants.delete).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
+    it("deletes it once confirmed", async () => {
+        expect(await deleteTenant("acme", true)).toEqual(expect.objectContaining({ success: true }));
+        expect(mocks.tenants.delete).toHaveBeenCalledWith("acme");
+    });
+
+    it("deletes an empty tenant without a confirmation", async () => {
+        mocks.contents.mockResolvedValue({ connections: 0, jobs: 0, members: 0 });
+        expect(await deleteTenant("acme")).toEqual(expect.objectContaining({ success: true }));
     });
 });
 

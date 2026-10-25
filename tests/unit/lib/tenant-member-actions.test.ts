@@ -137,6 +137,14 @@ describe("the members of a tenant, changed through a platform group", () => {
         expect(mocks.memberships.setRole).not.toHaveBeenCalled();
     });
 
+    it("tells nothing about an account in a tenant out of its reach, like whether it is one of a platform admin", async () => {
+        mocks.memberships.isPlatformAdmin.mockResolvedValue(true);
+
+        expect(await setTenantMember("tenant-b", "root", null)).toEqual({ success: false, error: "The tenant no longer exists." });
+        expect(mocks.memberships.isPlatformAdmin).not.toHaveBeenCalled();
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+    });
+
     it("never gives or takes a group that may do more than she may in that tenant", async () => {
         const admins = { id: "g-admins", name: "Admin", permissions: "[]", fullAccess: true };
         mocks.groups.find.mockImplementation(async (id: string) => (id === admins.id ? admins : OPERATORS));

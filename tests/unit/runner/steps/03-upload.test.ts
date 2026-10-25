@@ -436,6 +436,20 @@ describe('stepUpload', () => {
         expect(ctx.status).toBe('Partial');
     });
 
+    it('writes nothing of a job without a key to a shared destination switched to encrypted backups only while the dump ran', async () => {
+        const own = makeDestination({ configId: 'cfg-1', configName: 'Own NAS' });
+        const shared = makeDestination({ configId: 'cfg-2', configName: 'Acme NAS', customer: 'globex' });
+        sharing.providedConnection.mockResolvedValueOnce({ id: 'cfg-2', encryptedOnly: true });
+
+        const ctx = makeCtx({ destinations: [own, shared] });
+        (ctx.job as any).encryptionProfileId = null;
+        await stepUpload(ctx);
+
+        expect(shared.adapter.upload).not.toHaveBeenCalled();
+        expect(shared.uploadResult).toEqual({ success: false, error: 'Acme NAS takes only encrypted backups. Pick a key under Encryption' });
+        expect(ctx.status).toBe('Partial');
+    });
+
     it('throws when all destination uploads fail', async () => {
         const failDest = makeDestination({
             adapterId: 's3',

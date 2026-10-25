@@ -7,6 +7,7 @@ import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { maySeeAccount } from "@/services/user/account-visibility";
 import { getUserDetails } from "@/services/user/user-details";
+import { logViewOf } from "@/services/audit/log-reach";
 
 const log = logger.child({ route: "users/[id]" });
 
@@ -26,7 +27,8 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
         if (!(await maySeeAccount(ctx, id))) return NextResponse.json({ success: false, error: "The user no longer exists" }, { status: 404 });
         // The session of the viewer is marked in the list, so the panel never offers to end it.
         const session = ctx.authMethod === "session" ? await auth.api.getSession({ headers: requestHeaders }).catch(() => null) : null;
-        const details = await getUserDetails(id, session?.session.id ?? null);
+        // The activity follows the view of the log the caller has, like the Audit log tab.
+        const details = await getUserDetails(id, session?.session.id ?? null, Date.now(), await logViewOf(ctx));
         if (!details) return NextResponse.json({ success: false, error: "The user no longer exists" }, { status: 404 });
         return NextResponse.json({ success: true, data: details });
     } catch (error: unknown) {

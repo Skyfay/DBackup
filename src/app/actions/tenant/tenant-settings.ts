@@ -58,7 +58,8 @@ export async function renameOwnTenant(tenantId: string, name: string): Promise<S
     if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request", field: "name" };
 
     try {
-        const change = await tenantService.rename(scope.tenantId, parsed.data);
+        // The tenant renames itself, so a taken name never says that another tenant has it.
+        const change = await tenantService.rename(scope.tenantId, parsed.data, { ownTenant: true });
         if (change.name !== change.renamedFrom) {
             await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, {
                 name: change.name,

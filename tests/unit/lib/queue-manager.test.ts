@@ -117,6 +117,58 @@ describe('Queue Manager Concurrency', () => {
         expect(mockPerformExecution).toHaveBeenCalledWith('exec-orphan', null);
     });
 
+    it('never starts a system task that waits for its own runner, only the runs of jobs and orphaned backups', async () => {
+        // The where of the query, read the way SQLite would for the few forms it uses.
+        const matches = (where: any, row: Record<string, unknown>): boolean => Object.entries(where ?? {}).every(([key, value]: [string, any]) => {
+            if (key === 'AND') return (value as any[]).every((part) => matches(part, row));
+            if (key === 'OR') return (value as any[]).some((part) => matches(part, row));
+            if (key === 'NOT') return !matches(value, row);
+            if (value !== null && typeof value === 'object') {
+                if ('not' in value) return row[key] !== value.not;
+                if ('contains' in value) return typeof row[key] === 'string' && (row[key] as string).includes(value.contains);
+            }
+            return row[key] === value;
+        });
+        const rows = [
+            { id: 'integrity-acme', jobId: null, type: 'IntegrityCheck', status: 'Pending', metadata: '{"progress":0}' },
+            { id: 'verification', jobId: null, type: 'Verification', status: 'Pending', metadata: null },
+            { id: 'exec-orphan', jobId: null, type: 'Backup', status: 'Pending', metadata: null },
+            { id: 'exec-1', jobId: 'job-1', type: 'Backup', status: 'Pending', metadata: null },
+        ];
+        vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue({ key: 'maxConcurrentJobs', value: '5', description: null, updatedAt: new Date() });
+        vi.mocked(prisma.execution.findMany).mockImplementation((async (args: { where: { status: string } }) =>
+            args.where.status === 'Running' ? [] : rows.filter((row) => matches(args.where, row))) as any);
+
+        await processQueue();
+
+        expect(mockPerformExecution.mock.calls.map(([id]) => id).sort()).toEqual(['exec-1', 'exec-orphan']);
+    });
+
+    it('gives no slot to a running restore or check of copies of any tenant, which the queue never started', async () => {
+        const matches = (where: any, row: Record<string, unknown>): boolean => Object.entries(where ?? {}).every(([key, value]: [string, any]) => {
+            if (key === 'AND') return (value as any[]).every((part) => matches(part, row));
+            if (key === 'OR') return (value as any[]).some((part) => matches(part, row));
+            if (key === 'NOT') return !matches(value, row);
+            if (value !== null && typeof value === 'object') {
+                if ('not' in value) return row[key] !== value.not;
+                if ('contains' in value) return typeof row[key] === 'string' && (row[key] as string).includes(value.contains);
+            }
+            return row[key] === value;
+        });
+        const rows = [
+            // A long restore of one customer and a check of copies of another, both running.
+            { id: 'restore-acme', jobId: null, type: 'Restore', status: 'Running', metadata: '{"progress":10}' },
+            { id: 'verify-globex', jobId: null, type: 'Verification', status: 'Running', metadata: null },
+            { id: 'exec-1', jobId: 'job-1', type: 'Backup', status: 'Pending', metadata: null },
+        ];
+        vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue({ key: 'maxConcurrentJobs', value: '1', description: null, updatedAt: new Date() });
+        vi.mocked(prisma.execution.findMany).mockImplementation((async (args: { where: any }) => rows.filter((row) => matches(args.where, row))) as any);
+
+        await processQueue();
+
+        expect(mockPerformExecution).toHaveBeenCalledWith('exec-1', 'job-1');
+    });
+
     it('should skip processing and return early when shutdown is requested', async () => {
         mockIsShutdownRequested.mockReturnValue(true);
 

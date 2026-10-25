@@ -100,12 +100,17 @@ export function tenantOfHolder(holder: Holder<AssignmentFact, RuleFact> | null):
  * and a move away keeps every rule of the server off it. Who held it is settled by what was given
  * by then: an assignment or a rule made later that starts in the past only reaches times nobody
  * else held, so giving a database again, or a new rule of a higher priority, never takes the
- * backups of another customer's time.
+ * backups of another customer's time. Of the claims made after the time, the first one that gives
+ * the name to a customer keeps it, so a later claim never takes what an earlier one gave.
  */
 export function holderAt<A extends AssignmentFact, R extends RuleFact>(assignments: readonly A[], rules: readonly R[], databaseName: string, at: Date): Holder<A, R> | null {
-    const known = (fact: { createdAt: Date }) => fact.createdAt.getTime() <= at.getTime();
-    const settled = decide(assignments.filter(known), rules.filter(known), databaseName, at);
-    if (tenantOfHolder(settled) !== null) return settled;
+    const knownBy = (time: number) => (fact: { createdAt: Date }) => fact.createdAt.getTime() <= time;
+    const later = [...new Set([...assignments, ...rules].map((fact) => fact.createdAt.getTime()).filter((time) => time > at.getTime()))]
+        .sort((a, b) => a - b);
+    for (const time of [at.getTime(), ...later]) {
+        const held = decide(assignments.filter(knownBy(time)), rules.filter(knownBy(time)), databaseName, at);
+        if (tenantOfHolder(held) !== null) return held;
+    }
     return decide(assignments, rules, databaseName, at);
 }
 

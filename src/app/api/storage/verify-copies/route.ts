@@ -4,7 +4,8 @@ import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, PermissionError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { findDestinationPath } from "@/services/sharing/destination-access";
 import { readCopyVerification, startCopyVerification } from "@/services/storage/copy-verification";
 import { userService } from "@/services/user/user-service";
 import { auditService } from "@/services/audit-service";
@@ -22,6 +23,8 @@ const StartSchema = z.object({
 
 function failure(error: unknown, what: string): NextResponse {
     if (error instanceof PermissionError) return NextResponse.json({ success: false, error: "Permission denied" }, { status: 403 });
+    if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    if (error instanceof NotFoundError) return NextResponse.json({ success: false, error: "Destination not found" }, { status: 404 });
     log.error(what, {}, wrapError(error));
     return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
 }
@@ -38,12 +41,16 @@ export async function POST(req: NextRequest) {
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.READ);
-        tenantOf(ctx);
+        const tenantId = tenantOf(ctx);
 
         const parsed = StartSchema.safeParse(await req.json());
         if (!parsed.success) {
             return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
         }
+
+        // Every copy in the tenant's view of its destination, the way the download reads it, before
+        // the run starts and anything is noted.
+        for (const copy of parsed.data.copies) await findDestinationPath(copy.destinationId, copy.file, tenantId);
 
         const startedBy = (await userService.nameOf(ctx.userId)) ?? "Manual";
         const { executionId } = await startCopyVerification(parsed.data.copies, startedBy);

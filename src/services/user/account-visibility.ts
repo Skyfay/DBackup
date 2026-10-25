@@ -7,6 +7,7 @@ import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 import type { ImageType } from "@/lib/core/image-type";
 import { runAsTenant } from "@/lib/tenant/context";
 import { membersOfAny, membershipService, peopleOf } from "@/services/tenant/membership-service";
+import { logReachOf } from "@/services/audit/log-reach";
 import { platformGroupService } from "./platform-group-service";
 
 /**
@@ -105,10 +106,14 @@ export async function maySeePicture(viewer: AccountViewer, userId: string): Prom
 
     const known = await prisma.user.count({ where: { AND: [{ id: userId }, { OR: [peopleOf(tenantId), reachesTenant(tenantId)] }] } });
     if (known > 0) return true;
-    // Read in the tenant of the viewer, the filter leaves the entries and keys of the others out.
+    // Read in the tenant of the viewer, the filter leaves the entries and keys of the others out. In
+    // the log of the home tenant someone of a platform group of some tenants sees the entries of the
+    // accounts of those tenants alone (`log-reach.ts`), and so only their pictures.
     const readsLog = hasPermissionWithContext(viewer, PERMISSIONS.AUDIT.READ);
+    const logReach = readsLog ? await logReachOf(viewer) : null;
+    const readsEntries = readsLog && (!logReach || (await reachSees([...logReach], userId)));
     const [entries, keys] = await runAsTenant(tenantId, () => Promise.all([
-        readsLog ? prisma.auditLog.count({ where: { userId } }) : 0,
+        readsEntries ? prisma.auditLog.count({ where: { userId } }) : 0,
         prisma.apiKey.count({ where: { userId } }),
     ]));
     return entries + keys > 0;

@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
     getAuditTimeline: vi.fn(),
     auditCsv: vi.fn(),
     logFor: vi.fn(),
+    shapeOf: vi.fn(),
+    cacheKeys: [] as string[],
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -23,7 +25,15 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
     },
 }));
-vi.mock("@/services/dashboard/cache", () => ({ cached: (_key: string, _ttl: number, load: () => unknown) => load() }));
+vi.mock("@/services/dashboard/cache", () => ({
+    cached: (key: string, _ttl: number, load: () => unknown) => {
+        mocks.cacheKeys.push(key);
+        return load();
+    },
+}));
+// The platform group of the reader, which decides what they see of the log of the home tenant.
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { shapeOf: (...args: unknown[]) => mocks.shapeOf(...args) } }));
+vi.mock("@/lib/prisma", () => ({ default: {} }));
 vi.mock("@/services/audit/audit-list-service", () => ({
     listAudit: (...args: unknown[]) => mocks.listAudit(...args),
     getAuditFacets: (...args: unknown[]) => mocks.getAuditFacets(...args),
@@ -55,6 +65,8 @@ describe("the routes of the audit log", () => {
         mocks.getAuditStats.mockResolvedValue({ entries: 0 });
         mocks.getAuditTimeline.mockResolvedValue({ from: "2026-09-01", to: "2026-09-29", rows: [] });
         mocks.auditCsv.mockResolvedValue({ csv: "Time (UTC)\r\n", count: 0 });
+        mocks.shapeOf.mockResolvedValue(null);
+        mocks.cacheKeys = [];
     });
 
     it("turn away a request without a session or a key", async () => {
@@ -83,7 +95,7 @@ describe("the routes of the audit log", () => {
 
         const response = await getList(request("/api/audit?page=2&pageSize=10&area=jobs&who=user:lena&quick=sensitive"));
         expect(response.status).toBe(200);
-        expect(mocks.listAudit).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 10, areas: ["jobs"], who: ["user:lena"], quick: "sensitive", period: "30d" }));
+        expect(mocks.listAudit).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 10, areas: ["jobs"], who: ["user:lena"], quick: "sensitive", period: "30d" }), expect.any(Date), expect.objectContaining({ reach: null }));
 
         expect((await getList(request("/api/audit?area=nowhere"))).status).toBe(400);
     });
@@ -99,8 +111,41 @@ describe("the routes of the audit log", () => {
         signedIn(PERMISSIONS.AUDIT.READ);
 
         expect((await getTimeline(request("/api/audit/timeline?start=2026-09-01&end=2026-09-29&tz=Europe/Zurich"))).status).toBe(200);
-        expect(mocks.getAuditTimeline).toHaveBeenCalledWith("2026-09-01", "2026-09-29", "Europe/Zurich", expect.any(Object));
+        expect(mocks.getAuditTimeline).toHaveBeenCalledWith("2026-09-01", "2026-09-29", "Europe/Zurich", expect.any(Object), expect.any(Date), expect.objectContaining({ reach: null }));
         expect((await getTimeline(request("/api/audit/timeline?start=2025-01-01&end=2026-09-29"))).status).toBe(400);
+    });
+
+    it("hand every reader of the log of the home tenant from a platform group of some tenants their reach, and keep the caches by it", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "nina", permissions: [PERMISSIONS.AUDIT.READ], isPlatformAdmin: false, tenantId: "default", allTenants: false, authMethod: "session" });
+        mocks.shapeOf.mockResolvedValue({ id: "pg-acme", shape: { allTenants: false, tenantIds: ["acme"], platformPermissions: [], tenantPermissions: [] } });
+        const restricted = expect.objectContaining({ reach: ["acme"], viewerId: "nina" });
+
+        await getList(request("/api/audit"));
+        await getEntry(request("/api/audit/a1"), { params: Promise.resolve({ id: "a1" }) });
+        await getTimeline(request("/api/audit/timeline?start=2026-09-01&end=2026-09-29"));
+        await getExport(request("/api/audit/export"));
+
+        expect(mocks.listAudit).toHaveBeenCalledWith(expect.any(Object), expect.any(Date), restricted);
+        expect(mocks.getAuditFacets).toHaveBeenCalledWith(expect.any(Object), expect.any(Date), false, restricted);
+        expect(mocks.getAuditWhoOptions).toHaveBeenCalledWith(restricted);
+        expect(mocks.getAuditStats).toHaveBeenCalledWith(expect.any(Date), restricted);
+        expect(mocks.getAuditEntryDetails).toHaveBeenCalledWith("a1", restricted);
+        expect(mocks.getAuditTimeline).toHaveBeenCalledWith("2026-09-01", "2026-09-29", "UTC", expect.any(Object), expect.any(Date), restricted);
+        expect(mocks.auditCsv).toHaveBeenCalledWith(expect.any(Object), expect.any(Date), restricted);
+        expect(mocks.cacheKeys).toEqual(["audit-who:reach:nina:acme", "audit-stats:reach:nina:acme"]);
+    });
+
+    it("leave the log of a customer and a platform group of all tenants as they were", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "nina", permissions: [PERMISSIONS.AUDIT.READ], isPlatformAdmin: false, tenantId: "acme", allTenants: false, authMethod: "session" });
+        mocks.shapeOf.mockResolvedValue({ id: "pg-acme", shape: { allTenants: false, tenantIds: ["acme"], platformPermissions: [], tenantPermissions: [] } });
+        await getList(request("/api/audit"));
+        expect(mocks.listAudit).toHaveBeenLastCalledWith(expect.any(Object), expect.any(Date), expect.objectContaining({ reach: null }));
+
+        mocks.getAuthContext.mockResolvedValue({ userId: "nina", permissions: [PERMISSIONS.AUDIT.READ], isPlatformAdmin: false, tenantId: "default", allTenants: false, authMethod: "session" });
+        mocks.shapeOf.mockResolvedValue({ id: "pg-all", shape: { allTenants: true, tenantIds: [], platformPermissions: [], tenantPermissions: [] } });
+        await getList(request("/api/audit"));
+        expect(mocks.listAudit).toHaveBeenLastCalledWith(expect.any(Object), expect.any(Date), expect.objectContaining({ reach: null }));
+        expect(mocks.cacheKeys).toEqual(["audit-who:all", "audit-stats:all", "audit-who:all", "audit-stats:all"]);
     });
 
     it("write an export of the log to the log itself, with the filters it used", async () => {

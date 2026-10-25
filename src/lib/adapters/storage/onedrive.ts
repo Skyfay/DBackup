@@ -102,7 +102,16 @@ function buildDrivePath(basePath: string | undefined, relativePath: string): str
  * Returns "/me/drive/root:/{path}:" for path-based access.
  */
 function driveItemPath(filePath: string): string {
-    return `/me/drive/root:/${filePath}:`;
+    return `/me/drive/root:/${encodeDrivePath(filePath)}:`;
+}
+
+/**
+ * A path as Graph reads it inside a URL, each name encoded on its own. The client sends the path
+ * as it is, so a name holding `%2e%2e`, `#` or `?` would otherwise be read as a parent folder, a
+ * fragment or a query instead of a name.
+ */
+function encodeDrivePath(filePath: string): string {
+    return filePath.split("/").map((segment) => encodeURIComponent(segment)).join("/");
 }
 
 /**
@@ -138,7 +147,7 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
             // Check if the folder already exists
             try {
                 await client
-                    .api(`/me/drive/root:/${targetPath}:`)
+                    .api(driveItemPath(targetPath))
                     .select("id,folder")
                     .get();
                 return; // Folder exists - continue to next segment
@@ -147,7 +156,7 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
             }
 
             const parentApiPath = parentPath
-                ? `/me/drive/root:/${parentPath}:/children`
+                ? `${driveItemPath(parentPath)}/children`
                 : "/me/drive/root/children";
 
             try {
@@ -206,7 +215,7 @@ async function listFilesRecursive(
     const files: FileInfo[] = [];
 
     const apiPath = folderPath
-        ? `/me/drive/root:/${folderPath}:/children`
+        ? `${driveItemPath(folderPath)}/children`
         : "/me/drive/root/children";
 
     let url: string | null = apiPath;
@@ -514,7 +523,7 @@ export const OneDriveAdapter: StorageAdapter = {
             const listPath = subPath ? (basePath ? `${basePath}/${subPath}` : subPath) : basePath;
 
             const apiPath = listPath
-                ? `/me/drive/root:/${listPath}:/children`
+                ? `${driveItemPath(listPath)}/children`
                 : "/me/drive/root/children";
 
             const entries: DirectoryBrowseEntry[] = [];

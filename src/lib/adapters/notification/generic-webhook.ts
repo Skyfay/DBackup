@@ -3,7 +3,7 @@ import { GenericWebhookSchema, GenericWebhookConfig } from "@/lib/adapters/defin
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
-import { NO_REDIRECTS, redirectRefusal } from "./http";
+import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "generic-webhook" });
 
@@ -60,11 +60,11 @@ export const GenericWebhookAdapter: NotificationAdapter = {
                   });
 
             const method = (config.method || "POST").toUpperCase();
-            const fetchOpts: RequestInit = { ...NO_REDIRECTS, method, headers };
+            const fetchOpts: RequestInit = { method, headers };
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await fetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts);
 
             const redirect = redirectRefusal("The webhook", response);
             if (redirect) return { success: false, message: redirect };
@@ -119,11 +119,11 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             }
 
             const method = (config.method || "POST").toUpperCase();
-            const fetchOpts: RequestInit = { ...NO_REDIRECTS, method, headers };
+            const fetchOpts: RequestInit = { method, headers };
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await fetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts);
 
             if (!response.ok) {
                 const responseBody = await response.text().catch(() => "");

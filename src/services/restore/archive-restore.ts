@@ -23,7 +23,8 @@ import { pipeline } from "stream/promises";
 import { StorageAdapter, AdapterConfig } from "@/lib/core/interfaces";
 import { LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
 import { NotFoundError } from "@/lib/logging/errors";
-import { findDestination, openRow, type OpenDestination } from "@/services/sharing/destination-access";
+import { openRow, type OpenDestination } from "@/services/sharing/destination-access";
+import { findRestoreTarget } from "./restore-target";
 import { shouldRestoreDatabase } from "@/lib/adapters/database/common/tar-utils";
 import { createDestinationSessions } from "./destination-sessions";
 import { forEachSnapshotFile } from "@/lib/archive/chain-source";
@@ -91,7 +92,7 @@ interface DirectoryTarget {
  * @throws Error "Restore target adapter not found" for an id the tenant may not use.
  */
 export async function openDirectoryTarget(id: string): Promise<OpenDestination> {
-    const found = await findDestination(id).catch((error: unknown) => {
+    const found = await findRestoreTarget(id).catch((error: unknown) => {
         if (error instanceof NotFoundError) throw new Error("Restore target adapter not found");
         throw error;
     });

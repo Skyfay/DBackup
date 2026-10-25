@@ -108,6 +108,20 @@ describe("ArchiveIndexService.load", () => {
         expect((error as EncryptionKeyRequiredError).profileId).toBe(PROFILE_ID);
     });
 
+    it("asks for a key again when the picked key is not in the Vault, unknown or of another tenant", async () => {
+        // It fell through to reading the archive as an older format, which answered 500 with
+        // "Cannot read properties of undefined (reading 'map')".
+        getProfileMasterKey.mockRejectedValue(new Error("Encryption profile not found: foreign"));
+        const bytes = await sealedIndex(MASTER_KEY);
+        const { service } = makeService(async () => bytes);
+
+        const error = await service.summarize("dest-1", "FileBackup/inc-001.tar", META, { profileId: "foreign" }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(EncryptionKeyRequiredError);
+        expect((error as EncryptionKeyRequiredError).message).toBe("The key picked to open this backup is not in the Vault.");
+        expect((error as EncryptionKeyRequiredError).profileId).toBe(PROFILE_ID);
+    });
+
     it("opens the sidecar with a key supplied by the caller", async () => {
         getProfileMasterKey.mockRejectedValue(new Error("Encryption profile not found"));
         const bytes = await sealedIndex(MASTER_KEY);

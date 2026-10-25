@@ -22,7 +22,7 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Host** | Hostname or IP of the remote server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
-| **Login** | `SSH_KEY` credential profile (username + key or password). The username is a plain login name, without `@`, `:`, `/`, spaces or a leading `-` | - | ✅ |
+| **Login** | `SSH_KEY` credential profile (username + key or password). The username is a login name without `:`, `/`, spaces or a leading `-`. A Windows or AD login like `alice@corp.local` works, the server is always the one in **Host** | - | ✅ |
 | **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ✅ |
 | **Options** | Additional rsync flags (e.g. `--bwlimit=1000`) | - | ❌ |
 

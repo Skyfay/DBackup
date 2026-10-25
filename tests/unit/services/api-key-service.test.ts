@@ -744,9 +744,9 @@ describe("ApiKeyService", () => {
       expect(result!.permissions).toEqual(["jobs:write", "groups:write"]);
     });
 
-    it("should let a key of a platform admin keep what it holds in any tenant, without acting as a platform admin", async () => {
-      // A platform admin may do everything everywhere, so nothing of the key is paused. It still never
-      // passes the checks only a platform admin passes, see `getAuthContext`.
+    it("should let a key of a platform admin keep the rights of its customer tenant, never the settings of the instance", async () => {
+      // A platform admin may do everything everywhere, but only a key of the home tenant carries rights
+      // on the platform. The key still never passes the checks only a platform admin passes, see `getAuthContext`.
       prismaMock.apiKey.findUnique.mockResolvedValue({
         id: "key-1",
         userId: "root",
@@ -760,8 +760,43 @@ describe("ApiKeyService", () => {
 
       const result = await service.validate("dbackup_" + "a".repeat(60));
 
-      expect(result!.permissions).toEqual(["jobs:read", "settings:write"]);
+      expect(result!.permissions).toEqual(["jobs:read"]);
       expect(result!.tenantId).toBe("tenant-a");
+    });
+
+    it("should let a key of a platform admin in the home tenant keep the settings of the instance", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "root",
+        permissions: '["jobs:read","settings:write"]',
+        enabled: true,
+        tenantId: HOME_TENANT_ID,
+        user: { platformRole: "ADMIN", ...ownerWith() },
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result!.permissions).toEqual(["jobs:read", "settings:write"]);
+    });
+
+    it("should never carry the settings of the instance into a customer tenant from the owner's group in the home tenant", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "user-1",
+        permissions: '["jobs:read","settings:read","settings:write","tenant-settings:write"]',
+        enabled: true,
+        tenantId: "tenant-a",
+        user: ownerWith({ tenantId: HOME_TENANT_ID, permissions: "[]", fullAccess: true }, { tenantId: "tenant-a", permissions: "[]", fullAccess: true }),
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      // The tenant's own settings stay, those of the instance go.
+      expect(result!.permissions).toEqual(["jobs:read", "tenant-settings:write"]);
     });
   });
 });

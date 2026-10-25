@@ -165,6 +165,23 @@ describe("who held a database stays settled", () => {
         expect(ownerAt([], rules, "shop_x", day("2026-05-01"))).toBe("retail");
     });
 
+    it("keeps a time nobody held with the first claim that reached back over it", () => {
+        // A rule made in May gave blog to Acme from January, an assignment made in June gives it to Globex from January.
+        const rules = [rule({ pattern: "blog", tenantId: "acme", validFrom: day("2026-01-01"), createdAt: day("2026-05-01") })];
+        const later = [assignment({ databaseName: "blog", tenantId: "globex", validFrom: day("2026-01-01"), createdAt: day("2026-06-01") })];
+        expect(ownerAt(later, rules, "blog", day("2026-02-10"))).toBe("acme");
+        expect(ownerAt(later, rules, "blog", day("2026-06-02"))).toBe("globex");
+    });
+
+    it("never hands the backups of a deleted tenant's backdated rule to a rule made after it", () => {
+        const rules = [
+            rule({ pattern: "report", tenantId: "doomed", validFrom: day("2026-01-01"), createdAt: day("2026-05-01"), validUntil: day("2026-07-01") }),
+            rule({ pattern: "report", tenantId: "initech", priority: 10, validFrom: day("2026-01-01"), createdAt: day("2026-07-02") }),
+        ];
+        expect(ownerAt([], rules, "report", day("2026-02-10"))).toBe("doomed");
+        expect(ownerAt([], rules, "report", day("2026-07-10"))).toBe("initech");
+    });
+
     it("breaks a tie of two rules of the same priority and age by their id", () => {
         const rules = [rule({ id: "b", tenantId: "globex" }), rule({ id: "a", tenantId: "acme" })];
         expect(ownerAt([], rules, "shop_x", day("2026-03-01"))).toBe("acme");

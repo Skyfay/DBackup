@@ -112,6 +112,11 @@ interface StorageAdapter {
   list(config: unknown, path: string): Promise<FileInfo[]>;
   delete(config: unknown, path: string): Promise<boolean>;
 
+  // Optional: removes a folder only while it is empty, never the folder the destination is set to.
+  // The cleanup of a customer's backups on a shared destination removes the folders they leave.
+  // Implemented by: Local Filesystem, SFTP, FTP
+  deleteEmptyFolder?(config: unknown, path: string): Promise<boolean>;
+
   // Connection tests
   test?(config: unknown): Promise<TestResult>;  // Full write/delete test (~15 s timeout)
   ping?(config: unknown): Promise<TestResult>;  // Lightweight check — no test file written

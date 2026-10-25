@@ -10,10 +10,10 @@ import { configBackupLinkRefusal } from "@/lib/server/config-backup-guard";
 import { planArchiveDownload } from "@/services/restore/archive-download";
 import { auditService } from "@/services/audit-service";
 import { backupAuditDetails } from "@/services/storage/backup-audit";
-import { findDestination } from "@/services/sharing/destination-access";
+import { findDestinationPath } from "@/services/sharing/destination-access";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, PermissionError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 
 registerAdapters();
 
@@ -35,6 +35,7 @@ const LinkSchema = z.object({
 function failure(error: unknown, storageId: string, what: string): NextResponse {
     if (error instanceof PermissionError) return NextResponse.json({ success: false, error: "Permission denied" }, { status: 403 });
     if (error instanceof NotFoundError) return NextResponse.json({ success: false, error: "Destination not found" }, { status: 404 });
+    if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     log.error(what, { storageId }, wrapError(error));
     return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
 }
@@ -58,8 +59,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
         }
         const { file, decrypt, database, databases, selections, profileIdOverride } = parsed.data;
-        // A link names a destination the tenant uses, own or provided, before it is made and noted.
-        await findDestination(id, tenantId);
+        // A link names a destination the tenant uses, own or provided, and a file in its view of
+        // it, the way the download reads it, before it is made and noted.
+        await findDestinationPath(id, file, tenantId);
         // A link is fetched without a session, which never gets a configuration backup.
         const configBackup = await configBackupLinkRefusal(id, file, tenantId);
         if (configBackup) return configBackup;

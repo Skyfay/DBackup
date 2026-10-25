@@ -55,7 +55,7 @@ A task the group of your account does not allow shows why and cannot be picked.
 - **It follows the group.** When the group of the owner loses a permission, the key loses it too. The panel lists it as paused, and the key may use it again once the group allows it.
 - **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too. What a key holds already stays when someone else edits its name or end.
 - **No platform admin bypass.** A key only ever uses the permissions it holds, even when its owner is a platform admin, and never does what only a platform admin may, like restoring a configuration backup or downloading the database.
-- **Rights of the platform only where they belong.** With [tenants](/user-guide/admin/tenants), a key carries what a platform group gives on the platform only as listed under [Platform Keys](#platform-keys), never the settings of the instance through it, the sign-in providers or what only a platform admin does. The settings the owner's group in the home tenant gives still count, as before tenants.
+- **Rights of the platform only where they belong.** With [tenants](/user-guide/admin/tenants), a key carries what a platform group gives on the platform only as listed under [Platform Keys](#platform-keys), never the settings of the instance through it, the sign-in providers or what only a platform admin does. The settings of the instance the owner's group in the home tenant gives still count in a key of the home tenant, as before tenants, and never in a key of a customer's tenant, which keeps the tenant settings of its own tenant.
 
 ## Platform Keys
 

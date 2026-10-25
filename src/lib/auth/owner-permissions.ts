@@ -144,10 +144,32 @@ export function allTenantsPermissionsOf(memberships: readonly OwnerMembership[],
 }
 
 /**
+ * The rights on the platform that act on the tenant someone works in, its servers, destinations and
+ * channels, rather than on tenants or accounts their reach picks: sharing with customers. A
+ * platform group gives them only in a tenant its reach covers, so someone whose group reaches only
+ * customer Y never gives away the databases of tenant X, where they are merely a member.
+ */
+const TENANT_BOUND_PLATFORM: ReadonlySet<string> = new Set([PERMISSIONS.PLATFORM.SHARING_READ, PERMISSIONS.PLATFORM.SHARING_WRITE]);
+
+/**
+ * The rights on the platform a platform group gives where someone works: all of `platformRightsOf`
+ * in a tenant its reach covers and in All tenants (no tenant) for a group of every tenant,
+ * elsewhere all but the ones of `TENANT_BOUND_PLATFORM`. The tenants and the accounts stay, their
+ * checks pick the tenants and accounts within the reach themselves.
+ */
+export function platformRightsIn(group: PlatformGroupGrant | null | undefined, tenantId: string | null): string[] {
+    if (!group) return [];
+    const reached = tenantId ? reachesTenant(group, tenantId) : group.allTenants;
+    const rights = platformRightsOf(group);
+    return reached ? rights : rights.filter((permission) => !TENANT_BOUND_PLATFORM.has(permission));
+}
+
+/**
  * What someone may do while working in a tenant: what their role there gives, the settings and the
  * roles of the instance from their role in the home tenant, and the own profile from any role.
- * A platform group adds its rights in the tenants of its scope and its rights on the platform.
- * With one tenant and no platform group this is exactly what their role gives.
+ * A platform group adds its rights in the tenants of its scope and its rights on the platform,
+ * sharing only in the tenants of its scope (`platformRightsIn`). With one tenant and no platform group this is exactly what
+ * their role gives.
  */
 export function permissionsIn(memberships: readonly OwnerMembership[], tenantId: string | null, platformGroup?: PlatformGroupGrant | null): string[] {
     const held = new Set<string>();
@@ -165,7 +187,7 @@ export function permissionsIn(memberships: readonly OwnerMembership[], tenantId:
         }
     }
     for (const permission of platformTenantRightsIn(platformGroup, tenantId)) held.add(permission);
-    for (const permission of platformRightsOf(platformGroup)) held.add(permission);
+    for (const permission of platformRightsIn(platformGroup, tenantId)) held.add(permission);
     // Someone of the MSP changes their own profile, also without a group in any tenant.
     if (platformGroup) for (const permission of PROFILE_PERMISSIONS) held.add(permission);
     return EVERY_PERMISSION.filter((permission) => held.has(permission));
@@ -198,20 +220,34 @@ export function keyPlatformPermissions(tenantShares: boolean, homeTenant = false
 }
 
 /**
+ * The permissions of a group a key of a tenant may carry: every one in the home tenant, and in the
+ * tenant of a customer all but the settings of the instance, which belong to the platform. Only a
+ * key of the home tenant carries rights on the platform, whoever its owner is.
+ */
+export function keyGroupPermissions(homeTenant: boolean): string[] {
+    return homeTenant ? [...ALL] : ALL.filter((permission) => !PLATFORM_PERMISSIONS.has(permission));
+}
+
+/**
  * What the owner of an API key may do in the tenant of the key, the ceiling of the key: every
  * permission of a tenant for a platform admin, else what their roles and the tenant part of their
- * platform group give there. Of the rights a platform group gives on the platform, the settings of
- * the instance included, a key holds only what `keyPlatformPermissions` allows in its tenant, and
- * only while its owner holds them: a platform admin, or a platform group that gives them. What such
- * a key reaches stays the reach of its owner (`platformGroupService.reachOf`). The key itself never
- * passes the checks only a platform admin passes.
+ * platform group give there. The settings of the instance count only in a key of the home tenant,
+ * from the owner's group there (`keyGroupPermissions`). Of the rights a platform group gives on the
+ * platform a key holds only what `keyPlatformPermissions` allows in its tenant, and only while its
+ * owner holds them there: a platform admin, or a platform group that gives them, sharing only while it reaches the tenant of the key. What such a key reaches
+ * stays the reach of its owner (`platformGroupService.reachOf`). The key itself never passes the
+ * checks only a platform admin passes.
  */
 export function ownerPermissionsIn(owner: { platformRole: string | null; memberships: readonly OwnerMembership[]; platformGroup?: PlatformGroupGrant | null }, tenantId: string, tenantShares = false): string[] {
-    const keyable = keyPlatformPermissions(tenantShares, tenantId === HOME_TENANT_ID);
-    if (owner.platformRole === PLATFORM_ADMIN_ROLE) return [...ALL, ...keyable];
+    const homeTenant = tenantId === HOME_TENANT_ID;
+    const keyable = keyPlatformPermissions(tenantShares, homeTenant);
+    const ofGroup = keyGroupPermissions(homeTenant);
+    if (owner.platformRole === PLATFORM_ADMIN_ROLE) return [...ofGroup, ...keyable];
+    const allowed = new Set(ofGroup);
     const tenantPart = owner.platformGroup ? { ...owner.platformGroup, platformPermissions: "[]" } : null;
-    const platform = platformRightsOf(owner.platformGroup).filter((permission) => keyable.includes(permission));
-    return [...permissionsIn(owner.memberships, tenantId, tenantPart).filter((permission) => !PLATFORM_ONLY.includes(permission)), ...platform];
+    // Like a session, sharing only in a tenant the platform group reaches.
+    const platform = platformRightsIn(owner.platformGroup, tenantId).filter((permission) => keyable.includes(permission));
+    return [...permissionsIn(owner.memberships, tenantId, tenantPart).filter((permission) => allowed.has(permission)), ...platform];
 }
 
 /** The permissions of a key its owner may use right now. What the owner lost stays stored but does nothing. */

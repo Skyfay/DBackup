@@ -508,6 +508,23 @@ export const FTPAdapter: StorageAdapter = {
         }
     },
 
+    async deleteEmptyFolder(config: FTPConfig, remotePath: string): Promise<boolean> {
+        // The folder the destination is set to stays, whatever is in it.
+        if (path.posix.normalize(`/${remotePath}`) === "/") return false;
+        let client: Client | null = null;
+        try {
+            client = await connectFTP(config);
+            // RMD, which the server refuses for a folder that holds anything.
+            await client.removeEmptyDir(resolvePath(config, remotePath));
+            return true;
+        } catch (error: unknown) {
+            log.debug("FTP folder not removed", { host: config.host, remotePath, reason: wrapError(error).message });
+            return false;
+        } finally {
+            if (client) client.close();
+        }
+    },
+
     async ping(config: FTPConfig): Promise<{ success: boolean; message: string }> {
         let client: Client | null = null;
         try {

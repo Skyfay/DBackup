@@ -59,6 +59,23 @@ describe("what a group lets someone change of the own profile", () => {
         expect(await updateUser("u1", { name: "Someone Else" })).toEqual({ success: true });
     });
 
+    it("refuses a name, an email or a format that is no valid one before it saves anything", async () => {
+        mocks.held = new Set(["profile:update_name", "profile:update_email", "users:write"]);
+
+        expect(await updateUser("u1", { name: "x".repeat(500) })).toEqual({ success: false, error: "A name has at most 100 characters." });
+        expect(await updateUser("u1", { email: "not an email" })).toEqual({ success: false, error: "That is no email address." });
+        expect(await updateUser("u1", { timezone: "Mars/Olympus" })).toEqual({ success: false, error: "That time zone is unknown." });
+        expect(await updateUser("u1", { dateFormat: "<script>" })).toEqual({ success: false, error: "Pick one of the date formats." });
+        expect(mocks.service.updateUser).not.toHaveBeenCalled();
+    });
+
+    it("saves only the fields it knows", async () => {
+        mocks.held = new Set(["profile:update_name"]);
+
+        expect(await updateUser("u1", { name: "  Lena Meier ", role: "ADMIN" } as never)).toEqual({ success: true });
+        expect(mocks.service.updateUser).toHaveBeenCalledWith("u1", { name: "Lena Meier" });
+    });
+
     it("keeps the linked sign-in providers to a group that may change them", async () => {
         const refused = { success: false, error: "Your group may not change your sign-in providers." };
         expect(await unlinkMySsoAccount("authentik", "acc-1")).toEqual(refused);

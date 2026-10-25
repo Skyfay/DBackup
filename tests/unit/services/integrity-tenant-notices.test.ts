@@ -92,6 +92,7 @@ describe("who hears about a failed copy of the integrity check", () => {
         mocks.notify.mockResolvedValue(undefined);
         prismaMock.adapterConfig.findMany.mockImplementation((async ({ where }: { where: { id: { in: string[] } } }) =>
             DESTINATIONS.filter((destination) => where.id.in.includes(destination.id))) as never);
+        prismaMock.tenant.findMany.mockResolvedValue([{ id: "acme", name: "Acme" }, { id: "msp", name: "MSP" }] as never);
     });
 
     it("tells the customer about its copy on a destination the MSP shares, and never the MSP", async () => {
@@ -110,6 +111,10 @@ describe("who hears about a failed copy of the integrity check", () => {
         expect(event.data).toEqual(expect.objectContaining({ totalFiles: 1, failed: 1 }));
         // The name the customer sees for the destination, read across tenants.
         expect(event.data.errors).toEqual([{ file: "acme-shop.tar", destination: "MSP NAS", expected: "aaa", actual: "bbb" }]);
+        // The platform hears that a copy of Acme failed, never which one.
+        const platform = mocks.notify.mock.calls.find(([, options]) => (options as { platform?: boolean }).platform !== false)!;
+        expect(platform[0].data).toEqual(expect.objectContaining({ failed: 1, errors: [], tenants: [{ tenant: "Acme", failed: 1, totalFiles: 1 }] }));
+        expect(JSON.stringify(platform[0].data)).not.toContain("acme-shop");
     });
 
     it("tells the customer about its copy on a destination of the home tenant", async () => {

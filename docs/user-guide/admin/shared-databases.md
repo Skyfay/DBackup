@@ -10,6 +10,18 @@ Shared databases close that gap. The tenant of the server says which database be
 
 Only the servers of a [tenant that shares with customers](#tenants-that-share), like the one of the hosting company, give databases away. A customer who brings a server of their own adds it in their tenant and backs it up and restores it like any other connection, without sharing it, and never sees the names of the other tenants.
 
+## Engines That Can Be Shared
+
+A database goes to a customer alone only where a backup holds each database as a dump of its own and a restore writes that one database back. That is the case for **MySQL**, **MariaDB**, **PostgreSQL**, **MongoDB**, **Microsoft SQL Server**, **Azure SQL Database**, **SQLite** and **Firebird**.
+
+**Redis** and **Valkey** cannot be shared. Their backup is one snapshot of every logical database of the server, and a restore writes that snapshot back whole, so a customer given one database would download and restore all of them. Their servers show no **Databases and tenants**, and giving one of their databases away, a rule, a move or a database given through the API is refused with:
+
+```
+Redis keeps every database of a server in one snapshot, which a backup and a restore never split, so no database of it goes to a tenant alone.
+```
+
+A database of such a server that was given away before this check stays recorded, but its customer sees nothing of it: no backup, no download, no restore and no **Back up now**. Take it back through the API, with `tenantId: null` for the database or `DELETE` on its rule, see [Through the API](#through-the-api).
+
 ## Tenants That Share
 
 A tenant of the MSP shares with customers, a customer does not. The home tenant shares from the start, any other tenant once the platform switches it on: **Shares with customers** under **Sharing** in **Edit** of the tenant under **Platform → Tenants**, or the tick **Shares with customers** in **New tenant**. The list marks such a tenant with **Shares with customers**. The same switch lets it share its destinations and channels, see [Shared Destinations and Channels](/user-guide/admin/shared-connections). Switching needs `platform-tenants:write`, someone of a platform group switches only the tenants their platform group reaches, and every switch goes into the audit log of the home tenant.
@@ -67,7 +79,7 @@ curl -s -X PUT "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments" \
 | `tenantId` | The tenant it belongs to, or `null` to take it back |
 | `validFrom` | An ISO date or time the customer's backups start, now when left out |
 
-The answer counts the databases whose owner changed, as `{ "success": true, "data": { "changed": 2 } }`. A database that belongs to the tenant already stays as it is, its start included. The name may be one DBackup has not read from the server yet, like a database the panel just created. A start in the future, a server of a tenant that does not share with customers, the tenant of the server itself or a tenant that does not exist answers `400`, and so does a database given to or taken from a tenant the platform group of the owner of the key does not reach. Nothing changes then. A server of another tenant answers `404`.
+The answer counts the databases whose owner changed, as `{ "success": true, "data": { "changed": 2 } }`. A database that belongs to the tenant already stays as it is, its start included. The name may be one DBackup has not read from the server yet, like a database the panel just created. A start in the future, a server of a tenant that does not share with customers (taking back included), a server of an [engine that cannot be shared](#engines-that-can-be-shared), the tenant of the server itself or a tenant that does not exist answers `400`, and so does a database given to or taken from a tenant the platform group of the owner of the key does not reach. Nothing changes then. A server of another tenant answers `404`.
 
 `GET` on the same address needs `platform-sharing:read` or `platform-sharing:write` and answers with the databases of the server and their owner now, every assignment and rule with its start and end, the tenants a database can go to under `customers`, those the owner of the key reaches, and every other tenant under `tenants`. The IDs of the tenants for the `PUT` come from `customers`.
 
@@ -76,7 +88,24 @@ curl -s "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments" \
   -H "Authorization: Bearer ${API_KEY}" | jq '.data.customers'
 ```
 
-Rules are made on the page of the server only. Every change writes an entry to the [audit log](/user-guide/admin/audit-log) of the server's tenant.
+The rules have addresses of their own, with the same keys and rights:
+
+| Request | Does | Needs |
+| :--- | :--- | :--- |
+| `GET /api/adapters/{id}/database-assignments/rules` | Every rule of the server, the ended ones too | `platform-sharing:read` or `platform-sharing:write` |
+| `POST /api/adapters/{id}/database-assignments/rules` | Adds a rule, answers `201` with it | `platform-sharing:write` |
+| `DELETE /api/adapters/{id}/database-assignments/rules/{ruleId}` | Ends the rule, its backups stay with the customer | `platform-sharing:write` |
+
+```bash
+curl -s -X POST "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments/rules" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{ "pattern": "acme_*", "tenantId": "cm2x8k1q40000acme", "priority": 10 }'
+```
+
+A new rule takes `pattern`, `tenantId`, and optionally `priority`, `validFrom` and `onDemandPerDay`, with the limits of [By Rules](#by-rules). It answers `400` for the same reasons as the `PUT` above, and for a rule that would rank above a rule of a tenant the owner of the key does not reach. Ending a rule that is gone or ended already answers `404`.
+
+Every change writes an entry to the [audit log](/user-guide/admin/audit-log) of the server's tenant.
 
 ## The Time Window
 
@@ -97,6 +126,20 @@ A backup belongs to whoever had its database when the backup was made, never to 
 
 **Move to another server** in the menu of a database moves it to another server of the same engine in the same tenant, under the same name or a new one. Its tenant keeps it as one database: the backups from the old server stay in their list, each saying where it was made, and a restore of one of them goes into the database at its new place. On the old server no rule gives the name to anyone from the move on, only a new assignment by hand does. The column **How** and the timeline show the move.
 
+A Microsoft SQL Server database restored on another server than the one its backup was made on, like after a move under the same name, puts its files into the data folder of the new server instead of the paths the backup names. A Firebird database restores into the path of its alias on the server.
+
+## Restoring the Server Over Customers' Databases
+
+The [restore page](/user-guide/features/restore) of the tenant of the server marks every database a customer holds now with the customer, **Acme holds it**, or **A customer holds it** for whoever may not see what is shared. Before such a restore starts, the confirmation asks for a tick at **Overwrite the databases of** the customers. The server refuses the restore without it:
+
+```
+The restore would overwrite databases that customers hold now: shop_acme. Confirm overwriting them to restore.
+```
+
+Through the API the request confirms it with `"overwriteCustomerDatabases": true` in the body of `POST /api/storage/{id}/restore`. A request without a database mapping restores every database of the backup, so it asks for the confirmation as soon as a customer holds any database of the server. A copy beside the database under a free name overwrites nothing and asks nothing.
+
+The customers' History shows nothing of such a restore. The entry in the audit log of the tenant of the server names the customers whose databases it overwrote.
+
 Deleting the connection of a server that gives databases away warns first, and names its tenants to whoever may see what is shared, the others learn how many there are. Its tenants keep their backups, marked **Server deleted**, and download them, but restore none, unless the database moved to another server before. Restoring the connection from [Recently deleted](/user-guide/admin/recently-deleted) brings the restores back.
 
 ## Backups on Demand
@@ -111,7 +154,7 @@ How many backups a customer may start of each of its databases, 1 to 24 a day, i
 | **A number of its own** | 1 to 24 a day, whatever the tenant has |
 | **Off for** the database | None, whatever the tenant may for its other databases |
 
-The **How** column says it under each database, like **Backups on demand, 3 a day · as Acme** or **· set here**, and **Backups on demand off here**. **Backups on demand** in **Edit** of the tenant lists the databases and rules that set their own, each with **Follow** to let it follow the tenant again. Someone of a platform group sees a tenant that shares beyond its reach as **Another tenant** there, and cannot let its databases and rules follow. The menu of a database, also on a right click, holds **Who held it**, **Move to another server**, **Backups on demand** and **Take back**. A day starts at midnight in the time zone of the instance, and with a rule every database counts on its own.
+The **How** column says it under each database, like **Backups on demand, 3 a day · as Acme** or **· set here**, and **Backups on demand off here**. **Backups on demand** in **Edit** of the tenant lists the databases and rules that set their own, each with **Follow** to let it follow the tenant again. Someone of a platform group sees a tenant that shares beyond its reach as **Another tenant** there, and cannot let its databases and rules follow. The menu of a database, also on a right click, holds **Who held it**, **Move to another server** while a tenant holds the database, **Backups on demand** only for a database given by name (one a rule gives takes it from the menu of the rule), and **Take back**. A day starts at midnight in the time zone of the instance, and with a rule every database counts on its own.
 
 The backup runs the job of the server that backs up the database, an enabled one first, for that database alone. It belongs to the tenant of the server like every run of that job, shows in its History with the tenant and the person as the trigger, and sends the notifications of the job. Retention judges these backups apart from the full backups of the job, under the same policy, so they never push a full backup out. Such a run counts toward no usual length, neither of the job nor of its steps.
 
@@ -141,9 +184,13 @@ A right click on a shared backup offers only what the customer may do with it: *
 
 **Restore** asks for nothing but a confirmation: the backup is the row picked, the target is the same database, shown as fixed, and the dialog says that only this database is overwritten. A database that is theirs no longer keeps its backups for download only, since a restore would write over a database that belongs to someone else by now.
 
-A restore shows in the History of the customer's tenant, and every download and restore in its audit log. The run names the database alone, never the address, port or user of the server, another host of its domain, the name of its Sentinel master, the archive, the destination or another database of the backup or the server, and the other databases of the backup are never read. The restore notifications to the customer's channels name the database instead of the archive, without the destination, and a failure with a general message. A download goes through an address that holds a token alone, never the destination. When the first destination of a backup does not answer, a download or restore takes the next copy.
+A restore shows in the History of the customer's tenant, and every download and restore in its audit log. The run names the database alone, never the address, port or user of the server, every host of a list and the name of a MongoDB replica set, an account the server names with its host, another host of its domain, the name of its Sentinel master, the data folder of SQL Server, the archive, the destination or another database of the backup or the server, and the other databases of the backup are never read. The restore notifications to the customer's channels name the database instead of the archive, without the destination, and a failure with a general message. A download goes through an address that holds a token alone, never the destination. When the first destination of a backup does not answer, a download or restore takes the next copy.
 
 The tenant of the server sees every restore of a customer too. Its History gets a run of the same restore, **Restore onto** the server with **Restore of** the database **for** the customer below it, started by the customer and the person, like *Acme · Sara*. That run holds the whole log, with the archive, the commands and the errors of the server's tools, and ends with the same status as the customer's run. **Cancel** in either History stops the restore. Its audit log keeps the restore as well, with the database, the server and the customer. When a restore fails, the customer's run ends with a line that says the tenant of the server sees the full run in its History, so the customer knows whom to ask.
+
+A restore the checks before the start refuse, like a backup of a newer version than the server, a local network the tenant of the server blocks, or a database the server will not prepare, leaves both runs as well, failed at once. The customer reads **The restore was refused:** with the reason in the words of its run, the version by its number and nothing of the server, and the run that says it. The provider's run holds the whole reason.
+
+The customer's run names the version of the server by its number alone, like `8.0.36` for `8.0.36-0ubuntu0.22.04.1`, without the build and the system it runs on.
 
 The customer's short run of a backup and the provider's run of a restore each follow another run. When that run is gone or ended without them, the [Stuck run watchdog](/user-guide/jobs/#stuck-job-timeout), while it is on, ends them 10 minutes later with the outcome of that run, or as failed when it is gone.
 

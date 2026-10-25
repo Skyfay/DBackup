@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { assignmentAt, followMoves, holderAt, matchesPattern, ownerAt, ruleAt, type DatabasePlace, type PlacedAssignment } from "@/lib/tenant/database-owner";
 import { effectiveOnDemand } from "@/lib/tenant/sharing";
+import { sharesSingleDatabases } from "@/lib/adapters/definitions";
 import { backupDatesByDatabase, factsOf, serverBackupFiles, type OwnerFacts } from "./shared-backups";
 import { listedDatabases, tenantOnDemand } from "./shared-servers";
 
@@ -164,6 +165,13 @@ export async function tenantPlaces(tenantId: string, now: Date): Promise<TenantP
                 hold({ sourceId: rule.sourceId, databaseName: name }, rule.validFrom, rule.validUntil, null);
             }
         }
+    }
+
+    // A server of an engine that gives no database alone, like Redis, whose backup holds every
+    // database in one snapshot, hands nothing to a customer, also when it was given before the check.
+    for (const [key, place] of places) {
+        const server = servers.get(place.sourceId);
+        if (server && !sharesSingleDatabases(server.adapterId)) places.delete(key);
     }
 
     const groupOf = new Map<string, string>();

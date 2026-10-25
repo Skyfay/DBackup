@@ -31,4 +31,19 @@ describe("a test of the recipients of a channel another tenant shares", () => {
         await expect(sendRecipientsTest("acme-mail", "globex", start + TEST_COOLDOWN_MS)).resolves.toBeDefined();
         expect(mocks.send).toHaveBeenCalledTimes(3);
     });
+
+    it("lets only one of two tests at the same moment go out", async () => {
+        const start = 5_000_000;
+        const results = await Promise.allSettled([sendRecipientsTest("acme-mail", "hooli", start), sendRecipientsTest("acme-mail", "hooli", start + 1)]);
+        expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+        expect(mocks.send).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets the next test go out at once when one was refused before it sent", async () => {
+        const start = 9_000_000;
+        const { recipientsOf } = await import("@/services/sharing/channel-recipients");
+        vi.mocked(recipientsOf).mockResolvedValueOnce([]);
+        await expect(sendRecipientsTest("acme-mail", "umbrella", start)).rejects.toThrow("Name the recipients first");
+        await expect(sendRecipientsTest("acme-mail", "umbrella", start + 1_000)).resolves.toBeDefined();
+    });
 });

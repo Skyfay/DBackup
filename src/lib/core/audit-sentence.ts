@@ -165,7 +165,15 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
             if (kind === "config_restore") return { parts: [plain("Restored the configuration"), ...(file ? [plain(" from "), strong(fileName(file))] : [])], glyph: "restore" };
             const into = text(details.target);
             const what = kind === "file_restore" ? [plain("Restored files of "), ...(file ? [strong(fileName(file))] : [plain("a backup")])] : [plain("Restored "), ...(name ? [strong(name)] : [plain("a backup")])];
-            return { parts: [...what, ...(into && kind !== "file_restore" ? [plain(" into "), strong(into)] : [])], glyph: "restore" };
+            // The customers whose databases on a shared server the restore overwrote.
+            const customers = Array.isArray(details.customers) ? details.customers.filter((entry): entry is string => typeof entry === "string" && entry.length > 0) : [];
+            return {
+                parts: [
+                    ...what, ...(into && kind !== "file_restore" ? [plain(" into "), strong(into)] : []),
+                    ...(customers.length > 0 ? [plain(customers.length === 1 ? ", over databases of the customer " : ", over databases of the customers "), strong(customers.join(", "))] : []),
+                ],
+                glyph: "restore",
+            };
         }
         case A.EXPORT: {
             if (kind === "recovery_kit_download") return { parts: [plain("Downloaded a recovery kit")], glyph: "download" };

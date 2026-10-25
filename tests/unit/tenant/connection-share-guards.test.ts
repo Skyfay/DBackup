@@ -11,7 +11,7 @@ import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 
 const mocks = vi.hoisted(() => ({
     granted: new Set<string>(),
-    viewer: { id: "u-lena", name: "Lena Graf", tenantId: "acme" as string | null },
+    viewer: { id: "u-lena", name: "Lena Graf", tenantId: "acme" as string | null, allTenants: false },
     service: {
         view: vi.fn(),
         losing: vi.fn(),
@@ -30,6 +30,9 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!mocks.granted.has(permission)) throw new PermissionError(permission);
         return mocks.viewer;
     }),
+    // The refusal of the real module, which names All tenants and an account of no tenant apart.
+    tenantRefusal: (ctx: { tenantId: string | null; allTenants?: boolean }) =>
+        ctx.tenantId ? null : ctx.allTenants ? "All tenants only reads. Open the tenant of the record to change it." : "You work in no tenant yet.",
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/logging/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) } }));
@@ -55,7 +58,7 @@ const SETTINGS = { allTenants: false, tenantIds: ["globex"], encryptedOnly: true
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.granted = new Set();
-    mocks.viewer = { id: "u-lena", name: "Lena Graf", tenantId: "acme" };
+    mocks.viewer = { id: "u-lena", name: "Lena Graf", tenantId: "acme", allTenants: false };
     mocks.service.view.mockResolvedValue({ uses: [], settings: SETTINGS });
     mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: ["Globex"], losses: [] });
     mocks.reachOf.mockResolvedValue("all");
@@ -92,7 +95,7 @@ describe("what is shared with customers", () => {
 
     it("tells each tenant that lost a connection in its own log", async () => {
         mocks.granted.add(SHARE_PERMISSION);
-        mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "globex", name: "Globex", jobs: ["Nightly"], templates: [], backups: 3 }] });
+        mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "globex", name: "Globex", jobs: ["Nightly"], templates: [], backups: 3, used: true, noted: true }] });
         await actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: [] }, true);
         expect(mocks.audit).toHaveBeenCalledWith(
             "u-lena", "UPDATE", "DESTINATION",
@@ -102,11 +105,19 @@ describe("what is shared with customers", () => {
         );
     });
 
+    it("names a tenant that never used a connection shared with every tenant in no log of its own", async () => {
+        mocks.granted.add(SHARE_PERMISSION);
+        mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "hooli", name: "Hooli", jobs: [], templates: [], backups: 0, used: false, noted: false }] });
+        await actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: [] }, true);
+        expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", { name: "NAS", action: "unshare", tenants: "Hooli" }, "acme-nas");
+        expect(mocks.audit).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), "acme-nas", { tenantId: "hooli" });
+    });
+
     it("still tells the tenants that lost it when the storage stopped answering on the way", async () => {
         mocks.granted.add(SHARE_PERMISSION);
         const { ShareChangeError } = await import("@/services/sharing/connection-shares");
         mocks.service.save.mockRejectedValue(new ShareChangeError("Could not take it away from a tenant: timeout", {
-            name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "globex", name: "Globex", jobs: [], templates: [], backups: 2 }],
+            name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "globex", name: "Globex", jobs: [], templates: [], backups: 2, used: true, noted: true }],
         }));
         await expect(actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: [] }, true)).resolves.toMatchObject({ success: false, error: "Could not take it away from a tenant: timeout" });
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", { name: "NAS", action: "unshare", tenants: "Globex", backups: 2 }, "acme-nas", { tenantId: "globex" });
@@ -140,6 +151,23 @@ describe("what is shared with customers", () => {
         await expect(actions.deleteSharedBackups("acme-nas", "globex")).resolves.toMatchObject({ success: false });
         expect(mocks.service.save).not.toHaveBeenCalled();
         expect(mocks.service.deleteBackupsOf).not.toHaveBeenCalled();
+    });
+
+    it("answers every action in All tenants with the refusal of All tenants, before it touches a service", async () => {
+        mocks.granted = new Set([SEE_SHARING_PERMISSION, SHARE_PERMISSION, PERMISSIONS.NOTIFICATIONS.WRITE]);
+        mocks.viewer = { ...mocks.viewer, tenantId: null, allTenants: true };
+        const refused = { success: false, error: "All tenants only reads. Open the tenant of the record to change it." };
+
+        expect(await actions.getConnectionShare("acme-nas")).toEqual(refused);
+        expect(await actions.previewShareLoss("acme-nas", SETTINGS)).toEqual(refused);
+        expect(await actions.saveConnectionShare("acme-nas", SETTINGS, true)).toEqual(refused);
+        expect(await actions.stopSharingWith("acme-nas", "globex", true)).toEqual(refused);
+        expect(await actions.deleteSharedBackups("acme-nas", "globex")).toEqual(refused);
+        expect(await actions.setChannelRecipients("acme-mail", [])).toEqual(refused);
+        expect(await actions.testChannelRecipients("acme-mail")).toEqual(refused);
+        expect(mocks.reachOf).not.toHaveBeenCalled();
+        expect(mocks.service.view).not.toHaveBeenCalled();
+        expect(mocks.setRecipients).not.toHaveBeenCalled();
     });
 
     it("refuses settings it cannot read", async () => {

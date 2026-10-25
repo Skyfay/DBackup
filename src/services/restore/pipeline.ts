@@ -28,6 +28,7 @@ import { resolveDecryptionKey } from "./smart-recovery";
 import { restoreArchiveSnapshot } from "./archive-restore";
 import { openDestination } from "@/services/sharing/destination-access";
 import { createRestoreLogs, type ProviderRun } from "./run-logs";
+import { versionShown } from "./shared-restore-log";
 import { createRestoreTracker } from "./restore-record";
 import { FOLLOWS_KEY } from "@/lib/execution/follower-runs";
 
@@ -265,9 +266,19 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                         const test = await runAdapterTest(sourceAdapter, usageConfig);
                         if (test?.success && test.version) {
                             record.versions({ target: test.version });
-                            log(`Compatibility Check: Backup Version [${metadata.engineVersion}] vs Target [${test.version}]`, 'info');
+                            // A customer's run reads the versions by their number, without the build and system of the server.
+                            const [backupShown, targetShown] = [versionShown(metadata.engineVersion), versionShown(test.version)];
+                            logs.split(
+                                `Compatibility Check: Backup Version [${backupShown}] vs Target [${targetShown}]`,
+                                `Compatibility Check: Backup Version [${metadata.engineVersion}] vs Target [${test.version}]`,
+                                'info'
+                            );
                             if (parseFloat(metadata.engineVersion) > parseFloat(test.version)) {
-                                log(`WARNING: You are restoring a newer version backup (${metadata.engineVersion}) to an older database (${test.version}). This might fail.`, 'warning');
+                                logs.split(
+                                    `WARNING: You are restoring a newer version backup (${backupShown}) to an older database (${targetShown}). This might fail.`,
+                                    `WARNING: You are restoring a newer version backup (${metadata.engineVersion}) to an older database (${test.version}). This might fail.`,
+                                    'warning'
+                                );
                             }
                         }
                     } catch { /* ignore connection tests during restore init */ }

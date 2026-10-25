@@ -1,7 +1,8 @@
 /**
- * The webhook style channels never follow a redirect: the local network check of a tenant read
- * the host of the configured URL, and a redirect would carry the request to a host nobody
- * checked. Discord, Slack, Teams, Gotify and ntfy answer 2xx directly, so a 3xx is a failed send.
+ * The webhook style channels follow a redirect only on the host of their URL: the local network
+ * check of a tenant read that host, and a redirect to another host would carry the request to a
+ * host nobody checked. One on the same host, like from http to https behind a proxy, is followed
+ * with the same method and body.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NotificationAdapter } from "@/lib/core/interfaces";
@@ -48,7 +49,7 @@ afterEach(() => {
 });
 
 describe("a redirect of a webhook style channel", () => {
-    it.each(CHANNELS)("%s asks fetch to hand back a redirect instead of following it", async (_name, adapter, config) => {
+    it.each(CHANNELS)("%s asks fetch to hand back a redirect instead of following it itself", async (_name, adapter, config) => {
         fetchMock.mockResolvedValue(answer(204));
 
         await adapter.test!(config as never);
@@ -73,6 +74,39 @@ describe("a redirect of a webhook style channel", () => {
 
         await expect(adapter.send(config as never, "Backup done", { title: "Backup", success: true })).resolves.toBe(false);
         expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(CHANNELS)("%s follows a redirect to https on the same host with the same method and body", async (_name, adapter, config) => {
+        const first = new URL(String(Object.values(config).find((value) => typeof value === "string" && value.startsWith("https://"))));
+        const target = `https://${first.hostname}:8443/final`;
+        fetchMock.mockResolvedValueOnce(answer(301, `http://${first.hostname}/moved`)).mockResolvedValueOnce(answer(308, target)).mockResolvedValue(answer(200));
+
+        await expect(adapter.send(config as never, "Backup done", { title: "Backup", success: true })).resolves.toBe(true);
+
+        const calls = fetchMock.mock.calls as [string, RequestInit][];
+        expect(calls.map(([url]) => url).slice(1)).toEqual([`http://${first.hostname}/moved`, target]);
+        for (const [, options] of calls) {
+            expect(options).toMatchObject({ redirect: "manual", method: calls[0][1].method, body: calls[0][1].body });
+        }
+    });
+
+    it.each(CHANNELS)("%s refuses a redirect to another host after one on the same host", async (name, adapter, config) => {
+        const first = new URL(String(Object.values(config).find((value) => typeof value === "string" && value.startsWith("https://"))));
+        fetchMock.mockResolvedValueOnce(answer(302, `https://${first.hostname}/step`)).mockResolvedValue(answer(302, "http://10.0.0.5/hook"));
+
+        const result = await adapter.test!(config as never);
+
+        expect(result.message).toBe(`${name} answered with a redirect to http://10.0.0.5/hook (302), which DBackup does not follow. Enter the final address instead.`);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(CHANNELS)("%s gives up after a few redirects on the same host", async (_name, adapter, config) => {
+        fetchMock.mockResolvedValue(answer(302, "/again"));
+
+        const result = await adapter.test!(config as never);
+
+        expect(result.success).toBe(false);
+        expect(fetchMock).toHaveBeenCalledTimes(6);
     });
 
     it.each(CHANNELS)("%s still sends to a normal endpoint that answers 2xx", async (_name, adapter, config) => {

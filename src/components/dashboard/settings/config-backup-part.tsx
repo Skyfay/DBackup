@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Database, FileCog, Loader2, LockKeyhole, Play, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -21,7 +21,7 @@ import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { ConfigBackupSettings, SettingsModel } from "@/services/system/settings-types";
 import { ConfigRestoreDialog } from "./config-restore-dialog";
-import { Field, PartFrame, SaveBar, useSettingsFrame, usePartSave, usePartValues } from "./settings-frame";
+import { Field, PartFrame, SaveBar, SettingsFrameContext, useSettingsFrame, usePartSave, usePartValues } from "./settings-frame";
 import { changesOf } from "./settings-values";
 
 const log = logger.child({ component: "config-backup-part" });
@@ -76,8 +76,31 @@ function ConfigStatus({ model, enabled }: { model: SettingsModel["configBackup"]
     );
 }
 
-/** Where the configuration backup goes, the key, the schedule, how many stay and what it holds. */
-export function ConfigBackupPart({ model, isPlatformAdmin }: { model: SettingsModel["configBackup"]; isPlatformAdmin: boolean }) {
+const READ_ONLY_NOTE = "You may look at the configuration backup. Only a platform admin changes or starts it, since the file holds every secret of the instance.";
+
+interface ConfigBackupPartProps {
+    model: SettingsModel["configBackup"];
+    isPlatformAdmin: boolean;
+}
+
+/**
+ * Where the configuration backup goes, the key, the schedule, how many stay and what it holds. Only a
+ * platform admin changes or starts it, whatever else the viewer may change of the settings.
+ */
+export function ConfigBackupPart(props: ConfigBackupPartProps) {
+    const parent = useSettingsFrame();
+    const frame = useMemo(
+        () => (props.isPlatformAdmin ? parent : { ...parent, readOnly: true, readOnlyNote: READ_ONLY_NOTE }),
+        [parent, props.isPlatformAdmin]
+    );
+    return (
+        <SettingsFrameContext.Provider value={frame}>
+            <ConfigBackupForm {...props} />
+        </SettingsFrameContext.Provider>
+    );
+}
+
+function ConfigBackupForm({ model, isPlatformAdmin }: ConfigBackupPartProps) {
     const router = useRouter();
     const { readOnly } = useSettingsFrame();
     const form = usePartValues("config-backup", model.settings);

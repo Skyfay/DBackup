@@ -18,7 +18,11 @@ export interface ShareChange {
     name: string;
     kind: SharedKind;
     gained: string[];
-    losses: (TenantLoss & { name: string })[];
+    /**
+     * What each tenant that lost it lost. `noted` says whether its log and its Connections page hear
+     * of it, which after a share with every tenant only a tenant that used it does.
+     */
+    losses: (TenantLoss & { name: string; noted: boolean })[];
 }
 
 /**
@@ -42,6 +46,15 @@ export class ShareChangeError extends ValidationError {
  * `share-reach.ts`.
  */
 
+/**
+ * Why a save that takes a connection from tenants waits for `confirmed`, with what they lose: the
+ * links of a channel in their jobs, templates and notifications, and on a destination its backups.
+ */
+export const UNCONFIRMED_LOSS: Record<SharedKind, string> = {
+    destination: "The tenants that lose this destination lose their backups on it, and their jobs lose it. Confirm it first.",
+    channel: "The tenants that lose this channel lose it in their notification templates, their jobs, their notification settings and their recipients. Confirm it first.",
+};
+
 export const NOT_SHARING_CONNECTIONS = "This tenant shares nothing with customers. The platform switches it on for a tenant of the MSP.";
 
 /** Who gets a connection and on what terms. */
@@ -63,7 +76,7 @@ export interface ShareTenantUse {
     jobs: number;
     /** A channel: its notification templates that name it. */
     templates: number;
-    /** A destination: its backups there and their size at the last measurement, null before one. */
+    /** A destination: its backups there and their size at the last measurement, null before the destination was measured once. */
     backups: number | null;
     size: number | null;
     /** A destination that asks for encrypted backups: its jobs without a key, which write nothing to it. */
@@ -123,7 +136,7 @@ async function otherTenants(providerId: string) {
     return prisma.tenant.findMany({ where: { id: { not: providerId } }, select: { id: true, name: true }, orderBy: { name: "asc" } });
 }
 
-async function usesOf(config: { id: string; tenantId: string }, kind: SharedKind, customers: { id: string; name: string }[]): Promise<ShareTenantUse[]> {
+async function usesOf(config: { id: string; tenantId: string }, kind: SharedKind, customers: { id: string; name: string }[], encryptedOnly: boolean): Promise<ShareTenantUse[]> {
     if (customers.length === 0) return [];
     const ids = customers.map((tenant) => tenant.id);
     return runAsSystem(async () => {
@@ -142,9 +155,11 @@ async function usesOf(config: { id: string; tenantId: string }, kind: SharedKind
             prisma.job.findMany({ where: { tenantId: { in: ids }, destinations: { some: { configId: config.id } } }, select: { id: true, tenantId: true, encryptionProfileId: true } }),
             storageEntriesOf(config.id),
         ]);
+        // Once the destination was measured, a customer without an entry has written nothing there yet.
+        const measured = entries.length > 0;
         return Promise.all(customers.map(async (tenant) => {
             const theirs = jobs.filter((job) => job.tenantId === tenant.id);
-            const entry = entries.find((candidate) => candidate.tenantId === tenant.id);
+            const entry = entries.find((candidate) => candidate.tenantId === tenant.id) ?? (measured ? { count: 0, size: 0 } : undefined);
             const last = theirs.length === 0 ? null : await prisma.execution.findFirst({
                 where: { tenantId: tenant.id, type: "Backup", status: { in: ["Success", "Partial"] }, jobId: { in: theirs.map((job) => job.id) } },
                 orderBy: { startedAt: "desc" },
@@ -157,11 +172,21 @@ async function usesOf(config: { id: string; tenantId: string }, kind: SharedKind
                 templates: 0,
                 backups: entry ? entry.count : null,
                 size: entry ? entry.size : null,
-                jobsWithoutKey: theirs.filter((job) => !job.encryptionProfileId).length,
+                // A job without a key writes to a destination that takes any backup.
+                jobsWithoutKey: encryptedOnly ? theirs.filter((job) => !job.encryptionProfileId).length : 0,
                 lastBackup: last ? (last.endedAt ?? last.startedAt) : null,
             };
         }));
     });
+}
+
+/** The tenant of a run of `tenantIds` that writes to a destination now or waits to, null without one. */
+async function runningRunOf(configId: string, tenantIds: readonly string[]): Promise<string | null> {
+    const running = await runAsSystem(() => prisma.execution.findFirst({
+        where: { status: { in: ["Pending", "Running"] }, tenantId: { in: [...tenantIds] }, job: { destinations: { some: { configId } } } },
+        select: { tenantId: true },
+    }));
+    return running?.tenantId ?? null;
 }
 
 export const connectionShareService = {
@@ -209,7 +234,7 @@ export const connectionShareService = {
             candidates: others.filter((tenant) => reachCovers(reach, tenant.id)),
             reach: shareReachView({ name: config.name, share, customers, reach }),
             own: config.kind === "destination" ? { backups: ownEntry ? ownEntry.count : null, size: ownEntry ? ownEntry.size : null } : null,
-            uses: await usesOf(config, config.kind, customers),
+            uses: await usesOf(config, config.kind, customers, share?.encryptedOnly ?? false),
         };
     },
 
@@ -225,12 +250,12 @@ export const connectionShareService = {
         const bound = boundToReach({ name: config.name, share, before, wanted: settings, termsChanged: false, reach, nameOf: (id) => names.get(id) ?? "a tenant" });
         const after = new Set(bound.allTenants ? others.map((tenant) => tenant.id) : bound.tenantIds);
         const lost = before.filter((id) => !after.has(id));
-        return usesOf(config, config.kind, others.filter((tenant) => lost.includes(tenant.id)));
+        return usesOf(config, config.kind, others.filter((tenant) => lost.includes(tenant.id)), share?.encryptedOnly ?? false);
     },
 
     /**
      * Saves who gets a connection. A tenant that loses it loses every link to it first, and on a
-     * destination its backups there, which `confirmed` must allow. When the storage does not answer,
+     * destination its backups there, which `confirmed` must allow for either kind. When the storage does not answer,
      * the share stays as it was. Without anybody left the connection is no longer shared. With a
      * reach of some tenants it changes only those, see `boundToReach`.
      */
@@ -267,41 +292,51 @@ export const connectionShareService = {
             // A second connection to the same folder would show the customers' backups in the view of this tenant.
             if (!share) await assertSharedPlaceAlone(configId);
         }
-        if (config.kind === "destination" && lost.length > 0 && !options.confirmed) {
-            throw new ValidationError("The tenants that lose this destination lose their backups on it. Confirm it first.");
-        }
-        // A run that writes there now, or one that waits and may start any moment, would put a
-        // backup into the folder after it was emptied.
-        if (config.kind === "destination" && lost.length > 0) {
-            const running = await runAsSystem(() => prisma.execution.findFirst({
-                where: { status: { in: ["Pending", "Running"] }, tenantId: { in: lost }, job: { destinations: { some: { configId } } } },
-                select: { tenantId: true },
-            }));
-            if (running) throw new ValidationError(`A run of ${known.get(running.tenantId) ?? "a tenant"} writes to this destination right now or waits to. Try again once it finished.`);
-        }
+        if (lost.length > 0 && !options.confirmed) throw new ValidationError(UNCONFIRMED_LOSS[config.kind]);
 
         // A share with nobody on it goes, unless `keep` holds it for a folder of the customers that
         // could not be emptied yet.
-        const writeShare = (customers: string[], allTenants: boolean, keep = false) => prisma.$transaction(async (tx) => {
+        const writeShare = (customers: string[], allTenants: boolean, keep = false, shareTerms = terms) => prisma.$transaction(async (tx) => {
             if (!allTenants && customers.length === 0 && !keep) {
                 await tx.connectionShare.deleteMany({ where: { id: configId } });
                 return;
             }
-            await tx.connectionShare.upsert({ where: { id: configId }, create: { id: configId, tenantId: config.tenantId, ...terms, allTenants }, update: { ...terms, allTenants } });
+            await tx.connectionShare.upsert({ where: { id: configId }, create: { id: configId, tenantId: config.tenantId, ...shareTerms, allTenants }, update: { ...shareTerms, allTenants } });
             await tx.connectionShareTenant.deleteMany({ where: { shareId: configId } });
             if (!allTenants) await tx.connectionShareTenant.createMany({ data: customers.map((tenantId) => ({ shareId: configId, tenantId })) });
         });
-        const named = (losses: TenantLoss[]) => losses.map((loss) => ({ ...loss, name: known.get(loss.tenantId) ?? loss.tenantId }));
+        // Puts the tenants that kept everything back on the share: the share as it was when nobody
+        // lost anything yet, else every tenant but those that lost everything already.
+        const putBack = async (gone: ReadonlySet<string>) => {
+            if (!share) return;
+            if (gone.size === 0) await writeShare(before, share.allTenants, true, { encryptedOnly: share.encryptedOnly, ownRecipients: share.ownRecipients });
+            else await writeShare(before.filter((id) => !gone.has(id)), false, true);
+        };
+        // After an All tenants share only the tenants that used it hear of it, not every tenant there is.
+        const named = (losses: TenantLoss[]) => losses.map((loss) => ({ ...loss, name: known.get(loss.tenantId) ?? loss.tenantId, noted: !share?.allTenants || loss.used }));
 
-        // Taken away first, one tenant after the other. When the storage stops answering, the tenants
-        // that lost everything already come off the share and every other one keeps it as it was.
+        // The tenants that lose it come off the share first, so no run of theirs starts writing to it
+        // or sending through it while it is taken away. The share stays even with nobody on it until
+        // the folder of the customers is empty, so its tenant never sees a backup of a customer.
+        if (lost.length > 0 && share) await writeShare(before.filter((id) => !lost.includes(id)), false, true, { encryptedOnly: share.encryptedOnly, ownRecipients: share.ownRecipients });
+        // A run that writes there now, or one that waited before and may start any moment, would put a
+        // backup into the folder after it was emptied.
+        if (config.kind === "destination" && lost.length > 0) {
+            const running = await runningRunOf(configId, lost);
+            if (running) {
+                await putBack(new Set());
+                throw new ValidationError(`A run of ${known.get(running) ?? "a tenant"} writes to this destination right now or waits to. Try again once it finished.`);
+            }
+        }
+
+        // Taken away one tenant after the other. When the storage stops answering, the tenants that
+        // lost everything already stay off the share and every other one gets it back as it was.
         let losses: TenantLoss[];
         try {
             losses = await forgetConnection(configId, config.kind, lost);
         } catch (error) {
             if (!(error instanceof PartialLossError)) throw error;
-            const gone = new Set(error.losses.map((loss) => loss.tenantId));
-            if (gone.size > 0) await writeShare(before.filter((id) => !gone.has(id)), false);
+            await putBack(new Set(error.losses.map((loss) => loss.tenantId)));
             throw new ShareChangeError(error.message, { name: config.name, kind: config.kind, gained: [], losses: named(error.losses) });
         }
 
@@ -353,6 +388,8 @@ export const connectionShareService = {
             otherTenants(config.tenantId),
         ]);
         if (!customersOf(share, others).includes(tenantId)) throw new ValidationError(`${tenant.name} does not get this destination.`);
+        // A run that writes there now would lose its backup under it, or leave half of it behind.
+        if (await runningRunOf(configId, [tenantId])) throw new ValidationError(`A run of ${tenant.name} writes to this destination right now or waits to. Try again once it finished.`);
         const backups = await deleteTenantBackups(configId, tenantId);
         await refreshStorageStatsCache({ configIds: [configId] }).catch(() => undefined);
         return { name: config.name, tenantName: tenant.name, backups };

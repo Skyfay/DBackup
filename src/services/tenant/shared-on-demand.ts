@@ -4,11 +4,12 @@ import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import type { DatabasePlace } from "@/lib/tenant/database-owner";
+import { sharesSingleDatabases } from "@/lib/adapters/definitions";
 import { backupService } from "@/services/backup/backup-service";
 import { getTimezone } from "@/services/system/system-settings-service";
 import { backupKeyOf } from "./shared-backups";
 import { createCustomerBackupRun, dropCustomerBackupRun } from "./shared-backup-runs";
-import { holdingNow, placeKey } from "./shared-places";
+import { holdingNow, placeKey, tenantPlaces } from "./shared-places";
 
 /**
  * Backups a customer starts of a database given to them, where the tenant of the server allows it
@@ -146,7 +147,15 @@ export async function requestSharedBackup(tenantId: string, user: { id: string; 
             prisma.sharedServer.findUnique({ where: { id: place.sourceId }, select: { tenantId: true, name: true, adapterId: true } }),
         ]);
         const holding = await holdingNow(tenantId, place, now);
-        if (!server || !holding.owner) throw new ValidationError(`${place.databaseName} is no longer yours, so you cannot back it up.`);
+        // A database of an engine that gives none alone is no database of the customer's, see `tenantPlaces`.
+        if (!server || !holding.owner || !sharesSingleDatabases(server.adapterId)) {
+            // Only a tenant that held the database reads that it lost it. Any other gets the answer
+            // of a database that does not exist, which tells it nothing of the databases of others.
+            const heldOnce = !!server && (await tenantPlaces(tenantId, now)).places.has(placeKey(place));
+            throw new ValidationError(heldOnce
+                ? `${place.databaseName} is no longer yours, so you cannot back it up.`
+                : `${place.databaseName} is not a database of yours, so you cannot back it up.`);
+        }
         const provider = (await prisma.tenant.findUnique({ where: { id: server.tenantId }, select: { name: true } }))?.name ?? "The provider";
         if (!holding.live) throw new ValidationError(`The server of ${place.databaseName} was deleted, its backups can only be downloaded.`);
         if (holding.perDay === null) throw new ValidationError(`Backups on demand are off for ${place.databaseName}. ${provider} can switch them on.`);

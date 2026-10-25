@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { checkPermission } from "@/lib/auth/access-control";
+import { checkPermission, tenantRefusal } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getErrorMessage } from "@/lib/logging/errors";
 import { getRetentionTargets } from "@/services/templates/retention-targets";
@@ -11,10 +11,14 @@ const ScopeSchema = z.union([z.object({ policyId: z.string().min(1) }), z.object
 /**
  * The destinations a change of a retention policy reaches, each with the backups it holds now, so
  * its dialog can say what the next runs remove. `followers` are the destinations a new default
- * would reach. Only counts and times of backups leave the server, never their names.
+ * would reach. Only counts and times of backups leave the server, never their names. Read in the
+ * tenant of the viewer only, never in All tenants.
  */
 export async function getRetentionPolicyTargets(scope: { policyId: string } | { followers: true }) {
-    await checkPermission(PERMISSIONS.TEMPLATES.READ);
+    const viewer = await checkPermission(PERMISSIONS.TEMPLATES.READ);
+    // A policy belongs to a tenant, so All tenants, which would mix the destinations of every tenant, is refused.
+    const refused = tenantRefusal(viewer);
+    if (refused) return { success: false as const, error: refused };
 
     const parsed = ScopeSchema.safeParse(scope);
     if (!parsed.success) return { success: false as const, error: "Invalid request" };

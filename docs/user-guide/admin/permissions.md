@@ -29,7 +29,9 @@ The tenants, the accounts of every tenant, the sign-in providers and the sharing
 | **Sign-in providers** | `platform-sign-in:read`, also given by `settings:read` | A platform admin only, since a provider signs in as anyone of its emails |
 | **Sharing** | `platform-sharing:read`, **See what is shared**: who holds which database, and which tenants get a destination or a channel with the space each takes | `platform-sharing:write`, **Share with customers**: give databases away, move them, allow backups on demand, share destinations and channels and delete the backups of a tenant on a shared destination, in a tenant that shares with customers |
 
-An API key never carries these rights, the settings of the instance from a platform group included. The one exception is **Sharing** in a key made in a tenant that [shares with customers](/user-guide/admin/shared-databases#tenants-that-share), while its owner holds it, for a hosting panel, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api).
+An API key carries these rights in two places only, and only while its owner holds them: **Tenants** and **Accounts** in a key made in the home tenant, for the automation of an MSP, see [Tenants](/user-guide/admin/tenants#api-keys), and **Sharing** in a key made in a tenant that [shares with customers](/user-guide/admin/shared-databases#tenants-that-share) and that the platform group of its owner reaches, for a hosting panel, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api). Such a key reaches only the tenants its owner reaches. A key never carries the settings of the instance through a platform group, nor the sign-in providers.
+
+**Share with customers** and **See what is shared** count only in a tenant the platform group reaches. Someone whose platform group reaches some customers shares nothing of a tenant they are merely a member of.
 
 ### What Only a Platform Admin Does
 
@@ -38,7 +40,7 @@ A platform admin passes every check in every tenant. A few tasks are for a platf
 - Make someone a platform admin or take it back, see [Tenants](/user-guide/admin/tenants#platform-admins)
 - Change the account of a platform admin
 - Add, change and delete sign-in providers
-- Download, open or restore a configuration backup, which holds every tenant, user and group with the keys of the instance
+- Set up or start the configuration backup, and download, open or restore one, since it holds every tenant, user and group with the keys of the instance
 - Download the database
 - Restore or delete for good, from Recently deleted, the account of a platform admin, of a platform group or of someone who also worked in another tenant
 

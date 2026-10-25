@@ -7,7 +7,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
-import { refusedUnless } from "@/lib/server/permission-refusal";
+import { refusedUnless, requestRefusal } from "@/lib/server/permission-refusal";
 
 export async function DELETE(
     req: NextRequest,
@@ -102,6 +102,9 @@ export async function PUT(
 
         return NextResponse.json(updatedJob);
     } catch (error: unknown) {
+        // A linked record of another tenant or a value the job refuses is the caller's to fix.
+        const refusal = requestRefusal(error);
+        if (refusal) return refusal;
         const message = error instanceof Error ? error.message : "Failed to update job";
         const status = message.includes("already exists") ? 409 : 500;
         return NextResponse.json({ error: message }, { status });

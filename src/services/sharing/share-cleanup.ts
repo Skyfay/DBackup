@@ -2,10 +2,11 @@ import prisma from "@/lib/prisma";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { isBackupFile } from "@/lib/core/backup-files";
 import { logger } from "@/lib/logging/logger";
-import { getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ServiceError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { getTenantNotificationConfig, saveTenantNotificationConfig } from "@/services/notifications/tenant-notification-settings";
 import { TENANTS_FOLDER } from "@/lib/tenant/storage-view";
 import type { Tx } from "@/lib/prisma-tx";
+import type { AdapterConfig as ResolvedConfig, FileInfo, StorageAdapter } from "@/lib/core/interfaces";
 import { openRow } from "./destination-access";
 import type { SharedKind } from "./provided";
 
@@ -25,17 +26,61 @@ export async function deleteTenantBackups(configId: string, tenantId: string): P
     // The view of the customer, so not a byte outside its folder is touched.
     const { adapter, config } = await openRow(row, { kind: "customer", tenantId });
     const files = await adapter.list(config, "");
-    let backups = 0;
-    for (const file of files) {
-        await adapter.delete(config, file.path);
-        if (isBackupFile(file.name)) backups++;
-    }
+    await deleteFiles(adapter, config, files, "");
+    const backups = files.filter((file) => isBackupFile(file.name)).length;
+    // The root of the customer's view is its folder, `tenants/<id>/`, which goes too once empty.
+    await removeEmptyFolders(adapter, config, files, "", configId);
     await runAsTenant(tenantId, () => Promise.all([
         prisma.storageListCache.deleteMany({ where: { adapterConfigId: configId, tenantId } }),
         prisma.storageSnapshot.deleteMany({ where: { adapterConfigId: configId, tenantId } }),
     ]));
     log.info("Deleted the backups of a tenant on a shared destination", { configId, tenantId, backups });
     return backups;
+}
+
+/**
+ * Deletes every file and throws when the storage kept one. Most storage adapters answer a delete
+ * they could not do with false instead of throwing, so a file whose delete answered false counts as
+ * kept while a second listing of `dir` still shows it. One that went in between, like by the
+ * retention of a run, counts as deleted.
+ */
+async function deleteFiles(adapter: StorageAdapter, config: ResolvedConfig, files: readonly FileInfo[], dir: string): Promise<void> {
+    const refused: string[] = [];
+    for (const file of files) {
+        if (!(await adapter.delete(config, file.path))) refused.push(file.path);
+    }
+    if (refused.length === 0) return;
+    const left = new Set((await adapter.list(config, dir)).map((file) => file.path));
+    const kept = refused.filter((file) => left.has(file)).length;
+    if (kept > 0) throw new ServiceError("ShareCleanup", "delete", `The storage refused to delete ${kept} ${kept === 1 ? "file" : "files"}.`);
+}
+
+/** Every folder the files lay in, the deepest first, so a folder comes after the folders inside it. */
+export function foldersOf(files: readonly Pick<FileInfo, "path">[]): string[] {
+    const folders = new Set<string>();
+    for (const file of files) {
+        const parts = file.path.split("/").filter((part) => part !== "");
+        for (let depth = parts.length - 1; depth > 0; depth--) folders.add(parts.slice(0, depth).join("/"));
+    }
+    return [...folders].sort((a, b) => b.split("/").length - a.split("/").length);
+}
+
+/**
+ * Removes the folders the deleted files lay in once they are empty, then `root`, where the adapter
+ * deletes an empty folder. A storage of objects has no folders to leave behind, and an adapter
+ * without `deleteEmptyFolder` leaves them where they are. A folder that still holds something
+ * stays, and a failure never stops the caller, since its files are gone already.
+ */
+async function removeEmptyFolders(adapter: StorageAdapter, config: ResolvedConfig, files: readonly FileInfo[], root: string, configId: string): Promise<void> {
+    const remove = adapter.deleteEmptyFolder?.bind(adapter);
+    if (!remove || files.length === 0) return;
+    const folders = foldersOf(files);
+    try {
+        for (const folder of folders) await remove(config, folder);
+        if (!folders.includes(root)) await remove(config, root);
+    } catch (error: unknown) {
+        log.warn("The empty folders of the customers could not be removed", { configId }, wrapError(error));
+    }
 }
 
 /** What one tenant loses, which the audit entry in its log names. */
@@ -47,6 +92,11 @@ export interface TenantLoss {
     templates: string[];
     /** The backups deleted on the destination. */
     backups: number;
+    /**
+     * Whether the tenant used the connection at all: a job, a template, a notification setting or
+     * recipients of a channel, a job or a backup on a destination.
+     */
+    used: boolean;
 }
 
 /**
@@ -59,6 +109,7 @@ async function forgetChannel(configId: string, tenantId: string, tx?: Tx): Promi
         // One after the other, which a transaction needs.
         const channels = await client.notificationTemplateChannel.findMany({ where: { configId, template: { tenantId } }, select: { id: true, template: { select: { name: true } } } });
         const jobs = await client.job.findMany({ where: { tenantId, notifications: { some: { id: configId } } }, select: { id: true, name: true } });
+        const recipients = await client.channelRecipients.count({ where: { configId, tenantId } });
         const unlink = (db: typeof prisma | Tx) => [
             db.notificationTemplateChannel.deleteMany({ where: { id: { in: channels.map((channel) => channel.id) } } }),
             ...jobs.map((job) => db.job.update({ where: { id: job.id }, data: { notifications: { disconnect: { id: configId } } } })),
@@ -81,7 +132,8 @@ async function forgetChannel(configId: string, tenantId: string, tx?: Tx): Promi
                 events: Object.fromEntries(Object.entries(settings.events).map(([id, event]) => [id, { ...event, channels: event.channels ? keepOrDefault(event.channels) : null }])),
             }, client);
         }
-        return { tenantId, jobs: jobs.map((job) => job.name), templates: [...new Set(channels.map((channel) => channel.template.name))], backups: 0 };
+        const used = channels.length > 0 || jobs.length > 0 || recipients > 0 || named;
+        return { tenantId, jobs: jobs.map((job) => job.name), templates: [...new Set(channels.map((channel) => channel.template.name))], backups: 0, used };
     });
 }
 
@@ -97,7 +149,7 @@ async function forgetDestination(configId: string, tenantId: string, deleteBacku
         const links = await client.jobDestination.findMany({ where: { configId, job: { tenantId } }, select: { id: true, job: { select: { name: true } } } });
         await client.jobDestination.deleteMany({ where: { id: { in: links.map((link) => link.id) } } });
         await client.storageListCache.deleteMany({ where: { adapterConfigId: configId, tenantId } });
-        return { tenantId, jobs: links.map((link) => link.job.name), templates: [], backups };
+        return { tenantId, jobs: links.map((link) => link.job.name), templates: [], backups, used: links.length > 0 || backups > 0 };
     });
 }
 
@@ -154,7 +206,9 @@ export async function sweepCustomerFolder(configId: string): Promise<number> {
     if (!row) return 0;
     const { adapter, config } = await openRow(row, { kind: "own" });
     const files = await adapter.list(config, TENANTS_FOLDER);
-    for (const file of files) await adapter.delete(config, file.path);
+    await deleteFiles(adapter, config, files, TENANTS_FOLDER);
+    // The folder of every customer and `tenants/` itself, which the tenant sees again from now on.
+    await removeEmptyFolders(adapter, config, files, TENANTS_FOLDER, configId);
     if (files.length > 0) log.info("Deleted what was left of the customers on a destination no longer shared", { configId, files: files.length });
     return files.length;
 }

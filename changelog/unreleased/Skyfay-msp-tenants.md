@@ -1,6 +1,6 @@
 > ⚠️ **Before updating:** This version moves everything an installation holds into its first tenant. The first start after the update keeps a copy of the database from before, and going back to an earlier version means starting it on that copy, see [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating).
 
-> ⚠️ **Breaking:** For API users the group SuperAdmin is now Admin, `viewerSuperAdmin` is now `viewerPlatformAdmin` and `GET /api/sso-providers` refuses API keys. The right to see the settings no longer covers the encryption keys and the templates, and the configuration restore, the database download and the files of a configuration backup are for a platform admin only.
+> ⚠️ **Breaking:** For API users the group SuperAdmin is now Admin, `viewerSuperAdmin` is now `viewerPlatformAdmin` and `GET /api/sso-providers` refuses API keys. The right to see the settings no longer covers the encryption keys and the templates, and the configuration restore, the database download and the files of a configuration backup are for a platform admin only. The configuration backup is set up, scheduled and started by a platform admin signed in to DBackup only, and `PUT /api/settings/system-tasks` answers 403 for it to every API key. Testing a connection and the other checks of a connection form need the right to change that kind of connection, also for API keys. Webhook channels no longer follow a redirect to another host, and a new member of the group Admin is no platform admin.
 
 ### ✨ Features
 
@@ -42,9 +42,19 @@
 - **scheduler**: A scheduled system task that still runs is not started a second time.
 - **vault**: Downloading a recovery kit is written to the audit log once it succeeded, with the names of its keys.
 - **storage**: SFTP, FTP and Dropbox list their backups right when their folder is written with a leading `./`, double slashes or another case.
+- **OneDrive**: A folder or file name with `#`, `?` or `%` in it is read as that name.
+- **SMB**: A backup into a folder that is more than one level deep and does not exist yet no longer fails.
+- **Firebird**: A restore into a configured alias writes into the file of that alias instead of a file named after the alias.
+- **MSSQL**: A backup restored onto another server under its own name puts its files into the data folder of that server.
+- **rsync**: A folder setting like `./backups` or `/srv//backups` no longer puts the folder in front of every listed backup.
+- **restore**: A key picked to open a backup that is no longer in the Vault asks for a key again instead of failing with an error.
+- **queue**: A waiting integrity check or check of backup copies is no longer started by the queue as if it were a backup.
 
 ### 🔒 Security
 
+- **users**: Saving a user checks the name, email, time zone and date formats before storing them.
+- **config backup**: Only a platform admin signed in to DBackup changes, schedules or starts the configuration backup, which an API key and a group with the right to change the settings no longer do.
+- **API keys**: Pausing, resuming and deleting the key of someone else needs a group that may do all the key may do, like rotating it.
 - **connections**: Testing a connection or its SSH login, checking its access or its snapshots and reading databases, tables or rows from the fields of a form need the right to change that kind of connection.
 - **storage**: A configuration backup on a destination is downloaded, opened and restored file by file only by a platform admin who is signed in, and never through a link.
 - **PostgreSQL**: The tools get a database name of a job, a restore or the table browser always as a name, so a name that reads like a connection string no longer connects to another server.
@@ -58,8 +68,8 @@
 - **MySQL**: A restore target whose name holds a backtick is quoted as one name when the database is created, and the client gets the target as `--database`.
 - **restore**: A database name of a job, a restore target or a mapping that starts with a hyphen is refused, so no tool reads it as an option.
 - **SQLite**: A restore under a new name always lands in the folder of the source.
-- **rsync**: A username with `@`, `:`, `/`, spaces or a leading hyphen is refused when the connection or its saved login is saved and before any command runs.
-- **notifications**: Discord, Slack, Teams, Generic Webhook, Gotify and ntfy no longer follow a redirect, and a send that gets one fails with a message naming where it led.
+- **rsync**: A username with `:`, `/`, spaces or a leading hyphen is refused when the connection or its saved login is saved and before any command runs.
+- **notifications**: Discord, Slack, Teams, Generic Webhook, Gotify and ntfy follow a redirect only to the same host. A send redirected to another host fails with a message naming where it led.
 - **WebDAV**: A redirect to another host is no longer followed.
 
 ### 🎨 Improvements
@@ -81,10 +91,12 @@
 - **api**: GET /api/users and GET /api/groups answer viewerPlatformAdmin in place of viewerSuperAdmin.
 - **SMB**: The share address must have the form `//server/share` or `\\server\share`.
 - **MongoDB**: A connection to a single host talks to that host alone and no longer to the members of a replica set it announces.
+- **queue**: Runs at the same time counts only backups, so a running restore or check of copies no longer holds a backup back.
 
 ### 📝 Documentation
 
 - **docs**: New guides for tenants, shared databases and shared destinations and channels, for admins and for developers. The guides of users, groups, permissions, API keys with platform keys, SSO and the audit log describe platform admins and tenants.
+- **API keys**: Fixed the length of a key and the path of its service in the developer guide.
 
 ### 🧪 Tests
 

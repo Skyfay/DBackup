@@ -106,6 +106,8 @@ interface DatabaseAdapter {
 The Zod schema for an adapter's configuration lives in `src/lib/adapters/definitions/database.ts` (or `storage.ts` / `notification.ts`), registered in `ADAPTER_DEFINITIONS`. It is not a property on the adapter instance itself.
 :::
 
+Its entry in `ADAPTER_DEFINITIONS` also declares `sharesSingleDatabases`: whether one database of a server can go to a customer of a [shared server](/developer-guide/advanced/tenants#shared-databases) alone. It is true where every database is a dump of its own and a restore writes that one back, and false for an engine like Redis, whose backup is one snapshot of all of them. `tests/unit/adapters/shares-single-databases.test.ts` fails for a database adapter without it.
+
 ::: warning `host` is required and positional
 It sits after the mandatory arguments and before the optional callbacks. That position is deliberate: `AdapterConfig` is `any`, so a misplaced argument next to it would be swallowed silently. Next to a typed parameter, forgetting the host is an arity error the compiler cannot suppress.
 :::

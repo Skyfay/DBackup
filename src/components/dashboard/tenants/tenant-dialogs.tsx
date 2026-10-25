@@ -144,7 +144,8 @@ export function TenantDeleteDialog({ tenant, onClose, onDeleted }: TenantDeleteD
     const remove = async () => {
         setPending(true);
         try {
-            const result = await deleteTenant(tenant.id);
+            // The dialog lists what goes with the tenant and waits for the tick, which confirms it.
+            const result = await deleteTenant(tenant.id, true);
             if (!result.success) {
                 toast.error(result.error);
                 return;

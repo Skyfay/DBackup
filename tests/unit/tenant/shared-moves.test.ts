@@ -215,6 +215,17 @@ describe("a database that moves to another server", () => {
         expect(await base.databaseAssignment.count({ where: { databaseName: "orders", validUntil: null } })).toBe(1);
     });
 
+    it("offers the servers of the same engine and tenant, naming no database of a tenant beyond the reach", async () => {
+        const { moveTargets } = await import("@/services/tenant/database-moves");
+        const all = await asHome(() => moveTargets("old-mysql", "all", NOW));
+        expect(all.map((target) => target.id)).not.toContain("pg");
+        expect(all.find((target) => target.id === "new-mysql")?.databases).toEqual(["blog_one", "shop2", "taken"]);
+
+        // Globex holds blog_one and taken on the new server, which a platform group of Acme alone does not reach.
+        const acmeOnly = await asHome(() => moveTargets("old-mysql", ["acme"], NOW));
+        expect(acmeOnly.find((target) => target.id === "new-mysql")?.databases).toEqual(["shop2"]);
+    });
+
     it("lets no customer move a database", async () => {
         await expect(runAsTenant("acme", () => moveDatabase("old-mysql", { databaseName: "orders", toSourceId: "new-mysql" }, "u-acme", NOW))).rejects.toBeInstanceOf(NotFoundError);
     });
@@ -331,7 +342,9 @@ describe("backups a customer starts on demand", () => {
     });
 
     it("refuses a database that is not the customer's now", async () => {
-        await expect(requestSharedBackup("globex", lena, shop2, NOW)).rejects.toThrow(/no longer yours/);
+        // Globex never held shop2, so it reads what a database that does not exist reads.
+        await expect(requestSharedBackup("globex", lena, shop2, NOW)).rejects.toThrow(/shop2 is not a database of yours/);
+        // Acme held shop on the old server before it moved.
         await expect(requestSharedBackup("acme", lena, { sourceId: "old-mysql", databaseName: "shop" }, NOW)).rejects.toThrow(/no longer yours/);
     });
 

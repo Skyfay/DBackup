@@ -248,7 +248,7 @@ By default, one backup runs at a time. Configure concurrency:
 2. Set **Runs at the same time**
 3. Higher values = more parallel backups
 
-Runs of the same job never overlap, whatever the setting. A run started by hand, by the API or by the schedule while the job is still running waits as **Queued** and starts right after. Two runs of one job at once would plan the same step of an incremental chain and could write the same file.
+Only backups count, a restore or a check of copies runs beside them without taking a slot, so a long restore never holds the backups of another tenant. Runs of the same job never overlap, whatever the setting. A run started by hand, by the API or by the schedule while the job is still running waits as **Queued** and starts right after. Two runs of one job at once would plan the same step of an incremental chain and could write the same file.
 
 ::: warning Resource Usage
 More concurrent jobs = higher CPU/memory/disk usage

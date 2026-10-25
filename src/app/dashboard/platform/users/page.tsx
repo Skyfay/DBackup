@@ -8,6 +8,7 @@ import { USERS_TABLE_ID } from "@/components/dashboard/users/users-tables";
 import { TenantNamesProvider } from "@/components/tenant/tenant-view";
 import { getViewer, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
+import { accountsSeenReach } from "@/services/user/account-visibility";
 import { platformTenantNames } from "@/services/user/groups-model";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 
@@ -34,8 +35,8 @@ export default async function PlatformUsersPage() {
     const [layouts, signInView, tenantNames] = await Promise.all([
         getTablePreferences(viewer.id, [USERS_TABLE_ID, SIGN_IN_TABLE_ID, PLATFORM_GROUPS_TABLE_ID, TENANT_GROUPS_TABLE_ID]),
         getViewMode(viewer.id, SIGN_IN_PAGE_ID),
-        // The accounts and groups of every tenant name their tenants, also the ones the viewer may not open.
-        canReadAccounts ? platformTenantNames() : [],
+        // The accounts and groups name their tenants, the ones of the reach of the viewer and no other.
+        canReadAccounts ? accountsSeenReach({ ...viewer, userId: viewer.id }).then(platformTenantNames) : [],
     ]);
 
     return (

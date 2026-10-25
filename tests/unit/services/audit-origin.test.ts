@@ -27,3 +27,19 @@ describe("where an entry of the audit log came from", () => {
         expect(originShown({ tenantId: "default", userId: null, actorName: "Nina", user: null })).toBe(true);
     });
 });
+
+describe("where an entry of the home tenant came from, for a platform group of some tenants", () => {
+    const view = { reach: ["acme"], viewerId: "nina", key: "reach:nina:acme" };
+
+    it("shows the address and browser of an account it reaches, its own and an entry of no person", () => {
+        expect(originShown({ tenantId: "default", userId: "u1", actorName: "Tom", user: person(["acme"]) }, view)).toBe(true);
+        expect(originShown({ tenantId: "default", userId: "nina", actorName: "Nina", user: person([]) }, view)).toBe(true);
+        expect(originShown({ tenantId: "default", userId: null, actorName: null, user: null }, view)).toBe(true);
+    });
+
+    it("keeps them of an account of another tenant, of no tenant beyond the home tenant and of a deleted one", () => {
+        expect(originShown({ tenantId: "default", userId: "u2", actorName: "Gus", user: person(["globex"]) }, view)).toBe(false);
+        expect(originShown({ tenantId: "default", userId: "u3", actorName: "Lone", user: person([]) }, view)).toBe(false);
+        expect(originShown({ tenantId: "default", userId: null, actorName: "Tom", user: null }, view)).toBe(false);
+    });
+});

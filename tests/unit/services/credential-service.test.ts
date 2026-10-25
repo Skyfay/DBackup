@@ -345,7 +345,7 @@ describe("Credential Service", () => {
             (prisma.credentialProfile.update as any).mockResolvedValue(sshProfile);
             (prisma.adapterConfig.count as any).mockResolvedValue(1);
 
-            for (const username of ["ops@10.0.0.5", "a:b", "a/b", "a b", "-oProxyCommand=x"]) {
+            for (const username of ["ops@10.0.0.5:22", "a:b", "a/b", "a b", "-oProxyCommand=x"]) {
                 await expect(updateCredentialProfile("cred-1", { data: { username, authType: "password", password: "pw" } }), username).rejects.toBeInstanceOf(ValidationError);
             }
             expect(prisma.adapterConfig.count).toHaveBeenCalledWith({ where: { primaryCredentialId: "cred-1", adapterId: "rsync" } });

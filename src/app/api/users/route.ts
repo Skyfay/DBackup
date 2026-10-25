@@ -11,7 +11,8 @@ const log = logger.child({ route: "users" });
 
 /**
  * The Users tab: every user with how they sign in, their group and their sessions. Never a password
- * hash or a token. In All tenants every account of the instance with its group in each tenant.
+ * hash or a token. In All tenants every account of the instance with its group in each tenant,
+ * for whoever may see the accounts of the platform like `/api/platform/users`.
  */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
@@ -19,6 +20,8 @@ export async function GET() {
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.USERS.READ);
+        // Every account of the instance is what Platform > Users & Groups shows, so it needs the same right there.
+        if (ctx.allTenants) checkPermissionWithContext(ctx, PERMISSIONS.PLATFORM.ACCOUNTS_READ);
         const model = ctx.allTenants ? await getAllUsersModel(ctx.userId, ctx.isPlatformAdmin) : await getUsersModel(ctx.userId, ctx.isPlatformAdmin, tenantOf(ctx));
         return NextResponse.json({ success: true, data: model });
     } catch (error: unknown) {

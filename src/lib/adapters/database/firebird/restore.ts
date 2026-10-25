@@ -83,9 +83,20 @@ async function restoreSingleFile(
 }
 
 /**
+ * The file a restore writes into: the path of a configured alias when the target names one, like
+ * the restore of a shared database into itself, which names the database and not its file. Any
+ * other target is a path already, like the one the restore page prefills, and stays as it is.
+ */
+export function restoreTargetPath(config: FirebirdConfig, target: string): string {
+    const alias = (config.databases || []).find((entry) => entry.name === target);
+    return alias ? resolveAliasPath(config, alias.name) : target;
+}
+
+/**
  * Capability export for combined DB+directory restores (JobSource): restores a single .fbk
- * file into a single target path. Thin wrapper around restoreSingleFile, the same per-alias
- * logic restore() already uses internally for its own multi-DB case.
+ * file into a single target, a configured alias or a path. Thin wrapper around
+ * restoreSingleFile, the same per-alias logic restore() already uses internally for its own
+ * multi-DB case.
  */
 export async function restoreOne(
     config: FirebirdRestoreConfig,
@@ -95,7 +106,7 @@ export async function restoreOne(
     onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
     onProgress?: (percentage: number, detail?: string) => void
 ): Promise<void> {
-    await restoreSingleFile(config, filePath, targetDbName, _host, onLog ?? (() => {}), onProgress);
+    await restoreSingleFile(config, filePath, restoreTargetPath(config, targetDbName), _host, onLog ?? (() => {}), onProgress);
 }
 
 // LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump

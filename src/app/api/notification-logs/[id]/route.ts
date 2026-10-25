@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { getNotificationLogById } from "@/services/notifications/notification-log-service";
+import { logViewOf } from "@/services/audit/log-reach";
 
 const log = logger.child({ route: "notification-logs/[id]" });
 
@@ -21,7 +22,7 @@ export async function GET(
     checkPermissionWithContext(ctx, PERMISSIONS.HISTORY.READ);
 
     const { id } = await params;
-    const entry = await getNotificationLogById(id);
+    const entry = await getNotificationLogById(id, await logViewOf(ctx));
 
     if (!entry) {
       return NextResponse.json(

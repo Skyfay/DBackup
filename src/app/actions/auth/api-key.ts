@@ -8,7 +8,7 @@ import { apiKeyService } from "@/services/auth/api-key-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, NotFoundError, PermissionError } from "@/lib/logging/errors";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { areaChanges, knownKeyPermissions, permissionPhrase } from "@/lib/auth/permission-areas";
 import { sharesWithCustomers } from "@/services/tenant/shared-servers";
@@ -45,6 +45,24 @@ function beyond(requested: string[], allowed: string[]): string[] {
   const allowedSet = new Set(allowed);
   return requested.filter((permission) => !allowedSet.has(permission)).map(permissionPhrase);
 }
+
+/**
+ * Why someone may not pause, resume, rotate or delete a key, null when they may: its owner may,
+ * anyone else only while their group may do all the key may use, so nobody stops or takes over a
+ * key that does more than they may. Throws `NotFoundError` for a key that is gone.
+ */
+async function keyRefusal(id: string, viewer: { id: string; permissions: readonly string[] } | null, verb: string): Promise<string | null> {
+  const owner = await apiKeyService.ownerOf(id);
+  if (viewer?.id === owner.ownerId) return null;
+  const refused = beyond(owner.permissions.filter((permission) => owner.ownerPermissions.includes(permission)), [...(viewer?.permissions ?? [])]);
+  return refused.length > 0 ? `The key may ${listWords(refused)}, which your group may not, so only its owner ${verb} it.` : null;
+}
+
+/** `keyRefusal` for a bulk run, which records a refusal as the failure of that key. */
+const bulkGuard = (viewer: { id: string; permissions: readonly string[] } | null, verb: string) => async (id: string) => {
+  const refusal = await keyRefusal(id, viewer, verb);
+  if (refusal) throw new PermissionError("api-keys:write", { message: refusal });
+};
 
 // ============================================================================
 // Server Actions
@@ -175,11 +193,16 @@ export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
 /**
  * Delete an API key by ID.
  */
-export async function deleteApiKey(id: string) {
+export async function deleteApiKey(keyId: string) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
+  const parsed = IdSchema.safeParse(keyId);
+  if (!parsed.success) return { success: false, error: "Invalid request" };
+  const id = parsed.data;
   const currentUser = await getViewer();
 
   try {
+    const refusal = await keyRefusal(id, currentUser, "deletes");
+    if (refusal) return { success: false, error: refusal };
     const existing = await apiKeyService.getById(id);
 
     await apiKeyService.delete(id);
@@ -206,11 +229,16 @@ export async function deleteApiKey(id: string) {
 /**
  * Enable or disable an API key.
  */
-export async function toggleApiKey(id: string, enabled: boolean) {
+export async function toggleApiKey(keyId: string, on: boolean) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
+  const input = z.object({ id: IdSchema, enabled: z.boolean() }).safeParse({ id: keyId, enabled: on });
+  if (!input.success) return { success: false, error: "Invalid request" };
+  const { id, enabled } = input.data;
   const currentUser = await getViewer();
 
   try {
+    const refusal = await keyRefusal(id, currentUser, enabled ? "resumes" : "pauses");
+    if (refusal) return { success: false, error: refusal };
     const result = await apiKeyService.toggle(id, enabled);
 
     revalidatePath("/dashboard/users");
@@ -235,19 +263,17 @@ export async function toggleApiKey(id: string, enabled: boolean) {
 /**
  * Rotate an API key - generates a new secret. Returns the new raw key ONCE.
  */
-export async function rotateApiKey(id: string) {
+export async function rotateApiKey(keyId: string) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
+  const parsed = IdSchema.safeParse(keyId);
+  if (!parsed.success) return { success: false, error: "Invalid request" };
+  const id = parsed.data;
   const currentUser = await getViewer();
 
   try {
     // Rotating hands out the new secret. Only its owner, or someone who may do all the key may do, gets it.
-    const owner = await apiKeyService.ownerOf(id);
-    if (currentUser?.id !== owner.ownerId) {
-      const refused = beyond(owner.permissions.filter((permission) => owner.ownerPermissions.includes(permission)), currentUser?.permissions ?? []);
-      if (refused.length > 0) {
-        return { success: false, error: `The key may ${listWords(refused)}, which your group may not, so only its owner rotates it.` };
-      }
-    }
+    const refusal = await keyRefusal(id, currentUser, "rotates");
+    if (refusal) return { success: false, error: refusal };
 
     const result = await apiKeyService.rotate(id);
 
@@ -285,7 +311,7 @@ export async function bulkDeleteApiKeys(ids: string[]) {
     if (!parsed.success) return { success: false as const, error: "Invalid request" };
 
     try {
-        const result = await apiKeyService.deleteMany(parsed.data);
+        const result = await apiKeyService.deleteMany(parsed.data, bulkGuard(currentUser, "deletes"));
         revalidatePath("/dashboard/users");
 
         if (currentUser) {
@@ -310,10 +336,10 @@ export async function bulkToggleApiKeys(ids: string[], enabled: boolean) {
     const currentUser = await getViewer();
 
     const parsed = BulkIdsSchema.safeParse(ids);
-    if (!parsed.success) return { success: false as const, error: "Invalid request" };
+    if (!parsed.success || typeof enabled !== "boolean") return { success: false as const, error: "Invalid request" };
 
     try {
-        const result = await apiKeyService.toggleMany(parsed.data, enabled);
+        const result = await apiKeyService.toggleMany(parsed.data, enabled, bulkGuard(currentUser, enabled ? "resumes" : "pauses"));
         revalidatePath("/dashboard/users");
 
         if (currentUser) {

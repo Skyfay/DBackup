@@ -6,6 +6,7 @@ import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { MAX_CONFIG_BACKUPS_KEPT, saveConfigBackupSettings } from "@/services/config/config-backup-settings";
 import { configBackupSettings, SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { PLATFORM_ADMIN_TASK_REFUSAL } from "@/services/system/system-task-definitions";
 import { invalid, savePart, type SaveResult } from "@/services/system/settings-save";
 
 const configBackupSchema = z.object({
@@ -19,6 +20,8 @@ const configBackupSchema = z.object({
 
 export async function saveConfigBackupSettingsAction(data: z.infer<typeof configBackupSchema>): Promise<SaveResult> {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    // The file holds every secret of the instance, so where it goes, its key and its switch are a platform admin's.
+    if (!user.isPlatformAdmin) return { success: false, error: PLATFORM_ADMIN_TASK_REFUSAL };
 
     const parsed = configBackupSchema.safeParse(data);
     if (!parsed.success) return invalid(parsed.error.issues);

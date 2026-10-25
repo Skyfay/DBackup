@@ -1,11 +1,11 @@
 import prisma from "@/lib/prisma";
 import { ValidationError } from "@/lib/logging/errors";
 import { ownerAt, ruleAt } from "@/lib/tenant/database-owner";
-import { OUTSIDE_REACH, type PlatformReach } from "@/lib/tenant/sharing-reach";
+import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { assertReached } from "./assignment-reach";
 import type { AssignmentWithTenant, MovePlace } from "./database-assignments";
 import { factsOf } from "./shared-backups";
-import { listedDatabases, NOT_SHARING, ownSource, rememberServer, serverNames, sharesWithCustomers, sharingChanged } from "./shared-servers";
+import { assertSharesSingleDatabases, listedDatabases, NOT_SHARING, ownSource, rememberServer, serverNames, sharesWithCustomers, sharingChanged } from "./shared-servers";
 
 /**
  * A database of a shared server that moved to another server of the same tenant, under the same
@@ -59,15 +59,27 @@ export async function movesOf(sourceId: string, assignments: readonly Assignment
     };
 }
 
-/** The servers a database of a server can move to, by name. */
-export async function moveTargets(sourceId: string): Promise<MoveTarget[]> {
+/**
+ * The servers a database of a server can move to, by name: those of the same engine in the tenant of
+ * the server. Each names its databases but those a tenant beyond the reach holds now, so someone of
+ * a platform group of some tenants never learns the databases of the other customers.
+ */
+export async function moveTargets(sourceId: string, reach: PlatformReach = "all", now = new Date()): Promise<MoveTarget[]> {
     const source = await ownSource(sourceId);
     const servers = await prisma.adapterConfig.findMany({
-        where: { type: "database", adapterId: source.adapterId, id: { not: source.id } },
+        where: { type: "database", adapterId: source.adapterId, tenantId: source.tenantId, id: { not: source.id } },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
     });
-    return Promise.all(servers.map(async (server) => ({ ...server, databases: (await listedDatabases(server.id)).map((entry) => entry.name).sort((a, b) => a.localeCompare(b)) })));
+    return Promise.all(servers.map(async (server) => {
+        const [listed, facts] = await Promise.all([listedDatabases(server.id), reach === "all" ? null : factsOf(server.id)]);
+        const shown = (name: string) => {
+            if (!facts) return true;
+            const holder = ownerAt(facts.assignments, facts.rules, name, now);
+            return !holder || holder === source.tenantId || reachCovers(reach, holder);
+        };
+        return { ...server, databases: listed.map((entry) => entry.name).filter(shown).sort((a, b) => a.localeCompare(b)) };
+    }));
 }
 
 /**
@@ -82,6 +94,7 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
     const toDatabase = (input.toDatabase ?? databaseName).trim();
     if (!databaseName || !toDatabase) throw new ValidationError("Name the database.");
     if (!(await sharesWithCustomers(from.tenantId))) throw new ValidationError(NOT_SHARING);
+    assertSharesSingleDatabases(from.adapterId);
     if (from.id === to.id && databaseName === toDatabase) throw new ValidationError("Pick another server or another name, the database is there already.");
     if (from.adapterId !== to.adapterId) throw new ValidationError(`${to.name} runs another engine. A database moves only to a server of the same engine, so its backups restore there.`);
 

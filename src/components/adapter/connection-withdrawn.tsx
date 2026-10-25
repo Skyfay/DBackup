@@ -17,14 +17,14 @@ function listed(names: string[]): string {
 }
 
 /** What the tenant lost with the connection, in one sentence. */
-function lossOf(note: WithdrawnConnection): string {
+export function lossOf(note: WithdrawnConnection): string {
     const parts: string[] = [];
     if (note.kind === "destination") {
-        if (note.backups > 0) parts.push(`${plural(note.backups, "backup", "backups")} of this tenant on it were deleted.`);
-        if (note.jobs.length > 0) parts.push(`${plural(note.jobs.length, "job", "jobs")} no longer write to it: ${listed(note.jobs)}. Give them another destination.`);
+        if (note.backups > 0) parts.push(`${plural(note.backups, "backup", "backups")} of this tenant on it ${note.backups === 1 ? "was" : "were"} deleted.`);
+        if (note.jobs.length > 0) parts.push(`${plural(note.jobs.length, "job no longer writes", "jobs no longer write")} to it: ${listed(note.jobs)}. Give ${note.jobs.length === 1 ? "it" : "them"} another destination.`);
     } else {
-        if (note.jobs.length > 0) parts.push(`${plural(note.jobs.length, "job", "jobs")} no longer tell it: ${listed(note.jobs)}.`);
-        if (note.templates.length > 0) parts.push(`${plural(note.templates.length, "template", "templates")} no longer send to it: ${listed(note.templates)}.`);
+        if (note.jobs.length > 0) parts.push(`${plural(note.jobs.length, "job no longer tells", "jobs no longer tell")} it: ${listed(note.jobs)}.`);
+        if (note.templates.length > 0) parts.push(`${plural(note.templates.length, "template no longer sends", "templates no longer send")} to it: ${listed(note.templates)}.`);
     }
     return parts.join(" ") || "Nothing of this tenant used it.";
 }

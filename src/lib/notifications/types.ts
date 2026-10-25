@@ -308,6 +308,15 @@ export interface IntegrityCheckFailureData {
     expected: string;
     actual: string;
   }>;
+  /**
+   * The other tenants whose copies failed, in the message of the platform, by how many and never
+   * by their files or destinations. Each of them hears about its own copies on its own channels.
+   */
+  tenants?: Array<{
+    tenant: string;
+    failed: number;
+    totalFiles: number;
+  }>;
 }
 
 /** Union of all event data types for type-safe template dispatch */

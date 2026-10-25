@@ -261,6 +261,23 @@ describe("delivering an event to the channels of a tenant", () => {
         await expect(sendTenantEventTest("t-shop", NOTIFICATION_EVENTS.BACKUP_SUCCESS)).rejects.toThrow(/no channel/);
         await expect(sendTenantEventTest(HOME_TENANT_ID, NOTIFICATION_EVENTS.BACKUP_SUCCESS)).rejects.toThrow(/platform/);
     });
+
+    it("sends a test through a channel another tenant shares once a minute, its own channels as often as it likes", async () => {
+        stored({ [tenantNotificationKey("t-limit")]: { globalChannels: ["teams", "msp-pager"], events: {} } });
+        mocks.provided.mockResolvedValue([sharedChannel("msp-pager")]);
+        prismaMock.adapterConfig.findMany.mockImplementation((async (args: { where: { tenantId?: string; id: { in: string[] } } }) =>
+            args.where.tenantId ? args.where.id.in.filter((id) => id === "teams").map((id) => channel(id, "t-limit")) : args.where.id.in.map((id) => channel(id, MSP))) as never);
+
+        expect(await sendTenantEventTest("t-limit", NOTIFICATION_EVENTS.BACKUP_SUCCESS)).toEqual({ sent: 2, failed: 0 });
+        // The second test a moment later goes through the own channel alone.
+        expect(await sendTenantEventTest("t-limit", NOTIFICATION_EVENTS.BACKUP_SUCCESS)).toEqual({ sent: 1, failed: 1 });
+        expect(mocks.send.mock.calls.map((call) => (call[0] as { id: string }).id)).toEqual(["teams", "msp-pager", "teams"]);
+
+        // With only the shared channel left, it says when to try again.
+        stored({ [tenantNotificationKey("t-limit")]: { globalChannels: ["msp-pager"], events: {} } });
+        await expect(sendTenantEventTest("t-limit", NOTIFICATION_EVENTS.BACKUP_SUCCESS)).rejects.toThrow("A test went out through msp-pager a moment ago");
+        expect(mocks.send).toHaveBeenCalledTimes(3);
+    });
 });
 
 describe("notify, the platform first and then the tenant", () => {

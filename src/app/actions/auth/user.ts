@@ -5,6 +5,7 @@ import { checkPermission, currentSessionId, getViewer, hasPermission, hasPermiss
 import { ACCOUNT_CHANGE, emailClaimScope, roleRefusal } from "@/lib/auth/account-access";
 import { reachCovers } from "@/lib/auth/platform-group-caps";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
+import { DATE_FORMAT_VALUES, TIME_FORMAT_VALUES, isKnownTimezone } from "@/lib/core/profile-formats";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { authService } from "@/services/auth/auth-service";
 import { userService } from "@/services/user/user-service";
@@ -13,6 +14,7 @@ import { membershipService } from "@/services/tenant/membership-service";
 import { tenantGroupRefusal } from "@/services/tenant/member-rules";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
+import { newAccountEmailRefusal } from "@/services/user/new-account-email";
 import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -96,6 +98,9 @@ export async function createUser(input: CreateUserInput) {
 
     const refused = await runAsTenant(tenantId, () => groupRefused(data.groupId, actor));
     if (refused) return { success: false, error: refused };
+    // Whoever does not see an account of this email never learns that it exists, see `newAccountEmailRefusal`.
+    const taken = await newAccountEmailRefusal(data.email, { ...currentUser, userId: currentUser.id }, tenantId);
+    if (taken) return { success: false, error: taken, field: "email" };
 
     try {
         const user = await userService.createUser({ ...data, tenantId });
@@ -201,9 +206,15 @@ export async function deleteUser(userId: string, mode?: DeleteMode) {
     }
 }
 
+/**
+ * Switches whether a passkey counts as the second factor of an account.
+ * @no-permission-required - Self-service for the own account, as far as `profile:manage_passkeys`
+ * checked below allows. Another account needs `ACCOUNT_CHANGE` and `accountRefusal`, checked below too.
+ */
 export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
     const currentUser = await getViewer();
     if (!currentUser) throw new Error("Unauthorized");
+    if (typeof enabled !== "boolean" || typeof userId !== "string" || !userId) return { success: false, error: "Invalid request" };
 
     // Allow user to edit their own settings, as far as their group allows, otherwise require permission
     if (currentUser.id !== userId) {
@@ -279,9 +290,29 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
     }
 }
 
-export async function updateUser(userId: string, data: { name?: string; email?: string; timezone?: string; dateFormat?: string; timeFormat?: string }) {
+const UpdateUserSchema = z.object({
+    userId: z.string().min(1).max(200),
+    data: z.object({
+        name: z.string().trim().min(2, "A name has at least 2 characters.").max(100, "A name has at most 100 characters.").optional(),
+        email: z.string().trim().email("That is no email address.").max(320).optional(),
+        timezone: z.string().refine(isKnownTimezone, "That time zone is unknown.").optional(),
+        dateFormat: z.string().refine((value) => DATE_FORMAT_VALUES.includes(value), "Pick one of the date formats.").optional(),
+        timeFormat: z.string().refine((value) => TIME_FORMAT_VALUES.includes(value), "Pick one of the time formats.").optional(),
+    }),
+});
+
+/**
+ * Changes the name, the email or the dates of an account: someone else's with the right to change
+ * accounts, the own one as far as the `profile:*` permissions allow.
+ * @no-permission-required - Self-service for the own account, as far as the `profile:*` permissions
+ * checked below allow. Another account needs `ACCOUNT_CHANGE` and `accountRefusal`, checked below too.
+ */
+export async function updateUser(userId: string, input: { name?: string; email?: string; timezone?: string; dateFormat?: string; timeFormat?: string }) {
     const currentUser = await getViewer();
     if (!currentUser) throw new Error("Unauthorized");
+    const parsed = UpdateUserSchema.safeParse({ userId, data: input });
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
+    const data = parsed.data.data;
 
     // Allow user to edit their own profile, otherwise require permission
     if (currentUser.id !== userId) {
@@ -297,7 +328,6 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
             if (claimed) return { success: false, error: claimed };
         }
     } else {
-        // @no-permission-required - Self-service: the own account, as far as the `profile:*` permissions below allow.
         // The own name and email change only as far as the profile permissions allow, whatever else the group gives.
         const emailChanges = data.email !== undefined && data.email !== currentUser.email;
         if (data.name !== undefined && data.name !== currentUser.name && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_NAME))) {

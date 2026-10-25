@@ -76,16 +76,22 @@ function resolvePath(config: SMBConfig, relativePath: string): string {
 }
 
 /**
- * Ensures the parent directory of the given remote path exists.
+ * Creates every folder of a remote path below the folder setting, one after the other, since
+ * smbclient creates no missing parents: a first backup to `tenants/<id>/<job>/` needs three. A
+ * folder that exists already answers with an error, which is ignored, and a folder that cannot be
+ * made shows in the error of the upload. `made` keeps the folders made in this session.
  */
-async function ensureDir(client: SambaClient, remotePath: string): Promise<void> {
-    const dir = path.posix.dirname(remotePath);
-    if (dir && dir !== "." && dir !== "/") {
+async function ensureDir(client: SambaClient, config: SMBConfig, remotePath: string, made: Set<string>): Promise<void> {
+    const parts = path.posix.dirname(remotePath.replace(/\\/g, "/")).split("/").filter((part) => part !== "" && part !== ".");
+    for (let depth = 1; depth <= parts.length; depth++) {
+        const dir = resolvePath(config, parts.slice(0, depth).join("/"));
+        if (made.has(dir)) continue;
         try {
             await client.mkdir(dir, "/");
         } catch {
-            // Directory may already exist, ignore errors
+            // The folder may exist already.
         }
+        made.add(dir);
     }
 }
 
@@ -110,12 +116,7 @@ async function performSmbUpload(
 ): Promise<boolean> {
     try {
         const destination = resolvePath(config, remotePath);
-        const dir = path.posix.dirname(destination);
-
-        if (!dirCache.has(dir)) {
-            await ensureDir(client, destination);
-            dirCache.add(dir);
-        }
+        await ensureDir(client, config, remotePath, dirCache);
 
         if (onLog) onLog(`Starting SMB upload to: ${destination}`, "info", "storage");
 

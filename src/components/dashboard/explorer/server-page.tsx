@@ -9,6 +9,7 @@ import { Banner } from "@/components/dashboard/storage/explorer/backup-details";
 import { AllTenantsNotice } from "@/components/tenant/all-tenants-notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { sharesSingleDatabases } from "@/lib/adapters/definitions";
 import type { DatabaseOverview, ServerDetails } from "@/services/databases/database-explorer-types";
 import { useDatabaseData } from "./database-data";
 import { DatabasesEmpty } from "./database-list-parts";
@@ -112,7 +113,8 @@ export function ServerPage({ canOpenBackups, sharing = null }: { canOpenBackups:
                 <ServerVersions key={server.id} serverId={server.id} />
                 <ServerDatabases server={server} databases={databases} jobsById={jobsById} coverage={data.coverage} />
             </div>
-            {sharing && <ServerAssignments key={server.id} serverId={server.id} serverName={server.name} tenantName={sharing.tenantName} canAssign={sharing.canAssign} />}
+            {/* A server of Redis or Valkey gives no database alone, so it has nothing to share. */}
+            {sharing && sharesSingleDatabases(server.adapterId) && <ServerAssignments key={server.id} serverId={server.id} serverName={server.name} tenantName={sharing.tenantName} canAssign={sharing.canAssign} />}
         </div>
     );
 }

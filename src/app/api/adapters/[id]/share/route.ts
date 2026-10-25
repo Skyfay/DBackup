@@ -6,7 +6,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { serviceRefusal } from "@/lib/server/permission-refusal";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
-import { connectionShareService, ShareChangeError } from "@/services/sharing/connection-shares";
+import { connectionShareService, ShareChangeError, UNCONFIRMED_LOSS } from "@/services/sharing/connection-shares";
 import { logShareChange } from "@/services/sharing/share-audit";
 import { platformGroupService } from "@/services/user/platform-group-service";
 
@@ -22,7 +22,7 @@ const BodySchema = z.object({
     encryptedOnly: z.boolean().default(false),
     /** An email channel: each customer names its own recipients. */
     ownRecipients: z.boolean().default(true),
-    /** A tenant that loses a destination loses its backups on it, which needs this. */
+    /** A tenant that loses the connection loses its backups or its links to it, which needs this. */
     confirmed: z.boolean().default(false),
 });
 
@@ -52,8 +52,8 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 /**
  * PUT /api/adapters/[id]/share
  * Sets who gets a destination or a channel: every other tenant or the ones named, nobody with an
- * empty list. A tenant that loses a destination loses its backups on it, so without `confirmed`
- * the answer is 409 with what each would lose. Someone of a platform group of some tenants, and
+ * empty list. A tenant that loses a destination loses its backups on it, and one that loses a
+ * channel every link to it, so without `confirmed` the answer is 409 with what each would lose. Someone of a platform group of some tenants, and
  * their key, shares with and takes from the tenants it reaches only.
  */
 export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -70,10 +70,12 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
         const reach = await platformGroupService.reachOf(ctx.userId);
 
         if (!confirmed) {
+            // A destination or a channel alike, with what each tenant loses of it.
             const before = await connectionShareService.view(id, reach);
-            const losing = before.kind === "destination" ? await connectionShareService.losing(id, settings, reach) : [];
+            const losing = await connectionShareService.losing(id, settings, reach);
             if (losing.length > 0) {
-                return NextResponse.json({ success: false, error: "The tenants that lose this destination lose their backups on it. Send confirmed to go on.", data: { losing } }, { status: 409 });
+                const error = UNCONFIRMED_LOSS[before.kind].replace("Confirm it first.", "Send confirmed to go on.");
+                return NextResponse.json({ success: false, error, data: { losing } }, { status: 409 });
             }
         }
         const result = await connectionShareService.save(id, settings, { confirmed, reach });

@@ -90,7 +90,8 @@ vi.mock("@/services/sharing/connection-shares", async () => {
             super(message);
         }
     }
-    return { connectionShareService: mocks.shares, ShareChangeError };
+    const { UNCONFIRMED_LOSS } = await vi.importActual<typeof import("@/services/sharing/connection-shares")>("@/services/sharing/connection-shares");
+    return { connectionShareService: mocks.shares, ShareChangeError, UNCONFIRMED_LOSS };
 });
 vi.mock("@/services/tenant/database-assignments", () => ({ databaseAssignmentService: mocks.assignments }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
@@ -139,8 +140,17 @@ function keyOf(userId: string, owner: Owner, tenantId: string, stored: string[],
 }
 
 const ninaKey = () => keyOf("nina", NINA, HOME_TENANT_ID, TENANT_RIGHTS, true);
-/** Nina's key of the home tenant, which shares with customers, that also shares. */
-const ninaSharingKey = () => keyOf("nina", NINA, HOME_TENANT_ID, [...TENANT_RIGHTS, P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE], true);
+/** Nina's group once it reaches the home tenant too, the tenant of the MSP that shares with customers. */
+const NINA_SHARING = [HOME_TENANT_ID, "acme"];
+/**
+ * Nina's key of the home tenant, which shares with customers, that also shares. Sharing counts only
+ * in a tenant her platform group reaches, so here it reaches the home tenant as well.
+ */
+const ninaSharingKey = () => {
+    mocks.reach.set("nina", NINA_SHARING);
+    const owner: Owner = { ...NINA, platformGroup: group([P.PLATFORM.TENANTS_READ, P.PLATFORM.TENANTS_WRITE, P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE], NINA_SHARING) };
+    return keyOf("nina", owner, HOME_TENANT_ID, [...TENANT_RIGHTS, P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE], true);
+};
 const rootKey = () => keyOf("root", ROOT, HOME_TENANT_ID, TENANT_RIGHTS, true);
 const tomKey = (stored: string[]) => keyOf("tom", TOM, "acme", stored);
 const rootSession = (tenantId: string | null = HOME_TENANT_ID) => ({
@@ -209,6 +219,15 @@ describe("the rights of the platform an API key carries", () => {
     it("drops them from a key of a customer, whatever it stores", () => {
         const key = tomKey([P.USERS.READ, ...TENANT_RIGHTS, P.PLATFORM.ACCOUNTS_WRITE]);
         expect(key.permissions).toEqual([P.USERS.READ]);
+    });
+
+    it("keeps sharing out of a key of a tenant the platform group of its owner does not reach, where she is merely at work", () => {
+        // Nina's group reaches Acme only, so a key of the home tenant never gives the home tenant's databases away.
+        const key = keyOf("nina", NINA, HOME_TENANT_ID, [...TENANT_RIGHTS, P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE], true);
+        expect(key.permissions).toEqual(expect.arrayContaining(TENANT_RIGHTS));
+        expect(key.permissions).not.toContain(P.PLATFORM.SHARING_READ);
+        expect(key.permissions).not.toContain(P.PLATFORM.SHARING_WRITE);
+        expect(ninaSharingKey().permissions).toEqual(expect.arrayContaining([P.PLATFORM.SHARING_READ, P.PLATFORM.SHARING_WRITE]));
     });
 
     it("drops them from a key whose owner lost them", () => {
@@ -507,12 +526,12 @@ describe("sharing a destination or a channel through the API", () => {
     it("reads and changes the sharing with the reach of the owner, into the log with the key", async () => {
         mocks.ctx = ninaSharingKey();
         expect((await shareRoute.GET(request("GET", "/api/adapters/nas/share"), params({ id: "nas" }))).status).toBe(200);
-        expect(mocks.shares.view).toHaveBeenCalledWith("nas", ["acme"]);
+        expect(mocks.shares.view).toHaveBeenCalledWith("nas", NINA_SHARING);
 
         const { status, body } = await json(await put(SETTINGS));
         expect(status).toBe(200);
         expect(body.data).toEqual({ gained: ["Acme"], lost: [] });
-        expect(mocks.shares.save).toHaveBeenCalledWith("nas", SETTINGS, { confirmed: false, reach: ["acme"] });
+        expect(mocks.shares.save).toHaveBeenCalledWith("nas", SETTINGS, { confirmed: false, reach: NINA_SHARING });
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "DESTINATION", { name: "NAS", action: "share", tenants: "Acme" }, "nas", { apiKeyId: "key-nina" });
     });
 
@@ -525,6 +544,18 @@ describe("sharing a destination or a channel through the API", () => {
         expect(body.data.losing).toEqual([expect.objectContaining({ name: "Acme", backups: 4 })]);
         expect(mocks.shares.save).not.toHaveBeenCalled();
         expect((await put({ ...SETTINGS, tenantIds: [], confirmed: true })).status).toBe(200);
+    });
+
+    it("asks for confirmed while a tenant would lose a channel, with what it loses", async () => {
+        mocks.ctx = ninaSharingKey();
+        mocks.shares.view.mockResolvedValue({ kind: "channel", uses: [{ name: "Acme" }], settings: SETTINGS });
+        mocks.shares.losing.mockResolvedValue([{ tenantId: "acme", name: "Acme", jobs: ["Nightly"], templates: ["Alerts"] }]);
+        const { status, body } = await json(await put({ ...SETTINGS, tenantIds: [] }));
+
+        expect(status).toBe(409);
+        expect(body.error).toMatch(/lose it in their notification templates, their jobs/);
+        expect(body.data.losing).toEqual([expect.objectContaining({ name: "Acme", templates: ["Alerts"] })]);
+        expect(mocks.shares.save).not.toHaveBeenCalled();
     });
 
     it("refuses a key without the right, a key of a customer and All tenants", async () => {
@@ -549,11 +580,11 @@ describe("the rules of a shared server through the API", () => {
 
         expect((await json(await rulesRoute.GET(request("GET", "/api/adapters/srv/database-assignments/rules"), params({ id: "srv" })))).body.data).toEqual([{ id: "r-1", pattern: "shop_*" }]);
         expect((await rulesRoute.POST(request("POST", "/api/adapters/srv/database-assignments/rules", { pattern: "acme_*", tenantId: "acme", priority: 5 }), params({ id: "srv" }))).status).toBe(201);
-        expect(mocks.assignments.addRule).toHaveBeenCalledWith("srv", { pattern: "acme_*", tenantId: "acme", priority: 5 }, expect.any(Date), ["acme"]);
+        expect(mocks.assignments.addRule).toHaveBeenCalledWith("srv", { pattern: "acme_*", tenantId: "acme", priority: 5 }, expect.any(Date), NINA_SHARING);
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "ADAPTER", { change: "Assignment rule added", pattern: "acme_*", tenant: "Acme" }, "srv", { apiKeyId: "key-nina" });
 
         expect((await ruleRoute.DELETE(request("DELETE", "/api/adapters/srv/database-assignments/rules/r-2"), params({ id: "srv", ruleId: "r-2" }))).status).toBe(200);
-        expect(mocks.assignments.removeRule).toHaveBeenCalledWith("srv", "r-2", expect.any(Date), ["acme"]);
+        expect(mocks.assignments.removeRule).toHaveBeenCalledWith("srv", "r-2", expect.any(Date), NINA_SHARING);
         expect(mocks.audit).toHaveBeenLastCalledWith("nina", "UPDATE", "ADAPTER", { change: "Assignment rule removed", pattern: "acme_*", tenant: "Acme" }, "srv", { apiKeyId: "key-nina" });
     });
 

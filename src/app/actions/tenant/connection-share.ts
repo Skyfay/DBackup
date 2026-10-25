@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission } from "@/lib/auth/access-control";
+import { checkPermission, tenantRefusal } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ConflictError, NotFoundError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
@@ -35,14 +35,19 @@ const SettingsSchema = z.object({
 const messageOf = (error: unknown, fallback: string) =>
     error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError ? error.message : fallback;
 
-const ALL_TENANTS = "Open the tenant of the connection first.";
+/**
+ * The answer of an action outside a tenant: All tenants only reads, and an account of no tenant has
+ * no connection to share. `tenantRefusal` says which.
+ */
+const outsideTenant = (viewer: { tenantId: string | null; allTenants?: boolean }) =>
+    ({ success: false as const, error: tenantRefusal(viewer) ?? "Open the tenant of the connection first." });
 
 /** Who gets a connection of the open tenant, and how each uses it. */
 export async function getConnectionShare(configId: string) {
     const viewer = await checkPermission(SEE_SHARING_PERMISSION);
     const id = IdSchema.safeParse(configId);
     if (!id.success) return { success: false as const, error: "Invalid request" };
-    if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
+    if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         return { success: true as const, data: await connectionShareService.view(id.data, await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
@@ -56,7 +61,7 @@ export async function previewShareLoss(configId: string, settings: Pick<ShareSet
     const id = IdSchema.safeParse(configId);
     const parsed = SettingsSchema.pick({ allTenants: true, tenantIds: true }).safeParse(settings);
     if (!id.success || !parsed.success) return { success: false as const, error: "Invalid request" };
-    if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
+    if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         return { success: true as const, data: await connectionShareService.losing(id.data, parsed.data, await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
@@ -73,7 +78,7 @@ export async function saveConnectionShare(configId: string, settings: ShareSetti
     const id = IdSchema.safeParse(configId);
     const parsed = SettingsSchema.safeParse(settings);
     if (!id.success || !parsed.success || typeof confirmed !== "boolean") return { success: false as const, error: "Invalid request" };
-    if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
+    if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         const result = await connectionShareService.save(id.data, parsed.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
         const view = await connectionShareService.view(id.data);
@@ -94,7 +99,7 @@ export async function stopSharingWith(configId: string, tenantId: string, confir
     const id = IdSchema.safeParse(configId);
     const customer = IdSchema.safeParse(tenantId);
     if (!id.success || !customer.success || typeof confirmed !== "boolean") return { success: false as const, error: "Invalid request" };
-    if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
+    if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         const result = await connectionShareService.stopFor(id.data, customer.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
         const view = await connectionShareService.view(id.data);
@@ -114,7 +119,7 @@ export async function deleteSharedBackups(configId: string, tenantId: string) {
     const id = IdSchema.safeParse(configId);
     const customer = IdSchema.safeParse(tenantId);
     if (!id.success || !customer.success) return { success: false as const, error: "Invalid request" };
-    if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
+    if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         const result = await connectionShareService.deleteBackupsOf(id.data, customer.data, await platformGroupService.reachOf(viewer.id));
         const details = { name: result.name, action: "tenantBackups", tenant: result.tenantName, backups: result.backups };
@@ -134,7 +139,7 @@ export async function setChannelRecipients(configId: string, recipients: string[
     const id = IdSchema.safeParse(configId);
     const list = z.array(z.string().max(320)).max(100).safeParse(recipients);
     if (!id.success || !list.success) return { success: false as const, error: "Invalid request" };
-    if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
+    if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         const result = await setRecipients(id.data, viewer.tenantId, list.data);
         await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
@@ -154,7 +159,7 @@ export async function testChannelRecipients(configId: string) {
     const viewer = await checkPermission(PERMISSIONS.NOTIFICATIONS.WRITE);
     const id = IdSchema.safeParse(configId);
     if (!id.success) return { success: false as const, error: "Invalid request" };
-    if (!viewer.tenantId) return { success: false as const, error: ALL_TENANTS };
+    if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         const result = await sendRecipientsTest(id.data, viewer.tenantId);
         return { success: true as const, data: { recipients: result.recipients } };

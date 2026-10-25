@@ -71,12 +71,28 @@ describe("the storage a directory is restored into", () => {
         await expect(runAsTenant("msp", () => openDirectoryTarget("gone"))).rejects.toThrow("Restore target adapter not found");
     });
 
+    it("finds no destination shared with the customer that takes only encrypted backups, since restored files land on it in plain text", async () => {
+        mocks.providedConnection.mockResolvedValue({ id: "nas", encryptedOnly: true });
+
+        await expect(runAsTenant("acme", () => openDirectoryTarget("nas"))).rejects.toThrow("Restore target adapter not found");
+        expect(mocks.upload).not.toHaveBeenCalled();
+    });
+
     describe("in the preflight", () => {
         const input = { storageConfigId: "backups", file: "/backup.tar", directoryMapping: [{ entryId: "src-1", targetConfigId: "nas", targetPath: "/restore", selected: true }] };
 
         it("refuses a storage of another tenant that is not shared with the one that restores", async () => {
+            // The archive lies on a destination shared with the customer, the target is no such one.
+            prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) => row({ id: where.id })) as never);
+            mocks.providedConnection.mockImplementation(async (id: string) => (id === "backups" ? { id } : null));
             await expect(runAsTenant("acme", () => preflightRestore(input))).rejects.toThrow("Invalid restore target for a directory entry: adapter 'nas' not found");
             expect(mocks.test).not.toHaveBeenCalled();
+        });
+
+        it("refuses a destination shared with the customer that takes only encrypted backups, like one that does not exist", async () => {
+            prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) => row({ id: where.id })) as never);
+            mocks.providedConnection.mockImplementation(async (id: string) => (id === "backups" ? { id, encryptedOnly: false } : { id, encryptedOnly: true }));
+            await expect(runAsTenant("acme", () => preflightRestore(input))).rejects.toThrow("Invalid restore target for a directory entry: adapter 'nas' not found");
         });
 
         it("probes the own storage, but not the top of a destination another tenant shares, which is not the customer's", async () => {

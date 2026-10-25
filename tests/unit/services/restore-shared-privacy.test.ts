@@ -288,6 +288,20 @@ describe("the run of the tenant of the server beside a customer's restore", () =
         expect(lastOf("msp-run", "status")).toBe("Failed");
     });
 
+    it("gives the customer the versions by their number alone, and the provider the whole version of the server", async () => {
+        const full = "8.0.36-0ubuntu0.22.04.1";
+        await fs.writeFile(path.join(workDir, `${ARCHIVE}.meta.json`), JSON.stringify({ version: 1, engineVersion: full, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } }));
+        const { database } = wire(mysqlLike);
+        database.test.mockResolvedValue({ success: true, version: full });
+        await runRestorePipeline("run-1", SHARED, PROVIDER_RUN);
+
+        expect(runLog().map((entry) => entry.message)).toContain("Compatibility Check: Backup Version [8.0.36] vs Target [8.0.36]");
+        expect(JSON.stringify(runLog())).not.toContain("ubuntu");
+        expect(runMetadata().restore).toEqual(expect.objectContaining({ backupVersion: "8.0.36", targetVersion: "8.0.36" }));
+        expect(runLog("msp-run").map((entry) => entry.message)).toContain(`Compatibility Check: Backup Version [${full}] vs Target [${full}]`);
+        expect(runMetadata("msp-run").restore).toEqual(expect.objectContaining({ backupVersion: full, targetVersion: full }));
+    });
+
     it("stops with Cancel in either History", async () => {
         wire(mysqlLike);
         await runRestorePipeline("run-1", SHARED, PROVIDER_RUN);

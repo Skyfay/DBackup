@@ -92,8 +92,9 @@ export type RichFileInfo = FileInfo & {
  *      explorer's, so rows it wrote without compression or encryption are rebuilt.
  * - 4: `jobId`, `createdAt` and `databases` from the sidecar, which the explorer needs to put
  *      the copies of one run side by side and to tell a deleted job from a renamed one.
+ * - 5: `sourceId` from the sidecar, by which a shared database finds the backups of its server.
  */
-export const CACHE_SCHEMA_VERSION = 4;
+export const CACHE_SCHEMA_VERSION = 5;
 
 /**
  * The oldest payload that is still served, while a rebuild runs in the background.

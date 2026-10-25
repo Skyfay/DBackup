@@ -10,6 +10,8 @@ vi.mock('@/lib/prisma', () => ({
     default: {
         adapterConfig: {
             findUnique: vi.fn(),
+            // The server, looked up for the databases its customers hold, which these servers have none of.
+            findFirst: vi.fn().mockResolvedValue(null),
         },
         execution: {
             create: vi.fn()

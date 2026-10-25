@@ -4,7 +4,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
 import { stripTrailingSlashes } from "@/lib/paths";
-import { NO_REDIRECTS, redirectRefusal } from "./http";
+import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "ntfy" });
 
@@ -76,8 +76,7 @@ export const NtfyAdapter: NotificationAdapter = {
             }
 
             validateOutboundUrl(url);
-            const response = await fetch(url, {
-                ...NO_REDIRECTS,
+            const response = await webhookFetch(url, {
                 method: "POST",
                 headers,
                 body: "This is a test notification to verify your ntfy configuration.",
@@ -117,8 +116,7 @@ export const NtfyAdapter: NotificationAdapter = {
             }
 
             validateOutboundUrl(url);
-            const response = await fetch(url, {
-                ...NO_REDIRECTS,
+            const response = await webhookFetch(url, {
                 method: "POST",
                 headers,
                 body: formattedMessage,

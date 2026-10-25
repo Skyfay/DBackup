@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { changesOf } from "@/lib/core/audit-changes";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -5,6 +6,7 @@ import { getDataRetentionValues } from "@/services/system/data-retention-service
 import { TENANT_SETTINGS_AREA } from "@/services/tenant/tenant-settings-audit";
 import { AUDIT_ROW_SELECT, deviceOf, networkOf, newPlacesOf, originShown, parseDetails, resolveTargets, targetOf, toLine, type AuditRecord } from "./audit-rows";
 import type { AuditDetails } from "./audit-types";
+import { auditVisibleWhere, FULL_VIEW, type LogView } from "./log-reach";
 
 /** The earlier entries of a record the panel lists, and the entries of a session at most. */
 const EARLIER_LIMIT = 3;
@@ -55,10 +57,13 @@ function recordLink(record: AuditRecord, name: string | null): AuditDetails["rec
 /**
  * The panel of one entry: what changed, the sign-in it came from, the entries of the same record
  * before it, and for a sign-in what happened in that session and where the person signed in from
- * before. Null when the entry is gone.
+ * before. Null when the entry is gone or the view does not see it, which read the same, and every
+ * entry around it is one the view sees too.
  */
-export async function getAuditEntryDetails(id: string): Promise<AuditDetails | null> {
-    const record = await prisma.auditLog.findUnique({ where: { id }, select: AUDIT_ROW_SELECT });
+export async function getAuditEntryDetails(id: string, view: LogView = FULL_VIEW): Promise<AuditDetails | null> {
+    const visible = await auditVisibleWhere(view);
+    const seen = (where: Prisma.AuditLogWhereInput): Prisma.AuditLogWhereInput => (visible ? { AND: [where, visible] } : where);
+    const record = await prisma.auditLog.findFirst({ where: seen({ id }), select: AUDIT_ROW_SELECT });
     if (!record) return null;
     const details = parseDetails(record.details);
     const isSignIn = record.action === AUDIT_ACTIONS.LOGIN;
@@ -67,14 +72,14 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
         getDataRetentionValues(),
         record.userId && !isSignIn
             ? prisma.auditLog.findFirst({
-                  where: { userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lte: record.createdAt } },
+                  where: seen({ userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lte: record.createdAt } }),
                   orderBy: { createdAt: "desc" },
                   select: { createdAt: true, details: true, userAgent: true, ipAddress: true },
               })
             : null,
         record.resourceId
             ? prisma.auditLog.findMany({
-                  where: { resource: record.resource, resourceId: record.resourceId, createdAt: { lt: record.createdAt } },
+                  where: seen({ resource: record.resource, resourceId: record.resourceId, createdAt: { lt: record.createdAt } }),
                   orderBy: { createdAt: "desc" },
                   take: EARLIER_LIMIT,
                   select: AUDIT_ROW_SELECT,
@@ -83,7 +88,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
         // A session ends with the next sign-in or sign-out of the same person.
         isSignIn && record.userId
             ? prisma.auditLog.findFirst({
-                  where: { userId: record.userId, action: { in: [AUDIT_ACTIONS.LOGIN, AUDIT_ACTIONS.LOGOUT] }, createdAt: { gt: record.createdAt } },
+                  where: seen({ userId: record.userId, action: { in: [AUDIT_ACTIONS.LOGIN, AUDIT_ACTIONS.LOGOUT] }, createdAt: { gt: record.createdAt } }),
                   orderBy: { createdAt: "asc" },
                   select: { createdAt: true, action: true },
               })
@@ -93,12 +98,12 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
     const [sessionRecords, before, newPlaces] = await Promise.all([
         isSignIn && record.userId
             ? prisma.auditLog.findMany({
-                  where: {
+                  where: seen({
                       userId: record.userId,
                       apiKeyId: null,
                       action: { not: AUDIT_ACTIONS.LOGIN },
                       createdAt: { gt: record.createdAt, ...(boundary ? { lte: boundary.createdAt } : {}) },
-                  },
+                  }),
                   orderBy: { createdAt: "asc" },
                   take: SESSION_LIMIT,
                   select: AUDIT_ROW_SELECT,
@@ -106,7 +111,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
             : [],
         isSignIn && record.userId
             ? prisma.auditLog.findMany({
-                  where: { userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lt: record.createdAt } },
+                  where: seen({ userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lt: record.createdAt } }),
                   select: { ipAddress: true },
               })
             : [],
@@ -115,7 +120,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
 
     const targets = await resolveTargets([record, ...earlier, ...sessionRecords]);
     const name = typeof details.name === "string" ? details.name : targetOf(targets, record);
-    const shown = originShown(record);
+    const shown = originShown(record, view);
 
     return {
         id: record.id,

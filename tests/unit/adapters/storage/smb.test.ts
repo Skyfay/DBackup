@@ -92,6 +92,22 @@ describe("SMBAdapter", () => {
             expect(mockMkdir).toHaveBeenCalled();
         });
 
+        it("creates every missing folder of a nested path below the folder setting, one after the other", async () => {
+            await SMBAdapter.upload(config, "/tmp/backup.tar", "tenants/t-globex/Nightly/backup.tar");
+
+            expect(mockMkdir.mock.calls.map((call) => call[0])).toEqual(["backups/tenants", "backups/tenants/t-globex", "backups/tenants/t-globex/Nightly"]);
+            expect(mockSendFile).toHaveBeenCalledWith("/tmp/backup.tar", "backups/tenants/t-globex/Nightly/backup.tar");
+        });
+
+        it("goes on when a folder of the path exists already, and makes each folder once in a session", async () => {
+            mockMkdir.mockRejectedValueOnce(new Error("NT_STATUS_OBJECT_NAME_COLLISION making remote directory"));
+            const session = await SMBAdapter.openSession!(config);
+
+            await expect(session.upload("/tmp/a.tar", "tenants/t-globex/Nightly/a.tar")).resolves.toBe(true);
+            await expect(session.upload("/tmp/b.tar", "tenants/t-globex/Weekly/b.tar")).resolves.toBe(true);
+            expect(mockMkdir.mock.calls.map((call) => call[0])).toEqual(["backups/tenants", "backups/tenants/t-globex", "backups/tenants/t-globex/Nightly", "backups/tenants/t-globex/Weekly"]);
+        });
+
         it("returns false when sendFile throws", async () => {
             mockSendFile.mockRejectedValue(new Error("Access denied"));
 

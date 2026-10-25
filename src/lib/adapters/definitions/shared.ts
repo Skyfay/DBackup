@@ -19,6 +19,16 @@ export type AdapterDefinition = {
      */
     credentials?: { primary?: CredentialType; ssh?: CredentialType; primaryOptional?: boolean };
     /**
+     * Database only, and every database adapter declares it: whether one database of a server can
+     * be given to a customer alone, see Shared Databases. True where a backup holds each database
+     * as a dump of its own and a restore writes that one database. Redis and Valkey write one
+     * snapshot of every logical database, so a database of theirs never goes to a customer.
+     *
+     * Here rather than on the runtime adapter because the page of a server hides its sharing card
+     * by it, and that page runs in the browser.
+     */
+    sharesSingleDatabases?: boolean;
+    /**
      * Storage only: how many files this adapter can usefully transfer at once as a directory
      * source - a suggested starting point and a ceiling the connection may not exceed.
      *

@@ -5,6 +5,7 @@ import { currentTenantId } from "@/lib/tenant/current";
 import { buildAuditWhere, type AuditFilter } from "./audit-query";
 import { AUDIT_ACTOR_SELECT, actorOf } from "./audit-rows";
 import type { AuditTimeline, AuditTimelineRow } from "./audit-types";
+import { auditVisibleWhere, FULL_VIEW, type LogView } from "./log-reach";
 
 /** A day as `yyyy-MM-dd`, like the timelines of the Backups page. */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -35,12 +36,13 @@ export async function getAuditTimeline(
     to: string,
     timeZone: string,
     filter: Omit<AuditFilter, "period" | "from" | "to">,
-    now = new Date()
+    now = new Date(),
+    view: LogView = FULL_VIEW
 ): Promise<AuditTimeline> {
     const start = fromZonedTime(`${from}T00:00:00`, timeZone);
     const end = fromZonedTime(`${nextDay(to)}T00:00:00`, timeZone);
     const records = await prisma.auditLog.findMany({
-        where: buildAuditWhere({ ...filter, period: "all", from: start, to: end, viewerTenantId: await currentTenantId() }, now),
+        where: buildAuditWhere({ ...filter, period: "all", from: start, to: end, viewerTenantId: await currentTenantId(), visible: await auditVisibleWhere(view) }, now),
         select: {
             tenantId: true,
             createdAt: true,

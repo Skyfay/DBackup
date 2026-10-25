@@ -32,7 +32,7 @@ import {
     ping,
 } from "@/lib/adapters/database/firebird/connection";
 import { dump } from "@/lib/adapters/database/firebird/dump";
-import { restore } from "@/lib/adapters/database/firebird/restore";
+import { restore, restoreOne } from "@/lib/adapters/database/firebird/restore";
 import { analyzeDump } from "@/lib/adapters/database/firebird/analyze";
 import type { HostKind } from "@/lib/transport/types";
 
@@ -271,6 +271,27 @@ describe.each<HostKind>(["direct", "ssh"])("Firebird over a %s host", (kind) => 
 
             const result = await restore({ ...baseConfig, database: "shop" } as never, "/tmp/in.fbk", host);
             expect(result.success).toBe(false);
+        });
+    });
+
+    describe("restoreOne()", () => {
+        // The restore of a shared database names the database, which on Firebird is an alias.
+        it("restores into the configured path of an alias the target names", async () => {
+            const host = firebirdHost(kind, { onSpawn: () => ({ code: 0 }) });
+
+            await restoreOne(baseConfig as never, "/tmp/in.fbk", "shop", host);
+
+            const gbakCall = host.calls.spawn.find(a => a.includes("-rep"))!;
+            expect(gbakCall[gbakCall.length - 1]).toBe("fb.internal:/var/lib/firebird/shop.fdb");
+        });
+
+        it("keeps a target that is a path, like a restore under a new name", async () => {
+            const host = firebirdHost(kind, { onSpawn: () => ({ code: 0 }) });
+
+            await restoreOne(baseConfig as never, "/tmp/in.fbk", "/srv/restored.fdb", host);
+
+            const gbakCall = host.calls.spawn.find(a => a.includes("-rep"))!;
+            expect(gbakCall[gbakCall.length - 1]).toBe("fb.internal:/srv/restored.fdb");
         });
     });
 });

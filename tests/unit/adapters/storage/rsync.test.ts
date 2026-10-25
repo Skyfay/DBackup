@@ -77,6 +77,7 @@ vi.mock("@/lib/logging/errors", () => ({
 
 // Import AFTER mocks so promisify captures the mock functions
 import { Minimatch } from "minimatch";
+import { dialedHosts } from "@/lib/adapters/dialed-hosts";
 import { RsyncAdapter } from "@/lib/adapters/storage/rsync";
 
 // --- Helpers for default behaviors ---
@@ -409,6 +410,17 @@ describe("RsyncAdapter", () => {
             expect(result).toHaveLength(2);
             expect(result[0].name).toBe("backup.sql");
             expect(result[0].size).toBe(1024);
+        });
+
+        it.each([
+            ["./backups", "backups/tenants/t1/Job/one.tar"],
+            ["/srv//backups/", "/srv/backups/tenants/t1/Job/one.tar"],
+        ])("lists the paths below the folder setting %s as typed, which find prints normalised", async (pathPrefix, printed) => {
+            sshSucceeds(`${printed}\t1024\t1700000000.0`);
+
+            const result = await RsyncAdapter.list!({ ...agentConfig, pathPrefix }, "tenants/t1");
+
+            expect(result.map((file) => file.path)).toEqual(["tenants/t1/Job/one.tar"]);
         });
 
         it("returns empty array when SSH returns no output", async () => {
@@ -1428,6 +1440,16 @@ describe("RsyncAdapter", () => {
             expect((args as string[]).slice(-3)).toEqual(["--", "/tmp/a;b|c d.sql", "admin@backup.example.com:/backups/Job;x/a b.sql"]);
         });
 
+        it("puts a Windows login with an @ in front of the configured host, which rsync and OpenSSH read after the last @", async () => {
+            await RsyncAdapter.upload({ ...agentConfig, username: "alice@corp.local" }, "/tmp/a.sql", "Job/a.sql");
+
+            const target = rsyncArgs().at(-1)!;
+            expect(target).toBe("alice@corp.local@backup.example.com:/backups/Job/a.sql");
+            const login = target.slice(0, target.indexOf(":"));
+            expect(login.slice(login.lastIndexOf("@") + 1)).toBe(agentConfig.host);
+            expect(dialedHosts("rsync", { host: agentConfig.host, username: "alice@corp.local" })).toEqual([agentConfig.host]);
+        });
+
         it("passes additional options as they were written", async () => {
             // Taken apart, a combined -avz became the option --avz, which rsync refuses.
             await RsyncAdapter.upload({ ...agentConfig, options: "-avz --bwlimit=1000" }, "/tmp/a", "Job/a");
@@ -1478,7 +1500,7 @@ describe("RsyncAdapter", () => {
         });
 
         it("runs neither ssh nor rsync with a name that would change the host or read as an option", async () => {
-            for (const username of ["evil@10.0.0.5", "a:b", "a/b", "back up", "-oProxyCommand=x", "tab\there"]) {
+            for (const username of ["evil@10.0.0.5:22", "a:b", "a/b", "back up", "-oProxyCommand=x", "tab\there"]) {
                 mockSpawn.mockClear();
                 mockExecFileCb.mockClear();
 

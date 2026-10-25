@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
@@ -9,7 +9,7 @@ import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { apiKeyService } from "@/services/auth/api-key-service";
 import { userService } from "@/services/user/user-service";
-import { isSystemTaskId } from "@/services/system/system-task-definitions";
+import { isPlatformAdminTask, isSystemTaskId, PLATFORM_ADMIN_TASK_REFUSAL, type SystemTaskId } from "@/services/system/system-task-definitions";
 import { getSystemTaskRows, saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { getGeneralSettings } from "@/services/system/system-settings-service";
 import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
@@ -19,6 +19,15 @@ import { refusedUnless } from "@/lib/server/permission-refusal";
 const log = logger.child({ route: "system-tasks" });
 
 const taskId = z.string().refine(isSystemTaskId, { message: "Unknown system task" });
+
+/**
+ * A task of `platformAdminOnly`, the configuration backup, changes and starts only for a platform
+ * admin with a session, never through an API key, since its file holds every secret of the instance.
+ */
+function platformTaskRefusal(ctx: AuthContext, task: SystemTaskId): Response | null {
+    if (!isPlatformAdminTask(task) || (ctx.isPlatformAdmin && ctx.authMethod === "session")) return null;
+    return NextResponse.json({ success: false, error: PLATFORM_ADMIN_TASK_REFUSAL }, { status: 403 });
+}
 
 const updateSchema = z.object({
     taskId,
@@ -56,6 +65,8 @@ export async function POST(req: NextRequest) {
     }
     const { taskId: task, ...input } = parsed.data;
     if (!isSystemTaskId(task)) return NextResponse.json({ error: "Unknown system task" }, { status: 400 });
+    const platformOnly = platformTaskRefusal(ctx, task);
+    if (platformOnly) return platformOnly;
 
     const before = await taskSnapshot(task);
     try {
@@ -98,6 +109,8 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ error: "Unknown system task" }, { status: 400 });
     }
     const task = parsed.data.taskId;
+    const platformOnly = platformTaskRefusal(ctx, task);
+    if (platformOnly) return platformOnly;
 
     // Like a job started through the API, the run names the key instead of its owner.
     let started;

@@ -369,7 +369,7 @@ interface TenantCheck {
  * that tenant: the plan, every copy with the last state it reached, the logs and the outcome.
  * Never throws, a check that fails as a whole fails its run.
  */
-async function checkCopiesOfTenant(tenantId: string, runner: SystemTaskRunner, note?: string): Promise<TenantCheck> {
+async function checkCopiesOfTenant(tenantId: string, runner: SystemTaskRunner): Promise<TenantCheck> {
     const { integrityService } = await import("@/services/backup/integrity-service");
     const { INTEGRITY_CHECK_STAGES } = await import("@/lib/core/logs");
 
@@ -378,7 +378,6 @@ async function checkCopiesOfTenant(tenantId: string, runner: SystemTaskRunner, n
     const copies: CheckedCopy[] = [];
     try {
         await runner.start();
-        if (note) runner.logEntry(note);
         const result = await integrityService.runFullIntegrityCheck({
             onLog: (msg, level, details) => runner.logEntry(msg, level ?? "info", "general", details),
             onStage: (stage) => runner.setStage(stage),
@@ -428,11 +427,25 @@ function integrityOutcome(checks: TenantCheck[], unread: boolean): TaskOutcome {
     return { summary: `${plural(checked, "backup", "backups")} passed` };
 }
 
-/** Tells the platform about every copy that failed, and each tenant about the copies its own run checked. */
+/**
+ * Tells the platform about the copies that failed, and each tenant about the copies its own run
+ * checked. The message of the platform and its row in the notification log of the home tenant name
+ * the files and destinations of the home tenant alone, and of every other tenant only how many of
+ * its copies failed, since each of them hears about its own copies by name on its own channels.
+ */
 async function reportIntegrityFailures(checks: TenantCheck[], triggerType: "Manual" | "Scheduler" | "Api", homeRunId: string): Promise<void> {
     const results = checks.flatMap((check) => (check.result ? [check.result] : []));
     const failed = results.reduce((total, result) => total + result.failed, 0);
     if (failed === 0) return;
+    const home = checks.flatMap((check) => (check.tenantId === HOME_TENANT_ID && check.result ? [check.result] : []));
+    const others = checks.flatMap((check) => (check.tenantId !== HOME_TENANT_ID && check.result && check.result.failed > 0 ? [{ tenantId: check.tenantId, result: check.result }] : []));
+    // A name that cannot be read leaves the tenant unnamed, never the platform and the tenants untold.
+    const tenantRows = others.length === 0 ? [] : await prisma.tenant.findMany({ where: { id: { in: others.map((other) => other.tenantId) } }, select: { id: true, name: true } })
+        .catch((error: unknown) => {
+            log.warn("Reading the names of the tenants for the integrity notice failed", {}, wrapError(error));
+            return [];
+        });
+    const names = new Map((tenantRows ?? []).map((tenant) => [tenant.id, tenant.name]));
     await notify({
         eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
         data: {
@@ -441,7 +454,10 @@ async function reportIntegrityFailures(checks: TenantCheck[], triggerType: "Manu
             passed: results.reduce((total, result) => total + result.passed, 0),
             skipped: results.reduce((total, result) => total + result.skipped, 0),
             triggerType,
-            errors: results.flatMap((result) => result.errors),
+            errors: home.flatMap((result) => result.errors),
+            ...(others.length > 0
+                ? { tenants: others.map(({ tenantId, result }) => ({ tenant: names.get(tenantId) ?? "A deleted tenant", failed: result.failed, totalFiles: result.totalFiles })) }
+                : {}),
         },
     }, { executionId: homeRunId });
     // Each tenant hears about its own copies too, on its own channels. A customer's copy on a destination
@@ -470,9 +486,12 @@ export async function startIntegrityCheck(
     const { integrityService } = await import("@/services/backup/integrity-service");
     const runners = await import("@/lib/runner/system-task-runner");
     const trigger = triggerType ?? "Scheduler";
-    const newRun = () => runners.SystemTaskRunner.create("IntegrityCheck", trigger, triggerLabel ?? "Scheduler");
+    const homeRun = () => runners.SystemTaskRunner.create("IntegrityCheck", trigger, triggerLabel ?? "Scheduler");
+    // The run of another tenant names the platform as who started it, never a person or a key of the
+    // platform, whom the customer does not know. A scheduled one stays the scheduler's.
+    const tenantRun = () => runners.SystemTaskRunner.create("IntegrityCheck", trigger, trigger === "Scheduler" ? (triggerLabel ?? "Scheduler") : "Platform");
 
-    const home = await runAsTenant(HOME_TENANT_ID, newRun);
+    const home = await runAsTenant(HOME_TENANT_ID, homeRun);
 
     // Run async without blocking so callers receive the executionId immediately.
     (async () => {
@@ -487,10 +506,10 @@ export async function startIntegrityCheck(
                 log.error("Reading the tenants to check failed", {}, wrapError(e));
             }
             // The other runs are made when their turn comes, a waiting run would be taken for a queued backup.
-            const note = others.length > 0 ? `The copies of ${plural(others.length, "other tenant", "other tenants")} are checked in runs of their own` : undefined;
-            const checks = [await runAsTenant(HOME_TENANT_ID, () => checkCopiesOfTenant(HOME_TENANT_ID, home, note))];
+            // The run of the home tenant says nothing of the other tenants, whose runs are their own.
+            const checks = [await runAsTenant(HOME_TENANT_ID, () => checkCopiesOfTenant(HOME_TENANT_ID, home))];
             for (const tenantId of others) {
-                const check = await runAsTenant(tenantId, async () => checkCopiesOfTenant(tenantId, await newRun())).catch((e: unknown) => {
+                const check = await runAsTenant(tenantId, async () => checkCopiesOfTenant(tenantId, await tenantRun())).catch((e: unknown) => {
                     log.error("Starting the integrity check of a tenant failed", { tenantId }, wrapError(e));
                     const failed: TenantCheck = { tenantId, result: null, copies: [], error: getErrorMessage(e) };
                     return failed;

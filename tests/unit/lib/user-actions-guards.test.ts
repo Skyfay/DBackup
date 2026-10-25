@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => ({
     tenants: { switchable: vi.fn() },
     setPassword: vi.fn(),
     audit: vi.fn(),
+    emailRefusal: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
@@ -71,6 +72,8 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } 
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: mocks.tenants }));
 vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.fn(async () => null) }));
+// An email without an account, unless a test says otherwise, see tests/unit/services/new-account-email.test.ts.
+vi.mock("@/services/user/new-account-email", () => ({ newAccountEmailRefusal: (...args: unknown[]) => mocks.emailRefusal(...args) }));
 
 const { accountRefusal } = await vi.importActual<typeof import("@/lib/auth/account-access")>("@/lib/auth/account-access");
 
@@ -178,6 +181,15 @@ describe("what an admin may do to other users", () => {
             .toEqual({ success: false, error: GROUP_TOO_STRONG });
         expect(await createUser({ name: "Sara Nguyen", email: "sara@example.ch", password: "correct horse", groupId: "g-gone" }))
             .toEqual({ success: false, error: "The group no longer exists." });
+        expect(mocks.service.createUser).not.toHaveBeenCalled();
+    });
+
+    it("answers an email of an existing account with what the creator may know, and makes no account", async () => {
+        mocks.emailRefusal.mockResolvedValueOnce("This email cannot get a new account here. Send the person an invitation of the tenant instead.");
+
+        expect(await createUser({ name: "Gina", email: "gina@globex.example", password: "correct horse", groupId: "g-view" }))
+            .toEqual({ success: false, error: "This email cannot get a new account here. Send the person an invitation of the tenant instead.", field: "email" });
+        expect(mocks.emailRefusal).toHaveBeenCalledWith("gina@globex.example", expect.objectContaining({ userId: ADMIN.id, isPlatformAdmin: false }), HOME_TENANT_ID);
         expect(mocks.service.createUser).not.toHaveBeenCalled();
     });
 

@@ -160,6 +160,43 @@ describe("MSSQL single-database restore", () => {
         expect(queries().find(q => q.startsWith("RESTORE DATABASE"))).toContain("MOVE");
     });
 
+    /** A server that answers to `here` and a backup made on the server `made`, its files on drive D. */
+    function servers(made: string, here: string) {
+        mockExecuteQuery.mockImplementation(async (_cfg, _host, query: string) => {
+            if (query.includes("FILELISTONLY")) {
+                return {
+                    recordset: [
+                        { LogicalName: "shop", Type: "D", PhysicalName: "D:\\SQLData\\shop.mdf" },
+                        { LogicalName: "shop_log", Type: "L", PhysicalName: "D:\\SQLData\\shop_log.ldf" },
+                    ],
+                };
+            }
+            if (query.includes("HEADERONLY")) return { recordset: [{ ServerName: made, DatabaseName: "shop" }] };
+            if (query.includes("@@SERVERNAME")) return { recordset: [{ ServerName: here, PropertyName: here }] };
+            return { recordset: [{ DataPath: "/var/opt/mssql/data/", LogPath: "/var/opt/mssql/log/" }] };
+        });
+    }
+
+    // A database moved to another server keeps its name, and the paths in its backup are the old server's.
+    it("moves the files to the data folder of this server when the backup was made on another one", async () => {
+        servers("SQL-OLD", "sql-new");
+
+        await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
+
+        const restore = queries().find(q => q.startsWith("RESTORE DATABASE"))!;
+        expect(restore).toContain("MOVE N'shop' TO N'/var/opt/mssql/data/shop.mdf'");
+        expect(restore).toContain("MOVE N'shop_log' TO N'/var/opt/mssql/log/shop.ldf'");
+        expect(restore).not.toContain("D:\\SQLData");
+    });
+
+    it("keeps the files where they were when the backup comes from this very server", async () => {
+        servers("SQL01", "sql01");
+
+        await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
+
+        expect(queries().find(q => q.startsWith("RESTORE DATABASE"))).not.toContain("MOVE");
+    });
+
     it("uploads the dump over SSH under a unique name and removes it afterwards", async () => {
         const host = createFakeHost({ kind: "ssh" });
         await restoreOne(config() as never, await dumpFile(), "shop", host, undefined, undefined, "shop");

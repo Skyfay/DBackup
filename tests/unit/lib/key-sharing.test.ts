@@ -37,8 +37,17 @@ describe("what an API key may carry of the platform", () => {
         expect(keyAreas(true).map((area) => area.id)).toContain("platform-sharing");
         expect(keyAreas(false).map((area) => area.id)).not.toContain("platform-sharing");
         expect(knownKeyPermissions([PERMISSIONS.JOBS.READ, PERMISSIONS.PLATFORM.SHARING_WRITE, PERMISSIONS.SETTINGS.WRITE], true))
-            .toEqual([PERMISSIONS.JOBS.READ, PERMISSIONS.SETTINGS.WRITE, PERMISSIONS.PLATFORM.SHARING_WRITE]);
+            .toEqual([PERMISSIONS.JOBS.READ, PERMISSIONS.PLATFORM.SHARING_WRITE]);
         expect(knownKeyPermissions([PERMISSIONS.PLATFORM.SHARING_WRITE], false)).toEqual([]);
+    });
+
+    it("offers and keeps the settings of the instance in the key editor of the home tenant only", () => {
+        expect(keyAreas(false, true).map((area) => area.id)).toContain("settings");
+        expect(keyAreas(true, false).map((area) => area.id)).not.toContain("settings");
+        expect(keyAreas(false, false).map((area) => area.id)).toContain("tenant-settings");
+        const stored = [PERMISSIONS.SETTINGS.READ, PERMISSIONS.SETTINGS.WRITE, PERMISSIONS.TENANT_SETTINGS.WRITE];
+        expect(knownKeyPermissions(stored, false, true)).toEqual(stored);
+        expect(knownKeyPermissions(stored, true, false)).toEqual([PERMISSIONS.TENANT_SETTINGS.WRITE]);
     });
 
     it("carries the tenants and the accounts in a key of the home tenant only, as far as the owner holds them", () => {

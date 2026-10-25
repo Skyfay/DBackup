@@ -19,7 +19,9 @@ export interface SharingAccess {
  * Whether the servers of the tenant the viewer works in show the card Shared with tenants, null
  * when they do not: only to whoever may see the shared databases, only in a tenant that shares, only
  * while there is another tenant to give a database to, and never in All tenants, which has no
- * tenant and changes none. Without the right to share it shows read only.
+ * tenant and changes none. Without the right to share it shows read only. A server of an engine that
+ * gives no database alone (`sharesSingleDatabases` of its definition), like Redis, never shows it, and
+ * the services refuse every database given there, see `assertCustomer` in `shared-servers.ts`.
  */
 export async function serverSharingOf(tenantId: string | null, access: SharingAccess): Promise<ServerSharingInfo | null> {
     if (!access.see && !access.assign) return null;

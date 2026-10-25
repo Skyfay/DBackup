@@ -18,6 +18,7 @@ import type { FileInfo, StorageAdapter } from "@/lib/core/interfaces";
 import { connectionShareService } from "@/services/sharing/connection-shares";
 import { providedTo } from "@/services/sharing/provided";
 import { channelTarget, setRecipients } from "@/services/sharing/channel-recipients";
+import { storageEntriesOf } from "@/services/dashboard-service";
 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
@@ -39,7 +40,7 @@ vi.mock("@/services/dashboard-service", () => ({
 }));
 
 /** The files of the destination `acme-nas`, by their path from its root. */
-const storage = vi.hoisted(() => ({ files: new Map<string, number>(), failOn: null as string | null }));
+const storage = vi.hoisted(() => ({ files: new Map<string, number>(), failOn: null as string | null, onDelete: null as ((file: string) => Promise<void>) | null }));
 vi.mock("@/services/sharing/destination-access", async (importOriginal) => {
     const original = await importOriginal<typeof import("@/services/sharing/destination-access")>();
     const adapter = {
@@ -52,6 +53,7 @@ vi.mock("@/services/sharing/destination-access", async (importOriginal) => {
                 .map((file) => ({ name: file.split("/").at(-1)!, path: file, size: storage.files.get(file)!, lastModified: new Date() })),
         delete: async (_config: unknown, file: string) => {
             if (storage.failOn && file.startsWith(storage.failOn)) throw new Error("connect ECONNREFUSED 10.0.0.7:22");
+            await storage.onDelete?.(file);
             return storage.files.delete(file);
         },
     } as unknown as StorageAdapter;
@@ -93,6 +95,7 @@ beforeEach(async () => {
         await base.job.create({ data: { tenantId, id: `${tenantId}-job`, name: `${tenantId} nightly`, schedule: "0 3 * * *", sourceId: `${tenantId}-db` } });
     }
     storage.failOn = null;
+    storage.onDelete = null;
     // Only Acme's own backup, the folder of the customers is empty before the first share.
     storage.files = new Map([["acme-job/one.tar", 10]]);
 });
@@ -175,6 +178,26 @@ describe("sharing a connection with other tenants", () => {
         expect(await providedIdsOf("globex")).toEqual(["acme-nas"]);
     });
 
+    it("shows a customer that wrote nothing yet with no backups once the destination was measured, and as not measured before", async () => {
+        await share("acme-nas", ["globex"]);
+        const usesOfGlobex = async () => (await runAsTenant("acme", () => connectionShareService.view("acme-nas"))).uses.find((use) => use.tenantId === "globex");
+
+        expect(await usesOfGlobex()).toMatchObject({ backups: null, size: null });
+        const measured = [{ configId: "acme-nas", tenantId: "acme", name: "NAS", adapterId: "local-filesystem", size: 10, count: 1 }];
+        vi.mocked(storageEntriesOf).mockResolvedValueOnce(measured).mockResolvedValueOnce(measured);
+        expect(await usesOfGlobex()).toMatchObject({ backups: 0, size: 0 });
+    });
+
+    it("counts the jobs of a customer without a key only while the destination takes only encrypted backups", async () => {
+        await base.jobDestination.create({ data: { id: "globex-link", jobId: "globex-job", configId: "acme-nas" } });
+        const withoutKey = async () => (await runAsTenant("acme", () => connectionShareService.view("acme-nas"))).uses.find((use) => use.tenantId === "globex")?.jobsWithoutKey;
+
+        await share("acme-nas", ["globex"]);
+        expect(await withoutKey()).toBe(0);
+        await share("acme-nas", ["globex"], { encryptedOnly: true });
+        expect(await withoutKey()).toBe(1);
+    });
+
     it("refuses a tenant that does not exist", async () => {
         await expect(share("acme-nas", ["nobody"])).rejects.toThrow("no longer exists");
     });
@@ -202,7 +225,7 @@ describe("taking a destination back", () => {
     it("deletes the backups of that tenant alone, its links to the destination and its listing", async () => {
         const result = await share("acme-nas", ["initech"], {}, true);
 
-        expect(result.losses).toEqual([{ tenantId: "globex", name: "Globex", jobs: ["globex nightly"], templates: [], backups: 1 }]);
+        expect(result.losses).toEqual([{ tenantId: "globex", name: "Globex", jobs: ["globex nightly"], templates: [], backups: 1, used: true, noted: true }]);
         expect([...storage.files.keys()].sort()).toEqual(["acme-job/one.tar", "tenants/initech/initech-nightly/three.tar"]);
         expect(await base.jobDestination.count({ where: { id: "globex-link" } })).toBe(0);
         expect(await base.storageListCache.count({ where: { tenantId: "globex" } })).toBe(0);
@@ -235,6 +258,39 @@ describe("taking a destination back", () => {
         expect(await providedIdsOf("globex")).toEqual([]);
         expect(await providedIdsOf("initech")).toEqual(["acme-nas"]);
         expect(storage.files.has("tenants/initech/initech-nightly/three.tar")).toBe(true);
+    });
+
+    it("takes the tenant off the share before its backups go, so a run that starts meanwhile writes nothing there", async () => {
+        const seen: string[][] = [];
+        storage.onDelete = async (file) => {
+            if (file.startsWith("tenants/globex/")) seen.push(await providedIdsOf("globex"));
+        };
+        await share("acme-nas", ["initech"], {}, true);
+        expect(seen.length).toBeGreaterThan(0);
+        expect(seen.every((ids) => ids.length === 0)).toBe(true);
+    });
+
+    it("gives the share back as it was when a run of the tenant that loses it waits", async () => {
+        await base.execution.create({ data: { tenantId: "globex", id: "globex-run", jobId: "globex-job", status: "Pending", logs: "[]" } });
+        await expect(share("acme-nas", [], { encryptedOnly: true }, true)).rejects.toThrow("A run of Globex writes to this destination right now");
+        expect(await providedIdsOf("globex")).toEqual(["acme-nas"]);
+        expect(await providedIdsOf("initech")).toEqual(["acme-nas"]);
+        expect(await base.connectionShare.findUnique({ where: { id: "acme-nas" } })).toMatchObject({ allTenants: false, encryptedOnly: false });
+    });
+
+    it("deletes no backups of a tenant here while a run of it writes to the destination", async () => {
+        await base.execution.create({ data: { tenantId: "globex", id: "globex-run", jobId: "globex-job", status: "Running", logs: "[]" } });
+        await expect(runAsTenant("acme", () => connectionShareService.deleteBackupsOf("acme-nas", "globex"))).rejects.toThrow("A run of Globex writes to this destination right now");
+        expect(storage.files.has("tenants/globex/globex-nightly/two.tar")).toBe(true);
+    });
+
+    it("tells only the tenants that used a destination shared with every tenant that they lost it", async () => {
+        await base.tenant.create({ data: { id: "hooli", name: "Hooli" } });
+        await share("acme-nas", [], { allTenants: true });
+        const result = await share("acme-nas", [], {}, true);
+        // Globex writes to it and Initech left backups there, Hooli never touched it.
+        const noted = Object.fromEntries(result.losses.map((loss) => [loss.tenantId, loss.noted]));
+        expect(noted).toMatchObject({ globex: true, initech: true, hooli: false });
     });
 
     it("stops for one tenant and keeps it for the others", async () => {
@@ -271,7 +327,7 @@ describe("taking a channel back", () => {
         const eventId = Object.keys(before.events)[0] ?? "BACKUP_FAILURE";
         await saveTenantNotificationConfig("globex", { globalChannels: ["acme-mail"], events: { ...before.events, [eventId]: { ...(before.events[eventId] ?? {}), channels: ["acme-mail"] } } } as never);
 
-        await runAsTenant("acme", () => connectionShareService.stopFor("acme-mail", "globex"));
+        await runAsTenant("acme", () => connectionShareService.stopFor("acme-mail", "globex", { confirmed: true }));
 
         const after = await getTenantNotificationConfig("globex");
         expect(after.globalChannels).toEqual([]);
@@ -284,9 +340,14 @@ describe("taking a channel back", () => {
         await base.job.update({ where: { id: "globex-job" }, data: { notifications: { connect: { id: "acme-mail" } } } });
         await runAsTenant("globex", () => setRecipients("acme-mail", "globex", ["ops@globex.example"]));
 
-        const result = await runAsTenant("acme", () => connectionShareService.stopFor("acme-mail", "globex"));
+        // Like a destination, the stop waits for a confirmation and changes nothing without it.
+        await expect(runAsTenant("acme", () => connectionShareService.stopFor("acme-mail", "globex"))).rejects.toThrow("lose it in their notification templates");
+        expect(await base.notificationTemplateChannel.count({ where: { configId: "acme-mail" } })).toBe(1);
+        expect(await base.channelRecipients.count()).toBe(1);
 
-        expect(result.losses).toEqual([{ tenantId: "globex", name: "Globex", jobs: ["globex nightly"], templates: ["Failures"], backups: 0 }]);
+        const result = await runAsTenant("acme", () => connectionShareService.stopFor("acme-mail", "globex", { confirmed: true }));
+
+        expect(result.losses).toEqual([{ tenantId: "globex", name: "Globex", jobs: ["globex nightly"], templates: ["Failures"], backups: 0, used: true, noted: true }]);
         expect(await base.notificationTemplate.count({ where: { id: "globex-template" } })).toBe(1);
         expect(await base.notificationTemplateChannel.count({ where: { configId: "acme-mail" } })).toBe(0);
         expect(await base.job.count({ where: { notifications: { some: { id: "acme-mail" } } } })).toBe(0);

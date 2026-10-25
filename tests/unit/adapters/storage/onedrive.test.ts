@@ -633,6 +633,14 @@ describe("OneDriveAdapter", () => {
             expect(mockClient.api).toHaveBeenCalledWith("/me/drive/root:/backups/tenants/t1:/children");
         });
 
+        it("encodes each name of the path, so an escape or a # in a name stays inside that name", async () => {
+            mockTokenRefresh();
+            graphAnswers({ value: [] });
+
+            await OneDriveAdapter.list(validConfig, "tenants/t1/%2e%2e/a b#c");
+            expect(mockClient.api).toHaveBeenCalledWith("/me/drive/root:/backups/tenants/t1/%252e%252e/a%20b%23c:/children");
+        });
+
         it("still fails when access to the folder is denied", async () => {
             mockTokenRefresh();
             graphAnswers(graphFailure(403, "accessDenied", "Access denied"));

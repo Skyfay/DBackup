@@ -9,12 +9,9 @@ import { sendThroughChannel } from "@/services/notifications/channel-send";
 import { buildTestData } from "@/services/notifications/notification-test-data";
 import { recipientsOf } from "./channel-recipients";
 import { isEmailChannel, providedConnection } from "./provided";
+import { claimChannelTest, releaseChannelTest } from "./channel-test-limit";
 
-/** How long a tenant waits between two tests of one channel, which sends through the mail server of another tenant. */
-export const TEST_COOLDOWN_MS = 60_000;
-
-/** When each tenant last sent a test through a channel, by tenant and channel. */
-const lastTests = new Map<string, number>();
+export { TEST_COOLDOWN_MS } from "./channel-test-limit";
 
 /**
  * Sends a test message of a tenant through an email channel another tenant shares with it, to the
@@ -23,9 +20,22 @@ const lastTests = new Map<string, number>();
  * loop through the server of another tenant.
  */
 export async function sendRecipientsTest(configId: string, tenantId: string, now = Date.now()): Promise<{ name: string; recipients: string[] }> {
-    const key = `${tenantId}\n${configId}`;
-    const last = lastTests.get(key);
-    if (last !== undefined && now - last < TEST_COOLDOWN_MS) throw new ValidationError("A test went out a moment ago. Try again in a minute.");
+    // Claimed before anything else, so of two requests at the same moment only one sends.
+    if (!claimChannelTest(tenantId, configId, now)) throw new ValidationError("A test went out a moment ago. Try again in a minute.");
+    let test: Awaited<ReturnType<typeof prepareTest>>;
+    try {
+        test = await prepareTest(configId, tenantId);
+    } catch (error: unknown) {
+        // Nothing went out, so the next try need not wait.
+        releaseChannelTest(tenantId, configId, now);
+        throw error;
+    }
+    await sendThroughChannel(test.channel, test.payload, NOTIFICATION_EVENTS.BACKUP_SUCCESS, undefined, { brand: test.brand, tenantId });
+    return { name: test.name, recipients: test.recipients };
+}
+
+/** The channel, the message and the recipients of a test, or why there is none. */
+async function prepareTest(configId: string, tenantId: string) {
     const provided = await providedConnection(configId, tenantId);
     if (!provided || provided.type !== "notification") throw new NotFoundError("Channel", configId);
     if (!isEmailChannel(provided.adapterId) || !provided.ownRecipients) throw new ValidationError(`${provided.providerName} decides who gets the messages of this channel.`);
@@ -39,7 +49,5 @@ export async function sendRecipientsTest(configId: string, tenantId: string, now
     registerAdapters();
     const brand = await loadNotificationBrand();
     const payload = { ...renderTemplate(event, { timeZone: brand.timeZone }), reason: `This is a test of the recipients your tenant named for "${provided.name}".` };
-    lastTests.set(key, now);
-    await sendThroughChannel(channel, payload, event.eventType, undefined, { brand, tenantId });
-    return { name: provided.name, recipients };
+    return { name: provided.name, recipients, channel, brand, payload };
 }

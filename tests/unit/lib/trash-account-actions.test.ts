@@ -32,6 +32,7 @@ vi.mock("@/lib/auth/access-control", async () => {
         }),
         getViewer: vi.fn(async () => mocks.viewer),
         getUserPermissions: vi.fn(async () => mocks.viewer?.permissions ?? []),
+        tenantRefusal: (ctx: { tenantId: string | null; allTenants?: boolean }) => (ctx.tenantId ? null : ctx.allTenants ? "All tenants only reads." : "You work in no tenant yet."),
     };
 });
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

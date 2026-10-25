@@ -6,6 +6,7 @@ import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { parseAuditFilter, timeZoneOr } from "@/services/audit/audit-params";
 import { getAuditTimeline, validRange } from "@/services/audit/audit-timeline";
+import { logViewOf } from "@/services/audit/log-reach";
 
 const log = logger.child({ route: "audit/timeline" });
 
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
     if (!filter || !validRange(start, end)) return NextResponse.json({ success: false, error: "Invalid query parameters" }, { status: 400 });
 
     try {
-        const data = await getAuditTimeline(start, end, timeZoneOr(params.get("tz") ?? undefined), filter);
+        const data = await getAuditTimeline(start, end, timeZoneOr(params.get("tz") ?? undefined), filter, new Date(), await logViewOf(ctx));
         return NextResponse.json({ success: true, data });
     } catch (error) {
         log.error("Loading the audit timeline failed", {}, wrapError(error));

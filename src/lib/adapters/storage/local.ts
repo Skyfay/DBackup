@@ -385,6 +385,19 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         }
     },
 
+    async deleteEmptyFolder(config: { basePath: string }, remotePath: string): Promise<boolean> {
+        const target = resolveSafePath(config.basePath, remotePath);
+        // The folder the destination is set to stays, whatever is in it.
+        if (target === path.resolve(config.basePath)) return false;
+        try {
+            // Not recursive, so a folder that holds anything refuses.
+            await fs.rmdir(target);
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
     async verifyChecksum(config: { basePath: string }, remotePath: string, checksums: { sha256?: string; md5?: string }): Promise<'passed' | 'failed' | 'unsupported'> {
         if (!checksums.sha256) return 'unsupported';
         try {

@@ -482,6 +482,25 @@ describe("Access Control", () => {
         expect(ctx!.permissions).not.toContain(PERMISSIONS.PLATFORM.SIGN_IN_WRITE);
       });
 
+      it("shares with customers only in a tenant of its scope, never in one where someone is merely a member", async () => {
+        const sharing = support({ allTenants: false, tenants: ["acme"] });
+        sharing.platformPermissions = JSON.stringify([PERMISSIONS.PLATFORM.TENANTS_READ, PERMISSIONS.PLATFORM.SHARING_READ, PERMISSIONS.PLATFORM.SHARING_WRITE]);
+        const lena = account("lena", { memberships: [{ tenantId: HOME_TENANT_ID, permissions: JSON.stringify([PERMISSIONS.SOURCES.READ]) }], platformGroup: sharing });
+
+        signedIn(lena, HOME_TENANT_ID);
+        const atHome = await getAuthContext(new Headers());
+        expect(atHome!.tenantId).toBe(HOME_TENANT_ID);
+        expect(atHome!.permissions).toContain(PERMISSIONS.PLATFORM.TENANTS_READ);
+        expect(atHome!.permissions).not.toContain(PERMISSIONS.PLATFORM.SHARING_READ);
+        expect(atHome!.permissions).not.toContain(PERMISSIONS.PLATFORM.SHARING_WRITE);
+
+        mockPrismaTenant.findUnique.mockResolvedValue({ id: "acme" });
+        signedIn(lena, "acme");
+        const inScope = await getAuthContext(new Headers());
+        expect(inScope!.tenantId).toBe("acme");
+        expect(inScope!.permissions).toEqual(expect.arrayContaining([PERMISSIONS.PLATFORM.SHARING_READ, PERMISSIONS.PLATFORM.SHARING_WRITE]));
+      });
+
       it("never opens All tenants for a group of some tenants, which would show the others too", async () => {
         mockPrismaTenant.count.mockResolvedValue(3);
         signedIn(account("lena", { platformGroup: support({ allTenants: false, tenants: ["acme"] }) }), "*");

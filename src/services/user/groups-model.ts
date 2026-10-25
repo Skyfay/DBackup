@@ -170,7 +170,8 @@ export async function getPlatformGroupsModel(viewerId: string | null, reach: Pla
         name: template.name,
         permissions: template.permissions,
         allTenants: template.allTenants,
-        tenantIds: template.tenantIds,
+        // A tenant beyond the reach of the viewer stays unnamed, also by its id.
+        tenantIds: template.tenantIds.filter(inReach),
         groups: template.groups.filter((group) => inReach(group.tenantId)).map((group) => ({
             tenantId: group.tenantId,
             groupId: group.id,
@@ -184,12 +185,17 @@ export async function getPlatformGroupsModel(viewerId: string | null, reach: Pla
 }
 
 /**
- * The name of every tenant, for Users & Groups of the Platform, whose groups and accounts belong to
- * every tenant. Someone of a platform group of some tenants sees which tenants the others are,
- * though only the ones they may open lead anywhere.
+ * The names of the tenants for Users & Groups of the Platform, whose groups and accounts belong to
+ * every tenant: every one for a reach of all tenants, else the tenants of the reach alone, so
+ * someone of a platform group of some tenants never learns the names of the others.
  */
-export async function platformTenantNames(): Promise<{ id: string; name: string }[]> {
-    return prisma.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
+export async function platformTenantNames(reach: PlatformReach): Promise<{ id: string; name: string }[]> {
+    if (reach !== "all" && reach.length === 0) return [];
+    return prisma.tenant.findMany({
+        where: reach === "all" ? undefined : { id: { in: [...reach] } },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+    });
 }
 
 /** Loads the Groups tab with the groups of a tenant and their members, read in that tenant. */

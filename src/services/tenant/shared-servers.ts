@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import type { Tx } from "@/lib/prisma-tx";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { ON_DEMAND_MAX, ON_DEMAND_MIN, ON_DEMAND_OFF } from "@/lib/tenant/sharing";
+import { getAdapterDefinition, sharesSingleDatabases } from "@/lib/adapters/definitions";
 
 /**
  * The servers whose databases are given to customers, each as a SharedServer beside its connection,
@@ -41,12 +42,29 @@ export async function ownSource(sourceId: string): Promise<ServerFacts> {
     return source;
 }
 
+/** Why a server of an engine whose backups hold every database in one piece gives none of them away. */
+export function notSingleDatabases(adapterId: string): string {
+    const engine = getAdapterDefinition(adapterId)?.name ?? adapterId;
+    return `${engine} keeps every database of a server in one snapshot, which a backup and a restore never split, so no database of it goes to a tenant alone.`;
+}
+
 /**
- * A tenant a database of the server can be given to: another one, which still exists. It may share
- * databases itself, a database it gets is no server of its own, so it never passes it on.
+ * Refuses an engine that cannot give one database alone, like Redis and Valkey, whose backup is one
+ * snapshot of every logical database: a customer given one of them would download and restore all.
  */
-export async function assertCustomer(tenantId: string, serverTenantId: string): Promise<void> {
+export function assertSharesSingleDatabases(adapterId: string): void {
+    if (!sharesSingleDatabases(adapterId)) throw new ValidationError(notSingleDatabases(adapterId));
+}
+
+/**
+ * A tenant a database of the server can be given to: another one, which still exists, on a server
+ * of a tenant that shares and of an engine that gives one database alone. It may share databases
+ * itself, a database it gets is no server of its own, so it never passes it on.
+ */
+export async function assertCustomer(tenantId: string, server: Pick<ServerFacts, "tenantId" | "adapterId">): Promise<void> {
+    const serverTenantId = server.tenantId;
     if (!(await sharesWithCustomers(serverTenantId))) throw new ValidationError(NOT_SHARING);
+    assertSharesSingleDatabases(server.adapterId);
     if (tenantId === serverTenantId) throw new ValidationError("A database of this server belongs to this tenant already. Pick another tenant.");
     if (!(await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }))) throw new ValidationError("The tenant no longer exists.");
 }

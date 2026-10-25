@@ -786,6 +786,15 @@ export interface StorageAdapter extends BaseAdapter {
     delete(config: AdapterConfig, remotePath: string): Promise<boolean>;
 
     /**
+     * Optional: removes a folder, but only while it is empty, never with anything in it, and never
+     * the folder the destination is set to. Returns false when it holds something, is gone or is
+     * that folder. Implemented where the storage has folders of their own to delete, so a storage
+     * of objects, whose folders vanish with their last file, leaves it out, and so does an adapter
+     * whose protocol deletes a folder only with everything in it.
+     */
+    deleteEmptyFolder?(config: AdapterConfig, remotePath: string): Promise<boolean>;
+
+    /**
      * Optional: downloads an entire remote directory tree to a local directory, used by
      * directory-source (JobSource) backups. Adapters that don't implement this are handled
      * via a generic fallback (list() + per-file download()) - see

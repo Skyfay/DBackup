@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { getAuditEntryDetails } from "@/services/audit/audit-details";
+import { logViewOf } from "@/services/audit/log-reach";
 
 const log = logger.child({ route: "audit/[id]" });
 
@@ -16,7 +17,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.AUDIT.READ);
-        const details = await getAuditEntryDetails(id);
+        const details = await getAuditEntryDetails(id, await logViewOf(ctx));
         if (!details) return NextResponse.json({ success: false, error: "The entry is no longer in the audit log" }, { status: 404 });
         return NextResponse.json({ success: true, data: details });
     } catch (error: unknown) {

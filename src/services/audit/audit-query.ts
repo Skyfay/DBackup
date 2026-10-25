@@ -32,6 +32,12 @@ export interface AuditFilter {
      * address a search may match, see `addressShownWhere`. Never read from the query.
      */
     viewerTenantId?: string | null;
+    /**
+     * The entries the reader sees at all, from `auditVisibleWhere` in log-reach.ts: in the log of the
+     * home tenant someone of a platform group of some tenants sees the entries of the accounts of
+     * those tenants alone. Null or left out for every entry. Never read from the query.
+     */
+    visible?: Prisma.AuditLogWhereInput | null;
 }
 
 export interface AuditQuery extends AuditFilter {
@@ -73,6 +79,7 @@ export function addressShownWhere(viewerTenantId: string | null | undefined): Pr
  */
 export function buildAuditWhere(filter: AuditFilter, now: Date, omit?: "who" | "area" | "action" | "quick" | "tenant"): Prisma.AuditLogWhereInput {
     const and: Prisma.AuditLogWhereInput[] = [];
+    if (filter.visible) and.push(filter.visible);
 
     if (filter.from || filter.to) {
         and.push({ createdAt: { ...(filter.from ? { gte: filter.from } : {}), ...(filter.to ? { lt: filter.to } : {}) } });

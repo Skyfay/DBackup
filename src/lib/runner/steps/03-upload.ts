@@ -243,9 +243,12 @@ export async function stepUpload(ctx: RunnerContext) {
     for (let i = 0; i < totalDests; i++) {
         const dest = ctx.destinations[i];
         const destLabel = `[${dest.configName}]`;
-        // A share that ended while the dump ran writes nothing more into the folder of the tenant.
-        if (!dest.refusal && dest.customer && !(await providedConnection(dest.configId, dest.customer))) {
-            dest.refusal = `${dest.configName} is no longer shared with this tenant`;
+        // A share that ended while the dump ran writes nothing more into the folder of the tenant, and
+        // one switched to encrypted backups only takes nothing of a job without a key.
+        if (!dest.refusal && dest.customer) {
+            const provided = await providedConnection(dest.configId, dest.customer);
+            if (!provided) dest.refusal = `${dest.configName} is no longer shared with this tenant`;
+            else if (provided.encryptedOnly && !job.encryptionProfileId) dest.refusal = `${dest.configName} takes only encrypted backups. Pick a key under Encryption`;
         }
         if (dest.refusal) {
             dest.uploadResult = { success: false, error: dest.refusal };

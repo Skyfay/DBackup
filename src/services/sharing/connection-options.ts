@@ -1,5 +1,6 @@
 import { getAdapterOptions, type AdapterListItemDTO } from "@/lib/adapters/dto";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { isAirGapped } from "@/lib/core/air-gap";
 import { currentTenantId } from "@/lib/tenant/current";
 import { isEmailChannel, providedTo, type ProvidedConnection, type SharedKind } from "./provided";
 import { recipientsOf } from "./channel-recipients";
@@ -22,15 +23,18 @@ export async function providedItem(connection: ProvidedConnection, tenantId: str
         adapterId: connection.adapterId,
         config: "{}",
         secretStatus: {},
-        metadata: connection.metadata,
+        // Of its settings only whether it is air-gapped, so the customer's runs and pages leave it out
+        // while it is not connected. Everything else stays with the tenant that shares it.
+        metadata: connection.type === "storage" ? JSON.stringify({ airGapped: isAirGapped(connection) }) : null,
         createdAt: connection.createdAt,
         updatedAt: connection.updatedAt,
         primaryCredentialId: null,
         sshCredentialId: null,
         defaultRetentionPolicyId: null,
+        // Online or offline and when it was checked last. Why the storage of another tenant fails,
+        // how fast it answers and where it is stay with that tenant.
         lastHealthCheck: connection.lastHealthCheck,
         lastStatus: connection.lastStatus,
-        // Why the storage of another tenant fails stays with that tenant.
         lastError: null,
         consecutiveFailures: 0,
         // The column default, which a channel carries too. Only destinations are shared of storage.

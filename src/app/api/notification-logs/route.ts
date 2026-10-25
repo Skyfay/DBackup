@@ -8,6 +8,7 @@ import { PermissionError, wrapError } from "@/lib/logging/errors";
 import {
   getNotificationFilterOptions, getNotificationLogFacets, getNotificationLogs, getNotificationStats,
 } from "@/services/notifications/notification-log-service";
+import { logViewOf } from "@/services/audit/log-reach";
 
 const log = logger.child({ route: "notification-logs" });
 
@@ -53,12 +54,15 @@ export async function GET(req: NextRequest) {
     const withFacets = searchParams.get("facets") === "true";
     // The History page also asks for the numbers above the list and the options of its filters.
     const withStats = searchParams.get("stats") === "true";
+    // In the log of the home tenant someone of a platform group of some tenants sees no message
+    // about the records of another tenant.
+    const view = await logViewOf(ctx);
     const [result, facets, stats, options] = await Promise.all([
-      getNotificationLogs(query),
+      getNotificationLogs(query, view),
       // All tenants counts the entries of each tenant for its Tenant filter.
-      withFacets ? getNotificationLogFacets(query, ctx.allTenants) : Promise.resolve(undefined),
-      withStats ? getNotificationStats() : Promise.resolve(undefined),
-      withStats ? getNotificationFilterOptions() : Promise.resolve(undefined),
+      withFacets ? getNotificationLogFacets(query, ctx.allTenants, view) : Promise.resolve(undefined),
+      withStats ? getNotificationStats(new Date(), view) : Promise.resolve(undefined),
+      withStats ? getNotificationFilterOptions(view) : Promise.resolve(undefined),
     ]);
 
     return NextResponse.json({ ...result, ...(facets ? { facets } : {}), ...(stats ? { stats, options } : {}) });

@@ -33,10 +33,13 @@ export interface ServerBackupFile {
     file: RichFileInfo & { createdAt: string };
 }
 
-/** Whether a row of a listing is a backup of the server, by the server it names or else by its job. */
-function fromServer(file: RichFileInfo, sourceId: string, jobsOfServer: Set<string>): boolean {
-    if (file.sourceId) return file.sourceId === sourceId;
-    return !!file.jobId && jobsOfServer.has(file.jobId);
+/**
+ * Whether a row of a listing is a backup of the server, by the server its sidecar names. A row
+ * without one is never counted by its job, since a job that moved to another server would hand the
+ * backups of the old server to whoever holds a database of the same name on the new one.
+ */
+function fromServer(file: RichFileInfo, sourceId: string): boolean {
+    return file.sourceId === sourceId;
 }
 
 /**
@@ -49,12 +52,10 @@ export async function serverBackupFiles(sourceId: string): Promise<ServerBackupF
     const source = (await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { tenantId: true } }))
         ?? (await prisma.sharedServer.findUnique({ where: { id: sourceId }, select: { tenantId: true } }));
     if (!source) return [];
-    const [jobs, own, provided] = await Promise.all([
-        prisma.job.findMany({ where: { sourceId }, select: { id: true } }),
+    const [own, provided] = await Promise.all([
         prisma.adapterConfig.findMany({ where: { tenantId: source.tenantId, type: "storage", storageRole: STORAGE_ROLES.DESTINATION }, select: { id: true }, orderBy: { name: "asc" } }),
         providedTo(source.tenantId, { kind: "destination" }),
     ]);
-    const jobsOfServer = new Set(jobs.map((job) => job.id));
     const destinations = [...own, ...provided.map((destination) => ({ id: destination.id }))];
 
     const found: ServerBackupFile[] = [];
@@ -64,7 +65,7 @@ export async function serverBackupFiles(sourceId: string): Promise<ServerBackupF
         const listing = await storageService.readCachedListing(destination.id, source.tenantId);
         for (const file of listing?.files ?? []) {
             if (!file.hasFileIndex || !file.createdAt || !file.databases?.length) continue;
-            if (!fromServer(file, sourceId, jobsOfServer)) continue;
+            if (!fromServer(file, sourceId)) continue;
             found.push({ destinationId: destination.id, file: { ...file, createdAt: file.createdAt } });
         }
     }

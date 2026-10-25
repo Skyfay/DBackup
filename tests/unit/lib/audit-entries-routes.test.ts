@@ -140,6 +140,30 @@ describe("starting a restore through the API", () => {
         );
     });
 
+    it("passes the confirmation of a restore over customers' databases and names those customers in the entry, never in the answer", async () => {
+        mocks.restore.mockResolvedValue({
+            success: true, executionId: "exec-9", message: "Restore started",
+            overwritten: [{ database: "shop_acme", tenantId: "acme", customer: "Acme" }, { database: "cust_1", tenantId: "globex", customer: "Globex" }],
+        });
+
+        const response = await startRestore({
+            file: "Shop/shop_2026-09-28.tar.gz",
+            targetSourceId: "pg-prod",
+            databaseMapping: [{ originalName: "shop_acme", targetName: "shop_acme", selected: true }, { originalName: "cust_1", targetName: "cust_1", selected: true }],
+            overwriteCustomerDatabases: true,
+        });
+
+        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: true }));
+        expect(mocks.logFor).toHaveBeenCalledWith(ctx, "RESTORE", "BACKUP", expect.objectContaining({ customers: ["Acme", "Globex"] }), "nas");
+        expect(JSON.stringify(await response.json())).not.toContain("Acme");
+    });
+
+    it("never confirms a restore over customers' databases by anything but true", async () => {
+        await startRestore({ file: "Shop/shop_2026-09-28.tar.gz", targetSourceId: "pg-prod", overwriteCustomerDatabases: "yes" });
+
+        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: false }));
+    });
+
     it("notes nothing when the restore is refused before it starts", async () => {
         mocks.restore.mockRejectedValue(new ValidationError("databaseMapping[0] needs an originalName"));
 

@@ -13,7 +13,7 @@ import type { TenantNetwork } from "@/services/tenant/tenant-network";
 import type { TenantAllowances } from "@/lib/tenant/allowances";
 import { AllowancesSchema, NetworkSchema, TenantNameSchema } from "@/lib/tenant/tenant-schemas";
 import {
-    createTenantAs, deleteRefusal, removeTenantAs, renameTenantAs, setTenantAllowancesAs, setTenantNetworkAs, setTenantSharingAs, type TenantAdminActor,
+    createTenantAs, deleteRefusal, deleteTenantAs, removeTenantAs, renameTenantAs, setTenantAllowancesAs, setTenantNetworkAs, setTenantSharingAs, TenantNotEmptyError, type TenantAdminActor,
 } from "@/services/tenant/tenant-admin";
 import { emptyBulkResult } from "@/lib/core/bulk";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
@@ -170,23 +170,26 @@ export async function renameTenant(id: string, name: string) {
     }
 }
 
+/** What the delete of a tenant that holds something answers before the dialog confirmed it. */
+const DELETE_NOT_CONFIRMED = "It holds connections, jobs or people, or keys, API keys or entries in Recently deleted. Confirm what goes with it first.";
+
 /**
  * Deletes a tenant with everything it holds. The backups at its destinations stay, and so do the
- * accounts, which lose their membership there. Refused while a run of the tenant waits or runs.
+ * accounts, which lose their membership there. Refused while a run of the tenant waits or runs,
+ * and for a tenant that holds anything until the dialog that lists it confirmed it, the same gate
+ * as `DELETE /api/tenants/[id]` (`deleteTenantAs`).
  */
-export async function deleteTenant(id: string) {
+export async function deleteTenant(id: string, confirmed = false) {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_WRITE);
     const tenantId = IdSchema.safeParse(id);
-    if (!tenantId.success) return { success: false as const, error: "Invalid request" };
-    const actor = actorOf(viewer);
-    const refused = await deleteRefusal(actor, tenantId.data);
-    if (refused) return { success: false as const, error: refused };
+    if (!tenantId.success || typeof confirmed !== "boolean") return { success: false as const, error: "Invalid request" };
 
     try {
-        const removal = await removeTenantAs(actor, tenantId.data);
+        const removal = await deleteTenantAs(actorOf(viewer), tenantId.data, confirmed);
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: removal };
     } catch (error: unknown) {
+        if (error instanceof TenantNotEmptyError) return { success: false as const, error: DELETE_NOT_CONFIRMED };
         if (!isRefusal(error)) log.error("Deleting a tenant failed", { tenantId: tenantId.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The tenant could not be deleted.") };
     }

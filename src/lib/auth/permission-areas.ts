@@ -1,4 +1,4 @@
-import { keyPlatformPermissions } from "@/lib/auth/owner-permissions";
+import { keyGroupPermissions, keyPlatformPermissions } from "@/lib/auth/owner-permissions";
 import { AVAILABLE_PERMISSIONS, PERMISSIONS, PLATFORM_ONLY_PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 
 /**
@@ -261,24 +261,26 @@ export const PLATFORM_AREAS: PermissionArea[] = [
 ];
 
 /**
- * The areas a key offers in a tenant: those of a group, in a tenant that shares databases their
- * sharing, and in the home tenant the tenants and the accounts, see `keyPlatformPermissions`. Of
- * the rights of the platform only those that may be stored, never the settings or the sign-in.
+ * The areas a key offers in a tenant: those of a group, the settings of the instance in the home
+ * tenant only, in a tenant that shares databases their sharing, and in the home tenant the tenants
+ * and the accounts, see `keyGroupPermissions` and `keyPlatformPermissions`. Never the sign-in.
  */
 export function keyAreas(tenantShares: boolean, homeTenant = false): PermissionArea[] {
     const keyable = new Set(keyPlatformPermissions(tenantShares, homeTenant));
     const platform = PLATFORM_AREAS.filter((area) => area.id !== "settings" && area.permissions.some((permission) => keyable.has(permission.id)));
-    return [...PERMISSION_AREAS, ...platform];
+    return [...PERMISSION_AREAS.filter((area) => homeTenant || area.id !== "settings"), ...platform];
 }
 
 /**
- * The permissions a key may store in a tenant: those of a group DBackup knows, in a tenant that
- * shares databases their sharing, and in the home tenant the tenants and the accounts.
+ * The permissions a key may store in a tenant: those of a group DBackup knows, the settings of the
+ * instance only in the home tenant, in a tenant that shares databases their sharing, and in the
+ * home tenant the tenants and the accounts.
  */
 export function knownKeyPermissions(ids: Iterable<string>, tenantShares: boolean, homeTenant = false): Permission[] {
     const held = new Set(ids);
+    const ofGroup = new Set(keyGroupPermissions(homeTenant));
     const keyable = keyPlatformPermissions(tenantShares, homeTenant).filter((permission) => held.has(permission)) as Permission[];
-    return [...knownPermissions(held), ...keyable];
+    return [...knownPermissions(held).filter((permission) => ofGroup.has(permission)), ...keyable];
 }
 
 /**

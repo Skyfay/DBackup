@@ -149,6 +149,9 @@ export function dbVersionChangedTemplate(data: DbVersionChangedData, options?: T
 export function integrityCheckFailureTemplate(data: IntegrityCheckFailureData, options?: TemplateOptions): NotificationPayload {
     const shown = data.errors.slice(0, 5);
     const more = data.errors.length > 5 ? ` (+${data.errors.length - 5} more)` : "";
+    // The other tenants by how many of their copies failed, which each of them hears about by name itself.
+    const tenants = (data.tenants ?? []).map((entry) => `${entry.tenant}: ${entry.failed} of ${entry.totalFiles}`).join(", ");
+    const otherTenants = tenants ? [{ name: "Other tenants", value: tenants, inline: false }] : [];
     return {
         title: `${plural(data.failed, "backup")} failed the integrity check`,
         message: `${data.failed} of ${plural(data.totalFiles, "file")} no longer match the checksum saved with them.`,
@@ -158,6 +161,7 @@ export function integrityCheckFailureTemplate(data: IntegrityCheckFailureData, o
             { name: "Passed", value: String(data.passed), inline: true },
             { name: "Trigger", value: data.triggerType, inline: true },
             ...(data.errors.length > 0 ? [{ name: "Corrupted Files", value: shown.map((entry) => entry.file).join(", ") + more, inline: false }] : []),
+            ...otherTenants,
         ],
         color: "#ef4444",
         success: false,
@@ -177,7 +181,10 @@ export function integrityCheckFailureTemplate(data: IntegrityCheckFailureData, o
                 raw: shown.map((entry) => `${entry.destination}: ${entry.file}`).join("\n") + more,
             }
             : undefined,
-        details: [{ name: "Started", value: data.triggerType === "Scheduler" ? "By schedule" : data.triggerType === "Api" ? "Through the API" : "By hand" }],
+        details: [
+            { name: "Started", value: data.triggerType === "Scheduler" ? "By schedule" : data.triggerType === "Api" ? "Through the API" : "By hand" },
+            ...otherTenants.map(({ name, value }) => ({ name, value })),
+        ],
         // The Backups page of the tenant whose copies failed, so the link opens there from any other tenant.
         actions: action("Open backups", paths.backups(options?.tenantId), "archive"),
     };

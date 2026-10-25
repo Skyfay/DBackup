@@ -9,6 +9,7 @@
 
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { shownMetadata } from "@/lib/execution/follower-runs";
 
 /** Execution types that show up under System Tasks rather than Activity Logs. */
 export const SYSTEM_TASK_TYPES = ["IntegrityCheck", "Verification"] as const;
@@ -144,10 +145,16 @@ export async function listExecutionHistory(query: ExecutionHistoryQuery = {}) {
     prisma.execution.count({ where }),
   ]);
 
-  return { data, total, page, pageSize };
+  return { data: data.map(shown), total, page, pageSize };
 }
 
 /** One execution in the same shape as the list, or null when it does not exist. */
 export async function getExecutionHistoryRow(id: string): Promise<ExecutionHistoryRow | null> {
-  return prisma.execution.findUnique({ where: { id }, select: executionHistorySelect });
+  const row = await prisma.execution.findUnique({ where: { id }, select: executionHistorySelect });
+  return row ? shown(row) : null;
+}
+
+/** A row as its reader gets it, never naming the run of another tenant a follower follows. */
+function shown(row: ExecutionHistoryRow): ExecutionHistoryRow {
+  return { ...row, metadata: shownMetadata(row.metadata) };
 }

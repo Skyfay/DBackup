@@ -4,7 +4,7 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { jobService } from "@/services/jobs/job-service";
 import { logger } from "@/lib/logging/logger";
-import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { requestRefusal } from "@/lib/server/permission-refusal";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { getJobList } from "@/services/jobs/job-list-service";
 import { auditService } from "@/services/audit-service";
@@ -87,7 +87,8 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(newJob, { status: 201 });
     } catch (error: unknown) {
-        const refused = permissionRefusal(error);
+        // A linked record of another tenant or a value the job refuses is the caller's to fix.
+        const refused = requestRefusal(error);
         if (refused) return refused;
         log.error("Create job error", {}, wrapError(error));
         const message = error instanceof Error ? error.message : "Failed to create job";

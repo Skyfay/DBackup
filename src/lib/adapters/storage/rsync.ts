@@ -1,4 +1,5 @@
 import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadOptions, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
+import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
 import { RsyncSchema, type SFTPConfig } from "@/lib/adapters/definitions";
 import { connectSFTP, endSftpClient } from "./sftp";
 import { Readable } from "stream";
@@ -154,9 +155,10 @@ function shellEscapeSingleQuote(value: string): string {
 
 /**
  * The login of every command, `user@host`, once the username is a plain login name. rsync and
- * OpenSSH read the host after the last `@`, rsync ends it at a `:` and OpenSSH takes a leading
- * `-` for an option, so another name would reach another host or another option, see
- * `rsync-user.ts`. Checked here as well as on save, since a profile may predate the rule.
+ * OpenSSH read the host after the last `@`, so a name like `alice@corp.local` still reaches the
+ * host of the connection. rsync ends the host at a `:` and OpenSSH takes a leading `-` for an
+ * option, so a name with one would reach another host or another option, see `rsync-user.ts`.
+ * Checked here as well as on save, since a profile may predate the rule.
  */
 function sshTarget(config: RsyncConfig): string {
     const problem = rsyncUsernameProblem(config.username);
@@ -360,12 +362,9 @@ async function findRemoteEntries(
             const modified = parseFloat(modifiedStr) || 0;
             if (type) sawTypeColumn = true;
 
-            // Calculate relative path (strip prefix)
-            let relativePath = normalize(filePath);
-            if (prefix && relativePath.startsWith(prefix)) {
-                relativePath = relativePath.substring(prefix.length);
-            }
-            if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
+            // The path below the folder setting, compared as `find` prints it, so `./backups` or
+            // `/srv//backups` strips like `backups` and `/srv/backups`.
+            const relativePath = relativeToPrefix(filePath, prefix);
 
             const isLink = type === "l";
             if (isLink && !linkTarget) continue;

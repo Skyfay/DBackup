@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
     buildDbRows,
     copyName,
+    customerNote,
+    customerOverwrites,
     databaseSentence,
     filterCounts,
     folderOutcome,
@@ -36,6 +38,23 @@ describe("the rows of the databases", () => {
 
         expect(rows.find((row) => row.target === "billing_restored")?.outcome).toBe("overwrite");
         expect(rows.filter((row) => row.outcome === "stays").map((row) => row.target)).toEqual(["orders", "shop"]);
+    });
+
+    it("marks the databases a customer holds on a shared server, which the confirmation asks about", () => {
+        const holders = new Map<string, string | null>([["shop", "Acme"], ["orders", null]]);
+        const rows = buildDbRows([choice("shop"), choice("orders"), choice("billing")], SERVER, sizes, false, holders);
+
+        expect(rows.map((row) => [row.target, row.customer])).toEqual([
+            ["shop", "Acme"], ["orders", null], ["billing", undefined], ["billing_restored", undefined],
+        ]);
+        expect(customerOverwrites(rows).map((row) => row.target)).toEqual(["shop", "orders"]);
+        expect(customerNote([rows[0]])).toBe("Acme holds it");
+        expect(customerNote([rows[1]])).toBe("A customer holds it");
+        expect(customerNote(rows.slice(0, 3))).toBe("2 of them are held by customers");
+        expect(customerNote([rows[2]])).toBeNull();
+        // A copy beside it under a free name overwrites nothing of the customer.
+        const copy = buildDbRows([choice("shop", { targetName: "shop_restored" })], SERVER, sizes, false, holders);
+        expect(customerOverwrites(copy)).toEqual([]);
     });
 
     it("cannot tell what lies at a Firebird path, so it says so instead of new", () => {

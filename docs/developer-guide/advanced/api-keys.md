@@ -21,7 +21,7 @@ This document covers the API key authentication system and the webhook trigger m
 - API keys **never** pass the checks only a platform admin passes - only explicitly assigned permissions apply
 - A key belongs to the tenant it was made in (`ApiKey.tenantId`) and acts only there, see [Tenants](./tenants.md)
 - A key never gets more than its owner may do in that tenant. `validate()` cuts its permissions at every request with `capToOwner(key, ownerPermissionsIn(owner, key.tenantId, tenantShares))` from `src/lib/auth/owner-permissions.ts`, where `tenantShares` is `Tenant.sharesWithCustomers` of the key's tenant
-- A key carries what a platform group gives on the platform only where `keyPlatformPermissions(tenantShares, homeTenant)` allows it: `platform-sharing:*` in a key of a tenant that shares with customers, for a hosting panel that calls `PUT /api/adapters/{id}/database-assignments`, and `platform-tenants:*` with `platform-accounts:*` (`HOME_KEY_PLATFORM_PERMISSIONS`) in a key of the home tenant, for the routes under `/api/tenants`. Never the settings of the instance through the platform group, never `platform-sign-in:*`. The key editor offers them through `keyAreas(tenantShares, homeTenant)`, the tenants and the accounts only to an owner who holds one of them, and the actions store them through `knownKeyPermissions(ids, tenantShares, homeTenant)` in `src/lib/auth/permission-areas.ts`. What such a key reaches is the reach of its owner, see [The API of the Platform](./tenants.md#the-api-of-the-platform)
+- A key carries what a platform group gives on the platform only where `keyPlatformPermissions(tenantShares, homeTenant)` allows it: `platform-sharing:*` in a key of a tenant that shares with customers and that the owner's platform group reaches (`platformRightsIn`), for a hosting panel that calls `PUT /api/adapters/{id}/database-assignments`, and `platform-tenants:*` with `platform-accounts:*` (`HOME_KEY_PLATFORM_PERMISSIONS`) in a key of the home tenant, for the routes under `/api/tenants`. Never the settings of the instance through the platform group, never `platform-sign-in:*`. The settings of the instance (`settings:*`) from the owner's group in the home tenant count in a key of the home tenant only, `keyGroupPermissions(homeTenant)` drops them from the key of a customer tenant, whose own settings stay `tenant-settings:*`. The key editor offers them through `keyAreas(tenantShares, homeTenant)`, the tenants and the accounts only to an owner who holds one of them, and the actions store them through `knownKeyPermissions(ids, tenantShares, homeTenant)` in `src/lib/auth/permission-areas.ts`. What such a key reaches is the reach of its owner, see [The API of the Platform](./tenants.md#the-api-of-the-platform)
 - The raw key is shown exactly once at creation; only a scrypt hash is stored (SHA-256 is kept as a legacy fallback and is automatically upgraded on next use)
 - All API routes support both session (cookie) and API key (Bearer token) authentication via the unified `getAuthContext()` function
 
@@ -58,13 +58,13 @@ model ApiKey {
 ```
 dbackup_ + randomBytes(30).toString("hex")
          ↓
-dbackup_ + 40 hex characters = 48 characters total
+dbackup_ + 60 hex characters = 68 characters total
 ```
 
 ```typescript
-// src/services/api-key-service.ts
+// src/services/auth/api-key-service.ts
 const API_KEY_PREFIX = "dbackup_";
-const KEY_BYTE_LENGTH = 30;   // 30 bytes → 40 hex chars
+const KEY_BYTE_LENGTH = 30;   // 30 bytes → 60 hex chars
 
 function generateRawKey(): string {
   return API_KEY_PREFIX + randomBytes(KEY_BYTE_LENGTH).toString("hex");

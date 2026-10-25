@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { EVERY_PERMISSION, PLATFORM_PERMISSIONS, isPlatformOnly } from "@/lib/auth/owner-permissions";
 import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
+import { reachCovers } from "@/lib/auth/platform-group-caps";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
@@ -98,7 +99,8 @@ export async function getPlatformGroupListModel(viewer: PlatformGroupsViewerInpu
             platformPermissions: [...group.platformPermissions],
             tenantPermissions: [...group.tenantPermissions],
             allTenants: group.allTenants,
-            tenantIds: [...group.tenantIds],
+            // A tenant beyond the reach of the viewer stays unnamed, also by its id.
+            tenantIds: group.tenantIds.filter((tenantId) => reachCovers(reach, tenantId)),
             members: membersOf(group.members),
             createdAt: group.createdAt.toISOString(),
             made: audit.made.get(group.id) ?? null,

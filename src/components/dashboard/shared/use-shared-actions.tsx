@@ -79,7 +79,9 @@ export function useSharedActions({ canDownload, canRestore, canViewHistory, canB
         try {
             const result = await restoreSharedDatabase(backupRef(restoring));
             if (!result.success) {
-                toast.error(result.error);
+                // A restore refused before it started has a failed run that says why.
+                const refusedRun = "executionId" in result ? result.executionId : undefined;
+                toast.error(result.error, refusedRun && canViewHistory ? { action: { label: "Open the run", onClick: () => router.push(runHref(refusedRun, "shared")) } } : undefined);
                 return;
             }
             const executionId = result.data.executionId;

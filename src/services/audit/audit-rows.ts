@@ -8,6 +8,7 @@ import { describeAgent, parseUserAgent } from "@/lib/core/user-agent";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { AuditActor, AuditLine, AuditRow } from "./audit-types";
+import { viewSeesAccount, type LogView } from "./log-reach";
 
 /** What a row reads of the person who wrote an entry: the group they hold in each tenant. */
 export const AUDIT_ACTOR_SELECT = {
@@ -53,9 +54,14 @@ export function parseDetails(details: string | null): Record<string, unknown> {
  * group or as a platform admin, keeps them to the platform. An entry of no person, like a failed
  * sign-in, shows them. A deleted account keeps only its name (`actorName`), and with its
  * memberships gone nothing tells whether it worked in the tenant, so a customer's log hides them.
+ * In the log of the home tenant they show to every reader but someone of a platform group of some
+ * tenants (`view`), who sees them of the accounts of those tenants alone, like the entries themselves.
  */
-export function originShown(record: Pick<AuditRecord, "tenantId" | "userId" | "actorName" | "user">): boolean {
-    if (record.tenantId === HOME_TENANT_ID) return true;
+export function originShown(record: Pick<AuditRecord, "tenantId" | "userId" | "actorName" | "user">, view?: LogView): boolean {
+    if (record.tenantId === HOME_TENANT_ID) {
+        if (!record.userId) return !record.actorName || !view?.reach;
+        return viewSeesAccount(view, record.user, record.userId);
+    }
     if (!record.userId && !record.actorName) return true;
     if (!record.user) return false;
     return record.user.memberships.some((membership) => membership.tenantId === record.tenantId);
@@ -166,8 +172,9 @@ export async function newPlacesOf(records: Pick<AuditRecord, "id" | "action" | "
     return result;
 }
 
-export function toRow(record: AuditRecord, targets: Map<string, string>, newPlaces: Set<string>): AuditRow {
+export function toRow(record: AuditRecord, targets: Map<string, string>, newPlaces: Set<string>, view?: LogView): AuditRow {
     const description = describeEntry(record, targetOf(targets, record));
+    const shown = originShown(record, view);
     return {
         id: record.id,
         tenantId: record.tenantId,
@@ -181,8 +188,8 @@ export function toRow(record: AuditRecord, targets: Map<string, string>, newPlac
         summary: changeSummary(record.action, parseDetails(record.details)),
         glyph: description.glyph,
         kind: description.kind,
-        device: originShown(record) ? deviceOf(record.userAgent) : null,
-        ipAddress: originShown(record) ? record.ipAddress : null,
+        device: shown ? deviceOf(record.userAgent) : null,
+        ipAddress: shown ? record.ipAddress : null,
         newPlace: newPlaces.has(record.id),
     };
 }

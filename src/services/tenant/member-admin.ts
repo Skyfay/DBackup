@@ -92,9 +92,11 @@ async function logMembership(actor: Pick<TenantAdminActor, "id" | "apiKeyId">, t
  */
 export async function setMemberAs(actor: TenantAdminActor, tenantId: string, userId: string, groupId: string | null): Promise<void> {
     if (!actor.isPlatformAdmin) {
+        // A tenant beyond the actor reads as gone before anything else, so the answer tells nothing
+        // about the account, like whether it is one of a platform admin.
+        await assertManages(actor, tenantId);
         if (userId === actor.id) throw new TenantAdminRefusal(OWN_MEMBERSHIP);
         if (await membershipService.isPlatformAdmin(userId)) throw new TenantAdminRefusal(PLATFORM_ADMIN_MEMBERSHIP);
-        await assertManages(actor, tenantId);
     }
     // A group belongs to its tenant, so it is looked up there, and one of another tenant reads as gone.
     const [target, role] = await Promise.all([tenantService.find(tenantId), groupId ? runAsTenant(tenantId, () => groupService.find(groupId)) : null]);

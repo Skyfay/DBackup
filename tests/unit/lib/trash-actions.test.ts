@@ -23,6 +23,7 @@ vi.mock("@/lib/auth/access-control", async () => {
         }),
         getViewer: vi.fn(async () => mocks.viewer),
         getUserPermissions: vi.fn(async () => mocks.permissions),
+        tenantRefusal: (ctx: { tenantId: string | null; allTenants?: boolean }) => (ctx.tenantId ? null : ctx.allTenants ? "All tenants only reads." : "You work in no tenant yet."),
     };
 });
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -152,6 +153,15 @@ describe("the actions of Recently deleted", () => {
         mocks.permissions = [];
         mocks.entries = [JOB];
         expect(await undoDeleteAction("job", ["job-1"])).toEqual(refused);
+        expect(mocks.restore).not.toHaveBeenCalled();
+    });
+
+    it("answers an Undo of a record of a tenant in All tenants with a refusal, before it reads anything", async () => {
+        mocks.viewer = { id: "lena", isPlatformAdmin: true, tenantId: null, allTenants: true };
+        mocks.latest.mockResolvedValue(["t-job"]);
+
+        expect(await undoDeleteAction("job", ["job-1"])).toEqual({ success: false, error: "Open the tenant of the entry to restore it or delete it for good." });
+        expect(mocks.latest).not.toHaveBeenCalled();
         expect(mocks.restore).not.toHaveBeenCalled();
     });
 

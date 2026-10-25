@@ -15,6 +15,7 @@ import { logRuleAdded, logRuleRemoved } from "@/services/tenant/assignment-audit
 import { AssignmentPerDaySchema, AssignmentRuleSchema } from "@/lib/tenant/tenant-schemas";
 import { moveDatabase, moveTargets, type MoveTarget } from "@/services/tenant/database-moves";
 import { customersOfServer } from "@/services/tenant/shared-servers";
+import { customerDatabases } from "@/services/restore/customer-databases";
 import { platformGroupService } from "@/services/user/platform-group-service";
 
 /**
@@ -129,13 +130,19 @@ export async function removeAssignmentRule(sourceId: string, ruleId: string) {
     }
 }
 
-/** The servers of the same engine a database of the server can move to, with the databases each holds. */
+/**
+ * The servers of the same engine and tenant a database of the server can move to, with the databases
+ * each holds but those of tenants beyond the reach of the viewer. A move happens in the tenant of
+ * the server, so All tenants is refused like the move itself.
+ */
 export async function getMoveTargets(sourceId: string): Promise<{ success: true; data: MoveTarget[] } | { success: false; error: string }> {
-    await checkPermission(SHARE_PERMISSION);
+    const viewer = await checkPermission(SHARE_PERMISSION);
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false, error: view };
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {
-        return { success: true, data: await moveTargets(id.data) };
+        return { success: true, data: await moveTargets(id.data, await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
         if (!(error instanceof NotFoundError)) log.error("Reading the servers to move to failed", { sourceId: id.data }, wrapError(error));
         return { success: false, error: messageOf(error, "The servers could not be read.") };
@@ -232,5 +239,26 @@ export async function getServerCustomers(sourceId: string): Promise<{ success: t
     } catch (error: unknown) {
         log.warn("Reading the customers of a server failed", { sourceId: id.data }, wrapError(error));
         return { success: false, error: "The customers of the server could not be read." };
+    }
+}
+
+/**
+ * Of the names a restore writes into on a server, the databases a customer holds now, for the restore
+ * page, which marks them and asks before it overwrites them. Whoever may restore sees which, the names
+ * of the customers go to whoever may see or share the databases of shared servers, everyone else
+ * reads that a customer holds it.
+ */
+export async function getCustomerDatabases(sourceId: string, names: string[]): Promise<{ success: true; data: { database: string; customer: string | null }[] } | { success: false; error: string }> {
+    const viewer = await checkPermission(PERMISSIONS.STORAGE.RESTORE);
+    const id = IdSchema.safeParse(sourceId);
+    const wanted = z.array(z.string().min(1).max(200)).max(1000).safeParse(names);
+    if (!id.success || !wanted.success) return { success: false, error: "Invalid request" };
+    try {
+        const held = await customerDatabases(id.data, wanted.data);
+        const named = hasPermissionWithContext(viewer, SEE_SHARING_PERMISSION) || hasPermissionWithContext(viewer, SHARE_PERMISSION);
+        return { success: true, data: held.map((entry) => ({ database: entry.database, customer: named ? entry.customer : null })) };
+    } catch (error: unknown) {
+        log.warn("Reading the databases customers hold on a server failed", { sourceId: id.data }, wrapError(error));
+        return { success: false, error: "The databases of customers could not be read." };
     }
 }

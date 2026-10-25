@@ -37,7 +37,7 @@ A restore always replaces the whole database, including what was added since the
    - **Include the history**: runs, logs, the audit log and the storage history, on by default
 4. Click **Save changes** in the bar at the foot
 
-The system task **Configuration backup** follows this switch and this schedule, so both are set in one place. The top of the part shows when the configuration was last backed up and where to, or why it failed.
+The system task **Configuration backup** follows this switch and this schedule, so both are set in one place. The file holds every secret of the instance, so only a platform admin signed in to DBackup changes the part, the switch and schedule of the task included, and starts a backup. Everyone else sees them read-only, and an API key gets them refused. The top of the part shows when the configuration was last backed up and where to, or why it failed.
 
 ::: warning Keep the key apart
 Keep the [recovery kit](/user-guide/security/recovery-kit) of the key somewhere else than the backup. A lost server takes the Vault with it, and without the key the file cannot be opened.

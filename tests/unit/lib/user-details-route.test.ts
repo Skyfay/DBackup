@@ -48,7 +48,8 @@ describe("GET /api/users/[id]", () => {
         const response = await open("max");
 
         expect(response.status).toBe(200);
-        expect(mocks.details).toHaveBeenCalledWith("max", "s-viewer");
+        // With the view of the log the caller has, so the activity hides what the Audit log tab hides.
+        expect(mocks.details).toHaveBeenCalledWith("max", "s-viewer", expect.any(Number), expect.objectContaining({ viewerId: "lena", reach: null }));
     });
 
     it("answers an account of another tenant like one that is gone, and reads nothing of it", async () => {

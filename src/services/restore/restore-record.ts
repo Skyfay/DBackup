@@ -7,6 +7,8 @@
  * archive of the server, see `view`.
  */
 
+import { versionShown } from "./shared-restore-log";
+
 export type RestoredState = "waiting" | "restoring" | "done" | "failed";
 
 export interface RestoredDatabase {
@@ -162,7 +164,10 @@ export function createRestoreTracker(): RestoreTracker {
         },
         view(customer) {
             const copy: RestoreRecord = structuredClone(record);
-            return customer ? { ...copy, from: null, archive: null } : copy;
+            // The customer reads the versions by their number, without the build and system of the server.
+            return customer
+                ? { ...copy, from: null, archive: null, backupVersion: versionShown(copy.backupVersion), targetVersion: versionShown(copy.targetVersion) }
+                : copy;
         },
     };
 }

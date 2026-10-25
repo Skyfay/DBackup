@@ -5,12 +5,12 @@ import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
 import { userService } from "@/services/user/user-service";
 import { restoreAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { requestRefusal } from "@/lib/server/permission-refusal";
 import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 
 const log = logger.child({ route: "storage/restore" });
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.RESTORE);
 
         const body = await req.json();
-        const { file, scope, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, excludePatterns, privilegedAuth, profileIdOverride } = body;
+        const { file, scope, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, excludePatterns, privilegedAuth, profileIdOverride, overwriteCustomerDatabases } = body;
 
         if (!file || typeof file !== 'string' || file.includes('..') || file.startsWith('/')) {
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
@@ -59,6 +59,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 ? { keyOverride: { profileId: profileIdOverride } }
                 : {}),
             triggerInfo: { type: "Manual", label: startedBy },
+            // Databases customers hold now on a shared server go back only once this is true.
+            overwriteCustomerDatabases: overwriteCustomerDatabases === true,
         });
 
         // Written once the restore was accepted and runs, with where it goes and what it picked.
@@ -72,17 +74,21 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             databaseMapping,
             directoryMapping,
         });
-        await auditService.logFor(ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, details, params.id);
+        // The customers whose databases it overwrote, which their own History never shows.
+        const customers = [...new Set((result.overwritten ?? []).map((entry) => entry.customer))].sort((a, b) => a.localeCompare(b));
+        await auditService.logFor(ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, customers.length > 0 ? { ...details, customers } : details, params.id);
 
         // result contains { success: true, executionId: string, message: "Restore started" }
-        return NextResponse.json(result, { status: 202 });
+        const { overwritten: _overwritten, ...answer } = result;
+        return NextResponse.json(answer, { status: 202 });
 
     } catch (error: unknown) {
-        const refused = permissionRefusal(error);
+        // A malformed request, like an archive outside the caller's view of the destination, is
+        // the caller's to fix, not a server failure.
+        const refused = requestRefusal(error);
         if (refused) return refused;
-        // A malformed request is the caller's to fix, not a server failure.
-        if (error instanceof ValidationError) {
-            return NextResponse.json({ error: error.message }, { status: 400 });
+        if (error instanceof NotFoundError) {
+            return NextResponse.json({ error: error.message }, { status: 404 });
         }
         log.error("Restore error", { storageId: params.id }, wrapError(error));
         return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });

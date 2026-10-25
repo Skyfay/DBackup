@@ -73,7 +73,7 @@ const LISTING = [
     backup("old.sql.gz", "2026-03-10", ["shop"], { hasFileIndex: false }),
     // A backup of another server that happens to hold a database of the same name.
     backup("elsewhere.tar", "2026-03-10", ["shop"], { sourceId: "other-server" }),
-    // A row cached before the server was kept, known by its job.
+    // A row without the server, which a job that moved from another server could have written.
     backup("legacy-row.tar", "2026-03-20", ["shop"], { sourceId: undefined }),
 ];
 
@@ -160,7 +160,7 @@ describe("what a customer sees of a shared server", () => {
     });
 
     it("shows the backups of a database from the time it was theirs only", async () => {
-        expect(daysOf(await overview("acme"), "shop")).toEqual(["2026-03-20", "2026-02-10"]);
+        expect(daysOf(await overview("acme"), "shop")).toEqual(["2026-02-10"]);
         expect(daysOf(await overview("globex"), "shop")).toEqual(["2026-07-10"]);
     });
 
@@ -356,13 +356,13 @@ describe("what the tenant of the server decides", () => {
 
     it("counts the backups of each database once however many destinations hold them", async () => {
         const model = await runAsTenant("default", () => databaseAssignmentService.forSource("shared-mysql", day("2026-08-01")));
-        expect(Object.fromEntries(model.databases.map((entry) => [entry.name, entry.backups]))).toEqual({ blog_one: 2, other: 1, shop: 4, shop_acme: 3 });
+        expect(Object.fromEntries(model.databases.map((entry) => [entry.name, entry.backups]))).toEqual({ blog_one: 2, other: 1, shop: 3, shop_acme: 3 });
     });
 
     it("hands the timeline the days of the backups of the databases a tenant ever held, and only of those", async () => {
         const model = await runAsTenant("default", () => databaseAssignmentService.forSource("shared-mysql", day("2026-08-01")));
         expect(Object.keys(model.backupDates).sort()).toEqual(["blog_one", "shop", "shop_acme"]);
-        expect(model.backupDates.shop.map((iso) => iso.slice(0, 10))).toEqual(["2026-02-10", "2026-03-20", "2026-05-10", "2026-07-10"]);
+        expect(model.backupDates.shop.map((iso) => iso.slice(0, 10))).toEqual(["2026-02-10", "2026-05-10", "2026-07-10"]);
     });
 
     it("ends an assignment instead of deleting it when the database moves on", async () => {

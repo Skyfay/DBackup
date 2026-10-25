@@ -192,20 +192,29 @@ export class ApiKeyService {
     log.info("API key deleted", { apiKeyId: id });
   }
 
-  /** Deletes several API keys, reporting per-key outcomes. */
-  async deleteMany(ids: string[]): Promise<BulkResult> {
+  /**
+   * Deletes several API keys, reporting per-key outcomes. `guard` runs before each and refuses a
+   * key by throwing, which lands in the failures with its sentence.
+   */
+  async deleteMany(ids: string[], guard?: (id: string) => Promise<void>): Promise<BulkResult> {
     const names = await this.namesById(ids);
-    return runBulk(ids, (id) => this.delete(id), (id) => names.get(id));
+    return runBulk(ids, async (id) => {
+      await guard?.(id);
+      await this.delete(id);
+    }, (id) => names.get(id));
   }
 
   /**
-   * Enables or disables several API keys.
+   * Enables or disables several API keys, with `guard` like `deleteMany`.
    *
    * Absolute rather than a toggle, so a mixed selection converges on one state.
    */
-  async toggleMany(ids: string[], enabled: boolean): Promise<BulkResult> {
+  async toggleMany(ids: string[], enabled: boolean, guard?: (id: string) => Promise<void>): Promise<BulkResult> {
     const names = await this.namesById(ids);
-    return runBulk(ids, (id) => this.toggle(id, enabled).then(() => undefined), (id) => names.get(id));
+    return runBulk(ids, async (id) => {
+      await guard?.(id);
+      await this.toggle(id, enabled);
+    }, (id) => names.get(id));
   }
 
   /** Names for the failure list, read before a delete makes them unreadable. */

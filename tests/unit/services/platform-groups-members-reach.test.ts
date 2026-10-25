@@ -60,6 +60,32 @@ describe("the platform groups someone of a platform group of some tenants sees",
         expect(mocks.db.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { AND: [{ id: { in: ["root", "nina", "otto"] } }, seen] } }));
     });
 
+    it("never name a tenant beyond the reach, also not by its id in the scope of another group", async () => {
+        mocks.reachOf.mockResolvedValue(["acme"]);
+        mocks.db.user.findMany.mockResolvedValue([]);
+        const { platformGroupService } = await import("@/services/user/platform-group-service");
+        vi.mocked(platformGroupService.list).mockResolvedValueOnce([
+            { id: "pg-both", name: "Support", createdAt: new Date("2026-10-01T00:00:00.000Z"), platformPermissions: [], tenantPermissions: [], allTenants: false, tenantIds: ["acme", "globex"], members: [] },
+        ] as never);
+
+        const model = await getPlatformGroupListModel(viewer);
+
+        expect(model.groups.find((group) => group.id === "pg-both")?.tenantIds).toEqual(["acme"]);
+        expect(model.tenants.map((tenant) => tenant.id)).toEqual(["acme"]);
+    });
+
+    it("name every tenant of a scope for a reach of all tenants", async () => {
+        mocks.reachOf.mockResolvedValue("all");
+        const { platformGroupService } = await import("@/services/user/platform-group-service");
+        vi.mocked(platformGroupService.list).mockResolvedValueOnce([
+            { id: "pg-both", name: "Support", createdAt: new Date("2026-10-01T00:00:00.000Z"), platformPermissions: [], tenantPermissions: [], allTenants: false, tenantIds: ["acme", "globex"], members: [] },
+        ] as never);
+
+        const model = await getPlatformGroupListModel(viewer);
+
+        expect(model.groups.find((group) => group.id === "pg-both")?.tenantIds).toEqual(["acme", "globex"]);
+    });
+
     it("keep every member for a platform group of all tenants and a platform admin", async () => {
         mocks.reachOf.mockResolvedValue("all");
 

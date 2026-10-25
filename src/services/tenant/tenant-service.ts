@@ -155,9 +155,21 @@ function cleanName(name: string): string {
     return trimmed;
 }
 
-async function assertFreeName(name: string, exceptId?: string): Promise<void> {
+/**
+ * What a tenant that renames itself hears when the name is taken. It never says that another tenant
+ * has the name, which would let the admin of a customer find out the names of the other customers.
+ */
+export const TENANT_NAME_REFUSED = "This name cannot be used. Pick another one.";
+
+/**
+ * Refuses a name another tenant has. The platform hears which, a tenant that renames itself
+ * (`ownTenant`) only `TENANT_NAME_REFUSED`.
+ */
+async function assertFreeName(name: string, exceptId?: string, ownTenant = false): Promise<void> {
     const clash = await prisma.tenant.findUnique({ where: { name }, select: { id: true } });
-    if (clash && clash.id !== exceptId) throw new ConflictError(`A tenant named "${name}" exists already.`);
+    if (!clash || clash.id === exceptId) return;
+    if (ownTenant) throw new ValidationError(TENANT_NAME_REFUSED, { field: "name" });
+    throw new ConflictError(`A tenant named "${name}" exists already.`);
 }
 
 export const tenantService = {
@@ -320,11 +332,15 @@ export const tenantService = {
         return { name: tenant.name, changed: true };
     },
 
-    async rename(id: string, name: string): Promise<{ name: string; renamedFrom: string }> {
+    /**
+     * Renames a tenant. `ownTenant` for a rename from the tenant settings of the tenant itself, whose
+     * refusal of a taken name never says that another tenant has it.
+     */
+    async rename(id: string, name: string, options: { ownTenant?: boolean } = {}): Promise<{ name: string; renamedFrom: string }> {
         const tenant = await prisma.tenant.findUnique({ where: { id }, select: { name: true } });
         if (!tenant) throw new NotFoundError("Tenant", id);
         const clean = cleanName(name);
-        await assertFreeName(clean, id);
+        await assertFreeName(clean, id, options.ownTenant === true);
         await prisma.tenant.update({ where: { id }, data: { name: clean } });
         return { name: clean, renamedFrom: tenant.name };
     },

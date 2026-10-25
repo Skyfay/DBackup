@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
     forSource: vi.fn(),
     addRule: vi.fn(),
     removeRule: vi.fn(),
+    customerDatabases: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/access-control", async (importOriginal) => ({
@@ -55,10 +56,12 @@ vi.mock("@/services/tenant/database-assignments", () => ({
 vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reachOf: mocks.reachOf } }));
 vi.mock("@/services/tenant/database-moves", () => ({ moveDatabase: mocks.move, moveTargets: mocks.targets }));
 vi.mock("@/services/tenant/shared-servers", () => ({ customersOfServer: mocks.customers }));
+vi.mock("@/services/restore/customer-databases", () => ({ customerDatabases: mocks.customerDatabases }));
 vi.mock("@/services/tenant/shared-databases", () => ({ sharedOverview: vi.fn(), prepareSharedDownload: vi.fn(), restoreSharedBackup: mocks.restore }));
 vi.mock("@/services/tenant/shared-on-demand", () => ({ requestSharedBackup: mocks.request, sharedBackupRun: mocks.run }));
 
-const { moveSharedDatabase, getMoveTargets, setDatabaseOnDemand, setRuleOnDemand, getSourceAssignments, assignDatabases, getServerCustomers, addAssignmentRule, removeAssignmentRule } = await import("@/app/actions/tenant/database-assignments");
+const { moveSharedDatabase, getMoveTargets, setDatabaseOnDemand, setRuleOnDemand, getSourceAssignments, assignDatabases, getServerCustomers, addAssignmentRule, removeAssignmentRule, getCustomerDatabases } = await import("@/app/actions/tenant/database-assignments");
+const { SharedRestoreRefused } = await import("@/services/restore/refused-restore");
 const { backUpSharedDatabase, getSharedBackupRun, restoreSharedDatabase } = await import("@/app/actions/tenant/shared-databases");
 
 beforeEach(() => {
@@ -110,6 +113,26 @@ describe("the customers a server warns about before it is deleted", () => {
 
         mocks.granted = new Set([PERMISSIONS.SOURCES.WRITE, SHARE_PERMISSION]);
         expect(await getServerCustomers("old")).toEqual({ success: true, data: { count: 2, names: ["Acme", "Globex"] } });
+    });
+});
+
+describe("the databases of customers a restore page marks", () => {
+    it("are told only to someone who may restore", async () => {
+        mocks.granted.add(PERMISSIONS.STORAGE.READ);
+
+        await expect(getCustomerDatabases("shared-mysql", ["shop_acme"])).rejects.toBeInstanceOf(PermissionError);
+        expect(mocks.checked).toEqual([PERMISSIONS.STORAGE.RESTORE]);
+        expect(mocks.customerDatabases).not.toHaveBeenCalled();
+    });
+
+    it("name the customer only to whoever may see or share the shared databases", async () => {
+        mocks.customerDatabases.mockResolvedValue([{ database: "shop_acme", tenantId: "acme", customer: "Acme" }]);
+        mocks.granted.add(PERMISSIONS.STORAGE.RESTORE);
+        expect(await getCustomerDatabases("shared-mysql", ["shop_acme", "intern"])).toEqual({ success: true, data: [{ database: "shop_acme", customer: null }] });
+        expect(mocks.customerDatabases).toHaveBeenCalledWith("shared-mysql", ["shop_acme", "intern"]);
+
+        mocks.granted.add(SEE_SHARING_PERMISSION);
+        expect(await getCustomerDatabases("shared-mysql", ["shop_acme"])).toEqual({ success: true, data: [{ database: "shop_acme", customer: "Acme" }] });
     });
 });
 
@@ -169,8 +192,11 @@ describe("what the tenant of a shared server changes", () => {
         await setDatabaseOnDemand("old", "shop", 2);
         await setRuleOnDemand("old", "rule-1", 2);
         await moveSharedDatabase("old", { databaseName: "shop", toSourceId: "new" });
+        mocks.targets.mockResolvedValue([]);
+        await getMoveTargets("old");
 
         expect(mocks.reachOf).toHaveBeenCalledWith("u-lena");
+        expect(mocks.targets).toHaveBeenCalledWith("old", ["globex"]);
         expect(mocks.forSource).toHaveBeenCalledWith("old", expect.any(Date), ["globex"]);
         expect(mocks.assign).toHaveBeenCalledWith("old", [{ databaseName: "shop", tenantId: "globex" }], "u-lena", expect.any(Date), ["globex"]);
         expect(mocks.addRule).toHaveBeenCalledWith("old", expect.objectContaining({ pattern: "shop_*", tenantId: "globex" }), expect.any(Date), ["globex"]);
@@ -191,7 +217,8 @@ describe("what the tenant of a shared server changes", () => {
         expect(await moveSharedDatabase("old", { databaseName: "shop", toSourceId: "new" })).toEqual(refused);
         expect(await setDatabaseOnDemand("old", "shop", 2)).toEqual(refused);
         expect(await setRuleOnDemand("old", "rule-1", 2)).toEqual(refused);
-        for (const call of [mocks.assign, mocks.addRule, mocks.removeRule, mocks.move, mocks.setOnDemand, mocks.setRuleOnDemand, mocks.audit]) {
+        expect(await getMoveTargets("old")).toEqual(refused);
+        for (const call of [mocks.assign, mocks.addRule, mocks.removeRule, mocks.move, mocks.targets, mocks.setOnDemand, mocks.setRuleOnDemand, mocks.audit]) {
             expect(call).not.toHaveBeenCalled();
         }
     });
@@ -269,5 +296,17 @@ describe("a restore a customer starts of a shared database", () => {
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "RESTORE", "BACKUP", {
             action: "shared_restore", name: "shop2", databases: ["shop2"], server: "New MySQL", tenant: "Acme", executionId: "run-msp",
         }, undefined, { tenantId: "default" });
+    });
+
+    it("says why a restore was refused before it started, and points to its failed run", async () => {
+        mocks.granted.add(PERMISSIONS.STORAGE.RESTORE);
+        mocks.restore.mockRejectedValue(new SharedRestoreRefused("Running restore of a newer database version (8.0.36) on an older server (8.0.30) is not recommended.", "run-refused", "run-msp"));
+
+        expect(await restoreSharedDatabase(ref)).toEqual({
+            success: false,
+            error: "The restore was refused: Running restore of a newer database version (8.0.36) on an older server (8.0.30) is not recommended.",
+            executionId: "run-refused",
+        });
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 });

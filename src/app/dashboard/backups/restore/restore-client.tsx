@@ -126,8 +126,8 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
         });
     };
 
-    const start = async (withAdmin: boolean) => {
-        await run.start(withAdmin);
+    const start = async (withAdmin: boolean, overwriteCustomerDatabases?: boolean) => {
+        await run.start(withAdmin, overwriteCustomerDatabases);
         setConfirming(false);
     };
 
@@ -207,7 +207,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
                     shapeOf={folders.shapeOf}
                     label={restoreLabel(dbCount, folderCount)}
                     pending={run.restoring}
-                    onConfirm={() => void start(false)}
+                    onConfirm={(overwriteCustomerDatabases) => void start(false, overwriteCustomerDatabases)}
                 />
             </>
         );

@@ -62,7 +62,7 @@ function UseRow({ view, use, kind, canShare, onStop, onDelete }: { view: Connect
                     {destination
                         ? <> · {use.backups === null ? "not measured yet" : plural(use.backups, "backup", "backups")}{use.lastBackup && <> · last <RelativeTime date={use.lastBackup} /></>}</>
                         : <> · {plural(use.templates, "template", "templates")}</>}
-                    {destination && use.jobsWithoutKey > 0 && <span className="text-warning"> · {plural(use.jobsWithoutKey, "job without a key", "jobs without a key")}</span>}
+                    {destination && view.settings.encryptedOnly && use.jobsWithoutKey > 0 && <span className="text-warning"> · {plural(use.jobsWithoutKey, "job without a key", "jobs without a key")}</span>}
                 </p>
             </div>
             {destination && <span className="shrink-0 text-sm font-medium tabular-nums">{use.size === null ? "-" : formatBytes(use.size, 1)}</span>}

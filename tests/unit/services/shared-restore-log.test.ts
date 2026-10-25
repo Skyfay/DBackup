@@ -31,6 +31,13 @@ describe("the log of a customer's restore on a shared server", () => {
             .toBe("MySQL: ERROR 2003 (HY000): Can't connect to MySQL server on 'the server' (111)");
     });
 
+    it("hides an account the server names with the host DBackup connects from", () => {
+        expect(scrubber().text("ERROR 1045 (28000): Access denied for user 'root'@'backup01.msp.internal' (using password: YES)"))
+            .toBe("ERROR 1045 (28000): Access denied for user 'the user'@'an address' (using password: YES)");
+        expect(scrubber().text("ERROR 1449 (HY000): The user specified as a definer (`ops`@`%`) does not exist"))
+            .toBe("ERROR 1449 (HY000): The user specified as a definer (`the user`@`an address`) does not exist");
+    });
+
     it("never names the archive, another archive of its chain, the destination or a path on the server", () => {
         const { text } = scrubber();
         expect(text("Archives missing: Shared MySQL/2026-10-15_0214_Shared_MySQL_nightly.tar, 2026-10-14_0214_Shared_MySQL_nightly.tar"))
@@ -56,8 +63,7 @@ describe("the log of a customer's restore on a shared server", () => {
 
     it("never reads a neutral word as a value again", () => {
         const { text } = sharedLogScrubber({ keep: ["shop_acme"], connection: { host: "db7.msp.internal", user: "server" } });
-        expect(text("Access denied for user 'server'@'db7.msp.internal'")).toBe("Access denied for user 'the user'@'the server'");
-    });
+        expect(text("Access denied for user 'server'@'db7.msp.internal'")).toBe("Access denied for user 'the user'@'an address'");    });
 
     it("hides any other host of the domain of the server, like a replica or a node of its cluster", () => {
         const { text } = scrubber();
@@ -95,10 +101,14 @@ describe("the log of a customer's restore on a shared server", () => {
         expect(log).toHaveBeenCalledWith("The server ran out of memory during the restore.", "error", undefined);
     });
 
-    it("leaves plain progress lines, times and versions as they are", () => {
+    it("leaves plain progress lines, times and the number of a version as they are", () => {
         const { text } = scrubber();
         for (const line of ["Target server version: 16.0.4135.4", "2026-10-16T12:30:45.123+0000 finished restoring shop_acme.orders (12 documents, 0 failures)", "1.2 MB / 3 MB - 1 MB/s"]) {
             expect(text(line)).toBe(line);
         }
+    });
+
+    it("keeps a version without the build and the system of the server", () => {
+        expect(scrubber().text("Target server version: 8.0.36-0ubuntu0.22.04.1")).toBe("Target server version: 8.0.36");
     });
 });

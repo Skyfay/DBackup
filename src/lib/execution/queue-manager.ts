@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { logger } from "@/lib/logging/logger";
@@ -6,6 +7,15 @@ import { isDatabaseMaintenanceActive, isRunHoldActive } from "@/lib/server/datab
 import { LEADING_RUNS } from "./follower-runs";
 
 const log = logger.child({ module: "Queue" });
+
+/**
+ * The waiting runs the queue starts: those of a job, and a backup whose job was deleted, which then
+ * ends at once. A system task, like the integrity check of a tenant or a check of copies, waits as
+ * `Pending` without a job only until its own runner claims it, and is never the queue's to start.
+ */
+export const QUEUED_RUNS: Prisma.ExecutionWhereInput = {
+    OR: [{ jobId: { not: null } }, { type: "Backup" }],
+};
 
 /**
  * Checks the queue and starts jobs if slots are available.
@@ -48,7 +58,7 @@ async function processAllTenants() {
     // this read shows up as running below. Either way no second run of a job starts beside it.
     // A run that follows another one waits for that one, never for a slot of its own.
     const pending = await prisma.execution.findMany({
-        where: { status: "Pending", AND: [LEADING_RUNS] },
+        where: { status: "Pending", AND: [LEADING_RUNS, QUEUED_RUNS] },
         orderBy: { startedAt: 'asc' }, // Creation time
         select: { id: true, jobId: true, tenantId: true },
     });
@@ -58,9 +68,11 @@ async function processAllTenants() {
         return;
     }
 
-    // 3. Running runs fill slots, and their jobs are busy. A run that follows another fills none.
+    // 3. The running runs the queue started fill slots, and their jobs are busy. A run that follows
+    // another fills none, and neither does a restore or a system task like a check of copies, which
+    // the queue never starts, so a long restore of one tenant holds no backup of another.
     const running = await prisma.execution.findMany({
-        where: { status: "Running", AND: [LEADING_RUNS] },
+        where: { status: "Running", AND: [LEADING_RUNS, QUEUED_RUNS] },
         select: { jobId: true },
     });
 

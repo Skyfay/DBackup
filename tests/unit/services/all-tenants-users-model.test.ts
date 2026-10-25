@@ -6,7 +6,7 @@ vi.mock("@/services/auth/password-policy-service", () => ({ getPasswordPolicy: v
 
 const { buildUsersModel } = await import("@/services/user/users-model");
 const { getAllUsersModel } = await import("@/services/user/users-all-model");
-const { getPlatformGroupsModel } = await import("@/services/user/groups-model");
+const { getPlatformGroupsModel, platformTenantNames } = await import("@/services/user/groups-model");
 type Build = Parameters<typeof buildUsersModel>[0];
 
 const NOW = Date.parse("2026-10-15T12:00:00Z");
@@ -260,5 +260,34 @@ describe("the accounts a platform group of some tenants sees on the Platform", (
 
         await getPlatformGroupsModel("root");
         expect(prismaMock.group.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: undefined }));
+    });
+
+    it("hands the page the names of the tenants it reaches alone", async () => {
+        prismaMock.tenant.findMany.mockResolvedValue([{ id: "tenant-a", name: "Acme" }] as never);
+
+        expect(await platformTenantNames(["tenant-a"])).toEqual([{ id: "tenant-a", name: "Acme" }]);
+        expect(prismaMock.tenant.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: { in: ["tenant-a"] } } }));
+
+        await platformTenantNames("all");
+        expect(prismaMock.tenant.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: undefined }));
+
+        prismaMock.tenant.findMany.mockClear();
+        expect(await platformTenantNames([])).toEqual([]);
+        expect(prismaMock.tenant.findMany).not.toHaveBeenCalled();
+    });
+
+    it("names only the tenants it reaches of a group for tenants, never another by its id", async () => {
+        prismaMock.group.findMany.mockResolvedValue([] as never);
+        prismaMock.tenantGroupTemplate.findMany.mockResolvedValue([{
+            id: "tpl-client", name: "Client", permissions: "[]", allTenants: false, createdAt: at("2026-03-01T09:00:00Z"), updatedAt: at("2026-03-01T09:00:00Z"),
+            tenants: [{ tenantId: "tenant-a" }, { tenantId: "tenant-b" }],
+            groups: [{ id: "g-a", tenantId: "tenant-a", memberships: [] }, { id: "g-b", tenantId: "tenant-b", memberships: [] }],
+        }] as never);
+
+        const reached = await getPlatformGroupsModel("nina", ["tenant-a"]);
+        expect(reached.templates?.[0]).toEqual(expect.objectContaining({ tenantIds: ["tenant-a"], groups: [expect.objectContaining({ tenantId: "tenant-a" })] }));
+
+        const all = await getPlatformGroupsModel("root");
+        expect(all.templates?.[0].tenantIds).toEqual(["tenant-a", "tenant-b"]);
     });
 });

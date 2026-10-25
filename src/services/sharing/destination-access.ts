@@ -8,7 +8,7 @@ import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { runAsSystem } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
-import { SHARED_STORAGE_FAILURE, storageView, type StorageViewMode } from "@/lib/tenant/storage-view";
+import { SHARED_STORAGE_FAILURE, innerPath, storageView, type StorageViewMode } from "@/lib/tenant/storage-view";
 import { providedConnection, type ProvidedConnection } from "./provided";
 
 const log = logger.child({ service: "DestinationAccess" });
@@ -68,6 +68,19 @@ export async function findDestination(id: string, tenantId?: string | null): Pro
     const mode = await viewModeOf(row, viewer);
     if (!mode) throw new NotFoundError(STORAGE, id);
     return { row, mode, tenantId: viewer };
+}
+
+/**
+ * The row of a storage connection a tenant may use, once a path on it is one its view reaches, like
+ * the archive of a restore or of a link. Throws a NotFoundError for a destination it may not use and
+ * a ValidationError for a path outside its view, like the folder of the customers for the tenant
+ * that shares the destination. Reads nothing of the storage, so a caller refuses before anything
+ * else happens, like a database the restore creates or an entry in the audit log.
+ */
+export async function findDestinationPath(id: string, remotePath: string, tenantId?: string | null): Promise<{ row: AdapterConfig; mode: StorageViewMode; tenantId: string }> {
+    const found = await findDestination(id, tenantId);
+    innerPath(found.mode, remotePath);
+    return found;
 }
 
 /**

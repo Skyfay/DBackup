@@ -103,6 +103,7 @@ describe("the integrity check of every tenant", () => {
         mocks.tenantsToCheck.mockResolvedValue(["acme", "default", "zeta"]);
         mocks.notify.mockResolvedValue(undefined);
         mocks.notifyTenants.mockResolvedValue(undefined);
+        prismaMock.tenant.findMany.mockResolvedValue([{ id: "acme", name: "Acme" }] as never);
         checkOneCopyPerTenant();
     });
 
@@ -115,7 +116,8 @@ describe("the integrity check of every tenant", () => {
             const copies = run.setExtra.mock.calls.flatMap(([extra]) => (extra as { copies?: { destinationId: string }[] }).copies ?? []);
             expect(copies.map((copy) => copy.destinationId)).toEqual([`${run.tenantId}-nas`]);
         }
-        expect(mocks.runs[0].logEntry).toHaveBeenCalledWith("The copies of 2 other tenants are checked in runs of their own");
+        // The run of the home tenant says nothing about the other tenants, not even how many there are.
+        expect(mocks.runs[0].logEntry).not.toHaveBeenCalledWith(expect.stringContaining("other tenant"));
         expect(mocks.runs[1].finish).toHaveBeenCalledWith("Partial");
         expect(mocks.runs[2].finish).toHaveBeenCalledWith("Success");
     });
@@ -134,10 +136,35 @@ describe("the integrity check of every tenant", () => {
 
         expect(mocks.notify).toHaveBeenCalledTimes(1);
         expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ totalFiles: 3, failed: 1, passed: 2 }) }), { executionId: "run-default" });
+        // The files and destinations of a customer stay out of the message of the platform and its log row.
+        expect(mocks.notify.mock.calls[0][0].data).toEqual(expect.objectContaining({ errors: [], tenants: [{ tenant: "Acme", failed: 1, totalFiles: 1 }] }));
         expect(mocks.notifyTenants).toHaveBeenCalledWith(
             [expect.objectContaining({ destinationId: "default-nas" }), expect.objectContaining({ destinationId: "acme-nas" }), expect.objectContaining({ destinationId: "zeta-nas" })],
             "Scheduler",
         );
+    });
+
+    it("names the files of the home tenant to the platform, and of the others only how many failed", async () => {
+        mocks.check.mockImplementation(async () => {
+            const tenantId = scopeTenant();
+            return { ...result(1, 1), errors: [{ file: `${tenantId}.tar`, destination: `${tenantId} NAS`, expected: "x", actual: "y" }] };
+        });
+
+        await runCheck();
+
+        const { data } = mocks.notify.mock.calls[0][0];
+        expect(data.errors).toEqual([{ file: "default.tar", destination: "default NAS", expected: "x", actual: "y" }]);
+        expect(JSON.stringify(data)).not.toMatch(/acme\.tar|acme NAS|zeta/);
+        expect(data.tenants).toEqual([{ tenant: "Acme", failed: 1, totalFiles: 2 }, { tenant: "A deleted tenant", failed: 1, totalFiles: 2 }]);
+    });
+
+    it("names the platform as who started the runs of the other tenants, never the person who pressed Run now", async () => {
+        const { SystemTaskRunner } = await import("@/lib/runner/system-task-runner");
+        const onDone = vi.fn(async () => undefined);
+        await runAsSystem(() => startIntegrityCheck("Manual", "Lena Graf", onDone));
+        await vi.waitFor(() => expect(onDone).toHaveBeenCalled());
+
+        expect(vi.mocked(SystemTaskRunner.create).mock.calls.map((call) => call.slice(1, 3))).toEqual([["Manual", "Lena Graf"], ["Manual", "Platform"], ["Manual", "Platform"]]);
     });
 
     it("fails only the run of a tenant whose check breaks, and goes on with the others", async () => {

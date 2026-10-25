@@ -35,7 +35,16 @@ export interface SystemTaskDefinition {
     label: string;
     description: string;
     follows?: TaskFollows;
+    /**
+     * Only a platform admin with a session changes or starts it, never someone who only may change
+     * the settings and never an API key, like the configuration backup, whose file holds every
+     * secret of the instance.
+     */
+    platformAdminOnly?: boolean;
 }
+
+/** The answer to anyone else who changes or starts a task of `platformAdminOnly`. */
+export const PLATFORM_ADMIN_TASK_REFUSAL = "Only a platform admin changes or starts the configuration backup, since its file holds every secret of the instance.";
 
 export const DEFAULT_TASK_CONFIG: Record<SystemTaskId, SystemTaskDefinition> = {
     [SYSTEM_TASKS.HEALTH_CHECK]: {
@@ -104,6 +113,7 @@ export const DEFAULT_TASK_CONFIG: Record<SystemTaskId, SystemTaskDefinition> = {
         label: "Configuration backup",
         description: "Backs up connections, jobs, users and settings to the destination of Configuration backup.",
         follows: { part: "config-backup", setting: "Back up the configuration" },
+        platformAdminOnly: true,
     },
     [SYSTEM_TASKS.INTEGRITY_CHECK]: {
         interval: "0 4 * * 0",
@@ -140,4 +150,9 @@ export const TASK_ORDER: readonly SystemTaskId[] = [
 
 export function isSystemTaskId(value: unknown): value is SystemTaskId {
     return typeof value === "string" && value in DEFAULT_TASK_CONFIG;
+}
+
+/** Whether only a platform admin with a session changes or starts the task, see `platformAdminOnly`. */
+export function isPlatformAdminTask(taskId: SystemTaskId): boolean {
+    return DEFAULT_TASK_CONFIG[taskId].platformAdminOnly === true;
 }

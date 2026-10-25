@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { currentTenantId } from "@/lib/tenant/current";
 import { AUDIT_AREAS, areaOfResource, QUICK_ACTIONS, type AuditQuick } from "@/lib/core/audit-areas";
@@ -6,14 +7,15 @@ import { getDataRetentionValues } from "@/services/system/data-retention-service
 import { buildAuditWhere, type AuditFilter, type AuditQuery } from "./audit-query";
 import { AUDIT_ROW_SELECT, networkOf, newPlacesOf, resolveTargets, toRow } from "./audit-rows";
 import type { AuditFacets, AuditRow, AuditStats, AuditWhoOption } from "./audit-types";
+import { auditVisibleWhere, FULL_VIEW, type LogView } from "./log-reach";
 
 const DAY_MS = 86_400_000;
 /** The days the numbers above the list cover. */
 export const AUDIT_STATS_DAYS = 30;
 
-/** One page of entries, newest first, with every entry in words. */
-export async function listAudit(query: AuditQuery, now = new Date()): Promise<{ rows: AuditRow[]; total: number }> {
-    const where = buildAuditWhere({ ...query, viewerTenantId: await currentTenantId() }, now);
+/** One page of entries, newest first, with every entry in words, of those the view sees (`log-reach.ts`). */
+export async function listAudit(query: AuditQuery, now = new Date(), view: LogView = FULL_VIEW): Promise<{ rows: AuditRow[]; total: number }> {
+    const where = buildAuditWhere({ ...query, viewerTenantId: await currentTenantId(), visible: await auditVisibleWhere(view) }, now);
     const [records, total] = await Promise.all([
         prisma.auditLog.findMany({
             where,
@@ -25,7 +27,7 @@ export async function listAudit(query: AuditQuery, now = new Date()): Promise<{ 
         prisma.auditLog.count({ where }),
     ]);
     const [targets, newPlaces] = await Promise.all([resolveTargets(records), newPlacesOf(records)]);
-    return { rows: records.map((record) => toRow(record, targets, newPlaces)), total };
+    return { rows: records.map((record) => toRow(record, targets, newPlaces, view)), total };
 }
 
 const whoKey = (group: { userId: string | null; actorName: string | null; apiKeyId: string | null }) =>
@@ -35,8 +37,8 @@ const whoKey = (group: { userId: string | null; actorName: string | null; apiKey
  * How many entries each value of every filter keeps under the other filters. `byTenant` counts
  * the tenants too, for the Tenant filter of All tenants.
  */
-export async function getAuditFacets(query: AuditFilter, now = new Date(), byTenant = false): Promise<AuditFacets> {
-    const filter = { ...query, viewerTenantId: await currentTenantId() };
+export async function getAuditFacets(query: AuditFilter, now = new Date(), byTenant = false, view: LogView = FULL_VIEW): Promise<AuditFacets> {
+    const filter = { ...query, viewerTenantId: await currentTenantId(), visible: await auditVisibleWhere(view) };
     const [who, area, action, quick, tenant] = await Promise.all([
         prisma.auditLog.groupBy({ by: ["userId", "actorName", "apiKeyId"], where: buildAuditWhere(filter, now, "who"), _count: { _all: true } }),
         prisma.auditLog.groupBy({ by: ["resource"], where: buildAuditWhere(filter, now, "area"), _count: { _all: true } }),
@@ -67,9 +69,10 @@ export async function getAuditFacets(query: AuditFilter, now = new Date(), byTen
     };
 }
 
-/** Everyone the log names, people first, then the API keys, for the Who filter. */
-export async function getAuditWhoOptions(): Promise<AuditWhoOption[]> {
-    const groups = await prisma.auditLog.groupBy({ by: ["userId", "actorName", "apiKeyId", "apiKeyName"], _count: { _all: true } });
+/** Everyone the entries the view sees name, people first, then the API keys, for the Who filter. */
+export async function getAuditWhoOptions(view: LogView = FULL_VIEW): Promise<AuditWhoOption[]> {
+    const visible = await auditVisibleWhere(view);
+    const groups = await prisma.auditLog.groupBy({ by: ["userId", "actorName", "apiKeyId", "apiKeyName"], ...(visible ? { where: visible } : {}), _count: { _all: true } });
     const userIds = [...new Set(groups.flatMap((group) => (group.userId && !group.apiKeyId ? [group.userId] : [])))];
     const users = userIds.length === 0 ? [] : await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, image: true } });
     const known = new Map(users.map((user) => [user.id, user]));
@@ -93,16 +96,18 @@ export async function getAuditWhoOptions(): Promise<AuditWhoOption[]> {
     return [...options.values()].sort((a, b) => order[a.group] - order[b.group] || a.label.localeCompare(b.label));
 }
 
-/** The numbers above the list, over the last 30 days. */
-export async function getAuditStats(now = new Date()): Promise<AuditStats> {
+/** The numbers above the list, over the last 30 days, of the entries the view sees. */
+export async function getAuditStats(now = new Date(), view: LogView = FULL_VIEW): Promise<AuditStats> {
     const since = new Date(now.getTime() - AUDIT_STATS_DAYS * DAY_MS);
+    const visible = await auditVisibleWhere(view);
+    const within = (where: Prisma.AuditLogWhereInput): Prisma.AuditLogWhereInput => (visible ? { AND: [where, visible] } : where);
     const [retention, groups, people, lastFailed, logins] = await Promise.all([
         getDataRetentionValues(),
-        prisma.auditLog.groupBy({ by: ["action", "resource"], where: { createdAt: { gte: since } }, _count: { _all: true } }),
-        prisma.auditLog.groupBy({ by: ["userId"], where: { createdAt: { gte: since }, action: AUDIT_ACTIONS.LOGIN, userId: { not: null } } }),
-        prisma.auditLog.findFirst({ where: { action: AUDIT_ACTIONS.LOGIN_FAILED, createdAt: { gte: since } }, orderBy: { createdAt: "desc" }, select: { createdAt: true, ipAddress: true } }),
+        prisma.auditLog.groupBy({ by: ["action", "resource"], where: within({ createdAt: { gte: since } }), _count: { _all: true } }),
+        prisma.auditLog.groupBy({ by: ["userId"], where: within({ createdAt: { gte: since }, action: AUDIT_ACTIONS.LOGIN, userId: { not: null } }) }),
+        prisma.auditLog.findFirst({ where: within({ action: AUDIT_ACTIONS.LOGIN_FAILED, createdAt: { gte: since } }), orderBy: { createdAt: "desc" }, select: { createdAt: true, ipAddress: true } }),
         // Every sign-in the log keeps, to tell a new place from a known one.
-        prisma.auditLog.findMany({ where: { action: AUDIT_ACTIONS.LOGIN, userId: { not: null } }, orderBy: { createdAt: "asc" }, select: { userId: true, ipAddress: true, createdAt: true } }),
+        prisma.auditLog.findMany({ where: within({ action: AUDIT_ACTIONS.LOGIN, userId: { not: null } }), orderBy: { createdAt: "asc" }, select: { userId: true, ipAddress: true, createdAt: true } }),
     ]);
 
     const count = (keep: (group: { action: string; resource: string }) => boolean) =>

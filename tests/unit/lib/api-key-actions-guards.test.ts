@@ -7,7 +7,12 @@ type Viewer = { id: string; name: string; isPlatformAdmin: boolean; permissions:
 const mocks = vi.hoisted(() => ({
     denied: new Set<string>(),
     viewer: null as Viewer | null,
-    keys: { create: vi.fn(), update: vi.fn(), rotate: vi.fn(), ownerOf: vi.fn(), nameTaken: vi.fn(), ceilingFor: vi.fn() },
+    keys: {
+        create: vi.fn(), update: vi.fn(), rotate: vi.fn(), ownerOf: vi.fn(), nameTaken: vi.fn(), ceilingFor: vi.fn(),
+        toggle: vi.fn(), delete: vi.fn(), getById: vi.fn(),
+        // Like the service, every key in turn through the guard, a refusal as the failure of that key.
+        deleteMany: vi.fn(), toggleMany: vi.fn(),
+    },
     audit: vi.fn(),
 }));
 
@@ -23,7 +28,21 @@ vi.mock("@/services/auth/api-key-service", () => ({ apiKeyService: mocks.keys })
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/tenant/shared-servers", () => ({ sharesWithCustomers: vi.fn(async () => false) }));
 
-const { createApiKey, rotateApiKey, updateApiKey } = await import("@/app/actions/auth/api-key");
+const { bulkDeleteApiKeys, bulkToggleApiKeys, createApiKey, deleteApiKey, rotateApiKey, toggleApiKey, updateApiKey } = await import("@/app/actions/auth/api-key");
+
+/** What the service does with a guard: run it for every key, record a refusal as a failure. */
+async function bulkWith(ids: string[], guard?: (id: string) => Promise<void>) {
+    const result = { succeeded: [] as string[], failed: [] as { id: string; error: string }[] };
+    for (const id of ids) {
+        try {
+            await guard?.(id);
+            result.succeeded.push(id);
+        } catch (error: unknown) {
+            result.failed.push({ id, error: (error as Error).message });
+        }
+    }
+    return result;
+}
 
 /** Someone who may do what their group in the tenant gives, as `getViewer` hands them on. */
 const viewer = (id: string, name: string, permissions: string[], isPlatformAdmin = false): Viewer => ({ id, name, isPlatformAdmin, permissions, tenantId: "default" });
@@ -146,5 +165,52 @@ describe("what an API key may get", () => {
         expect(result.success).toBe(false);
         expect(mocks.keys.ceilingFor).toHaveBeenCalledWith("lena", "default");
         expect(mocks.keys.create).not.toHaveBeenCalled();
+    });
+
+    describe("pausing, resuming and deleting a key of someone else", () => {
+        /** Lena's key runs jobs and reads the history, Tom's own key only reads jobs. */
+        const KEYS: Record<string, { ownerId: string; name: string; permissions: string[]; ownerPermissions: string[] }> = {
+            "key-lena": { ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "history:read"], ownerPermissions: OPERATORS },
+            "key-tom": { ownerId: "tom", name: "Tom's reader", permissions: ["jobs:read"], ownerPermissions: ["jobs:read"] },
+        };
+
+        beforeEach(() => {
+            mocks.keys.ownerOf.mockImplementation(async (id: string) => KEYS[id]);
+            mocks.keys.getById.mockImplementation(async (id: string) => ({ id, name: KEYS[id].name, prefix: "dbackup_12345678" }));
+            mocks.keys.toggle.mockImplementation(async (id: string, enabled: boolean) => ({ id, name: KEYS[id].name, enabled }));
+            mocks.keys.deleteMany.mockImplementation(async (ids: string[], guard?: (id: string) => Promise<void>) => bulkWith(ids, guard));
+            mocks.keys.toggleMany.mockImplementation(async (ids: string[], _enabled: boolean, guard?: (id: string) => Promise<void>) => bulkWith(ids, guard));
+        });
+
+        it("refuses someone whose group may do less than the key, for one key and in bulk", async () => {
+            mocks.viewer = viewer("tom", "Tom Weber", ["jobs:read", "api-keys:write"]);
+
+            expect(await toggleApiKey("key-lena", false)).toEqual({ success: false, error: "The key may run jobs and see the history, which your group may not, so only its owner pauses it." });
+            expect(await deleteApiKey("key-lena")).toEqual({ success: false, error: "The key may run jobs and see the history, which your group may not, so only its owner deletes it." });
+            expect(mocks.keys.toggle).not.toHaveBeenCalled();
+            expect(mocks.keys.delete).not.toHaveBeenCalled();
+
+            const deleted = await bulkDeleteApiKeys(["key-lena", "key-tom"]);
+            expect(deleted).toMatchObject({ success: true, data: { succeeded: ["key-tom"], failed: [{ id: "key-lena", error: expect.stringMatching(/only its owner deletes it/) }] } });
+            const paused = await bulkToggleApiKeys(["key-lena", "key-tom"], false);
+            expect(paused).toMatchObject({ success: true, data: { succeeded: ["key-tom"], failed: [{ id: "key-lena", error: expect.stringMatching(/only its owner pauses it/) }] } });
+        });
+
+        it("lets the owner and someone who may do all the key may do pause and delete it", async () => {
+            mocks.viewer = viewer("lena", "Lena Graf", OPERATORS);
+            expect(await toggleApiKey("key-lena", false)).toMatchObject({ success: true });
+
+            mocks.viewer = viewer("ada", "Ada", [...OPERATORS, "api-keys:write"]);
+            expect(await deleteApiKey("key-lena")).toEqual({ success: true });
+            expect(mocks.keys.delete).toHaveBeenCalledWith("key-lena");
+        });
+
+        it("refuses ids and a switch that are no strings and no boolean before anything is read", async () => {
+            expect(await toggleApiKey("", true)).toEqual({ success: false, error: "Invalid request" });
+            expect(await toggleApiKey("key-lena", "yes" as unknown as boolean)).toEqual({ success: false, error: "Invalid request" });
+            expect(await deleteApiKey({ id: "key-lena" } as unknown as string)).toEqual({ success: false, error: "Invalid request" });
+            expect(await bulkToggleApiKeys(["key-lena"], "no" as unknown as boolean)).toEqual({ success: false, error: "Invalid request" });
+            expect(mocks.keys.ownerOf).not.toHaveBeenCalled();
+        });
     });
 });

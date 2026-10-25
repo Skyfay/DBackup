@@ -1,7 +1,8 @@
 /**
  * The username of an rsync login is a plain login name: rsync puts it in front of the host,
- * `user@host:path`, and OpenSSH reads `user@host`, so a name with `@`, `:` or `/` would make them
- * dial another host and one with a leading `-` would reach OpenSSH as an option.
+ * `user@host:path`, and OpenSSH reads `user@host`, so a name with `:` or `/` would make them dial
+ * another host and one with a leading `-` would reach OpenSSH as an option. Both read the host
+ * after the last `@`, so an AD login like `alice@corp.local` still reaches the configured host.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { rsyncUsernameProblem } from "@/lib/adapters/storage/rsync-user";
@@ -16,17 +17,17 @@ const { validateCredentialAssignments } = await import("@/lib/adapters/credentia
 const { registerAdapters } = await import("@/lib/adapters");
 registerAdapters();
 
-const REFUSED = ["ops@10.0.0.5", "ops:x", "ops/x", "back up", "tab\there", "-oProxyCommand=x", "-l"];
-const PLAIN = ["backup", "backup-01", "backup.ops", "svc_backup", "Backup01", "dbackup$"];
+const REFUSED = ["ops:x", "ops@10.0.0.5:22", "ops/x", "back up", "tab\there", "line\nbreak", "-oProxyCommand=x", "-l"];
+const PLAIN = ["backup", "backup-01", "backup.ops", "svc_backup", "Backup01", "dbackup$", "alice@corp.local", "CORP\\alice"];
 
 const config = { host: "nas.example.com", port: 22, authType: "password", password: "pw", pathPrefix: "/backups" };
 
 describe("the username of an rsync login", () => {
-    it("refuses @, :, /, whitespace and a leading -", () => {
+    it("refuses :, /, whitespace, control characters and a leading -", () => {
         for (const username of REFUSED) expect(rsyncUsernameProblem(username), username).not.toBeNull();
     });
 
-    it("takes a plain login name, with dots, dashes and underscores inside", () => {
+    it("takes a plain login name, with dots, dashes, underscores and an @ of a Windows login inside", () => {
         for (const username of PLAIN) expect(rsyncUsernameProblem(username), username).toBeNull();
     });
 
@@ -41,7 +42,7 @@ describe("the username of an rsync login", () => {
         });
 
         it("refuses a profile whose username is no plain name", async () => {
-            mocks.decrypted.mockResolvedValue({ username: "ops@10.0.0.5", authType: "password", password: "pw" });
+            mocks.decrypted.mockResolvedValue({ username: "ops:10.0.0.5", authType: "password", password: "pw" });
             await expect(validateCredentialAssignments("rsync", "login-1", null)).rejects.toBeInstanceOf(ValidationError);
         });
 

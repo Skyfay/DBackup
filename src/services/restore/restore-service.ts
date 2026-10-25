@@ -10,7 +10,8 @@ import type { RestoreInput } from "./types";
 import { preflightRestore } from "./preflight";
 import { runRestorePipeline } from "./pipeline";
 import type { ProviderRun } from "./run-logs";
-import { FOLLOWS_KEY } from "@/lib/execution/follower-runs";
+import { providerRunData, recordRefusedRestore } from "./refused-restore";
+import { assertCustomerDatabasesConfirmed } from "./customer-databases";
 import { assertDatabaseTarget, normalizeDatabaseMapping } from "./database-mapping";
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 import { runAsSystem } from "@/lib/tenant/context";
@@ -53,8 +54,20 @@ export class RestoreService {
         assertDatabaseTarget(input.targetDatabaseName);
         const { file } = input;
 
-        // Pre-flight: throws on permission/version/type incompatibility.
-        await preflightRestore(input);
+        // Databases customers hold now on the server go back only once the request confirms it,
+        // asked before anything touches the server.
+        const overwritten = await assertCustomerDatabasesConfirmed(input);
+
+        try {
+            // Pre-flight: throws on permission/version/type incompatibility.
+            await preflightRestore(input);
+            // Checked right before the run is recorded, since the preflight above can take a while.
+            assertNoDatabaseMaintenance("restore");
+        } catch (error: unknown) {
+            // A customer's restore refused here leaves its runs, failed, with the reason.
+            if (input.shared && runTenantId) throw await recordRefusedRestore(input, runTenantId, error);
+            throw error;
+        }
 
         // Initial Structured Log
         const initialLog: LogEntry = {
@@ -64,9 +77,6 @@ export class RestoreService {
             type: 'general',
             stage: 'Initializing'
         };
-
-        // Checked right before the run is recorded, since the preflight above can take a while.
-        assertNoDatabaseMaintenance("restore");
 
         const startedAt = new Date();
         const run: Prisma.ExecutionUncheckedCreateInput = {
@@ -103,35 +113,14 @@ export class RestoreService {
             svcLog.error("Background restore failed", { executionId }, wrapError(err));
         });
 
-        return { success: true, executionId, ...(providerRun ? { providerExecutionId: providerRun.id } : {}), message: "Restore started" };
+        return {
+            success: true,
+            executionId,
+            ...(providerRun ? { providerExecutionId: providerRun.id } : {}),
+            ...(overwritten.length > 0 ? { overwritten } : {}),
+            message: "Restore started",
+        };
     }
-}
-
-/**
- * The provider's run of a customer's restore of a database on its shared server: started by the
- * person of the customer, like "Acme · Sara", and linked to the customer's run by its id.
- */
-function providerRunData(providerRun: ProviderRun, input: RestoreInput, tenantId: string, customerRun: string, startedAt: Date): Prisma.ExecutionUncheckedCreateInput {
-    const database = input.shared?.databaseName;
-    const person = input.triggerInfo?.label;
-    return {
-        id: providerRun.id,
-        tenantId,
-        type: 'Restore',
-        status: 'Running',
-        logs: JSON.stringify([{
-            timestamp: startedAt.toISOString(),
-            message: `Starting restore of ${database} for ${providerRun.customer} out of ${path.basename(input.file)}`,
-            level: 'info',
-            type: 'general',
-            stage: 'Initializing',
-        } satisfies LogEntry]),
-        startedAt,
-        path: input.file,
-        metadata: JSON.stringify({ progress: 0, stage: 'Initializing', restoreOf: { database, customer: providerRun.customer }, [FOLLOWS_KEY]: customerRun }),
-        triggerType: input.triggerInfo?.type ?? null,
-        triggerLabel: person ? `${providerRun.customer} · ${person}` : providerRun.customer,
-    };
 }
 
 export const restoreService = new RestoreService();

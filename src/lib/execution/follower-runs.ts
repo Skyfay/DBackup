@@ -53,6 +53,22 @@ export function leaderOf(metadata: string | null | undefined): string | null {
 }
 
 /**
+ * The stored metadata of a run as a reader outside the server gets it: without the run a follower
+ * follows, which belongs to another tenant, like the provider's run of a customer's backup. The
+ * runner and Cancel read the link from the database, never from this.
+ */
+export function shownMetadata(metadata: string | null): string | null {
+    if (!metadata?.includes(FOLLOWER_MARK)) return metadata;
+    try {
+        const value = JSON.parse(metadata) as Record<string, unknown>;
+        delete value[FOLLOWS_KEY];
+        return JSON.stringify(value);
+    } catch {
+        return null;
+    }
+}
+
+/**
  * The followers of a run that are still waiting or running, in any tenant. Only these can still
  * change, which keeps the search to the few rows that wait or run.
  */

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission, getViewer, getUserPermissions } from "@/lib/auth/access-control";
+import { checkPermission, getViewer, getUserPermissions, tenantRefusal } from "@/lib/auth/access-control";
 import { emailClaimScope } from "@/lib/auth/account-access";
 import { TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import type { PlatformReach } from "@/lib/auth/platform-group-caps";
@@ -172,7 +172,11 @@ const UndoSchema = z.object({
 /**
  * Undo right after a delete: brings back what the viewer just deleted, the newest deleted record of
  * each id. Only their own delete of the last minutes, with the right to change the kind, so it
- * needs no right to change the settings and is no way around it.
+ * needs no right to change the settings and is no way around it. A record of a tenant comes back in
+ * that tenant, so All tenants, which only reads, is refused, while an account, which belongs to no
+ * tenant, comes back there too.
+ * @no-permission-required - no right of its own: each entry is checked against the right to change
+ * its kind (`mayHandle`, `mayRestoreAccount`), and only the viewer's own delete of the last minutes counts
  */
 export async function undoDeleteAction(kind: TrashKind, recordIds: string[]): Promise<TrashActionResult<TrashRestoreResult>> {
     const permissions = await getUserPermissions();
@@ -180,6 +184,10 @@ export async function undoDeleteAction(kind: TrashKind, recordIds: string[]): Pr
     if (!user) throw new AuthenticationError();
     const parsed = UndoSchema.safeParse({ kind, recordIds });
     if (!parsed.success) return { success: false, error: "Invalid request" };
+    if (parsed.data.kind !== "user") {
+        const refused = tenantRefusal(user);
+        if (refused) return { success: false, error: user.allTenants ? IN_ITS_TENANT : refused };
+    }
 
     try {
         const since = Date.now() - UNDO_WINDOW_MS;

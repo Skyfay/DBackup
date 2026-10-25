@@ -85,4 +85,9 @@ export interface RestoreInput {
      */
     keyOverride?: KeyOverride;
     triggerInfo?: TriggerInfo;
+    /**
+     * The tenant of a shared server confirmed that the restore overwrites databases its customers
+     * hold now. Without it such a restore is refused, see `customer-databases.ts`.
+     */
+    overwriteCustomerDatabases?: boolean;
 }

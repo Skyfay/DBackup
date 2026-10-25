@@ -29,15 +29,25 @@ export function tenantFolder(tenantId: string): string {
     return `${TENANTS_FOLDER}/${tenantId}`;
 }
 
+/** A name with its percent escapes read, the name itself when they do not read. */
+function decoded(part: string): string {
+    try {
+        return decodeURIComponent(part);
+    } catch {
+        return part;
+    }
+}
+
 /**
  * A path without a leading slash and without `.` segments. A `..` segment would leave the folder of
  * the view, so it is refused, and so is any other segment of dots and spaces alone, like `.. ` or
  * `...`, which Windows and the storages on it read as `..` once they drop the dots and spaces at
- * the end of a name.
+ * the end of a name. A segment like `%2e%2e` counts as well, since a storage that puts the path into
+ * a URL may read it as `..`.
  */
 export function cleanPath(remotePath: string): string {
     const parts = remotePath.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".");
-    if (parts.some((part) => /^[. ]+$/.test(part))) throw new ValidationError(`The path ${remotePath} leaves its folder.`);
+    if (parts.some((part) => /^[. ]+$/.test(part) || /^[. ]+$/.test(decoded(part)))) throw new ValidationError(`The path ${remotePath} leaves its folder.`);
     return parts.join("/");
 }
 
@@ -106,6 +116,16 @@ export function assertFilePath(remotePath: string): void {
 /** The path of a file on the destination for a delete or an upload, never the root of the view. */
 function filePath(mode: StorageViewMode, remotePath: string): string {
     assertFilePath(remotePath);
+    return innerPath(mode, remotePath);
+}
+
+/**
+ * The path of a folder on the destination for removing it once empty. The root of a customer's view
+ * is its own folder, which goes once its last backup is gone. The root of the tenant that shares the
+ * destination is the root of the destination and never goes.
+ */
+function folderPath(mode: StorageViewMode, remotePath: string): string {
+    if (mode.kind !== "customer") assertFilePath(remotePath);
     return innerPath(mode, remotePath);
 }
 
@@ -192,6 +212,12 @@ export function storageView(adapter: StorageAdapter, mode: StorageViewMode): Sto
             const inner = filePath(mode, remotePath);
             return guarded(mode, () => adapter.delete(config, inner));
         },
+        deleteEmptyFolder: adapter.deleteEmptyFolder
+            ? (config: Config, remotePath: string) => {
+                const inner = folderPath(mode, remotePath);
+                return guarded(mode, () => adapter.deleteEmptyFolder!(config, inner));
+            }
+            : undefined,
         read: adapter.read
             ? (config: Config, remotePath: string) => {
                 const inner = at(remotePath);

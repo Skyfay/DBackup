@@ -1801,7 +1801,7 @@ paths:
                         description: The databases whose tenant changed. One that belongs to the tenant already is left as it is
                         example: 2
         "400":
-          description: Invalid body, a start in the future, the tenant of the server itself, a tenant that does not exist, or a database given to or taken from a tenant the platform group of the owner of the key does not reach. Nothing changes
+          description: Invalid body, a start in the future, a server of a tenant that does not share with customers (taking back included), a database given on a server of Redis or Valkey, whose backup holds every database in one snapshot, the tenant of the server itself, a tenant that does not exist, or a database given to or taken from a tenant the platform group of the owner of the key does not reach. Nothing changes
           content:
             application/json:
               schema:
@@ -1921,7 +1921,7 @@ paths:
                   data:
                     $ref: "#/components/schemas/AssignmentRule"
         "400":
-          description: Invalid body, a server of a tenant that does not share, the tenant of the server itself, or a tenant beyond the platform group of the caller
+          description: Invalid body, a server of a tenant that does not share, a server of Redis or Valkey, whose backup holds every database in one snapshot, the tenant of the server itself, or a tenant beyond the platform group of the caller
           content:
             application/json:
               schema:
@@ -2035,7 +2035,8 @@ paths:
       description: |
         Sets who gets a destination or a channel: every other tenant, the ones named, or nobody with
         an empty list. A tenant that loses a destination loses its backups on it and every link to it,
-        so without `confirmed` the answer is `409` with what each would lose and nothing changes. A
+        and one that loses a channel every link to it, so without `confirmed` the answer is `409` with
+        what each would lose and nothing changes. A
         destination a job of the tenant writes into `tenants/` with is refused. Written into the audit
         log of the tenant and of each tenant that lost it, with the key.
 
@@ -2073,7 +2074,7 @@ paths:
                 confirmed:
                   type: boolean
                   default: false
-                  description: Go on although a tenant loses the destination with its backups
+                  description: Go on although a tenant loses the destination with its backups, or the channel with its links to it
             example:
               allTenants: false
               tenantIds: [cm2x8k1q40000acme, cm2x8k1q40000glob]
@@ -2130,7 +2131,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: A tenant loses the destination and `confirmed` is missing, with what each loses in `data.losing`
+          description: A tenant loses the destination or the channel and `confirmed` is missing, with what each loses in `data.losing`
           content:
             application/json:
               schema:
@@ -2920,6 +2921,7 @@ paths:
         - `privilegedAuth` provides elevated credentials for `CREATE DATABASE` permissions.
         - A version guard prevents restoring newer dump formats to older database servers.
         - `databaseMapping` allows renaming databases during multi-DB restores.
+        - A restore over databases of a shared server that customers hold now needs `overwriteCustomerDatabases: true`, else it answers `400`. The audit entry names those customers.
 
         **Required permission:** `storage:restore`. A configuration backup, a file in `config-backups/` or one whose `.meta.json` says `sourceType: SYSTEM`, answers `403` unless a platform admin is signed in with a session, never for an API key. Its restore goes through Settings.
       operationId: restoreBackup
@@ -2948,6 +2950,8 @@ paths:
                   message:
                     type: string
                     example: "Restore started"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -3896,6 +3900,7 @@ paths:
     post:
       tags: [Settings]
       summary: Update System Task
+      description: Changes a system task. The configuration backup (`system.config_backup`) holds every secret of the instance, so it answers 403 to every API key, only a platform admin signed in to DBackup changes it.
       operationId: updateSystemTask
       security:
         - BearerAuth: []
@@ -3935,7 +3940,7 @@ paths:
     put:
       tags: [Settings]
       summary: Run System Task Now
-      description: Starts a system task by hand and answers at once. The integrity check returns its run in History as `executionId`.
+      description: Starts a system task by hand and answers at once. The integrity check returns its run in History as `executionId`. The configuration backup (`system.config_backup`) answers 403 to every API key, only a platform admin signed in to DBackup starts it.
       operationId: runSystemTask
       security:
         - BearerAuth: []
@@ -6390,6 +6395,14 @@ components:
             password:
               type: string
           description: Elevated credentials for CREATE DATABASE permissions
+        overwriteCustomerDatabases:
+          type: boolean
+          default: false
+          description: >-
+            Confirms that the restore overwrites databases of a shared server that customers hold
+            now. Without `true` such a restore answers `400` before anything touches the server.
+            Without a `databaseMapping` or `targetDatabaseName` the restore writes every database of
+            the backup, so it asks as soon as a customer holds any database of the server.
 
     # ─── Other ───────────────────────────────────────────────────
     DatabaseInfo:

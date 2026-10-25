@@ -22,6 +22,7 @@ import { buildTestData } from "./notification-test-data";
 import { tenantReason } from "./notification-reason";
 import { getTenantNotificationConfig, tenantEventEnabled } from "./tenant-notification-settings";
 import { providedTo } from "@/services/sharing/provided";
+import { claimChannelTest } from "@/services/sharing/channel-test-limit";
 
 const log = logger.child({ service: "TenantNotificationDelivery" });
 
@@ -29,6 +30,8 @@ const log = logger.child({ service: "TenantNotificationDelivery" });
 export interface DeliveryResult {
     succeeded: number;
     failed: number;
+    /** A test: the channels another tenant shares that took a test of this tenant less than a minute ago. */
+    limited?: string[];
 }
 
 const idOf = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
@@ -95,13 +98,16 @@ export async function deliverToTenant(event: NotificationEventData, tenantId: st
     if (channelIds.length === 0) return undefined;
 
     return runAsTenant(tenantId, async () => {
-        // Its own channels and those other tenants share with it, which go where it named.
-        const shared = (await providedTo(tenantId, { kind: "channel", ids: channelIds })).map((channel) => channel.id);
+        // Its own channels and those other tenants share with it, which go where it named. A test goes
+        // through a channel of another tenant once a minute, like the test of its recipients.
+        const provided = await providedTo(tenantId, { kind: "channel", ids: channelIds });
+        const limited = opts.test ? provided.filter((channel) => !claimChannelTest(tenantId, channel.id)) : [];
+        const shared = provided.filter((channel) => !limited.includes(channel)).map((channel) => channel.id);
         const channels = [
             ...(await prisma.adapterConfig.findMany({ where: { id: { in: channelIds }, type: "notification", tenantId } })),
             ...(shared.length > 0 ? await runAsSystem(() => prisma.adapterConfig.findMany({ where: { id: { in: shared }, type: "notification" } })) : []),
         ];
-        if (channels.length === 0) return undefined;
+        if (channels.length === 0) return limited.length > 0 ? { succeeded: 0, failed: 0, limited: limited.map((channel) => channel.name) } : undefined;
         registerAdapters();
         const brand = await loadNotificationBrand();
         // Its links name the tenant, so they open there from any other tenant of the reader.
@@ -118,7 +124,7 @@ export async function deliverToTenant(event: NotificationEventData, tenantId: st
                 failed++;
             }
         }
-        return { succeeded, failed };
+        return limited.length > 0 ? { succeeded, failed, limited: limited.map((channel) => channel.name) } : { succeeded, failed };
     });
 }
 
@@ -134,6 +140,9 @@ export async function sendTenantEventTest(tenantId: string, eventId: string): Pr
 
     const result = await deliverToTenant(data, tenantId, { test: true });
     if (!result) throw new ValidationError("It has no channel to go to. Pick one or set the default channels first.", { field: "channels" });
+    if (result.succeeded === 0 && result.failed === 0 && result.limited) {
+        throw new ValidationError(`A test went out through ${result.limited.join(", ")} a moment ago. Try again in a minute.`, { field: "channels" });
+    }
     if (result.succeeded === 0) throw new ValidationError("No channel took the test. The notifications of History say why.", { field: "channels" });
-    return { sent: result.succeeded, failed: result.failed };
+    return { sent: result.succeeded, failed: result.failed + (result.limited?.length ?? 0) };
 }

@@ -5,7 +5,7 @@ import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sha
 import { assertChangesReached, assertReached, assertRuleReached } from "./assignment-reach";
 import { movesOf } from "./database-moves";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
-import { assertCustomer, listedDatabases, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
+import { assertCustomer, listedDatabases, NOT_SHARING, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
 
 export { listedDatabases, sharesWithCustomers };
 
@@ -198,9 +198,11 @@ export const databaseAssignmentService = {
      */
     async assign(sourceId: string, changes: AssignmentChange[], by: string | null, now = new Date(), reach: PlatformReach = "all"): Promise<{ changed: number }> {
         const source = await ownSource(sourceId);
+        // Taking back too, which would record the server as shared in a tenant that never shares.
+        if (!(await sharesWithCustomers(source.tenantId))) throw new ValidationError(NOT_SHARING);
         for (const change of changes) {
             if (!change.databaseName.trim()) throw new ValidationError("Name the database.");
-            if (change.tenantId) await assertCustomer(change.tenantId, source.tenantId);
+            if (change.tenantId) await assertCustomer(change.tenantId, source);
             if (change.validFrom && change.validFrom.getTime() > now.getTime()) throw new ValidationError("An assignment starts today or earlier.");
         }
 
@@ -240,7 +242,7 @@ export const databaseAssignmentService = {
         const pattern = input.pattern.trim();
         if (!pattern) throw new ValidationError("Enter a pattern, like shop_*.");
         if (pattern.length > PATTERN_MAX) throw new ValidationError(`A pattern can have at most ${PATTERN_MAX} characters.`);
-        await assertCustomer(input.tenantId, source.tenantId);
+        await assertCustomer(input.tenantId, source);
         if (input.validFrom && input.validFrom.getTime() > now.getTime()) throw new ValidationError("A rule starts today or earlier.");
         await assertRuleReached(sourceId, { pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now }, reach, now);
         const onDemandPerDay = onDemandValue(input.onDemandPerDay);

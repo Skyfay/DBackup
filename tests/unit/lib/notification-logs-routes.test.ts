@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
     getNotificationLogs: vi.fn(),
     getNotificationLogById: vi.fn(),
     getNotificationLogFacets: vi.fn(),
+    getNotificationStats: vi.fn(),
+    getNotificationFilterOptions: vi.fn(),
+    shapeOf: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -24,9 +27,12 @@ vi.mock("@/services/notifications/notification-log-service", () => ({
     getNotificationLogs: (...args: unknown[]) => mocks.getNotificationLogs(...args),
     getNotificationLogById: (...args: unknown[]) => mocks.getNotificationLogById(...args),
     getNotificationLogFacets: (...args: unknown[]) => mocks.getNotificationLogFacets(...args),
-    getNotificationStats: vi.fn(),
-    getNotificationFilterOptions: vi.fn(),
+    getNotificationStats: (...args: unknown[]) => mocks.getNotificationStats(...args),
+    getNotificationFilterOptions: (...args: unknown[]) => mocks.getNotificationFilterOptions(...args),
 }));
+// The platform group of the reader, which decides what they see of the log of the home tenant.
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { shapeOf: (...args: unknown[]) => mocks.shapeOf(...args) } }));
+vi.mock("@/lib/prisma", () => ({ default: {} }));
 
 import { GET as list } from "@/app/api/notification-logs/route";
 import { GET as single } from "@/app/api/notification-logs/[id]/route";
@@ -44,14 +50,30 @@ describe("the notification log routes", () => {
         mocks.getNotificationLogs.mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 50 });
         mocks.getNotificationLogById.mockResolvedValue({ id: "n1" });
         mocks.getNotificationLogFacets.mockResolvedValue({ adapterId: {}, status: {}, channelName: {}, eventType: {} });
+        mocks.shapeOf.mockResolvedValue(null);
+    });
+
+    it("hands a reader of the log of the home tenant from a platform group of some tenants their reach", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "nina", permissions: [PERMISSIONS.HISTORY.READ], isPlatformAdmin: false, tenantId: "default", allTenants: false });
+        mocks.shapeOf.mockResolvedValue({ id: "pg-acme", shape: { allTenants: false, tenantIds: ["acme"], platformPermissions: [], tenantPermissions: [] } });
+        const restricted = expect.objectContaining({ reach: ["acme"], viewerId: "nina" });
+
+        expect((await callList("?facets=true&stats=true")).status).toBe(200);
+        expect((await callSingle()).status).toBe(200);
+
+        expect(mocks.getNotificationLogs).toHaveBeenCalledWith(expect.any(Object), restricted);
+        expect(mocks.getNotificationLogFacets).toHaveBeenCalledWith(expect.any(Object), false, restricted);
+        expect(mocks.getNotificationStats).toHaveBeenCalledWith(expect.any(Date), restricted);
+        expect(mocks.getNotificationFilterOptions).toHaveBeenCalledWith(restricted);
+        expect(mocks.getNotificationLogById).toHaveBeenCalledWith("n1", restricted);
     });
 
     it("narrows the notifications to the tenants picked in All tenants and counts the entries of each tenant", async () => {
         asPlatformAdmin(true);
 
         expect((await callList("?tenant=acme&tenant=globex&facets=true")).status).toBe(200);
-        expect(mocks.getNotificationLogs).toHaveBeenCalledWith(expect.objectContaining({ tenantId: ["acme", "globex"] }));
-        expect(mocks.getNotificationLogFacets).toHaveBeenCalledWith(expect.objectContaining({ tenantId: ["acme", "globex"] }), true);
+        expect(mocks.getNotificationLogs).toHaveBeenCalledWith(expect.objectContaining({ tenantId: ["acme", "globex"] }), expect.objectContaining({ reach: null }));
+        expect(mocks.getNotificationLogFacets).toHaveBeenCalledWith(expect.objectContaining({ tenantId: ["acme", "globex"] }), true, expect.objectContaining({ reach: null }));
     });
 
     it("ignores a Tenant filter inside a tenant, where every entry is of that tenant anyway", async () => {

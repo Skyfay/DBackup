@@ -31,7 +31,7 @@ Someone of a platform group of selected tenants shares with those tenants only. 
 
 | Setting | For | What it does |
 | :--- | :--- | :--- |
-| **Only encrypted backups** | A destination | Off by default. A job of a customer writes to it only with a key of its own Vault. A job without a key is refused on save, and a run of one saved before writes nothing to this destination |
+| **Only encrypted backups** | A destination | Off by default. A job of a customer writes to it only with a key of its own Vault. A job without a key is refused on save, and a run of one saved before, or one that started before you switched it on, writes nothing to this destination |
 | **The recipients each tenant picks** | An email channel | The default. The server, the login and the sender stay with you, and each customer names its own addresses |
 | **The recipients set here** | An email channel | The mail goes to the recipients of the channel, about the runs of every customer's job that names it, like a support desk of the MSP |
 
@@ -47,13 +47,13 @@ A destination is shared the first time only while `tenants/` on it is empty, sin
 
 ## What You See of Your Customers
 
-The card **Shared with tenants** in the details of the connection says who gets it and on what terms. On a destination a bar shows how the space splits between your tenant and your customers, and each customer has a line with its jobs that write there, its backups, its last backup, the space it takes and its jobs without a key. On a channel each customer shows its jobs and templates that name it. You never see a customer's backups, only how much it keeps.
+The card **Shared with tenants** in the details of the connection says who gets it and on what terms. On a destination a bar shows how the space splits between your tenant and your customers, and each customer has a line with its jobs that write there, its backups, its last backup, the space it takes and, while the destination takes only encrypted backups, its jobs without a key. On a channel each customer shows its jobs and templates that name it. You never see a customer's backups, only how much it keeps.
 
-The numbers come from the storage statistics, which run every hour and after each backup. A customer shows **not measured yet** until then. The storage limit and the usage spike alerts of the destination count the backups of your customers too, since they fill the same storage. The missing backup alert watches your own backups.
+The numbers come from the storage statistics, which run every hour and after each backup. Every customer shows **not measured yet** until the destination was counted once, after that a customer that wrote nothing there yet shows 0 backups. The storage limit and the usage spike alerts of the destination count the backups of your customers too, since they fill the same storage. The missing backup alert watches your own backups.
 
 The list of the tab has the column **Shared with**: **Only this tenant**, **All tenants** with how many there are today, or the number of tenants with their names.
 
-**Delete its backups here** in the menu of a customer's line deletes every backup of that customer on the destination. Its jobs go on writing new ones, and it can no longer download or restore the old ones.
+**Delete its backups here** in the menu of a customer's line deletes every backup of that customer on the destination. Its jobs go on writing new ones, and it can no longer download or restore the old ones. It waits while a run of that customer writes to the destination or waits to, and when the storage keeps a file it refuses to delete, it fails and says how many files are left. The folders its backups leave empty go too on a Local Filesystem, SFTP or FTP destination, any other destination keeps them or has no folders.
 
 ## Taking It Back
 
@@ -64,19 +64,42 @@ The list of the tab has the column **Shared with**: **Only this tenant**, **All 
 | Destination | Its backups there are deleted, and the destination leaves its jobs |
 | Channel | The channel leaves its notification templates, its jobs, the channels of its notifications under **Administration → Settings → Notifications** and its recipients |
 
-A confirmation lists each tenant with what it loses first. **Stop sharing with** on a destination also asks you to type the name of the tenant. While a run of that tenant writes to the destination or waits to, the stop waits, try again once the run finished. When the storage stops answering on the way, the tenants that lost everything already are off the share and every other one keeps it as it was.
+A confirmation lists each tenant with what it loses first. **Stop sharing with** on a destination also asks you to type the name of the tenant. While a run of that tenant writes to the destination or waits to, the stop waits, try again once the run finished. The tenants that lose it come off the share before anything is deleted, so no run of theirs starts writing there meanwhile. When the storage stops answering on the way, or keeps a file it refuses to delete, the tenants that lost everything already are off the share and every other one keeps it as it was.
 
-Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again. The same happens when the last customer of a destination is deleted, once its backups there are gone. A folder of a tenant that no longer gets the destination counts for nobody in the numbers of the card. When the storage does not answer then, the destination stays shared with nobody and your tenant still does not see `tenants/`. Its share dialog says so in amber, and **Stop sharing** with no tenant picked tries the delete again. Until then the destination counts as shared and cannot be deleted.
+Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again. The same happens when the last customer of a destination is deleted, once its backups there are gone. A folder of a tenant that no longer gets the destination counts for nobody in the numbers of the card. When the storage does not answer then, or keeps a file it refuses to delete, the destination stays shared with nobody and your tenant still does not see `tenants/`. Its share dialog says so in amber, and **Stop sharing** with no tenant picked tries the delete again. Until then the destination counts as shared and cannot be deleted.
 
 - **A shared connection cannot be deleted.** Stop sharing it first.
 - **Stop sharing with customers** on the tenant is refused while it shares a destination or a channel.
 - **Deleting the tenant that shares** takes its connections from its customers, but leaves their backup files on the storage. It waits while a run of a customer writes to one of its destinations or waits to, and when the delete fails, its customers keep every connection as they had it.
 
+## Through the API
+
+A hosting panel shares and takes back a connection with an [API key](/user-guide/features/api-keys) that holds **Share with customers** (`platform-sharing:write`), made in the tenant of the connection, like the [API of Shared Databases](/user-guide/admin/shared-databases#through-the-api). `PUT /api/adapters/{id}/share` sets who gets the destination or channel `{id}`:
+
+```bash
+curl -s -X PUT "${BASE_URL}/api/adapters/${CONNECTION_ID}/share" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{ "allTenants": false, "tenantIds": ["cm2x8k1q40000acme"], "encryptedOnly": true }'
+```
+
+| Field | What it does |
+| :--- | :--- |
+| `allTenants` | Every other tenant, also those created later |
+| `tenantIds` | The tenants that get it while `allTenants` is `false`, an empty list for nobody |
+| `encryptedOnly` | A destination: **Only encrypted backups**, `false` when left out |
+| `ownRecipients` | An email channel: each tenant picks its recipients, `true` when left out |
+| `confirmed` | Lets a tenant lose the connection, `false` when left out |
+
+The body sets the whole share, so a tenant left out of `tenantIds` loses the connection. Without `confirmed` such a change answers `409` with each tenant that would lose it and what it uses of it under `data.losing`, its jobs, templates, backups and space, and nothing changes. Sent again with `"confirmed": true`, it goes through like **Stop sharing** on the page, the backups of those tenants on a destination included. The answer names who got it and what each tenant that lost it lost, as `{ "success": true, "data": { "gained": ["Acme"], "lost": [{ "name": "Globex", "backups": 3, "jobs": 1 }] } }`. A key whose owner reaches only some tenants gives to and takes from those only, the others keep what they have.
+
+`GET` on the same address needs `platform-sharing:read` or `platform-sharing:write` and answers with the share now under `settings`, each tenant that gets it with its use under `uses`, and the tenants the owner of the key may share with under `candidates`. The IDs for `tenantIds` come from `candidates`. Every change writes the same audit entries as the page.
+
 ## What the Customer Sees
 
 The lists under **Connections** show the shared destinations and channels after the customer's own, with the column **From**, **Yours** or the tenant that shares it, and **Provided** among the quick filters after **All**, **Online**, **Issues** and **Unused**. **Backups → Destinations** has the quick filters **All**, **Yours** and **Provided** while one is provided. A destination shows **Address hidden** where its location would be, an email channel the recipients the customer named, and any other channel that the tenant that shares it decides. Its details show **Provided by** and the name instead of the settings: who keeps the address, the customer's own backups there and whether encryption is required.
 
-The customer cannot edit, test, clone or delete a provided connection, and its health checks belong to the tenant that shares it. When the storage fails, or the settings of the destination cannot be used, like a saved login of the tenant that shares it that was deleted, the customer reads **The destination did not answer. The tenant that shares it can see why.**, and the log of its runs names nothing of the storage, like its host or bucket. A run then writes nothing to that destination and goes on with its other ones. The destination picker of a job and the channel picker of a notification template list them under **Provided by** and the name, after **Yours**, marked **address hidden** and **only encrypted backups**. **Administration → Settings → Notifications** offers the shared channels too. The Encryption part of a job warns when a picked destination takes only encrypted backups and no key is picked.
+The customer cannot edit, test, clone or delete a provided connection, and its health checks belong to the tenant that shares it. The customer sees whether it is **Online** or **Offline** and when it was checked last, never why a check failed, how fast it answered or anything of its address or settings. When the storage fails, or the settings of the destination cannot be used, like a saved login of the tenant that shares it that was deleted, the customer reads **The destination did not answer. The tenant that shares it can see why.**, and the log of its runs names nothing of the storage, like its host or bucket. A run then writes nothing to that destination and goes on with its other ones. The destination picker of a job and the channel picker of a notification template list them under **Provided by** and the name, after **Yours**, marked **address hidden** and **only encrypted backups**. **Administration → Settings → Notifications** offers the shared channels too, and its **Send a test** goes through each of them once a minute at most, a minute it shares with the test of the recipients. A shared channel that took a test a moment ago is left out and counts as one that did not take it. The Encryption part of a job warns when a picked destination takes only encrypted backups and no key is picked.
 
 On the **Backups** page a provided destination shows **provided by** and the name. The customer browses, downloads and restores its backups there like on its own destination, but cannot **Edit alerts**, the alerts of the destination are those of the tenant that shares it.
 
@@ -92,7 +115,7 @@ The addresses hold for every job and template of the tenant that names the chann
 
 ### When Sharing Stops
 
-For 14 days the **Connections** page shows a note above the lists for each destination or channel another tenant stopped sharing: how many backups were deleted and which jobs and templates lost it. A job that lost its only destination needs another one. A notification event that named the channel alone goes to the default channels again. The cross on a note hides it in this browser. The stop also goes into the audit log of the customer, and so does the delete of the tenant that shared it.
+For 14 days the **Connections** page shows a note above the lists for each destination or channel another tenant stopped sharing: how many backups were deleted and which jobs and templates lost it. A job that lost its only destination needs another one. A notification event that named the channel alone goes to the default channels again. The cross on a note hides it in this browser. The stop also goes into the audit log of the customer, and so does the delete of the tenant that shared it. When a connection shared with all tenants is taken back, only the tenants that used it get the note and the entry: with a job or a template that names it, its notification settings or its recipients, or with backups on the destination.
 
 ## What a Tenant May Add
 
@@ -100,7 +123,7 @@ The platform decides whether a tenant adds database connections, directory sourc
 
 ## Audit Log
 
-Sharing, stopping and deleting a customer's backups go into the [audit log](/user-guide/admin/audit-log) of the tenant that shares. A stop also goes into the log of each tenant that lost the connection, with its jobs, templates and deleted backups, and a delete of its backups into its log too. The recipients a customer names go into its own log.
+Sharing, stopping and deleting a customer's backups go into the [audit log](/user-guide/admin/audit-log) of the tenant that shares. A stop also goes into the log of each tenant that lost the connection, with its jobs, templates and deleted backups, after a share with all tenants only of each tenant that used it, and a delete of its backups into its log too. The recipients a customer names go into its own log.
 
 ## Troubleshooting
 

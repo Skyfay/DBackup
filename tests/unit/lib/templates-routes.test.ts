@@ -88,7 +88,17 @@ describe("GET /api/templates", () => {
 });
 
 describe("the destinations a retention change reaches", () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.checkPermission.mockResolvedValue({ id: "u1", tenantId: "default", allTenants: false });
+    });
+
+    it("refuses All tenants, which would mix the destinations of every tenant", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "root", tenantId: null, allTenants: true });
+
+        expect(await getRetentionPolicyTargets({ followers: true })).toEqual({ success: false, error: expect.stringMatching(/tenant/i) });
+        expect(mocks.getRetentionTargets).not.toHaveBeenCalled();
+    });
 
     it("asks for the right to read templates before it looks at a backup", async () => {
         mocks.checkPermission.mockRejectedValueOnce(new PermissionError(PERMISSIONS.TEMPLATES.READ));

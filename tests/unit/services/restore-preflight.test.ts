@@ -77,7 +77,7 @@ describe('preflightRestore()', () => {
     it('calls prepareRestore with targetDatabaseName when provided', async () => {
         const prepareRestore = vi.fn().mockResolvedValue(undefined);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
-        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
         vi.mocked(registry.get).mockReturnValue({ prepareRestore } as any);
 
         await preflightRestore({
@@ -98,6 +98,7 @@ describe('preflightRestore()', () => {
         const { ValidationError } = await import('@/lib/logging/errors');
         const refusal = 'Main reaches no address of the local network, db1 is 10.0.0.5.';
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
+        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
         vi.mocked(registry.get).mockReturnValue({ prepareRestore: vi.fn() } as any);
         vi.mocked(resolveAdapterConfig).mockRejectedValueOnce(new ValidationError(refusal));
 
@@ -111,6 +112,58 @@ describe('preflightRestore()', () => {
 
         await expect(started).rejects.toThrow('could not be used');
         await expect(started).rejects.not.toBeInstanceOf(ValidationError);
+    });
+
+    describe('an archive the caller may not read', () => {
+        it('refuses an archive in the folder of the customers before the target server is touched', async () => {
+            const prepareRestore = vi.fn().mockResolvedValue(undefined);
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
+            // The destination is shared, so its tenant sees everything but `tenants/`.
+            prismaMock.connectionShare.count.mockResolvedValue(1);
+            vi.mocked(registry.get).mockReturnValue({ prepareRestore } as any);
+
+            await expect(preflightRestore({
+                storageConfigId: 'storage-1',
+                file: 'tenants/acme/job/backup.tar',
+                targetSourceId: 'target-1',
+                targetDatabaseName: 'shop',
+            })).rejects.toThrow('holds the backups of the tenants');
+
+            expect(prepareRestore).not.toHaveBeenCalled();
+            expect(resolveAdapterConfig).not.toHaveBeenCalled();
+        });
+
+        it('refuses a destination the caller may not use before the target server is touched', async () => {
+            const prepareRestore = vi.fn().mockResolvedValue(undefined);
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+            vi.mocked(registry.get).mockReturnValue({ prepareRestore } as any);
+
+            await expect(preflightRestore({
+                storageConfigId: 'storage-1',
+                file: 'job/backup.tar',
+                targetSourceId: 'target-1',
+                targetDatabaseName: 'shop',
+            })).rejects.toThrow('not found');
+
+            expect(prepareRestore).not.toHaveBeenCalled();
+        });
+
+        it('probes no directory target for an archive in the folder of the customers', async () => {
+            const testFn = vi.fn().mockResolvedValue({ success: true, message: 'ok' });
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
+            prismaMock.connectionShare.count.mockResolvedValue(1);
+            vi.mocked(registry.get).mockReturnValue({ test: testFn } as any);
+
+            await expect(preflightRestore({
+                storageConfigId: 'storage-1',
+                file: 'Tenants/acme/backup.tar',
+                directoryMapping: [{ entryId: 'src-1', targetConfigId: 'dest-local', targetPath: '/restore', selected: true }],
+            })).rejects.toThrow('holds the backups of the tenants');
+
+            expect(testFn).not.toHaveBeenCalled();
+        });
     });
 
     it('throws on incompatible source/target database types', async () => {
@@ -199,7 +252,7 @@ describe('preflightRestore()', () => {
     it('calls prepareRestore with targets from array-format databaseMapping', async () => {
         const prepareRestore = vi.fn().mockResolvedValue(undefined);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
-        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
         vi.mocked(registry.get).mockReturnValue({ prepareRestore } as any);
 
         await preflightRestore({
@@ -223,7 +276,7 @@ describe('preflightRestore()', () => {
     it('calls prepareRestore with values from record-format databaseMapping', async () => {
         const prepareRestore = vi.fn().mockResolvedValue(undefined);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
-        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
         vi.mocked(registry.get).mockReturnValue({ prepareRestore } as any);
 
         await preflightRestore({
@@ -329,7 +382,7 @@ describe('preflightRestore()', () => {
     it('applies privilegedAuth to the resolve config during prepareRestore', async () => {
         const prepareRestore = vi.fn().mockResolvedValue(undefined);
         prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockDbConfig as any);
-        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+        prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
         vi.mocked(registry.get).mockReturnValue({ prepareRestore } as any);
 
         await preflightRestore({
@@ -351,7 +404,7 @@ describe('preflightRestore()', () => {
         it('skips the database branch entirely when targetSourceId is omitted (directory-only restore)', async () => {
             // Only the (unrelated, always-run) storage-config lookup happens - no database
             // target is ever queried since targetSourceId was not provided.
-            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
             await expect(
                 preflightRestore({
@@ -367,6 +420,7 @@ describe('preflightRestore()', () => {
 
         it('verifies each selected directory restore target is writable', async () => {
             const testFn = vi.fn().mockResolvedValue({ success: true, message: 'ok' });
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
             prismaMock.adapterConfig.findUnique.mockResolvedValueOnce({
                 ...mockStorageConfig,
                 id: 'dest-local',
@@ -389,6 +443,7 @@ describe('preflightRestore()', () => {
 
         it('throws when a selected directory restore target is not writable', async () => {
             const testFn = vi.fn().mockResolvedValue({ success: false, message: 'permission denied' });
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
             prismaMock.adapterConfig.findUnique.mockResolvedValueOnce({
                 ...mockStorageConfig,
                 id: 'dest-local',
@@ -408,6 +463,7 @@ describe('preflightRestore()', () => {
         });
 
         it('throws when a directory restore target config cannot be found', async () => {
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
             prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
 
             await expect(
@@ -422,7 +478,7 @@ describe('preflightRestore()', () => {
         });
 
         it('ignores unselected directory mapping entries', async () => {
-            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(mockStorageConfig as any);
 
             await expect(
                 preflightRestore({

@@ -100,6 +100,17 @@ describe("the Users tab in All tenants and in a tenant", () => {
         expect((await getUsers()).status).toBe(403);
         expect(mocks.getAllUsersModel).not.toHaveBeenCalled();
     });
+
+    it("serves every account in All tenants only to whoever may see the accounts of the platform, like Platform > Users & Groups", async () => {
+        // A platform group of all tenants that reads the users of each tenant but not the accounts of the platform.
+        mocks.getAuthContext.mockResolvedValue({ userId: "sam", permissions: [PERMISSIONS.USERS.READ], isPlatformAdmin: false, authMethod: "session", tenantId: null, allTenants: true });
+        expect((await getUsers()).status).toBe(403);
+        expect(mocks.getAllUsersModel).not.toHaveBeenCalled();
+
+        mocks.getAuthContext.mockResolvedValue({ userId: "sam", permissions: [PERMISSIONS.USERS.READ, PERMISSIONS.PLATFORM.ACCOUNTS_READ], isPlatformAdmin: false, authMethod: "session", tenantId: null, allTenants: true });
+        expect((await getUsers()).status).toBe(200);
+        expect(mocks.getAllUsersModel).toHaveBeenCalledWith("sam", false);
+    });
 });
 
 describe("the Groups tab in All tenants and in a tenant", () => {

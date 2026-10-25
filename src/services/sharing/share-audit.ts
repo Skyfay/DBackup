@@ -34,7 +34,8 @@ export async function logShareChange(author: ShareAuthor, configId: string, resu
     if (result.losses.length > 0) {
         await write(author, resource, { name: result.name, action: "unshare", tenants: result.losses.map((loss) => loss.name).join(", ") }, configId);
     }
-    for (const loss of result.losses) {
+    // A tenant that never used a connection shared with every tenant hears nothing of it, see `noted`.
+    for (const loss of result.losses.filter((entry) => entry.noted)) {
         await write(author, resource, {
             name: result.name,
             action: "unshare",

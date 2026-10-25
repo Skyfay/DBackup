@@ -133,7 +133,7 @@ export function SettingsClient({ model, viewerName, note }: SettingsClientProps)
     const part = (() => {
         switch (current) {
             case "general": return <GeneralPart saved={model.general} />;
-            case "tasks": return <TasksPart tasks={model.tasks} integrity={model.integrity} openTaskId={openTaskId} onOpened={clearOpenTask} onOpenPart={open} />;
+            case "tasks": return <TasksPart tasks={model.tasks} integrity={model.integrity} openTaskId={openTaskId} onOpened={clearOpenTask} onOpenPart={open} isPlatformAdmin={model.isPlatformAdmin} />;
             case "notifications": return <NotificationsPart model={model.notifications} openEventId={openEventId} onOpened={clearOpenEvent} />;
             case "retention": return <RetentionPart model={model.retention} />;
             case "database": return <DatabasePart info={model.database} isPlatformAdmin={model.isPlatformAdmin} />;

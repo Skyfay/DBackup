@@ -19,7 +19,7 @@ pnpm test:e2e:ui                       # Playwright UI mode
 ## How it fits together
 
 - DBackup runs as the service `app` of `lab/compose/e2e.yml`, in the Compose project of the dev lab, on the Docker host of the lab config. It reaches every server by its service name, like a user's container does. CI runs the same project on the runner.
-- `support/global-setup.ts` builds the image, starts the lab services the selected families need, loads their test data and starts DBackup from scratch. Afterwards it removes DBackup, the lab keeps running.
+- `support/global-setup.ts` builds the image, trims the build cache of the lab host to `BUILD_CACHE_CAP` (a run filled its disk once), starts the lab services the selected families need, loads their test data and starts DBackup from scratch. Afterwards it removes DBackup, the lab keeps running.
 - Starting the services and loading their data lives in `support/services.ts`. `support/start-services.ts` runs just that, and CI starts it in the background while the image builds. The global setup repeats the steps, finds them done and reports what did not come up, so the head start never decides a run.
 - In CI the tests are jobs of `.github/workflows/validate.yml`, beside lint and the unit tests. Its job Changes skips them for a pull request into `dev` that only touches paths in its `SKIP` pattern, and for the release, whose pull request into `main` ran them. A new folder the image or the tests read needs nothing there, one they never read can go into it.
 - `lab/compose/e2e.yml` also holds what only the tests start: the customer server (Ubuntu with its packages, over OpenSSH) and a second FTP server that names itself for the passive mode.

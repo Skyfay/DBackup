@@ -8,7 +8,7 @@
 
 import { DATABASES } from "../../lab/src/catalog";
 import { describeDown, isUp, serviceStates } from "../../lab/src/containers";
-import { compose, type RunResult } from "../../lab/src/docker";
+import { compose, dockerArgs, run, type RunResult } from "../../lab/src/docker";
 import { BASE_URL, PORT, lab } from "./environment";
 import { loadDatasets, selectedServices, startServices } from "./services";
 import { selectedFamilies, uiSelected } from "./targets";
@@ -16,6 +16,8 @@ import { selectedFamilies, uiSelected } from "./targets";
 const write = (line: string) => process.stdout.write(`${line}\n`);
 const tail = (result: RunResult) => (result.stderr || result.stdout).trim().split("\n").slice(-15).join("\n");
 const appEnv = { E2E_PORT: String(PORT), E2E_BASE_URL: BASE_URL };
+/** How much of the build cache stays on the lab host after a build. */
+const BUILD_CACHE_CAP = "10GB";
 
 async function waitForHealth(deadline: number): Promise<void> {
     for (;;) {
@@ -55,6 +57,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         write("Building the image of this checkout, the first build takes a few minutes");
         const built = await compose(lab, ["--progress", "quiet", "build", "app"]);
         if (built.code !== 0) throw new Error(`Building the image failed:\n${tail(built)}`);
+        // Every build leaves layers in the cache of the lab host, which filled its disk once.
+        // The newest stay up to the cap, so the next build is still quick.
+        const trimmed = await run("docker", dockerArgs(lab.docker, ["builder", "prune", "--force", "--max-used-space", BUILD_CACHE_CAP]));
+        if (trimmed.code !== 0) write(`Could not trim the build cache of the lab host: ${tail(trimmed)}`);
     }
 
     write(`Starting ${services.join(", ")}`);

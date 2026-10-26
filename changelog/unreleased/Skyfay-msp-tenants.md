@@ -101,6 +101,7 @@
 ### 🧪 Tests
 
 - **SSH**: The test of a new ed25519 key that ssh2 writes a byte short no longer fails now and then.
+- **e2e**: A run trims the build cache of the Docker host to 10 GB after it built the image.
 - **lint**: Lint guards keep direct database queries out of the routes and Next.js out of the services.
 - **e2e**: End-to-end tests walk an MSP through its customers, an invitation, a shared database with its download and restore, a shared destination and channel, Recently deleted of a customer and a platform group of selected tenants. They also cover the network block, All tenants and the delete of a tenant.
 - **tenants**: Tests against a real database prove that no tenant reads, changes or deletes the rows of another. Invitation links, shared databases and shared destinations and channels have tests of their own.

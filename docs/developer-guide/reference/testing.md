@@ -73,7 +73,7 @@ E2E_FAMILIES=mysql,storage pnpm test:e2e   # Only these families
 pnpm test:e2e:ui                       # Playwright UI mode
 ```
 
-DBackup runs as the service `app` of `lab/compose/e2e.yml`, in the Compose project of the [Dev Lab](/developer-guide/reference/dev-lab) on its Docker host, and reaches every server by its service name. A run builds the image, starts the services it needs, loads their test data and starts DBackup from an empty instance. Afterwards it removes DBackup again and leaves the lab running. Without a lab config of your own everything runs on the Docker of this machine, as in CI.
+DBackup runs as the service `app` of `lab/compose/e2e.yml`, in the Compose project of the [Dev Lab](/developer-guide/reference/dev-lab) on its Docker host, and reaches every server by its service name. A run builds the image, trims the build cache of the Docker host to 10 GB, starts the services it needs, loads their test data and starts DBackup from an empty instance. Afterwards it removes DBackup again and leaves the lab running. Without a lab config of your own everything runs on the Docker of this machine, as in CI.
 
 | Project | Covers |
 | :--- | :--- |

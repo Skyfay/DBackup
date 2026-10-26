@@ -16,19 +16,38 @@ import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { tenantScopeExtension } from "@/lib/tenant/prisma-scope";
 
 const holder = vi.hoisted(() => ({ client: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+    writeDump: vi.fn(async () => ({ fileName: "1.rdb" })),
+    openArchive: vi.fn(async () => ({ masterKey: undefined, dispose: async () => undefined })),
+    restoreShared: vi.fn(async () => ({ success: true, executionId: "run-1", providerExecutionId: "msp-run-1" })),
+}));
+
+/** A backup of the Redis server at the destination of the MSP, made while database 1 was Acme's. */
+const SNAPSHOT = {
+    name: "cache.tar", path: "Cache/cache.tar", size: 1000, lastModified: "2026-06-01T03:00:00.000Z", createdAt: "2026-06-01T03:00:00.000Z",
+    databases: ["0", "1"], sourceId: "cache-1", jobId: "cache-nightly", hasFileIndex: true, isEncrypted: false,
+};
 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
-vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: async () => null } }));
+vi.mock("@/services/storage/storage-service", () => ({
+    storageService: { readCachedListing: async (id: string) => (id === "msp-nas" ? { files: [SNAPSHOT], listedAt: new Date(), current: true } : null) },
+}));
 vi.mock("@/services/backup/backup-service", () => ({ backupService: { executeJob: vi.fn() } }));
 vi.mock("@/services/system/system-settings-service", () => ({ getTimezone: async () => "UTC" }));
+vi.mock("@/services/restore/archive-download", () => ({ writeDatabaseDump: mocks.writeDump }));
+vi.mock("@/services/restore/file-restore", () => ({ openArchiveForRestore: mocks.openArchive }));
+vi.mock("@/services/restore/restore-service", () => ({ restoreService: { restoreShared: mocks.restoreShared } }));
+vi.mock("@/services/tenant/shared-dump-sizes", () => ({ dumpSizes: async () => new Map() }));
 
 const { databaseAssignmentService } = await import("@/services/tenant/database-assignments");
 const { moveDatabase } = await import("@/services/tenant/database-moves");
-const { tenantPlaces } = await import("@/services/tenant/shared-places");
+const { restoreTarget, tenantPlaces } = await import("@/services/tenant/shared-places");
 const { requestSharedBackup } = await import("@/services/tenant/shared-on-demand");
+const { prepareSharedDownload, restoreSharedBackup, sharedOverview } = await import("@/services/tenant/shared-databases");
+const { sharedBackupId } = await import("@/services/tenant/shared-backups");
 
 let root = "";
 let base: PrismaClient;
@@ -58,6 +77,7 @@ beforeAll(async () => {
     await server("cache-2", "redis", ["0", "1"]);
     await server("kv-1", "valkey", ["0"]);
     await server("solo-mysql", "mysql", ["crm"], "solo");
+    await base.adapterConfig.create({ data: { id: "msp-nas", name: "MSP NAS", type: "storage", adapterId: "local-filesystem", config: "{}", tenantId: HOME } });
     // Given before the check existed, straight into the table.
     await base.sharedServer.create({ data: { id: "cache-1", name: "cache-1", adapterId: "redis", tenantId: HOME } });
     await base.databaseAssignment.create({ data: { sourceId: "cache-1", databaseName: "1", tenantId: "acme", validFrom: new Date("2026-01-01T00:00:00.000Z"), createdAt: new Date("2026-01-01T00:00:00.000Z") } });
@@ -93,6 +113,16 @@ describe("a server whose backup holds every database in one snapshot", () => {
     it("hands a customer nothing of a database given there before: no backups, no download, no restore", async () => {
         const held = await runAsSystem(() => tenantPlaces("acme", NOW));
         expect([...held.places.keys()].filter((key) => key.startsWith("cache-1/"))).toEqual([]);
+        expect((await sharedOverview("acme", NOW)).backups).toEqual([]);
+
+        // The action names the backup by the id it would have had, which the customer may know from before the check.
+        const ref = { sourceId: "cache-1", databaseName: "1", backupId: sharedBackupId("cache-1", "1", SNAPSHOT.path) };
+        await expect(prepareSharedDownload("acme", "u-acme", ref)).rejects.toThrow(/not found/i);
+        await expect(restoreSharedBackup("acme", ref, "Sara", NOW)).rejects.toThrow(/not found/i);
+        expect(mocks.writeDump).not.toHaveBeenCalled();
+        expect(mocks.openArchive).not.toHaveBeenCalled();
+        expect(mocks.restoreShared).not.toHaveBeenCalled();
+        expect(await runAsSystem(() => restoreTarget("acme", ref, SNAPSHOT.createdAt, NOW))).toEqual({ target: null, reason: "1 is not a database of yours, so you cannot restore it." });
     });
 
     it("starts no backup on demand of it for the customer", async () => {

@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
     restore: vi.fn(),
     latest: vi.fn(),
     audit: vi.fn(),
+    /** The check of an email that has an account, see tests/unit/services/new-account-email.test.ts. */
+    taken: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
 }));
 
 vi.mock("@/lib/auth/access-control", async () => {
@@ -47,6 +49,10 @@ vi.mock("@/services/user/user-service", () => ({
 vi.mock("@/services/sso/email-domain-claims", () => ({
     claimedEmailRefusal: vi.fn(async (_email: string, tenantIds: readonly string[], platformLevel: boolean) =>
         !platformLevel && mocks.claimedBy && !tenantIds.includes(mocks.claimedBy) ? "The domain of this email signs in through the provider of another tenant." : null),
+}));
+vi.mock("@/services/user/new-account-email", () => ({
+    CHANGED_EMAIL_ANSWERS: { known: "known", refused: "refused", spent: "spent" },
+    takenEmailRefusal: (...args: unknown[]) => mocks.taken(...args),
 }));
 vi.mock("@/services/trash/trash-service", async () => {
     const actual = await vi.importActual<typeof import("@/services/trash/trash-service")>("@/services/trash/trash-service");
@@ -214,5 +220,31 @@ describe("restoring a deleted account under its own email", () => {
         mocks.reach = ["acme", "globex"];
         await restoreDeletedAction(["t-carla"]);
         expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined });
+    });
+});
+
+describe("restoring a deleted account under another email", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.reach = "all";
+        mocks.claimedBy = null;
+        mocks.viewer = { id: "lena", isPlatformAdmin: false, tenantId: "acme", permissions: [PERMISSIONS.USERS.WRITE, "tenant-settings:write"] };
+        mocks.entries = [CARLA];
+        mocks.accounts = [{ id: "t-carla", email: "carla@acme.example", tenantIds: ["acme"] }];
+        mocks.restore.mockImplementation(restoredAll);
+    });
+
+    it("answers an email of an account the admin may not see with the fixed sentence, and restores nothing", async () => {
+        mocks.taken.mockResolvedValueOnce("This email cannot be given to this account. Pick another email.");
+
+        expect(await restoreDeletedAction(["t-carla"], "gina@globex.example")).toEqual({ success: false, error: "This email cannot be given to this account. Pick another email." });
+        expect(mocks.taken).toHaveBeenCalledWith("gina@globex.example", expect.objectContaining({ userId: "lena" }), "acme", expect.anything());
+        expect(mocks.restore).not.toHaveBeenCalled();
+    });
+
+    it("restores it under a free email", async () => {
+        await restoreDeletedAction(["t-carla"], "carla.new@acme.example");
+
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: "carla.new@acme.example" });
     });
 });

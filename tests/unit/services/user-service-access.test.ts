@@ -91,13 +91,20 @@ describe("creating a user and ending their sessions", () => {
     });
 
     it("knows whose an account is, which decides who may change it", async () => {
+        const viewers = { permissions: '["jobs:read"]', fullAccess: false };
+        const admins = { permissions: "[]", fullAccess: true };
         mocks.prisma.user.findUnique
-            .mockResolvedValueOnce({ platformRole: null, memberships: [{ tenantId: "default" }, { tenantId: "tenant-a" }] })
+            .mockResolvedValueOnce({ platformRole: null, memberships: [{ tenantId: "default", group: viewers }, { tenantId: "tenant-a", group: admins }] })
             .mockResolvedValueOnce({ platformRole: "ADMIN", memberships: [] })
             .mockResolvedValueOnce(null);
 
-        expect(await userService.accountOf("tech")).toEqual({ isPlatformAdmin: false, tenantIds: ["default", "tenant-a"], platformGroup: null });
-        expect(await userService.accountOf("root")).toEqual({ isPlatformAdmin: true, tenantIds: [], platformGroup: null });
+        expect(await userService.accountOf("tech")).toEqual({
+            isPlatformAdmin: false,
+            tenantIds: ["default", "tenant-a"],
+            platformGroup: null,
+            groups: [{ tenantId: "default", group: viewers }, { tenantId: "tenant-a", group: admins }],
+        });
+        expect(await userService.accountOf("root")).toEqual({ isPlatformAdmin: true, tenantIds: [], platformGroup: null, groups: [] });
         expect(await userService.accountOf("gone")).toBeNull();
     });
 
@@ -119,5 +126,23 @@ describe("creating a user and ending their sessions", () => {
         // Without the right to manage the accounts nothing of the platform counts, and a platform admin reaches every tenant.
         expect(await userService.accountsReachOf({ ...nina, permissions: ["users:write"] })).toEqual([]);
         expect(await userService.accountsReachOf({ ...nina, isPlatformAdmin: true })).toBe("all");
+    });
+
+    it("refuses an account whose group in another tenant may do more than the caller may there", async () => {
+        const nina = { id: "nina", isPlatformAdmin: false, tenantId: "default", permissions: ["platform-accounts:write"] };
+        // Max is the Admin of tenant A. Nina's platform group reaches it and lets her read the jobs there.
+        const max = { platformRole: null, platformGroupId: null, memberships: [{ tenantId: "tenant-a", group: { permissions: "[]", fullAccess: true } }] };
+        const support = {
+            platformRole: null,
+            memberships: [],
+            platformGroup: { platformPermissions: '["platform-accounts:write"]', tenantPermissions: '["jobs:read"]', allTenants: false, tenants: [{ tenantId: "tenant-a" }] },
+        };
+        mocks.prisma.user.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === "nina" ? support : max));
+
+        expect(await userService.accountRefusalFor(nina, "max")).toBe("This user's group may do more than you may, so only someone who may do all of it can change their account.");
+
+        // Of a group within hers, she changes it.
+        max.memberships[0].group = { permissions: '["jobs:read"]', fullAccess: false };
+        expect(await userService.accountRefusalFor(nina, "max")).toBeNull();
     });
 });

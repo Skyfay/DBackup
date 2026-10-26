@@ -5,6 +5,7 @@ import { getDataRetentionValues } from "@/services/system/data-retention-service
 import { credentialAudit, type CredentialAudit } from "./vault-audit";
 import type { VaultConnection, VaultConnectionRole, VaultCredential, VaultCredentialsModel } from "./vault-types";
 import { isNotConnected } from "@/lib/core/air-gap";
+import { getConfigBackupTargets } from "@/services/config/config-backup-targets";
 
 /** The window of the reveals above the list. */
 const REVEAL_WINDOW_MS = 30 * 86_400_000;
@@ -81,7 +82,10 @@ export function buildCredentialsModel(profiles: ListedProfile[], audit: Credenti
 
 /** Loads the Credentials tab of the Vault page. */
 export async function getVaultCredentials(): Promise<VaultCredentialsModel> {
-    const [profiles, retention] = await Promise.all([listCredentialProfilesForVault(), getDataRetentionValues()]);
+    const [profiles, retention, targets] = await Promise.all([listCredentialProfilesForVault(), getDataRetentionValues(), getConfigBackupTargets()]);
     const audit = await credentialAudit(profiles.map((profile) => profile.id));
-    return buildCredentialsModel(profiles, audit, retention.auditLog);
+    const model = buildCredentialsModel(profiles, audit, retention.auditLog);
+    // The logins of the destination of the configuration backup say so, for the page to lock them.
+    const logins = new Set(targets.credentialIds);
+    return { ...model, profiles: model.profiles.map((row) => (logins.has(row.id) ? { ...row, configBackup: true } : row)) };
 }

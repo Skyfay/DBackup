@@ -67,6 +67,8 @@ vi.mock("@/lib/adapters/credential-validation", () => ({
 }));
 
 const mockFindMany = vi.fn();
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/lib/prisma", () => ({
     default: {
         adapterConfig: {

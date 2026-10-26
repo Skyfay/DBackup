@@ -8,6 +8,7 @@ import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 
 const log = logger.child({ route: "adapters/dropbox/auth" });
 
@@ -32,6 +33,9 @@ export async function POST(req: NextRequest) {
         if (!credentialId) {
             return NextResponse.json({ error: "Missing credentialId" }, { status: 400 });
         }
+        // The login of the destination of the configuration backup is authorized only by a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: [credentialId] });
+        if (locked) return locked;
 
         const profile = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 

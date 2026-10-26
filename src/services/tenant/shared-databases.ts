@@ -14,7 +14,7 @@ import { restoreService } from "@/services/restore/restore-service";
 import { backupKeyOf, factsOf, serverBackupFiles, sharedBackupsOf, sharedDumpName, type OwnerFacts, type ServerBackupFile, type SharedBackupRecord } from "./shared-backups";
 import { dumpSizes, type DumpSize } from "./shared-dump-sizes";
 import { onDemandStates, requestersByBackup, type SharedOnDemand } from "./shared-on-demand";
-import { groupOfBackup, placeKey, restoreTarget, tenantPlaces, type HeldPlace, type TenantPlaces } from "./shared-places";
+import { groupOfBackup, placeKey, restoreTarget, sharesSingleDatabasesOf, tenantPlaces, type HeldPlace, type TenantPlaces } from "./shared-places";
 
 /**
  * What a customer sees of the databases given to them on a shared server: those databases, their
@@ -162,17 +162,26 @@ export function listSharedDatabases(tenantId: string, now = new Date()): Promise
     return runAsSystem(async () => databasesOf(tenantId, await tenantPlaces(tenantId, now), now));
 }
 
-/** The backups made at some places, with the copies they lie in, which never leave this module. */
+/**
+ * The backups made at some places, with the copies they lie in, which never leave this module. A
+ * server of an engine that gives no database alone, like Redis, has none for a customer, also of a
+ * database given there before the check, since each backup holds every database of the server.
+ */
 async function recordsOf(tenantId: string, places: readonly DatabasePlace[]): Promise<SharedBackupRecord[]> {
-    const servers = new Map<string, { files: ServerBackupFile[]; facts: OwnerFacts }>();
+    const servers = new Map<string, { files: ServerBackupFile[]; facts: OwnerFacts } | null>();
     const records: SharedBackupRecord[] = [];
     for (const place of places) {
         let server = servers.get(place.sourceId);
-        if (!server) {
-            const [files, facts] = await Promise.all([serverBackupFiles(place.sourceId), factsOf(place.sourceId)]);
-            server = { files, facts };
+        if (server === undefined) {
+            if (await sharesSingleDatabasesOf(place.sourceId)) {
+                const [files, facts] = await Promise.all([serverBackupFiles(place.sourceId), factsOf(place.sourceId)]);
+                server = { files, facts };
+            } else {
+                server = null;
+            }
             servers.set(place.sourceId, server);
         }
+        if (!server) continue;
         records.push(...sharedBackupsOf(tenantId, place.sourceId, place.databaseName, server.files, server.facts));
     }
     return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

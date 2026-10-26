@@ -10,6 +10,7 @@
  */
 
 import type { LogLevel, LogType } from "@/lib/core/logs";
+import { dialedHosts, sqlServerHost } from "@/lib/adapters/dialed-hosts";
 
 export type RunLog = (message: string, level?: LogLevel, type?: LogType, details?: string) => void;
 
@@ -23,6 +24,8 @@ export interface SharedLogFacts {
     destination?: string | null;
     /** The connection of the server, as the database adapter gets it. */
     connection?: Record<string, unknown>;
+    /** The adapter of the server, which reads its host field, `type` of the connection when left out. */
+    adapterId?: string;
     /** The other databases the backup or the server holds. */
     otherDatabases?: readonly string[];
 }
@@ -162,8 +165,43 @@ interface Hidden {
     whole: string[];
 }
 
+/** The engines whose host field holds a server name of SQL Server, see `sqlServerName`. */
+const SQL_SERVER_ADAPTERS = new Set(["mssql", "azure-sql"]);
+const SQL_SERVER_FORM = /\\|^(?:tcp|np|lpc|admin):/i;
+
+/**
+ * The parts of a server name of SQL Server as its clients read it, see `sqlServerHost`: of
+ * `tcp:sql01.msp.internal\PROD,1433` the host, the instance PROD, the port 1433 and every spelling
+ * of the name with and without them.
+ */
+function sqlServerName(value: string): { spellings: string[]; instance: string | null; port: string | null } {
+    const bare = value.replace(/^(?:tcp|np|lpc|admin):/i, "");
+    const [name, port] = bare.split(",").map((part) => part.trim());
+    const slash = name.lastIndexOf("\\");
+    return {
+        spellings: [value, bare, name, sqlServerHost(value) ?? ""],
+        instance: slash >= 0 ? name.slice(slash + 1) : null,
+        port: port && /^\d+$/.test(port) ? port : null,
+    };
+}
+
+/**
+ * The hosts the adapter dials for the connection, read the way its client reads the field, like the
+ * network check of a tenant does. A number alone, like the first group of an IPv6 address Firebird
+ * reads as a host, says nothing and stays.
+ */
+function dialedBy(adapterId: string | undefined, connection: Record<string, unknown>): string[] {
+    if (!adapterId) return [];
+    try {
+        return dialedHosts(adapterId, connection).filter((host) => !/^\d+$/.test(host));
+    } catch {
+        // A host no client reads goes by its shape and the other rules alone.
+        return [];
+    }
+}
+
 /** What the connection of a server names: its hosts, ports, logins, paths and databases. */
-function connectionValues(connection: Record<string, unknown>): Hidden {
+function connectionValues(connection: Record<string, unknown>, adapterId: string | undefined): Hidden {
     const pick = (...keys: string[]) => keys.flatMap((key) => strings(connection[key]));
     const privileged = (connection.privilegedAuth ?? {}) as Record<string, unknown>;
     const listed = Array.isArray(connection.databases) ? (connection.databases as Record<string, unknown>[]) : [];
@@ -182,7 +220,16 @@ function connectionValues(connection: Record<string, unknown>): Hidden {
     // A URI, the nodes of a Sentinel and a host field with a list, like the members of a MongoDB
     // replica set as `rs0/mongo1:27017,mongo2:27017`, name hosts, ports and a login of their own.
     const nodes = pick("sentinelNodes").flatMap((value) => value.split(","));
+    // A server name of SQL Server, whose comma ends the name before its port and whose backslash
+    // names an instance, which names the server as much as its host does.
+    const sqlServer = adapterId ? SQL_SERVER_ADAPTERS.has(adapterId) : pick("host").some((host) => SQL_SERVER_FORM.test(host));
     for (const host of pick("host")) {
+        if (sqlServer) {
+            const parts = sqlServerName(host);
+            hidden.hosts.push(...parts.spellings, ...(parts.instance ? [parts.instance] : []));
+            if (parts.port) hidden.ports.push(parts.port);
+            continue;
+        }
         const replicaSet = /^([A-Za-z0-9_.-]+)\/(.+)$/.exec(host);
         if (replicaSet) hidden.hosts.push(replicaSet[1]);
         nodes.push(...(replicaSet ? replicaSet[2] : host).split(","));
@@ -203,6 +250,7 @@ function connectionValues(connection: Record<string, unknown>): Hidden {
         if (host) hidden.hosts.push(host);
         if (port) hidden.ports.push(port);
     }
+    hidden.hosts.push(...dialedBy(adapterId, connection));
     // The server of Azure SQL goes by its first label too, like the acme-sql of a login sqladmin@acme-sql.
     for (const host of [...hidden.hosts]) {
         const azure = /^([a-z0-9-]+)\.database\.(?:windows\.net|chinacloudapi\.cn|usgovcloudapi\.net|cloudapi\.de)$/i.exec(host);
@@ -259,7 +307,8 @@ export function sharedLogScrubber(facts: SharedLogFacts): SharedLogScrubber {
     // A value of one letter would hide that letter in every word, a kept name is the customer's own.
     const usable = (values: readonly string[]) => values.filter((value) => value.length >= 2 && !isKept(value));
 
-    const connection = connectionValues(facts.connection ?? {});
+    const adapterId = facts.adapterId ?? (typeof facts.connection?.type === "string" ? facts.connection.type : undefined);
+    const connection = connectionValues(facts.connection ?? {}, adapterId);
     const hosts = usable(connection.hosts);
     const domains = [...new Set(domainsOf(hosts))];
     const ports = [...new Set(connection.ports.filter((port) => /^\d+$/.test(port)))];

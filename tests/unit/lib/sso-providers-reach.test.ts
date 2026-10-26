@@ -69,6 +69,25 @@ afterAll(async () => {
 const linked = (model: Awaited<ReturnType<typeof getSsoProvidersModel>>, providerId: string) =>
     model.providers.find((row) => row.providerId === providerId)?.linked.map((entry) => entry.id).sort();
 
+describe("the people beside the providers and the groups to give", () => {
+    it("lists every provider to whoever reads the settings, but only the people of the accounts they may see, and no group to give", async () => {
+        const model = await getSsoProvidersModel(false, { reach: "all", peopleReach: [], viewerId: "desk" });
+
+        expect(model.providers.map((row) => row.providerId).sort()).toEqual(["acme-entra", "globex-okta", "platform-id"]);
+        expect(linked(model, "platform-id")).toEqual(["desk"]);
+        expect(linked(model, "globex-okta")).toEqual([]);
+        expect(model.stats.signIns).toBe(1);
+        expect(model.manage).toBeNull();
+    });
+
+    it("lists the people of the tenants whose accounts the viewer sees", async () => {
+        const model = await getSsoProvidersModel(false, { reach: "all", peopleReach: ["acme"], viewerId: "desk" });
+
+        expect(linked(model, "platform-id")).toEqual(["desk", "tom"]);
+        expect(linked(model, "globex-okta")).toEqual([]);
+    });
+});
+
 describe("the sign-in providers a platform group of some tenants sees", () => {
     it("lists the providers of the platform and of the tenants it reaches, never one of another tenant", async () => {
         const model = await getSsoProvidersModel(true, { reach: ["acme"], viewerId: "desk" });

@@ -39,6 +39,8 @@ export interface AdapterConfig {
      * Connections page lists. The server stays with that tenant: no address, no health check, no edit.
      */
     sharedServer?: SharedServerTerms;
+    /** The destination of the configuration backup, which only a platform admin changes or deletes. */
+    configBackup?: boolean;
 }
 
 export interface AdapterManagerProps {

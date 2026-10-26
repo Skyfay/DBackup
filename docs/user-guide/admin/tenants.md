@@ -9,7 +9,7 @@ A tenant is a customer of the instance and the boundary of its data. Its connect
 Every installation has the **home tenant**, named **Default**. After the update from an earlier version it holds everything the instance held before. It also holds what the platform owns, like the runs of the system tasks and the sign-ins in the audit log, and it cannot be deleted.
 
 ::: info One tenant changes nothing
-With only the home tenant, DBackup looks and works as before: the head of the sidebar names DBackup, and every group does what it did. Whoever may see the tenants opens a menu from the head with **Manage tenants**, and whoever may create one also finds **New tenant** there, to create the second one.
+With only the home tenant, DBackup looks as before: the head of the sidebar names DBackup. Some permissions check more than they did, see [Before Updating](#before-updating). Whoever may see the tenants opens a menu from the head with **Manage tenants**, and whoever may create one also finds **New tenant** there, to create the second one.
 :::
 
 ## Platform Admins
@@ -263,11 +263,11 @@ Someone whose group in the tenant holds `users:write` manages its people:
 
 - **New user** creates an account that joins the open tenant with the group picked. Outside the home tenant the group is required, since an account without one would belong to no tenant and show only in the home tenant.
 - **Change group** gives someone of the tenant another group. **No group** takes them out of the tenant, the account stays. The people of a tenant are its members, and in the home tenant also the accounts of no tenant. Anyone else joins with an [invitation](#invitations) or through **Platform → Tenants**.
-- The account itself, its password, second factor, sessions, name, email or the delete of it, changes only when it works in this tenant alone. An account belongs to every tenant it works in, so an account that also works in another tenant is changed by a platform admin or by whoever holds `platform-accounts:write` through a platform group that reaches all of its tenants. The account of a platform admin is changed by a platform admin only, and an account of a platform group as [Platform Groups](#platform-groups) says. The Users tab counts both as working elsewhere.
+- The account itself, its password, second factor, sessions, name, email or the delete of it, changes only when it works in this tenant alone. An account belongs to every tenant it works in, so an account that also works in another tenant is changed by a platform admin or by whoever holds `platform-accounts:write` through a platform group that reaches all of its tenants. The account of a platform admin is changed by a platform admin only, and an account of a platform group as [Platform Groups](#platform-groups) says. The Users tab counts both as working elsewhere. Nobody but a platform admin changes an account whose group in one of its tenants may do more than they may there, like the **Admin** of the tenant, since whoever sets its password signs in as it.
 
 Nobody gives a group that may do more than they may, and nobody takes one away from someone whose group may do more than they may. The group lists leave such groups out.
 
-An email that has an account already cannot get a second one. Invite that person instead, they join with the account they have. **New user** says that the account exists only to a platform admin and to someone who sees it, like one of the people of the tenant. Anyone else reads that the email cannot get a new account here, whichever tenant the account works in, and after five such answers within an hour **New user** refuses them every email until the hour is over.
+An email that has an account already cannot get a second one. Invite that person instead, they join with the account they have. **New user** says that the account exists only to a platform admin and to someone who sees it, like one of the people of the tenant. Anyone else reads that the email cannot get a new account here, whichever tenant the account works in, and after five such answers within an hour **New user** refuses them every email until the hour is over. The same holds wherever an email is set: Edit of a user, the own profile and an account restored from Recently deleted under a new email answer that the email cannot be given to this account, and their answers count toward the same five.
 
 An email whose domain the [sign-in provider](/user-guide/admin/sso#providers-of-a-tenant) of another tenant claims is refused, since that provider would sign in to the account. A provider of the platform counts as one of the home tenant. Only a platform admin or someone with `platform-accounts:write` gives an account such an email, someone of a platform group of selected tenants only one whose domain the provider of one of those tenants claims. This holds for New user, Edit, the own profile, an invitation that makes an account, and an account restored from Recently deleted, under its own email or a new one.
 
@@ -327,6 +327,17 @@ The update to this version moves the whole instance into the home tenant:
 - Every sign-in provider becomes a provider of the platform. Only platform admins add, change, switch and delete providers, as only the SuperAdmin group did before. Seeing them still needs `settings:read`, and from a browser only, no API key reads them any more.
 - The names of saved logins and templates only need to be unique within a tenant from now on.
 - Sessions, passwords, passkeys, second factors and the settings of the instance stay as they are, so nobody has to sign in again.
+
+Some permissions check more than before, with the home tenant alone too. Look at these before you update:
+
+- **Groups and API keys.** Nobody makes, edits, gives or takes a group that may do more than they may, and nobody edits, pauses, rotates or deletes an API key of someone else that may do more than they may. Let a member of **Admin** or a platform admin do it, or give the group of whoever does it what it lacks.
+- **Accounts.** Nobody but a platform admin sets the password, resets the second factor, ends the sessions, changes the name or email of, or deletes an account whose group may do more than they may, like a member of **Admin**. Let a platform admin do it.
+- **Keys and templates.** `settings:read` no longer lists the encryption keys and the templates. Give a group that needs them `vault:read` or `templates:read`.
+- **Test connection** needs the right to change connections of the kind (`sources:write`, `destinations:write` or `notifications:write`), no longer the right to see them.
+- **Storage alerts** of a destination need `destinations:write` instead of `settings:write`.
+- **Configuration backup.** Only a platform admin sets it up, switches it, runs it and restores one, no longer whoever holds `settings:write`. Make whoever does it a platform admin.
+- **Redirects.** Webhook, Slack, Discord, Teams, Gotify and ntfy channels and WebDAV destinations follow a redirect only on the same host. Enter the final address of a server that sends DBackup on to another host.
+- **Admin.** Someone added to **Admin** after the update may do everything in the tenant but is no platform admin, unlike a new member of SuperAdmin before. Pick **Platform admin** for their account under **Platform → Users & Groups** where they need it.
 
 A database migration cannot be taken back. A start that is about to apply one first keeps a copy of the database beside it in `/data/db`, named `dbackup.db.before-migrate-<time>`, like `dbackup.db.before-migrate-2026-10-15T08-30-00-000Z`. The three newest copies stay, older ones are deleted. A start without a migration to apply copies nothing, and neither does a start after a migration that failed half way, so restarts of a container that cannot finish its migrations never push the copy from before them out.
 

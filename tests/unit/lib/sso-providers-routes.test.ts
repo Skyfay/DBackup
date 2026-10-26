@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
     getAuthContext: vi.fn(),
     getModel: vi.fn(),
     reachOf: vi.fn(),
+    /** The tenants whose accounts the viewer sees, see `accountsSeenReach`. */
+    seenReach: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -24,6 +26,7 @@ vi.mock("@/lib/auth/access-control", () => ({
 vi.mock("@/services/sso/sso-providers-model", () => ({ getSsoProvidersModel: (...args: unknown[]) => mocks.getModel(...args) }));
 // The tenants the platform group of the viewer reaches.
 vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reachOf: (...args: unknown[]) => mocks.reachOf(...args) } }));
+vi.mock("@/services/user/account-visibility", () => ({ accountsSeenReach: (...args: unknown[]) => mocks.seenReach(...args) }));
 
 import { GET } from "@/app/api/sso-providers/route";
 
@@ -37,6 +40,7 @@ describe("GET /api/sso-providers", () => {
         vi.clearAllMocks();
         mocks.getModel.mockResolvedValue({ providers: [] });
         mocks.reachOf.mockResolvedValue("all");
+        mocks.seenReach.mockResolvedValue([]);
     });
 
     it("turns away a request without a session or a key", async () => {
@@ -57,11 +61,11 @@ describe("GET /api/sso-providers", () => {
     it("hands every provider with the groups to whoever may see the sign-in providers, a platform group of all tenants or a platform admin", async () => {
         signedIn(PERMISSIONS.PLATFORM.SIGN_IN_READ);
         expect((await GET()).status).toBe(200);
-        expect(mocks.getModel).toHaveBeenLastCalledWith(true, { reach: "all", viewerId: "lena" });
+        expect(mocks.getModel).toHaveBeenLastCalledWith(false, { reach: "all", peopleReach: [], viewerId: "lena" });
 
         signedInAsPlatformAdmin();
         expect((await GET()).status).toBe(200);
-        expect(mocks.getModel).toHaveBeenLastCalledWith(true, { reach: "all", viewerId: "root" });
+        expect(mocks.getModel).toHaveBeenLastCalledWith(true, { reach: "all", peopleReach: [], viewerId: "root" });
     });
 
     it("shows a platform group of some tenants the providers of the platform and of those tenants only", async () => {
@@ -70,7 +74,7 @@ describe("GET /api/sso-providers", () => {
 
         expect((await GET()).status).toBe(200);
         expect(mocks.reachOf).toHaveBeenCalledWith("lena");
-        expect(mocks.getModel).toHaveBeenLastCalledWith(true, { reach: ["acme"], viewerId: "lena" });
+        expect(mocks.getModel).toHaveBeenLastCalledWith(false, { reach: ["acme"], peopleReach: [], viewerId: "lena" });
     });
 
     it("keeps every provider for whoever reads the settings through the home tenant without a platform group, as before platform groups", async () => {
@@ -78,7 +82,7 @@ describe("GET /api/sso-providers", () => {
         signedIn(PERMISSIONS.SETTINGS.READ);
 
         expect((await GET()).status).toBe(200);
-        expect(mocks.getModel).toHaveBeenLastCalledWith(true, { reach: "all", viewerId: "lena" });
+        expect(mocks.getModel).toHaveBeenLastCalledWith(false, { reach: "all", peopleReach: [], viewerId: "lena" });
     });
 
     it("keeps someone of a platform group of some tenants to its tenants, the settings read through the home tenant too", async () => {
@@ -93,7 +97,25 @@ describe("GET /api/sso-providers", () => {
         });
 
         expect((await GET()).status).toBe(200);
-        expect(mocks.getModel).toHaveBeenLastCalledWith(true, { reach: ["acme"], viewerId: "lena" });
+        expect(mocks.getModel).toHaveBeenLastCalledWith(false, { reach: ["acme"], peopleReach: [], viewerId: "lena" });
+    });
+
+    it("lists the people of the providers only within the accounts the viewer may see, and the groups to a platform admin alone", async () => {
+        signedIn(PERMISSIONS.SETTINGS.READ);
+        await GET();
+        // Reading the settings sees every provider, but no person of another tenant and no group to give.
+        expect(mocks.seenReach).toHaveBeenCalledWith(expect.objectContaining({ userId: "lena" }));
+        expect(mocks.getModel).toHaveBeenLastCalledWith(false, { reach: "all", peopleReach: [], viewerId: "lena" });
+
+        mocks.seenReach.mockResolvedValue(["acme"]);
+        signedIn(PERMISSIONS.PLATFORM.SIGN_IN_READ, PERMISSIONS.PLATFORM.ACCOUNTS_READ);
+        await GET();
+        expect(mocks.getModel).toHaveBeenLastCalledWith(false, { reach: "all", peopleReach: ["acme"], viewerId: "lena" });
+
+        mocks.seenReach.mockResolvedValue("all");
+        signedInAsPlatformAdmin();
+        await GET();
+        expect(mocks.getModel).toHaveBeenLastCalledWith(true, { reach: "all", peopleReach: "all", viewerId: "root" });
     });
 
     it("answers no API key, which gets the settings of its owner's group in the home tenant, since the list spans every tenant", async () => {

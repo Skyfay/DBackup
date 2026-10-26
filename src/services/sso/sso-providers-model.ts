@@ -94,7 +94,7 @@ interface BuildInput {
     callbackBase: string;
     /** The tenants the providers belong to, the home tenant among them. */
     tenants: SsoTenant[];
-    /** Whether the viewer changes the providers, which only a platform admin does. */
+    /** Whether the viewer changes the providers, which only a platform admin does, and gets the groups new people can start in. */
     canManage: boolean;
 }
 
@@ -188,7 +188,7 @@ export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
         autoRedirect,
         callbackBase,
         adapters: OIDC_ADAPTERS.map((adapter) => ({ id: adapter.id, name: adapter.name, inputs: adapter.inputs })),
-        tenants: canManage ? tenants : tenants.filter((tenant) => tenant.id === HOME_TENANT_ID),
+        tenants,
         manage: canManage
             ? {
                   groups: groups.map((group) => ({
@@ -206,10 +206,13 @@ export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
 
 /**
  * Whose providers the tab lists: every one, or for someone of a platform group of some tenants those
- * of the platform and of the tenants it reaches, with only the people of those tenants beside them.
+ * of the platform and of the tenants it reaches. Beside them it lists the people of the tenants
+ * whose accounts the viewer may see, see `accountsSeenReach`.
  */
 export interface SsoProvidersScope {
     reach: PlatformReach;
+    /** The tenants whose people show beside the providers, the tenants of `reach` when left out. */
+    peopleReach?: PlatformReach;
     /** The viewer, who sees their own account among the people in any case. */
     viewerId: string | null;
 }
@@ -220,28 +223,30 @@ const EVERY_PROVIDER: SsoProvidersScope = { reach: "all", viewerId: null };
  * The accounts a viewer of some tenants sees: those with a membership in a tenant they reach, like
  * the accounts of the platform show them (`membersOfAny`), and their own.
  */
-function peopleReached(reached: readonly string[], viewerId: string | null): Prisma.UserWhereInput {
+function peopleOfReach(reached: readonly string[], viewerId: string | null): Prisma.UserWhereInput {
     return { OR: [...(viewerId ? [{ id: viewerId }] : []), membersOfAny(reached)] };
 }
 
 /**
- * Loads the SSO tab. The client secret never leaves the database. A platform admin sees the
- * providers of every tenant with the groups of every tenant, read as the system since the admin
- * may work inside any tenant. Anyone else sees the providers of the platform only. A scope of some
- * tenants narrows it to the providers of the platform and of those tenants, the groups they name
- * and the accounts that work there, see `SsoProvidersScope`.
+ * Loads the SSO tab, read as the system since the viewer may work inside any tenant. The client
+ * secret never leaves the database. A scope of every tenant lists the providers of every tenant,
+ * one of some tenants those of the platform and of those tenants with the groups they name, and
+ * the people beside them come from the tenants of `peopleReach`, see `SsoProvidersScope`. Only
+ * with `canManage`, for a platform admin, it hands the groups new people can start in.
  */
 export async function getSsoProvidersModel(canManage: boolean, scope: SsoProvidersScope = EVERY_PROVIDER): Promise<SsoProvidersModel> {
     const since = new Date(Date.now() - SIGN_IN_WINDOW_MS);
     const reached = scope.reach === "all" ? null : scope.reach;
+    const peopleReach = scope.peopleReach ?? scope.reach;
+    const peopleReached = peopleReach === "all" ? null : peopleReach;
     return runAsSystem(async () => {
         const [providers, tenants, passkeySetting] = await Promise.all([
             prisma.ssoProvider.findMany({
-                where: !canManage ? { tenantId: null } : reached ? { OR: [{ tenantId: null }, { tenantId: { in: [...reached] } }] } : undefined,
+                where: reached ? { OR: [{ tenantId: null }, { tenantId: { in: [...reached] } }] } : undefined,
                 select: PROVIDER_SELECT,
             }),
             prisma.tenant.findMany({
-                where: !canManage ? { id: HOME_TENANT_ID } : reached ? { id: { in: [HOME_TENANT_ID, ...reached] } } : undefined,
+                where: reached ? { id: { in: [HOME_TENANT_ID, ...reached] } } : undefined,
                 select: { id: true, name: true },
             }),
             prisma.systemSetting.findUnique({ where: { key: "auth.disablePasskeyLogin" }, select: { value: true } }),
@@ -250,7 +255,7 @@ export async function getSsoProvidersModel(canManage: boolean, scope: SsoProvide
         const platformGroups = providers.flatMap((provider) => (!provider.tenantId && provider.defaultGroupId ? [provider.defaultGroupId] : []));
         const groups = await prisma.group.findMany({
             // A group belongs to one tenant, so all of its memberships are in that tenant.
-            where: !canManage ? { tenantId: HOME_TENANT_ID } : reached ? { OR: [{ tenantId: { in: [...reached] } }, { id: { in: platformGroups } }] } : undefined,
+            where: reached ? { OR: [{ tenantId: { in: [...reached] } }, { id: { in: platformGroups } }] } : undefined,
             select: { id: true, name: true, permissions: true, fullAccess: true, tenantId: true, _count: { select: { memberships: true } } },
             orderBy: { name: "asc" },
         });
@@ -259,7 +264,7 @@ export async function getSsoProvidersModel(canManage: boolean, scope: SsoProvide
             : await prisma.user.findMany({
                   where: {
                       accounts: { some: { providerId: { in: providers.map((provider) => provider.providerId) } } },
-                      ...(reached ? peopleReached(reached, scope.viewerId) : {}),
+                      ...(peopleReached ? peopleOfReach(peopleReached, scope.viewerId) : {}),
                   },
                   select: {
                       id: true,
@@ -277,7 +282,7 @@ export async function getSsoProvidersModel(canManage: boolean, scope: SsoProvide
                 action: AUDIT_ACTIONS.LOGIN,
                 createdAt: { gte: since },
                 details: { contains: '"method":"sso"' },
-                ...(reached ? { userId: { in: people.map((person) => person.id) } } : {}),
+                ...(peopleReached ? { userId: { in: people.map((person) => person.id) } } : {}),
             },
         });
 

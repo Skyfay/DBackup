@@ -25,7 +25,7 @@ The tenants, the accounts of every tenant, the sign-in providers and the sharing
 | Area | See | Change |
 | :--- | :--- | :--- |
 | **Tenants** | `platform-tenants:read`: every tenant and All tenants | `platform-tenants:write`: create, rename and delete tenants, decide who works in them, which of them share with customers and what each adds itself |
-| **Accounts** | `platform-accounts:read`: the accounts and the platform groups, with a platform group of selected tenants the people of those tenants | `platform-accounts:write`: change any account but a platform admin's whose tenants your platform group all reaches, the account of a platform group only when you may give that platform group, give platform groups, and give an account an email whose domain the sign-in provider of a tenant you reach claims |
+| **Accounts** | `platform-accounts:read`: the accounts and the platform groups, with a platform group of selected tenants the people of those tenants | `platform-accounts:write`: change any account but a platform admin's whose tenants your platform group all reaches and whose groups there may do no more than you may there, the account of a platform group only when you may give that platform group, give platform groups, and give an account an email whose domain the sign-in provider of a tenant you reach claims |
 | **Sign-in providers** | `platform-sign-in:read`, also given by `settings:read` | A platform admin only, since a provider signs in as anyone of its emails |
 | **Sharing** | `platform-sharing:read`, **See what is shared**: who holds which database, and which tenants get a destination or a channel with the space each takes | `platform-sharing:write`, **Share with customers**: give databases away, move them, allow backups on demand, share destinations and channels and delete the backups of a tenant on a shared destination, in a tenant that shares with customers |
 
@@ -45,6 +45,8 @@ A platform admin passes every check in every tenant. A few tasks are for a platf
 - Restore or delete for good, from Recently deleted, the account of a platform admin, of a platform group or of someone who also worked in another tenant
 
 Nobody changes or deletes a group they hold in any tenant, since that would hand them any permission. Nobody gives a group that may do more than they may, or takes one away from someone whose group may do more than they may.
+
+Whoever changes how an account signs in can sign in as it. So nobody but a platform admin sets the password, resets the second factor, ends the sessions, changes the name or email of, or deletes an account whose group in one of its tenants may do more than they may there, like the **Admin** of the tenant. This holds for `users:write` and for `platform-accounts:write` alike, and the Users tab locks such an account with the reason. In the same way only its owner, or someone who may do all a key may do, changes, pauses, rotates or deletes an API key.
 
 ::: warning No Group = No Access
 A user without a group signs in but sees and does nothing until someone picks a group. The Users tab counts them above the list.

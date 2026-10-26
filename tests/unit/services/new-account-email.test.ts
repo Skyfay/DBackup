@@ -19,7 +19,8 @@ vi.mock("@/services/tenant/membership-service", () => ({
 }));
 vi.mock("@/services/tenant/invitation-service", () => ({ MAX_FAILED_SIGN_UPS: 5 }));
 
-const { EMAIL_HAS_ACCOUNT, EMAIL_TRIES_SPENT, EMAIL_UNUSABLE, REFUSAL_WINDOW_MS, newAccountEmailRefusal, resetNewAccountEmailTries } = await import("@/services/user/new-account-email");
+const { CHANGED_EMAIL_ANSWERS, EMAIL_CHANGE_TRIES_SPENT, EMAIL_HAS_ACCOUNT, EMAIL_IN_USE, EMAIL_REFUSED, EMAIL_TRIES_SPENT, EMAIL_UNUSABLE, REFUSAL_WINDOW_MS, newAccountEmailRefusal, resetNewAccountEmailTries, takenEmailRefusal } =
+    await import("@/services/user/new-account-email");
 
 /** Tom, the admin of Acme, a customer, who sees the people of Acme only. */
 const TOM_ADMIN = { userId: "tom-admin", tenantId: "acme", allTenants: false, isPlatformAdmin: false, permissions: ["users:write"] };
@@ -66,5 +67,39 @@ describe("New user with an email that has an account", () => {
             expect(await newAccountEmailRefusal("gina@globex.example", ROOT, "acme", NOW)).toBe(EMAIL_HAS_ACCOUNT);
         }
         expect(await newAccountEmailRefusal("sara@acme.example", TOM_ADMIN, "acme", NOW)).toBeNull();
+    });
+});
+
+describe("an email given to an existing account, by an admin, under Profile or on a restore", () => {
+    beforeEach(() => {
+        resetNewAccountEmailTries();
+        mocks.seen = new Set();
+    });
+
+    it("never tells the admin of a customer that the email has an account in another tenant", async () => {
+        const refusal = await takenEmailRefusal("gina@globex.example", TOM_ADMIN, "acme", CHANGED_EMAIL_ANSWERS, { accountId: "sara", now: NOW });
+
+        expect(refusal).toBe(EMAIL_REFUSED);
+        expect(refusal).not.toMatch(/exist|account with/i);
+    });
+
+    it("says that it exists to whoever sees the account that holds it", async () => {
+        expect(await takenEmailRefusal("tom@acme.example", TOM_ADMIN, "acme", CHANGED_EMAIL_ANSWERS, { accountId: "sara", now: NOW })).toBe(EMAIL_IN_USE);
+        expect(await takenEmailRefusal("gina@globex.example", ROOT, null, CHANGED_EMAIL_ANSWERS, { accountId: "sara", now: NOW })).toBe(EMAIL_IN_USE);
+    });
+
+    it("lets an account keep its own email in other letters, and needs no tenant for a free one", async () => {
+        expect(await takenEmailRefusal("Tom@Acme.example", TOM_ADMIN, "acme", CHANGED_EMAIL_ANSWERS, { accountId: "tom", now: NOW })).toBeNull();
+        expect(await takenEmailRefusal("sara@acme.example", { ...TOM_ADMIN, tenantId: null }, null, CHANGED_EMAIL_ANSWERS, { now: NOW })).toBeNull();
+    });
+
+    it("counts its refusals with those of New user, so nobody tries one address after the other across both", async () => {
+        for (let attempt = 0; attempt < 3; attempt++) await newAccountEmailRefusal("gina@globex.example", TOM_ADMIN, "acme", NOW);
+        for (let attempt = 0; attempt < 2; attempt++) {
+            expect(await takenEmailRefusal("gina@globex.example", TOM_ADMIN, "acme", CHANGED_EMAIL_ANSWERS, { accountId: "sara", now: NOW })).toBe(EMAIL_REFUSED);
+        }
+
+        expect(await takenEmailRefusal("sara@acme.example", TOM_ADMIN, "acme", CHANGED_EMAIL_ANSWERS, { accountId: "sara", now: NOW })).toBe(EMAIL_CHANGE_TRIES_SPENT);
+        expect(await newAccountEmailRefusal("sara@acme.example", TOM_ADMIN, "acme", NOW)).toBe(EMAIL_TRIES_SPENT);
     });
 });

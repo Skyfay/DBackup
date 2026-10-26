@@ -17,8 +17,12 @@ vi.mock('@/services/storage/storage-service', () => ({
 vi.mock('@/lib/logging/logger', () => ({
     logger: { child: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
+// The destinations another tenant shares with the tenant of the page, none unless a test names one.
+const provided = vi.hoisted(() => vi.fn(async (..._args: unknown[]): Promise<{ id: string; providerName: string }[]> => []));
+vi.mock('@/services/sharing/provided', () => ({ providedTo: provided }));
 
 import { StorageExplorerService } from '@/services/storage/explorer-service';
+import { runAsTenant } from '@/lib/tenant/context';
 
 const destination = (id: string, lastStatus = 'ONLINE') => ({ id, name: id.toUpperCase(), tenantId: 'acme', adapterId: 'sftp', lastStatus, lastHealthCheck: new Date(), lastError: null });
 const file = { name: 'a.tar', path: 'Shop/a.tar', size: 10, lastModified: new Date(), jobId: 'job-1', jobName: 'Shop', createdAt: new Date().toISOString() };
@@ -107,6 +111,20 @@ describe('the Backups page never waits for a storage', () => {
 
         expect(index.destinations.find((entry) => entry.id === 'nas')?.health).toMatchObject({ status: 'ONLINE', latencyMs: 12, answeredAt: null });
         expect(index.destinations.find((entry) => entry.id === 'r2')?.health).toMatchObject({ status: 'OFFLINE', answeredAt: lastAnswer.toISOString() });
+    });
+
+    it('tells a customer whether a destination of the provider answers, never how fast or since when', async () => {
+        provided.mockResolvedValueOnce([{ id: 'msp-s3', providerName: 'MSP' }]);
+        prismaMock.adapterConfig.findMany.mockImplementation((async (args: { where: { id?: unknown } }) =>
+            (args.where.id ? [{ ...destination('msp-s3', 'OFFLINE'), tenantId: 'default' }] : [destination('nas')])) as never);
+        storage.readCachedListing.mockResolvedValue(null);
+        prismaMock.healthCheckLog.findFirst.mockImplementation((async (args: { where: { status?: string } }) =>
+            (args.where.status === 'ONLINE' ? { createdAt: new Date('2026-09-24T05:00:00Z') } : { latencyMs: 12 })) as never);
+
+        const index = await runAsTenant('acme', () => service.getIndex());
+
+        expect(index.destinations.find((entry) => entry.id === 'msp-s3')?.health).toMatchObject({ status: 'OFFLINE', latencyMs: null, answeredAt: null });
+        expect(index.destinations.find((entry) => entry.id === 'nas')?.health).toMatchObject({ status: 'ONLINE', latencyMs: 12 });
     });
 
     it('checks only destinations it knows', async () => {

@@ -16,6 +16,8 @@ import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { DeleteModeSchema, PERMANENT_DELETE_REFUSED, type DeleteMode } from "@/lib/core/delete-mode";
 import { isKeyHex, keyIdOf } from "@/services/vault/key-id";
 import { VAULT_AUDIT } from "@/services/vault/vault-audit";
+import { configBackupTargetRefusal } from "@/lib/server/config-backup-target-guard";
+import { configBackupFileRefusal } from "@/lib/server/config-backup-guard";
 import { z } from "zod";
 
 /**
@@ -26,6 +28,9 @@ import { z } from "zod";
 const KEY_READERS = [PERMISSIONS.VAULT.READ, PERMISSIONS.VAULT.WRITE, PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.WRITE];
 
 const IdSchema = z.string().min(1).max(200);
+
+/** A Server Action runs with a session, never with an API key. */
+const asCaller = (viewer: { isPlatformAdmin: boolean; tenantId: string | null }) => ({ isPlatformAdmin: viewer.isPlatformAdmin, authMethod: "session" as const, tenantId: viewer.tenantId });
 
 /** What the edit dialog of a key can change besides its name, which an entry keeps as `renamedFrom`. */
 const KEY_FIELDS = { description: { label: "Description" } };
@@ -80,6 +85,9 @@ export async function revealMasterKey(id: string) {
 
     const parsed = IdSchema.safeParse(id);
     if (!parsed.success) return { success: false, error: "Invalid request" };
+    // The key of the configuration backup shows only to a platform admin.
+    const locked = await configBackupTargetRefusal(asCaller(user), { profileIds: [parsed.data] });
+    if (locked) return { success: false, error: locked };
 
     try {
         // The key without its secret, which names the entry. Nothing is revealed of a key that is gone.
@@ -213,6 +221,8 @@ export async function deleteEncryptionProfile(id: string, mode?: DeleteMode) {
     if (!parsedId.success || !parsedMode.success) return { success: false, error: "Invalid request" };
     const { permanently = false } = parsedMode.data;
     if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false, error: PERMANENT_DELETE_REFUSED };
+    const locked = await configBackupTargetRefusal(asCaller(user), { profileIds: [parsedId.data] });
+    if (locked) return { success: false, error: locked };
 
     try {
         // Permanently, every backup it encrypted is unreadable for good. The dialog warns about it.
@@ -259,6 +269,10 @@ export async function recoverEncryptionKeyAction(
     if (!parsedId.success) return { success: false, error: "Invalid request" };
 
     try {
+        // A configuration backup is only for a platform admin, also to try a key on.
+        const refused = await configBackupFileRefusal(asCaller(user), parsedId.data, file);
+        if (refused) return { success: false, error: refused };
+
         const result = await recoverEncryptionKey(parsedId.data, file, keyHex, name);
 
         if (result.status === "rejected") {
@@ -299,6 +313,8 @@ export async function bulkDeleteEncryptionProfiles(ids: string[], mode?: DeleteM
     if (!parsed.success || !parsedMode.success) return { success: false as const, error: "Invalid request" };
     const { permanently = false } = parsedMode.data;
     if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false as const, error: PERMANENT_DELETE_REFUSED };
+    const locked = await configBackupTargetRefusal(asCaller(user), { profileIds: parsed.data });
+    if (locked) return { success: false as const, error: locked };
 
     try {
         // Read first, the keys are gone afterwards. A Vault holds a handful, so the list is cheap.

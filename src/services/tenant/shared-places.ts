@@ -201,14 +201,29 @@ export function groupOfBackup(held: TenantPlaces, tenantId: string, place: Datab
 }
 
 /**
+ * Whether a server, live or deleted, is of an engine that gives one database alone. A server of
+ * another engine, like Redis, hands a customer nothing, see `tenantPlaces`.
+ */
+export async function sharesSingleDatabasesOf(sourceId: string): Promise<boolean> {
+    const server = (await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { adapterId: true } }))
+        ?? (await prisma.sharedServer.findUnique({ where: { id: sourceId }, select: { adapterId: true } }));
+    return !!server && sharesSingleDatabases(server.adapterId);
+}
+
+/**
  * Where a backup of a customer restores into now: the database it was made of, at the place it
- * moved to since. Null when that server was deleted or the database is not theirs now.
+ * moved to since. Null when that server was deleted, is of an engine that gives no database alone
+ * or the database is not theirs now.
  */
 export async function restoreTarget(tenantId: string, place: DatabasePlace, createdAt: string, now: Date): Promise<{ target: DatabasePlace | null; reason: string | null }> {
     const assignments = await prisma.databaseAssignment.findMany({ where: { tenantId }, select: ASSIGNMENT });
     const target = followMoves(assignments, tenantId, place, new Date(createdAt));
-    const live = await prisma.adapterConfig.findFirst({ where: { id: target.sourceId, type: "database" }, select: { id: true } });
+    const live = await prisma.adapterConfig.findFirst({ where: { id: target.sourceId, type: "database" }, select: { id: true, adapterId: true } });
     if (!live) return { target: null, reason: "The server of this database was deleted, so its backups can only be downloaded." };
+    // Its backup holds every database of the server, which a restore never splits.
+    if (!sharesSingleDatabases(live.adapterId) || !(await sharesSingleDatabasesOf(place.sourceId))) {
+        return { target: null, reason: `${target.databaseName} is not a database of yours, so you cannot restore it.` };
+    }
     const facts = await factsOf(target.sourceId);
     if (ownerAt(facts.assignments, facts.rules, target.databaseName, now) !== tenantId) {
         return { target: null, reason: "The database is no longer yours, so a backup of it can only be downloaded." };

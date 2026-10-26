@@ -28,6 +28,8 @@ import { CredentialsStrip } from "./vault-strips";
 import { useVaultModel } from "./use-vault-model";
 import { VAULT_TABLE_IDS } from "./vault-tables";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
+import { useTenantView } from "@/components/tenant/tenant-view";
+import { loginLock, unlessLocked } from "./config-backup-lock";
 
 /** What the page around the list can start, like New profile beside the tabs. */
 export interface CredentialsTabHandle {
@@ -91,12 +93,17 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
         );
     }, []);
 
-    const handlers = useMemo<CredentialActionHandlers>(() => ({
-        onPublicKey: setPublicKey,
-        onReveal: access.canReveal ? reveal : undefined,
-        onEdit: access.canWrite ? (profile) => setForm({ open: true, profile }) : undefined,
-        onDelete: access.canDelete ? setRemoving : undefined,
-    }), [access, reveal]);
+    // The logins of the destination of the configuration backup are revealed and changed by a platform admin alone.
+    const { isPlatformAdmin } = useTenantView();
+    const handlers = useMemo<CredentialActionHandlers>(() => {
+        const locked = (profile: VaultCredential) => loginLock(profile, isPlatformAdmin);
+        return {
+            onPublicKey: setPublicKey,
+            onReveal: unlessLocked(locked, access.canReveal ? reveal : undefined),
+            onEdit: unlessLocked(locked, access.canWrite ? (profile) => setForm({ open: true, profile }) : undefined),
+            onDelete: access.canDelete ? setRemoving : undefined,
+        };
+    }, [access, reveal, isPlatformAdmin]);
 
     const open = useCallback((profile: VaultCredential) => setDetails({ id: profile.id, open: true }), []);
     // A link like the search in the header opens one with `?open=`.

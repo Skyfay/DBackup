@@ -1,6 +1,7 @@
 import { canOfferCounterpart, counterpartStorageRole, STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import type { TenantAllowances } from "@/lib/tenant/allowances";
+import { CONFIG_BACKUP_DESTINATION_LOCKED } from "@/lib/core/config-backup-locks";
 import { isProvidedRow } from "./connection-status-filter";
 import type { AdapterConfig } from "./types";
 
@@ -23,4 +24,12 @@ export function counterpartRole(config: AdapterConfig, mayAdd: Pick<TenantAllowa
     if (!canOfferCounterpart(getAdapterDefinition(config.adapterId)?.supportedRoles, current)) return null;
     const counterpart = counterpartStorageRole(current);
     return (counterpart === STORAGE_ROLES.SOURCE ? mayAdd.directorySources : mayAdd.destinations) ? counterpart : null;
+}
+
+/**
+ * Why the viewer may not edit or delete a connection, or null: the destination of the configuration
+ * backup is changed by a platform admin alone, and the server refuses everyone else.
+ */
+export function configBackupLock(config: Pick<AdapterConfig, "configBackup">, isPlatformAdmin: boolean): string | null {
+    return config.configBackup && !isPlatformAdmin ? CONFIG_BACKUP_DESTINATION_LOCKED : null;
 }

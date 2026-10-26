@@ -118,8 +118,8 @@ export interface SsoProvidersModel {
     callbackBase: string;
     adapters: SsoAdapterOption[];
     /**
-     * Every tenant, the home tenant first, for the Belongs to column, its filter and the form. Only
-     * the home tenant for someone who is no platform admin, who sees the providers of the platform only.
+     * The tenants whose providers the tab lists, the home tenant first, for the Belongs to column,
+     * its filter and the form: every tenant, or the ones a platform group of some tenants reaches.
      */
     tenants: SsoTenant[];
     /** For a platform admin, the only one who changes the providers: the groups of every tenant new people can start in. */

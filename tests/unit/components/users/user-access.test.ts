@@ -61,6 +61,19 @@ describe("what a tenant admin may change of an account", () => {
         expect(accountLock(person({ superAdmin: true }), false)).toBe(accountRefusal(actor, { isPlatformAdmin: true, tenantIds: ["t1"] }));
         expect(accountLock(person({ elsewhere: true }), false)).toBe(accountRefusal(actor, { isPlatformAdmin: false, tenantIds: ["t1", "t2"] }));
     });
+
+    it("locks an account whose group may do more than the viewer, with the words of the server, for a manager of the accounts of the platform too", () => {
+        const actor = { isPlatformAdmin: false, tenantId: "t1", permissions: OPERATOR };
+        const admin = { tenantId: "t1", group: { permissions: "[]", fullAccess: true } };
+        const refused = accountRefusal(actor, { isPlatformAdmin: false, tenantIds: ["t1"], groups: [admin] });
+
+        expect(refused).not.toBeNull();
+        expect(accountLock({ ...person(), groupBeyond: true }, false)).toBe(refused);
+        expect(accountLock({ ...person({ elsewhere: true }), groupBeyond: true }, false, true)).toBe(refused);
+        // The reason of where the account works comes first, like on the server.
+        expect(accountLock({ ...person({ elsewhere: true }), groupBeyond: true }, false)).toBe(accountRefusal(actor, { isPlatformAdmin: false, tenantIds: ["t1", "t2"], groups: [admin] }));
+        expect(accountLock({ ...person(), groupBeyond: true }, true)).toBeNull();
+    });
 });
 
 describe("which groups a viewer may give", () => {

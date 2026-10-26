@@ -14,7 +14,7 @@ Only the servers of a [tenant that shares with customers](#tenants-that-share), 
 
 A database goes to a customer alone only where a backup holds each database as a dump of its own and a restore writes that one database back. That is the case for **MySQL**, **MariaDB**, **PostgreSQL**, **MongoDB**, **Microsoft SQL Server**, **Azure SQL Database**, **SQLite** and **Firebird**.
 
-**Redis** and **Valkey** cannot be shared. Their backup is one snapshot of every logical database of the server, and a restore writes that snapshot back whole, so a customer given one database would download and restore all of them. Their servers show no **Databases and tenants**, and giving one of their databases away, a rule, a move or a database given through the API is refused with:
+**Redis** and **Valkey** cannot be shared. Their backup is one snapshot of every logical database of the server, and a restore writes that snapshot back whole, so a customer given one database would download and restore all of them. Their servers show no **Databases and tenants**, and a database given there before hands its customer nothing, no backup to list, download or restore. Giving one of their databases away, a rule, a move or a database given through the API is refused with:
 
 ```
 Redis keeps every database of a server in one snapshot, which a backup and a restore never split, so no database of it goes to a tenant alone.
@@ -136,7 +136,13 @@ The [restore page](/user-guide/features/restore) of the tenant of the server mar
 The restore would overwrite databases that customers hold now: shop_acme. Confirm overwriting them to restore.
 ```
 
-Through the API the request confirms it with `"overwriteCustomerDatabases": true` in the body of `POST /api/storage/{id}/restore`. A request without a database mapping restores every database of the backup, so it asks for the confirmation as soon as a customer holds any database of the server. A copy beside the database under a free name overwrites nothing and asks nothing.
+Through the API the request confirms it with `"overwriteCustomerDatabases": true` in the body of `POST /api/storage/{id}/restore`. A request without a database mapping restores every database of the backup under its own name, and `targetDatabaseName` renames only a backup of one database, so the server asks about the databases the backup lists in its metadata. For a backup whose metadata lists none it asks as soon as a customer holds any database of the server or the name in `targetDatabaseName`. A copy beside the database under a free name overwrites nothing and asks nothing.
+
+Right before it writes, the restore checks the names it writes into once more. A database a customer holds that the request did not confirm, like one given to a customer while the restore waited, stops the restore before it touches the server:
+
+```
+The restore would overwrite databases that customers hold now: shop_acme. The request did not confirm overwriting them, so nothing was restored.
+```
 
 The customers' History shows nothing of such a restore. The entry in the audit log of the tenant of the server names the customers whose databases it overwrote.
 
@@ -184,7 +190,7 @@ A right click on a shared backup offers only what the customer may do with it: *
 
 **Restore** asks for nothing but a confirmation: the backup is the row picked, the target is the same database, shown as fixed, and the dialog says that only this database is overwritten. A database that is theirs no longer keeps its backups for download only, since a restore would write over a database that belongs to someone else by now.
 
-A restore shows in the History of the customer's tenant, and every download and restore in its audit log. The run names the database alone, never the address, port or user of the server, every host of a list and the name of a MongoDB replica set, an account the server names with its host, another host of its domain, the name of its Sentinel master, the data folder of SQL Server, the archive, the destination or another database of the backup or the server, and the other databases of the backup are never read. The restore notifications to the customer's channels name the database instead of the archive, without the destination, and a failure with a general message. A download goes through an address that holds a token alone, never the destination. When the first destination of a backup does not answer, a download or restore takes the next copy.
+A restore shows in the History of the customer's tenant, and every download and restore in its audit log. The run names the database alone, never the address, port or user of the server, every host of a list and the name of a MongoDB replica set, a server name of SQL Server in each spelling it takes, like `tcp:sql01,1433` or `sql01\PROD`, with its instance, an account the server names with its host, another host of its domain, the name of its Sentinel master, the data folder of SQL Server, the archive, the destination or another database of the backup or the server, and the other databases of the backup are never read. The restore notifications to the customer's channels name the database instead of the archive, without the destination, and a failure with a general message. A download goes through an address that holds a token alone, never the destination. When the first destination of a backup does not answer, a download or restore takes the next copy.
 
 The tenant of the server sees every restore of a customer too. Its History gets a run of the same restore, **Restore onto** the server with **Restore of** the database **for** the customer below it, started by the customer and the person, like *Acme · Sara*. That run holds the whole log, with the archive, the commands and the errors of the server's tools, and ends with the same status as the customer's run. **Cancel** in either History stops the restore. Its audit log keeps the restore as well, with the database, the server and the customer. When a restore fails, the customer's run ends with a line that says the tenant of the server sees the full run in its History, so the customer knows whom to ask.
 

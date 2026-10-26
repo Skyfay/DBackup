@@ -10,6 +10,20 @@ export interface ApiKeyActionHandlers {
 }
 
 /**
+ * Whether the viewer may change, pause, resume, rotate or delete a key, like `keyRefusal` on the
+ * server: their own, or one whose permissions that still work they may all use themselves.
+ */
+export function mayChangeKey(key: Pick<ApiKeyRow, "isMine" | "effective">, viewerPermissions: readonly string[]): boolean {
+    if (key.isMine) return true;
+    const held = new Set(viewerPermissions);
+    return key.effective.every((permission) => held.has(permission));
+}
+
+/** Why the viewer may not change a key, for a bulk action, null when they may. */
+export const keyLockReason = (key: Pick<ApiKeyRow, "isMine" | "effective">, viewerPermissions: readonly string[]): string | null =>
+    mayChangeKey(key, viewerPermissions) ? null : "It may do more than your group may, only its owner changes it";
+
+/**
  * Everything one key can have done to it, as data, for the button at the end of its row, the
  * right click menu, the cards and the panel. Actions the viewer may not take have no handler and
  * are left out. The panel shows Edit and Rotate as buttons of their own, so `inPanel` leaves them out.

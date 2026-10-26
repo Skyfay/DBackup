@@ -9,6 +9,7 @@ import { VAULT_AUDIT } from "@/services/vault/vault-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupTargetRefusal } from "@/lib/server/config-backup-target-guard";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -40,6 +41,9 @@ export async function GET(request: NextRequest) {
         if (ids.length === 0) {
             return new NextResponse("No encryption profiles selected", { status: 400 });
         }
+        // The key of the configuration backup goes into a kit only for a platform admin.
+        const locked = await configBackupTargetRefusal(ctx, { profileIds: ids });
+        if (locked) return new NextResponse(locked, { status: 403 });
 
         // The profiles without their keys first, which name the entry. An unknown id ends here
         // with nothing logged and no key read.

@@ -72,6 +72,8 @@ damaged archive never leaves something that looks like a recovered file.
 
 **Recovery kit** in the menu of a key, in its side panel and in the bar of several selected keys opens the same dialog with only those keys ticked. Right after **New key** the dialog of the new key offers its kit as well.
 
+The key of the [configuration backup](/user-guide/features/system-backup) goes into a kit, and shows with **Reveal key**, only for a platform admin, since it opens a file with every secret of the instance. Everyone else sees it in the dialog without a checkbox and with the reason.
+
 The Vault notes on every key when it was last in a downloaded kit, so the list can mark the keys that never were. The **Never in a kit** filter shows them.
 
 One kit can hold several keys. That is usually what you want: a backup records which

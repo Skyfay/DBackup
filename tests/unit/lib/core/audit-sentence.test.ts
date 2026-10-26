@@ -45,6 +45,13 @@ describe("an entry of the audit log as a sentence", () => {
         expect(auditSentence(entry("UPDATE", "USER", { change: "Sessions Revoked", count: 2 }), "Lena Graf")).toBe("Signed out Lena Graf everywhere");
     });
 
+    it("names the user and the group a change of the group gave, from the entry itself", () => {
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Updating Group", name: "Lena Graf", groupId: "g-view", group: "Viewers" }))).toBe("Changed the group of Lena Graf to Viewers");
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Updating Group", name: "Lena Graf", groupId: "none" }))).toBe("Changed the group of Lena Graf");
+        // An entry of an earlier version kept neither.
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Updating Group", groupId: "g-view" }), "Lena")).toBe("Changed the group of Lena");
+    });
+
     it("tells the kinds of templates apart and counts a bulk action", () => {
         expect(auditSentence(entry("CREATE", "TEMPLATE", { type: "RetentionPolicy", name: "Keep 30" }))).toBe("Created the retention policy Keep 30");
         expect(auditSentence(entry("DELETE", "TEMPLATE", { type: "RetentionPolicy", bulk: true, succeeded: 3 }))).toBe("Deleted 3 retention policies");

@@ -30,6 +30,8 @@ vi.mock("@/services/sharing/connection-options", () => ({ providedItems: vi.fn()
 
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: vi.fn() } }));
 vi.mock("@/lib/core/audit-types", () => ({ AUDIT_ACTIONS: {}, AUDIT_RESOURCES: {} }));
 vi.mock("@/lib/adapters/credential-validation", () => ({ validateCredentialAssignments: vi.fn() }));

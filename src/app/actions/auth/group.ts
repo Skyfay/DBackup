@@ -15,6 +15,7 @@ import { auditService } from "@/services/audit-service";
 import { fromPlatform, groupService } from "@/services/user/group-service";
 import { membershipService } from "@/services/tenant/membership-service";
 import { userService } from "@/services/user/user-service";
+import { maySeeAccount } from "@/services/user/account-visibility";
 
 /**
  * The groups of the tenant the viewer works in. A group belongs to one tenant, so it is made,
@@ -234,12 +235,27 @@ export async function moveUsersToGroup(userIds: string[], groupId: string | null
         for (const user of await userService.namesOf(guarded)) {
             result.failed.push({ id: user.id, name: user.name, error: "This user's group may do more than you may, so only someone who may do all of it changes it." });
         }
-        for (const user of await userService.namesOf(outsiders)) {
-            result.failed.push({ id: user.id, name: user.name, error: "This account works in another tenant. Add people to this tenant with an invitation." });
+        // An account the viewer may not see, or one that does not exist, reads as gone, without its name.
+        const outsiderNames = new Map((await userService.namesOf(outsiders)).map((user) => [user.id, user.name]));
+        for (const id of outsiders) {
+            const name = outsiderNames.get(id);
+            if (name !== undefined && (await maySeeAccount({ ...viewer, userId: viewer.id }, id))) {
+                result.failed.push({ id, name, error: "This account works in another tenant. Add people to this tenant with an invitation." });
+            } else {
+                result.failed.push({ id, name: id, error: "The user no longer exists." });
+            }
         }
 
+        // Each entry names the user and the group, which may both be gone by the time someone reads it.
+        const movedNames = new Map((await userService.namesOf(result.succeeded)).map((user) => [user.id, user.name]));
         for (const id of result.succeeded) {
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Updating Group", groupId: target.data ?? "none" }, id);
+            await auditService.log(
+                viewer.id,
+                AUDIT_ACTIONS.UPDATE,
+                AUDIT_RESOURCES.USER,
+                { change: "Updating Group", name: movedNames.get(id), groupId: target.data ?? "none", ...(group ? { group: group.name } : {}) },
+                id
+            );
         }
         revalidatePath("/dashboard/users");
         return { success: true as const, data: result };

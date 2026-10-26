@@ -176,6 +176,11 @@ credentials to adapters without exposing the raw secrets to them. **Reveal
 secret** shows each field of the profile with a copy button, and every reveal
 is recorded in the audit log before the secret leaves the server.
 
+The logins of the destination the [configuration backup](/user-guide/features/system-backup)
+writes to are revealed, changed and authorized again only by a platform admin, since
+they lead to a file with every secret of the instance. Everyone else may still pick
+them for a connection, and an API key never reveals or changes them.
+
 ## Encryption at Rest
 
 Profile payloads are stored AES-256-GCM encrypted in SQLite, using the same

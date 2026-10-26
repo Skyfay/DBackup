@@ -15,6 +15,8 @@ const ADMIN = ["jobs:write", "destinations:write", "credentials:delete", "tenant
 const ctx = { userId: "u1", permissions: [...ADMIN], isPlatformAdmin: false, authMethod: "session", apiKeyId: undefined };
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: async () => ctx,
     checkPermissionWithContext: () => undefined,

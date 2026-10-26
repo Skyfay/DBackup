@@ -6,6 +6,7 @@ import { reachCovers, type PlatformReach } from "@/lib/auth/platform-group-caps"
 import { runAsSystem } from "@/lib/tenant/context";
 import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import { membersOfAny } from "@/services/tenant/membership-service";
+import { groupsBeyondViewer } from "./account-groups-beyond";
 import { buildUsersModel, loadLogins } from "./users-model";
 import type { UsersModel } from "./users-types";
 
@@ -65,6 +66,8 @@ export async function getAllUsersModel(viewerId: string | null, viewerPlatformAd
         allTenants: true,
     });
     const platformGroups = new Map(users.map((user) => [user.id, user.platformGroup]));
+    // Of every tenant, also those the viewer does not see, see `accountRefusal`.
+    const stronger = viewerId && !viewerPlatformAdmin ? await groupsBeyondViewer(viewerId, users.map((user) => user.id)) : new Set<string>();
     const reach = scope ? reachOfScope(scope, groups) : { managedTenants: null, givableGroups: null, newUserTenants: null, newUserGroups: null };
     // No tenant is open, so a new account picks its tenant, and its group, in the dialog.
     return {
@@ -74,6 +77,7 @@ export async function getAllUsersModel(viewerId: string | null, viewerPlatformAd
             platformGroup: platformGroups.get(row.id) ?? null,
             // The right to manage the accounts of the platform does not change it, see `accountRefusal`.
             ...(beyond.has(row.id) ? { beyondReach: true, elsewhere: true } : {}),
+            ...(stronger.has(row.id) ? { groupBeyond: true } : {}),
         })),
         passwordPolicy,
         homeTenant: false,

@@ -72,6 +72,7 @@ The Audit log tab turns an entry into a sentence with `describeEntry` in `src/li
 | `originalName` | For a restore from Recently deleted under another name, the name it had |
 | `area` | For `UPDATE SYSTEM`: the settings part a person sees, like `Data retention` |
 | `enabled` | For an enable or disable |
+| `group` | For a change of the group of a user (`change: "Updating Group"`), the name of the group it gave, none when it took the group |
 | `bulk`, `requested`, `succeeded`, `failed` | For a bulk action |
 
 A secret never goes into the details with its value. Mark its field with `secret: true` in `diffFields`, and the entry keeps only that it changed.

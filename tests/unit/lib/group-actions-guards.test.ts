@@ -18,9 +18,11 @@ const mocks = vi.hoisted(() => ({
     denied: new Set<string>(),
     viewer: null as unknown as TestViewer,
     groups: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), find: vi.fn(), heldBy: vi.fn() },
-    memberships: { roleOf: vi.fn(), setRoles: vi.fn(), isPersonOf: vi.fn(async () => true), isPlatformAdmin: vi.fn(async () => false) },
+    memberships: { roleOf: vi.fn(), setRoles: vi.fn(), isPersonOf: vi.fn(async (..._args: unknown[]) => true), isPlatformAdmin: vi.fn(async () => false) },
     users: { namesOf: vi.fn() },
     audit: vi.fn(),
+    /** The accounts the viewer sees, see `maySeeAccount`. */
+    seen: new Set<string>(),
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
@@ -35,6 +37,7 @@ vi.mock("@/services/user/group-service", () => ({ groupService: mocks.groups }))
 vi.mock("@/services/tenant/membership-service", () => ({ membershipService: mocks.memberships }));
 vi.mock("@/services/user/user-service", () => ({ userService: mocks.users }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
+vi.mock("@/services/user/account-visibility", () => ({ maySeeAccount: vi.fn(async (_viewer: unknown, id: string) => mocks.seen.has(id)) }));
 
 const { bulkDeleteGroups, createGroup, deleteGroup, moveUsersToGroup, updateGroup } = await import("@/app/actions/auth/group");
 
@@ -184,7 +187,32 @@ describe("what may be done to groups and their people", () => {
                 ],
             },
         });
-        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Updating Group", groupId: "g-view" }, "lena");
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Updating Group", name: "lena", groupId: "g-view", group: "Viewers" }, "lena");
+    });
+
+    it("names an account of another tenant only while the viewer may see it, and answers any other like one that does not exist", async () => {
+        mocks.memberships.isPersonOf.mockImplementation(async (...args: unknown[]) => args[0] === "lena");
+        mocks.users.namesOf.mockImplementation(async (ids: string[]) => ids.filter((id) => id !== "gone").map((id) => ({ id, name: id === "gina" ? "Gina Globex" : id === "tech" ? "Tom Tech" : id })));
+        mocks.seen = new Set(["tech"]);
+        try {
+            const result = await moveUsersToGroup(["lena", "gina", "tech", "gone"], "g-view");
+
+            expect(result).toEqual({
+                success: true,
+                data: {
+                    succeeded: ["lena"],
+                    failed: [
+                        { id: "gina", name: "gina", error: "The user no longer exists." },
+                        { id: "tech", name: "Tom Tech", error: "This account works in another tenant. Add people to this tenant with an invitation." },
+                        { id: "gone", name: "gone", error: "The user no longer exists." },
+                    ],
+                },
+            });
+            expect(JSON.stringify(result)).not.toContain("Gina Globex");
+        } finally {
+            mocks.memberships.isPersonOf.mockImplementation(async () => true);
+            mocks.seen = new Set();
+        }
     });
 
     it("needs the right to change groups, and to change users for moving people", async () => {

@@ -1,4 +1,4 @@
-import { groupPermissions, PLATFORM_PERMISSIONS, type OwnerGroup } from "@/lib/auth/owner-permissions";
+import { groupPermissions, PLATFORM_PERMISSIONS, type OwnerGroup, type OwnerMembership } from "@/lib/auth/owner-permissions";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 import { platformGroupRefusal, reachCovers, type PlatformGroupShape, type PlatformReach } from "@/lib/auth/platform-group-caps";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
@@ -30,6 +30,11 @@ export interface AccountActor {
      * when left out.
      */
     reach?: PlatformReach;
+    /**
+     * What the actor may do in the other tenants of the account, by tenant, which caps the groups
+     * the account may hold there, see `heldGroupBeyond`. In a tenant left out they may do nothing.
+     */
+    permissionsByTenant?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface AccountTarget {
@@ -38,12 +43,15 @@ export interface AccountTarget {
     tenantIds: readonly string[];
     /** The platform group the account holds, none for an account without one. */
     platformGroup?: PlatformGroupShape | null;
+    /** The group the account holds in each of its tenants, none when left out. */
+    groups?: readonly OwnerMembership[];
 }
 
 export const PLATFORM_ADMIN_ACCOUNT_REFUSAL = "Only a platform admin can change the account of a platform admin.";
 export const PLATFORM_GROUP_ACCOUNT_REFUSAL = "This account holds a platform group. Only someone who may give that platform group can change it.";
 export const SHARED_ACCOUNT_REFUSAL = "This account also works in other tenants. Only someone who manages the accounts of the platform can change it.";
 export const BEYOND_REACH_ACCOUNT_REFUSAL = "This account works in a tenant your platform group does not reach. Only someone who reaches all of its tenants can change it.";
+export const GROUP_BEYOND_ACCOUNT_REFUSAL = "This user's group may do more than you may, so only someone who may do all of it can change their account.";
 
 /** The tenants an account belongs to for the reach: the ones it works in, the home tenant for an account of no tenant. */
 const accountTenantsOf = (tenantIds: readonly string[]): readonly string[] => (tenantIds.length > 0 ? tenantIds : [HOME_TENANT_ID]);
@@ -58,10 +66,33 @@ export const reachCoversAccount = (reach: PlatformReach, tenantIds: readonly str
  * give it what it holds: a platform admin by a platform admin, a platform group by someone who
  * manages the accounts of the platform and may give that platform group. The right to manage the
  * accounts of the platform reaches the accounts whose tenants all lie in the reach of the actor,
- * every account but a platform admin's for a platform group of all tenants.
+ * every account but a platform admin's for a platform group of all tenants. Beyond that nobody but
+ * a platform admin changes an account whose group in one of its tenants may do more than they may
+ * there, see `heldGroupBeyond`.
  */
 export function accountRefusal(actor: AccountActor, target: AccountTarget): string | null {
     if (actor.isPlatformAdmin) return null;
+    const refused = placeRefusal(actor, target);
+    if (refused) return refused;
+    // Whoever changes how the account signs in can sign in as it, so its groups cap who changes it.
+    return heldGroupBeyond(actor, target.groups ?? []) ? GROUP_BEYOND_ACCOUNT_REFUSAL : null;
+}
+
+/**
+ * Whether the account holds, in one of its tenants, a group that may do more than the actor may
+ * there, like `roleRefusal` judges a group to give: against what they may in the tenant they work
+ * in now, and in another against `permissionsByTenant`.
+ */
+export function heldGroupBeyond(actor: Pick<AccountActor, "isPlatformAdmin" | "tenantId" | "permissions" | "permissionsByTenant">, groups: readonly OwnerMembership[]): boolean {
+    if (actor.isPlatformAdmin) return false;
+    return groups.some(({ tenantId, group }) => {
+        const permissions = tenantId === actor.tenantId ? actor.permissions : actor.permissionsByTenant?.[tenantId] ?? [];
+        return roleRefusal({ isPlatformAdmin: false, tenantId, permissions }, group) !== null;
+    });
+}
+
+/** Why the actor may not change the account by whom it belongs to, null when they may. */
+function placeRefusal(actor: AccountActor, target: AccountTarget): string | null {
     if (target.isPlatformAdmin) return PLATFORM_ADMIN_ACCOUNT_REFUSAL;
     const managesAccounts = actor.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
     const reached = managesAccounts && reachCoversAccount(actor.reach ?? [], target.tenantIds);

@@ -21,6 +21,9 @@ const EXECUTION_LOOKUP_SLICE = 400;
 const HEALTH_STATUSES: HealthStatus[] = ["ONLINE", "DEGRADED", "OFFLINE"];
 const WEEK_MS = 7 * 86_400_000;
 
+/** What a customer reads of the checks of a destination another tenant shares with it. */
+const NO_CHECKS = { latencyMs: null, answeredAt: null } as const;
+
 /** The alerts of a destination another tenant shares, which only its tenant sets. */
 async function noAlerts(): Promise<DestinationAlerts> {
     const config = defaultAlertConfig();
@@ -151,10 +154,9 @@ export class StorageExplorerService {
 
         const now = Date.now();
         const [checks, growths, alerts] = await Promise.all([
-            // The checks of a shared destination belong to its tenant, the customer reads how they went.
-            Promise.all(places.map((place) => (place.provider
-                ? runAsSystem(() => this.lastChecks(place.config.id, place.config.lastStatus))
-                : this.lastChecks(place.config.id, place.config.lastStatus)))),
+            // The checks of a shared destination belong to its tenant. The customer reads whether it
+            // answers, never how fast or since when, see `connection-options.ts`.
+            Promise.all(places.map((place) => (place.provider ? NO_CHECKS : this.lastChecks(place.config.id, place.config.lastStatus)))),
             Promise.all(places.map((place) => this.growthOf(place.config.id, place.tenantId, now))),
             Promise.all(places.map((place) => (place.provider ? noAlerts() : this.alertsOf(place.config.id)))),
         ]);

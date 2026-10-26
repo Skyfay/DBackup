@@ -11,6 +11,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 
 const log = logger.child({ route: "credentials/[id]" });
 
@@ -66,6 +67,9 @@ export async function PUT(
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.WRITE);
+        // The login of the destination of the configuration backup changes only with a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: [id] });
+        if (locked) return locked;
 
         const body = await req.json();
         const parsed = UpdateCredentialSchema.safeParse(body);
@@ -108,6 +112,8 @@ export async function DELETE(
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.DELETE);
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: [id] });
+        if (locked) return locked;
 
         // Into Recently deleted, unless `?permanently=true`, which needs the right to change the settings too.
         const permanently = permanentlyFrom(req.nextUrl.searchParams);

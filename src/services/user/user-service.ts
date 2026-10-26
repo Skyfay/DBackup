@@ -99,12 +99,20 @@ export const userService = {
     return permissionsIn(user.memberships, tenantId, user.platformGroup);
   },
 
-  /** Whom an account belongs to, which decides who may change it, see `accountRefusal`. */
+  /** Whom an account belongs to and the group it holds in each tenant, which decide who may change it, see `accountRefusal`. */
   async accountOf(userId: string): Promise<AccountTarget | null> {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } } },
+    });
     if (!user) return null;
     const platformGroup = user.platformGroupId ? (await platformGroupService.shapeOf(userId))?.shape ?? null : null;
-    return { isPlatformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE, tenantIds: user.memberships.map((membership) => membership.tenantId), platformGroup };
+    return {
+      isPlatformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE,
+      tenantIds: user.memberships.map((membership) => membership.tenantId),
+      platformGroup,
+      groups: user.memberships.flatMap((membership) => (membership.group ? [{ tenantId: membership.tenantId, group: membership.group }] : [])),
+    };
   },
 
   /**
@@ -122,14 +130,22 @@ export const userService = {
 
   /**
    * Why the caller may not change an account, its password, second factor, sessions, name, email
-   * or the account itself, null when they may or the account is gone. See `accountRefusal`.
+   * or the account itself, null when they may or the account is gone. See `accountRefusal`, which
+   * also weighs the group the account holds in each tenant against what the caller may there.
    */
   async accountRefusalFor(caller: AccountActor & { id: string }, userId: string): Promise<string | null> {
     const target = await this.accountOf(userId);
     if (!target) return null;
     // Only an account of a platform group needs the caller's own platform group to compare.
     const platformGroupShape = target.platformGroup && !caller.isPlatformAdmin ? (await platformGroupService.shapeOf(caller.id))?.shape ?? null : null;
-    return accountRefusal({ ...caller, platformGroupShape, reach: caller.reach ?? (await this.accountsReachOf(caller)) }, target);
+    // What the caller may do in the other tenants of the account, which caps the groups it holds there.
+    const permissionsByTenant: Record<string, readonly string[]> = {};
+    if (!caller.isPlatformAdmin) {
+      for (const { tenantId } of target.groups ?? []) {
+        if (tenantId !== caller.tenantId) permissionsByTenant[tenantId] = await this.permissionsIn(caller.id, tenantId);
+      }
+    }
+    return accountRefusal({ ...caller, platformGroupShape, reach: caller.reach ?? (await this.accountsReachOf(caller)), permissionsByTenant }, target);
   },
 
   /**

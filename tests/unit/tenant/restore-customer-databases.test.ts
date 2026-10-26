@@ -13,16 +13,24 @@ import { PrismaClient } from "@prisma/client";
 import { runAsTenant } from "@/lib/tenant/context";
 import { tenantScopeExtension } from "@/lib/tenant/prisma-scope";
 
-const holder = vi.hoisted(() => ({ client: undefined as unknown }));
+const holder = vi.hoisted(() => ({ client: undefined as unknown, meta: {} as Record<string, unknown> }));
 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: async () => null } }));
+// The metadata of a backup by its path, a path without one reads as a backup whose metadata is gone.
+vi.mock("@/lib/archive/storage-source", () => ({ resolveStorageAdapter: async () => ({ adapter: {}, config: {} }) }));
+vi.mock("@/services/restore/file-restore", () => ({
+    readBackupMetadata: async (_adapter: unknown, _config: unknown, file: string) => {
+        if (!(file in holder.meta)) throw new Error("Backup metadata not found");
+        return holder.meta[file];
+    },
+}));
 
 const { databaseAssignmentService } = await import("@/services/tenant/database-assignments");
-const { assertCustomerDatabasesConfirmed, customerDatabases } = await import("@/services/restore/customer-databases");
+const { assertCustomerDatabasesConfirmed, assertTargetsConfirmed, customerDatabases } = await import("@/services/restore/customer-databases");
 
 let root = "";
 let base: PrismaClient;
@@ -82,6 +90,37 @@ describe("the databases of customers a restore of the provider overwrites", () =
         await expect(asHome(() => assertCustomerDatabasesConfirmed({ storageConfigId: "nas", file: "x.tar", targetSourceId: "shared-mysql" }))).rejects.toThrow(/cust_1, shop_acme/);
         await expect(asHome(() => assertCustomerDatabasesConfirmed(restoring(["shop_acme"], { overwriteCustomerDatabases: true }))))
             .resolves.toEqual([{ database: "shop_acme", tenantId: "acme", customer: "Acme" }]);
+    });
+
+    it("refuses a plain target name on a backup of several databases, which each go back under their own name", async () => {
+        holder.meta["nightly/all.tar"] = { version: 1, databases: { count: 3, names: ["shop_acme", "cust_1", "intern"] }, archive: { formatVersion: 2 } };
+        const api = { storageConfigId: "nas", file: "nightly/all.tar", targetSourceId: "shared-mysql", targetDatabaseName: "scratch" };
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(api))).rejects.toThrow(/customers hold now: cust_1, shop_acme\./);
+        await expect(asHome(() => assertCustomerDatabasesConfirmed({ ...api, overwriteCustomerDatabases: true }))).resolves.toEqual([
+            { database: "cust_1", tenantId: "globex", customer: "Globex" },
+            { database: "shop_acme", tenantId: "acme", customer: "Acme" },
+        ]);
+    });
+
+    it("lets a plain target name through on a backup of one database, which goes back under that name", async () => {
+        holder.meta["nightly/shop.tar"] = { version: 1, databases: { count: 1, names: ["shop_acme"] }, archive: { formatVersion: 2 } };
+        const api = { storageConfigId: "nas", file: "nightly/shop.tar", targetSourceId: "shared-mysql", targetDatabaseName: "shop_check" };
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(api))).resolves.toEqual([]);
+        await expect(asHome(() => assertCustomerDatabasesConfirmed({ ...api, targetDatabaseName: "cust_9" }))).rejects.toThrow(/customers hold now: cust_9\./);
+    });
+
+    it("counts every database of the server and the plain target name for a backup whose databases it cannot read", async () => {
+        const api = { storageConfigId: "nas", file: "gone/unknown.tar", targetSourceId: "shared-mysql", targetDatabaseName: "cust_new" };
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(api))).rejects.toThrow(/customers hold now: cust_1, cust_new, shop_acme\./);
+    });
+
+    it("refuses at the write a database of a customer the check before did not confirm", async () => {
+        const input = { storageConfigId: "nas", file: "nightly/all.tar", targetSourceId: "shared-mysql", overwriteCustomerDatabases: true };
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, confirmedCustomerDatabases: [] }, ["shop_acme", "intern"]))).rejects.toThrow(/customers hold now: shop_acme\. The request did not confirm/);
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, confirmedCustomerDatabases: ["shop_acme"] }, ["shop_acme", "cust_1"]))).rejects.toThrow(/customers hold now: cust_1\./);
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, confirmedCustomerDatabases: ["shop_acme"] }, ["shop_acme", "intern"]))).resolves.toBeUndefined();
+        // The customer's own restore of its database was checked as theirs.
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, shared: { databaseName: "shop_acme" } }, ["shop_acme"]))).resolves.toBeUndefined();
     });
 
     it("asks nothing for a copy beside them, a restore of files or the customer's own restore", async () => {

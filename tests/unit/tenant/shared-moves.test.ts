@@ -215,6 +215,13 @@ describe("a database that moves to another server", () => {
         expect(await base.databaseAssignment.count({ where: { databaseName: "orders", validUntil: null } })).toBe(1);
     });
 
+    it("names no tenant beyond the reach that holds the name on the new server", async () => {
+        const refused = asHome(() => moveDatabase("old-mysql", { databaseName: "orders", toSourceId: "new-mysql", toDatabase: "taken" }, "u-msp", NOW, ["acme"]));
+        await expect(refused).rejects.toThrow("That name is taken on the target server.");
+        await expect(refused).rejects.not.toThrow(/Globex/);
+        expect(await base.databaseAssignment.count({ where: { databaseName: "orders", validUntil: null } })).toBe(1);
+    });
+
     it("offers the servers of the same engine and tenant, naming no database of a tenant beyond the reach", async () => {
         const { moveTargets } = await import("@/services/tenant/database-moves");
         const all = await asHome(() => moveTargets("old-mysql", "all", NOW));

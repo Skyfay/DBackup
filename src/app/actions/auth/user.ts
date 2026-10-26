@@ -14,7 +14,9 @@ import { membershipService } from "@/services/tenant/membership-service";
 import { tenantGroupRefusal } from "@/services/tenant/member-rules";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
-import { newAccountEmailRefusal } from "@/services/user/new-account-email";
+import { CHANGED_EMAIL_ANSWERS, EMAIL_REFUSED, newAccountEmailRefusal, takenEmailRefusal } from "@/services/user/new-account-email";
+import { maySeeAccount } from "@/services/user/account-visibility";
+import { Prisma } from "@prisma/client";
 import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -32,6 +34,9 @@ import { z } from "zod";
 const log = logger.child({ action: "user" });
 
 const BEYOND_TENANT = "Your platform group does not reach this tenant, and you may not manage its users.";
+
+/** What a bulk delete reports for an account that does not exist, see `userService.deleteUser`. */
+const USER_GONE = "User not found";
 
 /**
  * Why the caller may not change this account, null when they may: the account of a platform admin,
@@ -147,18 +152,19 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
     if (refused) return { success: false, error: refused };
 
     try {
+        const given = groupId && groupId !== "none" ? await groupService.find(groupId) : null;
         await membershipService.setRole(userId, currentUser.tenantId, groupId === "none" ? null : groupId, { platformAdmin: currentUser.isPlatformAdmin });
         revalidatePath("/dashboard/users");
 
-        if (currentUser) {
-            await auditService.log(
-                currentUser.id,
-                AUDIT_ACTIONS.UPDATE,
-                AUDIT_RESOURCES.USER,
-                { change: "Updating Group", groupId },
-                userId
-            );
-        }
+        // The entry names the user and the group, which may both be gone by the time someone reads it.
+        const [named] = await userService.namesOf([userId]);
+        await auditService.log(
+            currentUser.id,
+            AUDIT_ACTIONS.UPDATE,
+            AUDIT_RESOURCES.USER,
+            { change: "Updating Group", name: named?.name, groupId, ...(given ? { group: given.name } : {}) },
+            userId
+        );
 
         return { success: true };
     } catch (error: unknown) {
@@ -294,7 +300,7 @@ const UpdateUserSchema = z.object({
     userId: z.string().min(1).max(200),
     data: z.object({
         name: z.string().trim().min(2, "A name has at least 2 characters.").max(100, "A name has at most 100 characters.").optional(),
-        email: z.string().trim().email("That is no email address.").max(320).optional(),
+        email: z.string().trim().toLowerCase().email("That is no email address.").max(320).optional(),
         timezone: z.string().refine(isKnownTimezone, "That time zone is unknown.").optional(),
         dateFormat: z.string().refine((value) => DATE_FORMAT_VALUES.includes(value), "Pick one of the date formats.").optional(),
         timeFormat: z.string().refine((value) => TIME_FORMAT_VALUES.includes(value), "Pick one of the time formats.").optional(),
@@ -326,6 +332,9 @@ export async function updateUser(userId: string, input: { name?: string; email?:
             const scope = emailClaimScope({ ...currentUser, reach: await userService.accountsReachOf(currentUser) });
             const claimed = await claimedEmailRefusal(data.email!, [...(currentUser.tenantId ? [currentUser.tenantId] : []), ...scope.tenantIds], scope.platformLevel);
             if (claimed) return { success: false, error: claimed };
+            // Whoever does not see the account that holds the email never learns that it exists, see `takenEmailRefusal`.
+            const taken = await takenEmailRefusal(data.email!, { ...currentUser, userId: currentUser.id }, currentUser.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: userId });
+            if (taken) return { success: false, error: taken };
         }
     } else {
         // The own name and email change only as far as the profile permissions allow, whatever else the group gives.
@@ -338,6 +347,8 @@ export async function updateUser(userId: string, input: { name?: string; email?:
         }
         const claimed = emailChanges ? await userService.ownEmailRefusal(currentUser.id, data.email!) : null;
         if (claimed) return { success: false, error: claimed };
+        const taken = emailChanges ? await takenEmailRefusal(data.email!, { ...currentUser, userId: currentUser.id }, currentUser.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: currentUser.id }) : null;
+        if (taken) return { success: false, error: taken };
     }
 
     try {
@@ -357,8 +368,10 @@ export async function updateUser(userId: string, input: { name?: string; email?:
 
         return { success: true };
     } catch (error: unknown) {
-         log.error("Failed to update user", { userId }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to update user" };
+        // Taken meanwhile, answered like any email the caller may not give, never with the words of the database.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return { success: false, error: EMAIL_REFUSED };
+        log.error("Failed to update user", { userId }, wrapError(error));
+        return { success: false, error: "The user could not be saved." };
     }
 }
 
@@ -455,7 +468,9 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
         }
         const names = new Map((await userService.namesOf(guarded.map((user) => user.id))).map((user) => [user.id, user.name]));
         for (const user of guarded) {
-            result.failed.push({ id: user.id, name: names.get(user.id) ?? user.id, error: user.error });
+            // An account the caller may not see reads like one that does not exist, its name and why it stays included.
+            if (!(await maySeeAccount({ ...currentUser, userId: currentUser.id }, user.id))) result.failed.push({ id: user.id, error: USER_GONE });
+            else result.failed.push({ id: user.id, name: names.get(user.id) ?? user.id, error: user.error });
         }
 
         revalidatePath("/dashboard/users");

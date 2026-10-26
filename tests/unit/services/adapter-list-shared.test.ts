@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/logging/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) } }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/services/sharing/shared-server-rows", () => ({ sharedServerItems: mocks.sharedRows }));
 vi.mock("@/services/adapters/connection-overview", () => ({ getConnectionOverview: mocks.overview }));
 vi.mock("@/services/sharing/connection-options", () => ({ providedItems: mocks.provided }));

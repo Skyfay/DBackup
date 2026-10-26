@@ -47,7 +47,7 @@ function beyond(requested: string[], allowed: string[]): string[] {
 }
 
 /**
- * Why someone may not pause, resume, rotate or delete a key, null when they may: its owner may,
+ * Why someone may not change, pause, resume, rotate or delete a key, null when they may: its owner may,
  * anyone else only while their group may do all the key may use, so nobody stops or takes over a
  * key that does more than they may. Throws `NotFoundError` for a key that is gone.
  */
@@ -129,8 +129,9 @@ export async function createApiKey(data: CreateApiKeyFormValues) {
 }
 
 /**
- * Changes the name, the permissions and the end of a key. A permission it gets new is never more
- * than the group of its owner may do, nor more than the caller may do themselves.
+ * Changes the name, the permissions and the end of a key, the caller's own or one that does no more
+ * than they may, see `keyRefusal`. A permission it gets new is never more than the group of its
+ * owner may do, nor more than the caller may do themselves.
  */
 export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
   await checkPermission(PERMISSIONS.API_KEYS.WRITE);
@@ -144,6 +145,9 @@ export async function updateApiKey(id: string, data: UpdateApiKeyFormValues) {
   if (permissions.length === 0) return { success: false, error: "Give the key at least one permission." };
 
   try {
+    // Nobody renames, narrows or extends a key that does more than they may, like they pause or rotate none.
+    const refusal = await keyRefusal(keyId.data, currentUser, "changes");
+    if (refusal) return { success: false, error: refusal };
     if (await apiKeyService.nameTaken(parsed.data.name, keyId.data)) return { success: false, error: NAME_TAKEN };
     // Only what the key gets new is checked. What it keeps, even paused, stays as it was.
     const owner = await apiKeyService.ownerOf(keyId.data);

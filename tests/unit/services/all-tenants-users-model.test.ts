@@ -201,6 +201,17 @@ describe("the accounts a platform group of some tenants sees on the Platform", (
             account({ id: "tech", name: "Tom Tech", memberships: [{ tenantId: "default", group: OPERATORS }, { tenantId: "tenant-a", group: VIEWERS }] }),
             account({ id: "carla", name: "Carla", memberships: [{ tenantId: "tenant-a", group: OPERATORS }] }),
         ] as never);
+        // The groups the accounts hold, with what they may: none beyond what Nina may in tenant A.
+        prismaMock.tenantMembership.findMany.mockResolvedValue([{ userId: "carla", tenantId: "tenant-a", group: { permissions: JSON.stringify(["jobs:read"]), fullAccess: false } }] as never);
+    });
+
+    it("marks an account whose group in a tenant may do more than she may there, which she does not change", async () => {
+        prismaMock.tenantMembership.findMany.mockResolvedValue([{ userId: "carla", tenantId: "tenant-a", group: { permissions: "[]", fullAccess: true } }] as never);
+
+        const model = await getAllUsersModel("nina", false);
+
+        expect(model.users.find((row) => row.id === "carla")).toEqual(expect.objectContaining({ groupBeyond: true }));
+        expect(model.users.find((row) => row.id === "tech")).not.toHaveProperty("groupBeyond");
     });
 
     it("lists the people of the tenants it reaches and the own account, never an account of no tenant or of other tenants alone", async () => {

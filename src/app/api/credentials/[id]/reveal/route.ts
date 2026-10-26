@@ -8,6 +8,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { refusedUnless } from "@/lib/server/permission-refusal";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 
 const log = logger.child({ route: "credentials/[id]/reveal" });
 
@@ -26,6 +27,10 @@ export async function GET(
     if (refused) return refused;
 
     try {
+        // The login of the destination of the configuration backup shows only to a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: [id] });
+        if (locked) return locked;
+
         // The profile without its secret, which names the entry. An unknown id ends here as a 404.
         const profile = await credentialService.getCredentialProfile(id);
 

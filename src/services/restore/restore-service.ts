@@ -50,13 +50,15 @@ export class RestoreService {
     private async start(rawInput: RestoreInput, runTenantId?: string) {
         // One mapping shape from here on, so the preflight checks the same databases the
         // pipeline then restores.
-        const input: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping) };
-        assertDatabaseTarget(input.targetDatabaseName);
-        const { file } = input;
+        const normalized: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping), confirmedCustomerDatabases: undefined };
+        assertDatabaseTarget(normalized.targetDatabaseName);
+        const { file } = normalized;
 
         // Databases customers hold now on the server go back only once the request confirms it,
-        // asked before anything touches the server.
-        const overwritten = await assertCustomerDatabasesConfirmed(input);
+        // asked before anything touches the server. The restore checks the names it writes into
+        // against these again.
+        const overwritten = await assertCustomerDatabasesConfirmed(normalized);
+        const input: RestoreInput = { ...normalized, confirmedCustomerDatabases: overwritten.map((entry) => entry.database) };
 
         try {
             // Pre-flight: throws on permission/version/type incompatibility.

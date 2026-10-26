@@ -216,7 +216,12 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
             }
             if (entry.resource === R.USER && change && USER_CHANGES[change]) {
                 const [lead, tail] = USER_CHANGES[change];
-                return { parts: [plain(`${lead} `), ...(target ? [strong(target)] : [plain("a user")]), ...(tail ? [plain(tail)] : [])], glyph: change === "Password Set" ? "key" : "pencil" };
+                // The group a change of the group gave, which the entry names since the version that wrote it.
+                const given = change === "Updating Group" ? text(details.group) : null;
+                return {
+                    parts: [plain(`${lead} `), ...(name ? [strong(name)] : [plain("a user")]), ...(tail ? [plain(tail)] : []), ...(given ? [plain(" to "), strong(given)] : [])],
+                    glyph: change === "Password Set" ? "key" : "pencil",
+                };
             }
             if (change === "SSO account connected") return { parts: [plain("Linked a single sign-on account")], glyph: "link" };
             // A destination or a channel shared with other tenants, see src/services/sharing/.

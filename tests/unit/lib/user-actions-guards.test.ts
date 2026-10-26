@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PermissionError, ValidationError } from "@/lib/logging/errors";
 import { AVAILABLE_PERMISSIONS, PERMISSIONS } from "@/lib/auth/permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { Prisma } from "@prisma/client";
 
 interface TestViewer {
     id: string;
@@ -40,6 +41,8 @@ const mocks = vi.hoisted(() => ({
         permissionsIn: vi.fn(),
         accountRefusalFor: vi.fn(),
         accountsReachOf: vi.fn(),
+        emailOf: vi.fn(),
+        updateUser: vi.fn(),
     },
     groups: { find: vi.fn() },
     memberships: { setRole: vi.fn(), roleOf: vi.fn(), isPersonOf: vi.fn(), isPlatformAdmin: vi.fn() },
@@ -47,6 +50,10 @@ const mocks = vi.hoisted(() => ({
     setPassword: vi.fn(),
     audit: vi.fn(),
     emailRefusal: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
+    /** The check of an email given to an existing account. */
+    takenEmail: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
+    /** The accounts the viewer sees, every one when null, see `maySeeAccount`. */
+    seen: null as Set<string> | null,
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
@@ -73,7 +80,13 @@ vi.mock("@/services/notifications/system-notification-service", () => ({ notify:
 vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: mocks.tenants }));
 vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.fn(async () => null) }));
 // An email without an account, unless a test says otherwise, see tests/unit/services/new-account-email.test.ts.
-vi.mock("@/services/user/new-account-email", () => ({ newAccountEmailRefusal: (...args: unknown[]) => mocks.emailRefusal(...args) }));
+vi.mock("@/services/user/new-account-email", () => ({
+    newAccountEmailRefusal: (...args: unknown[]) => mocks.emailRefusal(...args),
+    takenEmailRefusal: (...args: unknown[]) => mocks.takenEmail(...args),
+    CHANGED_EMAIL_ANSWERS: { known: "known", refused: "refused", spent: "spent" },
+    EMAIL_REFUSED: "This email cannot be given to this account. Pick another email.",
+}));
+vi.mock("@/services/user/account-visibility", () => ({ maySeeAccount: vi.fn(async (_viewer: unknown, id: string) => mocks.seen?.has(id) ?? true) }));
 
 const { accountRefusal } = await vi.importActual<typeof import("@/lib/auth/account-access")>("@/lib/auth/account-access");
 
@@ -84,7 +97,11 @@ function decideAccounts() {
         caller.isPlatformAdmin ? "all" : caller.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE) ? mocks.reach : []);
     mocks.service.accountRefusalFor.mockImplementation(async (caller: TestViewer, id: string) => {
         const target = await mocks.service.accountOf(id);
-        return target ? accountRefusal({ ...caller, platformGroupShape: null, reach: await mocks.service.accountsReachOf(caller) }, target) : null;
+        if (!target) return null;
+        // Like the service: what the caller may in the other tenants of the account caps the groups it holds there.
+        const permissionsByTenant: Record<string, string[]> = {};
+        for (const { tenantId } of target.groups ?? []) if (tenantId !== caller.tenantId) permissionsByTenant[tenantId] = await mocks.service.permissionsIn(caller.id, tenantId);
+        return accountRefusal({ ...caller, platformGroupShape: null, reach: await mocks.service.accountsReachOf(caller), permissionsByTenant }, target);
     });
     mocks.memberships.isPersonOf.mockResolvedValue(true);
     mocks.memberships.isPlatformAdmin.mockResolvedValue(false);
@@ -129,7 +146,12 @@ const FULL_ACCESS: TestGroup = { id: "g-full", name: "Admin", permissions: "[]",
 const DELETERS: TestGroup = { id: "g-delete", name: "Deleters", permissions: JSON.stringify([PERMISSIONS.JOBS.READ, PERMISSIONS.STORAGE.DELETE]), fullAccess: false };
 
 /** The accounts the guards look at: whose they are decides who may change them. */
-const ACCOUNTS: Record<string, { isPlatformAdmin: boolean; tenantIds: string[]; platformGroup?: { platformPermissions: string[]; tenantPermissions: string[]; allTenants: boolean; tenantIds: string[] } }> = {
+const ACCOUNTS: Record<string, {
+    isPlatformAdmin: boolean;
+    tenantIds: string[];
+    platformGroup?: { platformPermissions: string[]; tenantPermissions: string[]; allTenants: boolean; tenantIds: string[] };
+    groups?: { tenantId: string; group: TestGroup }[];
+}> = {
     // A technician of a platform group who works in no tenant.
     "platform-tech": { isPlatformAdmin: false, tenantIds: [], platformGroup: { platformPermissions: [PERMISSIONS.PLATFORM.ACCOUNTS_WRITE], tenantPermissions: [], allTenants: true, tenantIds: [] } },
     lena: { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID] },
@@ -143,7 +165,14 @@ const ACCOUNTS: Record<string, { isPlatformAdmin: boolean; tenantIds: string[]; 
     "globex-user": { isPlatformAdmin: false, tenantIds: ["tenant-b"] },
     // Works in no tenant yet, which counts as the home tenant.
     fresh: { isPlatformAdmin: false, tenantIds: [] },
+    // The Admin of the home tenant, whose group may do everything there.
+    "home-admin": { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID], groups: [{ tenantId: HOME_TENANT_ID, group: FULL_ACCESS }] },
+    // The Admin of tenant A, and someone there who only reads the jobs.
+    "a-admin": { isPlatformAdmin: false, tenantIds: ["tenant-a"], groups: [{ tenantId: "tenant-a", group: FULL_ACCESS }] },
+    "a-viewer": { isPlatformAdmin: false, tenantIds: ["tenant-a"], groups: [{ tenantId: "tenant-a", group: VIEWERS }] },
 };
+
+const GROUP_BEYOND = "This user's group may do more than you may, so only someone who may do all of it can change their account.";
 
 const PLATFORM_ONLY = "Only a platform admin can change the account of a platform admin.";
 const OTHER_TENANTS = "This account also works in other tenants. Only someone who manages the accounts of the platform can change it.";
@@ -379,6 +408,41 @@ describe("what an admin may do to other users", () => {
         expect(mocks.service.revokeSession).not.toHaveBeenCalled();
     });
 
+    it("never lets an admin change the account of someone whose group may do more, like the Admin of the tenant", async () => {
+        expect(await setUserPassword("home-admin", { password: "a new password", signOut: true })).toEqual({ success: false, error: GROUP_BEYOND });
+        expect(await resetUserTwoFactor("home-admin")).toEqual({ success: false, error: GROUP_BEYOND });
+        expect(await revokeUserSessions("home-admin")).toEqual({ success: false, error: GROUP_BEYOND });
+        expect(await updateUser("home-admin", { name: "Renamed", email: "mine@example.ch" })).toEqual({ success: false, error: GROUP_BEYOND });
+        expect(await deleteUser("home-admin")).toEqual({ success: false, error: GROUP_BEYOND });
+        expect(mocks.setPassword).not.toHaveBeenCalled();
+        expect(mocks.service.resetTwoFactor).not.toHaveBeenCalled();
+        expect(mocks.service.updateUser).not.toHaveBeenCalled();
+        expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+
+        // A platform admin does.
+        mocks.viewer = PLATFORM_ADMIN;
+        expect((await setUserPassword("home-admin", { password: "a new password", signOut: false })).success).toBe(true);
+    });
+
+    it("answers an email of an account the admin may not see with the fixed sentence, also when the database refuses it", async () => {
+        mocks.service.emailOf.mockResolvedValue("lena@example.ch");
+        mocks.takenEmail.mockResolvedValueOnce("This email cannot be given to this account. Pick another email.");
+
+        expect(await updateUser("lena", { email: "Gina@Globex.example" })).toEqual({ success: false, error: "This email cannot be given to this account. Pick another email." });
+        expect(mocks.takenEmail).toHaveBeenCalledWith("gina@globex.example", expect.objectContaining({ userId: "admin" }), HOME_TENANT_ID, expect.anything(), { accountId: "lena" });
+        expect(mocks.service.updateUser).not.toHaveBeenCalled();
+
+        // Taken meanwhile: never the words of the database.
+        mocks.service.updateUser.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`email`)", { code: "P2002", clientVersion: "6" }));
+        expect(await updateUser("lena", { email: "sara@example.ch" })).toEqual({ success: false, error: "This email cannot be given to this account. Pick another email." });
+    });
+
+    it("names the user and the group in the entry of a change of the group", async () => {
+        await updateUserGroup("lena", "g-view");
+
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Updating Group", name: "lena", groupId: "g-view", group: "Viewers" }, "lena");
+    });
+
     it("needs the permission to change users", async () => {
         mocks.allowed = false;
 
@@ -549,6 +613,28 @@ describe("the accounts someone of a platform group of some tenants changes", () 
         // In tenant B she is a member whose group manages the users.
         mocks.service.permissionsIn.mockResolvedValue([PERMISSIONS.USERS.WRITE, PERMISSIONS.JOBS.READ]);
         expect(await createUser({ ...NEW_USER, tenantId: "tenant-b" })).toEqual({ success: true, data: { id: "u-new" } });
+    });
+
+    it("never changes an account whose group in its tenant may do more than she may there", async () => {
+        expect(await setUserPassword("a-admin", { password: "a new password", signOut: true })).toEqual({ success: false, error: GROUP_BEYOND });
+        expect(await deleteUser("a-admin")).toEqual({ success: false, error: GROUP_BEYOND });
+        expect(mocks.service.permissionsIn).toHaveBeenCalledWith("nina", "tenant-a");
+        // Her platform group of all tenants changes no such account either.
+        mocks.reach = "all";
+        expect(await resetUserTwoFactor("a-admin")).toEqual({ success: false, error: GROUP_BEYOND });
+
+        expect(await deleteUser("a-viewer")).toEqual({ success: true });
+    });
+
+    it("reports an account she may not see in a bulk delete like one that does not exist", async () => {
+        mocks.seen = new Set(["cust-user"]);
+        try {
+            const result = await bulkDeleteUsers(["cust-user", "globex-user"]);
+
+            expect(result).toEqual({ success: true, data: { succeeded: ["cust-user"], failed: [{ id: "globex-user", error: "User not found" }] } });
+        } finally {
+            mocks.seen = null;
+        }
     });
 
     it("makes a new account in any tenant for a platform group of all tenants, as before", async () => {

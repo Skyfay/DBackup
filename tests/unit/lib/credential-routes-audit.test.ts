@@ -25,6 +25,8 @@ vi.mock("@/lib/auth/access-control", () => ({
     checkPermissionWithContext: vi.fn(),
 }));
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers()) }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
 vi.mock("@/services/auth/credential-service", () => ({
     updateCredentialProfile: (...args: unknown[]) => mocks.updateCredentialProfile(...args),

@@ -90,4 +90,10 @@ export interface RestoreInput {
      * hold now. Without it such a restore is refused, see `customer-databases.ts`.
      */
     overwriteCustomerDatabases?: boolean;
+    /**
+     * The databases of customers the request confirmed overwriting, filled by `RestoreService` from
+     * its check, never by a request. The restore refuses to write into any other database a customer
+     * holds, see `assertTargetsConfirmed` in `customer-databases.ts`.
+     */
+    confirmedCustomerDatabases?: string[];
 }

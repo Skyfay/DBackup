@@ -11,6 +11,7 @@ import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { rememberServer, serverRestored } from "@/services/tenant/shared-servers";
 import { sharedKindOf, type SharedKind } from "@/services/sharing/provided";
+import { EMAIL_REFUSED } from "@/services/user/new-account-email";
 import type { ConnectionSnapshot, CredentialSnapshot, JobSnapshot, KeySnapshot, UserSnapshot } from "./trash-snapshot";
 import type { TrashKind } from "./trash-types";
 
@@ -217,9 +218,10 @@ async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Prom
 }
 
 async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): Promise<RestoredRecord> {
-    const email = newEmail || snapshot.record.email;
+    const email = newEmail ? newEmail.trim().toLowerCase() : snapshot.record.email;
     if (await tx.user.findUnique({ where: { email }, select: { id: true } })) {
-        throw new ConflictError(`An account with ${email} exists already. Restore this one with another email.`);
+        // The action checks a new email first, see `takenEmailRefusal`. One taken since never says that an account holds it.
+        throw new ConflictError(newEmail ? EMAIL_REFUSED : `An account with ${email} exists already. Restore this one with another email.`);
     }
     const notes: string[] = [];
     const { groupId: legacyGroupId, ...record } = { ...snapshot.record, email };

@@ -67,6 +67,18 @@ describe("a customer whose backups on a shared destination are all gone", () => 
         });
     });
 
+    it("counts a customer's backups in its folder however a storage that ignores the case spells it", async () => {
+        vi.mocked(registry.get).mockReturnValue({ list: vi.fn().mockResolvedValue([
+            { name: "own.tar", path: "nightly/own.tar", size: 50 },
+            { name: "a.tar", path: "Tenants/acme/shop/a.tar", size: 300 },
+            { name: "b.tar", path: "TENANTS./acme/shop/b.tar", size: 400 },
+        ]) } as never);
+
+        const result = await refreshStorageStatsCache();
+
+        expect(result.map((entry) => [entry.tenantId, entry.size, entry.count])).toEqual([["msp", 50, 1], ["acme", 700, 2]]);
+    });
+
     it("leaves out a tenant that no longer gets the destination or is gone", async () => {
         stored = [...stored!, { configId: "msp-s3", tenantId: "shop", name: "MSP S3", adapterId: "s3", size: 90, count: 1 }, { configId: "msp-s3", tenantId: "gone", name: "MSP S3", adapterId: "s3", size: 10, count: 1 }];
         vi.mocked(registry.get).mockReturnValue({ list: vi.fn().mockResolvedValue([]) } as never);

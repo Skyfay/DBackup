@@ -63,6 +63,11 @@ export interface UserRow {
      * the accounts of the platform does not change it. Only for someone of a platform group of some tenants.
      */
     beyondReach?: boolean;
+    /**
+     * Holds, in one of its tenants, a group that may do more than the viewer may there, so the
+     * viewer changes neither the account nor how it signs in. Absent otherwise.
+     */
+    groupBeyond?: boolean;
     methods: SignInMethod[];
     secondFactor: SecondFactor;
     lastSignIn: UserSignIn | null;

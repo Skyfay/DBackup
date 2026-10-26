@@ -1,10 +1,11 @@
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
-import { matchesPattern, ownerAt, type AssignmentFact, type RuleFact } from "@/lib/tenant/database-owner";
+import { matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
 import { normalizePath } from "@/services/storage/explorer-model";
 import { storageService, type RichFileInfo } from "@/services/storage/storage-service";
 import { providedTo } from "@/services/sharing/provided";
+import type { OwnerFacts } from "./owner-facts";
 
 /**
  * The backups of a shared server as plain records: every backup of the server at the destinations
@@ -13,19 +14,7 @@ import { providedTo } from "@/services/sharing/provided";
  * and the customer for its own, so they never count differently.
  */
 
-/** Who a database of a server belonged to and when, as `database-owner.ts` reads it. */
-export interface OwnerFacts {
-    assignments: AssignmentFact[];
-    rules: RuleFact[];
-}
-
-export async function factsOf(sourceId: string): Promise<OwnerFacts> {
-    const [assignments, rules] = await Promise.all([
-        prisma.databaseAssignment.findMany({ where: { sourceId }, select: { databaseName: true, tenantId: true, validFrom: true, validUntil: true, movedToSourceId: true, createdAt: true } }),
-        prisma.databaseAssignmentRule.findMany({ where: { sourceId }, select: { id: true, pattern: true, tenantId: true, priority: true, validFrom: true, validUntil: true, createdAt: true } }),
-    ]);
-    return { assignments, rules };
-}
+export { factsOf, type OwnerFacts } from "./owner-facts";
 
 /** One backup of the server as one destination lists it. */
 export interface ServerBackupFile {

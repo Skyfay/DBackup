@@ -14,7 +14,7 @@ import { isBackupFile } from "@/lib/core/backup-files";
 import { invalidateDashboardCache, invalidateTenantCaches } from "@/services/dashboard/cache";
 import { isNotConnected } from "@/lib/core/air-gap";
 import { currentTenantId } from "@/lib/tenant/current";
-import { TENANTS_FOLDER } from "@/lib/tenant/storage-view";
+import { isTenantsSegment } from "@/lib/tenant/storage-view";
 import { providedIds, providedTo } from "@/services/sharing/provided";
 import { nameAndSub, parseMetadata } from "@/services/history/run-row";
 
@@ -390,9 +390,10 @@ async function entriesOf(
   const totals = new Map<string, { size: number; count: number }>(
     [destination.tenantId, ...customers].map((tenantId) => [tenantId, { size: 0, count: 0 }]),
   );
+  // The folder of the customers in every spelling the storage view treats as it, like Tenants/.
   const folderOf = (path: string) => {
-    const clean = path.replace(/\\/g, "/").replace(/^\/+/, "");
-    return shared ? new RegExp(`^${TENANTS_FOLDER}/([^/]+)/`).exec(clean)?.[1] : undefined;
+    const parts = path.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".");
+    return shared && parts.length > 2 && isTenantsSegment(parts[0]) ? parts[1] : undefined;
   };
   // A folder of a tenant the count did not know yet is a customer's while the tenant exists and gets
   // the destination now. When that cannot be read, each counts for its tenant as the folder says.

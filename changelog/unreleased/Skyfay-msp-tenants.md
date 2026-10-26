@@ -1,6 +1,6 @@
 > ⚠️ **Before updating:** This version moves everything an installation holds into its first tenant. The first start after the update keeps a copy of the database from before, and going back to an earlier version means starting it on that copy, see [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating).
 
-> ⚠️ **Breaking:** For API users the group SuperAdmin is now Admin, `viewerSuperAdmin` is now `viewerPlatformAdmin` and `GET /api/sso-providers` refuses API keys. The right to see the settings no longer covers the encryption keys and the templates, and the configuration restore, the database download and the files of a configuration backup are for a platform admin only. The configuration backup is set up, scheduled and started by a platform admin signed in to DBackup only, and `PUT /api/settings/system-tasks` answers 403 for it to every API key. Testing a connection and the other checks of a connection form need the right to change that kind of connection, also for API keys. Webhook channels no longer follow a redirect to another host, and a new member of the group Admin is no platform admin.
+> ⚠️ **Breaking:** For API users the group SuperAdmin is now Admin, `viewerSuperAdmin` is now `viewerPlatformAdmin` and `GET /api/sso-providers` refuses API keys. Nobody makes, gives or takes a group that may do more than they may, or changes the account of someone in such a group, and the right to see the settings no longer covers the encryption keys and the templates. Testing a connection and the other checks of a connection form need the right to change that kind of connection, and changing the alerts of a destination needs the right to change destinations. The configuration backup with its destination, logins and key, the configuration restore and the database download are for a platform admin signed in to DBackup only, never for an API key. Webhook channels and WebDAV no longer follow a redirect to another host, and a new member of the group Admin is no platform admin. [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating) says what to do about each.
 
 ### ✨ Features
 
@@ -49,12 +49,16 @@
 - **rsync**: A folder setting like `./backups` or `/srv//backups` no longer puts the folder in front of every listed backup.
 - **restore**: A key picked to open a backup that is no longer in the Vault asks for a key again instead of failing with an error.
 - **queue**: A waiting integrity check or check of backup copies is no longer started by the queue as if it were a backup.
+- **users**: Changing the email of a user to one another account holds shows a plain sentence instead of the error of the database.
 
 ### 🔒 Security
 
 - **users**: Saving a user checks the name, email, time zone and date formats before storing them.
-- **config backup**: Only a platform admin signed in to DBackup changes, schedules or starts the configuration backup, which an API key and a group with the right to change the settings no longer do.
-- **API keys**: Pausing, resuming and deleting the key of someone else needs a group that may do all the key may do, like rotating it.
+- **backup**: Only a platform admin signed in to DBackup changes, schedules or starts the configuration backup, which an API key and a group with the right to change the settings no longer do.
+- **backup**: Only a platform admin changes or deletes the destination of the configuration backup, reveals or changes its saved logins and reveals or exports its key. A key is no longer tried on a configuration backup file by anyone else.
+- **API keys**: Editing, pausing, resuming and deleting the key of someone else needs a group that may do all the key may do, like rotating it.
+- **auth**: Nobody but a platform admin sets the password, resets the second factor, ends the sessions, changes the name or email of, or deletes an account whose group may do more than they may. The Users tab locks such an account with the reason.
+- **auth**: Nobody makes, edits, gives or takes a group that may do more than they may.
 - **connections**: Testing a connection or its SSH login, checking its access or its snapshots and reading databases, tables or rows from the fields of a form need the right to change that kind of connection.
 - **storage**: A configuration backup on a destination is downloaded, opened and restored file by file only by a platform admin who is signed in, and never through a link.
 - **PostgreSQL**: The tools get a database name of a job, a restore or the table browser always as a name, so a name that reads like a connection string no longer connects to another server.
@@ -74,6 +78,7 @@
 
 ### 🎨 Improvements
 
+- **audit**: A change of the group of a user names the user and the group.
 - **api**: Pages, Server Actions and API routes read the database only through the services.
 - **docker**: A start that applies database migrations first keeps a copy of the database beside it. The three newest copies stay.
 - **dashboard**: The Overview, the Timeline, the schedule picker, the History and the Connections page load much faster with many jobs and connections.
@@ -90,6 +95,7 @@
 - **api**: GET /api/sso-providers answers a signed-in person only and refuses API keys.
 - **api**: GET /api/users and GET /api/groups answer viewerPlatformAdmin in place of viewerSuperAdmin.
 - **SMB**: The share address must have the form `//server/share` or `\\server\share`.
+- **SSO**: The sign-in providers list the linked people only to a platform admin and to whoever may see the accounts of the platform.
 - **MongoDB**: A connection to a single host talks to that host alone and no longer to the members of a replica set it announces.
 - **queue**: Runs at the same time counts only backups, so a running restore or check of copies no longer holds a backup back.
 

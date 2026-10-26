@@ -38,13 +38,13 @@ import { ConnectionCard } from "./connection-card";
 import { ConnectionSplitView } from "./connection-split-view";
 import { adapterTypeIcon } from "./connection-type-icon";
 import { connectionBulkActions, deleteBlocker } from "./connection-bulk-actions";
-import { counterpartRole, selectableForBulk } from "./connection-row-rules";
+import { configBackupLock, counterpartRole, selectableForBulk } from "./connection-row-rules";
 import { ConnectionDeleteDialog } from "./connection-delete-dialog";
 import { useTrash } from "@/components/trash/use-trash";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
 import { useTenantColumns } from "@/components/tenant/tenant-column";
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
-import { useMayAdd } from "@/components/tenant/tenant-view";
+import { useMayAdd, useTenantView } from "@/components/tenant/tenant-view";
 import { withTenantColumn } from "@/components/tenant/tenant-rows";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
@@ -112,6 +112,17 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     // Create as directory source or destination adds the other kind, which has a limit of its own.
     const mayAddSources = useMayAdd("directorySources");
     const mayAddDestinations = useMayAdd("destinations");
+    // The destination of the configuration backup is changed by a platform admin alone.
+    const { isPlatformAdmin } = useTenantView();
+    const openEdit = useCallback((config: AdapterConfig) => {
+        const locked = configBackupLock(config, isPlatformAdmin);
+        if (locked) {
+            toast.error(locked);
+            return;
+        }
+        setEditingId(config.id);
+        setIsDialogOpen(true);
+    }, [isPlatformAdmin]);
 
     // A storage adapter has exactly one role; a manager instance scoped to one (the
     // "Directory Sources" section, the Destinations page) only shows configs in it -
@@ -266,20 +277,22 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             openInTenant: tenantName
                 ? { label: `Open in ${tenantName}`, onSelect: () => openRecord(config.tenantId, `/dashboard/connections?tab=${TAB_OF[kind]}&open=${encodeURIComponent(config.id)}`, () => undefined) }
                 : undefined,
-            onEdit: !inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
+            onEdit: !inPanel && canManage ? () => openEdit(config) : undefined,
             // A copy is a new connection, which the platform may not let the tenant add itself.
             onClone: canAdd ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
             counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
             onShare: shareable && shareAccess.share ? () => setSharingId(config.id) : undefined,
             onDelete: canManage ? () => {
                 // The row already knows whether a job or a template still holds the connection.
+                const locked = configBackupLock(config, isPlatformAdmin);
                 const blocker = deleteBlocker(config);
-                if (blocker) toast.error(`${config.name} cannot be deleted. ${blocker}.`);
+                if (locked) toast.error(locked);
+                else if (blocker) toast.error(`${config.name} cannot be deleted. ${blocker}.`);
                 else setDeletingId(config.id);
             } : undefined,
             busy: cloningId === config.id,
         };
-    }, [type, kind, canViewStorage, canManage, canAdd, mayAddSources, mayAddDestinations, shareable, shareAccess.share, cloningId, router, inAllTenants, tenantNameOf, openRecord]);
+    }, [type, kind, canViewStorage, canManage, canAdd, mayAddSources, mayAddDestinations, shareable, shareAccess.share, cloningId, router, inAllTenants, tenantNameOf, openRecord, openEdit, isPlatformAdmin]);
 
     const renderActions = useCallback(
         (config: AdapterConfig, inPanel = false) => (config.sharedServer
@@ -312,7 +325,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         canTest: canManage && type !== "notification" && !config.provided,
         canViewHistory,
         exploreHref: type === "database" ? `/dashboard/explorer?sourceId=${config.id}` : undefined,
-        onEdit: canManage && !config.provided ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
+        onEdit: canManage && !config.provided ? () => openEdit(config) : undefined,
         menu: renderActions(config, true),
         onChanged: afterChange,
     });
@@ -338,7 +351,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     }, [configs, availableAdapters, tenant.filter]);
 
     const trash = useTrash("connection", afterChange);
-    const bulkActions = useMemo(() => connectionBulkActions(kind, canManage, trash), [kind, canManage, trash]);
+    const bulkActions = useMemo(() => connectionBulkActions(kind, canManage, trash, isPlatformAdmin), [kind, canManage, trash, isPlatformAdmin]);
 
     // The connection the form edits, or the type picked for a new one.
     const editingConfig = editingId ? configs.find((config) => config.id === editingId) : undefined;

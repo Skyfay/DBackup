@@ -18,6 +18,10 @@ vi.mock('@/lib/core/registry', () => ({
     registry: { get: vi.fn() },
 }));
 
+// The check of customers' databases runs against a real database in restore-customer-databases.test.ts.
+const confirmTargets = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => undefined));
+vi.mock('@/services/restore/customer-databases', () => ({ assertTargetsConfirmed: confirmTargets }));
+
 vi.mock('@/lib/adapters/config-resolver', () => ({
     // Mirrors the real resolver: it takes the stored adapter row and hands back the parsed
     // config, not the row. Spreading the row instead hid every config value one level down.
@@ -475,6 +479,21 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(dbAdapter.restoreOne.mock.calls.map((c: unknown[]) => c[2])).toEqual(['shop', 'blog']);
         expect(log.mock.calls.some((c: unknown[]) => c[1] === 'warning' && String(c[0]).includes("'renamed' ignored"))).toBe(true);
+    });
+
+    it('checks the names it really writes into for databases of customers before it touches the server', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop', 'blog']);
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        confirmTargets.mockRejectedValueOnce(new Error('The restore would overwrite databases that customers hold now: shop.'));
+        const input = makeInput({ targetSourceId: 'target-db-1', targetDatabaseName: 'renamed' });
+
+        await expect(restoreArchiveSnapshot(input, { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })).rejects.toThrow(/customers hold now: shop/);
+
+        // The plain name does not apply to two databases, so each goes back under its own.
+        expect(confirmTargets).toHaveBeenCalledWith(input, ['shop', 'blog']);
+        expect(dbAdapter.prepareRestore).not.toHaveBeenCalled();
+        expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
     });
 
     it('lets the mapping win over a plain target name', async () => {

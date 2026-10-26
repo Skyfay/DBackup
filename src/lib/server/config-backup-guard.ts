@@ -22,10 +22,18 @@ export function readsConfigBackups(ctx: Pick<AuthContext, "isPlatformAdmin" | "a
 
 const refused = (message: string) => Response.json({ success: false, error: message, message }, { status: 403 });
 
-/** 403 when the file is a configuration backup and the caller is no platform admin with a session, else null. */
-export async function configBackupRefusal(ctx: AuthContext, storageId: string, file: string): Promise<Response | null> {
+type FileCaller = Pick<AuthContext, "isPlatformAdmin" | "authMethod" | "tenantId">;
+
+/** Why the caller may not open the file, a configuration backup for someone who is no platform admin with a session, else null. */
+export async function configBackupFileRefusal(ctx: FileCaller, storageId: string, file: string): Promise<string | null> {
     if (readsConfigBackups(ctx)) return null;
-    return (await isConfigBackupFile(storageId, file, ctx.tenantId)) ? refused(CONFIG_BACKUP_ADMIN_ONLY) : null;
+    return (await isConfigBackupFile(storageId, file, ctx.tenantId)) ? CONFIG_BACKUP_ADMIN_ONLY : null;
+}
+
+/** 403 when the file is a configuration backup and the caller is no platform admin with a session, else null. */
+export async function configBackupRefusal(ctx: FileCaller, storageId: string, file: string): Promise<Response | null> {
+    const message = await configBackupFileRefusal(ctx, storageId, file);
+    return message ? refused(message) : null;
 }
 
 /** 403 when the file is a configuration backup, for a link that is fetched without a session. */

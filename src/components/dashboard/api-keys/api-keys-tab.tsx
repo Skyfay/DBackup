@@ -21,7 +21,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import { runsOutSoon, type ApiKeyRow, type ApiKeysModel } from "@/services/auth/api-keys-types";
-import { apiKeyActions, type ApiKeyActionHandlers } from "./api-key-actions";
+import { apiKeyActions, keyLockReason, mayChangeKey, type ApiKeyActionHandlers } from "./api-key-actions";
 import { ApiKeyCard } from "./api-key-card";
 import { keyLine, KeyTile } from "./api-key-cells";
 import { apiKeyColumns, apiKeyFilters } from "./api-key-columns";
@@ -123,12 +123,10 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
         onDelete: setRemoving,
     } : {}, [canManage, toggle]);
 
-    // Rotating hands out the secret, so only the owner or someone who may do all the key may do rotates it.
+    // Only the owner, or someone who may do all the key may do, changes, pauses, rotates or deletes it, like the server.
     const viewerPermissions = useMemo(() => model?.viewer.permissions ?? [], [model]);
-    const handlersFor = useCallback((key: ApiKeyRow): ApiKeyActionHandlers => {
-        const viewer = new Set(viewerPermissions);
-        return key.isMine || key.effective.every((permission) => viewer.has(permission)) ? handlers : { ...handlers, onRotate: undefined };
-    }, [handlers, viewerPermissions]);
+    const handlersFor = useCallback((key: ApiKeyRow): ApiKeyActionHandlers => (mayChangeKey(key, viewerPermissions) ? handlers : {}), [handlers, viewerPermissions]);
+    const lockedKey = useCallback((key: ApiKeyRow) => keyLockReason(key, viewerPermissions), [viewerPermissions]);
 
     // The Tenant column and filter of All tenants, which lists the keys of every tenant.
     const tenantColumns = useTenantColumns(tenantOfKey, model?.keys);
@@ -153,7 +151,7 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
             icon: Power,
             isAvailable: (selected) => selected.some((key) => key.state === "disabled"),
             itemName: (key) => key.name,
-            ineligible: (key) => (key.state === "expired" ? RAN_OUT : null),
+            ineligible: (key) => lockedKey(key) ?? (key.state === "expired" ? RAN_OUT : null),
             run: (selected) => unwrapBulkAction(bulkToggleApiKeys(selected.map((key) => key.id), true)),
         },
         {
@@ -162,7 +160,7 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
             icon: PowerOff,
             isAvailable: (selected) => selected.some((key) => key.state === "enabled"),
             itemName: (key) => key.name,
-            ineligible: (key) => (key.state === "expired" ? RAN_OUT : null),
+            ineligible: (key) => lockedKey(key) ?? (key.state === "expired" ? RAN_OUT : null),
             run: (selected) => unwrapBulkAction(bulkToggleApiKeys(selected.map((key) => key.id), false)),
         },
         {
@@ -172,6 +170,7 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
             variant: "destructive",
             itemName: (key) => key.name,
             itemDetail: (key) => key.owner.name,
+            ineligible: lockedKey,
             confirm: {
                 title: (selected) => `Delete ${selected.length} API key${selected.length === 1 ? "" : "s"}?`,
                 description: () => "Whatever uses them is refused from its next request. The runs they started stay in History.",
@@ -179,7 +178,7 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
             },
             run: (selected) => unwrapBulkAction(bulkDeleteApiKeys(selected.map((key) => key.id))),
         },
-    ] : [], [canManage]);
+    ] : [], [canManage, lockedKey]);
 
     const shown = details ? keys.find((key) => key.id === details.id) ?? null : null;
     const shownHandlers = shown ? handlersFor(shown) : {};

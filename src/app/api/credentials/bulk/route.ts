@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 import * as credentialService from "@/services/auth/credential-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
         if (permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
             return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
         }
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: parsed.data.ids });
+        if (locked) return locked;
         const result = await credentialService.deleteCredentialProfiles(parsed.data.ids, { permanently, by: ctx.userId });
 
         await auditService.logFor(

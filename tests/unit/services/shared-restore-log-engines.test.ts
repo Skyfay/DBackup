@@ -151,6 +151,31 @@ describe("what a customer reads of the server, beyond its plain host and port", 
         expect(scrubber.text("Unable to resolve db7.msp.internal, retrying db7")).toBe("Unable to resolve the server, retrying the server");
     });
 
+    describe("every spelling of a SQL Server name the adapter accepts", () => {
+        const named = (host: string, type?: string) => sharedLogScrubber({ keep: ["shop_acme"], connection: { host, port: 1433, user: "sa", ...(type ? { type } : {}) } });
+        for (const type of ["mssql", undefined]) {
+            it(`hides the host and the instance of a named instance${type ? "" : " when the run names no engine"}`, () => {
+                const scrubber = named("sql01.msp.internal\\PROD", type);
+                expect(scrubber.text("Failed to connect to sql01.msp.internal - getaddrinfo ENOTFOUND sql01.msp.internal")).toBe("Failed to connect to the server - getaddrinfo ENOTFOUND the server");
+                expect(scrubber.text("Failed to connect to sql01.msp.internal\\PROD in 15000ms")).toBe("Failed to connect to the server in 15000ms");
+                expect(scrubber.text("Port for PROD not found in sql01.msp.internal")).toBe("Port for the server not found in the server");
+                expect(scrubber.text("Restore completed for: shop_acme")).toBe("Restore completed for: shop_acme");
+            });
+
+            it(`hides a name with a protocol and a port after a comma${type ? "" : " when the run names no engine"}`, () => {
+                const scrubber = named("tcp:sql01.msp.internal,1444", type);
+                expect(scrubber.text("SqlPackage: Importing to database 'shop_acme' on server 'tcp:sql01.msp.internal,1444'.")).toBe("SqlPackage: Importing to database 'shop_acme' on server 'the server'.");
+                expect(scrubber.text("Failed to connect to sql01.msp.internal:1444 - getaddrinfo ENOTFOUND sql01.msp.internal")).toBe("Failed to connect to the server - getaddrinfo ENOTFOUND the server");
+                expect(scrubber.text("Server is not listening on port 1444")).toBe("Server is not listening on its port");
+            });
+        }
+
+        it("hides a name with a port after a comma and an instance together, also of Azure SQL", () => {
+            const scrubber = named("sql01.msp.internal\\PROD,1444", "azure-sql");
+            expect(scrubber.text("Cannot open server sql01.msp.internal\\PROD,1444 for shop_acme, instance PROD on sql01.msp.internal:1444")).toBe("Cannot open server the server for shop_acme, instance the server on the server");
+        });
+    });
+
     it("hides the first label of an Azure SQL server, which logins and errors name alone", () => {
         const scrubber = facts({ host: "acme-sql.database.windows.net", port: 1433, user: "sqladmin" });
         expect(scrubber.text("Login failed for user 'sqladmin@acme-sql'.")).toBe("Login failed for user 'the user@the server'.");

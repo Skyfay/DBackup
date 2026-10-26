@@ -7,6 +7,7 @@ import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } 
 import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { deleteAdapter } from "@/services/adapters/adapter-service";
@@ -35,6 +36,9 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
         }
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
+        // The destination of the configuration backup goes only with a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { connectionIds: [params.id] });
+        if (locked) return locked;
 
         // Into Recently deleted, unless `?permanently=true`, which needs the right to change the settings too.
         const permanently = permanentlyFrom(req.nextUrl.searchParams);
@@ -84,6 +88,9 @@ export async function PUT(
             return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
         }
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
+        // Pointed elsewhere or given another login, the next configuration backup would go there.
+        const locked = await configBackupTargetResponse(ctx, { connectionIds: [params.id] });
+        if (locked) return locked;
 
         const body = await req.json();
         const { name, config, metadata, primaryCredentialId, sshCredentialId, storageRole } = body;

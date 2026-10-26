@@ -84,6 +84,7 @@ async function customerReason(input: RestoreInput, reason: string): Promise<stri
         archive: input.file,
         destination,
         connection,
+        adapterId: target?.adapterId,
         otherDatabases: listed.map((database) => database.name),
     }).text(reason);
 }

@@ -25,6 +25,7 @@ import { getTempDir } from "@/lib/temp-dir";
 import type { openArchiveForRestore } from "./file-restore";
 import type { ArchiveRestoreCallbacks } from "./archive-restore";
 import { sharedLogScrubber, type RunLog } from "./shared-restore-log";
+import { assertTargetsConfirmed } from "./customer-databases";
 import type { RestoreInput } from "./types";
 import { findDestination } from "@/services/sharing/destination-access";
 import { listedDatabases } from "@/services/tenant/shared-servers";
@@ -139,6 +140,10 @@ export async function restoreDatabases(
             'warning'
         );
     }
+
+    // The names it writes into, checked against the databases of customers the request confirmed,
+    // since the check before the run could only read what the backup's metadata lists.
+    await assertTargetsConfirmed(input, selectedDbNames.map(targetFor));
 
     // One transport for the whole database portion: the version probe, the
     // prepare step and every restoreOne share a single connection.

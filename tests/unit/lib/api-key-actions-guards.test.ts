@@ -111,8 +111,24 @@ describe("what an API key may get", () => {
         expect(result).toEqual({ success: false, error: "Your group may not run jobs, so you cannot give it to a key." });
     });
 
-    it("keeps what a key holds already, even what its owner lost, when only its name changes", async () => {
+    it("never lets someone change a key of someone else that does more than they may, not even its name", async () => {
         mocks.viewer = viewer("tom", "Tom Weber", ["jobs:read"]);
+        mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "jobs:read"], ownerPermissions: OPERATORS });
+
+        expect(await updateApiKey("key-1", { name: "Renamed", permissions: ["jobs:execute", "jobs:read"], expiresAt: null }))
+            .toEqual({ success: false, error: "The key may run jobs, which your group may not, so only its owner changes it." });
+        // Taking a permission away is a change too.
+        expect(await updateApiKey("key-1", { name: "CI pipeline", permissions: ["jobs:read"], expiresAt: null })).toMatchObject({ success: false });
+        expect(mocks.keys.update).not.toHaveBeenCalled();
+
+        // Its owner changes it.
+        mocks.viewer = viewer("lena", "Lena Graf", OPERATORS);
+        expect(await updateApiKey("key-1", { name: "Renamed", permissions: ["jobs:execute", "jobs:read"], expiresAt: null })).toEqual({ success: true });
+    });
+
+    it("keeps what a key holds already, even what its owner lost, when only its name changes", async () => {
+        // Tom may do all the key may still use, the deletes its owner lost do not count.
+        mocks.viewer = viewer("tom", "Tom Weber", ["jobs:read", "jobs:execute"]);
         mocks.keys.ownerOf.mockResolvedValue({ ownerId: "lena", name: "CI pipeline", permissions: ["jobs:execute", "storage:delete"], ownerPermissions: OPERATORS });
 
         const result = await updateApiKey("key-1", { name: "Deploy", permissions: ["jobs:execute", "storage:delete"], expiresAt: null });

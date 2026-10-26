@@ -5,6 +5,7 @@ import { deleteAdapters, getAdapterTypes, updateAdapterFlags, type AdapterFlagCh
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { summarizeBulkResult, BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
@@ -66,6 +67,9 @@ export async function POST(req: NextRequest) {
         for (const type of types) {
             checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
         }
+        // A selection with the destination of the configuration backup goes only with a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { connectionIds: ids });
+        if (locked) return locked;
 
         const deleting = action === "delete";
         const result = deleting ? await deleteAdapters(ids, { permanently, by: ctx.userId }) : await updateAdapterFlags(ids, FLAG_ACTIONS[action]);

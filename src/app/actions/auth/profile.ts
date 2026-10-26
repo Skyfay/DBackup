@@ -16,6 +16,7 @@ import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
 import { setTaskColors } from "@/services/user/preference-service";
 import { userService } from "@/services/user/user-service";
+import { CHANGED_EMAIL_ANSWERS, EMAIL_REFUSED, takenEmailRefusal } from "@/services/user/new-account-email";
 
 const log = logger.child({ action: "profile" });
 
@@ -47,6 +48,9 @@ export async function saveProfileAccountAction(input: { name: string; email: str
     }
     const claimed = email !== user.email ? await userService.ownEmailRefusal(user.id, email) : null;
     if (claimed) return { success: false, error: claimed, field: "email" };
+    // Whoever does not see the account that holds the email never learns that it exists, see `takenEmailRefusal`.
+    const taken = email !== user.email ? await takenEmailRefusal(email, { ...user, userId: user.id }, user.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: user.id }) : null;
+    if (taken) return { success: false, error: taken, field: "email" };
 
     // A change of the own account goes into the log of the tenant only while the account is one of
     // its people, so a customer never reads the old and new email of someone of the platform.
@@ -55,7 +59,7 @@ export async function saveProfileAccountAction(input: { name: string; email: str
         await userService.updateUser(user.id, { name, email });
     } catch (error: unknown) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-            return { success: false, error: "Another account signs in with this email.", field: "email" };
+            return { success: false, error: EMAIL_REFUSED, field: "email" };
         }
         log.error("Saving the own account failed", { userId: user.id }, wrapError(error));
         return { success: false, error: "The account could not be saved." };

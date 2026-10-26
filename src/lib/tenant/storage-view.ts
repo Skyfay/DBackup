@@ -56,7 +56,7 @@ export function cleanPath(remotePath: string): string {
  * Windows drops dots and spaces at the end of a name, so `Tenants.` is that folder there too. The
  * upper case is compared as well, since a letter like `ſ` turns into `S` only that way.
  */
-function isTenantsSegment(part: string): boolean {
+export function isTenantsSegment(part: string): boolean {
     const name = stripTrailingDotsAndSpaces(part);
     return name.toLowerCase() === TENANTS_FOLDER || name.toUpperCase() === TENANTS_FOLDER.toUpperCase();
 }

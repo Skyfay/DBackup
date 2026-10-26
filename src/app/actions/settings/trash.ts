@@ -16,6 +16,7 @@ import { PLATFORM_LOG } from "@/services/system/settings-save";
 import { latestAccountEntries, latestTrashIds, mayHandle, mayRestoreAccount, purgeFromTrash, restoreFromTrash, trashAccounts, trashEntries, type TrashViewer } from "@/services/trash/trash-service";
 import { TRASH_KINDS, isTrashKind, type TrashKind, type TrashRestoreResult } from "@/services/trash/trash-types";
 import { userService } from "@/services/user/user-service";
+import { CHANGED_EMAIL_ANSWERS, takenEmailRefusal } from "@/services/user/new-account-email";
 
 const log = logger.child({ action: "trash" });
 
@@ -145,6 +146,9 @@ export async function restoreDeletedAction(ids: string[], newName?: string): Pro
         const found = await allowed(viewer, parsed.data.ids);
         const newEmail = parsed.data.newName && found.length === 1 && found[0].kind === "user" ? parsed.data.newName : undefined;
         if (newEmail && !z.string().email().safeParse(newEmail).success) return { success: false, error: "An account needs a valid email." };
+        // Whoever does not see the account that holds the new email never learns that it exists, see `takenEmailRefusal`.
+        const taken = newEmail ? await takenEmailRefusal(newEmail, { ...user, userId: user.id }, user.tenantId, CHANGED_EMAIL_ANSWERS) : null;
+        if (taken) return { success: false, error: taken };
         // An account comes back with an email, its own or a new one, whose domain the provider of
         // another tenant may claim by now.
         const { claims } = await accountsScopeOf(user, [...viewer.permissions]);

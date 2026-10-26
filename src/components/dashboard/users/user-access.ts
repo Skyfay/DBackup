@@ -12,6 +12,7 @@ export const PLATFORM_ADMIN_ACCOUNT = "Only a platform admin can change the acco
 export const SHARED_ACCOUNT = "This account also works in other tenants. Only someone who manages the accounts of the platform can change it.";
 export const BEYOND_REACH_ACCOUNT = "This account works in a tenant your platform group does not reach. Only someone who reaches all of its tenants can change it.";
 export const HELD_GROUP_BEYOND_YOU = "This user's group may do more than you may, so only someone who may do all of it changes it.";
+export const ACCOUNT_GROUP_BEYOND_YOU = "This user's group may do more than you may, so only someone who may do all of it can change their account.";
 
 /**
  * The groups a tenant offers on the list of every account: its own, since a group belongs to one
@@ -74,14 +75,14 @@ const ALL = AVAILABLE_PERMISSIONS.map((permission) => permission.id);
  * sessions, name, email or the account itself, null when they may. The own account is always the
  * viewer's to change, and whoever manages the accounts of the platform changes any but that of a
  * platform admin among the tenants their platform group reaches. Beyond them they change an
- * account like the admin of a tenant, one that works in that tenant alone.
+ * account like the admin of a tenant, one that works in that tenant alone. Either way nobody
+ * changes an account whose group may do more than they may, which the server marks `groupBeyond`.
  */
-export function accountLock(user: Pick<UserRow, "superAdmin" | "elsewhere" | "isYou" | "beyondReach">, viewerPlatformAdmin: boolean, managesAccounts = false): string | null {
+export function accountLock(user: Pick<UserRow, "superAdmin" | "elsewhere" | "isYou" | "beyondReach" | "groupBeyond">, viewerPlatformAdmin: boolean, managesAccounts = false): string | null {
     if (viewerPlatformAdmin || user.isYou) return null;
     if (user.superAdmin) return PLATFORM_ADMIN_ACCOUNT;
-    if (managesAccounts && !user.beyondReach) return null;
-    if (!user.elsewhere) return null;
-    return managesAccounts ? BEYOND_REACH_ACCOUNT : SHARED_ACCOUNT;
+    const placed = managesAccounts && !user.beyondReach ? null : !user.elsewhere ? null : managesAccounts ? BEYOND_REACH_ACCOUNT : SHARED_ACCOUNT;
+    return placed ?? (user.groupBeyond ? ACCOUNT_GROUP_BEYOND_YOU : null);
 }
 
 /** What a group lets its members do: every permission for the group with every permission, else the ones DBackup knows. */

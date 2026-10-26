@@ -105,6 +105,8 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
     const there = ownerAt(targetFacts.assignments, targetFacts.rules, toDatabase, now);
     const tenant = await prisma.tenant.findUnique({ where: { id: holder }, select: { name: true } });
     if (there && there !== holder) {
+        // A tenant beyond the reach stays unnamed, as `moveTargets` leaves its databases out.
+        if (!reachCovers(reach, there)) throw new ValidationError("That name is taken on the target server.");
         const other = await prisma.tenant.findUnique({ where: { id: there }, select: { name: true } });
         throw new ValidationError(`${toDatabase} on ${to.name} belongs to ${other?.name ?? "another tenant"}. Take it back first, or move under another name.`);
     }

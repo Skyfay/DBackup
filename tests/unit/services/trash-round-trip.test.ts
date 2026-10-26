@@ -344,6 +344,9 @@ describe("a user in Recently deleted", () => {
 
         await db.user.create({ data: { id: "u-new", name: "New Jana", email: "jana@example.ch", emailVerified: true, createdAt: now, updatedAt: now } });
         await expect(restore("user", trashId)).rejects.toThrow("An account with jana@example.ch exists already");
+        // A new email taken since the action checked it never says that an account holds it.
+        await db.user.create({ data: { id: "u-other", name: "Other", email: "other@example.ch", emailVerified: true, createdAt: now, updatedAt: now } });
+        await expect(restore("user", trashId, "Other@example.ch")).rejects.toThrow("This email cannot be given to this account. Pick another email.");
         await expect(restore("user", trashId, "jana.keller@example.ch")).resolves.toMatchObject({ name: "Jana Keller" });
         expect(await db.user.findUniqueOrThrow({ where: { id: "u-jana" } })).toMatchObject({ email: "jana.keller@example.ch", platformRole: "ADMIN" });
     }));

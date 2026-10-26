@@ -58,6 +58,13 @@ vi.mock("@/services/user/user-service", () => ({
     },
 }));
 vi.mock("@/services/user/group-service", () => ({ groupService: { find: vi.fn() } }));
+// An email without another account, see tests/unit/services/new-account-email.test.ts.
+vi.mock("@/services/user/new-account-email", () => ({
+    newAccountEmailRefusal: vi.fn(async () => null),
+    takenEmailRefusal: vi.fn(async () => null),
+    CHANGED_EMAIL_ANSWERS: { known: "known", refused: "refused", spent: "spent" },
+    EMAIL_REFUSED: "refused",
+}));
 vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: { switchable: vi.fn(async () => []) } }));
 vi.mock("@/services/auth/auth-service", () => ({ authService: { verifyPassword: vi.fn(async () => true), setPassword: vi.fn(async () => undefined) } }));
 vi.mock("@/services/user/preference-service", () => ({ getAutoRedirectOnJobStart: vi.fn(), setAutoRedirectOnJobStart: vi.fn(async () => undefined), setTaskColors: vi.fn() }));

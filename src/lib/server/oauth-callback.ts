@@ -10,6 +10,7 @@ import { consumeOAuthState, type OAuthProvider } from "@/lib/auth/oauth-state";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import type { OAuthData } from "@/lib/core/credentials";
 import { requestHeaders } from "@/lib/server/request-headers";
+import { configBackupTargetRefusal } from "@/lib/server/config-backup-target-guard";
 import { auditService } from "@/services/audit-service";
 import { credentialChanges, credentialSnapshot } from "@/services/auth/credential-audit";
 import { updateCredentialProfile } from "@/services/auth/credential-service";
@@ -31,6 +32,9 @@ export async function oauthCallbackCaller(provider: OAuthProvider, state: string
     }
     const bound = consumeOAuthState(state, { provider, userId: ctx.userId, tenantId: ctx.tenantId });
     if (!bound) return { ok: false, message: "This authorization ran out or belongs to another session. Start it again from the saved login." };
+    // A new token of the login of the destination of the configuration backup comes only from a platform admin.
+    const locked = await configBackupTargetRefusal(ctx, { credentialIds: [bound.credentialId] });
+    if (locked) return { ok: false, message: locked };
     return { ok: true, ctx, credentialId: bound.credentialId };
 }
 

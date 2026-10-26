@@ -12,6 +12,7 @@ import { listedDatabasesOf, type ListedDatabases } from "./connection-databases"
 import { providedItems } from "@/services/sharing/connection-options";
 import { connectionShareService } from "@/services/sharing/connection-shares";
 import type { SharedServerTerms } from "@/services/sharing/shared-server-rows";
+import { getConfigBackupTargets } from "@/services/config/config-backup-targets";
 
 /**
  * A row of the list, with the overview when the caller asked for it. A database connection also
@@ -22,6 +23,8 @@ export type AdapterListEntry = AdapterListItemDTO & {
     overview?: ConnectionOverview | null;
     listedDatabases?: ListedDatabases | null;
     sharedServer?: SharedServerTerms;
+    /** The destination of the configuration backup, which only a platform admin changes or deletes. */
+    configBackup?: true;
 };
 
 export interface ListAdaptersOptions {
@@ -63,7 +66,12 @@ export async function listAdapters(type: string, options: ListAdaptersOptions = 
         },
         orderBy: { createdAt: "desc" },
     });
-    const own = adapters.map(toAdapterListItem);
+    // The destination of the configuration backup says so, for the page to lock its Edit and Delete.
+    const configStorage = type === "storage" ? (await getConfigBackupTargets()).storageId : null;
+    const own: AdapterListEntry[] = adapters.map((adapter) => {
+        const item = toAdapterListItem(adapter);
+        return item.id === configStorage ? { ...item, configBackup: true as const } : item;
+    });
     const shares = options.shares ? await connectionShareService.summaries(own.map((item) => item.id)) : new Map();
     const items = [
         ...own.map((item) => (shares.has(item.id) ? { ...item, share: shares.get(item.id) } : item)),

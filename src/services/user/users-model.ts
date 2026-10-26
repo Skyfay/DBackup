@@ -8,6 +8,7 @@ import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { peopleOf, roleIn } from "@/services/tenant/membership-service";
+import { groupsBeyondViewer } from "./account-groups-beyond";
 import type { SecondFactor, SignInMethod, UserRow, UserSignIn, UsersGroup, UsersModel, UserTenantRole } from "./users-types";
 
 /** The window of Signed in above the list. */
@@ -264,10 +265,13 @@ export async function getUsersModel(viewerId: string | null, viewerPlatformAdmin
         viewerId,
         viewerPlatformAdmin,
     });
-    const beyond = viewerId && !viewerPlatformAdmin ? await beyondReachOf(viewerId, users.map((user) => user.id)) : new Set<string>();
+    const ids = users.map((user) => user.id);
+    const [beyond, stronger] = viewerId && !viewerPlatformAdmin
+        ? await Promise.all([beyondReachOf(viewerId, ids), groupsBeyondViewer(viewerId, ids)])
+        : [new Set<string>(), new Set<string>()];
     return {
         ...model,
-        users: beyond.size > 0 ? model.users.map((row) => (beyond.has(row.id) ? { ...row, beyondReach: true } : row)) : model.users,
+        users: model.users.map((row) => ({ ...row, ...(beyond.has(row.id) ? { beyondReach: true } : {}), ...(stronger.has(row.id) ? { groupBeyond: true } : {}) })),
         passwordPolicy,
         homeTenant: tenantId === HOME_TENANT_ID,
     };

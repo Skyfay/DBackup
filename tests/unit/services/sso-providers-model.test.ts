@@ -161,7 +161,9 @@ describe("the SSO tab", () => {
 
             expect(model.tenants.map((tenant) => tenant.name)).toEqual(["Skyfay Hosting", "Acme GmbH"]);
             expect(model.manage?.groups.map((group) => [group.name, group.tenantId])).toEqual([["Operators", "default"], ["Viewer", "acme"]]);
-            expect(withTenants().tenants).toEqual([{ id: "default", name: "Skyfay Hosting" }]);
+            // Anyone else sees the tenants of the providers listed, never a group to give.
+            expect(withTenants().tenants.map((tenant) => tenant.id)).toEqual(["default", "acme"]);
+            expect(withTenants().manage).toBeNull();
         });
     });
 

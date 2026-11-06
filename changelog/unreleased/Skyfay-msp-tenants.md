@@ -232,6 +232,7 @@
 
 ### 🔧 CI/CD
 
+- **docker**: The image build retries its downloads, so a mirror that drops the connection no longer fails it.
 - **lab**: `pnpm lab:seed` adds two customer tenants with a person each, a database, destination and channel shared with one of them and a platform group of both. `pnpm lab:status` shows what of it exists.
 - **build**: The type check of the image build, the CI and the pnpm scripts runs with a heap of 6 GB, since the default of Node no longer fits.
 - **lab**: The customer server of the end-to-end tests starts again after it was stopped hard, instead of restarting for good.

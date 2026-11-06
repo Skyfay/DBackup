@@ -35,7 +35,8 @@ describe("the dot of the History tab", () => {
         const [strings, ...values] = prismaMock.$queryRaw.mock.calls[0] as unknown as [string[], ...unknown[]];
         const sql = [strings.join("?"), ...values.map((value) => JSON.stringify(value))].join(" ");
         expect(sql).toContain("metadata IS NULL OR NOT x.metadata LIKE");
-        expect(sql).toContain(SINGLE_DATABASES_MARK.replace(/"/g, '\\"'));
+        // The values went through JSON.stringify above, so the mark appears escaped the same way.
+        expect(sql).toContain(JSON.stringify(SINGLE_DATABASES_MARK).slice(1, -1));
         expect(WHOLE_JOB_RUNS).toEqual({ OR: [{ metadata: null }, { NOT: { metadata: { contains: SINGLE_DATABASES_MARK } } }] });
     });
 });

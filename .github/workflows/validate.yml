@@ -161,7 +161,9 @@ jobs:
   e2e:
     name: E2E (${{ matrix.family }})
     needs: approve
-    runs-on: ubuntu-latest
+    # Pinned, since MongoDB 8.0 refuses to start on the kernel 6.19 and newer of ubuntu-latest
+    # (Ubuntu 26.04), see https://jira.mongodb.org/browse/SERVER-121912.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

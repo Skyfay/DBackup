@@ -422,6 +422,14 @@ docker compose up -d
 
 The first start of a new version runs its database migrations, which can take a while on an instance with a long history. Leave the container running until its log (`docker compose logs -f dbackup`) shows `All migrations have been successfully applied`. A container stopped halfway leaves a migration marked as failed, and the next start stops with an error.
 
+### Beta Versions
+
+Before a larger release, a beta like `skyfay/dbackup:v4.1.0-beta.1` lets you try it early. The tag `skyfay/dbackup:beta` always points to the newest beta, and the [release notes on GitHub](https://github.com/Skyfay/DBackup/releases) list what it brings. `latest` never points to a beta.
+
+- Try a beta on a copy of your instance, or back up the `db` folder first as above. An older version cannot run on a database a beta migrated, so going back means starting it on that backup.
+- An instance on a beta tells you about the newer betas and about the release once it is out. An instance on a release never offers a beta.
+- When the release is out, switch the image from `beta` back to `latest`. The release takes over the database of the beta as it is.
+
 ## Troubleshooting
 
 ### Container Won't Start

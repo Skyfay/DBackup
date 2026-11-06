@@ -31,6 +31,7 @@
     "changelog:check": "node scripts/toolbox/index.mjs changelog:check",
     "changelog:preview": "node scripts/toolbox/index.mjs changelog:preview",
     "changelog:amend": "node scripts/toolbox/index.mjs changelog:amend",
+    "changelog:notes": "node scripts/toolbox/index.mjs changelog:notes",
     "codeql:check": "node scripts/toolbox/index.mjs codeql:check",
     "audit:check": "node scripts/toolbox/index.mjs audit:check",
     "update:check": "node scripts/toolbox/index.mjs update:check",

@@ -33,6 +33,7 @@ Mock every call that leaves the process: network, filesystem, child processes an
 | `fake-host.ts` | An in-memory execution host, for adapters that run commands locally or over SSH |
 | `fake-docker-engine.ts` | An in-memory Docker engine, for the Docker volume source |
 | `setup.ts` | Loaded before every test file: jest-dom matchers and browser polyfills |
+| `global-setup.ts` | Runs once before the tests: migrates an empty database under `node_modules/.cache/` and sets `DATABASE_URL` and a test `ENCRYPTION_KEY` for every test |
 
 ```typescript
 import { describe, it, expect } from "vitest";
@@ -51,6 +52,7 @@ describe("the dashboard while a backup runs", () => {
 - Name the business case in `describe` and `it`, not the function.
 - A mocked `fetch` answers in the API format, `{ success: true, data: ... }`. A bare object passes the test and hides what production does.
 - Assert on returned values and stored state, never on log output.
+- A test never depends on the `dev.db` or the `.env` of your checkout. Code that reads the database without a mock reads the empty database of `global-setup.ts`, the same as in CI, where there is no `.env`.
 
 ### Against a Real SQLite Database
 

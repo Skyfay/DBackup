@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { UNIT_TEST_ENV } from './src/lib/testing/global-setup';
 
 export default defineConfig({
   plugins: [react()],
@@ -10,6 +11,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/lib/testing/setup.ts'],
+    // An empty database and a key of their own, so no test reads the dev.db or .env of the checkout.
+    globalSetup: ['./src/lib/testing/global-setup.ts'],
+    env: UNIT_TEST_ENV,
     include: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
     // The end-to-end tests run on their own, `pnpm test:e2e`.
     exclude: ['e2e/**', '**/node_modules/**', '**/dist/**', '**/cypress/**', '**/.{idea,git,cache,output,temp}/**', '**/.next/**', '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*'],

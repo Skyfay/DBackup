@@ -12,4 +12,4 @@
 - **release**: `pnpm version:bump beta` sets the next beta without using up the changelog fragments, and `pnpm release:tag dev` tags it on dev.
 - **release**: The notes of a GitHub release come from `pnpm changelog:notes`, for a beta from the fragments with what is new since the beta before it. The workflow makes them before it builds an image.
 - **release**: A beta runs the end-to-end tests and keeps the CI image and the README on Docker Hub of the last release.
-- **e2e**: The end-to-end tests run on Ubuntu 24.04, since MongoDB 8.0 does not start on the newer kernel of Ubuntu 26.04.
+- **e2e**: The end-to-end tests of MongoDB run on Ubuntu 22.04, since MongoDB 8.0 does not start on the kernel of the newer GitHub runners.

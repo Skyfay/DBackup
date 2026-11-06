@@ -169,9 +169,11 @@ jobs:
   e2e:
     name: E2E (${{ matrix.family }})
     needs: approve
-    # Pinned, since MongoDB 8.0 refuses to start on the kernel 6.19 and newer of ubuntu-latest
-    # (Ubuntu 26.04), see https://jira.mongodb.org/browse/SERVER-121912.
-    runs-on: ubuntu-24.04
+    # MongoDB 8.0 and later refuse to start on a kernel from 6.19 to 7.0.13, which ubuntu-latest and
+    # ubuntu-24.04 run now, see https://jira.mongodb.org/browse/SERVER-121912. The mongodb family runs
+    # on ubuntu-22.04 with its kernel 6.8 until the newer images get 7.0.14 or later. GitHub stops
+    # supporting ubuntu-22.04 in April 2027.
+    runs-on: ${{ matrix.family == 'mongodb' && 'ubuntu-22.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:

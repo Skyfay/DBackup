@@ -221,6 +221,7 @@
 ### 🧪 Tests
 
 - **SSH**: The test of a new ed25519 key that ssh2 writes a byte short no longer fails now and then.
+- **SSH**: The test of a key with a passphrase no longer fails when ssh2 writes it a byte short.
 - **restore**: The Smart Recovery test that tries every profile no longer fails now and then.
 - **tests**: The unit tests run against an empty database and an encryption key of their own, so they never read the dev.db or .env of a checkout.
 - **connections**: The tests of the connection form no longer leave an error behind now and then.

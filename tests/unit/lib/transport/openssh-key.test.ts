@@ -46,9 +46,9 @@ function ed25519KeyLength(publicLine: string): number {
  * An ed25519 pair ssh2 wrote in full, made once with its synchronous keygen, which the spy leaves
  * alone. One key in 256 comes out short, so it keeps the first full one.
  */
-function readablePair(): { private: string; public: string } {
+function readablePair(options: { passphrase?: string; cipher?: string; rounds?: number } = {}): { private: string; public: string } {
     for (let attempt = 0; attempt < 100; attempt++) {
-        const pair = sshUtils.generateKeyPairSync("ed25519", { comment: "dbackup@prod" });
+        const pair = sshUtils.generateKeyPairSync("ed25519", { comment: "dbackup@prod", ...options });
         if (ed25519KeyLength(pair.public) === 32) return { private: pair.private, public: pair.public };
     }
     throw new Error("ssh2 wrote no full ed25519 key in 100 attempts");
@@ -198,12 +198,7 @@ describe("readPublicKey", () => {
     });
 
     it("reads a passphrase-protected key only with its passphrase", () => {
-        const encrypted = sshUtils.generateKeyPairSync("ed25519", {
-            comment: "dbackup@prod",
-            passphrase: "correct horse",
-            cipher: "aes256-cbc",
-            rounds: 1,
-        });
+        const encrypted = readablePair({ passphrase: "correct horse", cipher: "aes256-cbc", rounds: 1 });
 
         expect(readPublicKey(encrypted.private)).toBeNull();
         expect(readPublicKey(encrypted.private, "wrong")).toBeNull();

@@ -99,7 +99,8 @@ describe("a bundle", () => {
 
 describe("a standalone entry", () => {
     it("stops inflating at the size its index line declares, long before its end", async () => {
-        const payload = bomb(256 * 1024 * 1024);
+        // 16 MB against a declared 1 KB proves the stop as well as more would, and builds in a fraction of the time.
+        const payload = bomb(16 * 1024 * 1024);
         const stream = await openArchiveEntry(bufferSource(payload), MANIFEST, entryOf(payload), undefined, 1024);
         let seen = 0;
         stream.on("data", (chunk: Buffer) => { seen += chunk.length; });

@@ -14,6 +14,9 @@ export default defineConfig({
     // An empty database and a key of their own, so no test reads the dev.db or .env of the checkout.
     globalSetup: ['./src/lib/testing/global-setup.ts'],
     env: UNIT_TEST_ENV,
+    // The coverage run of CI is about three times slower than a run here, which put tests that take
+    // 1 to 2 seconds here, like key generation and inflating archives, close to the default of 5.
+    testTimeout: 15_000,
     include: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
     // The end-to-end tests run on their own, `pnpm test:e2e`.
     exclude: ['e2e/**', '**/node_modules/**', '**/dist/**', '**/cypress/**', '**/.{idea,git,cache,output,temp}/**', '**/.next/**', '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*'],

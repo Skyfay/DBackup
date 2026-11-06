@@ -14,7 +14,10 @@ const mocks = vi.hoisted(() => ({
     dispose: vi.fn(),
     /** The local network check of the tenant, which passes unless a test says otherwise. */
     reach: vi.fn(),
+    logFor: vi.fn(),
 }));
+
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
 
 vi.mock("@/services/tenant/tenant-network", () => ({
     assertHostsReachable: (...args: unknown[]) => mocks.reach(...args),
@@ -108,6 +111,18 @@ describe("POST /api/adapters/test-ssh", () => {
         expect(body.message).not.toContain("backup path");
     });
 
+    it("writes the test into the audit log with its host and whether it worked, like the test of a connection", async () => {
+        await POST(request({ config: sshConfig, adapterId: "mysql" }));
+        mocks.exec.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
+        await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        const ctx = { userId: "u1", tenantId: "default", allTenants: false };
+        expect(mocks.logFor.mock.calls).toEqual([
+            [ctx, "EXECUTE", "ADAPTER", { action: "ssh_test", adapter: "mysql", host: "192.168.252.4", success: true }],
+            [ctx, "EXECUTE", "ADAPTER", { action: "ssh_test", adapter: "mysql", host: "192.168.252.4", success: false }],
+        ]);
+    });
+
     it("says why the host of a saved SSH login is refused, like one in the local network of the tenant", async () => {
         const { overlayCredentialsOnConfig } = await import("@/lib/adapters/config-resolver");
         const { ValidationError } = await import("@/lib/logging/errors");
@@ -118,6 +133,24 @@ describe("POST /api/adapters/test-ssh", () => {
         expect(response.status).toBe(400);
         expect(await response.json()).toEqual({ success: false, message: "Acme reaches no address of the local network, db1 is 10.0.0.5." });
         expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("answers a fixed sentence when the test fails for a reason of DBackup, never the words of that error", async () => {
+        mocks.reach.mockRejectedValueOnce(new Error("SQLITE_BUSY: database is locked at /data/dbackup.db"));
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        expect(response.status).toBe(500);
+        expect(await response.json()).toEqual({ success: false, message: "The SSH login could not be tested. The log of DBackup has the details." });
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("still answers what the SSH server said when the login fails", async () => {
+        mocks.exec.mockRejectedValueOnce(new Error("All configured authentication methods failed"));
+
+        const body = await (await POST(request({ config: sshConfig, adapterId: "mysql" }))).json();
+
+        expect(body).toEqual({ success: false, message: "All configured authentication methods failed" });
     });
 
     it("does not check it for a SQLite source either", async () => {

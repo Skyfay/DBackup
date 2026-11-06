@@ -9,6 +9,7 @@ import { registry } from "@/lib/core/registry";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { storedScanRefusal } from "@/lib/adapters/own-data";
 import { updateService } from "./update-service";
 import { notify, getNotificationConfig } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
@@ -275,10 +276,18 @@ export async function updateDbVersions(): Promise<TaskOutcome> {
 export async function warmupStorageCache(): Promise<TaskOutcome> {
     const rows = await prisma.adapterConfig.findMany({
         where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-        select: { id: true, name: true, type: true, storageRole: true, metadata: true, lastStatus: true, tenantId: true },
+        select: { id: true, name: true, type: true, adapterId: true, config: true, storageRole: true, metadata: true, lastStatus: true, tenantId: true },
     });
+    // A destination whose folder reaches the own data of DBackup is never listed, its listing would
+    // show the files of DBackup to its tenant, see `scanRefusal`. What was cached of it goes.
+    const refused: string[] = [];
+    for (const row of rows) if (await storedScanRefusal(row)) refused.push(row.id);
+    if (refused.length > 0) {
+        await prisma.storageListCache.deleteMany({ where: { adapterConfigId: { in: refused } } });
+        log.warn("Left out destinations whose folder reaches the own data of DBackup", { count: refused.length });
+    }
     // An air-gapped destination that is not connected is compared the next hour it is.
-    const adapters = rows.filter((row) => !isNotConnected(row));
+    const adapters = rows.filter((row) => !isNotConnected(row) && !refused.includes(row.id));
     // A shared destination has a listing for each customer that has one, besides the one of its tenant.
     const listings = await prisma.storageListCache.findMany({
         where: { adapterConfigId: { in: adapters.map((adapter) => adapter.id) } },

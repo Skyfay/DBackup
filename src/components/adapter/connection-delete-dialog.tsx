@@ -88,7 +88,7 @@ function listOf(names: string[]): string {
     return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** The tenants that hold a database of the server, by name for whoever may see who they are. */
+/** The tenants that hold a database of the server, by name for whoever may see who they are and reaches them. */
 interface ServerCustomers {
     count: number;
     names: string[] | null;
@@ -96,9 +96,15 @@ interface ServerCustomers {
 
 const NO_CUSTOMERS: ServerCustomers = { count: 0, names: null };
 
-/** "Acme keeps", "Acme and Globex keep", or "2 tenants keep" without their names. */
+/**
+ * "Acme keeps", "Acme and Globex keep", "2 tenants keep" without their names, or "Acme and 1 other
+ * tenant keep" when the names leave out the tenants beyond the reach of the viewer.
+ */
 function whoKeeps({ count, names }: ServerCustomers): string {
-    const subject = names ? listOf(names) : count === 1 ? "1 tenant" : `${count} tenants`;
+    const others = names ? count - names.length : 0;
+    const subject = names && names.length > 0
+        ? listOf(others > 0 ? [...names, others === 1 ? "1 other tenant" : `${others} other tenants`] : names)
+        : count === 1 ? "1 tenant" : `${count} tenants`;
     return `${subject} ${count === 1 ? "keeps" : "keep"}`;
 }
 

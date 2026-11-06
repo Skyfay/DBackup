@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, StorageReadOptions } from "@/lib/core/interfaces";
 import { GoogleDriveSchema } from "@/lib/adapters/definitions";
 import { google, drive_v3 } from "googleapis";
 import { Readable, Transform } from "stream";
@@ -11,6 +11,8 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, createPageGuard, type ListingGuard } from "@/lib/adapters/storage/common/listing-limits";
 
 const log = logger.child({ adapter: "google-drive" });
 
@@ -199,16 +201,30 @@ async function findFile(
     return res.data.files?.[0] || null;
 }
 
+/** What one walk of a Drive shares between its folders: the count of its entries and the folders it read. */
+interface DriveWalk {
+    guard: ListingGuard;
+    visited: Set<string>;
+}
+
 /**
  * Lists all files recursively under a folder.
  * Returns flat list with relative paths.
+ *
+ * Every entry, a folder too, passes the guard of the walk as it arrives, and a folder is read once
+ * however often it is listed, since a Drive folder can have several parents and a folder may be
+ * listed below itself. A listing of pages without end stops too, see `listing-limits.ts`.
  */
 async function listFilesRecursive(
     drive: drive_v3.Drive,
     folderId: string,
-    prefix: string = ""
+    prefix: string = "",
+    walk: DriveWalk = { guard: createListingGuard(), visited: new Set<string>() }
 ): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
+    if (walk.visited.has(folderId)) return files;
+    walk.visited.add(folderId);
+    const pages = createPageGuard();
     let pageToken: string | undefined;
 
     do {
@@ -222,10 +238,11 @@ async function listFilesRecursive(
 
         for (const file of res.data.files || []) {
             const relativePath = prefix ? `${prefix}/${file.name}` : file.name!;
+            walk.guard.add(relativePath);
 
             if (file.mimeType === "application/vnd.google-apps.folder") {
                 // Recurse into subfolder
-                const subFiles = await listFilesRecursive(drive, file.id!, relativePath);
+                const subFiles = await listFilesRecursive(drive, file.id!, relativePath, walk);
                 files.push(...subFiles);
             } else {
                 files.push({
@@ -238,9 +255,42 @@ async function listFilesRecursive(
         }
 
         pageToken = res.data.nextPageToken || undefined;
+        pages.next(pageToken, res.data.files?.length ?? 0);
     } while (pageToken);
 
     return files;
+}
+
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. The size Drive lists is
+ * checked first and the stream is cut at the limit, whatever the size said. Null when the file is
+ * not there.
+ */
+async function readCappedBytes(config: GoogleDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    try {
+        const drive = createDriveClient(config);
+        const fileName = path.basename(remotePath);
+        const dirPath = path.posix.dirname(remotePath);
+
+        // Resolve folder path
+        const folderId = dirPath === "."
+            ? (config.folderId || "root")
+            : await resolveOrCreatePath(drive, config.folderId, dirPath + "/dummy");
+
+        const file = await findFile(drive, folderId, fileName);
+        if (!file) return null;
+        assertReadSize(file.size === undefined || file.size === null ? undefined : Number(file.size), limit);
+
+        const res = await drive.files.get(
+            { fileId: file.id!, alt: "media" },
+            { responseType: "stream" }
+        );
+        return await collectCapped(res.data as unknown as Readable, limit);
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        return null;
+    }
 }
 
 export const GoogleDriveAdapter: StorageAdapter = {
@@ -400,30 +450,11 @@ export const GoogleDriveAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: GoogleDriveConfig, remotePath: string): Promise<string | null> {
-        try {
-            const drive = createDriveClient(config);
-            const fileName = path.basename(remotePath);
-            const dirPath = path.posix.dirname(remotePath);
-
-            // Resolve folder path
-            const folderId = dirPath === "."
-                ? (config.folderId || "root")
-                : await resolveOrCreatePath(drive, config.folderId, dirPath + "/dummy");
-
-            const file = await findFile(drive, folderId, fileName);
-            if (!file) return null;
-
-            const res = await drive.files.get(
-                { fileId: file.id!, alt: "media" },
-                { responseType: "text" }
-            );
-
-            return res.data as string;
-        } catch {
-            return null;
-        }
+    async read(config: GoogleDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async list(config: GoogleDriveConfig, dir: string = ""): Promise<FileInfo[]> {
         try {

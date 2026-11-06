@@ -1,7 +1,8 @@
 /**
  * A connection that reaches the server DBackup runs on, like Local Filesystem with the folder "/"
- * or SQLite pointed at the database of DBackup, is the platform's alone: a customer's tenant
- * neither adds nor copies one, the home tenant and code outside any tenant do.
+ * or SQLite pointed at the database of DBackup, is added and copied by a platform admin with a
+ * session alone: a customer's tenant never, a member of the home tenant neither, which before could
+ * and was held back only by a list of paths. Code outside a request, like the lab seed, still does.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,8 @@ vi.stubEnv("ENCRYPTION_KEY", "d".repeat(64));
 
 const mocks = vi.hoisted(() => ({
     isShared: vi.fn(),
+    // Whether the code that runs now is a platform admin with a session, see `mayReachHost`.
+    mayReachHost: vi.fn(),
     profiles: {} as Record<string, Record<string, unknown>>,
 }));
 
@@ -22,7 +25,7 @@ vi.mock("@/lib/adapters/config-resolver", () => {
         ...(primary ? mocks.profiles[primary] : {}),
         ...(ssh ? mocks.profiles[ssh] : {}),
     });
-    return { overlayCredentialsOnConfig: overlay, layLoginsOver: overlay };
+    return { overlayCredentialsOnConfig: overlay, layLoginsOver: overlay, mayReachHost: () => mocks.mayReachHost() };
 });
 
 import { prismaMock } from "@/lib/testing/prisma-mock";
@@ -39,6 +42,7 @@ describe("adding a connection that reaches the server DBackup runs on", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.profiles = {};
+        mocks.mayReachHost.mockResolvedValue(true);
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
         // The tenant shares no destination with customers.
         prismaMock.connectionShare.findMany.mockResolvedValue([]);
@@ -49,12 +53,30 @@ describe("adding a connection that reaches the server DBackup runs on", () => {
 
     it("refuses Local Filesystem and SQLite in local mode in a customer's tenant", async () => {
         await expect(runAsTenant("acme", () => createAdapter(ROOT)))
-            .rejects.toThrow("Local Filesystem reaches the server DBackup runs on, which only the platform adds.");
+            .rejects.toThrow("Local Filesystem reaches the server DBackup runs on, which only a platform admin adds.");
         await expect(runAsTenant("acme", () => createAdapter(DBACKUP_DB))).rejects.toThrow("SQLite in local mode reads a file on the server DBackup runs on");
         expect(prismaMock.adapterConfig.create).not.toHaveBeenCalled();
     });
 
-    it("lets the platform add them, in the home tenant and outside any tenant", async () => {
+    it("refuses every kind of it to a member of the home tenant, who may still pick one in a job", async () => {
+        mocks.mayReachHost.mockResolvedValue(false);
+        const home = (input: Parameters<typeof createAdapter>[0]) => runAsTenant(HOME_TENANT_ID, () => createAdapter(input));
+
+        await expect(home(ROOT)).rejects.toThrow("Local Filesystem reaches the server DBackup runs on, which only a platform admin adds.");
+        await expect(home(DBACKUP_DB)).rejects.toThrow("SQLite in local mode reads a file on the server DBackup runs on");
+        await expect(home({ name: "Volumes", type: "storage", adapterId: "docker-volume", storageRole: "SOURCE", config: { connectionMode: "direct" } })).rejects.toThrow("without SSH reach the Docker");
+        await expect(home({ name: "Shop", type: "database", adapterId: "mysql", config: { host: "db.internal", options: "--result-file=/srv/x" } })).rejects.toThrow("The additional options of MySQL");
+        await expect(home({ name: "ERP", type: "database", adapterId: "mssql", config: { host: "sql.internal", fileTransferMode: "local", localBackupPath: "/mnt/mssql" } }))
+            .rejects.toThrow("with a shared folder moves its backup files");
+        await expect(home({ ...ROOT, config: { basePath: "/srv/backups" } })).rejects.toThrow("which only a platform admin adds");
+        expect(prismaMock.adapterConfig.create).not.toHaveBeenCalled();
+
+        // A server of its own stays open to the member.
+        await expect(home({ name: "Shop", type: "database", adapterId: "mysql", config: { host: "db.internal", user: "backup" } })).resolves.toMatchObject({ id: "new" });
+        await expect(home({ name: "ERP", type: "database", adapterId: "mssql", config: { host: "sql.internal", fileTransferMode: "ssh", sshUsername: "backup" } })).resolves.toMatchObject({ id: "new" });
+    });
+
+    it("lets a platform admin add them in the home tenant, and code outside any tenant", async () => {
         await runAsTenant(HOME_TENANT_ID, () => createAdapter(ROOT));
         await runAsSystem(() => createAdapter({ ...DBACKUP_DB, name: "DBackup 2" }));
         await createAdapter({ ...ROOT, name: "Script" });
@@ -93,6 +115,7 @@ describe("copying a connection", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.isShared.mockResolvedValue(false);
+        mocks.mayReachHost.mockResolvedValue(true);
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
         // The tenant shares no destination with customers.
         prismaMock.connectionShare.findMany.mockResolvedValue([]);
@@ -107,6 +130,14 @@ describe("copying a connection", () => {
         expect(prismaMock.adapterConfig.create).not.toHaveBeenCalled();
 
         await expect(runAsTenant(HOME_TENANT_ID, () => cloneAdapter("orig", {}))).resolves.toMatchObject({ clone: { id: "copy" } });
+    });
+
+    it("refuses a copy of a Local Filesystem connection to a member of the home tenant", async () => {
+        prismaMock.adapterConfig.findUnique.mockResolvedValue(original() as never);
+        mocks.mayReachHost.mockResolvedValue(false);
+
+        await expect(runAsTenant(HOME_TENANT_ID, () => cloneAdapter("orig", {}))).rejects.toThrow("which only a platform admin adds");
+        expect(prismaMock.adapterConfig.create).not.toHaveBeenCalled();
     });
 
     it("refuses a copy of a destination shared with other tenants, which would show the folders of its customers", async () => {

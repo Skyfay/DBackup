@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { checkAnyPermissionWithContext, checkPermissionWithContext, getAuthContext, tenantOf } from "@/lib/auth/access-control";
-import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
-import { auditService } from "@/services/audit-service";
+import { logDatabasesAssigned } from "@/services/tenant/assignment-audit";
 import { databaseAssignmentService } from "@/services/tenant/database-assignments";
 import { platformGroupService } from "@/services/user/platform-group-service";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 const log = logger.child({ route: "adapters/[id]/database-assignments" });
 
@@ -35,11 +35,12 @@ function failure(error: unknown, fallback: string) {
  * The databases of a shared server with the tenant each belongs to, the assignments and the rules,
  * for whoever may see the shared databases: a session, or an API key made in a tenant that shares, see
  * `keyPlatformPermissions`. `customers` lists the tenants the caller may give a database to, those
- * the platform group of the person or of the owner of the key reaches.
+ * the platform group of the person or of the owner of the key reaches, and a tenant beyond it holds
+ * as `TENANT_BEYOND_REACH`, without its id and its name.
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         checkAnyPermissionWithContext(ctx, [SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
@@ -58,7 +59,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         checkPermissionWithContext(ctx, SHARE_PERMISSION);
@@ -71,12 +72,9 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
         const reach = await platformGroupService.reachOf(ctx.userId);
         const result = await databaseAssignmentService.assign(id, changes, ctx.userId, new Date(), reach);
         if (result.changed > 0) {
-            await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
-                change: "Databases assigned",
-                databases: changes.map((change) => ({ name: change.databaseName, tenantId: change.tenantId })),
-            }, id);
+            await logDatabasesAssigned({ id: ctx.userId, apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null }, id, changes, result.tenants);
         }
-        return NextResponse.json({ success: true, data: result });
+        return NextResponse.json({ success: true, data: { changed: result.changed } });
     } catch (error: unknown) {
         return failure(error, "The databases could not be assigned");
     }

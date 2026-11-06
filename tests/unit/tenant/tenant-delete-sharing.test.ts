@@ -270,7 +270,7 @@ describe("giving a database to the tenant a rule gives it to already", () => {
 
         const result = await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: "globex", validFrom: day("2026-05-01") }], null));
 
-        expect(result).toEqual({ changed: 0 });
+        expect(result).toEqual({ changed: 0, tenants: ["globex"] });
         expect(await base.databaseAssignment.count({ where: { databaseName: "blog_one" } })).toBe(0);
         expect(sharingVersion()).toBe(before);
         const model = await runAsTenant("default", () => databaseAssignmentService.forSource("shared-mysql"));
@@ -280,7 +280,7 @@ describe("giving a database to the tenant a rule gives it to already", () => {
     it("still gives it to another tenant, and counts the change for the cached rows of the customers", async () => {
         await base.databaseAssignmentRule.create({ data: { sourceId: "shared-mysql", pattern: "blog_*", tenantId: "globex", validFrom: day("2026-01-01") } });
         const before = sharingVersion();
-        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: "acme" }], null))).toEqual({ changed: 1 });
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: "acme" }], null))).toMatchObject({ changed: 1 });
         expect(sharingVersion()).toBeGreaterThan(before);
     });
 });

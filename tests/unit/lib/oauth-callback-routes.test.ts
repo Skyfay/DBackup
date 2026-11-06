@@ -152,6 +152,16 @@ describe.each(["dropbox", "google-drive", "onedrive"] as const)("the authorizati
         expect(mocks.updateCredential).not.toHaveBeenCalled();
     });
 
+    it("starts none for an API key, also one of someone who may change saved logins", async () => {
+        mocks.ctx = { ...admin(), authMethod: "apikey" };
+
+        const response = await startAuth(provider);
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ success: false, error: "An authorization is started by a signed-in person, never with an API key." });
+        expect(mocks.getCredential).not.toHaveBeenCalled();
+    });
+
     it("starts none in All tenants", async () => {
         mocks.ctx = { ...admin(), tenantId: null, allTenants: true, isPlatformAdmin: true };
 

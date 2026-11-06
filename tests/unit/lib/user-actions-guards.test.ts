@@ -42,6 +42,10 @@ const mocks = vi.hoisted(() => ({
         accountRefusalFor: vi.fn(),
         accountsReachOf: vi.fn(),
         emailOf: vi.fn(),
+        emailTenantsOf: vi.fn(async (id: string): Promise<string[]> => {
+            const tenantIds = ACCOUNTS[id]?.tenantIds ?? [HOME_TENANT_ID];
+            return tenantIds.length > 0 ? tenantIds : [HOME_TENANT_ID];
+        }),
         updateUser: vi.fn(),
     },
     groups: { find: vi.fn() },
@@ -52,8 +56,14 @@ const mocks = vi.hoisted(() => ({
     emailRefusal: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
     /** The check of an email given to an existing account. */
     takenEmail: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
+    /** The accounts whose membership may not end, see `membershipEndRefusal`. */
+    endRefused: new Set<string>(),
+    /** The check of a claimed domain, free unless a test says otherwise. */
+    claimedEmail: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
     /** The accounts the viewer sees, every one when null, see `maySeeAccount`. */
     seen: null as Set<string> | null,
+    /** Ids of accounts that do not exist. */
+    missing: new Set<string>(),
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
@@ -78,7 +88,10 @@ vi.mock("@/services/auth/auth-service", () => ({ authService: { setPassword: moc
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: mocks.tenants }));
-vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.fn(async () => null) }));
+vi.mock("@/services/tenant/membership-end", () => ({
+    membershipEndRefusal: vi.fn(async (_caller: unknown, id: string) => (mocks.endRefused.has(id) ? "hands over" : null)),
+}));
+vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: (...args: unknown[]) => mocks.claimedEmail(...args) }));
 // An email without an account, unless a test says otherwise, see tests/unit/services/new-account-email.test.ts.
 vi.mock("@/services/user/new-account-email", () => ({
     newAccountEmailRefusal: (...args: unknown[]) => mocks.emailRefusal(...args),
@@ -86,7 +99,29 @@ vi.mock("@/services/user/new-account-email", () => ({
     CHANGED_EMAIL_ANSWERS: { known: "known", refused: "refused", spent: "spent" },
     EMAIL_REFUSED: "This email cannot be given to this account. Pick another email.",
 }));
-vi.mock("@/services/user/account-visibility", () => ({ maySeeAccount: vi.fn(async (_viewer: unknown, id: string) => mocks.seen?.has(id) ?? true) }));
+vi.mock("@/services/user/account-visibility", () => ({
+    maySeeAccount: vi.fn(async (_viewer: unknown, id: string) => mocks.seen?.has(id) ?? true),
+    // An account the test does not know does not exist, one the viewer does not see reads the same.
+    shownAccountName: vi.fn(async (_viewer: unknown, id: string) => (mocks.missing.has(id) || !(mocks.seen?.has(id) ?? true) ? null : id === "root" ? "Root" : id === "tech" ? "Tom Tech" : id)),
+    ACCOUNT_UNKNOWN: "The user no longer exists.",
+}));
+
+// Where the entry of a deleted account would wait, by the real rule from the accounts of the test.
+vi.mock("@/services/trash/account-place", async () => {
+    const { accountTrashPlace } = await vi.importActual<typeof import("@/services/trash/account-place")>("@/services/trash/account-place");
+    return {
+        accountTrashPlace,
+        accountTrashPlaceOf: vi.fn(async (id: string) => {
+            const account = ACCOUNTS[id] ?? { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID] };
+            return accountTrashPlace({
+                platformRole: account.isPlatformAdmin ? "ADMIN" : null,
+                platformGroupId: account.platformGroup ? "pg" : null,
+                memberships: account.tenantIds.map((tenantId) => ({ tenantId })),
+                apiKeys: [],
+            });
+        }),
+    };
+});
 
 const { accountRefusal } = await vi.importActual<typeof import("@/lib/auth/account-access")>("@/lib/auth/account-access");
 
@@ -105,10 +140,11 @@ function decideAccounts() {
     });
     mocks.memberships.isPersonOf.mockResolvedValue(true);
     mocks.memberships.isPlatformAdmin.mockResolvedValue(false);
+    mocks.endRefused = new Set();
     mocks.tenants.switchable.mockResolvedValue([{ id: HOME_TENANT_ID, name: "Home" }, { id: "tenant-a", name: "A" }]);
 }
 
-const { bulkDeleteUsers, createUser, deleteUser, updateUser, updateUserGroup } = await import("@/app/actions/auth/user");
+const { bulkDeleteUsers, createUser, deleteUser, togglePasskeyTwoFactor, updateUser, updateUserGroup } = await import("@/app/actions/auth/user");
 const { resetUserTwoFactor, revokeUserSession, revokeUserSessions, setUserPassword } = await import("@/app/actions/auth/user-security");
 
 /** Manages the users of the home tenant, without every permission. */
@@ -291,25 +327,35 @@ describe("what an admin may do to other users", () => {
 
     it("hands on that the last platform admin is not deleted", async () => {
         mocks.viewer = PLATFORM_ADMIN;
-        mocks.service.deleteUser.mockRejectedValueOnce(new Error("Cannot delete the last platform admin."));
+        mocks.service.deleteUser.mockRejectedValueOnce(new ValidationError("Cannot delete the last platform admin."));
 
         expect(await deleteUser("root-2")).toEqual({ success: false, error: "Cannot delete the last platform admin." });
         expect(mocks.audit).not.toHaveBeenCalled();
     });
 
-    it("deletes a user permanently only for someone who may change the settings", async () => {
-        mocks.mayChangeSettings = false;
+    it("deletes a user permanently only for someone who may change the settings of the tenant the account would wait in", async () => {
         const refused = { success: false, error: "Deleting permanently needs the right to change the settings." };
 
         expect(await deleteUser("lena", { permanently: true })).toEqual(refused);
-        expect(await bulkDeleteUsers(["lena"], { permanently: true })).toEqual(refused);
+        expect(await bulkDeleteUsers(["lena"], { permanently: true })).toEqual({ success: true, data: { succeeded: [], failed: [{ id: "lena", name: "lena", error: refused.error }] } });
         expect(mocks.service.deleteUser).not.toHaveBeenCalled();
-        expect(mocks.service.deleteUsers).not.toHaveBeenCalled();
+        expect(mocks.service.deleteUsers).toHaveBeenCalledWith([], { permanently: true, by: "admin" });
 
-        mocks.mayChangeSettings = true;
+        mocks.viewer = { ...ADMIN, permissions: [...ADMIN.permissions, PERMISSIONS.TENANT_SETTINGS.WRITE] };
         mocks.service.deleteUser.mockResolvedValue({ name: "Lena", email: "lena@example.ch" });
         expect(await deleteUser("lena", { permanently: true })).toEqual({ success: true });
         expect(mocks.service.deleteUser).toHaveBeenCalledWith("lena", { permanently: true, by: "admin" });
+    });
+
+    it("rejects an id that is no string of a sane length before it reaches the service", async () => {
+        const invalid = { success: false, error: "Invalid request" };
+        expect(await deleteUser("" as string)).toEqual(invalid);
+        expect(await deleteUser({ id: "lena" } as unknown as string)).toEqual(invalid);
+        expect(await deleteUser("x".repeat(201))).toEqual(invalid);
+        expect(await updateUserGroup(["lena"] as unknown as string, "g-view")).toEqual(invalid);
+        expect(await updateUserGroup("lena", { id: "g-view" } as unknown as string)).toEqual(invalid);
+        expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
     });
 
     it("reports the platform admins, the accounts of other tenants and the own account of a bulk delete instead of sending them", async () => {
@@ -335,7 +381,25 @@ describe("what an admin may do to other users", () => {
         expect(result).toEqual({ success: true, data: { signedOut: 2 } });
         expect(mocks.setPassword).toHaveBeenCalledWith("lena", "a new password");
         expect(mocks.service.revokeSessions).toHaveBeenCalledWith("lena");
-        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Password Set", signedOut: 2 }, "lena", { tenantId: HOME_TENANT_ID });
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Password Set", name: "lena", signedOut: 2 }, "lena", { tenantId: HOME_TENANT_ID });
+    });
+
+    it("names the account in the entry of a change, also when its name stays", async () => {
+        mocks.service.updateUser.mockResolvedValue(undefined);
+        expect(await updateUser("lena", { timezone: "Europe/Zurich" })).toEqual({ success: true });
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { timezone: "Europe/Zurich", name: "lena" }, "lena", expect.anything());
+    });
+
+    it("answers with a fixed sentence when the service fails for another reason, and keeps its words in the log", async () => {
+        mocks.viewer = PLATFORM_ADMIN;
+        mocks.service.deleteUser.mockRejectedValueOnce(new Error("SQLITE_BUSY: database is locked"));
+        expect(await deleteUser("lena")).toEqual({ success: false, error: "The user could not be deleted." });
+        mocks.setPassword.mockRejectedValueOnce(new Error("Prisma: Record to update not found"));
+        expect(await setUserPassword("lena", { password: "a new password", signOut: false })).toEqual({ success: false, error: "The password could not be set." });
+        mocks.service.resetTwoFactor.mockRejectedValueOnce(new Error("Prisma: Record to update not found"));
+        expect(await resetUserTwoFactor("lena")).toEqual({ success: false, error: "The second factor could not be reset." });
+        mocks.service.createUser.mockRejectedValueOnce(new Error("UNIQUE constraint failed: user.email"));
+        expect(await createUser({ name: "Sara Nguyen", email: "sara@example.ch", password: "correct horse", groupId: "g-view" })).toEqual({ success: false, error: "The user could not be created." });
     });
 
     it("keeps the sessions when the admin says so", async () => {
@@ -435,6 +499,16 @@ describe("what an admin may do to other users", () => {
         // Taken meanwhile: never the words of the database.
         mocks.service.updateUser.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`email`)", { code: "P2002", clientVersion: "6" }));
         expect(await updateUser("lena", { email: "sara@example.ch" })).toEqual({ success: false, error: "This email cannot be given to this account. Pick another email." });
+    });
+
+    it("never takes someone out of the tenant when they would then work alone where the admin manages the users", async () => {
+        mocks.endRefused = new Set(["tech"]);
+
+        expect(await updateUserGroup("tech", "none")).toEqual({ success: false, error: "hands over" });
+        expect(await updateUserGroup("tech", null)).toEqual({ success: false, error: "hands over" });
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+        // Another group ends no membership.
+        expect(await updateUserGroup("tech", "g-view")).toEqual({ success: true });
     });
 
     it("names the user and the group in the entry of a change of the group", async () => {
@@ -539,6 +613,7 @@ describe("the accounts someone of a platform group of some tenants changes", () 
         mocks.allowed = true;
         mocks.mayChangeSettings = true;
         mocks.viewer = NINA;
+        mocks.claimedEmail.mockResolvedValue(null);
         mocks.service.accountOf.mockImplementation(async (id: string) => ACCOUNTS[id] ?? { isPlatformAdmin: false, tenantIds: [HOME_TENANT_ID] });
         decideAccounts();
         mocks.reach = ["tenant-a"];
@@ -564,6 +639,23 @@ describe("the accounts someone of a platform group of some tenants changes", () 
         expect(mocks.service.resetTwoFactor).not.toHaveBeenCalled();
         expect(mocks.service.revokeSessions).not.toHaveBeenCalled();
         expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+    });
+
+    it("never gives an account of tenant A an email the provider of the tenant she works in claims", async () => {
+        const CLAIMED = "The domain of this email signs in through the provider of another tenant. Only someone who manages the accounts of the platform can use it here.";
+        // The provider of the home tenant claims home.example.
+        mocks.claimedEmail.mockImplementation(async (email: unknown, tenantIds: unknown) =>
+            String(email).endsWith("@home.example") && !(tenantIds as string[]).includes(HOME_TENANT_ID) ? CLAIMED : null);
+        mocks.service.emailOf.mockResolvedValue("cust-user@customer.example");
+
+        expect(await updateUser("cust-user", { email: "boss@home.example" })).toEqual({ success: false, error: CLAIMED });
+        expect(mocks.claimedEmail).toHaveBeenCalledWith("boss@home.example", ["tenant-a", "tenant-a"], false);
+        expect(mocks.service.updateUser).not.toHaveBeenCalled();
+
+        // An account of the home tenant gets it, its own tenant claims it.
+        mocks.reach = [HOME_TENANT_ID, "tenant-a"];
+        mocks.service.emailOf.mockResolvedValue("lena@example.ch");
+        expect(await updateUser("lena", { email: "lena@home.example" })).toEqual({ success: true });
     });
 
     it("refuses an account of no tenant unless her platform group reaches the home tenant", async () => {
@@ -626,6 +718,30 @@ describe("the accounts someone of a platform group of some tenants changes", () 
         expect(await deleteUser("a-viewer")).toEqual({ success: true });
     });
 
+    it("answers every change of one account she may not see exactly like one that does not exist", async () => {
+        // Globex is beyond her platform group, so she does not see Carla, who works there alone.
+        mocks.seen = new Set(["cust-user", "lena"]);
+        mocks.missing = new Set(["nobody"]);
+        try {
+            for (const id of ["globex-user", "nobody"]) {
+                const gone = { success: false, error: "The user no longer exists." };
+                expect(await setUserPassword(id, { password: "a new password", signOut: true })).toEqual(gone);
+                expect(await resetUserTwoFactor(id)).toEqual(gone);
+                expect(await revokeUserSessions(id)).toEqual(gone);
+                expect(await revokeUserSession(id, "s-1")).toEqual(gone);
+                expect(await updateUser(id, { name: "Renamed" })).toEqual(gone);
+                expect(await deleteUser(id)).toEqual(gone);
+                expect(await togglePasskeyTwoFactor(id, true)).toEqual(gone);
+            }
+            expect(mocks.setPassword).not.toHaveBeenCalled();
+            expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+            expect(mocks.audit).not.toHaveBeenCalled();
+        } finally {
+            mocks.seen = null;
+            mocks.missing = new Set();
+        }
+    });
+
     it("reports an account she may not see in a bulk delete like one that does not exist", async () => {
         mocks.seen = new Set(["cust-user"]);
         try {
@@ -635,6 +751,56 @@ describe("the accounts someone of a platform group of some tenants changes", () 
         } finally {
             mocks.seen = null;
         }
+    });
+
+    it("never deletes in bulk an account she may not see, even one whose rules would let her, and never asks those rules first", async () => {
+        mocks.seen = new Set(["cust-user"]);
+        // Without a target the rules pass, like an account the rules alone would let her change.
+        mocks.service.accountRefusalFor.mockResolvedValueOnce(null);
+        try {
+            const result = await bulkDeleteUsers(["globex-user", "cust-user"]);
+
+            expect(result).toEqual({ success: true, data: { succeeded: ["cust-user"], failed: [{ id: "globex-user", error: "User not found" }] } });
+            expect(mocks.service.deleteUsers).toHaveBeenCalledWith(["cust-user"], { permanently: false, by: "nina" });
+            expect(mocks.service.accountRefusalFor).not.toHaveBeenCalledWith(expect.anything(), "globex-user");
+        } finally {
+            mocks.seen = null;
+        }
+    });
+
+    it("deletes an account permanently only with the right to change the settings where its entry would wait", async () => {
+        const refused = "Deleting permanently needs the right to change the settings.";
+        // She may change the settings of the home tenant she works in, not those of tenant A.
+        mocks.viewer = { ...NINA, permissions: [...NINA.permissions, PERMISSIONS.TENANT_SETTINGS.WRITE] };
+        mocks.service.permissionsIn.mockResolvedValue([PERMISSIONS.JOBS.READ]);
+
+        expect(await deleteUser("cust-user", { permanently: true })).toEqual({ success: false, error: refused });
+        expect(mocks.service.permissionsIn).toHaveBeenCalledWith("nina", "tenant-a");
+        expect(await bulkDeleteUsers(["cust-user"], { permanently: true })).toEqual({ success: true, data: { succeeded: [], failed: [{ id: "cust-user", name: "cust-user", error: refused }] } });
+        expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+        expect(mocks.service.deleteUsers).toHaveBeenCalledWith([], { permanently: true, by: "nina" });
+
+        // Where she may change the settings of tenant A, the account goes for good.
+        mocks.service.permissionsIn.mockResolvedValue([PERMISSIONS.TENANT_SETTINGS.WRITE]);
+        expect(await deleteUser("cust-user", { permanently: true })).toEqual({ success: true });
+        expect(await bulkDeleteUsers(["cust-user"], { permanently: true })).toEqual({ success: true, data: { succeeded: ["cust-user"], failed: [] } });
+    });
+
+    it("leaves the permanent delete of an account that would wait for a platform admin to a platform admin", async () => {
+        const refused = "Deleting permanently needs the right to change the settings.";
+        mocks.reach = "all";
+        mocks.viewer = { ...NINA, permissions: [...NINA.permissions, PERMISSIONS.TENANT_SETTINGS.WRITE] };
+        mocks.service.permissionsIn.mockResolvedValue([PERMISSIONS.TENANT_SETTINGS.WRITE, PERMISSIONS.JOBS.READ]);
+
+        // Tom works in two tenants, so his entry would wait in the home tenant for a platform admin.
+        expect(await deleteUser("tech", { permanently: true })).toEqual({ success: false, error: refused });
+        expect(await deleteUser("fresh", { permanently: true })).toEqual({ success: false, error: refused });
+        expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+        expect(await deleteUser("tech")).toEqual({ success: true });
+
+        mocks.viewer = PLATFORM_ADMIN;
+        expect(await deleteUser("tech", { permanently: true })).toEqual({ success: true });
+        expect(mocks.service.deleteUser).toHaveBeenLastCalledWith("tech", { permanently: true, by: "root" });
     });
 
     it("makes a new account in any tenant for a platform group of all tenants, as before", async () => {

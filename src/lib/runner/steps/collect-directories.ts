@@ -21,10 +21,9 @@ import { ArchiveSourceEntry, FileMetadata, SourceFileEntry } from "@/lib/archive
 import { downloadDirectory } from "@/lib/adapters/storage/common/download-directory";
 import { fileKey } from "@/lib/archive/chain";
 import { formatBytes } from "@/lib/utils";
-import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
 import { resolveTransferConcurrency } from "@/lib/adapters/transfer-concurrency";
-import { mapWithConcurrency } from "@/lib/concurrency";
+import { checkCollectedEntries } from "./collected-entries";
 import { planCollectionGroups, type CollectionGroup } from "./source-groups";
 import { hostLocalReason } from "@/lib/adapters/host-local";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
@@ -217,21 +216,49 @@ async function collectOne(input: CollectOneInput): Promise<void> {
         }
     );
 
+    // Content hash of the raw (pre-compression, pre-encryption) file. Lands in the archive
+    // index, which is itself sealed when the job is encrypted - a plaintext hash sitting in
+    // the clear would be a confirmation oracle against known files.
+    //
+    // Hashing is a second full read of everything just collected. Done one file at a time
+    // with nothing reported, it left the run looking finished-but-frozen for as long as the
+    // source was large - the last silent stretch of the collect phase.
+    //
+    // Every entry is checked first, whichever adapter listed it: a name that leaves the
+    // collection folder is refused, and a file is read only as a regular file inside it, never
+    // through a link, see `collected-entries.ts`. Symbolic links of the source are not read at
+    // all, their content is the target string, which the index carries in full.
+    ctx.updateDetail(`${label}: checking and hashing the collected file(s)...`);
+    const checked = await checkCollectedEntries(localDir, result.entries, {
+        concurrency: HASH_CONCURRENCY,
+        ...(ctx.abortSignal ? { signal: ctx.abortSignal } : {}),
+        onHashed: (done, total) => {
+            if (done % HASH_PROGRESS_EVERY === 0) ctx.updateDetail(`${label}: hashing ${done}/${total} file(s)`);
+        },
+    });
+    if (checked.refused.length > 0) {
+        ctx.log(
+            `${logPrefix} ${checked.refused.length} listed file(s) were refused, their name or what arrived for it leads out of the collection folder or is no regular file`,
+            'error', 'security'
+        );
+    }
+
     // A file the source would not hand over is missing from this backup. Naming each one and
     // refusing to call the run a success is the whole point - a silently incomplete backup is
     // the failure mode that only shows up when it is needed.
-    if (result.failures.length > 0) {
-        for (const failure of result.failures) {
+    const failures = [...result.failures, ...checked.refused];
+    if (failures.length > 0) {
+        for (const failure of failures) {
             ctx.log(`${logPrefix} MISSING from this backup: ${failure.path} (${failure.error})`, 'error', 'storage');
         }
         ctx.log(
-            `${logPrefix} ${result.failures.length} file(s) could not be collected and are not in this backup`,
+            `${logPrefix} ${failures.length} file(s) could not be collected and are not in this backup`,
             'error', 'storage'
         );
         ctx.status = "Partial";
     }
 
-    for (const e of result.entries) {
+    for (const e of checked.entries) {
         // A symbolic link has no bytes anywhere to point back at, so it is never carried -
         // every snapshot restates its links in full. Guarded even though the collection never
         // marks one unchanged, because the cost of being wrong here is a link that silently
@@ -245,43 +272,18 @@ async function collectOne(input: CollectOneInput): Promise<void> {
     // of whether its bytes move. A file whose mode changed but whose content did not is
     // carried forward, and this is what stops the chain from replaying the mode it had when
     // the bytes were last written.
-    for (const e of result.entries) {
+    for (const e of checked.entries) {
         if (e.mode === undefined && e.uid === undefined && e.gid === undefined) continue;
         freshMetadata.set(fileKey(source.jobSourceId, e.relativePath), {
             mode: e.mode, uid: e.uid, gid: e.gid,
         });
     }
 
-    // Content hash of the raw (pre-compression, pre-encryption) file. Lands in the archive
-    // index, which is itself sealed when the job is encrypted - a plaintext hash sitting in
-    // the clear would be a confirmation oracle against known files.
-    //
-    // Hashing is a second full read of everything just collected. Done one file at a time
-    // with nothing reported, it left the run looking finished-but-frozen for as long as the
-    // source was large - the last silent stretch of the collect phase.
-    //
-    // Symbolic links are left out: nothing was collected under their path, so hashing one
-    // means reading a file that is not there. Their content is the target string, which the
-    // index already carries in full.
-    const toHash = result.entries.filter((e) => !e.unchanged && e.linkTarget === undefined);
-    let hashed = 0;
-    ctx.updateDetail(`${label}: hashing ${toHash.length} file(s)...`);
-    const checksums = await mapWithConcurrency(toHash, HASH_CONCURRENCY, async (e) => {
-        ctx.abortSignal?.throwIfAborted();
-        const checksum = await calculateFileChecksum(path.join(localDir, e.relativePath));
-        hashed++;
-        if (hashed % HASH_PROGRESS_EVERY === 0) {
-            ctx.updateDetail(`${label}: hashing ${hashed}/${toHash.length} file(s)`);
-        }
-        return checksum;
-    });
-
-    // Rebuilt in listing order, which mapWithConcurrency preserves - the index is compared
-    // against the previous snapshot's, so its layout has to stay stable.
+    // Rebuilt in listing order, which the check keeps - the index is compared against the
+    // previous snapshot's, so its layout has to stay stable.
     const fileIndex: SourceFileEntry[] = [];
-    toHash.forEach((e, i) => {
+    checked.hashed.forEach(({ entry: e, checksum, size }) => {
         const before = previousFiles?.get(e.relativePath);
-        const checksum = checksums[i];
 
         // The file was transferred, but its content is identical to what the chain already
         // holds - mtime moved without the bytes changing, which happens on every deploy and
@@ -293,7 +295,9 @@ async function collectOne(input: CollectOneInput): Promise<void> {
 
         fileIndex.push({
             path: e.relativePath,
-            size: e.size,
+            // The size of the file as it was collected, never the one the listing reported: the
+            // archive decides on it what it bundles, and a restore stops a file at it.
+            size,
             mtime: e.lastModified.toISOString(),
             checksum,
             mode: e.mode,
@@ -305,7 +309,7 @@ async function collectOne(input: CollectOneInput): Promise<void> {
     // Restated in every snapshot, full or incremental. A link is a path string of a few dozen
     // bytes, so carrying it forward would save nothing and cost the entire chain a special
     // case in exchange.
-    const symlinkEntries = result.entries.filter((e) => e.linkTarget !== undefined);
+    const symlinkEntries = checked.entries.filter((e) => e.linkTarget !== undefined);
     for (const e of symlinkEntries) {
         fileIndex.push({
             path: e.relativePath,
@@ -316,7 +320,7 @@ async function collectOne(input: CollectOneInput): Promise<void> {
     }
 
     if (plan.type === "incremental") {
-        const carriedHere = result.entries.length - fileIndex.length;
+        const carriedHere = checked.entries.length - fileIndex.length;
         ctx.log(
             `${logPrefix} ${fileIndex.length} changed file(s) stored, ${carriedHere} unchanged file(s) referenced from earlier backups`,
             'info', 'storage'
@@ -339,7 +343,7 @@ async function collectOne(input: CollectOneInput): Promise<void> {
         ? ` and ${symlinkEntries.length} symlink(s)`
         : '';
     ctx.log(
-        `${logPrefix} Collected ${result.files - symlinkEntries.length} file(s)${symlinkSuffix}, ${formatBytes(result.bytes)}`,
+        `${logPrefix} Collected ${checked.entries.length - symlinkEntries.length} file(s)${symlinkSuffix}, ${formatBytes(result.bytes)}`,
         'success', 'storage'
     );
 }

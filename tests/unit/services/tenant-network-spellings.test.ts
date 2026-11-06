@@ -47,6 +47,11 @@ const LOCAL: [string, Record<string, unknown>][] = [
     ["postgres", { host: "public.example.com,10.0.0.6" }],
     ["rsync", { host: "public.example.com@10.0.0.5" }],
     ["smb", { address: "\\\\10.0.0.9\\share" }],
+    // smbclient strips a NetBIOS name type, rpcclient dials the host of a binding string, and a
+    // realm in the login makes smbclient find a KDC on its own.
+    ["smb", { address: "//10.0.0.9#20/share" }],
+    ["smb", { address: "//ncacn_ip_tcp:10.0.0.9[135]/share" }],
+    ["smb", { address: "//files.example.com/share", username: "backup@corp.example" }],
 ];
 
 /** Valid inputs of each adapter, which reach a public server. */

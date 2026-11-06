@@ -7,6 +7,7 @@ import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
 import { AVATAR_MAX_BYTES, removeAvatar, saveAvatar } from "@/services/user/avatar-service";
 import { bodyTooLarge } from "@/lib/server/upload-size";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 const FIELD = "Picture";
 
@@ -18,7 +19,7 @@ const FIELD = "Picture";
  */
 export async function POST(req: NextRequest) {
     const user = await getViewer();
-    if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!user) return unauthorized();
 
     if (bodyTooLarge(req.headers, AVATAR_MAX_BYTES)) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
     const form = await req.formData().catch(() => null);
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE() {
     const user = await getViewer();
-    if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!user) return unauthorized();
     if (!user.image) return NextResponse.json({ success: true });
 
     await removeAvatar(user.id);

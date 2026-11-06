@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { checkPermissionWithContext, getAuthContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -11,7 +12,7 @@ const log = logger.child({ route: "api-keys" });
 /** The API keys tab: every key with its owner and what it may do right now. Never a secret or a hash. */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.API_KEYS.READ);

@@ -14,6 +14,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { createArchive } from "@/lib/archive/writer";
 import { extractArchive } from "@/lib/archive/extract";
+import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf } from "@/lib/archive/link-target";
 import { carryForward, fileKey } from "@/lib/archive/chain";
 import { browseLevel } from "@/lib/archive/browse";
 import {
@@ -205,11 +206,167 @@ describe("symbolic links in the archive format", () => {
         ).toEqual([]);
         expect(await fs.readFile(path.join(out, "sources", SRC, "foo/x"), "utf-8")).toBe("payload");
 
-        // The link then collides with the real directory the file created. Restored data wins,
-        // the link is reported, and the rest of the extraction is unaffected.
+        // The link points outside, so it is never laid, and the rest of the extraction is unaffected.
+        expect(result.skippedSymlinks).toEqual([{ path: "foo", reason: LINK_LEAVES_TARGET }]);
+    });
+
+    it("never lays a link whose target is absolute or climbs out of the folder it restores into", async () => {
+        const tmp = await tempDir("sym-outside-");
+        const source = path.join(tmp, "src");
+        await fs.mkdir(path.join(source, "conf"), { recursive: true });
+        await fs.writeFile(path.join(source, "conf/app.ini"), "ini");
+
+        const archivePath = path.join(tmp, "backup.tar");
+        await createArchive(
+            sourceEntry(source, [
+                { path: "conf/app.ini", size: 3, mtime: "2026-07-31T00:00:00.000Z" },
+                // Both would lead the next run that follows them to the database of DBackup.
+                { path: "db", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "/app/data/db" },
+                { path: "conf/up", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "../../../app/data" },
+                { path: "conf/same", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "./app.ini" },
+            ]),
+            archivePath,
+            { sourceType: "directory-only" }
+        );
+
+        const out = path.join(tmp, "out");
+        const result = await extractArchive(archivePath, out);
+        const root = path.join(out, "sources", SRC);
+
         expect(result.skippedSymlinks).toEqual([
-            { path: "foo", reason: "a file or directory was restored to that path" },
+            { path: "db", reason: LINK_LEAVES_TARGET },
+            { path: "conf/up", reason: LINK_LEAVES_TARGET },
         ]);
+        await expect(fs.lstat(path.join(root, "db"))).rejects.toThrow();
+        await expect(fs.lstat(path.join(root, "conf/up"))).rejects.toThrow();
+        expect(await fs.readlink(path.join(root, "conf/same"))).toBe("./app.ini");
+    });
+
+    it("never lays a link below another link of the same backup, where it would land and point wherever that one leads", async () => {
+        const tmp = await tempDir("sym-chain-");
+        const source = path.join(tmp, "src");
+        await fs.mkdir(source, { recursive: true });
+
+        const archivePath = path.join(tmp, "backup.tar");
+        await createArchive(
+            sourceEntry(source, [
+                // `x/y` leads to the root of the restore, so `x/y/z` would lie there and point above it.
+                { path: "x/y", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: ".." },
+                { path: "x/y/z", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: ".." },
+            ]),
+            archivePath,
+            { sourceType: "directory-only" }
+        );
+
+        const out = path.join(tmp, "out");
+        const result = await extractArchive(archivePath, out);
+        const root = path.join(out, "sources", SRC);
+
+        expect(result.skippedSymlinks).toEqual([{ path: "x/y/z", reason: ENTRY_THROUGH_LINK }]);
+        expect(await fs.readlink(path.join(root, "x/y"))).toBe("..");
+        await expect(fs.lstat(path.join(root, "z"))).rejects.toThrow();
+    });
+
+    it("tells an entry below a link of the same backup and source apart from one beside it", () => {
+        const throughLink = throughLinkOf([
+            { src: "a", p: "x/y", lnk: ".." },
+            { src: "a", p: "x/real.txt" },
+        ]);
+        expect(throughLink("a", "x/y/z")).toBe(true);
+        expect(throughLink("a", "X/Y/deeper/file")).toBe(true);
+        expect(throughLink("a", "./x//y/z")).toBe(true);
+        expect(throughLink("a", "x/y")).toBe(false);
+        expect(throughLink("a", "x/yz/file")).toBe(false);
+        expect(throughLink("a", "x/real.txt")).toBe(false);
+        expect(throughLink("b", "x/y/z")).toBe(false);
+    });
+
+    it("judges a link by where its target lands from the folder the link lies in", () => {
+        const noLinks = () => false;
+        expect(linkLeavesTarget("live/npm-10/fullchain.pem", CERT_TARGET, noLinks)).toBe(false);
+        expect(linkLeavesTarget("a/b", "../c", noLinks)).toBe(false);
+        expect(linkLeavesTarget("a/b", "../../c", noLinks)).toBe(true);
+        expect(linkLeavesTarget("b", "..", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b", "/etc/passwd", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b", "C:\\Windows", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b", "\\\\server\\share", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b", "..\\..\\x", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b", "", noLinks)).toBe(true);
+    });
+
+    it("refuses a target that climbs back after a folder, which may itself be a link that leads elsewhere", () => {
+        const noLinks = () => false;
+        // Read as text `x/up/../secret` stays inside, but with `x/up -> ..` the system climbs from the root of the restore.
+        expect(linkLeavesTarget("x/leak", "up/../secret", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b", "c/..", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b/c", "../d/../e", noLinks)).toBe(true);
+        expect(linkLeavesTarget("a/b/c", "./d\\..\\e", noLinks)).toBe(true);
+        // Leading `..` parts climb from the real folder the link lies in, and `.` is no folder.
+        expect(linkLeavesTarget("a/b/c", "../../d/e", noLinks)).toBe(false);
+        expect(linkLeavesTarget("a/b/c", "./../d/./e", noLinks)).toBe(false);
+    });
+
+    it("refuses a target that runs through a link of the same backup and source", () => {
+        const throughLink = throughLinkOf([
+            { src: "a", p: "x/up", lnk: ".." },
+            { src: "a", p: "x/peek", lnk: "up/etc" },
+            { src: "a", p: "x/plain", lnk: "real/etc" },
+        ]);
+        expect(linkLeavesTarget("x/peek", "up/etc", (resolved) => throughLink("a", resolved))).toBe(true);
+        expect(linkLeavesTarget("y/peek", "../X/Up/etc", (resolved) => throughLink("a", resolved))).toBe(true);
+        expect(linkLeavesTarget("x/plain", "real/etc", (resolved) => throughLink("a", resolved))).toBe(false);
+        // A link to the link itself runs through nothing.
+        expect(linkLeavesTarget("x/same", "up", (resolved) => throughLink("a", resolved))).toBe(false);
+        expect(linkLeavesTarget("x/peek", "up/etc", (resolved) => throughLink("b", resolved))).toBe(false);
+    });
+
+    it("never lays a link that climbs back through a link of the same backup on extraction", async () => {
+        const tmp = await tempDir("sym-climb-");
+        const source = path.join(tmp, "src");
+        await fs.mkdir(source, { recursive: true });
+
+        const archivePath = path.join(tmp, "backup.tar");
+        await createArchive(
+            sourceEntry(source, [
+                // `x/up` leads to the root of the restore, so `up/../secret` from `x` lands above it.
+                { path: "x/up", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: ".." },
+                { path: "x/leak", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "up/../secret" },
+                { path: "x/peek", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "up/x" },
+            ]),
+            archivePath,
+            { sourceType: "directory-only" }
+        );
+
+        const out = path.join(tmp, "out");
+        const result = await extractArchive(archivePath, out);
+        const root = path.join(out, "sources", SRC);
+
+        expect(result.skippedSymlinks).toEqual([
+            { path: "x/leak", reason: LINK_LEAVES_TARGET },
+            { path: "x/peek", reason: LINK_LEAVES_TARGET },
+        ]);
+        expect(await fs.readlink(path.join(root, "x/up"))).toBe("..");
+        await expect(fs.lstat(path.join(root, "x/leak"))).rejects.toThrow();
+    });
+
+    it("never extracts a directory source whose id from the index leaves the folder of the sources", async () => {
+        const tmp = await tempDir("src-id-");
+        const source = path.join(tmp, "src");
+        await fs.mkdir(source, { recursive: true });
+        await fs.writeFile(path.join(source, "x.txt"), "payload");
+
+        for (const jobSourceId of ["../../escaped", ".", ""]) {
+            const archivePath = path.join(tmp, `backup-${jobSourceId.length}.tar`);
+            await createArchive(
+                [{ kind: "directory", jobSourceId, label: "evil", localPath: source, excludePatterns: [], files: [{ path: "x.txt", size: 7, mtime: "2026-07-31T00:00:00.000Z" }] }],
+                archivePath,
+                { sourceType: "directory-only" }
+            );
+
+            const out = path.join(tmp, `out-${jobSourceId.length}`);
+            await expect(extractArchive(archivePath, out), JSON.stringify(jobSourceId)).rejects.toThrow(/Refusing to extract/);
+        }
+        await expect(fs.lstat(path.join(tmp, "escaped"))).rejects.toThrow();
     });
 
     it("keeps extracting when one link cannot be created", async () => {
@@ -224,7 +381,8 @@ describe("symbolic links in the archive format", () => {
                 { path: "dir/keep.txt", size: 4, mtime: "2026-07-31T00:00:00.000Z" },
                 // Collides with the directory above, so this one cannot be created.
                 { path: "dir", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "./elsewhere" },
-                { path: "ok.pem", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "./dir/keep.txt" },
+                // Not through `dir`, which the index calls a link, see `linkLeavesTarget`.
+                { path: "ok.pem", size: 0, mtime: "2026-07-31T00:00:00.000Z", linkTarget: "./certs/keep.pem" },
             ]),
             archivePath,
             { sourceType: "directory-only" }
@@ -236,7 +394,7 @@ describe("symbolic links in the archive format", () => {
 
         expect(result.skippedSymlinks.map((s) => s.path)).toEqual(["dir"]);
         expect(await fs.readFile(path.join(root, "dir/keep.txt"), "utf-8")).toBe("kept");
-        expect(await fs.readlink(path.join(root, "ok.pem")), "later links still get created").toBe("./dir/keep.txt");
+        expect(await fs.readlink(path.join(root, "ok.pem")), "later links still get created").toBe("./certs/keep.pem");
     });
 
     it("restates links in an incremental chain instead of carrying them forward", () => {

@@ -15,7 +15,7 @@ export const STORAGE_CONNECTION_KEYS = [
     'socketPath',
 ];
 
-export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options', 'folderId', 'folderPath'];
+export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'trustServerCertificate', 'options', 'folderId', 'folderPath'];
 
 /**
  * The config keys that say where inside the storage the files go, shown in the Location part

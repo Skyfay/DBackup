@@ -8,6 +8,9 @@ import * as cryptoStream from '@/lib/crypto/stream';
 import fs from 'fs';
 import { PassThrough } from 'stream';
 
+/** A platform admin with a session, who may restore into any target. */
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+
 // Mock Dependencies
 vi.mock('@/services/backup/encryption-service', () => ({
     getProfileMasterKey: vi.fn(),
@@ -108,9 +111,9 @@ describe('RestoreService', () => {
         // Arrange
         const executionId = 'exec-123';
         const mockStorageAdapter = {
-            // First call is the .meta.json sidecar check - return false so no real fs.readFile is triggered.
-            // Second call is the actual backup file download.
-            download: vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+            // The .meta.json sidecar is read through read(), which finds none, and never downloaded.
+            // The one download is the backup file itself.
+            download: vi.fn().mockResolvedValue(true),
             read: vi.fn().mockResolvedValue(null),
         } as unknown as StorageAdapter;
 
@@ -130,7 +133,7 @@ describe('RestoreService', () => {
             storageConfigId: 'storage-1',
             file: 'backup.sql',
             targetSourceId: 'source-1'
-        });
+        }, PLATFORM_ADMIN);
 
         // Wait for background process
         await flushPromises();
@@ -165,7 +168,7 @@ describe('RestoreService', () => {
             storageConfigId: 'storage-1',
             file: 'backup.sql',
             targetSourceId: 'source-1'
-        });
+        }, PLATFORM_ADMIN);
 
         await flushPromises();
 
@@ -179,9 +182,9 @@ describe('RestoreService', () => {
     it('should handle restore failure from adapter', async () => {
          const executionId = 'exec-fail-restore';
          const mockStorageAdapter = {
-            // First call is the .meta.json sidecar check - return false so no real fs.readFile is triggered.
-            // Second call is the actual backup file download.
-            download: vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+            // The .meta.json sidecar is read through read(), which finds none, and never downloaded.
+            // The one download is the backup file itself.
+            download: vi.fn().mockResolvedValue(true),
             read: vi.fn().mockResolvedValue(null),
         } as unknown as StorageAdapter;
 
@@ -198,7 +201,7 @@ describe('RestoreService', () => {
             storageConfigId: 'storage-1',
             file: 'backup.sql',
             targetSourceId: 'source-1'
-        });
+        }, PLATFORM_ADMIN);
 
         await flushPromises();
 
@@ -222,7 +225,7 @@ describe('RestoreService', () => {
             storageConfigId: 'storage-1',
             file: 'f',
             targetSourceId: 'missing-source'
-        })).rejects.toThrow('Target source not found');
+        }, PLATFORM_ADMIN)).rejects.toThrow('Target source not found');
     });
 
     describe('Version Compatibility Guard', () => {
@@ -269,7 +272,7 @@ describe('RestoreService', () => {
                 targetSourceId: 'source-1',
             };
 
-            await expect(service.restore(input)).rejects.toThrow('newer database version (15.0) on an older server (14.0)');
+            await expect(service.restore(input, PLATFORM_ADMIN)).rejects.toThrow('newer database version (15.0) on an older server (14.0)');
         });
 
         it('should allow restoring older version backup to newer server', async () => {
@@ -293,7 +296,7 @@ describe('RestoreService', () => {
                storageConfigId: 'storage-1',
                file: 'backup.sql',
                targetSourceId: 'source-1',
-           });
+           }, PLATFORM_ADMIN);
 
            expect(result.success).toBe(true);
        });
@@ -364,7 +367,7 @@ describe('RestoreService', () => {
             storageConfigId: 'storage-1',
             file: 'backup.sql.enc',
             targetSourceId: 'source-1'
-        });
+        }, PLATFORM_ADMIN);
 
         // Wait for background process (Smart Recovery involves many async steps + real file I/O)
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -407,7 +410,7 @@ describe('RestoreService', () => {
                 storageConfigId: 'storage-1',
                 file: 'backup.sql',
                 targetSourceId: 'source-1',
-            });
+            }, PLATFORM_ADMIN);
 
             await flushPromises();
 
@@ -429,7 +432,7 @@ describe('RestoreService', () => {
                 storageConfigId: 'storage-1',
                 file: 'backup.sql',
                 targetSourceId: 'source-1',
-            });
+            }, PLATFORM_ADMIN);
 
             await flushPromises();
 

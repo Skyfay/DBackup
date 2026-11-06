@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdapterConfig } from "@prisma/client";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { ValidationError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     get: vi.fn(),
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     overlayCredentialsOnConfig: vi.fn(),
     resolveAdapterConfig: vi.fn(),
     browseDirectories: vi.fn(),
+    mayReachHost: vi.fn(),
     isShared: vi.fn(),
     viewModeOf: vi.fn(),
 }));
@@ -19,6 +21,7 @@ vi.mock("@/lib/adapters/config-resolver", () => ({
     applyStoredSecrets: (...args: unknown[]) => mocks.applyStoredSecrets(...args),
     overlayCredentialsOnConfig: (...args: unknown[]) => mocks.overlayCredentialsOnConfig(...args),
     resolveAdapterConfig: (...args: unknown[]) => mocks.resolveAdapterConfig(...args),
+    mayReachHost: () => mocks.mayReachHost(),
 }));
 vi.mock("@/services/sharing/destination-access", () => ({
     isShared: (...args: unknown[]) => mocks.isShared(...args),
@@ -36,6 +39,7 @@ describe("browseLocation", () => {
         mocks.overlayCredentialsOnConfig.mockImplementation(async (_id: string, config: object) => ({ ...config, username: "backup" }));
         mocks.browseDirectories.mockResolvedValue([{ name: "srv", path: "srv" }]);
         mocks.isShared.mockResolvedValue(false);
+        mocks.mayReachHost.mockResolvedValue(true);
     });
 
     it("refuses the folder of a saved destination shared with other tenants, whose top holds the folders of its customers", async () => {
@@ -47,12 +51,15 @@ describe("browseLocation", () => {
         expect(mocks.browseDirectories).not.toHaveBeenCalled();
     });
 
-    it("refuses rsync options of a customer that would run on the server DBackup runs on, and lets the platform use them", async () => {
+    it("refuses rsync options that would run on the server DBackup runs on to a customer and a member of the home tenant, and lets a platform admin use them", async () => {
         const input = { adapterId: "rsync", config: { host: "nas.local", authType: "password", password: "pw", options: "-e sh" }, path: "" };
 
         await expect(runAsTenant("acme", () => browseLocation(input))).rejects.toThrow("The rsync option -e reaches the server DBackup runs on");
+        mocks.mayReachHost.mockResolvedValue(false);
+        await expect(runAsTenant(HOME_TENANT_ID, () => browseLocation(input))).rejects.toThrow("which only a platform admin sets");
         expect(mocks.browseDirectories).not.toHaveBeenCalled();
 
+        mocks.mayReachHost.mockResolvedValue(true);
         await expect(runAsTenant(HOME_TENANT_ID, () => browseLocation(input))).resolves.toEqual([{ name: "srv", path: "srv" }]);
     });
 
@@ -74,8 +81,21 @@ describe("browseLocation", () => {
     it("fills in the saved secrets of the connection being edited", async () => {
         await browseLocation({ adapterId: "smb", config: { address: "//nas/backup" }, storedConfigId: "saved", path: "" });
 
-        expect(mocks.applyStoredSecrets).toHaveBeenCalledWith("smb", "saved", { address: "//nas/backup" });
+        // With the login of the form, which signs in at a new address in place of the stored secrets.
+        expect(mocks.applyStoredSecrets).toHaveBeenCalledWith("smb", "saved", { address: "//nas/backup" }, { primaryCredentialId: undefined });
         expect(mocks.browseDirectories.mock.calls[0][0]).toMatchObject({ password: "stored" });
+    });
+
+    it.each(["..", "../..", "srv/../../etc", "%2e%2e", "%2e%2e%2f%2e%2e", "srv\\..\\..", ".. "])("refuses the path %s, which would list the folders above the top of the storage", async (path) => {
+        await expect(browseLocation({ adapterId: "sftp", config: { host: "nas.local" }, storedConfigId: "saved", path })).rejects.toThrow(ValidationError);
+        expect(mocks.applyStoredSecrets).not.toHaveBeenCalled();
+        expect(mocks.browseDirectories).not.toHaveBeenCalled();
+    });
+
+    it.each(["", "/", "srv", "/srv/backups"])("still lists the path %s", async (path) => {
+        await browseLocation({ adapterId: "sftp", config: { host: "nas.local" }, path });
+
+        expect(mocks.browseDirectories).toHaveBeenCalledWith(expect.anything(), path);
     });
 
     it("refuses a storage whose folder is picked another way", async () => {
@@ -118,6 +138,21 @@ describe("browseSavedFolders", () => {
         expect(await browseSavedFolders(saved, "")).toBeNull();
         expect(mocks.browseDirectories).not.toHaveBeenCalled();
         expect(mocks.resolveAdapterConfig).not.toHaveBeenCalled();
+    });
+
+    it.each(["..", "../..", "../other", "shop/../..", "%2e%2e%2fother", "shop\\..\\..", "..."])("refuses the path %s, which SFTP, FTP and SMB would join onto the folder of the connection", async (path) => {
+        mocks.viewModeOf.mockResolvedValue({ kind: "own" });
+
+        await expect(browseSavedFolders(saved, path)).rejects.toThrow(ValidationError);
+        expect(mocks.resolveAdapterConfig).not.toHaveBeenCalled();
+        expect(mocks.browseDirectories).not.toHaveBeenCalled();
+    });
+
+    it.each(["", "/", "shop", "shop/2026"])("still lists the folder %s of the connection", async (path) => {
+        mocks.viewModeOf.mockResolvedValue({ kind: "own" });
+
+        await browseSavedFolders(saved, path);
+        expect(mocks.browseDirectories).toHaveBeenCalledWith({ host: "nas.local", pathPrefix: "/backups" }, path);
     });
 
     it("never lists a storage the tenant may not use", async () => {

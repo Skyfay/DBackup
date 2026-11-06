@@ -43,3 +43,21 @@ export interface AuditChange {
   to: string | null;
   secret?: true;
 }
+
+/**
+ * What a change of the own second factor or passkeys was, in `change` of an `UPDATE USER` entry,
+ * written by the hooks of better-auth in `src/lib/auth/security-audit.ts`.
+ */
+export const SECURITY_CHANGES = {
+  appSetUp: "Authenticator app set up",
+  appRemoved: "Authenticator app removed",
+  on: "Second factor turned on",
+  off: "Second factor turned off",
+  backupCodes: "Backup codes renewed",
+  passkeyAdded: "Passkey added",
+  passkeyRenamed: "Passkey renamed",
+  passkeyDeleted: "Passkey deleted",
+  sessionEnded: "Own session ended",
+  otherSessionsEnded: "Other own sessions ended",
+  allSessionsEnded: "Every own session ended",
+} as const;

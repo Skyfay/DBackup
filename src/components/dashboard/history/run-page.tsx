@@ -66,7 +66,7 @@ export function RunPage({ access: given }: { access: RunAccess }) {
     const { allTenants } = useTenantView();
     const severalTenants = useSeveralTenants();
     // Nothing of a tenant changes in All tenants. Its permissions lack the right to run jobs anyway.
-    const access = allTenants ? { ...given, canExecute: false } : given;
+    const access = allTenants ? { ...given, canExecute: false, cancels: [] } : given;
     const searchParams = useSearchParams();
     // A link of a notification that names another tenant waits until the dashboard switched into it.
     const switching = useSwitchFromLink();

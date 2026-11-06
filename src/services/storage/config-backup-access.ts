@@ -1,9 +1,5 @@
-import fs from "fs/promises";
-import path from "path";
-import { randomUUID } from "crypto";
-import type { AdapterConfig, StorageAdapter } from "@/lib/core/interfaces";
 import { isConfigBackupPath } from "@/lib/core/config-backup-path";
-import { getTempDir } from "@/lib/temp-dir";
+import { readSidecar } from "@/lib/adapters/storage/common/read-sidecar";
 import { openDestination } from "@/services/sharing/destination-access";
 
 /**
@@ -24,25 +20,5 @@ export async function isConfigBackupFile(storageId: string, file: string, tenant
         return isConfigBackupPath(file);
     }
     if (opened.mode.kind !== "customer" && isConfigBackupPath(file)) return true;
-    return (await sidecarOf(opened.adapter, opened.config, file))?.sourceType === "SYSTEM";
-}
-
-/** The `.meta.json` beside a file, null without one or when it cannot be read. */
-async function sidecarOf(adapter: StorageAdapter, config: AdapterConfig, file: string): Promise<{ sourceType?: unknown } | null> {
-    const remote = `${file}.meta.json`;
-    try {
-        if (adapter.read) {
-            const text = await adapter.read(config, remote);
-            if (text) return JSON.parse(text) as { sourceType?: unknown };
-        }
-    } catch { /* a download below tries again */ }
-    const local = path.join(getTempDir(), `config-check-${randomUUID()}.json`);
-    try {
-        if (!(await adapter.download(config, remote, local))) return null;
-        return JSON.parse(await fs.readFile(local, "utf-8")) as { sourceType?: unknown };
-    } catch {
-        return null;
-    } finally {
-        await fs.unlink(local).catch(() => undefined);
-    }
+    return (await readSidecar(opened.adapter, opened.config, file))?.sourceType === "SYSTEM";
 }

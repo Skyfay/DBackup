@@ -43,10 +43,11 @@ A platform admin passes every check in every tenant. A few tasks are for a platf
 - Set up or start the configuration backup, and download, open or restore one, since it holds every tenant, user and group with the keys of the instance
 - Download the database
 - Restore or delete for good, from Recently deleted, the account of a platform admin, of a platform group or of someone who also worked in another tenant
+- Add, change, copy, test or browse a connection to the server DBackup runs on, like Local Filesystem, SQLite in local mode, Docker Volumes without SSH, a database in direct mode with extra options or SQL Server with a shared folder, restore one from Recently deleted, and open the file browser of a local path. Only with a session, never with an API key, and only in the home tenant. Anyone may still pick such a connection in a job, see [Connections to the Server DBackup Runs On](/user-guide/admin/tenants#connections-to-the-server-dbackup-runs-on)
 
-Nobody changes or deletes a group they hold in any tenant, since that would hand them any permission. Nobody gives a group that may do more than they may, or takes one away from someone whose group may do more than they may.
+Nobody changes or deletes a group they hold in any tenant, since that would hand them any permission. A group a platform admin is in is deleted by a platform admin only, since the delete moves or ends their membership. Nobody gives a group that may do more than they may, or takes one away from someone whose group may do more than they may.
 
-Whoever changes how an account signs in can sign in as it. So nobody but a platform admin sets the password, resets the second factor, ends the sessions, changes the name or email of, or deletes an account whose group in one of its tenants may do more than they may there, like the **Admin** of the tenant. This holds for `users:write` and for `platform-accounts:write` alike, and the Users tab locks such an account with the reason. In the same way only its owner, or someone who may do all a key may do, changes, pauses, rotates or deletes an API key.
+Whoever changes how an account signs in can sign in as it. So nobody but a platform admin sets the password, resets the second factor, ends the sessions, changes the name or email of, or deletes an account whose group in one of its tenants may do more than they may there, like the **Admin** of the tenant. This holds for `users:write` and for `platform-accounts:write` alike, and the Users tab locks such an account with the reason. In the same way an API key acts as its owner, so only its owner and a platform admin rotate it, enable it again, change its permissions or let it run longer. Anyone else with `api-keys:write` only renames it, lets it run out sooner, disables or deletes it, see [API Keys](/user-guide/features/api-keys#what-a-key-may-do).
 
 ::: warning No Group = No Access
 A user without a group signs in but sees and does nothing until someone picks a group. The Users tab counts them above the list.
@@ -93,7 +94,11 @@ Not every area has every level. A group whose permissions match no level of an a
 
 `sources:read` browses the tables and rows of a database in the Database Explorer, `credentials:reveal` shows the secret of a saved login and is written to the audit log.
 
+`vault:read` opens the Vault page, so its **Credentials** tab and the saved logins in the search of the header need `credentials:read` as well. The saved login a connection form offers needs `credentials:read` alone.
+
 `tenant-settings:write` also restores from [Recently deleted](/user-guide/admin/recently-deleted), deletes for good there and offers **Delete it permanently now** in every delete, each together with the right to change the record. Without it a delete always goes to Recently deleted.
+
+`templates:write` changes a retention policy and picks the default one, and every destination that follows it prunes by it on its next run. So it removes backups without `storage:delete`, which only covers deleting a backup by hand. That is on purpose: the policy is how backups go. The editor shows each destination it touches with what its next run removes under the change, and **Make default** lists them before it asks, see [What a change removes](/user-guide/features/templates#what-a-change-removes). Give `templates:write` only to a group whose members may decide how long backups stay.
 
 ## Create a Group
 
@@ -128,7 +133,7 @@ The foot names every area whose level changes. Members get a change with their n
 
 ## Delete a Group
 
-**Delete** asks first. A group with members asks which group of the tenant they move to, only one that may do no more than you may, or **No group**, which takes them out of the tenant. The button waits for the pick. Nobody loses access by surprise, and the audit log of the tenant keeps the group and who was in it. A [sign-in provider](/user-guide/admin/sso#new-people) that adds new people to the group adds them where its members go. With **No group**, a provider of the platform adds them without a group, and a provider of a tenant stops adding people.
+**Delete** asks first. A group with members needs the right to change users as well, since its members move, and asks which group of the tenant they move to, only one that may do no more than you may, or **No group**, which takes them out of the tenant. The button waits for the pick. Nobody loses access by surprise, and the audit log of the tenant keeps the group and who was in it. A [sign-in provider](/user-guide/admin/sso#new-people) that adds new people to the group adds them where its members go. With **No group**, a provider of the platform adds them without a group, and a provider of a tenant stops adding people.
 
 Several empty groups can be ticked and deleted together. A group with members is left out of that and deleted on its own. You cannot delete a group you hold.
 

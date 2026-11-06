@@ -15,6 +15,7 @@ import { PermissionError, ValidationError } from "@/lib/logging/errors";
 import { runAsTenant } from "@/lib/tenant/context";
 import { tenantScopeExtension } from "@/lib/tenant/prisma-scope";
 import { SHARE_PERMISSION } from "@/lib/tenant/sharing";
+import { TENANT_BEYOND_REACH } from "@/lib/tenant/sharing-reach";
 
 const app = vi.hoisted(() => ({ client: undefined as unknown, requestTenant: null as string | null }));
 const mocks = vi.hoisted(() => ({ ctx: null as unknown, audit: vi.fn() }));
@@ -26,7 +27,7 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/prisma", () => ({ get default() { return app.client; } }));
 // No destination keeps a backup here, who holds what is the subject.
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: vi.fn(async () => null) } }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: mocks.audit } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 // The request of an API key, with the checks of the permissions reduced to its list.
 vi.mock("@/lib/auth/access-control", async (importOriginal) => ({
@@ -130,19 +131,32 @@ describe("Share with customers in a platform group of some tenants", () => {
         expect(await reachOf("u-root")).toBe("all");
     });
 
-    it("offers only the tenants it reaches to give a database to, and still names every tenant that holds one", async () => {
+    it("offers only the tenants it reaches to give a database to, and shows a tenant beyond it by no id and no name", async () => {
         const model = await asHome(async () => databaseAssignmentService.forSource("shared-mysql", NOW, await reachOf("u-desk")));
 
         expect(model.customers.map((tenant) => tenant.id)).toEqual(["acme"]);
-        expect(model.tenants.map((tenant) => tenant.id)).toEqual(["acme", "globex", "initech"]);
-        expect(model.databases.find((row) => row.name === "shop_globex")?.owner?.tenantName).toBe("Globex");
-        expect(model.rules.map((rule) => rule.tenantName).sort()).toEqual(["Acme", "Globex"]);
+        // Initech holds nothing, so the filters do not know it, Globex goes by the one neutral name.
+        expect(model.tenants).toEqual([{ id: "acme", name: "Acme" }, TENANT_BEYOND_REACH]);
+        expect(model.databases.find((row) => row.name === "shop_globex")?.owner).toMatchObject({ tenantId: TENANT_BEYOND_REACH.id, tenantName: "Another tenant" });
+        expect(model.databases.find((row) => row.name === "blog_one")?.owner).toMatchObject({ tenantId: TENANT_BEYOND_REACH.id, tenantName: "Another tenant", via: "rule" });
+        expect(model.databases.find((row) => row.name === "shop_acme")?.owner).toMatchObject({ tenantId: "acme", tenantName: "Acme" });
+        expect(model.rules.map((rule) => [rule.pattern, rule.tenantId, rule.tenantName])).toEqual([
+            ["blog_*", TENANT_BEYOND_REACH.id, "Another tenant"],
+            ["crm_*", "acme", "Acme"],
+        ]);
+        expect(model.assignments.map((row) => [row.databaseName, row.tenantId, row.tenantName]).sort()).toEqual([
+            ["shop_acme", "acme", "Acme"],
+            ["shop_globex", TENANT_BEYOND_REACH.id, "Another tenant"],
+        ]);
+        // Nothing of the model names a tenant beyond the reach or carries its id.
+        const text = JSON.stringify(model);
+        for (const word of ['"globex"', "Globex", '"initech"', "Initech"]) expect(text).not.toContain(word);
     });
 
     it("gives a database and a rule to a tenant it reaches, and takes back what that tenant holds", async () => {
         const reach = await reachOf("u-desk");
-        expect(await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "free_db", tenantId: "acme" }], "u-desk", NOW, reach))).toEqual({ changed: 1 });
-        expect(await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "shop_acme", tenantId: null }], "u-desk", NOW, reach))).toEqual({ changed: 1 });
+        expect(await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "free_db", tenantId: "acme" }], "u-desk", NOW, reach))).toMatchObject({ changed: 1 });
+        expect(await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "shop_acme", tenantId: null }], "u-desk", NOW, reach))).toMatchObject({ changed: 1 });
         await asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "new_*", tenantId: "acme" }, NOW, reach));
         await asHome(() => databaseAssignmentService.setRuleOnDemand("shared-mysql", "r-crm", 2, reach));
 
@@ -152,21 +166,30 @@ describe("Share with customers in a platform group of some tenants", () => {
     it("cannot give a database or a rule to a tenant it does not reach", async () => {
         const reach = await reachOf("u-desk");
         await expect(asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "free_db", tenantId: "globex" }], "u-desk", NOW, reach)))
-            .rejects.toThrow("Your platform group does not reach Globex, so you cannot give it a database.");
+            .rejects.toThrow("Your platform group does not reach this tenant, so you cannot give it a database.");
         await expect(asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "free_*", tenantId: "initech" }, NOW, reach)))
-            .rejects.toThrow("Your platform group does not reach Initech, so you cannot give it a database.");
+            .rejects.toThrow("Your platform group does not reach this tenant, so you cannot give it a database.");
 
         expect(await holders()).toEqual(BEFORE);
         expect(await base.databaseAssignmentRule.count()).toBe(2);
+    });
+
+    it("answers a tenant beyond its reach and a tenant that does not exist alike, so neither tells the other apart", async () => {
+        const reach = await reachOf("u-desk");
+        const OUTSIDE = "Your platform group does not reach this tenant, so you cannot give it a database.";
+        for (const tenantId of ["globex", "no-such-tenant"]) {
+            await expect(asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "free_db", tenantId }], "u-desk", NOW, reach))).rejects.toThrow(OUTSIDE);
+            await expect(asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "free_*", tenantId }, NOW, reach))).rejects.toThrow(OUTSIDE);
+        }
     });
 
     it("cannot take a database back from a tenant it does not reach, nor give it to a tenant it reaches, by name or by a rule", async () => {
         const reach = await reachOf("u-desk");
         const assign = (databaseName: string, tenantId: string | null) => asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName, tenantId }], "u-desk", NOW, reach));
 
-        await expect(assign("shop_globex", null)).rejects.toThrow("shop_globex belongs to Globex, which your platform group does not reach, so you cannot change it.");
+        await expect(assign("shop_globex", null)).rejects.toThrow("shop_globex belongs to a tenant your platform group does not reach, so you cannot change it.");
         await expect(assign("shop_globex", "acme")).rejects.toBeInstanceOf(ValidationError);
-        await expect(assign("blog_one", null)).rejects.toThrow("blog_one belongs to Globex");
+        await expect(assign("blog_one", null)).rejects.toThrow("blog_one belongs to a tenant your platform group does not reach");
         // A list that touches one of them changes nothing at all.
         await expect(asHome(() => databaseAssignmentService.assign("shared-mysql", [
             { databaseName: "free_db", tenantId: "acme" },
@@ -179,10 +202,10 @@ describe("Share with customers in a platform group of some tenants", () => {
     it("leaves the rules of a tenant it does not reach alone, and adds no rule that would outrank one", async () => {
         const reach = await reachOf("u-desk");
         await expect(asHome(() => databaseAssignmentService.removeRule("shared-mysql", "r-blog", NOW, reach)))
-            .rejects.toThrow("The rule blog_* gives to Globex, which your platform group does not reach, so you cannot change it.");
-        await expect(asHome(() => databaseAssignmentService.setRuleOnDemand("shared-mysql", "r-blog", 2, reach))).rejects.toThrow("The rule blog_* gives to Globex");
+            .rejects.toThrow("The rule blog_* gives to a tenant your platform group does not reach, so you cannot change it.");
+        await expect(asHome(() => databaseAssignmentService.setRuleOnDemand("shared-mysql", "r-blog", 2, reach))).rejects.toThrow("The rule blog_* gives to a tenant your platform group does not reach");
         await expect(asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "blog_*", tenantId: "acme", priority: 5 }, NOW, reach)))
-            .rejects.toThrow("The rule would take blog_one from Globex, which your platform group does not reach. Give it a lower priority or a narrower pattern.");
+            .rejects.toThrow("The rule would take blog_one from a tenant your platform group does not reach. Give it a lower priority or a narrower pattern.");
 
         // A rule below the one of Globex takes nothing from it.
         await asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "blog_*", tenantId: "acme", priority: -5 }, NOW, reach));
@@ -192,8 +215,9 @@ describe("Share with customers in a platform group of some tenants", () => {
 
     it("changes neither the backups on demand nor the server of a database a tenant it does not reach holds", async () => {
         const reach = await reachOf("u-desk");
-        await expect(asHome(() => databaseAssignmentService.setOnDemand("shared-mysql", "shop_globex", 3, reach))).rejects.toThrow("shop_globex belongs to Globex");
-        await expect(asHome(() => moveDatabase("shared-mysql", { databaseName: "shop_globex", toSourceId: "new-mysql" }, "u-desk", NOW, reach))).rejects.toThrow("shop_globex belongs to Globex");
+        const words = "shop_globex belongs to a tenant your platform group does not reach, so you cannot change it.";
+        await expect(asHome(() => databaseAssignmentService.setOnDemand("shared-mysql", "shop_globex", 3, reach))).rejects.toThrow(words);
+        await expect(asHome(() => moveDatabase("shared-mysql", { databaseName: "shop_globex", toSourceId: "new-mysql" }, "u-desk", NOW, reach))).rejects.toThrow(words);
 
         expect(await base.databaseAssignment.findUnique({ where: { id: "a-globex" } })).toMatchObject({ validUntil: null, onDemandPerDay: null, movedToSourceId: null });
         await asHome(() => databaseAssignmentService.setOnDemand("shared-mysql", "shop_acme", 3, reach));
@@ -205,6 +229,9 @@ describe("Share with customers in a platform group of some tenants", () => {
             const reach = await reachOf(userId);
             const model = await asHome(() => databaseAssignmentService.forSource("shared-mysql", NOW, reach));
             expect(model.customers.map((tenant) => tenant.id)).toEqual(["acme", "globex", "initech"]);
+            expect(model.tenants.map((tenant) => tenant.id)).toEqual(["acme", "globex", "initech"]);
+            expect(model.databases.find((row) => row.name === "shop_globex")?.owner).toMatchObject({ tenantId: "globex", tenantName: "Globex" });
+            expect(model.rules.map((rule) => rule.tenantName)).toEqual(["Globex", "Acme"]);
         }
         const reach = await reachOf("u-msp");
         await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "shop_globex", tenantId: "initech" }, { databaseName: "blog_one", tenantId: null }], "u-msp", NOW, reach));
@@ -224,12 +251,14 @@ describe("the API of a hosting panel with the key of a person of some tenants", 
     const put = (assignments: { database: string; tenantId: string | null }[]) =>
         route.PUT(new Request("http://dbackup.local/api/adapters/shared-mysql/database-assignments", { method: "PUT", body: JSON.stringify({ assignments }) }) as never, params);
 
-    it("lists the tenants the owner of the key reaches as customers", async () => {
+    it("lists the tenants the owner of the key reaches as customers, and names no other", async () => {
         keyOf("u-desk");
         const body = await (await route.GET(new Request("http://dbackup.local") as never, params)).json();
 
         expect(body.data.customers).toEqual([{ id: "acme", name: "Acme" }]);
-        expect(body.data.tenants.map((tenant: { id: string }) => tenant.id)).toEqual(["acme", "globex", "initech"]);
+        expect(body.data.tenants).toEqual([{ id: "acme", name: "Acme" }, TENANT_BEYOND_REACH]);
+        const text = JSON.stringify(body);
+        for (const word of ['"globex"', "Globex", '"initech"', "Initech"]) expect(text).not.toContain(word);
     });
 
     it("gives to and takes from the tenants the owner of the key reaches, and refuses the others with a clear sentence", async () => {
@@ -240,12 +269,14 @@ describe("the API of a hosting panel with the key of a person of some tenants", 
 
         const refused = await put([{ database: "free_db", tenantId: "globex" }]);
         expect(refused.status).toBe(400);
-        expect((await refused.json()).error).toBe("Your platform group does not reach Globex, so you cannot give it a database.");
+        expect((await refused.json()).error).toBe("Your platform group does not reach this tenant, so you cannot give it a database.");
 
         const takenBack = await put([{ database: "shop_globex", tenantId: null }]);
         expect(takenBack.status).toBe(400);
-        expect((await takenBack.json()).error).toBe("shop_globex belongs to Globex, which your platform group does not reach, so you cannot change it.");
+        expect((await takenBack.json()).error).toBe("shop_globex belongs to a tenant your platform group does not reach, so you cannot change it.");
         expect(mocks.audit).toHaveBeenCalledTimes(1);
+        // The entry names the server, with the API key of the request.
+        expect(mocks.audit).toHaveBeenCalledWith("u-desk", "UPDATE", "ADAPTER", expect.objectContaining({ name: "Shared MySQL", change: "Databases assigned" }), "shared-mysql", { apiKeyId: "key-u-desk" });
         // The route gives from the moment of the request on.
         expect(await holders(new Date())).toEqual({ ...BEFORE, free_db: "acme" });
     });

@@ -75,6 +75,40 @@ describe("sign-ins in the audit log, written by the server", () => {
         expect(mocks.log).toHaveBeenCalledWith(null, "LOGIN_FAILED", "AUTH", expect.objectContaining({ reason: "unknown_email" }), undefined, expect.any(Object));
     });
 
+    it("writes a turned down code of the second factor for the account of the first step, but nobody as its author", async () => {
+        mocks.user.mockResolvedValue({ id: "lena", email: "lena@example.ch" });
+        const findVerificationValue = vi.fn(async (identifier: string) => (identifier === "2fa-abc" ? { value: "lena" } : null));
+        const getSignedCookie = vi.fn(async (name: string) => (name === "better-auth.two_factor" ? "2fa-abc" : null));
+
+        await recordSignIn({
+            path: "/two-factor/verify-totp",
+            headers,
+            getSignedCookie,
+            context: { returned: { statusCode: 401 }, secret: "s", createAuthCookie: (name: string) => ({ name: `better-auth.${name}` }), internalAdapter: { findVerificationValue } },
+        });
+
+        expect(mocks.user).toHaveBeenCalledWith({ where: { id: "lena" }, select: { id: true, email: true } });
+        expect(mocks.log).toHaveBeenCalledWith(null, "LOGIN_FAILED", "AUTH", { method: "two-factor", email: "lena@example.ch", reason: "wrong_code" }, "lena", {
+            ipAddress: "198.51.100.23",
+            userAgent: "Mozilla/5.0 Firefox/131.0",
+            tenantId: "default",
+        });
+    });
+
+    it("writes a turned down second factor without an account where better-auth does not say whose it was, and a turned down passkey", async () => {
+        await recordSignIn({ path: "/two-factor/verify-backup-code", headers, context: { returned: { statusCode: 401 } } });
+        await recordSignIn({ path: "/passkey/verify-authentication", headers, context: { returned: { statusCode: 400 } } });
+
+        expect(mocks.log).toHaveBeenNthCalledWith(1, null, "LOGIN_FAILED", "AUTH", { method: "two-factor", reason: "wrong_code" }, undefined, expect.any(Object));
+        expect(mocks.log).toHaveBeenNthCalledWith(2, null, "LOGIN_FAILED", "AUTH", { method: "passkey", reason: "passkey_refused" }, undefined, expect.any(Object));
+    });
+
+    it("writes no failed sign-in for a wrong code while the second factor is set up, which signs nobody in", async () => {
+        await recordSignIn({ path: "/two-factor/verify-totp", headers, context: { session: { session: {} }, returned: { statusCode: 401 } } });
+
+        expect(mocks.log).not.toHaveBeenCalled();
+    });
+
     it("writes nothing for other endpoints or a sign-in that went through without a session", async () => {
         await recordSignIn({ path: "/get-session", headers, context: { newSession: session() } });
         await recordSignIn({ path: "/sign-in/email", headers, context: { returned: { twoFactorRedirect: true } } });

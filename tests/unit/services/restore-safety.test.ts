@@ -5,6 +5,9 @@ import prisma from '@/lib/prisma';
 import { registry } from '@/lib/core/registry';
 import { compareVersions } from '@/lib/utils';
 
+/** A platform admin with a session, who may restore into any target. */
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+
 // Mocks
 vi.mock('@/lib/prisma', () => ({
     default: {
@@ -112,7 +115,7 @@ describe('Restore Service Safety Checks', () => {
             storageConfigId: 'storage-1',
             file: '/backup.sql',
             targetSourceId: 'target-1'
-        })).rejects.toThrow(/newer database version/);
+        }, PLATFORM_ADMIN)).rejects.toThrow(/newer database version/);
 
         // Ensure we didn't start execution
         expect(prisma.execution.create).not.toHaveBeenCalled();
@@ -141,7 +144,7 @@ describe('Restore Service Safety Checks', () => {
             storageConfigId: 'storage-1',
             file: '/backup.sql',
             targetSourceId: 'target-1'
-        })).rejects.toThrow('PASSED_CHECKS');
+        }, PLATFORM_ADMIN)).rejects.toThrow('PASSED_CHECKS');
     });
 
     it('should skip check if metadata is missing', async () => {
@@ -154,7 +157,7 @@ describe('Restore Service Safety Checks', () => {
              storageConfigId: 'storage-1',
              file: '/backup.sql',
              targetSourceId: 'target-1'
-         })).rejects.toThrow('PASSED_CHECKS');
+         }, PLATFORM_ADMIN)).rejects.toThrow('PASSED_CHECKS');
     });
 
     it('should fail if target adapter is not found', async () => {
@@ -165,6 +168,6 @@ describe('Restore Service Safety Checks', () => {
             storageConfigId: 'storage-1',
             file: '/backup.sql',
             targetSourceId: 'invalid-id'
-        })).rejects.toThrow('Target source not found');
+        }, PLATFORM_ADMIN)).rejects.toThrow('Target source not found');
     });
 });

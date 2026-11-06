@@ -5,6 +5,7 @@ import { registerAdapters } from "@/lib/adapters";
 import type { AdapterConfig as ResolvedConfig, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { NotFoundError, wrapError } from "@/lib/logging/errors";
+import { STORAGE_ROLES, STORAGE_ROLE_VALUES, type StorageRole } from "@/lib/core/storage-roles";
 import { logger } from "@/lib/logging/logger";
 import { runAsSystem } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
@@ -60,10 +61,34 @@ export async function viewerOf(row: { tenantId: string }, tenantId?: string | nu
     return tenantId ?? (await currentTenantId()) ?? row.tenantId;
 }
 
-/** The row of a storage connection a tenant may use, with its view. Throws a NotFoundError otherwise. */
-export async function findDestination(id: string, tenantId?: string | null): Promise<{ row: AdapterConfig; mode: StorageViewMode; tenantId: string }> {
+/**
+ * Which roles of a storage connection a lookup accepts. A destination by default, since the backups
+ * of a destination are what list, download, delete, lock, verify and analyze act on. A directory
+ * source holds the files of a customer and no backups, so those routes never reach one by its id.
+ * Only a lookup that legitimately reads or writes a source, like the target of a file restore and
+ * its check of the folder, asks for `ANY_STORAGE_ROLE`.
+ */
+export interface DestinationLookup {
+    roles?: readonly StorageRole[];
+}
+
+/** A destination or a directory source, for the lookups of a restore of files. */
+export const ANY_STORAGE_ROLE: readonly StorageRole[] = STORAGE_ROLE_VALUES;
+
+const DESTINATION_ONLY: readonly StorageRole[] = [STORAGE_ROLES.DESTINATION];
+
+/** Whether a row of a storage connection serves one of the roles a lookup accepts. */
+function servesRole(row: { storageRole: string | null }, roles: readonly StorageRole[]): boolean {
+    return (roles as readonly string[]).includes(row.storageRole ?? STORAGE_ROLES.DESTINATION);
+}
+
+/**
+ * The row of a storage connection a tenant may use, with its view. Throws a NotFoundError otherwise,
+ * also for a connection of another role than the lookup accepts, a destination when it names none.
+ */
+export async function findDestination(id: string, tenantId?: string | null, lookup: DestinationLookup = {}): Promise<{ row: AdapterConfig; mode: StorageViewMode; tenantId: string }> {
     const row = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id } }));
-    if (!row || row.type !== "storage") throw new NotFoundError(STORAGE, id);
+    if (!row || row.type !== "storage" || !servesRole(row, lookup.roles ?? DESTINATION_ONLY)) throw new NotFoundError(STORAGE, id);
     const viewer = await viewerOf(row, tenantId);
     const mode = await viewModeOf(row, viewer);
     if (!mode) throw new NotFoundError(STORAGE, id);
@@ -102,8 +127,11 @@ export async function openRow(row: AdapterConfig, mode: StorageViewMode): Promis
     }
 }
 
-/** Opens a storage connection a tenant may use. Throws a NotFoundError for one it may not. */
-export async function openDestination(id: string, tenantId?: string | null): Promise<OpenDestination> {
-    const found = await findDestination(id, tenantId);
+/**
+ * Opens a storage connection a tenant may use. Throws a NotFoundError for one it may not, and for
+ * a directory source unless the lookup asks for it, see `DestinationLookup`.
+ */
+export async function openDestination(id: string, tenantId?: string | null, lookup: DestinationLookup = {}): Promise<OpenDestination> {
+    const found = await findDestination(id, tenantId, lookup);
     return { ...found, ...(await openRow(found.row, found.mode)) };
 }

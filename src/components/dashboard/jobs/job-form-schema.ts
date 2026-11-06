@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { isValidCron } from "@/lib/core/cron";
+import { JOB_FOLDER_NAME, isUnsafeJobFolderName } from "@/lib/core/job-folder";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import type { ProvidedTerms } from "@/lib/adapters/dto";
 
@@ -85,7 +86,8 @@ const directorySourceSchema = z.object({
 
 export const jobSchema = z
     .object({
-        name: z.string().trim().min(1, "Give the job a name."),
+        // The same rule the job service checks, so the field says it before a save is refused.
+        name: z.string().trim().min(1, "Give the job a name.").refine((name) => !isUnsafeJobFolderName(name), JOB_FOLDER_NAME),
         enabled: z.boolean(),
         /** Own cron expression, or one that follows a schedule preset. */
         scheduleMode: z.enum(["own", "preset"]),

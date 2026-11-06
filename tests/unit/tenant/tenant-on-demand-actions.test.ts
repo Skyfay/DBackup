@@ -85,7 +85,7 @@ describe("backups on demand of a customer", () => {
     it("let a database follow the customer again, logged for the platform and for the tenant that shares the server", async () => {
         expect(await followTenantOnDemand("acme", "database", "a-1")).toEqual({ success: true });
         expect(mocks.service.follow).toHaveBeenCalledWith("acme", "database", "a-1", ["acme"]);
-        const details = expect.objectContaining({ change: "Backups on demand", tenant: "Acme", database: "shop", changes: [{ field: "Backups on demand", from: "Off here", to: "As the tenant" }] });
+        const details = expect.objectContaining({ name: "Shared MySQL", change: "Backups on demand", tenant: "Acme", database: "shop", changes: [{ field: "Backups on demand", from: "Off here", to: "As the tenant" }] });
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "ADAPTER", details, "srv-1", { tenantId: "default" });
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "ADAPTER", details, "srv-1", { tenantId: "msp-2" });
     });

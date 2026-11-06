@@ -41,16 +41,17 @@ const cases = [
     {
         name: "version-history",
         permission: PERMISSIONS.SOURCES.VIEW,
+        readsAllTenants: true,
         send: () => versionHistory.GET(new NextRequest("http://localhost/api/adapters/db-1/version-history"), { params: Promise.resolve({ id: "db-1" }) }),
     },
-    { name: "dropbox/validate-token", permission: PERMISSIONS.CREDENTIALS.READ, send: () => validate(dropbox.POST) },
-    { name: "onedrive/validate-token", permission: PERMISSIONS.CREDENTIALS.READ, send: () => validate(onedrive.POST) },
-    { name: "google-drive/validate-token", permission: PERMISSIONS.CREDENTIALS.READ, send: () => validate(googleDrive.POST) },
+    { name: "dropbox/validate-token", permission: PERMISSIONS.CREDENTIALS.READ, readsAllTenants: false, send: () => validate(dropbox.POST) },
+    { name: "onedrive/validate-token", permission: PERMISSIONS.CREDENTIALS.READ, readsAllTenants: false, send: () => validate(onedrive.POST) },
+    { name: "google-drive/validate-token", permission: PERMISSIONS.CREDENTIALS.READ, readsAllTenants: false, send: () => validate(googleDrive.POST) },
 ] as const;
 
 const admin = (allTenants: boolean, ...permissions: string[]): Ctx => ({ userId: "root", tenantId: allTenants ? null : "t-acme", allTenants, isPlatformAdmin: true, permissions, authMethod: "session" });
 
-describe.each(cases)("$name", ({ permission, send }) => {
+describe.each(cases)("$name", ({ permission, readsAllTenants, send }) => {
     beforeEach(() => {
         mocks.history.mockResolvedValue([]);
         mocks.credential.mockRejectedValue(new Error("not reached"));
@@ -65,8 +66,9 @@ describe.each(cases)("$name", ({ permission, send }) => {
         mocks.ctx = admin(true);
         expect((await send()).status).toBe(403);
 
+        // A saved login belongs to one tenant, so its check refuses All tenants with the permission too.
         mocks.ctx = admin(true, permission);
-        expect((await send()).status).toBe(200);
+        expect((await send()).status).toBe(readsAllTenants ? 200 : 403);
     });
 
     it("refuses someone without the permission", async () => {

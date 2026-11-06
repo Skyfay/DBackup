@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth/access-control";
 import { findVisibleAvatar } from "@/services/user/account-visibility";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 /**
  * The picture of a person, to whoever sees their name beside it, see `maySeePicture`. It shows in
@@ -11,7 +12,7 @@ import { findVisibleAvatar } from "@/services/user/account-visibility";
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return new NextResponse(null, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const avatar = await findVisibleAvatar(ctx, (await params).userId);
     if (!avatar) return new NextResponse(null, { status: 404 });

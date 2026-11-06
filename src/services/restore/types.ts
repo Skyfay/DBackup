@@ -1,6 +1,7 @@
 import type { TriggerInfo } from "@/lib/runner";
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import type { DatabaseMappingEntry } from "./database-mapping";
+import type { RestoreCaller } from "./restore-targets";
 
 /** Selects a directory entry (from a seekable v2 archive) to restore, and where to. */
 export interface DirectoryRestoreMapping {
@@ -96,4 +97,10 @@ export interface RestoreInput {
      * holds, see `assertTargetsConfirmed` in `customer-databases.ts`.
      */
     confirmedCustomerDatabases?: string[];
+    /**
+     * Who started the restore, set by `RestoreService` from its caller, never by a request. The
+     * restore of the directory sources writes the files only a platform admin may write by it, see
+     * `restoredFileRefusal`. Without it the restore writes them for nobody.
+     */
+    caller?: RestoreCaller;
 }

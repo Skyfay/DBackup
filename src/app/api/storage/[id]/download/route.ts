@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { registerAdapters } from "@/lib/adapters";
 import { storageService } from "@/services/storage/storage-service";
 import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
+import { randomUUID } from "crypto";
 import fsPromises from "fs/promises";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
@@ -11,15 +13,18 @@ import { auditService } from "@/services/audit-service";
 import { backupAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
 import { requestRefusal } from "@/lib/server/permission-refusal";
-import { configBackupRefusal } from "@/lib/server/config-backup-guard";
+import { backupPathRefusal, configBackupRefusal } from "@/lib/server/config-backup-guard";
 import { z } from "zod";
 
 const log = logger.child({ route: "storage/download" });
+
+/** What a download that failed answers, the reason goes to the log. */
+const DOWNLOAD_FAILED = "The download failed. The log of DBackup has the details.";
 registerAdapters();
 
 /** What the decrypted result is called - shared so a prepared download is named identically. */
@@ -66,7 +71,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -95,22 +100,22 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
             return tempFileDownloadResponse(claim.localFile.tempFile, claim.localFile.fileName, claim.localFile.contentType);
         }
 
-        const file = searchParams.get("file");
+        // An empty path is refused below like any other that names no file.
+        const file = searchParams.get("file") ?? "";
         const decrypt = searchParams.get("decrypt") === "true";
         const profileIdOverride = searchParams.get("profileIdOverride") || undefined;
         // Which database dump a decrypted download of a seekable archive should contain.
         const database = searchParams.get("database") || undefined;
 
-        if (!file || file.includes('..') || file.startsWith('/')) {
-             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
-        }
+        // A path that leaves the destination answers 400, see `assertBackupPath`.
+        const badPath = backupPathRefusal(file);
+        if (badPath) return badPath;
         const configBackup = await configBackupRefusal(ctx, params.id, file);
         if (configBackup) return configBackup;
 
         const tempDir = getTempDir();
-        // Use random suffix to avoid collision if multiple downloads happen
-        const tempName = `${path.basename(file)}_${Date.now()}`;
-        tempFile = path.join(tempDir, tempName);
+        // A name nobody can guess, so two downloads never meet and no one lays a file there first.
+        tempFile = path.join(tempDir, `download_${randomUUID()}`);
 
         // Delegate logic to Service with decrypt flag
         // Note: storageService handles config retrieval, decryption and adapter lookup
@@ -135,13 +140,11 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         if (keyRequired) return keyRequired;
 
         log.error("Download error", { storageId: params.id }, wrapError(error));
-        const errorMessage = getErrorMessage(error) || "An unknown error occurred";
-
-        if (errorMessage.includes("not found")) {
-            return NextResponse.json({ error: errorMessage }, { status: 404 });
+        if (error instanceof NotFoundError || getErrorMessage(error).includes("not found")) {
+            return NextResponse.json({ error: "The backup was not found." }, { status: 404 });
         }
 
-        return NextResponse.json({ error: errorMessage }, { status: 500 });
+        return NextResponse.json({ error: DOWNLOAD_FAILED }, { status: 500 });
     }
 }
 
@@ -164,7 +167,7 @@ const postBodySchema = z.object({
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -181,15 +184,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
         const { file, rawKeyHex, profileIdOverride, database, prepare } = parsed.data;
 
-        if (file.includes('..') || file.startsWith('/')) {
-            return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
-        }
+        const badPath = backupPathRefusal(file);
+        if (badPath) return badPath;
         const configBackup = await configBackupRefusal(ctx, params.id, file);
         if (configBackup) return configBackup;
 
         const tempDir = getTempDir();
-        const tempName = `${path.basename(file)}_${Date.now()}`;
-        tempFile = path.join(tempDir, tempName);
+        tempFile = path.join(tempDir, `download_${randomUUID()}`);
 
         const result = await storageService.downloadFile(params.id, file, tempFile, true, { rawKeyHex, profileIdOverride, database });
 
@@ -234,6 +235,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (keyRequired) return keyRequired;
 
         log.error("Decrypt-download (POST) error", { storageId: params.id }, wrapError(error));
-        return NextResponse.json({ error: getErrorMessage(error) || "An unknown error occurred" }, { status: 500 });
+        return NextResponse.json({ error: DOWNLOAD_FAILED }, { status: 500 });
     }
 }

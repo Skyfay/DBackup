@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -6,7 +7,8 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
-import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
+import { storedSecretsRefusal } from "@/lib/server/config-backup-target-guard";
+import { wrapError, ValidationError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { getAdapterType } from "@/services/adapters/adapter-list";
@@ -22,7 +24,7 @@ export async function POST(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -33,6 +35,10 @@ export async function POST(
         }
 
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
+        // A copy of the destination of the configuration backup keeps its logins in a connection
+        // its guard does not know, which its owner then points at another host.
+        const locked = await storedSecretsRefusal(ctx, params.id);
+        if (locked) return locked;
 
         // Without a name the copy gets a free one, and without a role it keeps the original's.
         let body: { name?: string; role?: string } = {};
@@ -67,7 +73,7 @@ export async function POST(
         log.error("Clone adapter error", { adapterId: params.id }, wrapError(error));
         return NextResponse.json({
             success: false,
-            error: getErrorMessage(error) || "Failed to clone adapter"
+            error: "The connection could not be copied."
         }, { status: 500 });
     }
 }

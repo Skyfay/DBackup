@@ -48,8 +48,8 @@ The view switch shows the timeline above the list: a row per person and API key,
 
 | Area | Entries |
 | :--- | :--- |
-| Sign-in | Sign-ins with a password, a passkey, a second factor or single sign-on, sign-ups through a sign-in provider, sign-outs, failed password sign-ins, linked and unlinked sign-in accounts, sign-in providers |
-| Connections | Created, changed, cloned and deleted connections, storage alerts |
+| Sign-in | Sign-ins with a password, a passkey, a second factor or single sign-on, sign-ups through a sign-in provider, sign-outs, failed password sign-ins, linked and unlinked sign-in accounts, the own second factor turned on and off, the own authenticator app removed beside a passkey as second factor, new backup codes, own passkeys added, renamed and deleted, sign-in providers |
+| Connections | Created, changed, cloned and deleted connections, connection tests and SSH login tests, reads of the databases of a source, storage alerts |
 | Jobs | Created, changed, cloned and deleted jobs, runs started by hand or through the API, cancelled runs |
 | Backups | Downloads, download links, restores, restored files, checked, locked and deleted backups, cancelled restores and backups on demand |
 | Vault | Encryption keys, revealed keys and secrets, recovery kits, credential profiles |

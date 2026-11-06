@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
@@ -31,7 +32,7 @@ const QuerySchema = z.object({
  */
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.HISTORY.READ);

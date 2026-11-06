@@ -6,17 +6,30 @@
 
 import prisma from "@/lib/prisma";
 import { getDataRetentionSetting, parseRetentionDays } from "@/lib/core/data-retention";
-import { ConflictError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ConflictError, PermissionError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { userMessage } from "@/lib/logging/user-message";
+import { BULK_ROW_FAILED } from "@/lib/core/bulk";
 import { accountRefusal } from "@/lib/auth/account-access";
+import type { OwnerMembership } from "@/lib/auth/owner-permissions";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { sharingChanged } from "@/services/tenant/shared-servers";
+import { decryptConfig } from "@/lib/crypto";
+import { assertMayManageHostLocal } from "@/services/adapters/adapter-create";
+import { assertCommandFields } from "@/lib/adapters/config-check";
+import { registerAdapters } from "@/lib/adapters";
+import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
+import { CONFIG_BACKUP_LOGIN_APPLY_LOCKED } from "@/lib/core/config-backup-locks";
+import type { AuthContext } from "@/lib/auth/access-control";
+import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { assertOffSharedPlaces } from "@/services/adapters/shared-place";
 import { restoreSnapshot } from "./trash-restore";
-import type { UserSnapshot } from "./trash-snapshot";
+import { assertStoredLoginFields, assertStoredLoginOffHost } from "@/services/auth/credential-service";
+import type { CredentialSnapshot, UserSnapshot } from "./trash-snapshot";
 import { isTrashKind, type TrashKind, type TrashPart, type TrashRestoreResult, type TrashRow } from "./trash-types";
 
 const log = logger.child({ service: "TrashService" });
@@ -40,14 +53,18 @@ export function mayHandle(viewer: TrashViewer, entry: { permission: string; supe
  * admin any, and one only a platform admin brings back no one else. Any other account works in the
  * tenant of its entry alone, so the viewer has to be allowed to change such an account, see
  * `accountRefusal`: whoever manages the accounts of the platform in a reach that covers that
- * tenant, or the admin of that tenant.
+ * tenant, or the admin of that tenant, and only while no group of its snapshot may do more than
+ * they may there (`groups` and `permissionsByTenant` from `trashAccountCaps`).
  */
-export function mayRestoreAccount(viewer: TrashViewer & { tenantId: string | null; reach?: PlatformReach }, entry: { permission: string; superAdminOnly: boolean; tenantId: string }): boolean {
+export function mayRestoreAccount(
+    viewer: TrashViewer & { tenantId: string | null; reach?: PlatformReach; permissionsByTenant?: Readonly<Record<string, readonly string[]>> },
+    entry: { permission: string; superAdminOnly: boolean; tenantId: string; groups?: readonly OwnerMembership[] }
+): boolean {
     if (viewer.isPlatformAdmin) return true;
     if (entry.superAdminOnly) return false;
     const mayChange = viewer.permissions.includes(entry.permission) || viewer.permissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
-    const actor = { isPlatformAdmin: false, tenantId: viewer.tenantId, permissions: viewer.permissions, reach: viewer.reach };
-    return mayChange && !accountRefusal(actor, { isPlatformAdmin: false, tenantIds: [entry.tenantId] });
+    const actor = { isPlatformAdmin: false, tenantId: viewer.tenantId, permissions: viewer.permissions, reach: viewer.reach, permissionsByTenant: viewer.permissionsByTenant };
+    return mayChange && !accountRefusal(actor, { isPlatformAdmin: false, tenantIds: [entry.tenantId], groups: entry.groups ?? [] });
 }
 
 /** How long a deleted record stays, from Data retention. */
@@ -150,11 +167,63 @@ async function findEntry(id: string, anyTenantAccounts: boolean) {
     return account?.kind === "user" ? account : null;
 }
 
+/** What the check of a restored connection reads of its snapshot. */
+interface DeletedConnection {
+    type: string;
+    storageRole?: string | null;
+    adapterId: string;
+    config: string;
+    primaryCredentialId?: string | null;
+    sshCredentialId?: string | null;
+}
+
+/** Who restores, for the guards that ask whether a platform admin with a session acts. */
+export type TrashCaller = Pick<AuthContext, "isPlatformAdmin" | "authMethod">;
+
+/** A caller with no right of a platform admin, for a restore that names nobody. */
+const NO_PLATFORM_ADMIN: TrashCaller = { isPlatformAdmin: false, authMethod: "session" };
+
+/** The id of a saved login that still exists, null for none or one deleted since the snapshot. */
+async function presentLogin(id: string | null | undefined): Promise<string | null> {
+    if (!id) return null;
+    return (await prisma.credentialProfile.findUnique({ where: { id }, select: { id: true } })) ? id : null;
+}
+
+/**
+ * The checks of a save that a connection meets again when it comes back from Recently deleted,
+ * since a restore stores it like a save: its saved logins fit its type, a saved login of the
+ * destination of the configuration backup signs in on it through a platform admin alone, and a
+ * storage connection keeps out of the folder of a destination the tenant shares with customers. A
+ * login deleted since the snapshot counts as none, the restore drops it with a note.
+ *
+ * @throws ValidationError for a login of the wrong type or a place a shared destination holds.
+ * @throws PermissionError for a login of the configuration backup without a platform admin.
+ */
+async function assertConnectionSaveChecks(record: DeletedConnection, config: Record<string, unknown>, caller: TrashCaller): Promise<void> {
+    const primaryCredentialId = await presentLogin(record.primaryCredentialId);
+    const sshCredentialId = await presentLogin(record.sshCredentialId);
+    if (await savedLoginRefusal(caller, primaryCredentialId, sshCredentialId)) {
+        throw new PermissionError("platform admin", { message: CONFIG_BACKUP_LOGIN_APPLY_LOCKED });
+    }
+    registerAdapters();
+    await validateCredentialAssignments(record.adapterId, primaryCredentialId, sshCredentialId);
+    if (record.type === "storage") await assertOffSharedPlaces(record.adapterId, config, { primaryCredentialId, sshCredentialId });
+}
+
+/** The config of a deleted connection in plain text, empty when it cannot be read. */
+function storedConfig(config: string): Record<string, unknown> {
+    try {
+        return decryptConfig(JSON.parse(config)) as Record<string, unknown>;
+    } catch {
+        return {};
+    }
+}
+
 /**
  * Restores deleted records under their own ids, each in a transaction of its own. A name someone took
  * meanwhile comes back as a conflict, and `newName` restores a single record under another one.
  */
-export async function restoreFromTrash(ids: string[], options: { newName?: string; anyTenantAccounts?: boolean } = {}): Promise<TrashRestoreResult> {
+export async function restoreFromTrash(ids: string[], options: { newName?: string; anyTenantAccounts?: boolean; caller?: TrashCaller } = {}): Promise<TrashRestoreResult> {
     const result: TrashRestoreResult = { restored: [], conflicts: [], failed: [] };
     const newName = ids.length === 1 ? options.newName?.trim() || undefined : undefined;
 
@@ -174,8 +243,24 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
             // A connection that comes back is one more of its kind, which the platform may not let
             // the tenant add itself. Asked before the transaction, which holds the one connection to SQLite.
             if (kind === "connection") {
-                const { record } = JSON.parse(entry.data) as { record: { type: string; storageRole?: string | null } };
+                const { record } = JSON.parse(entry.data) as { record: DeletedConnection };
+                const config = storedConfig(record.config);
                 await assertMayAdd(record.type, record.storageRole);
+                // One that reaches the server DBackup runs on comes back through a platform admin alone.
+                await assertMayManageHostLocal(record.adapterId, config, record, true);
+                // Nor with a port, a host or a user that could not reach a command line, which an
+                // earlier version may have stored, see `config-check.ts`.
+                assertCommandFields(config);
+                // Nor past the checks of its logins and its place a save asks.
+                await assertConnectionSaveChecks(record, config, options.caller ?? NO_PLATFORM_ADMIN);
+            }
+            // A saved login with the SSH agent of the server comes back through a platform admin alone,
+            // like when it is created, since every connection that used it logs in with it again.
+            if (kind === "credential") {
+                const { record } = JSON.parse(entry.data) as CredentialSnapshot;
+                await assertStoredLoginOffHost(record.type, record.data);
+                // Nor with a password or a username a save refuses today, which an earlier version may have stored.
+                await assertStoredLoginFields(record.id, record.type, record.data);
             }
             // An account belongs to no tenant, so its Undo also works in All tenants and in another
             // tenant, which changes no tenant. Its entry lives in the tenant that keeps it.
@@ -185,8 +270,8 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
             if (error instanceof ConflictError) {
                 result.conflicts.push({ id, kind, name: entry.name, message: error.message });
             } else {
-                if (!(error instanceof ValidationError)) log.error("Restoring a deleted record failed", { id, kind }, wrapError(error));
-                result.failed.push({ id, name: entry.name, error: getErrorMessage(error) || "It could not be restored." });
+                // A sentence written for the user passes, the words of the database stay in the log.
+                result.failed.push({ id, name: entry.name, error: userMessage(error, BULK_ROW_FAILED, log, "Restoring a deleted record failed", { id, kind }) });
             }
         }
     }

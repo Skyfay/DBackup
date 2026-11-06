@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
 import { auditService } from "@/services/audit-service";
@@ -7,11 +8,11 @@ import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } 
 import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
-import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
-import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
+import { configBackupTargetResponse, savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { wrapError, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { deleteAdapter } from "@/services/adapters/adapter-service";
-import { getAdapterType } from "@/services/adapters/adapter-list";
+import { getAdapterType, getConnectionLoginIds } from "@/services/adapters/adapter-list";
 import { updateAdapter, UnsupportedSettingError } from "@/services/adapters/adapter-update";
 import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
 
@@ -25,7 +26,7 @@ export async function DELETE(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -64,10 +65,7 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: error.message }, { status: 400 });
         }
         log.error("Delete adapter error", { adapterId: params.id }, wrapError(error));
-        return NextResponse.json({
-            success: false,
-            error: getErrorMessage(error) || "Failed to delete adapter"
-        }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The connection could not be deleted." }, { status: 500 });
     }
 }
 
@@ -77,7 +75,7 @@ export async function PUT(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -94,6 +92,11 @@ export async function PUT(
 
         const body = await req.json();
         const { name, config, metadata, primaryCredentialId, sshCredentialId, storageRole } = body;
+        // Nor does another connection sign in with the logins of that destination, the ones the
+        // request names and, for a new config, the ones it keeps.
+        const kept = config !== undefined ? await getConnectionLoginIds(params.id) : [];
+        const loginLocked = await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId, ...kept);
+        if (loginLocked) return loginLocked;
 
         let result;
         try {

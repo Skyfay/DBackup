@@ -61,7 +61,7 @@ Where the people of customers sign in through the provider too, give it **No gro
 
 Without it only people who already have an account in DBackup sign in through the provider. Their account is linked by its email on their first sign-in, when the provider marks the email as verified, and someone new is turned away.
 
-Deleting a group moves the new people of its providers where its members go. With **No group** a provider of the platform adds them without a group, and a provider of a tenant stops adding people, since it adds them into a group of its tenant only.
+Deleting a group moves the new people of its providers where its members go, also for a provider of the platform. The group they go to may do no more than whoever deletes may, like for its members. With **No group** a provider of the platform adds them without a group, and a provider of a tenant stops adding people, since it adds them into a group of its tenant only.
 
 A provider of the platform links an account that works only in customer tenants just for someone signed in to that account already, who clicks **Link** beside the provider under **Profile**. A first sign-in through it never takes over such an account by its email, and ends on the login page with **Account not linked**. A provider signs in only accounts linked to it.
 
@@ -72,8 +72,8 @@ A provider belongs to the platform or to one [tenant](/user-guide/admin/tenants)
 - It never shows as a button. Someone types an email of its domain, the login page says "acme.ch signs in with Acme Entra ID" and offers **Continue with Acme Entra ID**. The page asks the server about the one domain typed, so it never lists the domains of the customers.
 - It needs an **Email domain**, and while it adds new people, a group of its tenant. Without a group it adds nobody. One domain belongs to one provider, also among the providers of the platform.
 - It signs in only emails of exactly its domain, never a subdomain, a platform admin or an account of a platform group.
-- New people land in its tenant with its group. An existing account of its domain that works in no tenant yet joins the tenant with that group on its first sign-in through it, while the provider adds new people. Without that, only members of the tenant sign in through it.
-- It never links or signs in an account that works in other tenants but not in its own, also one linked before, since another tenant made that account.
+- New people land in its tenant with its group. Without that, only members of the tenant sign in through it.
+- It never links or signs in an account that works in other tenants but not in its own, also one linked before, since another tenant made that account. An account that works in no tenant counts as one of the home tenant, whose admins set its password, so a provider of a customer tenant never links or signs it in either. Such a person joins the tenant through an [invitation](/user-guide/admin/tenants#invitations).
 - A provider of the platform adds nobody whose email has its domain. The login page then says **Your organization has its own sign-in**, and the person enters their email to sign in through the provider of their tenant.
 - An account outside its tenant gets an email of its domain only from a platform admin or someone who manages the accounts of the platform, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant), so the admin of another tenant never makes an account it would sign in to.
 - Deleting the tenant deletes its providers and the links to them. The accounts stay.

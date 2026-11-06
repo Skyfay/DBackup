@@ -5,14 +5,16 @@
 
 import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { encryptConfig, decryptConfig, mergeSecrets } from "@/lib/crypto";
+import { encryptConfig, decryptConfig } from "@/lib/crypto";
 import { STORAGE_ROLES, isStorageRole, type StorageRole } from "@/lib/core/storage-roles";
 import type { AuditChange } from "@/lib/core/audit-types";
 import { registerAdapters } from "@/lib/adapters";
 import { layLoginsOver } from "@/lib/adapters/config-resolver";
+import { mergeStoredSecrets } from "@/lib/adapters/stored-secrets";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { validateStorageRole } from "@/lib/adapters/role-validation";
 import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
+import { assertConfigFitsSchema } from "@/lib/adapters/config-check";
 import { logger } from "@/lib/logging/logger";
 import { ConflictError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
@@ -20,7 +22,7 @@ import { currentTenantId } from "@/lib/tenant/current";
 import { isShared } from "@/services/sharing/destination-access";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { connectionChanges } from "./adapter-audit";
-import { assertMayReachHost } from "./adapter-create";
+import { assertMayManageHostLocal, assertMayReachHost } from "./adapter-create";
 import { assertOffSharedPlaces } from "./shared-place";
 
 registerAdapters();
@@ -80,9 +82,12 @@ const EXISTING_SELECT = {
  *
  * @throws ValidationError for a credential profile of the wrong type, an unknown role, a role
  *   change while a job still depends on the old one or the destination is shared, a new role the
- *   tenant may not add, a config that reaches the server DBackup runs on outside the platform or the
- *   local network its tenant blocks, a new place for the files of a shared destination, or a place
- *   that overlaps another destination the tenant shares with customers.
+ *   tenant may not add, a connection that reaches the server DBackup runs on, before or after the
+ *   edit, for anyone but a platform admin, see `assertMayManageHostLocal`, a config that reaches the
+ *   server DBackup runs on outside the platform or the
+ *   local network its tenant blocks, a new place for the files of a shared destination, a place
+ *   that overlaps another destination the tenant shares with customers, or a config that points
+ *   at another address and leaves a stored secret for it blank, without a saved login for it.
  * @throws UnsupportedSettingError for a role or shadow copies the adapter cannot serve.
  * @throws NotFoundError for a credential profile that does not exist.
  * @throws ConflictError when a connection of the same type has the name already.
@@ -104,8 +109,15 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
         }
     }
 
+    // The logins after the edit, which the checks below lay over the config like a run does.
+    const logins = {
+        primaryCredentialId: primaryCredentialId !== undefined ? primaryCredentialId ?? null : existing.primaryCredentialId ?? null,
+        sshCredentialId: sshCredentialId !== undefined ? sshCredentialId ?? null : existing.sshCredentialId ?? null,
+    };
+
     // The API returns secrets redacted, so an edit sends them back empty. They are filled from
     // the saved config before encrypting again, or a real secret would be overwritten with nothing.
+    // Only while the config still connects where it did, a new address needs its secrets typed again.
     let configString: string | undefined;
     // The merged config in plain text, for the snapshot check, which has to probe with the real secrets.
     let mergedConfig: Record<string, unknown> | undefined;
@@ -125,15 +137,13 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
     };
     if (config !== undefined) {
         const incoming = typeof config === "string" ? JSON.parse(config) : config;
-        mergedConfig = mergeSecrets(incoming, readExisting()) as Record<string, unknown>;
+        mergedConfig = mergeStoredSecrets(existing.adapterId, incoming, readExisting(), logins) as Record<string, unknown>;
+        // The config as it will be stored, its secrets filled in, has to fit the schema of its
+        // adapter, see `config-check.ts`. A secret a saved login holds counts as given.
+        assertConfigFitsSchema(existing.adapterId, mergedConfig);
         configString = JSON.stringify(encryptConfig(mergedConfig));
     }
 
-    // The logins after the edit, which the checks below lay over the config like a run does.
-    const logins = {
-        primaryCredentialId: primaryCredentialId !== undefined ? primaryCredentialId ?? null : existing.primaryCredentialId ?? null,
-        sshCredentialId: sshCredentialId !== undefined ? sshCredentialId ?? null : existing.sshCredentialId ?? null,
-    };
     const loginsChange = logins.primaryCredentialId !== (existing.primaryCredentialId ?? null)
         || logins.sshCredentialId !== (existing.sshCredentialId ?? null);
     // A config or a login can change what a connection reaches, a name or the metadata cannot.
@@ -162,6 +172,14 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
         await assertRoleFree(id, storageRole as StorageRole);
     }
 
+    // A connection that reaches the server DBackup runs on is changed by a platform admin alone, also
+    // by an edit that only renames it or moves it to a server of its own, see `host-local.ts`.
+    await assertMayManageHostLocal(
+        existing.adapterId,
+        readExisting(),
+        { primaryCredentialId: existing.primaryCredentialId ?? null, sshCredentialId: existing.sshCredentialId ?? null },
+        true
+    );
     // The same gate as on create, also for an edit that only switches the mode of the connection.
     if (placeMayMove) {
         await assertMayReachHost(existing.adapterId, () => mergedConfig ?? readExisting(), logins);

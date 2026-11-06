@@ -29,7 +29,7 @@ describe("changing the alerts of several destinations in one step", () => {
         vi.clearAllMocks();
         mocks.allowed = true;
         mocks.viewer = { id: "admin", tenantId: "acme", allTenants: false };
-        mocks.apply.mockResolvedValue({ succeeded: ["nas", "r2"], failed: [] });
+        mocks.apply.mockResolvedValue({ result: { succeeded: ["nas", "r2"], failed: [] }, names: ["NAS Backups", "Cloudflare R2"] });
     });
 
     it("hands the set alerts on and answers with what each destination did", async () => {
@@ -39,13 +39,13 @@ describe("changing the alerts of several destinations in one step", () => {
         expect(mocks.apply).toHaveBeenCalledWith(["nas", "r2"], { missingBackup: { enabled: true, hours: 24 }, usageSpike: { enabled: false } });
     });
 
-    it("writes one entry for the batch with how many destinations took the change", async () => {
-        mocks.apply.mockResolvedValue({ succeeded: ["nas"], failed: [{ id: "r2", error: "This destination does not exist anymore" }] });
+    it("writes one entry for the batch with how many destinations took the change and their names", async () => {
+        mocks.apply.mockResolvedValue({ result: { succeeded: ["nas"], failed: [{ id: "r2", error: "This destination does not exist anymore" }] }, names: ["NAS Backups"] });
 
         await updateStorageAlertsOfMany(["nas", "r2"], { usageSpike: { enabled: false } });
 
         expect(mocks.audit).toHaveBeenCalledTimes(1);
-        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "ADAPTER", { area: "Storage alerts", bulk: true, requested: 2, succeeded: 1, failed: 1 });
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "ADAPTER", { area: "Storage alerts", bulk: true, requested: 2, succeeded: 1, failed: 1, names: ["NAS Backups"] });
     });
 
     it("turns down an alert switched on without its value, and a request that changes nothing", async () => {

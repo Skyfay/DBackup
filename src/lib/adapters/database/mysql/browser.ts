@@ -1,7 +1,7 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { MySQLConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
-import { MYSQL_CLIENT, buildConnectionArgs, withAuthArgs } from "./args";
+import { MYSQL_CLIENT, NO_LOCAL_INFILE, buildConnectionArgs, withAuthArgs } from "./args";
 import { connectionClientOf } from "./dump-content";
 import { escapeMysqlIdentifier, escapeMysqlLiteral } from "./sql-quote";
 
@@ -81,7 +81,7 @@ export async function getTables(config: MySQLConfig, database: string, host: Exe
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const result = await host.exec([
-            mysqlBin, ...authArgs, ...connArgs,
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs,
             "-e", query, "--skip-column-names", "--batch",
         ]);
         if (result.code !== 0) {
@@ -120,7 +120,7 @@ export async function getTableData(
     const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
     return withAuthArgs(host, config.password, async (authArgs) => {
-        const base = [mysqlBin, ...authArgs, ...connArgs, "--skip-column-names", "--batch"];
+        const base = [mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "--skip-column-names", "--batch"];
 
         // Three concurrent queries. Over SSH each one is a separate channel, which
         // the transport caps so a wide fan-out cannot exhaust the server session limit.

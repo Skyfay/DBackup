@@ -7,6 +7,7 @@ import { ConnectionSharingProvider } from "@/components/adapter/connection-shari
 import { WithdrawnNotes } from "@/components/adapter/connection-withdrawn";
 import { TenantKeyed } from "@/components/tenant/tenant-keyed";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
+import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getConnectionAttention } from "@/services/adapters/adapter-service";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
@@ -23,6 +24,7 @@ export const metadata: Metadata = { title: "Connections" };
  * belongs to the job, not to the adapter.
  */
 export default async function ConnectionsPage() {
+    await redirectWithoutTenant();
     const [permissions, user, attention] = await Promise.all([getUserPermissions(), getViewer(), getConnectionAttention()]);
     const [layouts, savedView, sharing, withdrawn] = user
         ? await Promise.all([

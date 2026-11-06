@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
         group: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
         tenantMembership: { updateMany: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
         tenant: { findMany: vi.fn() },
-        ssoProvider: { updateMany: vi.fn() },
+        ssoProvider: { updateMany: vi.fn(), findMany: vi.fn() },
         // A list of queries, or a function that gets the client, like Prisma.
         $transaction: vi.fn(async (operations: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)): Promise<unknown> =>
             typeof operations === "function" ? operations(mocks.prisma) : Promise.all(operations)
@@ -31,6 +31,8 @@ describe("making, changing and deleting groups", () => {
         mocks.prisma.tenantMembership.updateMany.mockResolvedValue({ count: 2 });
         mocks.prisma.tenantMembership.deleteMany.mockResolvedValue({ count: 2 });
         mocks.prisma.group.delete.mockResolvedValue({});
+        // No sign-in provider adds people to a group unless a test says so.
+        mocks.prisma.ssoProvider.findMany.mockResolvedValue([]);
     });
 
     it("stores only the permissions DBackup knows", async () => {
@@ -88,7 +90,7 @@ describe("making, changing and deleting groups", () => {
 
         const result = await groupService.delete("g-ops", "g-view", TENANT_ADMIN);
 
-        expect(result).toEqual({ name: "Operators", moved: 2 });
+        expect(result).toEqual({ name: "Operators", moved: 2, ssoProviders: [] });
         expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
         expect(mocks.prisma.tenantMembership.updateMany).toHaveBeenCalledWith({ where: { groupId: "g-ops" }, data: { groupId: "g-view" } });
         expect(mocks.prisma.group.delete).toHaveBeenCalledWith({ where: { id: "g-ops" } });
@@ -97,13 +99,14 @@ describe("making, changing and deleting groups", () => {
     it("ends the memberships of the group when its members go to no group", async () => {
         mocks.prisma.group.findUnique.mockResolvedValue({ id: "g-ops", name: "Operators", fullAccess: false });
 
-        expect(await groupService.delete("g-ops", null, TENANT_ADMIN)).toEqual({ name: "Operators", moved: 2 });
+        expect(await groupService.delete("g-ops", null, TENANT_ADMIN)).toEqual({ name: "Operators", moved: 2, ssoProviders: [] });
         expect(mocks.prisma.tenantMembership.deleteMany).toHaveBeenCalledWith({ where: { groupId: "g-ops" } });
         expect(mocks.prisma.tenantMembership.updateMany).not.toHaveBeenCalled();
     });
 
     it("sends the new people of a sign-in provider where the members go", async () => {
         mocks.prisma.group.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id, name: where.id === "g-ops" ? "Operators" : "Viewers", fullAccess: false }));
+        mocks.prisma.ssoProvider.findMany.mockResolvedValue([{ id: "sso-acme", name: "Acme Entra", tenantId: "acme", allowProvisioning: true }]);
 
         await groupService.delete("g-ops", "g-view", TENANT_ADMIN);
         await groupService.delete("g-ops", null, TENANT_ADMIN);
@@ -181,6 +184,8 @@ describe("making, changing and deleting groups", () => {
             { id: "g-full", name: "Admin", fullAccess: true },
         ]);
         mocks.prisma.group.deleteMany.mockImplementation(async ({ where }: { where: { id: string } }) => ({ count: where.id === "g-empty" ? 1 : 0 }));
+        mocks.prisma.ssoProvider.findMany.mockImplementation(async ({ where }: { where: { defaultGroupId: string } }) =>
+            where.defaultGroupId === "g-empty" ? [{ id: "sso-staff", name: "Staff", tenantId: null, allowProvisioning: true }] : []);
 
         const result = await groupService.deleteMany(["g-empty", "g-ops", "g-full"]);
 
@@ -195,6 +200,50 @@ describe("making, changing and deleting groups", () => {
         expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledTimes(2);
         expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-empty", tenantId: { not: null } }, data: { defaultGroupId: null, allowProvisioning: false } });
         expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-empty" }, data: { defaultGroupId: null } });
+    });
+
+    describe("the sign-in providers a delete changes, for the audit log", () => {
+        const PROVIDERS = [
+            { id: "sso-acme", name: "Acme Entra", tenantId: "acme", allowProvisioning: true },
+            { id: "sso-staff", name: "Staff", tenantId: null, allowProvisioning: true },
+        ];
+
+        beforeEach(() => {
+            mocks.prisma.group.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id, name: where.id === "g-ops" ? "Operators" : "Viewers", fullAccess: false }));
+            mocks.prisma.ssoProvider.findMany.mockResolvedValue(PROVIDERS);
+        });
+
+        it("names each provider that now adds people to the group its members go to", async () => {
+            const result = await groupService.delete("g-ops", "g-view", TENANT_ADMIN);
+
+            expect(mocks.prisma.ssoProvider.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { defaultGroupId: "g-ops" } }));
+            expect(result.ssoProviders).toEqual([
+                { id: "sso-acme", name: "Acme Entra", tenantId: "acme", before: { group: "Operators", allowProvisioning: true }, after: { group: "Viewers", allowProvisioning: true } },
+                { id: "sso-staff", name: "Staff", tenantId: null, before: { group: "Operators", allowProvisioning: true }, after: { group: "Viewers", allowProvisioning: true } },
+            ]);
+        });
+
+        it("names the provider of a tenant that stops adding people when the members go to no group", async () => {
+            const result = await groupService.delete("g-ops", null, TENANT_ADMIN);
+
+            expect(result.ssoProviders).toEqual([
+                { id: "sso-acme", name: "Acme Entra", tenantId: "acme", before: { group: "Operators", allowProvisioning: true }, after: { group: null, allowProvisioning: false } },
+                { id: "sso-staff", name: "Staff", tenantId: null, before: { group: "Operators", allowProvisioning: true }, after: { group: null, allowProvisioning: true } },
+            ]);
+        });
+
+        it("names the providers of every group a bulk delete took, and none of a group that stayed", async () => {
+            mocks.prisma.group.findMany.mockResolvedValue([{ id: "g-empty", name: "Empty", fullAccess: false }, { id: "g-busy", name: "Busy", fullAccess: false }]);
+            mocks.prisma.group.deleteMany.mockImplementation(async ({ where }: { where: { id: string } }) => ({ count: where.id === "g-empty" ? 1 : 0 }));
+
+            const result = await groupService.deleteMany(["g-empty", "g-busy"]);
+
+            expect(result.succeeded).toEqual(["g-empty"]);
+            expect(result.ssoProviders).toEqual([
+                { id: "sso-acme", name: "Acme Entra", tenantId: "acme", before: { group: "Empty", allowProvisioning: true }, after: { group: null, allowProvisioning: false } },
+                { id: "sso-staff", name: "Staff", tenantId: null, before: { group: "Empty", allowProvisioning: true }, after: { group: null, allowProvisioning: true } },
+            ]);
+        });
     });
 
     it("counts the members of a group in one tenant and knows whether the viewer is one", async () => {

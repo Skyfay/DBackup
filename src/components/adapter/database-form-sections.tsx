@@ -10,6 +10,7 @@ import { FirebirdAliasFields } from "./firebird-alias-fields";
 import { RedisDatabaseSelect } from "./redis-database-select";
 import { SwitchList, SwitchRow } from "./setting-switches";
 import { SshTestButton } from "./ssh-test-button";
+import { PLATFORM_ADMIN_ONLY, useMayReachServer } from "./host-local-access";
 import type { ConnectionSectionProps } from "./use-connection-form";
 
 /** Names that read better than the ones made from the keys. */
@@ -51,10 +52,13 @@ function Field(props: { adapter: AdapterDefinition; fieldKey: string; label?: st
     return <ConfigField {...props} label={props.label ?? LABELS[props.fieldKey]} description={props.description ?? DESCRIPTIONS[props.fieldKey]} />;
 }
 
-function modeOptions(adapter: AdapterDefinition): ModeOption[] {
+/** What a card that reaches the server DBackup runs on carries for someone who may not pick it. */
+const adminOnly = (mayReachServer: boolean): Partial<ModeOption> => (mayReachServer ? {} : { disabled: true, badge: PLATFORM_ADMIN_ONLY });
+
+function modeOptions(adapter: AdapterDefinition, mayReachServer: boolean): ModeOption[] {
     if (adapter.id === "sqlite") {
         return [
-            { value: "local", title: "This machine", description: "The file is on the machine DBackup runs on." },
+            { value: "local", title: "This machine", description: "The file is on the machine DBackup runs on.", ...adminOnly(mayReachServer) },
             { value: "ssh", title: "Over SSH", description: "The file is on a server DBackup logs into.", beta: true },
         ];
     }
@@ -67,10 +71,12 @@ function modeOptions(adapter: AdapterDefinition): ModeOption[] {
     ];
 }
 
-const TRANSFER_OPTIONS: ModeOption[] = [
-    { value: "local", title: "Shared folder", description: "The backup folder is mounted here too, for example as a Docker volume." },
-    { value: "ssh", title: "Over SSH", description: "DBackup fetches the file from the SQL Server machine." },
-];
+function transferOptions(mayReachServer: boolean): ModeOption[] {
+    return [
+        { value: "local", title: "Shared folder", description: "The backup folder is mounted here too, for example as a Docker volume.", ...adminOnly(mayReachServer) },
+        { value: "ssh", title: "Over SSH", description: "DBackup fetches the file from the SQL Server machine." },
+    ];
+}
 
 function PrimaryLogin(props: ConnectionSectionProps) {
     return <LoginField adapter={props.adapter} slot="primary" value={props.primaryCredentialId} onChange={props.onPrimaryChange} />;
@@ -87,12 +93,13 @@ function ConnectionPart(props: ConnectionSectionProps) {
     const modeKey = isSqlite ? "mode" : "connectionMode";
     const hasMode = modeKey in (adapter.configSchema.shape as Record<string, unknown>);
     const mode = hasMode ? watch(`config.${modeKey}`) : "direct";
+    const mayReachServer = useMayReachServer();
 
     return (
         <>
             <NameField placeholder="My Production DB" />
             {hasMode && (
-                <ModeChoice fieldKey={modeKey} label={isSqlite ? "Where the file is" : "How DBackup connects"} options={modeOptions(adapter)} />
+                <ModeChoice fieldKey={modeKey} label={isSqlite ? "Where the file is" : "How DBackup connects"} options={modeOptions(adapter, mayReachServer)} />
             )}
             {isSqlite && mode === "local" && <Field adapter={adapter} fieldKey="path" label="Database file" />}
             {!isSqlite && mode === "direct" && (
@@ -108,10 +115,11 @@ function ConnectionPart(props: ConnectionSectionProps) {
 function TransferPart(props: ConnectionSectionProps) {
     const { adapter } = props;
     const transfer = useFormContext().watch("config.fileTransferMode");
+    const mayReachServer = useMayReachServer();
     return (
         <>
             <Field adapter={adapter} fieldKey="backupPath" />
-            <ModeChoice fieldKey="fileTransferMode" label="How DBackup gets the file" options={TRANSFER_OPTIONS} />
+            <ModeChoice fieldKey="fileTransferMode" label="How DBackup gets the file" options={transferOptions(mayReachServer)} />
             {transfer === "local" && <Field adapter={adapter} fieldKey="localBackupPath" />}
             {transfer === "ssh" && (
                 <>

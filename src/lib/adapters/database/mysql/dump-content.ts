@@ -2,7 +2,7 @@ import type { ExecutionHost } from "@/lib/transport";
 import type { LogLevel, LogType } from "@/lib/core/logs";
 import type { MySQLConfig, MariaDBConfig } from "@/lib/adapters/definitions";
 import { compareVersions } from "@/lib/utils";
-import { MYSQL_CLIENT, buildConnectionArgs } from "./args";
+import { MYSQL_CLIENT, NO_LOCAL_INFILE, buildConnectionArgs } from "./args";
 
 /**
  * What a MySQL or MariaDB dump holds besides tables, views and triggers, which the dump tools
@@ -164,7 +164,7 @@ export async function readableContent(
         const client = await connectionClientOf(config, host, mysqlBin);
         // The database goes in as an argument of its own, so its name needs no quoting.
         const ask = (sql: string) =>
-            host.exec([mysqlBin, ...authArgs, ...buildConnectionArgs(config, host, { client }), `--database=${dbName}`, "-N", "-s", "-e", sql]);
+            host.exec([mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...buildConnectionArgs(config, host, { client }), `--database=${dbName}`, "-N", "-s", "-e", sql]);
 
         if (planned.events) {
             const events = await ask("SHOW EVENTS");

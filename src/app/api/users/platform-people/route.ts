@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { platformPeopleOf } from "@/services/user/platform-people";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 const log = logger.child({ route: "users/platform-people" });
 
@@ -16,7 +17,7 @@ const log = logger.child({ route: "users/platform-people" });
  */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.USERS.READ);

@@ -46,6 +46,9 @@ vi.mock("@/lib/core/registry", () => ({
     registry: { get: (...args: any[]) => mockRegistryGet(...args) },
 }));
 
+const mockLogFor = vi.fn();
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: any[]) => mockLogFor(...args) } }));
+
 const { POST } = await import("@/app/api/storage/[id]/check-path/route");
 
 function createRequest(body: unknown) {
@@ -65,7 +68,7 @@ describe("POST /api/storage/[id]/check-path", () => {
         mockGetAuthContext.mockResolvedValue({ userId: "user-1", tenantId: "acme" });
         mockResolveAdapterConfig.mockImplementation(async (config: unknown) => config);
         mockRegistryGet.mockReturnValue({ id: "local-filesystem", type: "storage", list: mockList });
-        mockFindUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local-filesystem", config: "{}", tenantId: "acme" });
+        mockFindUnique.mockResolvedValue({ id: "dest-1", name: "NAS", type: "storage", storageRole: "DESTINATION", adapterId: "local-filesystem", config: "{}", tenantId: "acme" });
     });
 
     it("returns 401 when not authenticated", async () => {
@@ -104,5 +107,25 @@ describe("POST /api/storage/[id]/check-path", () => {
         const res = await POST(createRequest({ path: "/restore" }), createProps());
         const body = await res.json();
         expect(body).toEqual({ status: "unverified" });
+    });
+
+    it("checks the folder of a directory source, which a restore of files writes back into", async () => {
+        mockFindUnique.mockResolvedValue({ id: "dest-1", name: "NAS photos", type: "storage", storageRole: "SOURCE", adapterId: "local-filesystem", config: "{}", tenantId: "acme" });
+        mockList.mockResolvedValue([{ name: "a.jpg", path: "a.jpg", size: 10, lastModified: new Date() }]);
+        const res = await POST(createRequest({ path: "photos" }), createProps());
+        expect(await res.json()).toEqual({ status: "occupied", itemCount: 1 });
+    });
+
+    it("notes the check in the audit log with the storage and the folder, and nothing for a storage that is not found", async () => {
+        mockList.mockResolvedValue([]);
+        await POST(createRequest({ path: "restore" }), createProps());
+        expect(mockLogFor).toHaveBeenCalledExactlyOnceWith(
+            { userId: "user-1", tenantId: "acme" }, "EXECUTE", "ADAPTER", { action: "path_check", name: "NAS", path: "restore", success: true }, "dest-1", { tenantId: "acme" },
+        );
+
+        mockLogFor.mockClear();
+        mockFindUnique.mockResolvedValue(null);
+        expect((await POST(createRequest({ path: "restore" }), createProps())).status).toBe(404);
+        expect(mockLogFor).not.toHaveBeenCalled();
     });
 });

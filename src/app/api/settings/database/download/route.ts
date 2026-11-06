@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { AuthContext, getAuthContext } from "@/lib/auth/access-control";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
@@ -24,15 +25,10 @@ const DATABASE_DOWNLOAD_SCOPE = "dbackup-database";
  * active session tokens and all stored credentials, so a copy is enough to take over the instance.
  * Only a platform admin signed in with a session qualifies, which also rules out API keys.
  */
-async function requirePlatformAdmin(): Promise<AuthContext | NextResponse> {
-    let ctx: AuthContext | null;
-    try {
-        ctx = await getAuthContext(await headers());
-    } catch {
-        // An invalid, disabled or expired API key.
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function requirePlatformAdmin(): Promise<AuthContext | Response> {
+    // A disabled, expired or blocked API key has no context, `unauthorized` says why.
+    const ctx = await getAuthContext(await headers()).catch(() => null);
+    if (!ctx) return unauthorized();
     if (!ctx.isPlatformAdmin || ctx.authMethod !== "session") {
         return NextResponse.json({ error: "Only platform admins can download the database." }, { status: 403 });
     }
@@ -47,7 +43,7 @@ async function requirePlatformAdmin(): Promise<AuthContext | NextResponse> {
  */
 export async function POST() {
     const ctx = await requirePlatformAdmin();
-    if (ctx instanceof NextResponse) return ctx;
+    if (ctx instanceof Response) return ctx;
 
     try {
         const snapshot = await createDatabaseSnapshot();
@@ -86,7 +82,7 @@ export async function POST() {
 /** Streams a prepared copy. Only the user who prepared it can collect it. */
 export async function GET(req: NextRequest) {
     const ctx = await requirePlatformAdmin();
-    if (ctx instanceof NextResponse) return ctx;
+    if (ctx instanceof Response) return ctx;
 
     const token = req.nextUrl.searchParams.get("token");
     const claim = token ? consumeFileDownloadToken(token, ctx.userId) : null;

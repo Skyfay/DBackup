@@ -15,9 +15,11 @@ import { pipeline } from "stream/promises";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { importConfiguration } from "./import";
+import { UNENCRYPTED_AT_DESTINATION } from "./open-backup";
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { randomUUID } from "crypto";
 
 const svcLog = logger.child({ service: "ConfigService" });
 
@@ -94,7 +96,8 @@ async function runRestorePipeline(
 
   try {
     const tempDir = getTempDir();
-    const downloadPath = path.join(tempDir, `restore-${executionId}-${path.basename(filePath)}`);
+    // A name nobody can guess, so no one lays a file there first for the download to write through.
+    const downloadPath = path.join(tempDir, `restore-${randomUUID()}-${path.basename(filePath)}`);
 
     log(`Initializing restore from ${filePath}`);
 
@@ -132,6 +135,9 @@ async function runRestorePipeline(
       (meta && meta.iv);
 
     const isCompressed = filePath.includes(".gz") || (meta && String(meta.compression).toUpperCase() === 'GZIP');
+
+    // A plain file at a destination could come from anyone who may restore files into it.
+    if (!isEncrypted) throw new Error(UNENCRYPTED_AT_DESTINATION);
 
     // ── Resolve Encryption Key ───────────────────────────────
     // Support both flat (old) and nested (new) meta formats for IV/AuthTag.

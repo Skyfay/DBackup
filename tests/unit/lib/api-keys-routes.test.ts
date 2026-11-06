@@ -89,4 +89,12 @@ describe("GET /api/api-keys/[id]", () => {
         mocks.getApiKeyDetails.mockResolvedValue(null);
         expect((await openKey("key-gone")).status).toBe(404);
     });
+
+    it("asks for a tenant in All tenants, like the list", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "root", permissions: [PERMISSIONS.API_KEYS.READ], isPlatformAdmin: true, authMethod: "session", tenantId: null, allTenants: true });
+        const response = await openKey("key-1");
+
+        expect(response.status).toBe(403);
+        expect(mocks.getApiKeyDetails).not.toHaveBeenCalled();
+    });
 });

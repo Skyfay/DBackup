@@ -148,6 +148,30 @@ describe("a deleted job of a customer on what another tenant shares with it", ()
         expect(job.notifications).toEqual([]);
     });
 
+    it("refuses a job of the sharing tenant named like the folder of the customers, under its own name or a new one, like a save", async () => {
+        await acme(() => db.job.create({ data: { id: "acme-job", name: "tenants", schedule: "0 3 * * *", destinations: { create: [{ id: "dest-acme", configId: "acme-nas" }] } } }));
+        const trashId = await acme(() => db.$transaction(async (tx) => {
+            const id = await keepInTrash(asTx(tx), "job", "acme-job");
+            await tx.job.delete({ where: { id: "acme-job" } });
+            return id;
+        }));
+        const restore = (newName?: string) => acme(async () => {
+            const entry = await db.deletedRecord.findUniqueOrThrow({ where: { id: trashId } });
+            return db.$transaction((tx) => restoreSnapshot(asTx(tx), "job", JSON.parse(entry.data), newName));
+        });
+
+        await expect(restore()).rejects.toThrow("cannot be called tenants");
+        await expect(restore("tenants/acme")).rejects.toThrow("cannot be called tenants");
+        await expect(restore("Acme nightly")).resolves.toMatchObject({ name: "Acme nightly" });
+    });
+
+    it("lets a job of the customer named tenants come back on what another tenant shares with it, which it shares with nobody", async () => {
+        await globex(() => db.job.update({ where: { id: "globex-job" }, data: { name: "tenants" } }));
+        const trashId = await trashJob();
+
+        await expect(restoreJob(trashId)).resolves.toMatchObject({ name: "tenants" });
+    });
+
     it("drops them once the tenant that shares them stops sharing with customers", async () => {
         const trashId = await trashJob();
         await runAsSystem(() => db.tenant.update({ where: { id: "acme" }, data: { sharesWithCustomers: false } }));

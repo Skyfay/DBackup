@@ -26,6 +26,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     twoFactor: {
       deleteMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     session: {
       updateMany: vi.fn(),
@@ -286,6 +287,47 @@ describe('User Service', () => {
         },
       });
       expect(result).toEqual(updatedUser);
+    });
+  });
+
+  describe('the passkey as second factor', () => {
+    it('keeps the authenticator app as second factor when the passkey stops being one', async () => {
+      (prisma.twoFactor.findUnique as any).mockResolvedValue({ verified: true });
+
+      await userService.togglePasskeyTwoFactor('1', false);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: '1' }, data: { passkeyTwoFactor: false, twoFactorEnabled: true } });
+    });
+
+    it('turns the second factor off with the passkey when no app is set up, or one still waits for its first code', async () => {
+      (prisma.twoFactor.findUnique as any).mockResolvedValue(null);
+      await userService.togglePasskeyTwoFactor('1', false);
+      expect(prisma.user.update).toHaveBeenLastCalledWith({ where: { id: '1' }, data: { passkeyTwoFactor: false, twoFactorEnabled: false } });
+
+      (prisma.twoFactor.findUnique as any).mockResolvedValue({ verified: false });
+      await userService.togglePasskeyTwoFactor('1', false);
+      expect(prisma.user.update).toHaveBeenLastCalledWith({ where: { id: '1' }, data: { passkeyTwoFactor: false, twoFactorEnabled: false } });
+    });
+
+    it('asks for a second factor once the passkey is one', async () => {
+      await userService.togglePasskeyTwoFactor('1', true);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: '1' }, data: { passkeyTwoFactor: true, twoFactorEnabled: true } });
+    });
+
+    it('says the switch ends the second factor only while one is asked for and no app keeps it', async () => {
+      (prisma.user.findUnique as any).mockResolvedValue({ twoFactorEnabled: true });
+      (prisma.twoFactor.findUnique as any).mockResolvedValue(null);
+      expect(await userService.passkeyOffEndsTwoFactor('1')).toBe(true);
+      (prisma.twoFactor.findUnique as any).mockResolvedValue({ verified: false });
+      expect(await userService.passkeyOffEndsTwoFactor('1')).toBe(true);
+
+      (prisma.twoFactor.findUnique as any).mockResolvedValue({ verified: true });
+      expect(await userService.passkeyOffEndsTwoFactor('1')).toBe(false);
+
+      (prisma.user.findUnique as any).mockResolvedValue({ twoFactorEnabled: false });
+      (prisma.twoFactor.findUnique as any).mockResolvedValue(null);
+      expect(await userService.passkeyOffEndsTwoFactor('1')).toBe(false);
     });
   });
 });

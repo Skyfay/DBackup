@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
+import { backupPathIssue } from "@/lib/server/backup-path-schema";
 import { registerAdapters } from "@/lib/adapters";
 import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -13,14 +15,14 @@ import { backupAuditDetails } from "@/services/storage/backup-audit";
 import { findDestinationPath } from "@/services/sharing/destination-access";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, PermissionError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 
 registerAdapters();
 
 const log = logger.child({ route: "storage/download-url" });
 
 const LinkSchema = z.object({
-    file: z.string().min(1).refine((v) => !v.includes("..") && !v.startsWith("/"), "Invalid file path"),
+    file: z.string().min(1).superRefine(backupPathIssue),
     /** False keeps the file as it is stored, encrypted when the job encrypts. */
     decrypt: z.boolean().default(true),
     /** The one dump a decrypted link of a seekable archive holds, for older callers. */
@@ -37,7 +39,7 @@ function failure(error: unknown, storageId: string, what: string): NextResponse 
     if (error instanceof NotFoundError) return NextResponse.json({ success: false, error: "Destination not found" }, { status: 404 });
     if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     log.error(what, { storageId }, wrapError(error));
-    return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json({ success: false, error: "The download link could not be made. The log of DBackup has the details." }, { status: 500 });
 }
 
 /**
@@ -46,7 +48,7 @@ function failure(error: unknown, storageId: string, what: string): NextResponse 
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await props.params;
 
@@ -114,7 +116,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await props.params;
 
@@ -124,7 +126,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const token = new URL(req.url).searchParams.get("token");
         if (!token) return NextResponse.json({ success: false, error: "Missing token" }, { status: 400 });
 
-        const status = linkStatus(token, ctx.userId);
+        // Only for the request that made it, in its tenant, with its API key and at its destination.
+        const status = linkStatus(token, { userId: ctx.userId, tenantId: ctx.tenantId, apiKeyId: ctx.apiKeyId, storageId: id });
         // A link that ran out is removed from the store, so no answer reads as expired.
         return NextResponse.json({ success: true, data: status ?? { state: "expired" } });
     } catch (error: unknown) {

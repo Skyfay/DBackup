@@ -3,6 +3,7 @@ import path from "path";
 import Client from "ssh2-sftp-client";
 import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { hostsIn } from "@/lib/adapters/dialed-hosts";
+import { answerOf } from "@/lib/adapters/adapter-answer";
 import { DBackupError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { currentTenantId } from "@/lib/tenant/current";
@@ -141,6 +142,12 @@ export async function listRemoteDirectory({ config, path: requestedPath = "/", a
     // The browse dials this host whatever mode the form holds, so its tenant's network rule counts for it.
     await assertHostsReachable(await currentTenantId(), hostsIn(resolved.host));
 
+    // What the server says, like a refused login or a missing folder, goes back to the picker.
+    return answerOf("sftp", "list folder", () => listOverSftp(resolved, requestedPath));
+}
+
+/** Lists one folder over SFTP with a config that already holds its login. */
+async function listOverSftp(resolved: Record<string, unknown>, requestedPath: string): Promise<DirectoryListing> {
     const sftp = new Client();
     try {
         await sftp.connect({

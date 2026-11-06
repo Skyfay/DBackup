@@ -219,6 +219,8 @@ Use descriptive names:
 - `staging-postgres-hourly` - Staging PostgreSQL, hourly
 - `mongodb-weekly-archive` - MongoDB weekly archive
 
+The name becomes the folder of the job on every destination. So it cannot hold a `.` or `..` folder, a folder that starts with a hyphen (`-`), a semicolon, a double quote or a control character, and the form refuses such a name before the save. A job that already has one stops at its next run until it is renamed.
+
 ### One Source Per Job
 
 For clarity, create separate jobs for:

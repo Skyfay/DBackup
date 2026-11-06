@@ -16,7 +16,8 @@ const openArchiveEntry = vi.fn(async () => Readable.from([Buffer.from("x")]));
 // One entry per file, keyed by path - no bundles, so each file streams on its own.
 const groupFilesByEntry = vi.fn((files: { p: string }[]) => new Map(files.map((f) => [`k-${f.p}`, [f]])));
 const readArchiveManifest = vi.fn(async () => ({ encryption: undefined }));
-vi.mock("@/lib/archive/reader", () => ({ openArchiveEntry, groupFilesByEntry, readArchiveManifest }));
+// The check of the references runs for real in archive/duplicate-references.test.ts.
+vi.mock("@/lib/archive/reader", () => ({ openArchiveEntry, groupFilesByEntry, readArchiveManifest, assertSingleReferences: vi.fn() }));
 
 // openChainArchive (via this) is what opens a sibling. Track how many are live at once.
 let openArchives = 0;

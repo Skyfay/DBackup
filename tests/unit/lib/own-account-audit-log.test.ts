@@ -44,7 +44,19 @@ vi.mock("@/lib/auth", () => ({ auth: { api: { unlinkAccount: mocks.unlinkAccount
 vi.mock("@/lib/crypto", () => ({ decrypt: (token: string) => token }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/prisma", () => ({ default: {} }));
+// The session of a link and the provider it names, which the hook of the link reads.
+vi.mock("@/lib/prisma", () => ({
+    default: {
+        session: {
+            findUnique: vi.fn(async () => ({
+                userId: mocks.viewer.id,
+                expiresAt: new Date(Date.now() + 60_000),
+                activeTenantId: mocks.viewer.allTenants ? "*" : mocks.viewer.tenantId,
+            })),
+        },
+        ssoProvider: { findUnique: vi.fn(async () => ({ name: "Keycloak", tenantId: null })) },
+    },
+}));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/tenant/membership-service", () => ({
     membershipService: { isPersonOf: vi.fn(async (userId: string, tenantId: string) => mocks.people.get(tenantId)?.has(userId) ?? false) },
@@ -70,7 +82,7 @@ vi.mock("@/services/auth/auth-service", () => ({ authService: { verifyPassword: 
 vi.mock("@/services/user/preference-service", () => ({ getAutoRedirectOnJobStart: vi.fn(), setAutoRedirectOnJobStart: vi.fn(async () => undefined), setTaskColors: vi.fn() }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.fn(async () => null) }));
-vi.mock("@/services/sso/sso-connections-service", () => ({ countSignInAccounts: vi.fn(async () => 2), listSsoConnections: vi.fn(), prepareSsoConnect: vi.fn() }));
+vi.mock("@/services/sso/sso-connections-service", () => ({ countSignInAccounts: vi.fn(async () => 2), listSsoConnections: vi.fn(), prepareSsoConnect: vi.fn(), providerNameOf: vi.fn(async () => "Keycloak") }));
 vi.mock("@/services/user/avatar-service", () => ({
     AVATAR_MAX_BYTES: 5 * 1024 * 1024,
     saveAvatar: vi.fn(async () => "/api/avatar/x?v=1"),
@@ -82,6 +94,10 @@ const { saveProfileAccountAction, saveProfileDatesAction } = await import("@/app
 const { unlinkMySsoAccount } = await import("@/app/actions/auth/sso-connections");
 const avatarRoute = await import("@/app/api/user/avatar/route");
 const linkCallback = await import("@/app/api/auth/sso-link-callback/route");
+const { afterSsoLink } = await import("@/lib/auth/sso-hooks");
+
+/** The context of the callback of a provider that links it to the account signed in already. */
+const linkContext = () => ({ path: "/sso/callback/keycloak", params: { providerId: "keycloak" }, headers: new Headers({ cookie: "better-auth.session_token=tok-own.signature" }) });
 
 const person = (id: string, name: string): TestViewer => ({
     id,
@@ -117,11 +133,7 @@ const ownChanges: [string, () => Promise<unknown>][] = [
     }],
     ["the removed picture", () => avatarRoute.DELETE()],
     ["an unlinked sign-in provider", () => unlinkMySsoAccount("keycloak", "acc-1")],
-    ["a connected sign-in provider", () => {
-        mocks.getSession.mockResolvedValue({ user: { id: mocks.viewer.id } });
-        const token = encodeURIComponent(JSON.stringify({ userId: mocks.viewer.id, expiresAt: Date.now() + 60_000 }));
-        return linkCallback.GET(new NextRequest(`http://localhost/api/auth/sso-link-callback?t=${token}`));
-    }],
+    ["a connected sign-in provider", () => afterSsoLink({ userId: mocks.viewer.id }, linkContext())],
 ];
 
 describe("the log of a change of the own account", () => {
@@ -136,7 +148,7 @@ describe("the log of a change of the own account", () => {
         await change();
 
         expect(mocks.audit).toHaveBeenCalledTimes(1);
-        expect(mocks.audit.mock.calls[0][5]).toEqual(PLATFORM_LOG);
+        expect(mocks.audit.mock.calls[0][5]).toMatchObject(PLATFORM_LOG);
     });
 
     it.each(ownChanges)("writes %s of a member into the log of the tenant", async (_name, change) => {
@@ -145,7 +157,7 @@ describe("the log of a change of the own account", () => {
         await change();
 
         expect(mocks.audit).toHaveBeenCalledTimes(1);
-        expect(mocks.audit.mock.calls[0][5]).toEqual(ACME_LOG);
+        expect(mocks.audit.mock.calls[0][5]).toMatchObject(ACME_LOG);
     });
 
     it.each(ownChanges)("writes %s made from All tenants into the log of the platform", async (_name, change) => {
@@ -154,6 +166,41 @@ describe("the log of a change of the own account", () => {
         await change();
 
         expect(mocks.audit).toHaveBeenCalledTimes(1);
-        expect(mocks.audit.mock.calls[0][5]).toEqual(PLATFORM_LOG);
+        expect(mocks.audit.mock.calls[0][5]).toMatchObject(PLATFORM_LOG);
+    });
+});
+
+describe("what an entry of the own account names", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.people = new Map([["acme", new Set(["anna"])]]);
+        mocks.viewer = ANNA;
+    });
+
+    it("names the sign-in provider a link added to the account, and writes nothing more on the page the link returns to", async () => {
+        await afterSsoLink({ userId: "anna" }, linkContext());
+        expect(mocks.audit.mock.calls[0][3]).toEqual({ change: "SSO account connected", name: "Keycloak", providerId: "keycloak" });
+
+        mocks.getSession.mockResolvedValue({ user: { id: "anna" } });
+        const token = encodeURIComponent(JSON.stringify({ userId: "anna", expiresAt: Date.now() + 60_000 }));
+        const response = await linkCallback.GET(new NextRequest(`http://localhost/api/auth/sso-link-callback?t=${token}`));
+        expect(response.headers.get("location")).toContain("/dashboard/profile");
+        expect(mocks.audit).toHaveBeenCalledTimes(1);
+    });
+
+    it("writes no link of a provider to an account that is not the one signed in", async () => {
+        await afterSsoLink({ userId: "someone-else" }, linkContext());
+        expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
+    it("names the sign-in provider an unlink took off the account", async () => {
+        await unlinkMySsoAccount("keycloak", "acc-1");
+        expect(mocks.audit.mock.calls[0][3]).toEqual({ change: "SSO account unlinked", name: "Keycloak", providerId: "keycloak" });
+    });
+
+    it("refuses preferences that are no switch before anything is saved", async () => {
+        expect(await updateUserPreferences(ANNA.id, { autoRedirectOnJobStart: "yes" as unknown as boolean })).toEqual({ success: false, error: "Invalid request" });
+        expect(await updateUserPreferences(ANNA.id, { autoRedirectOnJobStart: true, isAdmin: true } as unknown as { autoRedirectOnJobStart: boolean })).toEqual({ success: false, error: "Invalid request" });
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 });

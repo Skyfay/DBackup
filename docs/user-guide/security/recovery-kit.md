@@ -181,6 +181,8 @@ node dbackup-recover.js --extract backup.tar ./restored docs
 
 Every extracted file and database dump is verified against the checksum recorded when the backup was made. A mismatch is reported, the file is not written, and the command exits non-zero. Dump checksums exist in backups written since every job became a seekable archive, and only a recently downloaded kit checks them, so download the kit again after updating DBackup.
 
+Symbolic links are laid last. A link whose target is absolute or leads out of the folder of its source, and a link inside another link of the backup, is skipped and named with `SKIPPED`, like DBackup's own restore does, so a tampered backup cannot write or point outside the output folder.
+
 `--decrypt` handles a database backup written by an earlier version, encrypted as a single file. It decompresses in the same pass, and a backup holding several databases is unpacked into one dump per database, never a `.gz` or a `.tar` to take apart first.
 
 ### Restoring a single database

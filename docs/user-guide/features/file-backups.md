@@ -54,6 +54,10 @@ paid for it.
    Sources** (an adapter is either a source or a backup destination, never both - see
    [Storage Destinations](/user-guide/destinations/) for why).
 2. In the job's **Sources** tab, add the directory source and pick the folders to back up.
+   A folder is read inside the folder the connection is set to. A folder that leaves it with
+   `..`, also between backslashes or written as `%2e%2e`, is refused when the job is saved or
+   copied, and a job that holds one from an earlier version fails its run until the folder is
+   changed. `/` or an empty folder backs up the whole connection.
 3. Optionally attach [Exclude Pattern Presets](/user-guide/features/templates) to skip
    caches, logs or anything else you do not want stored.
 
@@ -91,6 +95,8 @@ Applies **while configuring a source**: DBackup queries the source server live a
 checkbox tree of its folders, so the path does not have to be typed from memory. Every
 adapter supports it. On S3 and other object storage there are no real directories, so the
 tree shows key prefixes - the same folders the provider's own console displays.
+
+Saved connections that reach the server DBackup runs on, like a Local Filesystem or Docker Volumes without SSH, list their folders and volumes only for someone who may pick them, with `jobs:write` or `storage:restore`, and not for someone who may only see the connections.
 
 ::: info This is not the file tree you see when restoring
 The tree on the restore page comes from the `.index` sidecar stored next to the backup, not
@@ -260,6 +266,42 @@ Two consequences worth knowing:
   and WebDAV have no symbolic links. Such a restore names every link it had to skip and
   finishes as *Partial* rather than reporting a success it did not deliver. Restoring to a
   local path, over SFTP, or as a `.tar.gz` download recreates them properly.
+- **A restore lays no link that leads out of the folder it writes into.** A link whose
+  target is absolute, like `/etc/ssl/cert.pem`, or climbs above that folder with `..` is
+  skipped and named in the log of the restore, which finishes as *Partial*. So is a target
+  with a `..` after a folder, like `up/../secret`, since `up` may itself be a link that
+  leads elsewhere, and a target that runs through another link of the same backup. A `..`
+  at the start, like `../../archive/cert.pem`, is fine. Once laid, such a
+  link would lead the next backup, restore or browse that follows it to any file of the
+  server. It is skipped rather than written as a plain file, which would claim to be
+  something it never was. A `.tar.gz` download keeps every link as it was, and a relative
+  link that stays inside the folder, like the ones of Let's Encrypt, is restored as before.
+
+### Names that cannot be a file of the folder
+
+Every name of a source comes from its server, which may answer anything. A name that cannot
+be a file of the folder you picked is left out of the backup and named in the run log, and the
+run finishes as *Partial*. That covers a name with a `..` or `.` part, also one written with
+backslashes, an absolute path, an empty name, a name with a NUL character and one that ends in
+a separator.
+
+What arrives for a name is checked too. DBackup reads a collected file only as a regular file
+inside the folder of the run, never through a symbolic link, so a file that arrives as a link,
+a device, a pipe or a socket, or below a folder that arrives as a link leading out of the run,
+is left out and named the same way. A symbolic link the listing reports as one is still backed
+up as a link.
+
+### Limits of a source
+
+The listing of a source is held in memory until its files are collected, so a source fails with a
+message that names the limit when it lists **more than 10 million entries**, a path or link
+target **longer than 32 KB**, far past what a file system allows, or paths and link targets that
+add up to **more than 2 GB**, the most the index of one backup holds. The answer of a server for
+one folder is bounded as well, **256 MB** for WebDAV and **40 MB** for FTP. Back up the subfolders
+of such a tree as separate sources. A file is recorded with the size it arrived with, so one that grew
+between the listing and the transfer restores whole. A small file that grew past 64 KB after it
+was collected, while the archive was written, is left out and named in the run log, and the run
+finishes as *Partial*.
 
 File permissions and ownership are not yet preserved. A restored file gets default
 permissions, so anything relying on a restrictive mode (a private key at `0600`) needs it set
@@ -275,6 +317,16 @@ folder, or individual files - each source with its own target:
 - as a **`.tar.gz` download** to your own machine
 
 A backup that holds databases *and* files asks which half you want before opening the page.
+
+Some targets and files are refused, the rest of the restore goes on:
+
+- **A target folder that leaves the connection** with `..`, or with a part a storage reads as one like `%2e%2e` or `.. `, is refused before anything is written.
+- **Another place than the original location** needs the right to change the connection the files go to, `destinations:write` in its tenant, besides the right to restore. A restore there overwrites whatever lies in that folder, like the backups of other jobs. A folder inside the original location counts as the original location. A connection that reaches the server DBackup runs on, like Local Filesystem, takes a platform admin signed in with a session in the home tenant for any other folder.
+- **A `.meta.json`** decides how DBackup reads the backup beside it, whether retention keeps it and whether it is locked, **a file named like a backup or its index** (`.tar`, `.enc`, `.index`) would replace a backup on a backup destination (into a folder a job backs up it restores like any file), and **a file in a `config-backups` folder or named `config_backup_*`** reads as a configuration backup. Only a platform admin signed in with a session restores those into a storage, for everyone else they are listed as failed. A `.tar.gz` download holds them as usual. Each name counts up to its first `:`, which Windows reads as the start of an alternate data stream, so `x.meta.json::$DATA` is a `.meta.json` too, and names compare without case, so `X.Meta.Json` is one as well.
+- **Into an SMB share** a file with a `:` in its path is listed as failed for everyone, since the share would write it into a stream of another file, and so is one with a semicolon, a double quote or a control character, which `smbclient` cannot take, see [SMB / CIFS](/user-guide/destinations/smb#how-it-works). A file with a part like `CONFIG~1` in its path, which Windows may read as the short name of another file or folder, is listed as failed there unless a platform admin restores it.
+- **Docker Volumes** have rules of their own, see [Docker Volumes](/user-guide/sources/docker-volumes#restoring).
+
+A restore into a storage stages each file in the temporary folder of DBackup before it uploads it. Before the first file, it checks that the largest files that run at once fit the free space there, with 512 MB kept back, and refuses with a message otherwise. A restore of a database checks the same for its largest dump.
 
 ## Incremental
 

@@ -57,6 +57,19 @@ describe("who opens the panel of an account", () => {
         expect(await maySeeAccount(viewer, "someone-of-initech")).toBe(false);
     });
 
+    it("opens no other account in All tenants without the right to see the accounts of the platform, neither its panel nor its picture", async () => {
+        // A platform group of all tenants that may read the users of the tenants, but not the accounts of the platform.
+        platformGroup({ allTenants: true, tenants: [] });
+        prismaMock.auditLog.count.mockResolvedValue(0);
+        prismaMock.apiKey.count.mockResolvedValue(0);
+        const viewer = { ...member(null, PERMISSIONS.USERS.READ), allTenants: true };
+
+        expect(await maySeeAccount(viewer, "root")).toBe(false);
+        expect(await maySeePicture(viewer, "root")).toBe(false);
+        // The own account stays.
+        expect(await maySeeAccount(viewer, "lena")).toBe(true);
+    });
+
     it("opens no other account for someone of no tenant", async () => {
         expect(await maySeeAccount(member(null, PERMISSIONS.USERS.READ), "max")).toBe(false);
         expect(prismaMock.user.count).not.toHaveBeenCalled();

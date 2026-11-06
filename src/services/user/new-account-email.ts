@@ -5,14 +5,14 @@
  * through any of them that an email has an account in another tenant, nor try one address after
  * the other. Whoever sees the account hears that it exists, anyone else a fixed sentence, and after
  * `MAX_FAILED_SIGN_UPS` such refusals within `REFUSAL_WINDOW_MS`, counted across all of these
- * places, each of them refuses them every email for a while, like a link of an invitation that is
- * spent after as many.
+ * places and the links of an invitation they made (`email-tries.ts`), each of them refuses them
+ * every email for a while, like a link of an invitation that is spent after as many.
  */
 
 import prisma from "@/lib/prisma";
-import { MAX_FAILED_SIGN_UPS } from "@/services/tenant/invitation-service";
 import { membershipService } from "@/services/tenant/membership-service";
 import { maySeeAccount, type AccountViewer } from "./account-visibility";
+import { countEmailRefusal, emailTriesSpent, resetEmailTries } from "./email-tries";
 
 /** The answer of New user to whoever sees the account, the platform admin included. */
 export const EMAIL_HAS_ACCOUNT = "An account with this email exists already. Add it to the tenant with an invitation instead.";
@@ -45,33 +45,7 @@ export const NEW_ACCOUNT_ANSWERS: EmailAnswers = { known: EMAIL_HAS_ACCOUNT, ref
 /** The answers of a change of the email of an account and of a restore under another email. */
 export const CHANGED_EMAIL_ANSWERS: EmailAnswers = { known: EMAIL_IN_USE, refused: EMAIL_REFUSED, spent: EMAIL_CHANGE_TRIES_SPENT };
 
-/** How long the refusals of one person count. */
-export const REFUSAL_WINDOW_MS = 60 * 60 * 1000;
-
-interface Tries {
-    count: number;
-    since: number;
-}
-
-/** Refusals per person, by the id of their account, for this process, like the failures of a link. */
-const TRIES_KEY = Symbol.for("dbackup.newAccountEmailRefusals");
-type TriesGlobal = typeof globalThis & { [TRIES_KEY]?: Map<string, Tries> };
-function tries(): Map<string, Tries> {
-    const holder = globalThis as TriesGlobal;
-    holder[TRIES_KEY] ??= new Map();
-    return holder[TRIES_KEY];
-}
-
-/** The refusals of a person that still count, none once the window ran out. */
-function triesOf(userId: string, now: number): Tries | null {
-    const entry = tries().get(userId);
-    if (!entry) return null;
-    if (now - entry.since >= REFUSAL_WINDOW_MS) {
-        tries().delete(userId);
-        return null;
-    }
-    return entry;
-}
+export { REFUSAL_WINDOW_MS } from "./email-tries";
 
 interface TakenOptions {
     /** The account that gets the email, which may hold it already in other letters. */
@@ -87,15 +61,14 @@ interface TakenOptions {
  */
 export async function takenEmailRefusal(email: string, viewer: AccountViewer, tenantId: string | null, answers: EmailAnswers, options: TakenOptions = {}): Promise<string | null> {
     const now = options.now ?? Date.now();
-    const counted = viewer.isPlatformAdmin ? null : triesOf(viewer.userId, now);
-    if (counted && counted.count >= MAX_FAILED_SIGN_UPS) return answers.spent;
+    if (!viewer.isPlatformAdmin && emailTriesSpent(viewer.userId, now)) return answers.spent;
 
     const existing = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() }, select: { id: true } });
     if (!existing || existing.id === options.accountId) return null;
     if (viewer.isPlatformAdmin || (await maySeeAccount(viewer, existing.id)) || (tenantId !== null && (await membershipService.isPersonOf(existing.id, tenantId)))) {
         return answers.known;
     }
-    tries().set(viewer.userId, counted ? { ...counted, count: counted.count + 1 } : { count: 1, since: now });
+    countEmailRefusal(viewer.userId, now);
     return answers.refused;
 }
 
@@ -109,5 +82,5 @@ export function newAccountEmailRefusal(email: string, viewer: AccountViewer, ten
 
 /** Forgets every count, for the tests. */
 export function resetNewAccountEmailTries(): void {
-    tries().clear();
+    resetEmailTries();
 }

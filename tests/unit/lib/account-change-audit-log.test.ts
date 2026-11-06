@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
         revokeSessions: vi.fn(async () => 2),
         namesOf: vi.fn(async () => []),
         emailOf: vi.fn(async (id: string) => `${id}@example.ch`),
+        emailTenantsOf: vi.fn(async () => ["default"]),
     },
     audit: vi.fn(),
 }));
@@ -66,6 +67,12 @@ vi.mock("@/services/auth/auth-service", () => ({ authService: { setPassword: vi.
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.fn(async () => null) }));
+// Nina sees every account of the test, named like its id.
+vi.mock("@/services/user/account-visibility", () => ({
+    maySeeAccount: vi.fn(async () => true),
+    shownAccountName: vi.fn(async (_viewer: unknown, id: string) => id),
+    ACCOUNT_UNKNOWN: "The user no longer exists.",
+}));
 
 const { bulkDeleteUsers, deleteUser, togglePasskeyTwoFactor, updateUser } = await import("@/app/actions/auth/user");
 const { resetUserTwoFactor, revokeUserSession, revokeUserSessions, setUserPassword } = await import("@/app/actions/auth/user-security");

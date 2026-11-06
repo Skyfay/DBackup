@@ -2,10 +2,13 @@ import type { AuthContext } from "@/lib/auth/access-control";
 import { roleRefusal, type AccountActor } from "@/lib/auth/account-access";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { membershipService, type TenantMember } from "@/services/tenant/membership-service";
-import { GROUP_GONE, MemberGoneError, PLATFORM_ADMIN_MEMBERSHIP, tenantGroupRefusal, type TenantCaller } from "@/services/tenant/member-rules";
-import { assertManages, TenantAdminRefusal, TenantGoneError, tenantOrigin, type TenantAdminActor } from "@/services/tenant/tenant-admin";
+import { GROUP_GONE, MemberGoneError, placementRefusal, PLATFORM_ADMIN_MEMBERSHIP, tenantGroupRefusal, type TenantCaller } from "@/services/tenant/member-rules";
+import { ACCOUNT_UNKNOWN } from "@/services/user/account-visibility";
+import { membershipEndRefusal } from "@/services/tenant/membership-end";
+import { assertManages, platformOrigin, TenantAdminRefusal, TenantGoneError, tenantOrigin, type TenantAdminActor } from "@/services/tenant/tenant-admin";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { groupService } from "@/services/user/group-service";
 import { platformGroupService } from "@/services/user/platform-group-service";
@@ -73,22 +76,30 @@ export async function membersFor(actor: TenantAdminActor, tenantId: string, chan
     return { members, accounts, groups: groups.map((group) => ({ id: group.id, name: group.name, fullAccess: group.superAdmin })) };
 }
 
-/** The entry of a change of a membership, in the log of the tenant. */
-async function logMembership(actor: Pick<TenantAdminActor, "id" | "apiKeyId">, tenantId: string, tenantName: string, userId: string, group: { name: string } | null) {
-    await auditService.log(
-        actor.id,
-        AUDIT_ACTIONS.UPDATE,
-        AUDIT_RESOURCES.USER,
-        { change: group ? "Tenant group set" : "Removed from tenant", tenant: tenantName, ...(group ? { group: group.name } : {}) },
-        userId,
-        tenantOrigin(actor, tenantId)
-    );
+/**
+ * The entry of a change of a membership, in the log of the tenant, named after the account. A
+ * change from Platform > Tenants also goes into the log of the platform, like the other changes
+ * the platform makes to a tenant.
+ */
+async function logMembership(actor: Pick<TenantAdminActor, "id" | "apiKeyId">, tenantId: string, tenantName: string, userId: string, group: { name: string } | null, fromPlatform = false) {
+    const [account] = await userService.namesOf([userId]);
+    const details = {
+        change: group ? "Tenant group set" : "Removed from tenant",
+        ...(account ? { name: account.name } : {}),
+        tenant: tenantName,
+        // The id beside the name, so the log of the home tenant shows the entry only to whoever reaches the tenant.
+        tenantId,
+        ...(group ? { group: group.name } : {}),
+    };
+    await auditService.log(actor.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, details, userId, tenantOrigin(actor, tenantId));
+    if (fromPlatform && tenantId !== HOME_TENANT_ID) await auditService.log(actor.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, details, userId, platformOrigin(actor));
 }
 
 /**
  * Gives an account a group in a tenant the actor looks after, which adds it there, or takes it out
  * of the tenant with null. Nobody but a platform admin changes their own membership or that of a
- * platform admin, and nobody gives or takes a group that may do more than they may in that tenant.
+ * platform admin, nobody gives or takes a group that may do more than they may in that tenant, and
+ * nobody takes an account out so that it works alone where they manage the users.
  */
 export async function setMemberAs(actor: TenantAdminActor, tenantId: string, userId: string, groupId: string | null): Promise<void> {
     if (!actor.isPlatformAdmin) {
@@ -96,24 +107,39 @@ export async function setMemberAs(actor: TenantAdminActor, tenantId: string, use
         // about the account, like whether it is one of a platform admin.
         await assertManages(actor, tenantId);
         if (userId === actor.id) throw new TenantAdminRefusal(OWN_MEMBERSHIP);
-        if (await membershipService.isPlatformAdmin(userId)) throw new TenantAdminRefusal(PLATFORM_ADMIN_MEMBERSHIP);
+        if (await membershipService.isPlatformAdmin(userId)) {
+            // A platform admin the actor may not see reads like an account that does not exist.
+            if (!(await seesAccount(actor, userId))) throw new MemberGoneError("User", ACCOUNT_GONE);
+            throw new TenantAdminRefusal(PLATFORM_ADMIN_MEMBERSHIP);
+        }
     }
     // A group belongs to its tenant, so it is looked up there, and one of another tenant reads as gone.
     const [target, role] = await Promise.all([tenantService.find(tenantId), groupId ? runAsTenant(tenantId, () => groupService.find(groupId)) : null]);
     if (!target) throw new TenantGoneError(tenantId);
     if (groupId && !role) throw new MemberGoneError("Group", GROUP_GONE);
+    const current = await membershipService.roleOf(userId, tenantId);
+    // Taking out someone who is no member there removes nothing, so it answers like an account that
+    // does not exist, also for one beyond the actor, and writes no entry.
+    if (!groupId && !current) throw new MemberGoneError("User", ACCOUNT_GONE);
     if (!actor.isPlatformAdmin) {
         const caps = await actorIn(actor, tenantId);
         if (role && roleRefusal(caps, role)) throw new TenantAdminRefusal(GROUP_BEYOND);
-        const current = await membershipService.roleOf(userId, tenantId);
         if (current && roleRefusal(caps, current)) throw new TenantAdminRefusal(HELD_BEYOND);
         // A new membership adds only an account the actor may see, like Add member offers it.
         // Otherwise someone of a platform group of one tenant could pull an account of another in.
         if (role && !current && !(await seesAccount(actor, userId))) throw new MemberGoneError("User", ACCOUNT_GONE);
+        // An account of no tenant joins another tenant than its place only from someone who reaches that
+        // place, or the admins of this tenant could change it afterwards, see `placementRefusal`.
+        const placed = role && !current ? await placementRefusal(actor, userId, tenantId) : null;
+        if (placed) throw new TenantAdminRefusal(placed);
+        // Taking an account out never leaves it working alone where the actor manages the users,
+        // which would let them change it, see `membershipEndRefusal`.
+        const handsOver = groupId ? null : await membershipEndRefusal(actor, userId, tenantId);
+        if (handsOver) throw new TenantAdminRefusal(handsOver);
     }
     // A platform admin manages every tenant, so they may leave one without anyone else who does.
     await membershipService.setRole(userId, tenantId, groupId, { platformAdmin: actor.isPlatformAdmin });
-    await logMembership(actor, tenantId, target.name, userId, role);
+    await logMembership(actor, tenantId, target.name, userId, role, true);
 }
 
 /**
@@ -126,6 +152,8 @@ export async function setOwnTenantMemberAs(caller: TenantCaller & { apiKeyId?: s
     if (!tenantId) throw new TenantGoneError("");
     const refused = await tenantGroupRefusal(caller, userId, groupId);
     if (refused === GROUP_GONE) throw new MemberGoneError("Group", GROUP_GONE);
+    // An account that does not exist or that the caller may not see reads as gone, like in `setMemberAs`.
+    if (refused === ACCOUNT_UNKNOWN) throw new MemberGoneError("User", ACCOUNT_GONE);
     if (refused) throw new TenantAdminRefusal(refused);
     const [target, role] = await Promise.all([tenantService.find(tenantId), groupId ? groupService.find(groupId) : null]);
     if (!target) throw new TenantGoneError(tenantId);

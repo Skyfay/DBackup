@@ -224,8 +224,24 @@ describe("each host field read as its client reads it", () => {
         it("reads both forms and an IPv6 server", () => {
             expect(dialedHosts("smb", { address: "//fileserver/backups/sub" })).toEqual(["fileserver"]);
             expect(dialedHosts("smb", { address: "\\\\10.0.0.9\\share" })).toEqual(["10.0.0.9"]);
-            expect(dialedHosts("smb", { address: "//[fd00::9]/share" })).toEqual(["fd00::9"]);
+            expect(dialedHosts("smb", { address: "//fd00::9/share" })).toEqual(["fd00::9"]);
+            expect(dialedHosts("smb", { address: "//fe80::9%eth0/share" })).toEqual(["fe80::9%eth0"]);
             expect(dialedHosts("smb", { address: "//fs/My Share" })).toEqual(["fs"]);
+            expect(dialedHosts("smb", { address: "//fs/share", username: "backup", domain: "CORP" })).toEqual(["fs"]);
+        });
+
+        it("refuses a server smbclient or rpcclient would dial elsewhere than the check looks", () => {
+            // `#20` is a NetBIOS name type smbclient strips, a binding string sends rpcclient to the
+            // host inside it, and the rest are names no resolver knows, which the tools would ask
+            // the local network for by NetBIOS.
+            for (const address of ["//10.0.0.9#20/share", "//ncacn_ip_tcp:10.0.0.9[135]/share", "//fs[10.0.0.9]/share", "//10.0.0.9:445/share", "//[fd00::9]/share", "//user@10.0.0.9/share", "//10.0.0.9%eth0/share", "//fs\u00e9.example/share", "//.fs/share"]) {
+                expect(() => dialedHosts("smb", { address }), address).toThrow(HostFormatError);
+            }
+        });
+
+        it("refuses a user or a domain that names a Kerberos realm, whose KDC smbclient finds on its own", () => {
+            expect(() => dialedHosts("smb", { address: "//fs/share", username: "backup@corp.example" })).toThrow(HostFormatError);
+            expect(() => dialedHosts("smb", { address: "//fs/share", username: "backup", domain: "x@corp.example" })).toThrow(HostFormatError);
         });
 
         it("refuses an address of another form, which smbclient would read otherwise", () => {

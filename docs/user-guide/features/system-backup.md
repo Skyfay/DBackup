@@ -80,7 +80,7 @@ A backup made by a DBackup with another `ENCRYPTION_KEY` or `BETTER_AUTH_SECRET`
 2. Open it. DBackup reads it on the server, so its size does not matter
 3. Check what it holds and click **Replace and restart**
 
-A configuration backup restores only from a destination of the home tenant, whichever tenant you have open, since whoever owns the destination of a customer could have put a file there.
+A configuration backup restores only from a destination of the home tenant, whichever tenant you have open, since whoever owns the destination of a customer could have put a file there. From a destination only an encrypted file restores, as DBackup always writes it, since a plain one could come from anyone who may restore files into that destination. An unencrypted file of an older version restores from a file instead. Restores of files never write into `config-backups/`, under the name `config_backup_*` or a `.meta.json` for anyone but a platform admin, see [Restoring](/user-guide/features/file-backups#restoring).
 
 ### From a File
 

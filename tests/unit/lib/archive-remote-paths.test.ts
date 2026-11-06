@@ -7,7 +7,7 @@
  * same way local extraction already treats it.
  */
 import { describe, it, expect } from "vitest";
-import { safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { assertRestoreFolder, safeRemoteJoin } from "@/lib/archive/remote-paths";
 
 describe("safeRemoteJoin", () => {
     it("joins an ordinary path below the target", () => {
@@ -49,5 +49,30 @@ describe("safeRemoteJoin", () => {
     it("is not fooled by a sibling directory sharing the target's name prefix", () => {
         // "/restoreEVIL/x" starts with "/restore" as a string but is not inside it.
         expect(() => safeRemoteJoin("/restore", "../restoreEVIL/x")).toThrow(/outside the target/i);
+    });
+
+    it("refuses a target folder of the request that leaves its connection, even one that comes back in", () => {
+        for (const base of ["../home/ops", "restores/../../etc", "restores/../restores", "%2e%2e/x", "restores/.. /x", "..."]) {
+            expect(() => safeRemoteJoin(base, "a.txt"), base).toThrow(/leaves its folder/);
+        }
+    });
+
+    it("refuses a part of the archive path that a storage reads as ..", () => {
+        for (const relative of ["%2e%2e/%2e%2e/etc/passwd", "a/%2E%2E/../../x", ".. /x", "a/.../b"]) {
+            expect(() => safeRemoteJoin("/restore", relative), relative).toThrow(/outside the target/i);
+        }
+    });
+});
+
+describe("the folder a restore writes into", () => {
+    it.each(["%2e%2e%2fother", "restore%2f%2e%2e%2f%2e%2e", "a%5c..%5c..%5cb", "%2E%2E/x"])(
+        "refuses %s, which leaves the connection once a storage reads its escapes",
+        (folder) => {
+            expect(() => assertRestoreFolder(folder)).toThrow(/leaves its folder/);
+        }
+    );
+
+    it.each(["", "/", "restore/2026", "/srv/restore", "100%25 done", "bad%zzescape"])("takes %j", (folder) => {
+        expect(() => assertRestoreFolder(folder)).not.toThrow();
     });
 });

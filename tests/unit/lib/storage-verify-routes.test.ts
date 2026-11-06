@@ -116,6 +116,41 @@ describe("checking a backup against its checksum", () => {
         expect(mocks.logFor).toHaveBeenCalledWith(mocks.ctx, "EXECUTE", "BACKUP", expect.objectContaining({ action: "verify", destination: "Offsite", executionId: "exec-1" }), "offsite");
     });
 
+    it("checks no configuration backup for someone who may see the backups, since the check rewrites its sidecar", async () => {
+        mocks.ctx = reader();
+        const CONFIG_FILE = "config-backups/config_backup_2026-10-01.db.gz.enc";
+
+        expect((await verify.POST(post({ file: CONFIG_FILE }), params)).status).toBe(403);
+        expect((await verifyAsync.POST(post({ file: CONFIG_FILE }), params)).status).toBe(403);
+        expect((await verifyCopies.POST(post({ copies: [{ destinationId: "nas", file: CONFIG_FILE }] }))).status).toBe(403);
+
+        expect(mocks.verifyFile).not.toHaveBeenCalled();
+        expect(mocks.startCopyVerification).not.toHaveBeenCalled();
+        expect(mocks.logFor).not.toHaveBeenCalled();
+    });
+
+    it("checks no backup whose path reaches past the destination, between backslashes or behind escapes, also for a platform admin", async () => {
+        for (const ctx of [reader(), { ...reader(), userId: "root", isPlatformAdmin: true }]) {
+            mocks.ctx = ctx;
+            for (const file of ["Shop\\..\\..\\other\\x.tar", "%2e%2e/other/x.tar", "\\srv\\x.tar"]) {
+                expect((await verify.POST(post({ file }), params)).status).toBe(400);
+                expect((await verifyAsync.POST(post({ file }), params)).status).toBe(400);
+                expect((await verifyCopies.POST(post({ copies: [{ destinationId: "nas", file }] }))).status).toBe(400);
+            }
+        }
+
+        expect(mocks.verifyFile).not.toHaveBeenCalled();
+        expect(mocks.startCopyVerification).not.toHaveBeenCalled();
+        expect(mocks.logFor).not.toHaveBeenCalled();
+    });
+
+    it("checks a configuration backup for a platform admin with a session", async () => {
+        mocks.ctx = { ...reader(), userId: "root", isPlatformAdmin: true };
+
+        expect((await verify.POST(post({ file: "config-backups/config_backup_2026-10-01.db.gz.enc" }), params)).status).toBe(200);
+        expect(mocks.verifyFile).toHaveBeenCalledTimes(1);
+    });
+
     describe("a backup outside the tenant's view of the destination", () => {
         const PROVIDER_PATH = "tenants/globex/Shop/shop_2026-10-01.tar";
 

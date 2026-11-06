@@ -158,7 +158,7 @@ COPY . .
 
 # Environment variables for build
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV NODE_OPTIONS="--max-old-space-size=6144"
 
 # Generate Prisma Client, build Next.js app, and compile custom server
 # --mount=type=cache persists the Next.js incremental build cache (.next/cache)

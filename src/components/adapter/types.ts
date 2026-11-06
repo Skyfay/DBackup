@@ -13,6 +13,8 @@ export interface AdapterConfig {
     config: string; // JSON string (sensitive keys redacted by the API DTO)
     /** Map of sensitive key -> whether a non-empty value is stored (from the list DTO). */
     secretStatus?: Record<string, boolean>;
+    /** Why the connection reaches the server DBackup runs on, which only a platform admin changes, or null. */
+    hostLocal?: string | null;
     metadata?: string; // JSON string
     createdAt: string;
     primaryCredentialId?: string | null;

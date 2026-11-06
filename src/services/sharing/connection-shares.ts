@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { NotFoundError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
 import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { TENANTS_FOLDER, isTenantsFolderName } from "@/lib/tenant/storage-view";
@@ -18,12 +18,21 @@ export interface ShareChange {
     name: string;
     kind: SharedKind;
     gained: string[];
+    /** The tenants that got it, by id and name, which the audit log names one entry each. */
+    gainedTenants: { tenantId: string; name: string }[];
     /**
      * What each tenant that lost it lost. `noted` says whether its log and its Connections page hear
      * of it, which after a share with every tenant only a tenant that used it does.
      */
     losses: (TenantLoss & { name: string; noted: boolean })[];
+    /** Whether it was shared with every tenant before, so a save that keeps that names nobody new. */
+    wasAllTenants?: boolean;
+    /** What the tenants may put on it, before and after, when a save of a share that stays changed it. */
+    terms?: { before: ShareTerms; after: ShareTerms };
 }
+
+/** What the tenants may put on a shared connection, see `ShareSettings`. */
+export type ShareTerms = Pick<ShareSettings, "encryptedOnly" | "ownRecipients">;
 
 /**
  * Taking a connection away failed at one tenant. The change holds what the tenants before it
@@ -105,14 +114,19 @@ export interface ConnectionShareView {
     reach: ShareReachView;
     /** A destination: what its own tenant keeps there. */
     own: { backups: number | null; size: number | null } | null;
-    /** Each tenant that gets it now. */
+    /** Each tenant that gets it now and that the viewer reaches. The others are only `reach.beyond`. */
     uses: ShareTenantUse[];
 }
 
-/** The summary of a share for the lists: every tenant, or the names of those that get it. */
+/**
+ * The summary of a share for the lists: every tenant, or the names of those that get it. A tenant
+ * beyond the reach of the viewer is left out, `beyond` only says there are such tenants.
+ */
 export interface ShareSummary {
     allTenants: boolean;
     tenants: { id: string; name: string }[];
+    /** Whether tenants beyond the reach of the viewer get it too. */
+    beyond?: boolean;
     encryptedOnly: boolean;
     ownRecipients: boolean;
 }
@@ -190,8 +204,8 @@ async function runningRunOf(configId: string, tenantIds: readonly string[]): Pro
 }
 
 export const connectionShareService = {
-    /** The shares of the own connections among `configIds`, for the lists. */
-    async summaries(configIds: string[]): Promise<Map<string, ShareSummary>> {
+    /** The shares of the own connections among `configIds`, for the lists, naming only the tenants `reach` covers. */
+    async summaries(configIds: string[], reach: PlatformReach = "all"): Promise<Map<string, ShareSummary>> {
         if (configIds.length === 0) return new Map();
         const shares = await prisma.connectionShare.findMany({ where: { id: { in: configIds } }, include: { tenants: { select: { tenantId: true } } } });
         if (shares.length === 0) return new Map();
@@ -199,16 +213,21 @@ export const connectionShareService = {
         return new Map(shares.map((share) => {
             const others = tenants.filter((tenant) => tenant.id !== share.tenantId);
             const ids = new Set(customersOf(share, others));
+            const getting = others.filter((tenant) => ids.has(tenant.id));
             return [share.id, {
                 allTenants: share.allTenants,
-                tenants: others.filter((tenant) => ids.has(tenant.id)),
+                tenants: getting.filter((tenant) => reachCovers(reach, tenant.id)),
+                beyond: getting.some((tenant) => !reachCovers(reach, tenant.id)),
                 encryptedOnly: share.encryptedOnly,
                 ownRecipients: share.ownRecipients,
             }];
         }));
     },
 
-    /** Who gets a connection of the tenant that runs now, and how each uses it. */
+    /**
+     * Who gets a connection of the tenant that runs now, and how each uses it. A tenant beyond `reach`
+     * shows by no id, no name and no number, `reach.beyond` only says there are such tenants.
+     */
     async view(configId: string, reach: PlatformReach = "all"): Promise<ConnectionShareView> {
         const config = await ownConnection(configId);
         const [share, others] = await Promise.all([
@@ -217,6 +236,7 @@ export const connectionShareService = {
         ]);
         const ids = new Set(customersOf(share, others));
         const customers = others.filter((tenant) => ids.has(tenant.id));
+        const reached = customers.filter((tenant) => reachCovers(reach, tenant.id));
         const ownEntry = config.kind === "destination" ? (await storageEntriesOf(configId)).find((entry) => entry.tenantId === config.tenantId || !entry.tenantId) : undefined;
         return {
             configId,
@@ -227,14 +247,15 @@ export const connectionShareService = {
             cleanupPending: config.kind === "destination" && Boolean(share) && !share?.allTenants && customers.length === 0,
             settings: {
                 allTenants: share?.allTenants ?? false,
-                tenantIds: share?.allTenants ? [] : customers.map((tenant) => tenant.id),
+                // A save keeps the tenants beyond the reach on the share by itself, see `boundToReach`.
+                tenantIds: share?.allTenants ? [] : reached.map((tenant) => tenant.id),
                 encryptedOnly: share?.encryptedOnly ?? false,
                 ownRecipients: share?.ownRecipients ?? true,
             },
             candidates: others.filter((tenant) => reachCovers(reach, tenant.id)),
             reach: shareReachView({ name: config.name, share, customers, reach }),
             own: config.kind === "destination" ? { backups: ownEntry ? ownEntry.count : null, size: ownEntry ? ownEntry.size : null } : null,
-            uses: await usesOf(config, config.kind, customers, share?.encryptedOnly ?? false),
+            uses: await usesOf(config, config.kind, reached, share?.encryptedOnly ?? false),
         };
     },
 
@@ -246,8 +267,7 @@ export const connectionShareService = {
             otherTenants(config.tenantId),
         ]);
         const before = customersOf(share, others);
-        const names = new Map(others.map((tenant) => [tenant.id, tenant.name]));
-        const bound = boundToReach({ name: config.name, share, before, wanted: settings, termsChanged: false, reach, nameOf: (id) => names.get(id) ?? "a tenant" });
+        const bound = boundToReach({ name: config.name, share, before, wanted: settings, termsChanged: false, reach });
         const after = new Set(bound.allTenants ? others.map((tenant) => tenant.id) : bound.tenantIds);
         const lost = before.filter((id) => !after.has(id));
         return usesOf(config, config.kind, others.filter((tenant) => lost.includes(tenant.id)), share?.encryptedOnly ?? false);
@@ -265,10 +285,14 @@ export const connectionShareService = {
         const others = await otherTenants(config.tenantId);
         const known = new Map(others.map((tenant) => [tenant.id, tenant.name]));
         const picked = [...new Set(settings.tenantIds)];
-        if (!settings.allTenants && picked.some((id) => !known.has(id))) throw new ValidationError("A tenant you picked is this one or no longer exists.");
+        const reach = options.reach ?? "all";
 
         const share = await prisma.connectionShare.findUnique({ where: { id: configId }, include: { tenants: { select: { tenantId: true } } } });
         const before = customersOf(share, others);
+        // The reach first, so a picked tenant beyond it answers alike whether it exists or not. One
+        // that gets the connection already stays, see `boundToReach`.
+        if (!settings.allTenants && picked.some((id) => !reachCovers(reach, id) && !before.includes(id))) throw new ValidationError(OUTSIDE_REACH.share);
+        if (!settings.allTenants && picked.some((id) => !known.has(id))) throw new ValidationError("A tenant you picked is this one or no longer exists.");
         const terms = {
             encryptedOnly: config.kind === "destination" && settings.encryptedOnly,
             // A chat or a webhook has its address for a recipient, so it always sends where it is set.
@@ -277,7 +301,7 @@ export const connectionShareService = {
         const termsChanged = Boolean(share) && (config.kind === "destination"
             ? terms.encryptedOnly !== share?.encryptedOnly
             : isEmailChannel(config.adapterId) && terms.ownRecipients !== share?.ownRecipients);
-        const bound = boundToReach({ name: config.name, share, before, wanted: { allTenants: settings.allTenants, tenantIds: picked }, termsChanged, reach: options.reach ?? "all", nameOf: (id) => known.get(id) ?? "a tenant" });
+        const bound = boundToReach({ name: config.name, share, before, wanted: { allTenants: settings.allTenants, tenantIds: picked }, termsChanged, reach });
         const after = bound.allTenants ? others.map((tenant) => tenant.id) : bound.tenantIds;
         const lost = before.filter((id) => !after.includes(id));
         const gained = after.filter((id) => !before.includes(id));
@@ -337,7 +361,12 @@ export const connectionShareService = {
         } catch (error) {
             if (!(error instanceof PartialLossError)) throw error;
             await putBack(new Set(error.losses.map((loss) => loss.tenantId)));
-            throw new ShareChangeError(error.message, { name: config.name, kind: config.kind, gained: [], losses: named(error.losses) });
+            // What the storage answered stays in the log, it may name hosts and paths.
+            log.warn("Taking a connection away from a tenant failed", { configId, tenantId: error.failedTenantId }, wrapError(error));
+            throw new ShareChangeError(
+                `${config.name} could not be taken away from every tenant, the storage stopped answering. The tenants that lost it stay off, every other one keeps it. Try again once the storage answers.`,
+                { name: config.name, kind: config.kind, gained: [], gainedTenants: [], losses: named(error.losses) },
+            );
         }
 
         const shared = bound.allTenants || after.length > 0;
@@ -352,23 +381,25 @@ export const connectionShareService = {
                 log.warn("The folder of the customers could not be emptied", { configId }, wrapError(error));
                 await writeShare([], false, true);
                 throw new ShareChangeError(
-                    `Nobody gets ${config.name} any more, but what its customers left in ${TENANTS_FOLDER}/ could not be deleted: ${getErrorMessage(error)}. Save again once the storage answers, until then it stays shared with nobody.`,
-                    { name: config.name, kind: config.kind, gained: [], losses: named(losses) },
+                    `Nobody gets ${config.name} any more, but what its customers left in ${TENANTS_FOLDER}/ could not be deleted. Save again once the storage answers, until then it stays shared with nobody.`,
+                    { name: config.name, kind: config.kind, gained: [], gainedTenants: [], losses: named(losses) },
                 );
             }
         }
         await writeShare(after, bound.allTenants);
         if (config.kind === "destination" && lost.length > 0) await refreshStorageStatsCache({ configIds: [configId] }).catch(() => undefined);
-        return { name: config.name, kind: config.kind, gained: gained.map((id) => known.get(id) ?? id), losses: named(losses) };
+        const gainedTenants = gained.map((id) => ({ tenantId: id, name: known.get(id) ?? id }));
+        return {
+            name: config.name, kind: config.kind, gained: gainedTenants.map((tenant) => tenant.name), gainedTenants, losses: named(losses),
+            wasAllTenants: share?.allTenants ?? false,
+            ...(share && shared && termsChanged ? { terms: { before: { encryptedOnly: share.encryptedOnly, ownRecipients: share.ownRecipients }, after: terms } } : {}),
+        };
     },
 
     /** Stops sharing a connection with one tenant, with every other tenant keeping it. */
     async stopFor(configId: string, tenantId: string, options: { confirmed?: boolean; reach?: PlatformReach } = {}) {
         const reach = options.reach ?? "all";
-        if (!reachCovers(reach, tenantId)) {
-            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
-            throw new ValidationError(OUTSIDE_REACH.share(tenant?.name ?? "this tenant"));
-        }
+        if (!reachCovers(reach, tenantId)) throw new ValidationError(OUTSIDE_REACH.share);
         const view = await this.view(configId, reach);
         const tenantIds = (view.settings.allTenants ? view.candidates.map((tenant) => tenant.id) : view.settings.tenantIds).filter((id) => id !== tenantId);
         return this.save(configId, { ...view.settings, allTenants: false, tenantIds }, options);
@@ -379,9 +410,10 @@ export const connectionShareService = {
         const config = await ownConnection(configId);
         if (config.kind !== "destination") throw new ValidationError("Only a destination holds backups.");
         if (tenantId === config.tenantId) throw new ValidationError("These are the backups of this tenant. Delete them on the Backups page.");
+        // Before the tenant is read, so one beyond the reach answers alike whether it exists or not.
+        if (!reachCovers(reach, tenantId)) throw new ValidationError(OUTSIDE_REACH.backups);
         const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
         if (!tenant) throw new NotFoundError("Tenant", tenantId);
-        if (!reachCovers(reach, tenantId)) throw new ValidationError(OUTSIDE_REACH.backups(tenant.name));
         // Only of a tenant that gets the destination now. One that lost it lost its backups with it.
         const [share, others] = await Promise.all([
             prisma.connectionShare.findUnique({ where: { id: configId }, include: { tenants: { select: { tenantId: true } } } }),

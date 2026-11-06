@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { PermissionError } from "@/lib/logging/errors";
+import { NotFoundError, PermissionError } from "@/lib/logging/errors";
 import type { CancelResult } from "@/services/history/run-cancel";
 
 const mocks = vi.hoisted(() => ({
     ctx: vi.fn(),
     check: vi.fn(),
     cancel: vi.fn(),
+    type: vi.fn(),
     log: vi.fn(),
     logFor: vi.fn(),
 }));
@@ -14,19 +15,23 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: () => mocks.ctx(),
-    checkPermissionWithContext: (...args: unknown[]) => mocks.check(...args),
+    checkAnyPermissionWithContext: (...args: unknown[]) => mocks.check(...args),
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.log, logFor: mocks.logFor } }));
 vi.mock("@/services/history/run-cancel", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/history/run-cancel")>()),
     cancelRun: (...args: unknown[]) => mocks.cancel(...args),
+    runTypeOf: (...args: unknown[]) => mocks.type(...args),
 }));
 
 const { POST } = await import("@/app/api/executions/[id]/cancel/route");
 const { subjectOf } = await import("@/services/history/run-cancel");
 
-const CUSTOMER = { userId: "u1", authMethod: "session", tenantId: "acme" };
-const PROVIDER = { userId: "u2", authMethod: "session", tenantId: "default" };
+const ALL_RUNS = ["jobs:execute", "storage:restore"];
+const CUSTOMER = { userId: "u1", authMethod: "session", tenantId: "acme", isPlatformAdmin: false, allTenants: false, permissions: ALL_RUNS };
+const PROVIDER = { userId: "u2", authMethod: "session", tenantId: "default", isPlatformAdmin: false, allTenants: false, permissions: ALL_RUNS };
+/** May run backups, not restore them. */
+const OPERATOR = { ...PROVIDER, userId: "u3", permissions: ["jobs:execute"] };
 
 const cancel = (id: string) => POST(new NextRequest(`http://localhost/api/executions/${id}/cancel`, { method: "POST" }), { params: Promise.resolve({ id }) });
 
@@ -34,6 +39,7 @@ describe("POST /api/executions/[id]/cancel", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.check.mockImplementation(() => undefined);
+        mocks.type.mockResolvedValue("Backup");
     });
 
     it("answers 403 to someone who may not run jobs, and cancels nothing", async () => {
@@ -43,6 +49,47 @@ describe("POST /api/executions/[id]/cancel", () => {
         const response = await cancel("r1");
 
         expect(response.status).toBe(403);
+        expect(mocks.cancel).not.toHaveBeenCalled();
+    });
+
+    it("refuses a restore to someone who may run backups but not restore, the provider's run of a customer's restore included", async () => {
+        mocks.ctx.mockResolvedValue(OPERATOR);
+        mocks.type.mockResolvedValue("Restore");
+
+        const response = await cancel("provider-run");
+
+        expect(response.status).toBe(403);
+        expect(mocks.cancel).not.toHaveBeenCalled();
+        expect(mocks.logFor).not.toHaveBeenCalled();
+    });
+
+    it("cancels a restore for someone who may restore, and a backup only with the right to run jobs", async () => {
+        mocks.ctx.mockResolvedValue({ ...PROVIDER, permissions: ["storage:restore"] });
+        mocks.cancel.mockResolvedValue({ run: { id: "r1", jobId: null, job: null, tenantId: "default", subject: "shop" }, leader: null, message: "Cancellation signal sent" } satisfies CancelResult);
+        mocks.type.mockResolvedValue("Restore");
+        expect((await cancel("r1")).status).toBe(200);
+
+        mocks.cancel.mockClear();
+        mocks.type.mockResolvedValue("Backup");
+        expect((await cancel("r2")).status).toBe(403);
+        expect(mocks.cancel).not.toHaveBeenCalled();
+    });
+
+    it("leaves the configuration restore to a platform admin with a session", async () => {
+        mocks.type.mockResolvedValue("System Restore");
+        mocks.ctx.mockResolvedValue(PROVIDER);
+        expect((await cancel("cfg")).status).toBe(403);
+
+        mocks.ctx.mockResolvedValue({ ...PROVIDER, isPlatformAdmin: true });
+        mocks.cancel.mockResolvedValue({ run: { id: "cfg", jobId: null, job: null, tenantId: "default", subject: null }, leader: null, message: "Execution force-cancelled" } satisfies CancelResult);
+        expect((await cancel("cfg")).status).toBe(200);
+    });
+
+    it("answers 404 for a run that is not there", async () => {
+        mocks.ctx.mockResolvedValue(PROVIDER);
+        mocks.type.mockRejectedValue(new NotFoundError("Execution", "gone"));
+
+        expect((await cancel("gone")).status).toBe(404);
         expect(mocks.cancel).not.toHaveBeenCalled();
     });
 

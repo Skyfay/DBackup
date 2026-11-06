@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext } from "@/lib/auth/access-control";
 import { tenantRouteAccess } from "@/lib/auth/tenant-route-access";
@@ -17,7 +18,7 @@ const log = logger.child({ route: "tenants/[id]/invitations" });
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         const access = await tenantRouteAccess(ctx, id, false);
@@ -40,7 +41,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         const access = await tenantRouteAccess(ctx, id, true);

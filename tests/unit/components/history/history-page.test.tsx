@@ -22,7 +22,7 @@ import { HistoryClient } from "@/components/dashboard/history/history-client";
 import { TenantViewProvider } from "@/components/tenant/tenant-view";
 
 Element.prototype.scrollIntoView = vi.fn();
-const access = { canExecute: true, canOpenJobs: true, canOpenBackups: true };
+const access = { canExecute: true, cancels: ["Backup", "Restore", "IntegrityCheck", "Verification"], canOpenJobs: true, canOpenBackups: true };
 const calls = (prefix: string) => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith(prefix));
 
 describe("the History page", () => {
@@ -162,6 +162,23 @@ describe("the History page in All tenants", () => {
         await user.click(screen.getByRole("button", { name: /^Tenant/ }));
         await user.click(await screen.findByRole("option", { name: /Globex AG/ }));
         await waitFor(() => expect(calls("/api/history/runs?").some((url) => url.includes("tenant=globex"))).toBe(true));
+    });
+
+    it("offers Cancel on a live backup only to someone who may cancel a backup", async () => {
+        const user = userEvent.setup();
+        render(<HistoryClient access={{ ...access, cancels: ["Restore"] }} />);
+
+        await user.click(await screen.findByRole("button", { name: "Open menu for CRM daily" }));
+        expect(await screen.findByRole("menuitem", { name: "Open run" })).toBeInTheDocument();
+        expect(screen.queryByRole("menuitem", { name: /Cancel run/ })).not.toBeInTheDocument();
+    });
+
+    it("offers Cancel on a live backup to someone who may cancel one", async () => {
+        const user = userEvent.setup();
+        render(<HistoryClient access={{ ...access, cancels: ["Backup"] }} />);
+
+        await user.click(await screen.findByRole("button", { name: "Open menu for CRM daily" }));
+        expect(await screen.findByRole("menuitem", { name: /Cancel run/ })).toBeInTheDocument();
     });
 
     it("opens a run in its tenant from its menu and offers no way to run it again or cancel it there", async () => {

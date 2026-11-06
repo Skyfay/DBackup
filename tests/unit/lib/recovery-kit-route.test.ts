@@ -35,9 +35,9 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 
-const { GET } = await import("@/app/api/vault/recovery-kit/route");
+const route = await import("@/app/api/vault/recovery-kit/route");
 
-const kit = (ids: string) => GET(new NextRequest(`http://dbackup.test/api/vault/recovery-kit?ids=${ids}`));
+const kit = (ids: string) => route.POST(new NextRequest("http://dbackup.test/api/vault/recovery-kit", { method: "POST", body: JSON.stringify({ ids: ids.split(",") }) }));
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -81,5 +81,20 @@ describe("a Recovery Kit", () => {
         expect(mocks.audit).not.toHaveBeenCalled();
         expect(mocks.decryptKey).not.toHaveBeenCalled();
         expect(mocks.build).not.toHaveBeenCalled();
+    });
+
+    it("is a POST, since it marks its keys and writes an entry, which a GET from a link or a prefetch never may", () => {
+        expect("GET" in route).toBe(false);
+        expect(typeof route.POST).toBe("function");
+    });
+
+    it("refuses a body that is no list of ids before it reads a profile", async () => {
+        for (const body of ["not json", JSON.stringify({ ids: "k1,k2" }), JSON.stringify({ ids: [] }), JSON.stringify({ ids: ["x".repeat(201)] })]) {
+            const response = await route.POST(new NextRequest("http://dbackup.test/api/vault/recovery-kit", { method: "POST", body }));
+            expect(response.status).toBe(400);
+        }
+        expect(mocks.getProfile).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
+        expect(mocks.markKit).not.toHaveBeenCalled();
     });
 });

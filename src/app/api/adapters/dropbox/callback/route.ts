@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
-import { oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
+import { wrapError } from "@/lib/logging/errors";
+import { OAUTH_CALLBACK_FAILED, OAUTH_DENIED, oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
 
 const log = logger.child({ route: "adapters/dropbox/callback" });
 
@@ -26,7 +27,8 @@ export async function GET(req: NextRequest) {
     // Handle user denial
     if (error) {
         log.warn("Dropbox OAuth denied by user", { error, errorDescription });
-        return fail(errorDescription || "Authorization was denied by the user.");
+        // The description comes in the query, which anyone can write into a link, so it goes to the log only.
+        return fail(OAUTH_DENIED);
     }
 
     if (!code || !state) {
@@ -84,7 +86,7 @@ export async function GET(req: NextRequest) {
             `${origin}/dashboard/connections?tab=destinations&oauth=success&message=${encodeURIComponent("Dropbox authorized successfully!")}`
         );
     } catch (err) {
-        log.error("Dropbox OAuth callback failed", {}, err instanceof Error ? err : undefined);
-        return fail(err instanceof Error ? err.message : "OAuth callback failed");
+        log.error("Dropbox OAuth callback failed", { credentialId }, wrapError(err));
+        return fail(OAUTH_CALLBACK_FAILED);
     }
 }

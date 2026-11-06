@@ -90,7 +90,22 @@ describe("GET /api/templates", () => {
 describe("the destinations a retention change reaches", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.checkPermission.mockResolvedValue({ id: "u1", tenantId: "default", allTenants: false });
+        mocks.checkPermission.mockResolvedValue({ id: "u1", tenantId: "default", allTenants: false, permissions: [PERMISSIONS.TEMPLATES.READ, PERMISSIONS.JOBS.READ] });
+    });
+
+    it("names no job, destination or backup time to someone who may not see the jobs", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "u1", tenantId: "default", allTenants: false, permissions: [PERMISSIONS.TEMPLATES.READ] });
+
+        expect(await getRetentionPolicyTargets({ followers: true })).toEqual({ success: false, error: expect.stringMatching(/right to see jobs/) });
+        expect(mocks.getRetentionTargets).not.toHaveBeenCalled();
+    });
+
+    it("answers a failure of the storage listing with a fixed sentence, never its words", async () => {
+        mocks.getRetentionTargets.mockRejectedValue(new Error("ENOENT: no such file /mnt/customer-b/backups"));
+
+        const result = await getRetentionPolicyTargets({ followers: true });
+        expect(result).toEqual({ success: false, error: expect.stringMatching(/server log has the details/) });
+        expect(JSON.stringify(result)).not.toContain("customer-b");
     });
 
     it("refuses All tenants, which would mix the destinations of every tenant", async () => {
@@ -176,6 +191,15 @@ describe("deleting schedule presets", () => {
 
         expect(mocks.getSession).not.toHaveBeenCalled();
         expect(mocks.audit).toHaveBeenCalledWith("lena", "DELETE", "TEMPLATE", expect.objectContaining({ bulk: true }));
+    });
+
+    it("answers a failure of a bulk delete with a fixed sentence, never the words of the database", async () => {
+        mocks.templateNames.mockResolvedValue(new Map([["3am", "Daily at 3 AM"]]));
+        mocks.deleteSchedulePresetMany.mockRejectedValue(new Error("SQLITE_BUSY: database is locked at /data/dbackup.db"));
+
+        const result = await bulkDeleteSchedulePresets(["3am"]);
+        expect(result).toEqual({ success: false, error: expect.stringMatching(/server log has the details/) });
+        expect(JSON.stringify(result)).not.toContain("SQLITE");
     });
 
     it("leaves the scheduler alone when nothing was deleted", async () => {

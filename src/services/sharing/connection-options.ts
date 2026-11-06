@@ -23,6 +23,8 @@ export async function providedItem(connection: ProvidedConnection, tenantId: str
         adapterId: connection.adapterId,
         config: "{}",
         secretStatus: {},
+        // The tenant that shares it changes it, never the one that lists it.
+        hostLocal: null,
         // Of its settings only whether it is air-gapped, so the customer's runs and pages leave it out
         // while it is not connected. Everything else stays with the tenant that shares it.
         metadata: connection.type === "storage" ? JSON.stringify({ airGapped: isAirGapped(connection) }) : null,

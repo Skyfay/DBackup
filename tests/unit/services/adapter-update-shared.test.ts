@@ -1,8 +1,8 @@
 /**
  * Editing a connection where it touches other tenants: a destination shared with them keeps its
  * place and its role, a new role passes the limits of the tenant, the jobs in the way of a role
- * change are looked up in every tenant, and nothing outside the platform turns into a connection
- * that reaches the server DBackup runs on.
+ * change are looked up in every tenant, and nobody but a platform admin turns a connection into one
+ * that reaches the server DBackup runs on or changes one that does, not even its name.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,6 +11,8 @@ vi.stubEnv("ENCRYPTION_KEY", "b".repeat(64));
 const mocks = vi.hoisted(() => ({
     isShared: vi.fn(),
     profiles: {} as Record<string, Record<string, unknown>>,
+    // Whether the code that runs now is a platform admin with a session, see `mayReachHost`.
+    mayReachHost: vi.fn(),
 }));
 
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
@@ -24,7 +26,7 @@ vi.mock("@/lib/adapters/config-resolver", () => {
         ...(primary ? mocks.profiles[primary] : {}),
         ...(ssh ? mocks.profiles[ssh] : {}),
     });
-    return { overlayCredentialsOnConfig: overlay, layLoginsOver: overlay };
+    return { overlayCredentialsOnConfig: overlay, layLoginsOver: overlay, mayReachHost: () => mocks.mayReachHost() };
 });
 
 import { prismaMock } from "@/lib/testing/prisma-mock";
@@ -163,6 +165,7 @@ describe("an edit that would reach the server DBackup runs on", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.isShared.mockResolvedValue(false);
+        mocks.mayReachHost.mockResolvedValue(true);
         prismaMock.adapterConfig.findUnique.mockResolvedValue(stored({ adapterId: "docker-volume", storageRole: "SOURCE" }, docker) as never);
         prismaMock.adapterConfig.update.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => ({ ...stored(), ...data })) as never);
         prismaMock.credentialProfile.findMany.mockResolvedValue([]);
@@ -181,8 +184,21 @@ describe("an edit that would reach the server DBackup runs on", () => {
         await expect(runAsTenant("acme", () => updateAdapter("dest-1", { sshCredentialId: "agent" }))).rejects.toThrow("An SSH agent login");
     });
 
-    it("lets the platform switch it, and leaves a rename alone", async () => {
+    it("lets a platform admin switch it, and leaves a rename of one over SSH alone", async () => {
         await expect(runAsTenant(HOME_TENANT_ID, () => updateAdapter("dest-1", { config: { ...docker, connectionMode: "direct" } }))).resolves.not.toBeNull();
+        mocks.mayReachHost.mockResolvedValue(false);
         await expect(runAsTenant("acme", () => updateAdapter("dest-1", { name: "Volumes" }))).resolves.not.toBeNull();
+    });
+
+    it("refuses a member of the home tenant the switch, and every change of one that reaches the server, a rename too", async () => {
+        mocks.mayReachHost.mockResolvedValue(false);
+        await expect(runAsTenant(HOME_TENANT_ID, () => updateAdapter("dest-1", { config: { ...docker, connectionMode: "direct" } })))
+            .rejects.toThrow("which only a platform admin adds");
+
+        prismaMock.adapterConfig.findUnique.mockResolvedValue(stored({ adapterId: "docker-volume", storageRole: "SOURCE" }, { connectionMode: "direct" }) as never);
+        await expect(runAsTenant(HOME_TENANT_ID, () => updateAdapter("dest-1", { name: "Volumes" }))).rejects.toThrow("which only a platform admin adds");
+        // Not even back to SSH, the platform admin who added it decides.
+        await expect(runAsTenant(HOME_TENANT_ID, () => updateAdapter("dest-1", { config: docker }))).rejects.toThrow("which only a platform admin adds");
+        expect(prismaMock.adapterConfig.update).not.toHaveBeenCalled();
     });
 });

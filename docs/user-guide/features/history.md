@@ -116,9 +116,13 @@ The notification log of the home tenant opens the run of a message only for a ru
 | Permission | What it grants |
 | :--- | :--- |
 | `history:read` | The page, the runs, their logs and the notifications |
-| `jobs:execute` | **Run again** and **Cancel run** |
+| `jobs:execute` | **Run again**, and **Cancel run** on a backup |
+| `storage:restore` | **Cancel run** on a restore |
+| `settings:write` | **Cancel run** on an integrity check |
 | `jobs:read` | **Open job** |
-| `storage:read` | **Open backups** |
+| `storage:read` | **Open backups**, and **Cancel run** on a verification |
+
+Only a platform admin cancels a configuration restore.
 
 ## Troubleshooting
 

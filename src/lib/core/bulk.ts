@@ -11,7 +11,13 @@
  * Server Actions forward it, client components render it.
  */
 
-import { getErrorMessage } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
+import { userMessage } from "@/lib/logging/user-message";
+
+const log = logger.child({ module: "Bulk" });
+
+/** What a failed row says when its error was not written for the user. The log has the error. */
+export const BULK_ROW_FAILED = "This one failed. The server log has the details.";
 
 /**
  * Most rows one bulk request may carry.
@@ -42,7 +48,10 @@ export function emptyBulkResult(): BulkResult {
 }
 
 /**
- * Runs `fn` for every id, collecting outcomes instead of stopping at the first error.
+ * Runs `fn` for every id, collecting outcomes instead of stopping at the first error. A row
+ * answers the message of an error written for the user (`isUserMessage`), any other error goes to
+ * the log and the row answers `BULK_ROW_FAILED`, since the words of a driver or the database may
+ * name hosts, paths or secrets.
  *
  * Sequential on purpose. These operations contend on the same rows, the same scheduler and
  * the same remote storage endpoint, so a parallel fan-out would multiply lock contention
@@ -63,7 +72,7 @@ export async function runBulk(
             result.failed.push({
                 id,
                 name: nameOf?.(id),
-                error: getErrorMessage(error),
+                error: userMessage(error, BULK_ROW_FAILED, log, "A row of a bulk action failed", { id }),
             });
         }
     }

@@ -107,7 +107,7 @@ describe("a server whose backup holds every database in one snapshot", () => {
 
     it("still takes back what was given before, so the provider can end it", async () => {
         await base.databaseAssignment.create({ data: { sourceId: "cache-1", databaseName: "0", tenantId: "acme", validFrom: new Date("2026-01-01T00:00:00.000Z"), createdAt: new Date("2026-01-01T00:00:00.000Z") } });
-        await expect(asHome(() => databaseAssignmentService.assign("cache-1", [{ databaseName: "0", tenantId: null }], "u-msp", NOW))).resolves.toEqual({ changed: 1 });
+        await expect(asHome(() => databaseAssignmentService.assign("cache-1", [{ databaseName: "0", tenantId: null }], "u-msp", NOW))).resolves.toMatchObject({ changed: 1 });
     });
 
     it("hands a customer nothing of a database given there before: no backups, no download, no restore", async () => {

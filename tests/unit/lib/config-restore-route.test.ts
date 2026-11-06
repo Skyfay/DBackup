@@ -138,6 +138,18 @@ describe("the restore routes in Settings", () => {
         expect(mocks.checkStored).toHaveBeenCalledWith("nas", "config-backups/config_backup.db.gz.enc", { profileId: "key-1" }, { userId: "root" });
     });
 
+    it.each(["../other/config_backup.db.gz.enc", "/etc/config_backup.db.gz.enc", "config-backups/%2e%2e/%2e%2e/x.enc"])(
+        "answer 400 for the path %s that leaves the destination, before anything is read",
+        async (file) => {
+            mocks.context.mockReturnValue(PLATFORM_ADMIN);
+
+            const response = await destination.POST(postJson("/settings/config-backup/restore/destination", { destinationId: "nas", file, profileId: "key-1" }));
+
+            expect(response.status).toBe(400);
+            expect(mocks.checkStored).not.toHaveBeenCalled();
+        }
+    );
+
     it("restore a checked copy, write the audit log and say DBackup restarts", async () => {
         mocks.context.mockReturnValue({ ...PLATFORM_ADMIN, tenantId: "acme" });
 

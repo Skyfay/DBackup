@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import * as tokens from '@/lib/auth/download-tokens';
 import {
-    generateDownloadToken,
+    generateLinkToken,
     consumeDownloadToken,
     markTokenUsed,
     getTokenStoreSize,
@@ -10,7 +11,19 @@ import {
     consumeFileDownloadToken
 } from '@/lib/auth/download-tokens';
 
+/** A public link, the one token that is not bound to the session that asked for it. */
+const link = (storageId: string, file: string, decrypt = true, database?: string) =>
+    generateLinkToken({ tenantId: 'tenant-1', storageId, file, userId: 'user-1', decrypt, database }).token;
+
 describe('Download Tokens', () => {
+    it('makes no token without the one who may collect it', () => {
+        // A token of a storage and a file alone, which no route made any more, would be served to
+        // whoever presents it.
+        expect(Object.keys(tokens).filter((name) => name.startsWith('generate')).sort()).toEqual([
+            'generateFileDownloadToken', 'generateLinkToken', 'generateSelectionDownloadToken', 'generateSharedDownloadToken',
+        ]);
+    });
+
     beforeEach(() => {
         // Reset the token store before each test by clearing all tokens
         // We do this by consuming/marking used all existing tokens
@@ -21,10 +34,10 @@ describe('Download Tokens', () => {
         vi.useRealTimers();
     });
 
-    describe('generateDownloadToken', () => {
+    describe('a link token', () => {
         it('should generate a unique token string', () => {
-            const token1 = generateDownloadToken('storage-1', '/path/to/file.sql');
-            const token2 = generateDownloadToken('storage-1', '/path/to/file.sql');
+            const token1 = link('storage-1', '/path/to/file.sql');
+            const token2 = link('storage-1', '/path/to/file.sql');
 
             expect(token1).toBeTypeOf('string');
             expect(token2).toBeTypeOf('string');
@@ -38,7 +51,7 @@ describe('Download Tokens', () => {
             const file = '/backups/test.sql.gz.enc';
             const decrypt = true;
 
-            const token = generateDownloadToken(storageId, file, decrypt);
+            const token = link(storageId, file, decrypt);
             const data = consumeDownloadToken(token);
 
             expect(data).not.toBeNull();
@@ -48,15 +61,8 @@ describe('Download Tokens', () => {
             expect(data?.used).toBe(false);
         });
 
-        it('should default decrypt to true', () => {
-            const token = generateDownloadToken('storage', '/file.sql');
-            const data = consumeDownloadToken(token);
-
-            expect(data?.decrypt).toBe(true);
-        });
-
         it('should respect decrypt=false parameter', () => {
-            const token = generateDownloadToken('storage', '/file.sql.enc', false);
+            const token = link('storage', '/file.sql.enc', false);
             const data = consumeDownloadToken(token);
 
             expect(data?.decrypt).toBe(false);
@@ -66,7 +72,7 @@ describe('Download Tokens', () => {
             const now = Date.now();
             vi.setSystemTime(now);
 
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
             const data = consumeDownloadToken(token);
 
             expect(data?.createdAt).toBe(now);
@@ -76,12 +82,12 @@ describe('Download Tokens', () => {
 
     describe('database downloads', () => {
         it('carries the database a wget link was created for', () => {
-            const token = generateDownloadToken('storage-1', 'jobs/nightly.tar', true, 'shop');
+            const token = link('storage-1', 'jobs/nightly.tar', true, 'shop');
             expect(consumeDownloadToken(token)).toMatchObject({ file: 'jobs/nightly.tar', decrypt: true, database: 'shop' });
         });
 
         it('leaves the database out of a link for a whole file', () => {
-            const token = generateDownloadToken('storage-1', 'jobs/nightly.sql.gz', true);
+            const token = link('storage-1', 'jobs/nightly.sql.gz', true);
             expect(consumeDownloadToken(token)).not.toHaveProperty('database');
         });
 
@@ -107,7 +113,7 @@ describe('Download Tokens', () => {
             const now = Date.now();
             vi.setSystemTime(now);
 
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // Advance time by 6 minutes (past 5-min expiration)
             vi.setSystemTime(now + 6 * 60 * 1000);
@@ -120,7 +126,7 @@ describe('Download Tokens', () => {
             const now = Date.now();
             vi.setSystemTime(now);
 
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // Advance time by 4 minutes (within 5-min expiration)
             vi.setSystemTime(now + 4 * 60 * 1000);
@@ -131,7 +137,7 @@ describe('Download Tokens', () => {
         });
 
         it('should return null for already-used token', () => {
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // First consume - should work
             const firstResult = consumeDownloadToken(token);
@@ -146,7 +152,7 @@ describe('Download Tokens', () => {
         });
 
         it('should not mark token as used automatically', () => {
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // Consume once
             const firstResult = consumeDownloadToken(token);
@@ -161,7 +167,7 @@ describe('Download Tokens', () => {
 
     describe('markTokenUsed', () => {
         it('should mark token as used', () => {
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // Token should be valid initially
             const beforeMark = consumeDownloadToken(token);
@@ -183,7 +189,7 @@ describe('Download Tokens', () => {
 
     describe('Token Workflow', () => {
         it('should support the two-step consume-then-mark pattern', () => {
-            const token = generateDownloadToken('storage-id', '/backup.sql', true);
+            const token = link('storage-id', '/backup.sql', true);
 
             // Step 1: Validate token (simulating download start)
             const tokenData = consumeDownloadToken(token);
@@ -206,7 +212,7 @@ describe('Download Tokens', () => {
         });
 
         it('should allow retry if download fails before markTokenUsed', () => {
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // First attempt - validate
             const attempt1 = consumeDownloadToken(token);
@@ -235,20 +241,20 @@ describe('Download Tokens', () => {
         it('should return the number of tokens in store', () => {
             const initialSize = getTokenStoreSize();
 
-            generateDownloadToken('storage-1', '/file1.sql');
+            link('storage-1', '/file1.sql');
             expect(getTokenStoreSize()).toBe(initialSize + 1);
 
-            generateDownloadToken('storage-2', '/file2.sql');
+            link('storage-2', '/file2.sql');
             expect(getTokenStoreSize()).toBe(initialSize + 2);
 
-            generateDownloadToken('storage-3', '/file3.sql');
+            link('storage-3', '/file3.sql');
             expect(getTokenStoreSize()).toBe(initialSize + 3);
         });
     });
 
     describe('Edge Cases', () => {
         it('should handle empty string storage ID', () => {
-            const token = generateDownloadToken('', '/file.sql');
+            const token = link('', '/file.sql');
             const data = consumeDownloadToken(token);
 
             expect(data).not.toBeNull();
@@ -257,7 +263,7 @@ describe('Download Tokens', () => {
 
         it('should handle special characters in file path', () => {
             const specialPath = '/backups/my db/file with spaces & special.sql';
-            const token = generateDownloadToken('storage', specialPath);
+            const token = link('storage', specialPath);
             const data = consumeDownloadToken(token);
 
             expect(data).not.toBeNull();
@@ -274,7 +280,7 @@ describe('Download Tokens', () => {
 
         it('should handle very long file paths', () => {
             const longPath = '/backups/' + 'a'.repeat(1000) + '.sql';
-            const token = generateDownloadToken('storage', longPath);
+            const token = link('storage', longPath);
             const data = consumeDownloadToken(token);
 
             expect(data).not.toBeNull();
@@ -285,7 +291,7 @@ describe('Download Tokens', () => {
             const now = Date.now();
             vi.setSystemTime(now);
 
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // Set time to exactly 5 minutes later (edge case)
             vi.setSystemTime(now + 5 * 60 * 1000);
@@ -299,7 +305,7 @@ describe('Download Tokens', () => {
             const now = Date.now();
             vi.setSystemTime(now);
 
-            const token = generateDownloadToken('storage', '/file.sql');
+            const token = link('storage', '/file.sql');
 
             // Set time to 5 minutes + 1ms later (just past expiration)
             vi.setSystemTime(now + 5 * 60 * 1000 + 1);
@@ -347,10 +353,10 @@ describe('Selection download tokens', () => {
         expect(consumeSelectionDownloadToken(token, 'someone-else')).toBeNull();
     });
 
-    it('refuses a plain single-file token, which carries no owner', () => {
-        // Single-file tokens are not bound to a user, so accepting one here would hand out a
-        // selection download to whoever presents it.
-        const plain = generateDownloadToken('cfg-1', '/backup.sql');
+    it('refuses a public link, which carries no selection', () => {
+        // A link is served to whoever presents it, so accepting one here would hand out a
+        // selection download to them.
+        const plain = link('cfg-1', '/backup.sql');
 
         expect(consumeSelectionDownloadToken(plain, 'user-1')).toBeNull();
     });
@@ -431,7 +437,7 @@ describe('Prepared file download tokens', () => {
         const selection = generateSelectionDownloadToken({
             storageId: 'cfg-1', file: 'Job/backup.tar', userId: 'user-1', fileName: 'x.tar.gz',
         });
-        const plain = generateDownloadToken('cfg-1', '/backup.sql');
+        const plain = link('cfg-1', '/backup.sql');
 
         expect(consumeFileDownloadToken(selection, 'user-1')).toBeNull();
         expect(consumeFileDownloadToken(plain, 'user-1')).toBeNull();

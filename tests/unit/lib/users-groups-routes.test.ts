@@ -126,8 +126,15 @@ describe("the Groups tab in All tenants and in a tenant", () => {
 
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ success: true, data: { groups: [], allTenants: true } });
-        expect(mocks.getPlatformGroupsModel).toHaveBeenCalledWith("root");
+        expect(mocks.getPlatformGroupsModel).toHaveBeenCalledWith("root", "all");
         expect(mocks.getGroupsModel).not.toHaveBeenCalled();
+    });
+
+    it("lists in All tenants only the groups of the tenants whose accounts the viewer sees", async () => {
+        // A platform group of all tenants that reads the groups, whose members are accounts of the platform.
+        mocks.getAuthContext.mockResolvedValue({ userId: "sam", permissions: [PERMISSIONS.GROUPS.READ], isPlatformAdmin: false, authMethod: "session", tenantId: null, allTenants: true });
+        expect((await getGroups()).status).toBe(200);
+        expect(mocks.getPlatformGroupsModel).toHaveBeenCalledWith("sam", ["t-acme"]);
     });
 
     it("counts the members of the open tenant inside a tenant, without the people for a viewer who may not see the users", async () => {

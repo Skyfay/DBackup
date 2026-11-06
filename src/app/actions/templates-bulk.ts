@@ -12,7 +12,8 @@ import { auditService } from "@/services/audit-service";
 import { templateNames, type TemplateType } from "@/services/templates/template-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import { logger } from "@/lib/logging/logger";
 import { scheduler } from "@/lib/server/scheduler";
 import type { BulkResult } from "@/lib/core/bulk";
@@ -67,7 +68,7 @@ async function runTemplateBulkDelete(
 
         return { success: true as const, data: result };
     } catch (e: unknown) {
-        return { success: false as const, error: getErrorMessage(e) };
+        return { success: false as const, error: userMessage(e, "The templates could not be deleted. The server log has the details.", log, "Failed to bulk delete templates", { type: templateType }) };
     }
 }
 

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
+import { backupPathIssue } from "@/lib/server/backup-path-schema";
 import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, PermissionError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { findDestinationPath } from "@/services/sharing/destination-access";
+import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 import { readCopyVerification, startCopyVerification } from "@/services/storage/copy-verification";
 import { userService } from "@/services/user/user-service";
 import { auditService } from "@/services/audit-service";
@@ -17,7 +20,7 @@ const log = logger.child({ route: "storage/verify-copies" });
 const StartSchema = z.object({
     copies: z.array(z.object({
         destinationId: z.string().min(1),
-        file: z.string().min(1).refine((v) => !v.includes("..") && !v.startsWith("/"), "Invalid file path"),
+        file: z.string().min(1).superRefine(backupPathIssue),
     })).min(1).max(50),
 });
 
@@ -26,7 +29,7 @@ function failure(error: unknown, what: string): NextResponse {
     if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     if (error instanceof NotFoundError) return NextResponse.json({ success: false, error: "Destination not found" }, { status: 404 });
     log.error(what, {}, wrapError(error));
-    return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json({ success: false, error: "The copies could not be checked. The log of DBackup has the details." }, { status: 500 });
 }
 
 /**
@@ -37,7 +40,7 @@ function failure(error: unknown, what: string): NextResponse {
  */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.READ);
@@ -51,6 +54,12 @@ export async function POST(req: NextRequest) {
         // Every copy in the tenant's view of its destination, the way the download reads it, before
         // the run starts and anything is noted.
         for (const copy of parsed.data.copies) await findDestinationPath(copy.destinationId, copy.file, tenantId);
+        // A configuration backup is read only by a platform admin with a session, its check too,
+        // which downloads it and notes the result in its sidecar.
+        for (const copy of parsed.data.copies) {
+            const configBackup = await configBackupRefusal(ctx, copy.destinationId, copy.file);
+            if (configBackup) return configBackup;
+        }
 
         const startedBy = (await userService.nameOf(ctx.userId)) ?? "Manual";
         const { executionId } = await startCopyVerification(parsed.data.copies, startedBy);
@@ -72,7 +81,7 @@ export async function POST(req: NextRequest) {
 /** Where a check of copies stands: the run and every copy with its state and download progress. */
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.READ);

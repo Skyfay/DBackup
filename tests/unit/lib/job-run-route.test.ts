@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { PermissionError, ApiKeyError, NotFoundError } from "@/lib/logging/errors";
+import { recordKeyRefusal } from "@/lib/auth/api-key-refusal";
 
 // Mock logger
 vi.mock("@/lib/logging/logger", () => ({
@@ -69,6 +70,7 @@ vi.mock("@/services/user/user-service", () => ({
 vi.mock("@/lib/auth/permissions", () => ({
   PERMISSIONS: {
     JOBS: { EXECUTE: "jobs:execute" },
+    STORAGE: { DELETE: "storage:delete" },
   },
 }));
 
@@ -111,7 +113,11 @@ describe("POST /api/jobs/[id]/run", () => {
   });
 
   it("should return 401 for disabled API key", async () => {
-    mockGetAuthContext.mockRejectedValue(new ApiKeyError("disabled", "API key is disabled"));
+    // A refused key leaves no context and its reason, see `getAuthContext`.
+    mockGetAuthContext.mockImplementation(async (headers: Headers) => {
+      recordKeyRefusal(headers, new ApiKeyError("disabled", "API key is disabled").message);
+      return null;
+    });
 
     const response = await POST(createRequest(), createProps());
     const body = await response.json();
@@ -122,7 +128,11 @@ describe("POST /api/jobs/[id]/run", () => {
   });
 
   it("should return 401 for expired API key", async () => {
-    mockGetAuthContext.mockRejectedValue(new ApiKeyError("expired", "API key has expired"));
+    // A refused key leaves no context and its reason, see `getAuthContext`.
+    mockGetAuthContext.mockImplementation(async (headers: Headers) => {
+      recordKeyRefusal(headers, new ApiKeyError("expired", "API key has expired").message);
+      return null;
+    });
 
     const response = await POST(createRequest(), createProps());
     const body = await response.json();
@@ -248,14 +258,15 @@ describe("POST /api/jobs/[id]/run", () => {
       authMethod: "session",
     });
     mockCheckPermissionWithContext.mockReturnValue(undefined);
-    mockExecuteJob.mockRejectedValue(new Error("Job not found"));
+    mockExecuteJob.mockRejectedValue(new Error("SQLITE_BUSY at /data/dbackup.db"));
 
     const response = await POST(createRequest(), createProps("nonexistent"));
     const body = await response.json();
 
     expect(response.status).toBe(500);
     expect(body.success).toBe(false);
-    expect(body.error).toBe("Job not found");
+    // The detail goes to the log, never to the caller.
+    expect(body.error).toBe("The job could not be started. The log of DBackup has the details.");
   });
 
   it("answers 404 for a job the tenant does not hold, like for one that does not exist", async () => {
@@ -273,5 +284,33 @@ describe("POST /api/jobs/[id]/run", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ success: false, error: "Job not found" });
     expect(mockAuditLogFor).not.toHaveBeenCalled();
+  });
+
+  describe("locking the backup of the run", () => {
+    const ctx = { userId: "user-1", permissions: ["jobs:execute"], isPlatformAdmin: false, authMethod: "apikey", apiKeyId: "key-1" };
+    const withBody = (body: unknown) => new NextRequest("http://localhost:3000/api/jobs/job-1/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    beforeEach(() => {
+      // The real check, against the permissions of the request.
+      mockCheckPermissionWithContext.mockImplementation((context: { permissions: string[] }, permission: string) => {
+        if (!context.permissions.includes(permission)) throw new PermissionError(permission);
+      });
+      mockExecuteJob.mockResolvedValue({ success: true, executionId: "exec-1" });
+    });
+
+    it("locks it for a key that may run the job, like the key of a CI pipeline", async () => {
+      mockGetAuthContext.mockResolvedValue(ctx);
+      expect((await POST(withBody({ lock: true }), createProps())).status).toBe(200);
+      expect(mockCheckPermissionWithContext).not.toHaveBeenCalledWith(ctx, "storage:delete");
+      expect(mockExecuteJob).toHaveBeenLastCalledWith("job-1", expect.anything(), { lock: true });
+
+      mockGetAuthContext.mockResolvedValue(ctx);
+      expect((await POST(withBody({ lock: false }), createProps())).status).toBe(200);
+      expect((await POST(createRequest(), createProps())).status).toBe(200);
+    });
   });
 });

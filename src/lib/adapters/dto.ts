@@ -4,6 +4,7 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import type { StorageAdapter } from "@/lib/core/interfaces";
 import prisma from "@/lib/prisma";
+import { hostLocalReason } from "@/lib/adapters/host-local";
 
 registerAdapters();
 
@@ -29,6 +30,12 @@ export interface AdapterListItemDTO {
     config: string;
     /** Map of sensitive key -> whether a non-empty value is stored. */
     secretStatus: Record<string, boolean>;
+    /**
+     * Why the connection reaches the server DBackup runs on, from its stored config without its
+     * saved logins, see `hostLocalReason`, or null. Only a platform admin changes such a connection,
+     * so the form opens it read-only for anyone else. The server decides again on every change.
+     */
+    hostLocal: string | null;
     metadata: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -70,7 +77,10 @@ export interface ProvidedTerms {
 /** Who gets a connection the listing tenant shares. */
 export interface SharedTerms {
     allTenants: boolean;
+    /** The tenants that get it and that the viewer reaches. */
     tenants: { id: string; name: string }[];
+    /** Whether tenants beyond the reach of the viewer get it too, never which or how many. */
+    beyond?: boolean;
     encryptedOnly: boolean;
     ownRecipients: boolean;
 }
@@ -107,18 +117,22 @@ export interface AdapterRowInput {
 export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
     let config = "{}";
     let secretStatus: Record<string, boolean> = {};
+    // Local Filesystem reaches the server whatever its config holds.
+    let hostLocal = hostLocalReason(row.adapterId, {});
 
     try {
         const parsed = JSON.parse(row.config);
         try {
             const decrypted = decryptConfig(parsed);
             secretStatus = getSecretStatus(decrypted);
+            hostLocal = hostLocalReason(row.adapterId, decrypted as Record<string, unknown>);
             config = JSON.stringify(redactSecrets(decrypted));
         } catch {
             // Decryption failed (corrupt data / rotated key). Still redact secret
             // keys from the raw parsed config so structural fields survive without
             // leaking the (encrypted) secret values.
             secretStatus = getSecretStatus(parsed);
+            hostLocal = hostLocalReason(row.adapterId, parsed as Record<string, unknown>);
             config = JSON.stringify(redactSecrets(parsed));
         }
     } catch {
@@ -134,6 +148,7 @@ export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
         adapterId: row.adapterId,
         config,
         secretStatus,
+        hostLocal,
         metadata: row.metadata,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

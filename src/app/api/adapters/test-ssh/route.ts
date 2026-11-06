@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { registry } from "@/lib/core/registry";
 import { SshHost, createHost, resolveTransport, type TransportSpec, type SshConnectionConfig } from "@/lib/transport";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
@@ -10,16 +11,22 @@ import { MSSQLConfig } from "@/lib/adapters/definitions";
 import { assertConfigOffHost, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { registerAdapters } from "@/lib/adapters";
 import { assertMayApplySavedLogin } from "@/lib/auth/saved-login-access";
+import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
 import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
 import { hasSshMode } from "@/lib/adapters/ssh-mode";
 import { hostOf } from "@/lib/adapters/dialed-hosts";
 import { assertHostsReachable } from "@/services/tenant/tenant-network";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 
 registerAdapters();
 
 const log = logger.child({ route: "adapters/test-ssh" });
+
+/** What the test answers when it fails for a reason of DBackup rather than of the SSH server. */
+const SSH_TEST_FAILED = "The SSH login could not be tested. The log of DBackup has the details.";
 
 /**
  * A non-empty path of bounded length, without control characters.
@@ -40,7 +47,7 @@ export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -75,6 +82,9 @@ export async function POST(req: NextRequest) {
         let resolvedConfig = { ...config };
         if (adapterId && sshCredentialId) {
             assertMayApplySavedLogin(ctx, adapterId);
+            // The logins of the destination of the configuration backup never sign in to a host of the form.
+            const locked = await savedLoginRefusal(ctx, sshCredentialId);
+            if (locked) return locked;
             try {
                 resolvedConfig = await overlayCredentialsOnConfig(
                     adapterId,
@@ -159,46 +169,58 @@ export async function POST(req: NextRequest) {
                     { status: 400 },
                 );
             }
-            return testMssqlSsh(resolvedConfig as MSSQLConfig, spec, sshHost, sshPort);
         }
 
-        // Generic SSH connection test for all other adapters
-        return testGenericSsh(spec.ssh, sshHost, sshPort);
+        // SQL Server checks its backup directory too, every other adapter only the login.
+        const result = adapterId === "mssql"
+            ? await testMssqlSsh(resolvedConfig as MSSQLConfig, spec, sshHost, sshPort)
+            : await testGenericSsh(spec.ssh, sshHost, sshPort);
+        // Written once the test ran, whether the host answered or not, like the test of a connection.
+        await auditService.logFor(ctx, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.ADAPTER, {
+            action: "ssh_test",
+            adapter: adapterId ?? "ssh",
+            host: sshHost,
+            success: result.success,
+        });
+        return NextResponse.json(result);
     } catch (error: unknown) {
         if (error instanceof PermissionError) return NextResponse.json({ success: false, message: error.message }, { status: 403 });
+        // What the SSH server answers comes back from the tests above. Anything that reaches this
+        // point is DBackup's own failure, whose words may name paths or settings, so it stays in the log.
         log.error("SSH test route error", {}, wrapError(error));
-        const message =
-            error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json(
-            { success: false, message },
-            { status: 500 }
-        );
+        return NextResponse.json({ success: false, message: SSH_TEST_FAILED }, { status: 500 });
     }
+}
+
+/** What a test answers. */
+interface SshTestResult {
+    success: boolean;
+    message: string;
 }
 
 /**
  * Generic SSH test: connect and run a simple echo command.
  */
-async function testGenericSsh(sshConfig: SshConnectionConfig, sshHost: string, sshPort: number) {
+async function testGenericSsh(sshConfig: SshConnectionConfig, sshHost: string, sshPort: number): Promise<SshTestResult> {
     const host = new SshHost(sshConfig);
     try {
         const result = await host.exec(["echo", "connected"]);
 
         if (result.code === 0) {
-            return NextResponse.json({
+            return {
                 success: true,
                 message: `SSH connection to ${sshHost}:${sshPort} successful`,
-            });
+            };
         }
 
-        return NextResponse.json({
+        return {
             success: false,
             message: `SSH connected but test command failed: ${result.stderr.trim()}`,
-        });
+        };
     } catch (connectError: unknown) {
         const message = connectError instanceof Error ? connectError.message : "SSH connection failed";
         log.warn("SSH test failed", { sshHost }, wrapError(connectError));
-        return NextResponse.json({ success: false, message });
+        return { success: false, message };
     } finally {
         await host.dispose().catch(() => {});
     }
@@ -213,7 +235,7 @@ async function testMssqlSsh(
     spec: TransportSpec,
     sshHost: string,
     sshPort: number,
-) {
+): Promise<SshTestResult> {
     const backupPath = config.backupPath || "/var/opt/mssql/backup";
     const host = createHost(spec);
 
@@ -221,17 +243,17 @@ async function testMssqlSsh(
         const result = await checkBackupPath(host, backupPath);
 
         if (!result.readable) {
-            return NextResponse.json({
+            return {
                 success: false,
                 message: `SSH connection to ${sshHost}:${sshPort} successful, but backup path is not accessible: ${backupPath}${result.error ? ` (${result.error})` : ""}`,
-            });
+            };
         }
 
         if (!result.writable) {
-            return NextResponse.json({
+            return {
                 success: false,
                 message: `SSH connection to ${sshHost}:${sshPort} successful, but backup path is read-only: ${backupPath}`,
-            });
+            };
         }
 
         // Reachable and writable is not the same as "the directory SQL Server
@@ -241,25 +263,25 @@ async function testMssqlSsh(
         const shared = await checkBackupPathShared(config, host, backupPath).catch(() => null);
 
         if (shared && !shared.shared) {
-            return NextResponse.json({
+            return {
                 success: false,
                 message:
                     `SSH connection to ${sshHost}:${sshPort} successful, and ${backupPath} exists over SSH, ` +
                     `but SQL Server does not see the same directory. This is what happens when SQL Server ` +
                     `runs in a container and ${backupPath} is not bind-mounted to the same path on the host. ` +
                     `Use a path that is identical inside the container and on the host.`,
-            });
+            };
         }
 
         const verified = shared ? " and shared with SQL Server" : "";
-        return NextResponse.json({
+        return {
             success: true,
             message: `SSH connection to ${sshHost}:${sshPort} successful - backup path ${backupPath} is readable, writable${verified}`,
-        });
+        };
     } catch (connectError: unknown) {
         const message = connectError instanceof Error ? connectError.message : "SSH connection failed";
         log.warn("SSH test failed", { sshHost }, wrapError(connectError));
-        return NextResponse.json({ success: false, message });
+        return { success: false, message };
     } finally {
         await host.dispose().catch(() => {});
     }

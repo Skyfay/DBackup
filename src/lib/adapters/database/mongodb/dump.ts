@@ -1,5 +1,5 @@
 import type { ExecutionHost } from "@/lib/transport";
-import { MONGODUMP, buildConnectionArgs, maskSecrets } from "./args";
+import { MONGODUMP, maskSecrets, withToolConnection } from "./args";
 import { assertDatabaseArgument } from "@/lib/adapters/database/common/database-name";
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
@@ -38,9 +38,9 @@ async function dumpSingleDatabase(
 ): Promise<void> {
     const mongodump = await host.which(...MONGODUMP);
 
-    await host.captureOutput(outputPath, {}, async (hostPath) => {
+    await host.captureOutput(outputPath, {}, (hostPath) => withToolConnection(host, config, async (connection) => {
         const args = [
-            ...buildConnectionArgs(config),
+            ...connection,
             // A name, never an option, see `database-name.ts`.
             "--db", assertDatabaseArgument(dbName),
             `--archive=${hostPath}`,
@@ -66,7 +66,7 @@ async function dumpSingleDatabase(
                 `mongodump exited with code ${code ?? "null"}${signal ? ` (signal: ${signal})` : ""}`,
             );
         }
-    });
+    }));
 }
 
 /** Split a user-supplied option string, honouring single and double quotes. */

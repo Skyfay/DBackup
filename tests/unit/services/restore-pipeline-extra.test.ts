@@ -8,6 +8,7 @@ import * as smartRecovery from '@/services/restore/smart-recovery';
 import * as cryptoStream from '@/lib/crypto/stream';
 import { PassThrough } from 'stream';
 import type { RestoreInput } from '@/services/restore/types';
+import { FileTooLargeError } from '@/lib/adapters/storage/common/read-limit';
 
 // Hoisted so the same vi.fn() instances land in both the mock factory and test assertions.
 const fsMocks = vi.hoisted(() => ({
@@ -131,6 +132,9 @@ function makeInput(overrides: Partial<RestoreInput> = {}): RestoreInput {
 function makeStorageAdapter(overrides = {}) {
     return {
         download: vi.fn().mockResolvedValue(true),
+        // The .meta.json sidecar is read through read(), whose answer the tests set like the
+        // content of a downloaded file, through fsMocks.readFile.
+        read: vi.fn(async () => (await fsMocks.readFile()) ?? null),
         ...overrides,
     };
 }
@@ -185,12 +189,10 @@ describe('runRestorePipeline (extra coverage)', () => {
     // Metadata file download FAILS (catch branch) + extension-based fallbacks
     // -------------------------------------------------------------------------
 
-    it('detects GZIP compression from .gz extension when metadata download throws', async () => {
+    it('detects GZIP compression from .gz extension when the metadata read throws', async () => {
         const storageAdapter = makeStorageAdapter({
-            // First call (meta download) throws, second call (actual file) succeeds.
-            download: vi.fn()
-                .mockImplementationOnce(() => { throw new Error('Network error'); })
-                .mockResolvedValueOnce(true),
+            // The read of the .meta.json throws, the download of the file succeeds.
+            read: vi.fn().mockRejectedValue(new Error('Network error')),
         });
         const dbAdapter = makeDbAdapter();
 
@@ -207,11 +209,9 @@ describe('runRestorePipeline (extra coverage)', () => {
         expect(decomp.getDecompressionStream).toHaveBeenCalledWith('GZIP');
     });
 
-    it('detects BROTLI compression from .br extension when metadata download throws', async () => {
+    it('detects BROTLI compression from .br extension when the metadata read throws', async () => {
         const storageAdapter = makeStorageAdapter({
-            download: vi.fn()
-                .mockImplementationOnce(() => { throw new Error('Timeout'); })
-                .mockResolvedValueOnce(true),
+            read: vi.fn().mockRejectedValue(new Error('Timeout')),
         });
         const dbAdapter = makeDbAdapter();
 
@@ -250,11 +250,29 @@ describe('runRestorePipeline (extra coverage)', () => {
         expect(dbAdapter.restore).not.toHaveBeenCalled();
     });
 
-    it('logs a warning when metadata file download fails but continues without metadata', async () => {
+    it('fails on a .meta.json larger than any backup writes instead of guessing from the file name', async () => {
         const storageAdapter = makeStorageAdapter({
-            download: vi.fn()
-                .mockImplementationOnce(() => { throw new Error('Permission denied'); })
-                .mockResolvedValueOnce(true),
+            read: vi.fn().mockRejectedValue(new FileTooLargeError(8 * 1024 * 1024)),
+        });
+        const dbAdapter = makeDbAdapter();
+
+        prismaMock.adapterConfig.findUnique
+            .mockResolvedValueOnce(mockStorageConfig as any)
+            .mockResolvedValueOnce(mockSourceConfig as any);
+        useAdapters(storageAdapter, dbAdapter);
+
+        await runRestorePipeline('exec-meta-huge', makeInput({ file: 'backup.sql.gz' }));
+
+        expect(storageAdapter.download).not.toHaveBeenCalled();
+        expect(dbAdapter.restore).not.toHaveBeenCalled();
+        expect(prismaMock.execution.update).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
+        );
+    });
+
+    it('logs a warning when the metadata read fails but continues without metadata', async () => {
+        const storageAdapter = makeStorageAdapter({
+            read: vi.fn().mockRejectedValue(new Error('Permission denied')),
         });
         const dbAdapter = makeDbAdapter();
 

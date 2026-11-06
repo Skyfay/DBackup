@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -15,7 +16,7 @@ export async function GET(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ));
     if (refused) return refused;
 

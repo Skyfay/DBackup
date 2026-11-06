@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ServerPage } from "@/components/dashboard/explorer/server-page";
 import { checkPermission, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { serverSharingOf } from "@/services/tenant/server-sharing";
@@ -12,6 +13,7 @@ export const metadata: Metadata = { title: "Server" };
 export const dynamic = "force-dynamic";
 
 export default async function ExplorerServerPage() {
+    await redirectWithoutTenant();
     const viewer = await checkPermission(PERMISSIONS.SOURCES.VIEW);
     const can = (permission: Permission) => hasPermissionWithContext(viewer, permission);
 

@@ -46,6 +46,7 @@ import { useTenantColumns } from "@/components/tenant/tenant-column";
 import { useOpenRecord } from "@/components/tenant/tenant-actions";
 import { useMayAdd, useTenantView } from "@/components/tenant/tenant-view";
 import { withTenantColumn } from "@/components/tenant/tenant-rows";
+import { useMayReachServer } from "./host-local-access";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -114,6 +115,9 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const mayAddDestinations = useMayAdd("destinations");
     // The destination of the configuration backup is changed by a platform admin alone.
     const { isPlatformAdmin } = useTenantView();
+    // A connection that reaches the server DBackup runs on is copied by a platform admin alone, and
+    // its form opens read-only for anyone else, see `host-local.ts`.
+    const mayReachServer = useMayReachServer();
     const openEdit = useCallback((config: AdapterConfig) => {
         const locked = configBackupLock(config, isPlatformAdmin);
         if (locked) {
@@ -279,8 +283,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 : undefined,
             onEdit: !inPanel && canManage ? () => openEdit(config) : undefined,
             // A copy is a new connection, which the platform may not let the tenant add itself.
-            onClone: canAdd ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
-            counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
+            onClone: canAdd && (mayReachServer || !config.hostLocal) ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
+            counterpart: canManage && type === "storage" && (mayReachServer || !config.hostLocal) ? counterpartOf() : undefined,
             onShare: shareable && shareAccess.share ? () => setSharingId(config.id) : undefined,
             onDelete: canManage ? () => {
                 // The row already knows whether a job or a template still holds the connection.
@@ -292,7 +296,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             } : undefined,
             busy: cloningId === config.id,
         };
-    }, [type, kind, canViewStorage, canManage, canAdd, mayAddSources, mayAddDestinations, shareable, shareAccess.share, cloningId, router, inAllTenants, tenantNameOf, openRecord, openEdit, isPlatformAdmin]);
+    }, [type, kind, canViewStorage, canManage, canAdd, mayAddSources, mayAddDestinations, shareable, shareAccess.share, cloningId, router, inAllTenants, tenantNameOf, openRecord, openEdit, isPlatformAdmin, mayReachServer]);
 
     const renderActions = useCallback(
         (config: AdapterConfig, inPanel = false) => (config.sharedServer

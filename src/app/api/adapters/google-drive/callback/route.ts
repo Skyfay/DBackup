@@ -3,7 +3,8 @@ import { google } from "googleapis";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
-import { oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
+import { wrapError } from "@/lib/logging/errors";
+import { OAUTH_CALLBACK_FAILED, OAUTH_DENIED, oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
 
 const log = logger.child({ route: "adapters/google-drive/callback" });
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
     // Handle user denial
     if (error) {
         log.warn("Google OAuth denied by user", { error });
-        return fail("Authorization was denied by the user.");
+        return fail(OAUTH_DENIED);
     }
 
     if (!code || !state) {
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
             `${origin}/dashboard/connections?tab=destinations&oauth=success&message=${encodeURIComponent("Google Drive authorized successfully!")}`
         );
     } catch (err) {
-        log.error("Google OAuth callback failed", {}, err instanceof Error ? err : undefined);
-        return fail(err instanceof Error ? err.message : "OAuth callback failed");
+        log.error("Google OAuth callback failed", { credentialId }, wrapError(err));
+        return fail(OAUTH_CALLBACK_FAILED);
     }
 }

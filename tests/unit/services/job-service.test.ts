@@ -3,6 +3,7 @@ import { prismaMock } from '@/lib/testing/prisma-mock';
 import { JobService, CreateJobInput } from '@/services/jobs/job-service';
 import { scheduler } from '@/lib/server/scheduler';
 import { invalidateDashboardCache } from '@/services/dashboard/cache';
+import { ConflictError, NotFoundError, ValidationError } from '@/lib/logging/errors';
 
 // Mock the global scheduler singleton to avoid side effects (like starting cron timers)
 vi.mock('@/lib/server/scheduler', () => ({
@@ -240,6 +241,10 @@ describe('JobService', () => {
                     destinations: [],
                 })
             ).rejects.toThrow('A job with the name "Duplicate" already exists.');
+            // A name in use is the caller's to fix, so the routes answer 409 with this sentence.
+            await expect(
+                service.createJob({ name: 'Duplicate', schedule: '0 0 * * *', sourceId: 's-1', destinations: [] })
+            ).rejects.toBeInstanceOf(ConflictError);
 
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
@@ -260,6 +265,10 @@ describe('JobService', () => {
                     destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }],
                 })
             ).rejects.toThrow('Job must have at least one source');
+            // Written for the user, so the routes answer 400 with this sentence.
+            await expect(
+                service.createJob({ name: 'No Source Job', schedule: '0 0 * * *', destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }] })
+            ).rejects.toBeInstanceOf(ValidationError);
 
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
@@ -737,7 +746,7 @@ describe('JobService', () => {
         it('throws when the source job is not found', async () => {
             prismaMock.job.findUnique.mockResolvedValue(null);
 
-            await expect(service.cloneJob('missing')).rejects.toThrow('Job with id "missing" not found.');
+            await expect(service.cloneJob('missing')).rejects.toBeInstanceOf(NotFoundError);
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
 

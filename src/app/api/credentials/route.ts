@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
@@ -41,7 +42,7 @@ function errorResponse(error: unknown): Response {
 
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ);
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.WRITE);

@@ -10,6 +10,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { RestoreService } from '@/services/restore/restore-service';
 
+/** A platform admin with a session, who may restore into any target. */
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+
 const { mockLoggerError } = vi.hoisted(() => ({
     mockLoggerError: vi.fn(),
 }));
@@ -50,7 +53,7 @@ describe('RestoreService – background pipeline error handling', () => {
             storageConfigId: 'st-1',
             file: 'backup.sql',
             targetSourceId: 'src-1',
-        });
+        }, PLATFORM_ADMIN);
 
         expect(result.success).toBe(true);
         expect(result.executionId).toBe('exec-bg-err');
@@ -63,7 +66,7 @@ describe('RestoreService – background pipeline error handling', () => {
             storageConfigId: 'st-1',
             file: 'backup.sql',
             targetSourceId: 'src-1',
-        });
+        }, PLATFORM_ADMIN);
 
         // Wait for the rejected promise's .catch() to run
         await new Promise(resolve => setTimeout(resolve, 20));

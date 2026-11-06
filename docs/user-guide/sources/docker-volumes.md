@@ -26,6 +26,10 @@ services:
 A process that can talk to the Docker socket can start containers, and a container can be given access to the whole host. Mount it only if you are comfortable with DBackup having that reach. Connecting over SSH instead does not change this - it moves the same access to the other machine.
 :::
 
+::: info Direct is for platform admins
+**Direct** reaches the Docker of the server DBackup runs on, so only a platform admin, signed in with a session in the home tenant, adds, changes, copies or tests such a source, and nobody else is offered **Direct**. Anyone else opens it read-only and may still pick it in a job. **Over SSH** is open to everyone who may add directory sources. See [Connections to the Server DBackup Runs On](/user-guide/admin/tenants#connections-to-the-server-dbackup-runs-on).
+:::
+
 ## Configuration
 
 | Field | Description | Default | Required |
@@ -62,16 +66,22 @@ A volume cannot be read from outside a container, so DBackup mounts the ones it 
 
 **The run history shows all of it**: which containers were stopped and started again, which helper container the volume was read through and from which image, and - when a source is set not to stop its containers - that the resulting backup is crash-consistent rather than clean.
 
-Permissions and owners are carried into the backup and put back on restore. Symbolic links are recorded in the backup but are not written back into a volume - see [Known limitations](#known-limitations).
+Permissions and owners are carried into the backup and put back on restore. The owners go back only into the volume the backup was read from, any other volume gets the permission bits alone, and setuid, setgid and sticky are never restored. Symbolic links are recorded in the backup but are not written back into a volume - see [Known limitations](#known-limitations).
 
 ## Restoring
 
-Restore a volume from **Storage** → the backup file → **Restore**, choosing this adapter as the target. The volume button lists what is on the host so you can pick one, and typing a name that does not exist yet is equally valid.
+Restore a volume from **Storage** → the backup file → **Restore**, choosing this adapter as the target. The volume button lists what is on the host so you can pick one, and typing a name that does not exist yet is equally valid. A target without a volume, `/` or nothing, is refused.
 
 - **Same name**: the volume is **emptied completely** before the backup is written into it, so the result is the backup's state and not a mixture of two. The restore screen marks an existing volume as `Exists` and says so.
 - **New name**: the volume is created.
 
 Containers using the target are always stopped for a restore, whatever the job's own setting says, and started again afterwards.
+
+Since a restore empties the volume it writes into, who may pick the target is limited:
+
+- **Without SSH** the connection reaches the Docker of the server DBackup runs on, so only a platform admin signed in with a session restores into it, back to where the backup came from as well.
+- **Over SSH** anyone who may restore writes the backup back into the volume it was read from. Another volume of that Docker host takes the right to change the connection (`destinations:write`) in its tenant.
+- **A volume DBackup's own container keeps its database, certificates, temporary files or configuration backups in** is refused to everyone without SSH, a platform admin too, the same as a backup refuses to read it.
 
 ## Known limitations
 

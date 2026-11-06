@@ -89,14 +89,22 @@ export interface PlatformGroupGrant {
     tenants: readonly { tenantId: string }[];
 }
 
-function storedList(json: string): Set<string> {
+/**
+ * A list of permissions as stored, a JSON list of strings. Anything else, written by hand or by a
+ * broken import, holds no permission instead of failing whoever reads it.
+ */
+export function storedPermissionList(json: string): string[] {
     let stored: unknown;
     try {
         stored = JSON.parse(json);
     } catch {
-        return new Set();
+        return [];
     }
-    return new Set(Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === "string") : []);
+    return Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function storedList(json: string): Set<string> {
+    return new Set(storedPermissionList(json));
 }
 
 /** The rights on the platform a platform group gives: the settings of the instance and the platform's own. */
@@ -131,12 +139,16 @@ export function opensAllTenants(group: PlatformGroupGrant | null | undefined): b
 
 /**
  * What someone of a platform group may do in All tenants: the reads its rights in the tenants
- * give, its rights on the platform, and the settings and the profile of their own groups.
+ * give, its rights on the platform, and the settings and the profile of their own groups. The rights
+ * in the tenants are read like `platformTenantRightsIn` reads them, known permissions of a tenant
+ * only, so a broken stored list never gives a right of the platform through them.
  */
 export function allTenantsPermissionsOf(memberships: readonly OwnerMembership[], group: PlatformGroupGrant | null | undefined): string[] {
     const held = new Set(permissionsIn(memberships, null, group));
     if (group?.allTenants) {
-        for (const permission of storedList(group.tenantPermissions)) {
+        const stored = storedList(group.tenantPermissions);
+        for (const permission of ALL) {
+            if (!stored.has(permission) || PLATFORM_PERMISSIONS.has(permission) || isPlatformOnly(permission)) continue;
             if (permission.endsWith(":read") || permission.endsWith(":view")) held.add(permission);
         }
     }

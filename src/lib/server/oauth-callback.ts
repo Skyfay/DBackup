@@ -15,6 +15,34 @@ import { auditService } from "@/services/audit-service";
 import { credentialChanges, credentialSnapshot } from "@/services/auth/credential-audit";
 import { updateCredentialProfile } from "@/services/auth/credential-service";
 
+/**
+ * What a callback that broke shows on the destinations page. The error itself, which can carry the
+ * answer of the provider or a path of the server, goes to the log.
+ */
+export const OAUTH_CALLBACK_FAILED = "The authorization could not be completed. See the server log for details.";
+
+/**
+ * What the validate-token routes answer for a check that failed for another reason than an expired
+ * authorization. The answer of the provider goes to the log.
+ */
+export const TOKEN_CHECK_FAILED = "The authorization could not be checked. See the server log for details.";
+
+/** What a callback shows when the provider reports a refused authorization, whatever it adds. */
+export const OAUTH_DENIED = "Authorization was denied by the user.";
+
+/** What the auth routes answer an API key, see `oauthStartRefusal`. */
+export const OAUTH_START_SESSION_ONLY = "An authorization is started by a signed-in person, never with an API key.";
+
+/**
+ * Refuses the start of an authorization to an API key with 403. Only a signed-in person brings the
+ * authorization back, see `oauthCallbackCaller`, so a key would only hand out a link to the consent
+ * screen of the provider bound to its owner. Null for a session.
+ */
+export function oauthStartRefusal(ctx: Pick<AuthContext, "authMethod">): Response | null {
+    if (ctx.authMethod === "session") return null;
+    return Response.json({ success: false, error: OAUTH_START_SESSION_ONLY, message: OAUTH_START_SESSION_ONLY }, { status: 403 });
+}
+
 export type OAuthCallbackCaller =
     | { ok: true; ctx: AuthContext; credentialId: string }
     | { ok: false; message: string };

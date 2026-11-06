@@ -14,6 +14,7 @@ import { assertConfigOffHost, resolveAdapterConfig, withoutBinaryPaths } from "@
 import type { DatabaseAdapter, DatabaseInfo, TableDataOptions, TableDataResult, TableInfo } from "@/lib/core/interfaces";
 import { registry } from "@/lib/core/registry";
 import { withHost } from "@/lib/transport";
+import { answerOf } from "@/lib/adapters/adapter-answer";
 
 registerAdapters();
 
@@ -37,7 +38,8 @@ export async function listSourceDatabases(source: AdapterConfig): Promise<string
     const listDatabases = adapter.getDatabases;
 
     const config = await resolveAdapterConfig(source);
-    return withHost(adapter, config, (host) => listDatabases(config, host));
+    // What the server says goes back to the picker, a failure of DBackup itself does not.
+    return answerOf(source.adapterId, "list databases", () => withHost(adapter, config, (host) => listDatabases(config, host)));
 }
 
 export interface DatabaseStatsInput {
@@ -81,7 +83,8 @@ export async function readDatabaseStats(input: DatabaseStatsInput): Promise<Read
 
     // One host for the whole request: listing the databases and probing the version used to
     // open two connections to the same machine.
-    const databases: DatabaseInfo[] = await withHost(adapter, statsConfig, async (host) => {
+    // What the server says goes back to the caller, a failure of DBackup itself does not.
+    const databases: DatabaseInfo[] = await answerOf(adapterId, "read database stats", () => withHost(adapter, statsConfig, async (host) => {
         const listed = withStats
             ? await withStats(statsConfig, host)
             : (await listNames!(statsConfig, host)).map((name) => ({ name }));
@@ -99,7 +102,7 @@ export async function readDatabaseStats(input: DatabaseStatsInput): Promise<Read
         }
 
         return listed;
-    });
+    }));
 
     return { ok: true, value: { databases, serverVersion, serverEdition } };
 }
@@ -113,7 +116,7 @@ export async function listTables(target: DatabaseTarget, database: string): Prom
     const getTables = adapter.getTables;
     if (!getTables) return refused("unsupported");
 
-    const tables = await withHost(adapter, config, (host) => getTables(config, database, host));
+    const tables = await answerOf(adapter.id, "list tables", () => withHost(adapter, config, (host) => getTables(config, database, host)));
     return { ok: true, value: tables };
 }
 
@@ -126,7 +129,7 @@ export async function readTableData(target: DatabaseTarget, options: TableDataOp
     const getTableData = adapter.getTableData;
     if (!getTableData) return refused("unsupported");
 
-    const result = await withHost(adapter, config, (host) => getTableData(config, options, host));
+    const result = await answerOf(adapter.id, "read table data", () => withHost(adapter, config, (host) => getTableData(config, options, host)));
     return { ok: true, value: result };
 }
 

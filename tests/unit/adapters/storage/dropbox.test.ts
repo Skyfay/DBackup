@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DropboxAdapter } from "@/lib/adapters/storage/dropbox";
+import { FileTooLargeError } from "@/lib/adapters/storage/common/read-limit";
 
 // --- Hoisted mocks (available in vi.mock factories) ---
 const { mockDbx, mockFs, mockCreateReadStream, capturedDropboxOpts } = vi.hoisted(() => ({
@@ -34,7 +35,12 @@ vi.mock("dropbox", () => {
             return mockDbx;
         }
     }
-    return { Dropbox: MockDropbox };
+    // The reads that bypass the SDK take a token of their own.
+    class MockDropboxAuth {
+        checkAndRefreshAccessToken() { return Promise.resolve(); }
+        getAccessToken() { return "test-token"; }
+    }
+    return { Dropbox: MockDropbox, DropboxAuth: MockDropboxAuth };
 });
 
 vi.mock("fs/promises", () => ({
@@ -432,33 +438,60 @@ describe("DropboxAdapter", () => {
     // read()
     // ====================================================================
     describe("read()", () => {
+        /** A response of the content endpoint, its body streamed in chunks. */
+        const contentResponse = (chunks: Buffer[], init: { status?: number; length?: number } = {}) => {
+            const body = new ReadableStream<Uint8Array>({
+                start(controller) {
+                    for (const chunk of chunks) controller.enqueue(new Uint8Array(chunk));
+                    controller.close();
+                },
+            });
+            const headers = new Headers();
+            if (init.length !== undefined) headers.set("content-length", String(init.length));
+            return new Response(body, { status: init.status ?? 200, headers });
+        };
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
         it("should return file content as string", async () => {
             const content = "meta json content";
-            mockDbx.filesDownload.mockResolvedValue({
-                result: { fileBinary: Buffer.from(content) },
-            });
+            const fetchMock = vi.fn().mockResolvedValue(contentResponse([Buffer.from(content)]));
+            vi.stubGlobal("fetch", fetchMock);
 
             const result = await DropboxAdapter.read!(validConfig, "backup.sql.meta.json");
 
             expect(result).toBe(content);
+            expect(JSON.parse(fetchMock.mock.calls[0][1].headers["Dropbox-API-Arg"]).path).toBe("/backups/backup.sql.meta.json");
         });
 
-        it("should return null on error", async () => {
-            mockDbx.filesDownload.mockRejectedValue(new Error("not found"));
+        it("should return null when the file is not there", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockResolvedValue(contentResponse([Buffer.from("{}")], { status: 409 })));
 
             const result = await DropboxAdapter.read!(validConfig, "nonexistent.sql");
 
             expect(result).toBeNull();
         });
 
-        it("should return null when no file data received", async () => {
-            mockDbx.filesDownload.mockResolvedValue({
-                result: {},
-            });
+        it("should return null on error", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
 
-            const result = await DropboxAdapter.read!(validConfig, "backup.sql");
+            const result = await DropboxAdapter.read!(validConfig, "nonexistent.sql");
 
             expect(result).toBeNull();
+        });
+
+        it("refuses a file whose announced size passes the limit of the read", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockResolvedValue(contentResponse([Buffer.alloc(10)], { length: 50 })));
+
+            await expect(DropboxAdapter.read!(validConfig, "big.meta.json", { maxBytes: 20 })).rejects.toBeInstanceOf(FileTooLargeError);
+        });
+
+        it("stops a body that sends more than the limit, whatever it announced", async () => {
+            vi.stubGlobal("fetch", vi.fn().mockResolvedValue(contentResponse([Buffer.alloc(16), Buffer.alloc(16)])));
+
+            await expect(DropboxAdapter.readBytes!(validConfig, "big.index", { maxBytes: 20 })).rejects.toBeInstanceOf(FileTooLargeError);
         });
     });
 

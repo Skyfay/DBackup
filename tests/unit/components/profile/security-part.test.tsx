@@ -17,12 +17,12 @@ vi.mock("@/components/dashboard/profile/passkeys-section", () => ({
 vi.mock("@/components/dashboard/profile/security-dialogs", () => ({ BackupCodesDialog: () => null, PasswordDialog: () => null, TwoFactorOffDialog: () => null, TwoFactorOnDialog: () => null }));
 vi.mock("@/components/dashboard/profile/sign-in-providers", () => ({ SignInProviders: () => null }));
 
-function model(twoFactorEnabled: boolean, passkeyTwoFactor: boolean): ProfileModel {
+function model(twoFactorEnabled: boolean, passkeyTwoFactor: boolean, manage2FA = true): ProfileModel {
     return {
         user: { id: "u1", twoFactorEnabled, passkeyTwoFactor },
         hasPassword: true,
         showSignInProviders: false,
-        can: { updateName: true, updateEmail: true, updatePassword: true, manage2FA: true, managePasskeys: true, manageSso: true, seeGroups: true },
+        can: { updateName: true, updateEmail: true, updatePassword: true, manage2FA, managePasskeys: true, manageSso: true, seeGroups: true },
     } as unknown as ProfileModel;
 }
 
@@ -46,6 +46,13 @@ describe("the second factor in the Security part of the profile", () => {
 
         expect(screen.getByText("On. After the password DBackup asks for a code from the app.")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "New backup codes" })).toBeInTheDocument();
+        expect(screen.getByRole("switch", { name: /A passkey counts as the second factor/ })).toBeDisabled();
+    });
+
+    it("keeps the passkey as the second factor for a group that may change the passkeys but not the second factor", () => {
+        render(<SecurityPart model={model(true, true, false)} />);
+
+        expect(screen.getByText("Your group may not turn off your second factor.")).toBeInTheDocument();
         expect(screen.getByRole("switch", { name: /A passkey counts as the second factor/ })).toBeDisabled();
     });
 });

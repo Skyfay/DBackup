@@ -6,6 +6,7 @@ import { reachCovers, type PlatformReach } from "@/lib/auth/platform-group-caps"
 import { runAsSystem } from "@/lib/tenant/context";
 import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import { membersOfAny } from "@/services/tenant/membership-service";
+import { foreignClaimsOf } from "@/services/sso/email-domain-claims";
 import { groupsBeyondViewer } from "./account-groups-beyond";
 import { buildUsersModel, loadLogins } from "./users-model";
 import type { UsersModel } from "./users-types";
@@ -54,7 +55,13 @@ export async function getAllUsersModel(viewerId: string | null, viewerPlatformAd
     ]));
 
     // Of an account a group of some tenants learns only the tenants it reaches, and whether it works beyond them.
-    const beyond = new Set(some ? users.filter((user) => !reachCoversAccount(some, user.memberships.map((membership) => membership.tenantId))).map((user) => user.id) : []);
+    // An account of no tenant whose email the provider of another tenant claims counts as one of that tenant, see `userService.accountOf`.
+    const claimed = some ? await foreignClaimsOf(users.filter((user) => user.memberships.length === 0 && !user.platformRole && !user.platformGroupId)) : new Map<string, string>();
+    const placeOf = (user: (typeof users)[number]) => {
+        const claim = claimed.get(user.id);
+        return claim ? [claim] : user.memberships.map((membership) => membership.tenantId);
+    };
+    const beyond = new Set(some ? users.filter((user) => !reachCoversAccount(some, placeOf(user))).map((user) => user.id) : []);
     const shown = some ? users.map((user) => ({ ...user, memberships: user.memberships.filter((membership) => some.includes(membership.tenantId)) })) : users;
     const model = buildUsersModel({
         users: shown,

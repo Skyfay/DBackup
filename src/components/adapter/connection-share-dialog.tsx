@@ -69,7 +69,10 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                 toast.error(result.error);
                 return;
             }
-            toast.success(count > 0 ? `${view.name} is shared with ${plural(count, "tenant", "tenants")}` : `${view.name} is no longer shared`);
+            // Counts only the tenants the viewer reaches, the others show by no number.
+            toast.success(count > 0
+                ? `${view.name} is shared with ${plural(count, "tenant", "tenants")}${reach.beyond ? " and the tenants beyond your reach" : ""}`
+                : reach.beyond ? `${view.name} stays shared with the tenants beyond your reach` : `${view.name} is no longer shared`);
             onOpenChange(false);
             onSaved();
         } finally {
@@ -138,16 +141,16 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                                                 </li>
                                             );
                                         })}
-                                        {reach.outside.map((tenant) => (
-                                            <li key={tenant.id} className="flex items-center gap-3 px-3 py-2.5" title="Your platform group does not reach it, so it keeps the connection as it is.">
-                                                <Checkbox checked disabled aria-label={`${tenant.name}, beyond your reach`} />
-                                                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{tenant.name}</span>
+                                        {reach.beyond && (
+                                            <li className="flex items-center gap-3 px-3 py-2.5" title="Your platform group does not reach them, so they keep the connection as it is.">
+                                                <Checkbox checked disabled aria-label="Tenants beyond your reach" />
+                                                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">Tenants beyond your reach</span>
                                                 <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                                                     <Lock className="size-3" aria-hidden="true" />
-                                                    stays, beyond your reach
+                                                    stay as they are
                                                 </span>
                                             </li>
-                                        ))}
+                                        )}
                                     </ul>
                                 )}
                             </div>
@@ -192,7 +195,7 @@ export function ConnectionShareDialog({ view, onOpenChange, onSaved }: { view: C
                         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
                         <Button onClick={submit} disabled={saving || (!settings.allTenants && settings.tenantIds.length === 0 && view.uses.length === 0 && !view.cleanupPending)}>
                             {saving && <Loader2 className="animate-spin" />}
-                            {count > 0 ? `Share with ${plural(count, "tenant", "tenants")}` : "Stop sharing"}
+                            {count > 0 ? `Share with ${plural(count, "tenant", "tenants")}` : reach.beyond ? "Stop sharing with yours" : "Stop sharing"}
                         </Button>
                     </div>
                 </DialogContent>

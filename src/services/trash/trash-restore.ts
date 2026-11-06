@@ -11,6 +11,8 @@ import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { rememberServer, serverRestored } from "@/services/tenant/shared-servers";
 import { sharedKindOf, type SharedKind } from "@/services/sharing/provided";
+import { assertJobFolderName } from "@/services/jobs/job-folder-rules";
+import { assertSourceFolder } from "@/lib/archive/remote-paths";
 import { EMAIL_REFUSED } from "@/services/user/new-account-email";
 import type { ConnectionSnapshot, CredentialSnapshot, JobSnapshot, KeySnapshot, UserSnapshot } from "./trash-snapshot";
 import type { TrashKind } from "./trash-types";
@@ -124,6 +126,13 @@ async function providedThrough(tx: Tx, tenantId: string, ids: string[]): Promise
 
 async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Promise<RestoredRecord> {
     const job = { ...snapshot.record, name: newName || snapshot.record.name };
+    // A name a save of the job refuses comes back no more than it is saved: among the configuration
+    // backups, beside its own folder, or among the customers of a destination its tenant shares.
+    // Asked through the transaction, which holds the one connection to SQLite.
+    await assertJobFolderName(tx, job.name, snapshot.destinations.map((destination) => destination.configId));
+    // The folder of a directory source comes back only inside its connection, as a save or a copy
+    // of the job takes it, also one saved before the rule existed.
+    for (const source of snapshot.sources) assertSourceFolder(source.path);
     if (await tx.job.findFirst({ where: { name: job.name }, select: { id: true } })) {
         throw new ConflictError(`A job named ${job.name} exists already.`);
     }
@@ -220,8 +229,8 @@ async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Prom
 async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): Promise<RestoredRecord> {
     const email = newEmail ? newEmail.trim().toLowerCase() : snapshot.record.email;
     if (await tx.user.findUnique({ where: { email }, select: { id: true } })) {
-        // The action checks a new email first, see `takenEmailRefusal`. One taken since never says that an account holds it.
-        throw new ConflictError(newEmail ? EMAIL_REFUSED : `An account with ${email} exists already. Restore this one with another email.`);
+        // The action checks the email first, its own or a new one, see `takenEmailRefusal`. One taken since never says that an account holds it.
+        throw new ConflictError(EMAIL_REFUSED);
     }
     const notes: string[] = [];
     const { groupId: legacyGroupId, ...record } = { ...snapshot.record, email };

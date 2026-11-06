@@ -7,7 +7,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 
 const mocks = vi.hoisted(() => ({
     viewer: null as unknown as { id: string; name: string; isPlatformAdmin: boolean; tenantId: string | null; allTenants: boolean; permissions: string[] },
-    invitations: { create: vi.fn(), list: vi.fn(), revoke: vi.fn() },
+    invitations: { create: vi.fn(), list: vi.fn(), revoke: vi.fn(), accept: vi.fn() },
     audit: vi.fn(),
 }));
 
@@ -22,10 +22,22 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ default: {} }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/tenant/invitation-service", () => ({ INVITATION_MAX_DAYS: 30, invitationService: mocks.invitations }));
-vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: { setActive: vi.fn() } }));
+vi.mock("@/services/tenant/tenant-service", () => ({ tenantService: { setActive: vi.fn(), find: vi.fn(async (id: string) => ({ id, name: "Acme GmbH" })) } }));
 vi.mock("@/services/user/group-service", () => ({ groupService: { find: vi.fn(async () => ({ id: "g-ops", name: "Operators", permissions: "[]", fullAccess: false })) } }));
 
-const { createInvitation, listInvitations, revokeInvitation } = await import("@/app/actions/tenant/invitation");
+/** The group of the link the tests revoke: one that reads the jobs, or one that may do everything. */
+const OPERATORS = { name: "Operators", permissions: JSON.stringify([PERMISSIONS.USERS.READ]), fullAccess: false };
+const FULL_ACCESS = { name: "Admin", permissions: "[]", fullAccess: true };
+
+/** Like the service: the guard sees the group of the link before it goes. */
+function revokeWith(group: { name: string; permissions: string; fullAccess: boolean }) {
+    mocks.invitations.revoke.mockImplementation(async (_id: string, _tenantId: string, guard?: (group: { permissions: string; fullAccess: boolean }) => void) => {
+        guard?.(group);
+        return { groupName: group.name, note: null };
+    });
+}
+
+const { acceptInvitation, createInvitation, listInvitations, revokeInvitation } = await import("@/app/actions/tenant/invitation");
 
 const ALL_TENANTS_REFUSAL = "All tenants only reads. Open the tenant of the record to change it.";
 const ROOT = { id: "root", name: "Manu", isPlatformAdmin: true, tenantId: null, allTenants: true, permissions: [PERMISSIONS.USERS.READ, PERMISSIONS.USERS.WRITE] };
@@ -35,7 +47,7 @@ describe("the invitation links of a tenant", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.invitations.list.mockResolvedValue([]);
-        mocks.invitations.revoke.mockResolvedValue({ groupName: "Operators", note: null });
+        revokeWith(OPERATORS);
         mocks.invitations.create.mockResolvedValue({ id: "inv-1", token: "t".repeat(32), expiresAt: new Date() });
     });
 
@@ -56,7 +68,29 @@ describe("the invitation links of a tenant", () => {
         expect(await listInvitations()).toEqual({ success: true, data: [] });
         expect(mocks.invitations.list).toHaveBeenCalledWith("acme");
         expect(await revokeInvitation("inv-1")).toEqual({ success: true });
-        expect(mocks.invitations.revoke).toHaveBeenCalledWith("inv-1", "acme");
+        expect(mocks.invitations.revoke).toHaveBeenCalledWith("inv-1", "acme", expect.any(Function));
+        // The entries name the tenant.
+        expect(mocks.audit).toHaveBeenCalledWith("lena", "CREATE", "TENANT", expect.objectContaining({ change: "Invitation created", name: "Acme GmbH" }), "acme", { tenantId: "acme" });
+        expect(mocks.audit).toHaveBeenCalledWith("lena", "DELETE", "TENANT", expect.objectContaining({ change: "Invitation revoked", name: "Acme GmbH" }), "acme", { tenantId: "acme" });
+    });
+
+    it("never takes back a link that gives a group that may do more than the viewer, like they make none", async () => {
+        mocks.viewer = LENA;
+        revokeWith(FULL_ACCESS);
+
+        expect(await revokeInvitation("inv-1")).toEqual({ success: false, error: "This invitation gives a group that may do more than you may, so you cannot revoke it." });
+        expect(mocks.audit).not.toHaveBeenCalled();
+
+        revokeWith(OPERATORS);
+        expect(await revokeInvitation("inv-1")).toEqual({ success: true });
+    });
+
+    it("names the tenant a link was accepted for in the entry of its log", async () => {
+        mocks.viewer = { ...LENA, id: "tom", name: "Tom" };
+        mocks.invitations.accept.mockResolvedValue({ tenantId: "acme", tenantName: "Acme GmbH", joined: true });
+
+        expect(await acceptInvitation("t".repeat(43))).toMatchObject({ success: true });
+        expect(mocks.audit).toHaveBeenCalledWith("tom", "UPDATE", "TENANT", { change: "Invitation accepted", name: "Acme GmbH", joined: true }, "acme", { tenantId: "acme" });
     });
 
     it("refuses a link without an id before it reads anything", async () => {

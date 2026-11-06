@@ -70,12 +70,41 @@ describe.each<HostKind>(["direct", "ssh"])("MongoDB dump over a %s host", (kind)
         expect(argv[argv.indexOf("--authenticationDatabase") + 1]).toBe("admin");
     });
 
-    it("uses a stored connection URI when one is configured", async () => {
+    it("uses a stored connection URI when one is configured, from the file of --config", async () => {
         const host = dumpHost(kind);
         await dump({ ...baseConfig, uri: "mongodb://u:p@h:27017" } as never, "/tmp/out.archive", host);
 
-        expect(host.calls.spawn[0]).toContain("--uri=mongodb://u:p@h:27017");
-        expect(host.calls.spawn[0]).not.toContain("--host");
+        const argv = host.calls.spawn[0];
+        expect(argv.join(" ")).not.toContain("mongodb://");
+        expect(argv).not.toContain("--host");
+        const file = host.calls.tempFiles[0];
+        expect(argv).toContain(`--config=${file.path}`);
+        expect(file.content).toBe('uri: "mongodb://u:p@h:27017"\n');
+    });
+
+    it("hands mongodump the password in a file of mode 0600 named by --config, never in argv, and removes it", async () => {
+        const password = 'se"cr\\et\nx';
+        const host = dumpHost(kind);
+        await dump({ ...baseConfig, password } as never, "/tmp/out.archive", host);
+
+        const argv = host.calls.spawn[0];
+        expect(argv).not.toContain("--password");
+        expect(argv.join(" ")).not.toContain("se\"cr");
+        expect(argv[argv.indexOf("--username") + 1]).toBe("root");
+        const file = host.calls.tempFiles[0];
+        expect(file.mode).toBe(0o600);
+        expect(argv).toContain(`--config=${file.path}`);
+        // A YAML double quoted string, escaped the way the tools read it.
+        expect(file.content).toBe(`password: ${JSON.stringify(password)}\n`);
+        expect(host.calls.removed).toContain(file.path);
+    });
+
+    it("writes no file for a login without a password", async () => {
+        const host = dumpHost(kind);
+        await dump({ ...baseConfig, user: "", password: "" } as never, "/tmp/out.archive", host);
+
+        expect(host.calls.tempFiles).toEqual([]);
+        expect(host.calls.spawn[0].some((arg) => arg.startsWith("--config="))).toBe(false);
     });
 
     it("appends quoted extra options as single arguments", async () => {
@@ -110,12 +139,12 @@ describe.each<HostKind>(["direct", "ssh"])("MongoDB dump over a %s host", (kind)
         expect(host.calls.spawn).toHaveLength(2);
     });
 
-    it("masks the password in the logged command", async () => {
+    it("keeps the password out of the logged command", async () => {
         const details: Array<string | undefined> = [];
         await dump(baseConfig as never, "/tmp/out.archive", dumpHost(kind), (_m, _l, _t, d) => details.push(d));
 
         const logged = details.filter(Boolean).join(" ");
-        expect(logged).toContain("******");
+        expect(logged).toContain("--config=");
         expect(logged).not.toContain("secret");
     });
 

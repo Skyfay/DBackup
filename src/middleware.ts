@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig } from "./lib/rate-limit";
 import type { RateLimitConfig } from "./lib/rate-limit";
+import { INTERNAL_TOKEN_HEADER, internalToken } from "./lib/rate-limit/internal-token";
 import { logger } from "./lib/logging/logger";
 import { clientAddress, rateLimitKey } from "./lib/core/client-address";
 import { loginHref } from "./lib/auth/sign-in-target";
@@ -28,7 +29,11 @@ async function syncRateLimitConfig(origin: string): Promise<void> {
 
     _fetchInFlight = (async () => {
         try {
+            // The route answers only the token of this instance, see `internal-token.ts`.
+            const token = await internalToken();
+            if (!token) return;
             const res = await fetch(new URL("/api/internal/rate-limit-config", origin), {
+                headers: { [INTERNAL_TOKEN_HEADER]: token },
                 signal: AbortSignal.timeout(3000),
             });
             if (res.ok) {

@@ -6,6 +6,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { registry } from "@/lib/core/registry";
 import { StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { scanRefusal } from "@/lib/adapters/own-data";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -518,6 +519,11 @@ async function refreshEveryTenant(scope: StorageRefreshScope): Promise<StorageVo
       if (!adapter) return null;
 
       const config = await resolveAdapterConfig(adapterConfig);
+      // A destination whose folder reaches the own data of DBackup is never listed, see `scanRefusal`.
+      if (await scanRefusal(adapterConfig.adapterId, config as Record<string, unknown>, adapterConfig.id)) {
+        log.warn("Left out a destination whose folder reaches the own data of DBackup", { adapterId: adapterConfig.adapterId });
+        return null;
+      }
       const files = (await adapter.list(config, "")).filter(f => {
         const p = f.path.replace(/\\/g, '/');
         return !p.startsWith('.dbackup/') && !p.startsWith('/.dbackup/');

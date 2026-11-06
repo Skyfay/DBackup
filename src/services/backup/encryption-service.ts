@@ -2,7 +2,7 @@ import type { EncryptionProfile, Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { runBulk, type BulkResult } from '@/lib/core/bulk';
 import { encrypt, decrypt } from '@/lib/crypto';
-import { ConflictError, NotFoundError } from '@/lib/logging/errors';
+import { ConflictError, NotFoundError, ValidationError } from '@/lib/logging/errors';
 import crypto from 'crypto';
 import { isKeyHex, keyIdOf } from '@/services/vault/key-id';
 import { keepInTrash } from "@/services/trash/trash-snapshot";
@@ -35,7 +35,7 @@ export async function createEncryptionProfile(name: string, description?: string
   // Check name uniqueness
   const existingByName = await prisma.encryptionProfile.findFirst({ where: { name } });
   if (existingByName) {
-    throw new Error(`An encryption profile with the name "${name}" already exists.`);
+    throw new ConflictError(`An encryption profile with the name "${name}" already exists.`);
   }
 
   // Generate a new random 32-byte key for this profile
@@ -72,13 +72,13 @@ export async function importEncryptionProfile(
   // Check name uniqueness
   const existingByName = await prisma.encryptionProfile.findFirst({ where: { name } });
   if (existingByName) {
-    throw new Error(`An encryption profile with the name "${name}" already exists.`);
+    throw new ConflictError(`An encryption profile with the name "${name}" already exists.`);
   }
 
   // 1. Validate Format
   const cleanKey = keyHex.trim();
   if (!isKeyHex(cleanKey)) {
-    throw new Error("Invalid key format. Must be a 32-byte Hex string (64 characters).");
+    throw new ValidationError("Invalid key format. Must be a 32-byte Hex string (64 characters).");
   }
 
   // A second profile with the same key opens nothing the first does not, and makes it unclear

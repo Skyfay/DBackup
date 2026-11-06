@@ -8,6 +8,7 @@ import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { peopleOf, roleIn } from "@/services/tenant/membership-service";
+import { foreignClaimsOf } from "@/services/sso/email-domain-claims";
 import { groupsBeyondViewer } from "./account-groups-beyond";
 import type { SecondFactor, SignInMethod, UserRow, UserSignIn, UsersGroup, UsersModel, UserTenantRole } from "./users-types";
 
@@ -266,12 +267,19 @@ export async function getUsersModel(viewerId: string | null, viewerPlatformAdmin
         viewerPlatformAdmin,
     });
     const ids = users.map((user) => user.id);
+    // An account of no tenant whose email the provider of another tenant claims counts as one of that tenant, see `userService.accountOf`.
+    const claimed = await foreignClaimsOf(users.filter((user) => user.memberships.length === 0 && !user._count.memberships && !user.platformRole && !user.platformGroupId));
     const [beyond, stronger] = viewerId && !viewerPlatformAdmin
-        ? await Promise.all([beyondReachOf(viewerId, ids), groupsBeyondViewer(viewerId, ids)])
+        ? await Promise.all([beyondReachOf(viewerId, ids, claimed), groupsBeyondViewer(viewerId, ids)])
         : [new Set<string>(), new Set<string>()];
     return {
         ...model,
-        users: model.users.map((row) => ({ ...row, ...(beyond.has(row.id) ? { beyondReach: true } : {}), ...(stronger.has(row.id) ? { groupBeyond: true } : {}) })),
+        users: model.users.map((row) => ({
+            ...row,
+            ...(claimed.has(row.id) ? { elsewhere: true } : {}),
+            ...(beyond.has(row.id) ? { beyondReach: true } : {}),
+            ...(stronger.has(row.id) ? { groupBeyond: true } : {}),
+        })),
         passwordPolicy,
         homeTenant: tenantId === HOME_TENANT_ID,
     };
@@ -280,10 +288,10 @@ export async function getUsersModel(viewerId: string | null, viewerPlatformAdmin
 /**
  * The accounts among these that work in a tenant the platform group of the viewer does not reach,
  * which their right to manage the accounts of the platform does not change, see `accountRefusal`.
- * An account of no tenant counts as one of the home tenant. None for a viewer without a platform
- * group or with one of all tenants.
+ * An account of no tenant counts as one of the home tenant, or of the tenant in `claimed`, whose
+ * provider claims its email. None for a viewer without a platform group or with one of all tenants.
  */
-async function beyondReachOf(viewerId: string, userIds: string[]): Promise<Set<string>> {
+async function beyondReachOf(viewerId: string, userIds: string[], claimed: ReadonlyMap<string, string>): Promise<Set<string>> {
     const viewer = await prisma.user.findUnique({ where: { id: viewerId }, select: { platformGroup: { select: { allTenants: true, tenants: { select: { tenantId: true } } } } } });
     const group = viewer?.platformGroup;
     if (!group || group.allTenants || userIds.length === 0) return new Set();
@@ -293,7 +301,7 @@ async function beyondReachOf(viewerId: string, userIds: string[]): Promise<Set<s
     const memberships = await prisma.tenantMembership.findMany({ where: { userId: { in: userIds } }, select: { userId: true, tenantId: true } });
     const outside = memberships.filter((membership) => !reach.has(membership.tenantId)).map((membership) => membership.userId);
     const placed = new Set(memberships.map((membership) => membership.userId));
-    const placeless = reach.has(HOME_TENANT_ID) ? [] : userIds.filter((userId) => !placed.has(userId));
+    const placeless = userIds.filter((userId) => !placed.has(userId) && !reach.has(claimed.get(userId) ?? HOME_TENANT_ID));
     return new Set([...outside, ...placeless]);
 }
 

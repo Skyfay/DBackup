@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { vacuumDatabase } from "@/services/system/database-service";
@@ -19,6 +19,7 @@ export async function vacuumDatabaseAction() {
     try {
         const result = await vacuumDatabase();
         await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, {
+            name: "Database of DBackup",
             action: "database_vacuum",
             beforeBytes: result.beforeBytes,
             afterBytes: result.afterBytes,
@@ -27,7 +28,7 @@ export async function vacuumDatabaseAction() {
         revalidatePath("/dashboard/settings");
         return { success: true, data: result };
     } catch (error: unknown) {
-        log.warn("Database vacuum did not complete", {}, wrapError(error));
-        return { success: false, error: getErrorMessage(error) };
+        // A refusal while runs are in progress is a ServiceError written for the user.
+        return { success: false, error: userMessage(error, "The database could not be compacted. The server log has the details.", log, "Database vacuum did not complete") };
     }
 }

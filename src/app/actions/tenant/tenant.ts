@@ -13,7 +13,7 @@ import type { TenantNetwork } from "@/services/tenant/tenant-network";
 import type { TenantAllowances } from "@/lib/tenant/allowances";
 import { AllowancesSchema, NetworkSchema, TenantNameSchema } from "@/lib/tenant/tenant-schemas";
 import {
-    createTenantAs, deleteRefusal, deleteTenantAs, removeTenantAs, renameTenantAs, setTenantAllowancesAs, setTenantNetworkAs, setTenantSharingAs, TenantNotEmptyError, type TenantAdminActor,
+    createTenantAs, deleteRefusal, deleteTenantAs, managesTenant, removeTenantAs, renameTenantAs, setTenantAllowancesAs, setTenantNetworkAs, setTenantSharingAs, TenantNotEmptyError, type TenantAdminActor,
 } from "@/services/tenant/tenant-admin";
 import { emptyBulkResult } from "@/lib/core/bulk";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
@@ -59,14 +59,19 @@ export async function switchTenant(tenantId: string) {
 }
 
 /**
- * The jobs, the databases and the health of the tenants the viewer may open, which the switcher,
- * the Overview of All tenants and the Tenants page show to whoever may see the tenants.
+ * The jobs, the databases and the health of the tenants the viewer may open and looks after on the
+ * platform, which the switcher, the Overview of All tenants and the Tenants page show to whoever may
+ * see the tenants. A tenant the viewer is only a member of gives no numbers through this right,
+ * as `tenantsFor` leaves it out.
  */
 export async function getTenantSummaries() {
     const viewer = await checkPermission(PERMISSIONS.PLATFORM.TENANTS_READ);
     try {
         const tenants = await tenantService.switchable(viewer.id, viewer.isPlatformAdmin);
-        return { success: true as const, data: await tenantSummaries(tenants.map((tenant) => tenant.id)) };
+        const actor = actorOf(viewer);
+        const managed: string[] = [];
+        for (const tenant of tenants) if (await managesTenant(actor, tenant.id)) managed.push(tenant.id);
+        return { success: true as const, data: await tenantSummaries(managed) };
     } catch (error: unknown) {
         log.error("Reading the tenant summaries failed", {}, wrapError(error));
         return { success: false as const, error: "The tenants could not be read." };

@@ -4,6 +4,7 @@
  * never one the request brings along, and is checked against the server DBackup runs on first.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdapterError, ValidationError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     offHost: vi.fn(),
@@ -60,5 +61,29 @@ describe("a read by the config of a form", () => {
 
         await expect(listTables({ adapterId: "sqlite", config: { ...FORM, mode: "local" } }, "app")).rejects.toThrow("SQLite in local mode");
         expect(mocks.getTables).not.toHaveBeenCalled();
+    });
+});
+
+describe("a read that the server refused", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.offHost.mockResolvedValue(undefined);
+    });
+
+    it("comes back as the answer of the adapter, so the route passes the words of the server", async () => {
+        mocks.getTables.mockRejectedValue(new Error("file is not a database"));
+        mocks.getTableData.mockRejectedValue(new Error("no such table: user"));
+        mocks.getDatabases.mockRejectedValue(new Error("Permission denied (publickey)"));
+
+        await expect(listTables({ adapterId: "sqlite", config: FORM }, "app")).rejects.toBeInstanceOf(AdapterError);
+        await expect(listTables({ adapterId: "sqlite", config: FORM }, "app")).rejects.toThrow("file is not a database");
+        await expect(readTableData({ adapterId: "sqlite", config: FORM }, { database: "app", table: "user", page: 1, pageSize: 50 })).rejects.toBeInstanceOf(AdapterError);
+        await expect(readDatabaseStats({ adapterId: "sqlite", config: FORM })).rejects.toBeInstanceOf(AdapterError);
+    });
+
+    it("keeps a refusal of DBackup as it is", async () => {
+        mocks.getTables.mockRejectedValue(new ValidationError("The host is in the local network"));
+
+        await expect(listTables({ adapterId: "sqlite", config: FORM }, "app")).rejects.toBeInstanceOf(ValidationError);
     });
 });

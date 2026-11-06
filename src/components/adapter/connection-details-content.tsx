@@ -20,6 +20,7 @@ import { DetailStats, FactList, HealthTimeline, IssueBanner, Section, UsageList,
 import { ConnectionSharing } from "./connection-sharing";
 import { ConnectionShareCard } from "./connection-share-card";
 import { ProvidedSection } from "./connection-provided";
+import { useMayReachServer } from "./host-local-access";
 
 const log = logger.child({ component: "connection-details" });
 
@@ -104,6 +105,9 @@ interface ContentProps extends ConnectionDetailsProps {
 export function ConnectionDetailsContent({ variant, config, kind, canTest, canViewHistory, exploreHref, onEdit, menu, onChanged }: ContentProps) {
     const { details, loadError } = useConnectionDetails(config.id);
     const [testing, setTesting] = useState(false);
+    // A connection that reaches the server DBackup runs on is tested by a platform admin alone.
+    const mayReachServer = useMayReachServer();
+    const mayTest = canTest && (mayReachServer || !config.hostLocal);
 
     const overview = config.overview;
     const health = healthOf(config);
@@ -164,7 +168,7 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    {canTest && (
+                    {mayTest && (
                         <Button variant="outline" size="sm" onClick={runTest} disabled={testing}>
                             {testing ? <Loader2 className="animate-spin" /> : <Zap />}
                             Test connection

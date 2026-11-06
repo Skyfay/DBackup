@@ -14,6 +14,7 @@ import { openEntry } from "@/lib/crypto/entry-cipher";
 import { INDEX_MEMBER, MANIFEST_MEMBER, TAR_BLOCK_SIZE } from "./format";
 import { parseIndex } from "./index-file";
 import { readAll } from "./sources";
+import { BUNDLE_READ_LIMIT, byteLimit, DamagedBackupError } from "./limits";
 import { ArchiveByteSource, ArchiveIndex, ArchiveManifest, entryKey, IndexEntryLine, IndexFileLine, isSymlinkLine } from "./types";
 
 /**
@@ -22,6 +23,12 @@ import { ArchiveByteSource, ArchiveIndex, ArchiveManifest, entryKey, IndexEntryL
  * fetches the exact remainder in the (theoretical) case a manifest outgrows it.
  */
 const MANIFEST_PROBE_SIZE = 16 * 1024;
+
+/**
+ * The largest manifest a reader takes. The writer stores a few hundred bytes of fixed fields, so
+ * a manifest past this is damaged, and its size never decides how much is fetched into memory.
+ */
+const MANIFEST_MAX_SIZE = 1024 * 1024;
 
 /** Initial window read from the tail when locating the index without a sidecar. */
 const INDEX_TAIL_PROBE_SIZE = 1024 * 1024;
@@ -51,7 +58,7 @@ function readName(block: Buffer): string {
  */
 export async function readArchiveManifest(source: ArchiveByteSource): Promise<ArchiveManifest> {
     const limit = source.size !== undefined ? Math.min(MANIFEST_PROBE_SIZE, source.size) : MANIFEST_PROBE_SIZE;
-    let head = await readAll(await source.read(0, limit - 1));
+    let head = await readAll(await source.read(0, limit - 1), limit);
 
     if (head.length < TAR_BLOCK_SIZE) {
         throw new Error("Not a valid archive: file is shorter than one TAR block");
@@ -61,9 +68,13 @@ export async function readArchiveManifest(source: ArchiveByteSource): Promise<Ar
     }
 
     const size = readOctal(head, 124, 12);
+    if (size > MANIFEST_MAX_SIZE) {
+        throw new DamagedBackupError(`its manifest is ${size} bytes, more than the ${MANIFEST_MAX_SIZE} any backup writes`);
+    }
     if (TAR_BLOCK_SIZE + size > head.length && (source.size === undefined || TAR_BLOCK_SIZE + size <= source.size)) {
         // Manifest larger than the probe - fetch exactly the missing remainder.
-        const rest = await readAll(await source.read(head.length, TAR_BLOCK_SIZE + size - 1));
+        const missing = TAR_BLOCK_SIZE + size - head.length;
+        const rest = await readAll(await source.read(head.length, TAR_BLOCK_SIZE + size - 1), missing);
         head = Buffer.concat([head, rest]);
     }
 
@@ -117,7 +128,7 @@ export async function readEmbeddedIndexBytes(source: ArchiveByteSource): Promise
         const start = Math.max(0, source.size - window);
         // Align to a block boundary so header offsets within the window stay meaningful.
         const alignedStart = start - (start % TAR_BLOCK_SIZE);
-        const tail = await readAll(await source.read(alignedStart, source.size - 1));
+        const tail = await readAll(await source.read(alignedStart, source.size - 1), source.size - alignedStart);
 
         for (let offset = tail.length - TAR_BLOCK_SIZE; offset >= 0; offset -= TAR_BLOCK_SIZE) {
             const block = tail.subarray(offset, offset + TAR_BLOCK_SIZE);
@@ -200,13 +211,31 @@ function chainStreams(source: NodeJS.ReadableStream, stages: NodeJS.ReadWriteStr
  * Opens one physical entry as a plaintext, decompressed stream.
  *
  * Fetches exactly the entry's byte range, so the rest of the archive is never transferred.
+ *
+ * The stream fails with a `DamagedBackupError` at the first byte past what the entry may hold: a
+ * bundle `BUNDLE_READ_LIMIT`, any other entry the `declaredSize` of the one dump or file it holds,
+ * the `s` of its index line. The index comes from the destination, so a few bytes flagged as
+ * anything could otherwise inflate until the memory or the disk of the server is full.
+ *
+ * @param declaredSize - The `s` of the dump or file a standalone entry holds, ignored for a bundle.
+ *   Required for any other entry, which is refused as damaged without a whole number of at least 0
  */
 export async function openArchiveEntry(
     source: ArchiveByteSource,
     manifest: ArchiveManifest,
     entry: IndexEntryLine,
-    masterKey?: Buffer
+    masterKey?: Buffer,
+    declaredSize?: number
 ): Promise<NodeJS.ReadableStream> {
+    // A standalone entry inflates only as far as the dump or file it holds declares. Without a
+    // valid declaration there is no bound, so the entry is not read at all.
+    if (!entry.bundle && !(typeof declaredSize === "number" && Number.isSafeInteger(declaredSize) && declaredSize >= 0)) {
+        throw new DamagedBackupError(`entry ${entry.n} has no valid declared size to read it by`);
+    }
+    if (![entry.off, entry.size].every((value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) {
+        throw new DamagedBackupError(`entry ${entry.n} has no valid place in the archive`);
+    }
+
     const keys = archiveKeysFor(manifest, masterKey);
     const raw = await source.read(entry.off, entry.off + entry.size - 1);
 
@@ -222,6 +251,8 @@ export async function openArchiveEntry(
         if (!decompress) throw new Error(`Unsupported compression type: ${entry.comp}`);
         stages.push(decompress);
     }
+
+    stages.push(byteLimit(entry.bundle ? BUNDLE_READ_LIMIT : declaredSize!, `entry ${entry.n}`));
 
     return chainStreams(raw, stages);
 }
@@ -252,7 +283,7 @@ export async function openArchiveFile(
         throw new Error(`Archive index is inconsistent: file '${file.p}' references missing entry ${file.n}`);
     }
 
-    const stream = await openArchiveEntry(source, manifest, entry, masterKey);
+    const stream = await openArchiveEntry(source, manifest, entry, masterKey, file.s);
     if (file.o === undefined || file.l === undefined) return stream;
     // Same reasoning as chainStreams: a `.pipe()` here would strand an error from the
     // entry stream, so the slice is attached with pipeline instead.
@@ -277,6 +308,26 @@ export async function readArchiveFile(
  * against the entry in *their* archive rather than colliding with a same-ordinal entry
  * in this one.
  */
+/**
+ * Refuses an index where several file lines point at one entry that is no bundle. Such an entry
+ * holds the bytes of one file, so every other line would restore nothing, or the bytes of another
+ * file under its own name. The writer never produces it, so it is a damaged index, refused before
+ * anything of the selection is read or written.
+ */
+export function assertSingleReferences(entries: ReadonlyMap<string, IndexEntryLine>, files: readonly IndexFileLine[]): void {
+    const counts = new Map<string, number>();
+    for (const file of files) {
+        if (file.n === undefined) continue;
+        const key = entryKey(file.a, file.n);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of counts) {
+        if (count > 1 && entries.get(key)?.bundle !== true) {
+            throw new DamagedBackupError(`its index points ${count} files at entry ${key}, which holds one file`);
+        }
+    }
+}
+
 export function groupFilesByEntry(files: IndexFileLine[]): Map<string, IndexFileLine[]> {
     const grouped = new Map<string, IndexFileLine[]>();
     for (const file of files) {

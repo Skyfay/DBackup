@@ -126,6 +126,23 @@ describe("buildMoveTargets", () => {
         ]);
     });
 
+    it("names a second log file apart from the log of a database called <name>_2", () => {
+        const shop = buildMoveTargets(
+            [dataFile(), logFile(), logFile({ logicalName: "Shop_log2", physicalName: "/var/opt/mssql/data/Shop_log2.ldf" })],
+            "Shop",
+            { data: "/var/opt/mssql/data" },
+        );
+        const shop2 = buildMoveTargets([dataFile(), logFile()], "Shop_2", { data: "/var/opt/mssql/data" });
+
+        expect(shop.map((t) => t.physicalPath)).toEqual([
+            "/var/opt/mssql/data/Shop.mdf",
+            "/var/opt/mssql/data/Shop.ldf",
+            "/var/opt/mssql/data/Shop_log2.ldf",
+        ]);
+        const own = new Set(shop.map((t) => t.physicalPath));
+        expect(shop2.some((t) => own.has(t.physicalPath))).toBe(false);
+    });
+
     it("rejects a rename it cannot place, naming the way out", () => {
         const filestream = dataFile({ logicalName: "Shop_fs", type: "S", physicalName: "/var/opt/mssql/data/Shop_fs" });
 

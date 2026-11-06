@@ -173,6 +173,9 @@ describe("what an entry says changed", () => {
     it("says why a sign-in failed", () => {
         expect(changeSummary("LOGIN_FAILED", { reason: "unknown_email" })).toBe("No account has this email");
         expect(changeSummary("LOGIN_FAILED", { reason: "wrong_password" })).toBe("The password was wrong");
+        expect(changeSummary("LOGIN_FAILED", { reason: "wrong_code" })).toBe("The code of the second factor was wrong");
+        expect(changeSummary("LOGIN_FAILED", { reason: "passkey_refused" })).toBe("The passkey was not accepted");
+        expect(changeSummary("LOGIN_FAILED", { reason: "constructor" })).toBeNull();
     });
 });
 

@@ -15,6 +15,17 @@ describe("the groups the search finds", () => {
         expect(prismaMock.group.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ tenantId: true }) }));
     });
 
+    it("come in All tenants only from the tenants the reach covers, and not at all without one", async () => {
+        prismaMock.group.findMany.mockResolvedValue([] as never);
+
+        await groups("oper", null, ["acme"]);
+        expect(prismaMock.group.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { name: { contains: "oper" }, tenantId: { in: ["acme"] } } }));
+
+        prismaMock.group.findMany.mockClear();
+        expect(await groups("oper", null, [])).toEqual([]);
+        expect(prismaMock.group.findMany).not.toHaveBeenCalled();
+    });
+
     it("carry their tenant inside a tenant too", async () => {
         prismaMock.group.findMany.mockResolvedValue([{ id: "g1", name: "Operators", tenantId: "acme", _count: { memberships: 2 } }] as never);
 

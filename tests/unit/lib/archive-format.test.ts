@@ -15,7 +15,8 @@ import {
 } from "@/lib/archive/reader";
 import { extractArchive } from "@/lib/archive/extract";
 import { localFileSource, readAll } from "@/lib/archive/sources";
-import { walkTarHeaders } from "@/lib/archive/tar-blocks";
+import { buildUstarHeader, tarPadding, TAR_TRAILER, walkTarHeaders } from "@/lib/archive/tar-blocks";
+import { gunzipSync, gzipSync } from "zlib";
 import { MANIFEST_MEMBER, INDEX_MEMBER, BUNDLE_FILE_MAX_SIZE } from "@/lib/archive/format";
 import { entryKey } from "@/lib/archive/types";
 import type { ArchiveSourceEntry, CompressionKind, SourceFileEntry } from "@/lib/archive/types";
@@ -156,7 +157,7 @@ describe("createArchive / read back", () => {
 
             const dbLine = index.databases[0];
             const dbEntry = index.entries.get(entryKey(undefined, dbLine.n))!;
-            const dumpBytes = await readAll(await openArchiveEntry(source, manifest, dbEntry, masterKey));
+            const dumpBytes = await readAll(await openArchiveEntry(source, manifest, dbEntry, masterKey, dbLine.s));
             expect(dumpBytes.toString("utf-8")).toContain("CREATE TABLE gehalt");
         });
     }
@@ -516,26 +517,32 @@ describe("edge cases", () => {
         const escapeTarget = path.join(workDir, "escaped.txt");
         await fs.writeFile(escapeTarget, "pwned");
 
+        // The writer refuses to pack such a name, so the index is forged afterwards the way a
+        // tampered archive would carry it: the last member is rewritten with `..` in the path.
+        await fs.mkdir(path.join(sourceDir, "aa"), { recursive: true });
+        await fs.writeFile(path.join(sourceDir, "aa", "escaped.txt"), "evil!");
         const archivePath = path.join(workDir, "evil.tar");
-        await createArchive(
+        const { indexBytes } = await createArchive(
             [{
                 kind: "directory",
                 jobSourceId: "src-uuid-1",
                 label: "evil",
                 localPath: sourceDir,
                 excludePatterns: [],
-                files: [{ path: "../escaped.txt", size: 5, mtime: "2026-07-22T10:00:00.000Z" }],
+                files: [{ path: "aa/escaped.txt", size: 5, mtime: "2026-07-22T10:00:00.000Z" }],
             }],
             archivePath,
             { sourceType: "directory-only", compression: "NONE" }
         );
+        const written = await fs.readFile(archivePath);
+        const prefix = written.subarray(0, written.length - 512 - indexBytes.length - tarPadding(indexBytes.length).length - TAR_TRAILER.length);
+        const forged = gzipSync(Buffer.from(gunzipSync(indexBytes).toString("utf-8").replace('"p":"aa/escaped.txt"', '"p":"../escaped.txt"')));
+        await fs.writeFile(archivePath, Buffer.concat([prefix, buildUstarHeader(INDEX_MEMBER, forged.length), forged, tarPadding(forged.length), TAR_TRAILER]));
 
-        const source = await localFileSource(archivePath);
-        const index = await readArchiveIndex(source, await readArchiveManifest(source));
-        expect(index.files[0].p).toBe("../escaped.txt");
-
+        // Refused either as a damaged index or at the extraction, never written outside.
         await expect(extractArchive(archivePath, path.join(workDir, "slip")))
-            .rejects.toThrow(/outside the target directory/i);
+            .rejects.toThrow(/outside the target directory|damaged/i);
+        expect(await fs.readFile(escapeTarget, "utf-8")).toBe("pwned");
     });
 
     it("rejects a file that is not a v2 archive", async () => {

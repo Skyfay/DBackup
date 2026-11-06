@@ -53,7 +53,8 @@ A task the group of your account does not allow shows why and cannot be picked.
 
 - **Never more than its owner.** The permissions of a key are cut to what its owner may do in the tenant of the key at every request. A key of a platform admin can hold any permission, a key of a user without a group there can do nothing.
 - **It follows the group.** When the group of the owner loses a permission, the key loses it too. The panel lists it as paused, and the key may use it again once the group allows it.
-- **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too. A key of someone else is edited, paused, rotated or deleted only by someone whose group may do all the key may still use, and the list offers nothing else on it. What a key holds but its owner lost stays when such a person edits its name or end.
+- **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too.
+- **A key of someone else only loses access.** A key acts as its owner, so only its owner and a platform admin rotate it, enable it again, change its permissions or let it run longer. Anyone else with `api-keys:write` may only rename it, let it run out sooner, disable or delete it, and the list and the editor offer nothing else on it. What the key holds stays as it is.
 - **No platform admin bypass.** A key only ever uses the permissions it holds, even when its owner is a platform admin, and never does what only a platform admin may, like restoring a configuration backup or downloading the database.
 - **Rights of the platform only where they belong.** With [tenants](/user-guide/admin/tenants), a key carries what a platform group gives on the platform only as listed under [Platform Keys](#platform-keys), never the settings of the instance through it, the sign-in providers or what only a platform admin does. The settings of the instance the owner's group in the home tenant gives still count in a key of the home tenant, as before tenants, and never in a key of a customer's tenant, which keeps the tenant settings of its own tenant.
 
@@ -71,6 +72,7 @@ An MSP automates its tenants with keys of its own. Two kinds of rights of the pl
 - The list marks such a key **Platform**, in its row, on its card and in its panel.
 - A key never gets more than its owner, also here. When the owner loses the right, or their platform group, the key loses it at its next request.
 - A key **reaches what its owner reaches.** The key of someone whose platform group reaches some tenants manages those tenants only, every other one reads as gone, and creates no tenant, exactly like its owner on **Platform → Tenants**. The key of a platform admin reaches every tenant.
+- A key with `platform-tenants:write` gives members and makes invitations up to its owner's rights in every tenant the owner reaches, so it is as strong as its owner there.
 - A key made in a customer's tenant never carries a right on the tenants or the accounts, whatever it stores. It may manage the members and invitations of its own tenant with `users:read` and `users:write`.
 - The pages under **Platform**, the sign-in providers, the configuration restore and the database download stay for a signed-in person and answer every key with `403`.
 
@@ -82,9 +84,9 @@ A platform key changes customers. Give it only the area it needs, a short end, a
 
 Every action sits in the menu at the end of a row, in the right click menu and in the panel of a key.
 
-- **Edit** changes the name, the end and the permissions. The secret stays, so scripts keep working, and the change applies to the next request.
-- **Rotate** gives the key a new secret and shows it once. The old secret stops working at once. The dialog warns when the key was used within the last hour. Only the owner, or someone whose group may do everything the key may do, can rotate a key, since the new secret hands out its permissions.
-- **Disable** and **Enable** switch a key off and on. An expired key cannot be enabled, edit it to give it a new end.
+- **Edit** changes the name, the end and the permissions. The secret stays, so scripts keep working, and the change applies to the next request. On a key of someone else it changes only the name and lets the key run out sooner.
+- **Rotate** gives the key a new secret and shows it once. The old secret stops working at once. The dialog warns when the key was used within the last hour. Only the owner and a platform admin rotate a key, since the new secret acts as its owner.
+- **Disable** and **Enable** switch a key off and on. An expired key cannot be enabled, edit it to give it a new end. A key of someone else is enabled again only by its owner or a platform admin.
 - **Delete** removes a key for good. The runs it started stay in History.
 
 Select several keys in the table to enable, disable or delete them together.

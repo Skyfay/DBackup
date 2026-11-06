@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { checkAnyPermissionWithContext, checkPermissionWithContext, getAuthContext, tenantOf } from "@/lib/auth/access-control";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { serviceRefusal } from "@/lib/server/permission-refusal";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { connectionShareService, ShareChangeError, UNCONFIRMED_LOSS } from "@/services/sharing/connection-shares";
 import { logShareChange } from "@/services/sharing/share-audit";
@@ -34,7 +36,7 @@ const BodySchema = z.object({
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         checkAnyPermissionWithContext(ctx, [SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
@@ -58,7 +60,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     const author = { id: ctx.userId, apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null };
     try {
@@ -67,6 +69,9 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
         const parsed = BodySchema.safeParse(await req.json().catch(() => null));
         if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
         const { confirmed, ...settings } = parsed.data;
+        // Customers of the destination of the configuration backup would write their backups beside it.
+        const locked = await configBackupTargetResponse(ctx, { connectionIds: [id] });
+        if (locked) return locked;
         const reach = await platformGroupService.reachOf(ctx.userId);
 
         if (!confirmed) {
@@ -79,12 +84,11 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
             }
         }
         const result = await connectionShareService.save(id, settings, { confirmed, reach });
-        const view = await connectionShareService.view(id);
-        await logShareChange(author, id, result, settings, view.uses.map((use) => use.name));
+        await logShareChange(author, id, result, settings);
         return NextResponse.json({ success: true, data: { gained: result.gained, lost: result.losses.map((loss) => ({ name: loss.name, backups: loss.backups, jobs: loss.jobs.length })) } });
     } catch (error: unknown) {
         // The tenants that lost it before the storage stopped answering are told all the same.
-        if (error instanceof ShareChangeError) await logShareChange(author, id, error.change, { allTenants: false }, []);
+        if (error instanceof ShareChangeError) await logShareChange(author, id, error.change, { allTenants: false });
         const refusal = serviceRefusal(error);
         if (refusal) return refusal;
         log.error("Saving the sharing of a connection failed", { configId: id }, wrapError(error));

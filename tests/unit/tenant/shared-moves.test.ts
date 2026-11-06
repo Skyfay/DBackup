@@ -240,7 +240,7 @@ describe("a database that moves to another server", () => {
 
 describe("a server whose connection is deleted", () => {
     it("names the customers who keep its backups to download, before it goes", async () => {
-        expect(await asHome(() => customersOfServer("gone-mysql"))).toEqual(["Acme", "Globex"]);
+        expect(await asHome(() => customersOfServer("gone-mysql"))).toEqual([{ id: "acme", name: "Acme" }, { id: "globex", name: "Globex" }]);
         await asHome(() => deleteAdapter("gone-mysql", { by: null }));
         expect(await base.adapterConfig.findUnique({ where: { id: "gone-mysql" } })).toBeNull();
     });

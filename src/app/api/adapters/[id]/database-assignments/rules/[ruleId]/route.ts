@@ -8,6 +8,7 @@ import { SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { logRuleRemoved } from "@/services/tenant/assignment-audit";
 import { databaseAssignmentService } from "@/services/tenant/database-assignments";
 import { platformGroupService } from "@/services/user/platform-group-service";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 const log = logger.child({ route: "adapters/[id]/database-assignments/rules/[ruleId]" });
 
@@ -19,7 +20,7 @@ const log = logger.child({ route: "adapters/[id]/database-assignments/rules/[rul
  */
 export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string; ruleId: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id, ruleId } = await props.params;
     try {
         checkPermissionWithContext(ctx, SHARE_PERMISSION);

@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { capToOwner, HOME_KEY_PLATFORM_PERMISSIONS, ownerPermissionsIn, type OwnerGroup } from "@/lib/auth/owner-permissions";
+import { capToOwner, HOME_KEY_PLATFORM_PERMISSIONS, ownerPermissionsIn, type OwnerGroup, type PlatformGroupGrant } from "@/lib/auth/owner-permissions";
 import { runsOutSoon, type ApiKeyRow, type ApiKeysModel, type ApiKeyState } from "./api-keys-types";
 
 /** The trigger a run started with an API key stores, with the name of the key as its label. */
@@ -22,6 +22,7 @@ export interface ListedKey {
         image: string | null;
         platformRole: string | null;
         memberships: { tenantId: string; group: OwnerGroup & { name: string } }[];
+        platformGroup?: PlatformGroupGrant | null;
     };
 }
 

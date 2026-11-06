@@ -11,8 +11,8 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { keyIdOf } from "@/services/vault/key-id";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { runAsSystem } from "@/lib/tenant/context";
-import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { TrashKind } from "./trash-types";
+import { accountTrashPlace } from "./account-place";
 
 export interface KeySnapshot { record: EncryptionProfile }
 export interface CredentialSnapshot { record: CredentialProfile }
@@ -142,20 +142,15 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
         const picture = avatar && { mimeType: avatar.mimeType, size: avatar.size, data: Buffer.from(avatar.data).toString("base64"), updatedAt: avatar.updatedAt };
         const data: UserSnapshot = { record, memberships, accounts, twoFactor, passkeys, apiKeys, preferences, avatar: picture };
         const platformAdmin = record.platformRole === PLATFORM_ADMIN_ROLE;
-        // An account belongs to no tenant, so where it waits depends on the account, never on the
-        // tenant it was deleted from. One of exactly one tenant, with no platform role, no platform
-        // group and no keys elsewhere, waits in that tenant for its admins. Bringing back any other
-        // account makes someone a platform admin, gives a platform group again, or puts it back into
-        // several tenants or into none. Only a platform admin decides that, in the home tenant.
-        const only = memberships.length === 1 ? memberships[0].tenantId : null;
-        const ofOneTenant = !!only && !platformAdmin && !record.platformGroupId && apiKeys.every((key) => key.tenantId === only);
+        // Where it waits, which the delete with `permanently` checks the same way, see `accountTrashPlace`.
+        const place = accountTrashPlace({ platformRole: record.platformRole, platformGroupId: record.platformGroupId, memberships, apiKeys });
         return {
             name: record.name || record.email,
             detail: [record.email, platformAdmin ? "platform admin" : plural(memberships.length, "tenant", "tenants")].join(" · "),
             data,
             permission: PERMISSIONS.USERS.WRITE,
-            tenantId: ofOneTenant && only ? only : HOME_TENANT_ID,
-            superAdminOnly: !ofOneTenant,
+            tenantId: place.tenantId,
+            superAdminOnly: place.superAdminOnly,
         };
     },
 };

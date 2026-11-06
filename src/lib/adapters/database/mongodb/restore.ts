@@ -1,14 +1,14 @@
 import type { ExecutionHost } from "@/lib/transport";
-import { MONGORESTORE, buildConnectionArgs, maskSecrets } from "./args";
+import { MONGORESTORE, maskSecrets, withToolConnection } from "./args";
 import { assertDatabaseArgument } from "@/lib/adapters/database/common/database-name";
 import { withMongoMeta } from "./meta";
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { MongoDBConfig } from "@/lib/adapters/definitions";
-import path from "path";
 import {
     isMultiDbTar,
     extractSelectedDatabases,
+    extractedFileOf,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
@@ -74,9 +74,9 @@ async function restoreSingleDatabase(
 
     // mongorestore reads the archive from a path, so it is staged onto the
     // execution host. On a direct host that is the original file with no copy.
-    await host.stageInput(sourcePath, {}, async (stagedPath) => {
+    await host.stageInput(sourcePath, {}, (stagedPath) => withToolConnection(host, config, async (connection) => {
         const args = [
-            ...buildConnectionArgs(config),
+            ...connection,
             `--archive=${stagedPath}`,
             "--gzip",
             "--drop", // Drop collections before restoring, mirroring MySQL's --clean
@@ -108,7 +108,7 @@ async function restoreSingleDatabase(
                 `mongorestore exited with code ${code ?? "null"}${signal ? ` (signal: ${signal})` : ""}`,
             );
         }
-    });
+    }));
 }
 
 /**
@@ -188,7 +188,7 @@ export async function restore(
 
                 // Determine target database name (supports renaming)
                 const targetDb = getTargetDatabaseName(dbEntry.name, mapping);
-                const archivePath = path.join(tempDir, dbEntry.filename);
+                const archivePath = extractedFileOf(files, dbEntry);
 
                 log(`Restoring database: ${dbEntry.name} -> ${targetDb}`, 'info');
 

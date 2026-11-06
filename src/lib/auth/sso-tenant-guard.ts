@@ -22,7 +22,9 @@ import { DISABLED_PROVIDER_URL, isSsoCallback, ssoProviderIdOf, type SsoHookCont
  * Neither kind of provider links an account that another tenant made: its maker chose its password,
  * and the person of the email would sign in to an account someone else can sign in to as well. A
  * provider of a tenant never links one, a provider of the platform only for whoever signs in to the
- * account already and links the provider from their profile.
+ * account already and links the provider from their profile. An account of no tenant counts as one
+ * of the home tenant, whose admins set its password, so only a provider of the platform or of the
+ * home tenant links it.
  */
 
 /** The login page says why when a provider of a tenant may not sign someone in. */
@@ -86,25 +88,37 @@ async function tenantProviderOf(context: SsoHookContext | null | undefined) {
 const accountOf = (userId: string) =>
     prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
 
-/** Whether another tenant made the account: it works in tenants, none of them this one. */
-const madeElsewhere = (user: { memberships: { tenantId: string }[] }, tenantId: string) =>
-    user.memberships.length > 0 && !user.memberships.some((membership) => membership.tenantId === tenantId);
+/**
+ * Whether another tenant made the account: none of the tenants it works in is this one. An account
+ * of no tenant counts as one of the home tenant, whose admins set its password, like `accountRefusal`
+ * counts it, so a provider of another tenant never links it. Someone new a provider adds is a member
+ * of its tenant before the link, see `placeSsoUser`.
+ */
+const madeElsewhere = (user: { memberships: { tenantId: string }[] }, tenantId: string) => {
+    const tenants = user.memberships.length > 0 ? user.memberships.map((membership) => membership.tenantId) : [HOME_TENANT_ID];
+    return !tenants.includes(tenantId);
+};
 
-/** The account whose session the request carries, of someone who links a provider to their own account. */
-async function signedInUserOf(context: SsoHookContext | null | undefined): Promise<string | null> {
+/** The session the request carries, of someone who links a provider to their own account, with the tenant it works in. */
+export async function signedInSessionOf(context: SsoHookContext | null | undefined): Promise<{ userId: string; activeTenantId: string | null } | null> {
     const cookie = context?.headers ? getSessionCookie(context.headers) : null;
     if (!cookie) return null;
     // The cookie holds the token and its signature, the session is found by the token.
     const token = decodeURIComponent(cookie).split(".")[0];
-    const session = token ? await prisma.session.findUnique({ where: { token }, select: { userId: true, expiresAt: true } }) : null;
-    return session && session.expiresAt.getTime() > Date.now() ? session.userId : null;
+    const session = token ? await prisma.session.findUnique({ where: { token }, select: { userId: true, expiresAt: true, activeTenantId: true } }) : null;
+    return session && session.expiresAt.getTime() > Date.now() ? { userId: session.userId, activeTenantId: session.activeTenantId ?? null } : null;
+}
+
+/** The account whose session the request carries, of someone who links a provider to their own account. */
+async function signedInUserOf(context: SsoHookContext | null | undefined): Promise<string | null> {
+    return (await signedInSessionOf(context))?.userId ?? null;
 }
 
 /**
  * Runs before better-auth links an account to a provider. False keeps a provider from linking an
  * account it may not sign in, and the session hook then sends the person back to the login page
- * with the reason, see `refuseSsoSession`. A new account is linked before it joins a tenant, so it
- * passes here and was checked when it was added.
+ * with the reason, see `refuseSsoSession`. A new account joined the tenant of its provider when it
+ * was added, see `placeSsoUser`, so it passes here and was checked then.
  */
 export async function allowTenantSsoLink(account: { userId: string }, context: SsoHookContext | null | undefined): Promise<boolean> {
     const provider = await providerOf(context);
@@ -120,8 +134,8 @@ export async function allowTenantSsoLink(account: { userId: string }, context: S
 /**
  * A sign-in through a provider of a tenant goes on only for an account it may sign in, also one
  * linked before the provider moved to the tenant, and never for an account another tenant made,
- * also one linked while it was a member here. An account of no tenant that links through it now
- * joins the tenant only after its session starts, see `joinSsoTenant`.
+ * also one linked while it was a member here. An account of no tenant counts as one of the home
+ * tenant there, see `madeElsewhere`.
  */
 export async function refuseTenantSsoSession(session: { userId: string }, context: SsoHookContext | null | undefined, redirect: (url: string) => unknown): Promise<void> {
     const provider = await tenantProviderOf(context);

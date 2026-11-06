@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -17,7 +18,7 @@ const FIELD = "Login image";
 /** The stored picture for the preview in the settings, also while the login page shows the logos. */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ));
     if (refused) return refused;
 
@@ -31,7 +32,7 @@ export async function GET() {
 /** A new picture for the login page, `file` in a form, in place of the one before. */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
     if (refused) return refused;
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
 /** Removes the picture, and the login page shows the logos again. */
 export async function DELETE() {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
     if (refused) return refused;
 

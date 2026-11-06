@@ -76,9 +76,16 @@ vi.mock("@/services/dashboard-service", () => ({
 }));
 vi.mock("@/services/storage/restore-path-check", () => ({ checkRestorePath: (...args: unknown[]) => mocks.checkRestorePath(...args) }));
 vi.mock("@/services/storage/storage-lookup", () => ({ isMissingStorage: () => false }));
-vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: vi.fn() } }));
+const audit = vi.hoisted(() => ({ log: vi.fn(), logFor: vi.fn() }));
+vi.mock("@/services/audit-service", () => ({ auditService: audit }));
+// The tenant of the destination, whose log keeps the entry of a look at it, also from All tenants.
+vi.mock("@/services/audit/record-names", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/services/audit/record-names")>()),
+    connectionPlace: async (id: string) => ({ name: "NAS", tenantId: id === "nas" ? "default" : "globex" }),
+}));
 vi.mock("@/services/storage/backup-audit", () => ({
     backupAuditDetails: async (_id: string, file: string) => ({ file, destination: "NAS" }),
+    destinationAuditName: async () => "NAS",
     fileRestoreTarget: async () => ({}),
     restoreAuditDetails: async () => ({}),
 }));
@@ -285,5 +292,73 @@ describe("a download of files prepared for the browser", () => {
         mocks.ctx = { ...member("storage:download"), tenantId: "globex" };
         expect((await collect(token)).status).toBe(410);
         expect(mocks.openArchiveDownload).not.toHaveBeenCalled();
+    });
+});
+
+/** Every way a backup is read or deleted by its path, for a path of the caller's choosing. */
+const pathReaders = (file: string) => [
+    { name: "a download", send: () => download.GET(get(`?file=${encodeURIComponent(file)}`), params), reached: () => mocks.downloadFile },
+    { name: "a decrypted download", send: () => download.POST(post({ file }), params), reached: () => mocks.downloadFile },
+    { name: "an analysis", send: () => analyze.POST(post({ file }), params), reached: () => mocks.analyzeBackup },
+    { name: "a look inside the archive", send: () => browse.POST(post({ file }), params), reached: () => mocks.browseArchive },
+    { name: "a download of files", send: () => restoreFiles.POST(post({ file, target: { kind: "download" } }), params), reached: () => mocks.openArchiveDownload },
+    { name: "a restore", send: () => restore.POST(post({ file, targetSourceId: "src-1" }), params), reached: () => mocks.restore },
+    { name: "a delete", send: () => files.DELETE(del({ path: file }), params), reached: () => mocks.deleteFile },
+];
+
+describe("a backup path that reaches past the folder of the destination", () => {
+    const LEAVING = ["nightly\\..\\..\\other\\shop.tar", "%2e%2e/other/shop.tar", "nightly/%2e%2e%2f%2e%2e%2fother/shop.tar", "\\srv\\shop.tar", "nightly/.. /shop.tar"];
+
+    it.each(LEAVING)("answers 400 for %s on every route, also to a platform admin, and reads nothing", async (file) => {
+        for (const ctx of [member(...STORAGE_RIGHTS), admin()]) {
+            mocks.ctx = ctx;
+            for (const { name, send, reached } of pathReaders(file)) {
+                const response = await send();
+                expect([name, response.status]).toEqual([name, 400]);
+                expect(reached()).not.toHaveBeenCalled();
+            }
+        }
+        expect(mocks.isConfigBackupFile).not.toHaveBeenCalled();
+    });
+
+    it("still reads a backup whose name holds two dots inside a part", async () => {
+        mocks.ctx = member("storage:download");
+
+        const response = await download.GET(get(`?file=${encodeURIComponent("nightly/shop..v2.tar")}`), params);
+
+        expect(response.status).toBe(200);
+        expect(mocks.downloadFile).toHaveBeenCalled();
+    });
+});
+
+describe("a folder of a restore target checked for files", () => {
+    it.each(["../other", "data\\..\\..\\other", "%2e%2e/other"])("answers 400 for %s and asks no storage", async (path) => {
+        mocks.ctx = member("storage:restore");
+
+        const response = await checkPath.POST(post({ path }), params);
+
+        expect(response.status).toBe(400);
+        expect(mocks.checkRestorePath).not.toHaveBeenCalled();
+    });
+});
+
+describe("the listing of a destination", () => {
+    it("writes a storage_check entry when it lists the destination live, and none when the cache answers", async () => {
+        mocks.ctx = member("storage:read");
+
+        expect((await files.GET(get(""), params)).status).toBe(200);
+        expect(audit.logFor).not.toHaveBeenCalled();
+
+        expect((await files.GET(get("?refresh=true"), params)).status).toBe(200);
+        expect(audit.logFor).toHaveBeenCalledWith(mocks.ctx, "EXECUTE", "ADAPTER", expect.objectContaining({ action: "storage_check", name: "NAS", names: ["NAS"], success: true }), "nas", { tenantId: "default" });
+    });
+
+    it("writes no entry when the destination is not the tenant's", async () => {
+        mocks.ctx = member("storage:read");
+        const { NotFoundError } = await import("@/lib/logging/errors");
+        mocks.listFiles.mockRejectedValueOnce(new NotFoundError("Storage adapter", "nas"));
+
+        expect((await files.GET(get("?refresh=true"), params)).status).toBe(404);
+        expect(audit.logFor).not.toHaveBeenCalled();
     });
 });

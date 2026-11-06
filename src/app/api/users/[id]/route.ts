@@ -8,6 +8,7 @@ import { logger } from "@/lib/logging/logger";
 import { maySeeAccount } from "@/services/user/account-visibility";
 import { getUserDetails } from "@/services/user/user-details";
 import { logViewOf } from "@/services/audit/log-reach";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 const log = logger.child({ route: "users/[id]" });
 
@@ -19,10 +20,12 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
     const { id } = await props.params;
     const requestHeaders = await headers();
     const ctx = await getAuthContext(requestHeaders);
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.USERS.READ);
+        // In All tenants the panel may be of any account of the instance, so it needs the right to see them, like the Users tab there.
+        if (ctx.allTenants) checkPermissionWithContext(ctx, PERMISSIONS.PLATFORM.ACCOUNTS_READ);
         // An account the caller may not see reads like one that does not exist.
         if (!(await maySeeAccount(ctx, id))) return NextResponse.json({ success: false, error: "The user no longer exists" }, { status: 404 });
         // The session of the viewer is marked in the list, so the panel never offers to end it.

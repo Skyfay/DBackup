@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isConfigBackupPath } from "@/lib/core/config-backup-path";
-import { readsConfigBackups } from "@/lib/server/config-backup-guard";
+import { configBackupSelection, readsConfigBackups } from "@/lib/server/config-backup-guard";
 import type { StorageViewMode } from "@/lib/tenant/storage-view";
 
 const mocks = vi.hoisted(() => ({
@@ -84,6 +84,23 @@ describe("a configuration backup at a destination", () => {
         expect(await isConfigBackupFile("nas", "config-backups/config_backup_1.db.gz.enc")).toBe(true);
         expect(await isConfigBackupFile("nas", "nightly/shop.tar")).toBe(false);
     });
+});
+
+describe("a selection of backups for a bulk delete or lock", () => {
+    const MEMBER = { isPlatformAdmin: false, authMethod: "session" as const, tenantId: "default" };
+    const ADMIN = { isPlatformAdmin: true, authMethod: "session" as const, tenantId: "default" };
+
+    it.each([["a member", MEMBER], ["a platform admin", ADMIN]])(
+        "refuses a path that leaves the destination on its own row for %s, before any sidecar is read",
+        async (_who, ctx) => {
+            const selection = await configBackupSelection(ctx, "nas", ["nightly/shop.tar", "../other/shop.tar", "nightly/%2e%2e/%2e%2e/x.tar"]);
+
+            expect(selection.allowed).toEqual(["nightly/shop.tar"]);
+            expect(selection.refused.map((row) => row.id)).toEqual(["../other/shop.tar", "nightly/%2e%2e/%2e%2e/x.tar"]);
+            expect(mocks.read.mock.calls.map(([, remote]) => remote)).not.toContain("../other/shop.tar.meta.json");
+            expect(mocks.open.mock.calls.length).toBe(ctx === MEMBER ? 1 : 0);
+        }
+    );
 });
 
 describe("who opens a configuration backup", () => {

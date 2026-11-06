@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { isStorageRole } from "@/lib/core/storage-roles";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
@@ -9,10 +10,12 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
-import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
+import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { wrapError, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { createAdapter } from "@/services/adapters/adapter-create";
 import { listAdapters } from "@/services/adapters/adapter-list";
+import { platformGroupService } from "@/services/user/platform-group-service";
 
 registerAdapters();
 
@@ -21,7 +24,7 @@ const log = logger.child({ route: "adapters" });
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const { searchParams } = new URL(req.url);
@@ -60,25 +63,28 @@ export async function GET(req: NextRequest) {
 
         // Every row is the safe DTO, so a decrypted secret never reaches the client whatever the
         // caller may see. The connection tables ask for usage, last backup and health on top.
+        const shares = hasPermissionWithContext(ctx, SEE_SHARING_PERMISSION);
         const items = await listAdapters(type, {
             role,
             overview: searchParams.get("overview") === "true",
-            shares: hasPermissionWithContext(ctx, SEE_SHARING_PERMISSION),
+            shares,
+            // The tenants a share names, within the reach of the platform group of the viewer.
+            shareReach: shares ? await platformGroupService.reachOf(ctx.userId) : undefined,
             sharedServers,
         });
         return NextResponse.json(items);
     } catch (error: unknown) {
         const refused = permissionRefusal(error);
         if (refused) return refused;
-        const message = error instanceof Error ? error.message : "Failed to fetch adapters";
-        return NextResponse.json({ error: message }, { status: 500 });
+        log.error("Listing connections failed", {}, wrapError(error));
+        return NextResponse.json({ error: "The connections could not be loaded. The log of DBackup has the details." }, { status: 500 });
     }
 }
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -96,6 +102,9 @@ export async function POST(req: NextRequest) {
             // A kind without a permission of its own is no connection, so nothing is created.
             return NextResponse.json({ success: false, error: "The type must be database, storage or notification" }, { status: 400 });
         }
+        // A new connection never signs in with the logins of the destination of the configuration backup.
+        const locked = await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
+        if (locked) return locked;
 
         let newAdapter;
         try {
@@ -120,6 +129,6 @@ export async function POST(req: NextRequest) {
         const refused = permissionRefusal(error);
         if (refused) return refused;
         log.error("Create adapter error", {}, wrapError(error));
-        return NextResponse.json({ error: getErrorMessage(error) || "Failed to create adapter" }, { status: 500 });
+        return NextResponse.json({ error: "The connection could not be created. The log of DBackup has the details." }, { status: 500 });
     }
 }

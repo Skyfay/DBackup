@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { ValidationError } from "@/lib/logging/errors";
+import { ValidationError, ConflictError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     logFor: vi.fn(),
@@ -92,7 +92,7 @@ describe("saving a job through the API", () => {
 
     it("notes nothing when the save is refused", async () => {
         prismaMock.job.findUnique.mockResolvedValueOnce(jobRow() as never);
-        mocks.updateJob.mockRejectedValue(new Error('A job with the name "Shop" already exists.'));
+        mocks.updateJob.mockRejectedValue(new ConflictError('A job with the name "Shop" already exists.'));
 
         const response = await saveJob({ name: "Shop" });
 
@@ -153,7 +153,7 @@ describe("starting a restore through the API", () => {
             overwriteCustomerDatabases: true,
         });
 
-        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: true }));
+        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: true }), expect.anything());
         expect(mocks.logFor).toHaveBeenCalledWith(ctx, "RESTORE", "BACKUP", expect.objectContaining({ customers: ["Acme", "Globex"] }), "nas");
         expect(JSON.stringify(await response.json())).not.toContain("Acme");
     });
@@ -161,7 +161,7 @@ describe("starting a restore through the API", () => {
     it("never confirms a restore over customers' databases by anything but true", async () => {
         await startRestore({ file: "Shop/shop_2026-09-28.tar.gz", targetSourceId: "pg-prod", overwriteCustomerDatabases: "yes" });
 
-        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: false }));
+        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: false }), expect.anything());
     });
 
     it("notes nothing when the restore is refused before it starts", async () => {

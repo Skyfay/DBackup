@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { ApiKeyError, NotFoundError, wrapError } from "@/lib/logging/errors";
 import { Permission } from "@/lib/auth/permissions";
-import { capToOwner, ownerPermissionsIn } from "@/lib/auth/owner-permissions";
+import { capToOwner, ownerPermissionsIn, storedPermissionList } from "@/lib/auth/owner-permissions";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 
 const log = logger.child({ service: "ApiKeyService" });
@@ -107,7 +107,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions),
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -138,7 +138,7 @@ export class ApiKeyService {
       id: r.id,
       name: r.name,
       prefix: r.prefix,
-      permissions: JSON.parse(r.permissions) as string[],
+      permissions: storedPermissionList(r.permissions),
       userId: r.userId,
       userName: r.user.name,
       userEmail: r.user.email,
@@ -168,7 +168,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -249,7 +249,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -288,7 +288,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -329,7 +329,7 @@ export class ApiKeyService {
     return {
       ownerId: record.userId,
       name: record.name,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: storedPermissionList(record.permissions),
       ownerPermissions: ownerPermissionsIn(record.user, record.tenantId, await tenantShares(record.tenantId)),
     };
   }
@@ -351,7 +351,7 @@ export class ApiKeyService {
     log.info("API key updated", { apiKeyId: id });
 
     return {
-      before: { name: existing.name, permissions: JSON.parse(existing.permissions) as string[], expiresAt: existing.expiresAt },
+      before: { name: existing.name, permissions: storedPermissionList(existing.permissions), expiresAt: existing.expiresAt },
       after: input,
     };
   }
@@ -409,7 +409,12 @@ export class ApiKeyService {
 
     // The platform may switch the API keys of the tenant off, which stops the keys it has too.
     const tenant = await prisma.tenant.findUnique({ where: { id: record.tenantId }, select: { addsApiKeys: true, sharesWithCustomers: true } });
-    if (tenant && !tenant.addsApiKeys) {
+    // A key outlives no tenant: without its row nothing says what the key may still do there.
+    if (!tenant) {
+      log.warn("API key validation failed: its tenant no longer exists", { apiKeyId: record.id });
+      throw new ApiKeyError("tenant_gone", "The tenant of this API key no longer exists");
+    }
+    if (!tenant.addsApiKeys) {
       log.warn("API key validation failed: API keys are off for its tenant", { apiKeyId: record.id });
       throw new ApiKeyError("blocked", "API keys are switched off for this tenant");
     }
@@ -428,7 +433,7 @@ export class ApiKeyService {
     return {
       id: record.id,
       userId: record.userId,
-      permissions: capToOwner(JSON.parse(record.permissions) as string[], ownerPermissionsIn(record.user, record.tenantId, tenant?.sharesWithCustomers ?? false)),
+      permissions: capToOwner(storedPermissionList(record.permissions), ownerPermissionsIn(record.user, record.tenantId, tenant.sharesWithCustomers)),
       tenantId: record.tenantId,
     };
   }

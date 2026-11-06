@@ -8,6 +8,7 @@ import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { INTEGRITY_CHECK_STAGES } from "@/lib/core/logs";
 import { isBackupFile } from "@/lib/core/backup-files";
 import { isAirGapped } from "@/lib/core/air-gap";
+import { scanRefusal } from "@/lib/adapters/own-data";
 import { runAsSystem } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
 import { openDestination, openRow, viewModeOf } from "@/services/sharing/destination-access";
@@ -433,6 +434,12 @@ export class IntegrityService {
       // skipped. Anything else, like a config that cannot be decrypted, counts as a failed scan.
       if (!(e instanceof NotFoundError)) throw e;
       log.warn("Storage destination could not be opened", { adapterId: storageConfig.adapterId }, wrapError(e));
+      return [];
+    }
+    // A destination whose folder reaches the own data of DBackup is never scanned, see `scanRefusal`.
+    const ownData = await scanRefusal(storageConfig.adapterId, config as Record<string, unknown>, storageConfig.id);
+    if (ownData) {
+      callbacks?.onLog(`${storageConfig.name}: ${ownData} Skipping.`, "warning");
       return [];
     }
 

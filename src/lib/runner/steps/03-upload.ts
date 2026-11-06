@@ -18,6 +18,8 @@ import { chainSegment } from "@/lib/templates/naming-template-engine";
 import { withStorageSession } from "./upload-helpers";
 import { verificationService } from "@/services/storage/verification-service";
 import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
+import { isUnsafeJobFolderName } from "@/lib/core/job-folder";
+import { jobFolderRefusal } from "./job-folder-check";
 import { isConnected, reportSkippedAirGaps } from "./air-gap";
 import { providedConnection } from "@/services/sharing/provided";
 
@@ -226,6 +228,20 @@ export async function stepUpload(ctx: RunnerContext) {
         ? `${job.name}/${ctx.chain!.chainDir}/${chainPrefix}${path.basename(ctx.tempFile)}`
         : `${job.name}/${path.basename(ctx.tempFile)}`;
     const totalDests = ctx.destinations.length;
+
+    // The folder of the chain comes from the path of the previous run, so it is checked like the
+    // folder of the job: it stays below that folder and reaches none of the own data of DBackup.
+    if (inChain) {
+        const chainFolder = `${job.name}/${ctx.chain!.chainDir}`;
+        const unsafe = isUnsafeJobFolderName(ctx.chain!.chainDir) || ctx.chain!.chainDir.includes("/") || ctx.chain!.chainDir.includes("\\");
+        for (const dest of ctx.destinations) {
+            if (dest.refusal) continue;
+            const refusal = unsafe
+                ? `The folder of the chain ${ctx.chain!.chainDir} leaves the folder of the job`
+                : await jobFolderRefusal(dest.adapterId, dest.config as Record<string, unknown>, dest.configId, chainFolder, dest.customer);
+            if (refusal) dest.refusal = refusal;
+        }
+    }
 
     ctx.setStage(PIPELINE_STAGES.UPLOADING);
 

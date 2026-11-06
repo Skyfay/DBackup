@@ -14,7 +14,10 @@
  */
 
 import path from "path";
-import { safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { assertRestoreFolder, safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { isOrigin, mappingFolder, NO_RESTORE_FOLDER, restoredFileRefusal } from "./restore-targets";
+import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { formatBytes } from "@/lib/utils";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
@@ -41,6 +44,8 @@ import { restoreDatabases, type DatabaseMapping } from "./archive-restore-databa
 import type { RestoreInput } from "./types";
 import type { SharedRunLogs } from "./run-logs";
 import type { RestoreTracker } from "./restore-record";
+import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf } from "@/lib/archive/link-target";
+import { reserveTempSpace } from "./temp-space";
 
 /**
  * Names one entry for the error list, as "<source label>/<path>".
@@ -51,6 +56,15 @@ import type { RestoreTracker } from "./restore-record";
  */
 function entryLabel(sourceLabel: string, filePath: string): string {
     return `${stripTrailingSlashes(sourceLabel)}/${filePath}`;
+}
+
+/** The path a file is written to, or its own path when it leaves its folder, which the write then reports. */
+function remotePathOrRelative(basePath: string, relativePath: string): string {
+    try {
+        return safeRemoteJoin(basePath, relativePath);
+    } catch {
+        return relativePath;
+    }
 }
 
 export interface ArchiveRestoreCallbacks {
@@ -81,6 +95,8 @@ interface DirectoryTarget {
     config: AdapterConfig;
     basePath: string;
     label: string;
+    /** Whether the files go back where the directory source read them, the one place their owners are restored, see `metadataFromIndex`. */
+    origin: boolean;
 }
 
 /**
@@ -89,9 +105,13 @@ interface DirectoryTarget {
  * the folders of its customers, a customer only into its own, and nobody into a storage of another
  * tenant, whatever id and path the request names. A storage nobody shares is its plain adapter.
  *
+ * The folder, when given, may not leave the connection, see `assertRestoreFolder`, which is checked
+ * before the connection is opened.
+ *
  * @throws Error "Restore target adapter not found" for an id the tenant may not use.
  */
-export async function openDirectoryTarget(id: string): Promise<OpenDestination> {
+export async function openDirectoryTarget(id: string, basePath?: string): Promise<OpenDestination> {
+    if (basePath !== undefined) assertRestoreFolder(basePath);
     const found = await findRestoreTarget(id).catch((error: unknown) => {
         if (error instanceof NotFoundError) throw new Error("Restore target adapter not found");
         throw error;
@@ -199,23 +219,42 @@ export async function restoreArchiveSnapshot(
             const workItems: { src: string; file: IndexFileLine }[] = [];
             const perSourceTotals = new Map<string, number>();
             const labels = new Map(index.directories.map((d) => [d.src, d.label]));
+            /** Files of a source refused before anything was read, see `restoredFileRefusal`. */
+            const refusedFiles = new Map<string, number>();
+            // Entries below a link of the same backup, see `throughLinkOf`.
+            const throughLink = throughLinkOf(index.files);
 
             for (const dir of selectedDirs) {
-                const mappingEntry = dirMapping.find((m) => m.entryId === dir.src);
+                // The picked mapping of the source, the one the preflight checked, never another
+                // mapping of the same source that was left out.
+                const mappingEntry = dirMapping.find((m) => m.entryId === dir.src && m.selected);
                 if (!mappingEntry?.targetConfigId) {
                     errors.push({ entry: `directory:${dir.label}`, error: "No restore target specified" });
                     log(`Skipping directory '${dir.label}': no restore target specified`, 'warning', 'storage');
                     continue;
                 }
 
+                // The same folder the check of the targets read, never the label of the archive.
+                const basePath = mappingFolder(mappingEntry);
+                if (basePath === null) {
+                    errors.push({ entry: `directory:${dir.label}`, error: NO_RESTORE_FOLDER });
+                    log(`Skipping directory '${dir.label}': ${NO_RESTORE_FOLDER}`, 'warning', 'storage');
+                    continue;
+                }
+                let intoDestination = true;
+                let targetAdapterId: string | undefined;
                 try {
-                    const target = await openDirectoryTarget(mappingEntry.targetConfigId);
-                    const basePath = mappingEntry.targetPath || dir.label;
+                    const target = await openDirectoryTarget(mappingEntry.targetConfigId, basePath);
+                    intoDestination = target.row.storageRole === STORAGE_ROLES.DESTINATION;
+                    targetAdapterId = target.row.adapterId;
+                    // The source the request maps, like the check of the targets reads it, see `mappingTargets`.
+                    const source = await prisma.jobSource.findUnique({ where: { id: mappingEntry.entryId }, select: { configId: true, path: true } });
                     targets.set(dir.src, {
                         adapter: target.adapter,
                         config: target.config,
                         basePath,
                         label: `${target.row.name}:${basePath}`,
+                        origin: isOrigin(source, mappingEntry.targetConfigId, basePath, target.row.adapterId),
                     });
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : String(e);
@@ -236,9 +275,23 @@ export async function restoreArchiveSnapshot(
                 for (const file of selectedFiles) {
                     if (excludePatterns.length > 0 && matchesAnyExcludePattern(file.p, excludePatterns)) {
                         excluded.push({ path: file.p, size: file.s });
-                    } else {
-                        files.push(file);
+                        continue;
                     }
+                    // An entry below a link of the same backup is never written, see `throughLinkOf`.
+                    if (throughLink(dir.src, file.p)) {
+                        errors.push({ entry: entryLabel(dir.label, file.p), error: ENTRY_THROUGH_LINK });
+                        refusedFiles.set(dir.src, (refusedFiles.get(dir.src) ?? 0) + 1);
+                        log(`'${file.p}' of '${dir.label}' was not restored: ${ENTRY_THROUGH_LINK}.`, 'warning', 'storage');
+                        continue;
+                    }
+                    // A file only a platform admin restores is named as an error and never read.
+                    const refusal = restoredFileRefusal(remotePathOrRelative(basePath, file.p), input.caller, intoDestination, targetAdapterId);
+                    if (refusal) {
+                        errors.push({ entry: entryLabel(dir.label, file.p), error: refusal });
+                        refusedFiles.set(dir.src, (refusedFiles.get(dir.src) ?? 0) + 1);
+                        continue;
+                    }
+                    files.push(file);
                 }
 
                 perSourceTotals.set(dir.src, files.length);
@@ -316,7 +369,17 @@ export async function restoreArchiveSnapshot(
             // same order extractArchiveFrom() uses and for the same security reason.
             const { payloads, symlinks } = partitionSymlinks(workItems);
 
-            const sessions = createDestinationSessions(concurrency, log);
+            // Each file is staged whole before its upload and removed after it, `concurrency` at once.
+            // The space stays promised to this restore until it ends, see `reserveTempSpace`.
+            const space = await reserveTempSpace(payloads.map(({ file }) => file.s ?? 0), concurrency);
+
+            let sessions: ReturnType<typeof createDestinationSessions>;
+            try {
+                sessions = createDestinationSessions(concurrency, log);
+            } catch (error) {
+                space.release();
+                throw error;
+            }
             try {
                 await forEachSnapshotFile(archive, payloads, async (file, content) => {
                     const target = targets.get(file.src)!;
@@ -340,7 +403,7 @@ export async function restoreArchiveSnapshot(
                         const uploadOk = await sessions.upload(
                             target, stagePath, remotePath,
                             (msg, level, type, details) => { if (level && level !== 'info') log(`${file.p}: ${msg}`, level, type ?? 'storage', details); },
-                            metadataFromIndex(file)
+                            metadataFromIndex(file, target.origin)
                         );
                         if (!uploadOk) {
                             throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
@@ -369,6 +432,19 @@ export async function restoreArchiveSnapshot(
                     const target = targets.get(src)!;
                     const label = labels.get(src) ?? src;
                     const link = `'${file.p}' -> '${file.lnk}'`;
+
+                    // A link that leads out of the folder of the restore is never laid, see
+                    // `link-target.ts`. Skipped like one the destination cannot hold, and named.
+                    if (linkLeavesTarget(file.p, file.lnk, (resolved) => throughLink(src, resolved))) {
+                        perSourceSkippedLinks.set(src, (perSourceSkippedLinks.get(src) ?? 0) + 1);
+                        callbacks.record?.folderEntry(src, "skipped", 0);
+                        errors.push({ entry: entryLabel(label, file.p), error: LINK_LEAVES_TARGET });
+                        log(`Symbolic link ${link} was not restored: ${LINK_LEAVES_TARGET}.`, 'warning', 'storage');
+                        done++;
+                        doneBytes += file.s ?? 0;
+                        updateDetail(detailText());
+                        continue;
+                    }
 
                     // A destination without symbolic links is a capability limit, not a
                     // transfer that went wrong: retrying it will never behave differently.
@@ -412,13 +488,14 @@ export async function restoreArchiveSnapshot(
                     updateDetail(detailText());
                 }
             } finally {
+                space.release();
                 await sessions.close();
                 callbacks.record?.endFolders();
             }
 
             for (const dir of selectedDirs) {
                 if (!targets.has(dir.src)) continue; // target resolution already failed above
-                const failed = perSourceFailed.get(dir.src) ?? 0;
+                const failed = (perSourceFailed.get(dir.src) ?? 0) + (refusedFiles.get(dir.src) ?? 0);
                 const skippedLinks = perSourceSkippedLinks.get(dir.src) ?? 0;
                 const restored = perSourceDone.get(dir.src) ?? 0;
                 if (failed === 0 && skippedLinks === 0) {

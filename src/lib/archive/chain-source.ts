@@ -15,8 +15,10 @@ import path from "path";
 import { Readable } from "stream";
 import { AdapterConfig, StorageAdapter } from "@/lib/core/interfaces";
 import { openStorageArchiveSource, ManagedArchiveSource } from "./storage-source";
-import { openArchiveEntry, groupFilesByEntry, readArchiveManifest } from "./reader";
+import { assertSingleReferences, openArchiveEntry, groupFilesByEntry, readArchiveManifest } from "./reader";
 import { readAll } from "./sources";
+import { BUNDLE_READ_LIMIT } from "./limits";
+import { assertPlainFileName } from "./dump-names";
 import { createConcurrencyGate } from "@/lib/concurrency";
 import { ArchiveByteSource, ArchiveIndex, ArchiveManifest, IndexFileLine, isSymlinkLine } from "./types";
 
@@ -38,8 +40,15 @@ export interface ChainReaderOptions {
     resolveMasterKey: (profileId: string) => Promise<Buffer>;
 }
 
-/** Remote path of a sibling archive in the same chain directory. */
+/**
+ * Remote path of a sibling archive in the same chain directory.
+ *
+ * The name comes from the index of the snapshot, which whoever writes the destination can edit, so
+ * only a plain file name is taken: a path would read any file the connection reaches and restore
+ * it as part of the backup.
+ */
 export function siblingArchivePath(snapshotPath: string, archiveName: string): string {
+    assertPlainFileName(archiveName, "an archive of the backup chain");
     const dir = path.posix.dirname(snapshotPath.replace(/\\/g, "/"));
     return dir === "." ? archiveName : `${dir}/${archiveName}`;
 }
@@ -137,6 +146,7 @@ export async function forEachSnapshotFile(
     // single caller that forgot would ask for entry `undefined` and take the whole restore
     // down with it rather than losing one link.
     const withPayload = files.filter((f) => !isSymlinkLine(f.file));
+    assertSingleReferences(snapshot.index.entries, withPayload.map((f) => f.file));
 
     for (const [archiveName, group] of groupFilesByArchive(withPayload as { file: IndexFileLine }[])) {
         // The snapshot's own archive is already open; siblings are opened and released
@@ -159,13 +169,14 @@ export async function forEachSnapshotFile(
                     if (!entry.bundle) {
                         await visit(
                             entryFiles[0],
-                            await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                            await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey, entryFiles[0].s)
                         );
                         continue;
                     }
 
                     const payload = await readAll(
-                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey),
+                        BUNDLE_READ_LIMIT
                     );
                     for (const file of entryFiles) {
                         const start = file.o ?? 0;
@@ -189,7 +200,7 @@ export async function forEachSnapshotFile(
                 if (!entry.bundle) {
                     await run(async () => visit(
                         entryFiles[0],
-                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey, entryFiles[0].s)
                     ));
                     return;
                 }
@@ -197,7 +208,8 @@ export async function forEachSnapshotFile(
                 // Read under the gate too, so at most `concurrency` bundles are held in memory
                 // at once. Released before the files below ask for their own slots.
                 const payload = await run(async () => readAll(
-                    await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                    await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey),
+                    BUNDLE_READ_LIMIT
                 ));
 
                 await Promise.all(entryFiles.map((file) => run(async () => {

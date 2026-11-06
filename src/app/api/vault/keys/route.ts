@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { checkPermissionWithContext, getAuthContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -11,7 +12,7 @@ const log = logger.child({ route: "vault/keys" });
 /** The Encryption tab of the Vault: every key with what encrypts with it, what it protects and its recovery kit. Never a key. */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.VAULT.READ);

@@ -13,6 +13,9 @@ vi.mock("@/lib/core/registry", () => ({ registry: { get: vi.fn() } }));
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/services/storage/storage-alert-service", () => ({ checkStorageAlerts: vi.fn() }));
 vi.mock("@/services/sharing/provided", () => ({ providedIds: vi.fn(), providedTo: vi.fn() }));
+// Whether a destination reaches the own data of DBackup, see `own-data.ts`. None does unless a test says so.
+const ownData = vi.hoisted(() => ({ scanRefusal: vi.fn() }));
+vi.mock("@/lib/adapters/own-data", () => ({ scanRefusal: (...args: unknown[]) => ownData.scanRefusal(...args) }));
 
 import { getLatestJobs, getStorageVolume, refreshStorageStatsCache, type StorageVolumeEntry } from "@/services/dashboard-service";
 import { deriveHealth } from "@/services/dashboard/health";
@@ -27,6 +30,7 @@ let stored: StorageVolumeEntry[] | null;
 
 beforeEach(() => {
     vi.clearAllMocks();
+    ownData.scanRefusal.mockResolvedValue(null);
     stored = null;
     prismaMock.systemSetting.findUnique.mockImplementation((async ({ where }: { where: { key: string } }) =>
         where.key === "cache.storageVolume" && stored ? { key: where.key, value: JSON.stringify(stored) } : null) as never);
@@ -37,6 +41,23 @@ beforeEach(() => {
     prismaMock.$transaction.mockImplementation((async (operations: unknown) => (Array.isArray(operations) ? Promise.all(operations) : operations)) as never);
     prismaMock.storageSnapshot.createMany.mockResolvedValue({ count: 0 } as never);
     prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
+});
+
+describe("a destination whose folder reaches the own data of DBackup", () => {
+    it("is never listed, so the Overview counts none of the files of DBackup", async () => {
+        const DATA = { ...MSP_S3, id: "data", name: "Data", adapterId: "local-filesystem", tenantId: "default" };
+        prismaMock.adapterConfig.findMany.mockResolvedValue([DATA] as never);
+        prismaMock.connectionShare.findMany.mockResolvedValue([] as never);
+        const list = vi.fn().mockResolvedValue([{ name: "dbackup.tar", path: "x/dbackup.tar", size: 50 }]);
+        vi.mocked(registry.get).mockReturnValue({ list } as never);
+        ownData.scanRefusal.mockResolvedValue("This path reaches the folder of DBackup's own database.");
+
+        const result = await refreshStorageStatsCache();
+
+        expect(list).not.toHaveBeenCalled();
+        expect(result).toEqual([]);
+        expect(ownData.scanRefusal).toHaveBeenCalledWith("local-filesystem", {}, "data");
+    });
 });
 
 describe("a customer whose backups on a shared destination are all gone", () => {

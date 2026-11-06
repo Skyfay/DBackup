@@ -2,6 +2,7 @@ import { checkPermissionWithContext, getAuthContext, type AuthContext } from "@/
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { requestHeaders } from "@/lib/server/request-headers";
 import { refusedUnless } from "@/lib/server/permission-refusal";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 /**
  * The guard of every route of a configuration restore. A restore writes the whole database, every
@@ -11,7 +12,7 @@ import { refusedUnless } from "@/lib/server/permission-refusal";
  */
 export async function requireConfigRestorer(): Promise<AuthContext | Response> {
     const ctx = await getAuthContext(await requestHeaders());
-    if (!ctx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
     if (refused) return refused;
     if (!ctx.isPlatformAdmin || ctx.authMethod !== "session") {

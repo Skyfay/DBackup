@@ -91,6 +91,20 @@ const makeStorageAdapter = (overrides: Record<string, any> = {}) => ({
   ...overrides,
 });
 
+/**
+ * A configuration backup at a destination restores only encrypted, so the runs that should succeed
+ * read an encrypted file whose key the Vault holds.
+ */
+const ENCRYPTED_META = JSON.stringify({
+  encryption: { enabled: true, profileId: 'config-key', iv: 'aabbccddeeff0011aabbccddeeff0011', authTag: '00112233445566778899aabbccddeeff' },
+});
+const encryptedAdapter = (overrides: Record<string, any> = {}) => {
+  (encryptionService.getEncryptionProfiles as any).mockResolvedValue([{ id: 'config-key', name: 'Config key' }]);
+  (encryptionService.getProfileMasterKey as any).mockResolvedValue(Buffer.alloc(32));
+  return makeStorageAdapter({ read: vi.fn().mockResolvedValue(ENCRYPTED_META), ...overrides });
+};
+const ENCRYPTED_FILE = 'config-backups/config_backup_2026.json.enc';
+
 // Build a PassThrough that emits JSON content then ends
 const makeJsonStream = (content: string) => {
   const stream = new PassThrough();
@@ -145,10 +159,10 @@ describe('restoreFromStorage', () => {
   });
 
   it('marks execution as Success after a successful pipeline run', async () => {
-    (registry.get as any).mockReturnValue(makeStorageAdapter());
+    (registry.get as any).mockReturnValue(encryptedAdapter());
     (importConfiguration as any).mockResolvedValue({ notes: [] });
 
-    await restoreFromStorage(storageConfigId, filePath);
+    await restoreFromStorage(storageConfigId, ENCRYPTED_FILE);
     await flushAsync();
 
     expect(prismaMock.execution.update).toHaveBeenCalledWith(
@@ -159,10 +173,10 @@ describe('restoreFromStorage', () => {
   });
 
   it('writes what did not come back to the log of the run as warnings', async () => {
-    (registry.get as any).mockReturnValue(makeStorageAdapter());
+    (registry.get as any).mockReturnValue(encryptedAdapter());
     (importConfiguration as any).mockResolvedValue({ notes: ['1 job is paused so it does not back up unencrypted, its encryption key is not here: Shop.'] });
 
-    await restoreFromStorage(storageConfigId, filePath);
+    await restoreFromStorage(storageConfigId, ENCRYPTED_FILE);
     await flushAsync();
 
     const final = (prismaMock.execution.update as any).mock.calls.at(-1)[0];
@@ -274,10 +288,10 @@ describe('restoreFromStorage', () => {
     prismaMock.execution.create.mockImplementation(noted({ id: executionId }) as any);
     prismaMock.execution.update.mockImplementation(noted({}) as any);
     prismaMock.adapterConfig.findUnique.mockImplementation(noted(mockStorageConfig) as any);
-    (registry.get as any).mockReturnValue(makeStorageAdapter());
+    (registry.get as any).mockReturnValue(encryptedAdapter());
 
     // A customer's tenant, where the run would land in its history and the destination not be found.
-    await runAsTenant('acme', () => restoreFromStorage(storageConfigId, filePath));
+    await runAsTenant('acme', () => restoreFromStorage(storageConfigId, ENCRYPTED_FILE));
     await flushAsync();
 
     expect(prismaMock.execution.update).toHaveBeenLastCalledWith(
@@ -297,10 +311,10 @@ describe('restoreFromStorage', () => {
   });
 
   it('attaches gunzip stream when filePath contains .gz (compressed backup, lines 217-220)', async () => {
-    (registry.get as any).mockReturnValue(makeStorageAdapter());
+    (registry.get as any).mockReturnValue(encryptedAdapter());
     (importConfiguration as any).mockResolvedValue({ notes: [] });
 
-    await restoreFromStorage(storageConfigId, 'backups/config.json.gz');
+    await restoreFromStorage(storageConfigId, 'config-backups/config_backup_2026.json.gz.enc');
     await flushAsync();
 
     expect(prismaMock.execution.update).toHaveBeenCalledWith(
@@ -321,7 +335,7 @@ describe('restoreFromStorage', () => {
   });
 
   it('logs warning and still succeeds when backup sourceType is not SYSTEM (line 248)', async () => {
-    (registry.get as any).mockReturnValue(makeStorageAdapter());
+    (registry.get as any).mockReturnValue(encryptedAdapter());
     (importConfiguration as any).mockResolvedValue({ notes: [] });
 
     const nonSystemBackup = JSON.stringify({
@@ -330,7 +344,7 @@ describe('restoreFromStorage', () => {
     });
     mockCreateReadStream.mockReturnValue(makeJsonStream(nonSystemBackup));
 
-    await restoreFromStorage(storageConfigId, filePath);
+    await restoreFromStorage(storageConfigId, ENCRYPTED_FILE);
     await flushAsync();
 
     // Warning logged but pipeline still succeeds
@@ -447,12 +461,25 @@ describe('restoreFromStorage', () => {
     (registry.get as any).mockReturnValue(adapter);
     (importConfiguration as any).mockResolvedValue({ notes: [] });
 
-    // Sidecar read failure is caught and logged - pipeline continues with filename detection
-    await restoreFromStorage(storageConfigId, filePath); // plain .json, no encryption
+    // Sidecar read failure is caught and logged - pipeline continues with filename detection,
+    // which finds a plain file here, refused at a destination.
+    await restoreFromStorage(storageConfigId, filePath);
     await flushAsync();
 
-    expect(prismaMock.execution.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'Success' }) }),
-    );
+    const logs = JSON.parse((prismaMock.execution.update as any).mock.calls.at(-1)[0].data.logs);
+    expect(logs).toEqual(expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining('Could not read metadata sidecar') })]));
+    expect(importConfiguration).not.toHaveBeenCalled();
+  });
+
+  it('refuses a plain configuration file at a destination, which anyone who may restore files there could have put', async () => {
+    (registry.get as any).mockReturnValue(makeStorageAdapter());
+
+    await restoreFromStorage(storageConfigId, 'config-backups/config_backup_2026.json');
+    await flushAsync();
+
+    expect(importConfiguration).not.toHaveBeenCalled();
+    const final = (prismaMock.execution.update as any).mock.calls.at(-1)[0];
+    expect(final.data.status).toBe('Failed');
+    expect(final.data.logs).toContain('restored only when it is encrypted');
   });
 });

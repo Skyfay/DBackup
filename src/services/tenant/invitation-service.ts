@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "crypto";
 import prisma from "@/lib/prisma";
 import { roleRefusal } from "@/lib/auth/account-access";
-import { ConflictError, NotFoundError, ValidationError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { authService } from "@/services/auth/auth-service";
+import { assertPasswordAllowed } from "@/services/auth/password-policy-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
+import { countEmailRefusal, emailTriesSpent, MAX_FAILED_SIGN_UPS } from "@/services/user/email-tries";
 import { userService } from "@/services/user/user-service";
 import { membershipService } from "./membership-service";
 
@@ -19,6 +21,18 @@ export const INVITATION_DAYS = 7;
 export const INVITATION_MAX_DAYS = 30;
 /** The links a tenant may have open at once. Each one may try a few emails, see `MAX_FAILED_SIGN_UPS`. */
 export const OPEN_INVITATIONS_MAX = 100;
+/** The links one person may make within an hour, the used, spent and revoked ones included. */
+export const INVITATIONS_PER_HOUR = 20;
+export const INVITATIONS_PER_HOUR_REFUSAL = `You made ${INVITATIONS_PER_HOUR} invitations within the last hour. Try again later.`;
+
+/**
+ * The answer to an email that cannot get a new account through a link: one that has an account,
+ * or whose domain the provider of another tenant claims. Whoever opens a link may be anyone, so it
+ * never tells which, and it reads the same for every such email.
+ */
+export const INVITATION_EMAIL_REFUSED = "This email cannot get a new account through this invitation. If it has an account, sign in with it to accept the invitation, or pick another email.";
+/** The answer once whoever made the link met too many emails that have an account, for every email. */
+export const INVITATION_SIGN_UPS_PAUSED = "This invitation cannot make new accounts right now. Try again in an hour, or sign in with an account you have.";
 
 export interface InvitationRow {
     id: string;
@@ -37,13 +51,17 @@ export interface InvitationPreview {
     expiresAt: string;
 }
 
+/** Why the maker of a link cannot use it themselves. */
+export const OWN_INVITATION = "You made this invitation, so it is for someone else. Another admin adds you to the tenant.";
+
 const hashOf = (token: string) => createHash("sha256").update(token).digest("hex");
 
 /**
- * How often a link may fail to make an account before it is spent. A refusal says that an email
- * has an account here, so a link is no tool to try one address after the other.
+ * How often a link may fail to make an account before it is spent, so a link is no tool to try one
+ * address after the other. An email that has an account also counts against whoever made the link,
+ * across all of their links and every other place that sets an email, see `email-tries.ts`.
  */
-export const MAX_FAILED_SIGN_UPS = 5;
+export { MAX_FAILED_SIGN_UPS };
 
 /** Failed account attempts per link, by the hash of its token, for this process. */
 const FAILED_KEY = Symbol.for("dbackup.invitationFailures");
@@ -82,9 +100,15 @@ async function creatorMayGive(invitation: { tenantId: string; createdById: strin
 }
 
 export const invitationService = {
-    /** Makes a link for a group in a tenant. The token comes back once, only its hash stays. */
+    /**
+     * Makes a link for a group in a tenant. The token comes back once, only its hash stays. A tenant
+     * has at most `OPEN_INVITATIONS_MAX` open links, and a person makes at most
+     * `INVITATIONS_PER_HOUR` within an hour, so links that are spent or taken back make no more room.
+     */
     async create(input: { tenantId: string; groupId: string; note?: string | null; days?: number; createdById: string; createdByName: string | null }) {
         const days = Math.min(Math.max(Math.round(input.days ?? INVITATION_DAYS), 1), INVITATION_MAX_DAYS);
+        const made = await prisma.tenantInvitation.count({ where: { createdById: input.createdById, createdAt: { gt: new Date(Date.now() - 3_600_000) } } });
+        if (made >= INVITATIONS_PER_HOUR) throw new ValidationError(INVITATIONS_PER_HOUR_REFUSAL);
         const open = await prisma.tenantInvitation.count({ where: { tenantId: input.tenantId, acceptedAt: null, expiresAt: { gt: new Date() } } });
         if (open >= OPEN_INVITATIONS_MAX) throw new ValidationError(`The tenant has ${OPEN_INVITATIONS_MAX} open links. Take some back before you make another.`);
         const token = randomBytes(32).toString("base64url");
@@ -118,11 +142,20 @@ export const invitationService = {
         }));
     },
 
-    /** Takes a link back before anyone used it. Only one of the tenant it was made for. */
-    async revoke(id: string, tenantId: string): Promise<{ groupName: string; note: string | null }> {
-        const invitation = await prisma.tenantInvitation.findFirst({ where: { id, tenantId, acceptedAt: null }, select: { note: true, group: { select: { name: true } } } });
+    /**
+     * Takes a link back before anyone used it. Only one of the tenant it was made for. `guard` sees
+     * the group the link gives first and throws to keep the link. The row stays as a link that ran
+     * out, so it still counts against `INVITATIONS_PER_HOUR` of whoever made it.
+     */
+    async revoke(id: string, tenantId: string, guard?: (group: { permissions: string; fullAccess: boolean }) => void): Promise<{ groupName: string; note: string | null }> {
+        const now = new Date();
+        const invitation = await prisma.tenantInvitation.findFirst({
+            where: { id, tenantId, acceptedAt: null, expiresAt: { gt: now } },
+            select: { note: true, group: { select: { name: true, permissions: true, fullAccess: true } } },
+        });
         if (!invitation) throw new NotFoundError("Invitation", id);
-        await prisma.tenantInvitation.delete({ where: { id } });
+        guard?.(invitation.group);
+        await prisma.tenantInvitation.update({ where: { id }, data: { expiresAt: now } });
         return { groupName: invitation.group.name, note: invitation.note };
     },
 
@@ -135,11 +168,13 @@ export const invitationService = {
 
     /**
      * Adds an account to the tenant of a link and uses the link up. Someone who is a member already
-     * keeps the group they have, the link adds nobody twice.
+     * keeps the group they have, the link adds nobody twice. Whoever made the link, also through an
+     * API key of theirs, cannot use it, since nobody gives themselves a group, see `OWN_MEMBERSHIP`.
      */
     async accept(token: string, userId: string): Promise<{ tenantId: string; tenantName: string; joined: boolean }> {
         const invitation = await openInvitation(token);
         if (!invitation) throw new NotFoundError("Invitation", "link");
+        if (invitation.createdById === userId) throw new ValidationError(OWN_INVITATION);
         return prisma.$transaction(async (tx) => {
             // Used up in the same step as the join, so two tabs cannot both use one link.
             const now = new Date();
@@ -159,6 +194,12 @@ export const invitationService = {
      * Settings > Passwords. The person signs in on the login page afterwards. The link is used up
      * before the account is made, so two requests at once never make two accounts, and an email of
      * a domain the provider of another tenant claims is refused, see `claimedEmailRefusal`.
+     *
+     * Whoever opens a link may be anyone, so an email that has an account gets the same sentence as
+     * a claimed one, `INVITATION_EMAIL_REFUSED`, and counts against the tries of whoever made the
+     * link like their own New user would (`email-tries.ts`). Once they ran out, the link makes no
+     * account for an hour, whatever the email. The password is checked first, so a weak one never
+     * tells a free email from a taken one.
      */
     async acceptWithNewAccount(token: string, account: { name: string; email: string; password: string }) {
         const invitation = await openInvitation(token);
@@ -176,22 +217,37 @@ export const invitationService = {
         };
 
         const email = account.email.trim().toLowerCase();
-        if (!account.name.trim()) throw new ValidationError("Enter your name.");
-        if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
-            return refuse(new ConflictError("An account with this email exists already. Sign in with it to accept the invitation."));
+        const name = account.name.trim();
+        if (!name) throw new ValidationError("Enter your name.");
+        // A platform admin sees every account, so their links count nothing, like their New user.
+        const maker = invitation.createdById;
+        const counts = maker !== null && !(await membershipService.isPlatformAdmin(maker));
+        if (counts && emailTriesSpent(maker)) throw new ValidationError(INVITATION_SIGN_UPS_PAUSED);
+        try {
+            await assertPasswordAllowed(account.password, { name, email });
+        } catch (error: unknown) {
+            return refuse(error instanceof Error ? error : new Error(String(error)));
         }
-        const claimed = await claimedEmailRefusal(email, [invitation.tenantId], false);
-        if (claimed) return refuse(new ValidationError(claimed));
+        if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
+            if (counts) countEmailRefusal(maker);
+            return refuse(new ValidationError(INVITATION_EMAIL_REFUSED));
+        }
+        if (await claimedEmailRefusal(email, [invitation.tenantId], false)) return refuse(new ValidationError(INVITATION_EMAIL_REFUSED));
 
         const now = new Date();
         const { count } = await prisma.tenantInvitation.updateMany({ where: { id: invitation.id, acceptedAt: null, expiresAt: { gt: now } }, data: { acceptedAt: now } });
         if (count === 0) throw new NotFoundError("Invitation", "link");
         let created: Awaited<ReturnType<typeof authService.createUser>>;
         try {
-            created = await authService.createUser({ name: account.name.trim(), email, password: account.password });
+            created = await authService.createUser({ name, email, password: account.password });
         } catch (error: unknown) {
             // No account came of it, so the link works again.
             await prisma.tenantInvitation.updateMany({ where: { id: invitation.id, acceptedById: null }, data: { acceptedAt: null } });
+            // Taken meanwhile reads like taken before, never in the words of Better Auth.
+            if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
+                if (counts) countEmailRefusal(maker);
+                return refuse(new ValidationError(INVITATION_EMAIL_REFUSED));
+            }
             return refuse(error instanceof Error ? error : new Error(String(error)));
         }
         failures().delete(key);

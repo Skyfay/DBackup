@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FileInfo, StorageAdapter } from "@/lib/core/interfaces";
 import { SHARED_STORAGE_FAILURE, cleanPath, innerPath, isTenantsFolderName, outerFiles, storageView, type StorageViewMode } from "@/lib/tenant/storage-view";
+import { FileTooLargeError } from "@/lib/adapters/storage/common/read-limit";
 
 vi.mock("@/lib/logging/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) } }));
 
@@ -49,6 +50,16 @@ describe("the tenant of a shared destination", () => {
         expect(() => innerPath(PROVIDER, "./tenants/globex")).toThrow("tenants/");
         expect(innerPath(PROVIDER, "tenants-archive/four.tar")).toBe("tenants-archive/four.tar");
     });
+
+    it("cannot reach into the folder of its customers by percent escapes a storage reads inside a URL", () => {
+        expect(() => innerPath(PROVIDER, "%74enants/globex/crm/two.tar")).toThrow("tenants/");
+        expect(() => innerPath(PROVIDER, "%54ENANTS%2E/globex")).toThrow("tenants/");
+        expect(() => innerPath(PROVIDER, "tenants%2Fglobex%2Fcrm%2Ftwo.tar")).toThrow("tenants/");
+        // Read, its first part holds a part of a dot alone, refused before the folder is looked at.
+        expect(() => innerPath(PROVIDER, "%2E%2Ftenants%2Fglobex")).toThrow("leaves its folder");
+        expect(outerFiles(PROVIDER, [file("%74enants/globex/crm/two.tar")])).toEqual([]);
+        expect(innerPath(PROVIDER, "%74enants-archive/four.tar")).toBe("%74enants-archive/four.tar");
+    });
 });
 
 describe("a destination nobody shares", () => {
@@ -68,6 +79,7 @@ describe("the adapter of a view", () => {
         list: vi.fn().mockResolvedValue(STORED),
         delete: vi.fn().mockResolvedValue(true),
         read: vi.fn().mockResolvedValue("{}"),
+        readBytes: vi.fn().mockResolvedValue(Buffer.from("{}")),
         listTree: vi.fn(),
         browseDirectories: vi.fn(),
         downloadDirectory: vi.fn(),
@@ -81,10 +93,12 @@ describe("the adapter of a view", () => {
         await view.download({}, "crm/two.tar", "/tmp/two.tar");
         await view.delete({}, "crm/two.tar");
         await view.read!({}, "crm/two.tar.meta.json");
+        await view.readBytes!({}, "crm/two.tar.index", { maxBytes: 10 });
         expect(inner.upload).toHaveBeenCalledWith({}, "/tmp/run/two.tar", "tenants/globex/crm/two.tar", undefined, undefined, undefined);
         expect(inner.download).toHaveBeenCalledWith({}, "tenants/globex/crm/two.tar", "/tmp/two.tar", undefined, undefined);
         expect(inner.delete).toHaveBeenCalledWith({}, "tenants/globex/crm/two.tar");
-        expect(inner.read).toHaveBeenCalledWith({}, "tenants/globex/crm/two.tar.meta.json");
+        expect(inner.read).toHaveBeenCalledWith({}, "tenants/globex/crm/two.tar.meta.json", undefined);
+        expect(inner.readBytes).toHaveBeenCalledWith({}, "tenants/globex/crm/two.tar.index", { maxBytes: 10 });
         expect((await view.list({}, "")).map((entry) => entry.path)).toEqual(["crm/two.tar"]);
         expect(inner.list).toHaveBeenLastCalledWith({}, "tenants/globex");
     });
@@ -102,6 +116,12 @@ describe("the adapter of a view", () => {
 
         vi.mocked(inner.list).mockRejectedValue(new Error("NT_STATUS_ACCESS_DENIED listing \\\\fileserver\\backups"));
         await expect(storageView(inner, GLOBEX).list({}, "")).rejects.toThrow(SHARED_STORAGE_FAILURE);
+    });
+
+    it("hands a customer a sidecar past the limit of a read as that, so a listing can leave it out", async () => {
+        const inner = adapter();
+        vi.mocked(inner.read!).mockRejectedValue(new FileTooLargeError(10));
+        await expect(storageView(inner, GLOBEX).read!({}, "crm/two.tar.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
     });
 
     it("leaves the errors and the log of the storage to the tenant it belongs to", async () => {

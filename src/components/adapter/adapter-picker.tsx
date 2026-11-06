@@ -4,25 +4,25 @@ import { useMemo, useState } from "react";
 import { ChevronRight, Plus, Search } from "lucide-react";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { isAlwaysHostLocal } from "@/lib/adapters/host-local";
-import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { DialogClose, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useTenantView } from "@/components/tenant/tenant-view";
 import { AdapterIcon } from "./adapter-icon";
+import { useMayReachServer } from "./host-local-access";
 
 /**
- * The types a tenant may add. One that always reaches the server DBackup runs on, like Local
- * Filesystem, is the platform's alone, so a customer's tenant does not offer it. All tenants keeps
- * it, since New asks for the tenant there first, and the server refuses it for a customer anyway.
+ * The types the viewer may add. One that always reaches the server DBackup runs on, like Local
+ * Filesystem, is added by a platform admin of the home tenant alone, so nobody else is offered it.
+ * All tenants keeps it for a platform admin, since New asks for the tenant there first, and the
+ * server refuses it for a customer anyway.
  */
 function useAddableAdapters(adapters: AdapterDefinition[]): AdapterDefinition[] {
-    const { activeTenantId } = useTenantView();
+    const mayReachServer = useMayReachServer();
     return useMemo(
-        () => (activeTenantId && activeTenantId !== HOME_TENANT_ID ? adapters.filter((adapter) => !isAlwaysHostLocal(adapter.id)) : adapters),
-        [adapters, activeTenantId]
+        () => (mayReachServer ? adapters : adapters.filter((adapter) => !isAlwaysHostLocal(adapter.id))),
+        [adapters, mayReachServer]
     );
 }
 

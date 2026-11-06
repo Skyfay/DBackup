@@ -130,6 +130,9 @@ function makeInput(overrides: Partial<RestoreInput> = {}): RestoreInput {
 function makeStorageAdapter(overrides = {}) {
     return {
         download: vi.fn().mockResolvedValue(true),
+        // The .meta.json sidecar is read through read(), whose answer the tests set like the
+        // content of a downloaded file, through fsMocks.readFile.
+        read: vi.fn(async () => (await fsMocks.readFile()) ?? null),
         ...overrides,
     };
 }

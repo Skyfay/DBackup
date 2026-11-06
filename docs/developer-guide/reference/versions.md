@@ -126,10 +126,12 @@ mongodump \
   --host hostname \
   --port 27017 \
   --username user \
-  --password *** \
   --authenticationDatabase admin \
+  --config=/tmp/<file>.yaml \
   --archive=backup.archive
 ```
+
+The file of `--config` holds `password:`, readable by its owner alone, and needs the Database Tools 100.3.0 or newer.
 
 ### Features
 

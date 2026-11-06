@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * Error handler for better-auth SSO errors.
  * Redirects to login page with appropriate error message.
+ *
+ * Public on purpose, without a permission check: better-auth redirects here when a sign-in through
+ * a provider fails, before anyone is signed in. It reads nothing and changes nothing, it only maps
+ * the error code of better-auth onto one of the fixed codes the login page knows.
  */
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;

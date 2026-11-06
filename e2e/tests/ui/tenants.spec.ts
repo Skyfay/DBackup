@@ -354,6 +354,9 @@ test("an empty tenant is deleted through the pages", async () => {
     const dialog = adminPage.getByRole("alertdialog", { name: `Delete ${globex}?` });
     await dialog.getByLabel("I have the recovery kits of its keys, or do not need its backups").check();
     await dialog.getByRole("button", { name: "Delete tenant" }).click();
+    // The open dialog hides the rows from the roles, so the row check alone passes before the delete ends.
+    await expect(dialog).toHaveCount(0);
+    await expect(adminPage.getByText(`${globex} is deleted`)).toBeVisible();
     await expect(adminPage.getByRole("button", { name: globex, exact: true })).toHaveCount(0);
 
     await adminPage.goto("/dashboard");

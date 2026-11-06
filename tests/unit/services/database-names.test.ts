@@ -77,7 +77,7 @@ describe("a database name", () => {
         it("reaches gbak behind the host of the Firebird connection string, which never starts with -", () => {
             expect(buildConnectionString({ host: "fb.example.com", port: 3051 } as never, "/data/-shop.fdb")).toBe("fb.example.com/3051:/data/-shop.fdb");
             expect(buildConnectionString({ host: "fb.example.com", port: 3050 } as never, "/data/shop.fdb")).toBe("fb.example.com:/data/shop.fdb");
-            expect(() => buildConnectionString({ host: "-y", port: 3050 } as never, "/data/shop.fdb")).toThrow(/never starts with -/);
+            expect(() => buildConnectionString({ host: "-y", port: 3050 } as never, "/data/shop.fdb")).toThrow(/leading hyphen/);
         });
     });
 });

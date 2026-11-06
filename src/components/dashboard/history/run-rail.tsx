@@ -14,6 +14,8 @@ import type { SpeedSample } from "./use-run";
 
 export interface RunAccess {
     canExecute: boolean;
+    /** The types of runs the viewer may cancel, from `cancellableRunTypes`. */
+    cancels: readonly string[];
     canOpenJobs: boolean;
     canOpenBackups: boolean;
     canOpenConnections: boolean;

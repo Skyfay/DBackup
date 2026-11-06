@@ -8,16 +8,17 @@ import { backupAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { claimLinkToken, markTokenUsed, releaseLinkToken } from "@/lib/auth/download-tokens";
 import path from "path";
-import os from "os";
-import fs from "fs";
+import { randomUUID } from "crypto";
 import fsPromises from "fs/promises";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
+import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
 import { clientAddress } from "@/lib/core/client-address";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { runAsTenant } from "@/lib/tenant/context";
 import { makerMayDownload } from "@/lib/auth/download-maker";
 import { configBackupLinkRefusal } from "@/lib/server/config-backup-guard";
+import { getTempDir } from "@/lib/temp-dir";
 
 const log = logger.child({ route: "storage/public-download" });
 registerAdapters();
@@ -102,7 +103,8 @@ export async function GET(req: NextRequest) {
                         createdBy, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
                         { action: "download_link", ...backup, databases: pick?.databases ?? (database ? [database] : undefined), selections: pick?.selections },
                         storageId,
-                        { ipAddress: from ?? null, userAgent, tenantId }
+                        // A link made with an API key names that key, like every entry of a request with one.
+                        { ipAddress: from ?? null, userAgent, tenantId, apiKeyId: tokenData.apiKeyId ?? null }
                     ));
                 }
             };
@@ -125,15 +127,15 @@ export async function GET(req: NextRequest) {
                 });
             }
 
-            tempFile = path.join(os.tmpdir(), `${path.basename(file)}_${Date.now()}`);
+            // A name nobody can guess, in the temporary folder DBackup is set to. The stream removes it
+            // once it closed, the catch below when anything failed before.
+            tempFile = path.join(getTempDir(), `download_${randomUUID()}`);
             const result = await storageService.downloadFile(storageId, file, tempFile, decrypt, { database });
             if (!result.success) {
                 await fsPromises.unlink(tempFile).catch(() => {});
                 releaseLinkToken(token);
                 return NextResponse.json({ error: "Download failed" }, { status: 500 });
             }
-
-            const stat = await fsPromises.stat(tempFile);
 
             // Determine filename. A dump pulled out of a seekable archive arrives already named.
             let downloadFilename = path.basename(file);
@@ -146,18 +148,14 @@ export async function GET(req: NextRequest) {
                 downloadFilename = downloadFilename.slice(0, -4);
             }
 
-            const localFile = tempFile;
-            const fileStream = fs.createReadStream(localFile);
-            settleWhenDone(fileStream, token, fetched);
-            fileStream.on("close", () => { fsPromises.unlink(localFile).catch(() => {}); });
-
-            return new NextResponse(Readable.toWeb(fileStream) as ReadableStream, {
-                headers: {
-                    "Content-Disposition": attachmentDisposition(downloadFilename),
-                    "Content-Type": result.isZip ? "application/zip" : "application/octet-stream",
-                    "Content-Length": String(stat.size),
-                }
-            });
+            // Opened without following a link, like every other download of a temp file, see
+            // `downloaded-file.ts`. It removes the file once sent, failed or cancelled.
+            return tempFileDownloadResponse(
+                tempFile,
+                downloadFilename,
+                result.isZip ? "application/zip" : "application/octet-stream",
+                (fileStream) => settleWhenDone(fileStream, token, fetched)
+            );
         });
     } catch (error: unknown) {
         if (tempFile) await fsPromises.unlink(tempFile).catch(() => {});

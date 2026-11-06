@@ -20,6 +20,15 @@ export function dbArg(name: string): string {
     return `dbname='${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
+/**
+ * A value as an SQL string literal. The `E''` form reads a backslash as an escape whatever
+ * `standard_conforming_strings` says, so doubling the backslashes and the quotes keeps every
+ * character of the value inside the literal on any server.
+ */
+export function sqlLiteral(value: string): string {
+    return `E'${value.replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
+}
+
 /** Connection flags shared by psql, pg_dump and pg_restore. */
 export function buildConnectionArgs(
     config: AnyPostgresConfig,

@@ -15,6 +15,7 @@
 import path from "path";
 import { safeRemoteJoin } from "@/lib/archive/remote-paths";
 import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { pipeline } from "stream/promises";
 import { createGzip } from "zlib";
 import { pack } from "tar-stream";
@@ -30,7 +31,7 @@ import { hashingStream } from "@/lib/archive/hashing";
 import { checkChainCompleteness } from "@/lib/archive/chain";
 import { totalSize } from "@/lib/archive/browse";
 import { resolveContents, downloadShape, type FileRestoreSelection } from "./archive-selection";
-import { databaseDumpFileName } from "@/lib/archive/dump-names";
+import { databaseDumpFileName, safeNameSegment } from "@/lib/archive/dump-names";
 import { DATABASE_MEMBER_PREFIX } from "@/lib/archive/format";
 import { entryKey } from "@/lib/archive/types";
 import { openArchiveEntry } from "@/lib/archive/reader";
@@ -38,11 +39,16 @@ import { archiveIndexVerifier, KeyOverride, resolveBackupKey } from "@/services/
 import { resolveTransferConcurrency } from "@/lib/adapters/transfer-concurrency";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { getTempDir } from "@/lib/temp-dir";
+import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 import { ArchiveIndex, ArchiveManifest, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
+import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf } from "@/lib/archive/link-target";
+import { assertRestoreFolder } from "@/lib/archive/remote-paths";
+import { assertWriteTargets, isOrigin, restoredFileRefusal, type RestoreCaller } from "./restore-targets";
+import { reserveTempSpace, type TempSpaceReservation } from "./temp-space";
 
 const log = logger.child({ service: "FileRestoreService" });
 
@@ -84,6 +90,17 @@ export interface FileRestoreInput {
      * user picked another. Absent for the ordinary case, where the metadata decides.
      */
     keyOverride?: KeyOverride;
+    /**
+     * Writing to storage only: refuses the connections the files would be written to by throwing,
+     * called with their ids once they are known and before anything is written. A restore to the
+     * origin learns them from the archive, so the caller cannot check them up front.
+     */
+    checkTargets?: (connectionIds: string[]) => Promise<void>;
+    /**
+     * Who restores, for the targets and files only some may write, see `assertWriteTargets` and
+     * `restoredFileRefusal`. Without one the restore writes as someone with no rights beyond it.
+     */
+    caller?: RestoreCaller;
 }
 
 /** Everything needed to read files out of a snapshot, plus how to release it. */
@@ -104,20 +121,10 @@ export async function readBackupMetadata(
     config: AdapterConfig,
     file: string
 ): Promise<BackupMetadata> {
-    if (adapter.read) {
-        const content = await adapter.read(config, `${file}.meta.json`);
-        if (content) return JSON.parse(content) as BackupMetadata;
-    }
-
-    const tempFile = path.join(getTempDir(), `meta-${process.pid}-${crypto.randomUUID()}.json`);
-    try {
-        if (!(await adapter.download(config, `${file}.meta.json`, tempFile))) {
-            throw new NotFoundError("Backup metadata", `${file}.meta.json`);
-        }
-        return JSON.parse(await fs.readFile(tempFile, "utf-8")) as BackupMetadata;
-    } finally {
-        await fs.unlink(tempFile).catch(() => { });
-    }
+    // Bounded, see `readSidecarText`: a `.meta.json` past the limit fails the read.
+    const content = await readSidecarText(adapter, config, `${file}.meta.json`);
+    if (!content) throw new NotFoundError("Backup metadata", `${file}.meta.json`);
+    return JSON.parse(content) as BackupMetadata;
 }
 
 /**
@@ -222,6 +229,16 @@ export async function openArchiveForRestore(
     }
 }
 
+/**
+ * The name of a file in a download: the id of its source as one plain folder, then its path, which
+ * may not climb out of it. Both come from the index, and `tar -xf` on the machine of the user
+ * writes wherever a name says, so `..` or an absolute path would land outside the folder it
+ * extracts into. `safeRemoteJoin` refuses those, which fails the download rather than the user.
+ */
+function downloadMemberName(src: string, filePath: string): string {
+    return `${safeNameSegment(src)}/${safeRemoteJoin("", filePath)}`;
+}
+
 export interface FileRestorePlan {
     fileCount: number;
     databaseCount: number;
@@ -311,7 +328,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
                 });
                 let digest: string | undefined;
                 await pipeline(
-                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey),
+                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, database.s),
                     hashingStream((d) => { digest = d; }),
                     member
                 );
@@ -321,7 +338,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
             }
 
             await forEachSnapshotFile(archive, payloads, async (file, content) => {
-                const entry = tarPack.entry({ name: `${bySrc.get(file) ?? file.src}/${file.p}`, size: file.s });
+                const entry = tarPack.entry({ name: downloadMemberName(bySrc.get(file) ?? file.src, file.p), size: file.s });
                 let digest: string | undefined;
                 await pipeline(content, hashingStream((d) => { digest = d; }), entry);
 
@@ -342,7 +359,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
             for (const { file, src } of symlinks) {
                 await new Promise<void>((resolve, reject) => {
                     tarPack.entry(
-                        { name: `${src}/${file.p}`, type: "symlink", linkname: file.lnk, size: 0 },
+                        { name: downloadMemberName(src, file.p), type: "symlink", linkname: file.lnk, size: 0 },
                         (err) => (err ? reject(err) : resolve())
                     );
                 });
@@ -363,27 +380,59 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
     return gzip;
 }
 
+/** Where the files of one directory source are written: the connection, its adapter and config, and the folder. */
+interface RestoreTarget {
+    adapter: StorageAdapter;
+    config: AdapterConfig;
+    /** The saved connection the files go to. */
+    connectionId: string;
+    /** The adapter and tenant of that connection, for who may write into it. */
+    adapterId: string;
+    tenantId: string;
+    basePath: string;
+    label: string;
+    /** Whether the files go back where the directory source read them. */
+    origin: boolean;
+    /** Whether the connection holds backups, where a file named like one may not be restored, see `restoredFileRefusal`. */
+    destination: boolean;
+}
+
 /**
  * Resolves where each directory source's files should be written back to.
  *
  * Driven by the source ids actually resolved from the index rather than by the request's
  * selection, so restoring a whole snapshot (which carries no selection) works too.
+ *
+ * Only a source the request names in its selection counts as the origin of its files. The ids of
+ * the index come from the destination, so a backup could name the source of another job, whose
+ * folder the restore would then write as its origin, without the right to change that connection,
+ * see `writeTargetRefusal`. A whole snapshot restored without a selection writes as anywhere else.
  */
 async function resolveTargets(
     input: FileRestoreInput,
     sourceIds: string[]
-): Promise<Map<string, { adapter: StorageAdapter; config: AdapterConfig; basePath: string; label: string }>> {
-    const targets = new Map<string, { adapter: StorageAdapter; config: AdapterConfig; basePath: string; label: string }>();
+): Promise<Map<string, RestoreTarget>> {
+    const targets = new Map<string, RestoreTarget>();
+    const named = new Set((input.selections ?? []).map((selection) => selection.src));
 
     if (input.target.kind === "storage") {
+        // A folder that leaves the connection is refused before the connection is opened.
+        assertRestoreFolder(input.target.basePath);
         // Never a destination shared with the tenant that takes only encrypted backups, see `findRestoreTarget`.
         const found = await findRestoreTarget(input.target.configId);
         const { adapter, config } = await openRow(found.row, found.mode);
         for (const src of sourceIds) {
+            // The folder a source read, the volume of Docker Volumes, goes back without more rights, see `writeTargetRefusal`.
+            const source = await prisma.jobSource.findUnique({ where: { id: src }, select: { configId: true, path: true } });
             targets.set(src, {
                 adapter, config,
+                connectionId: input.target.configId,
+                adapterId: found.row.adapterId,
+                tenantId: found.row.tenantId,
                 basePath: input.target.basePath,
                 label: `${found.row.name}:${input.target.basePath}`,
+                origin: named.has(src) && isOrigin(source, input.target.configId, input.target.basePath, found.row.adapterId),
+                destination: found.row.storageRole === STORAGE_ROLES.DESTINATION,
             });
         }
         return targets;
@@ -401,16 +450,34 @@ async function resolveTargets(
                 `${src} - it was deleted since this backup was taken, so its original location is unknown. Restore to a chosen destination instead.`
             );
         }
+        assertRestoreFolder(jobSource.path);
         const origin = await findRestoreTarget(jobSource.configId);
         const { adapter, config } = await openRow(origin.row, origin.mode);
         targets.set(src, {
             adapter, config,
+            connectionId: jobSource.configId,
+            adapterId: origin.row.adapterId,
+            tenantId: origin.row.tenantId,
             basePath: jobSource.path,
             label: `${jobSource.config.name}:${jobSource.path}`,
+            origin: named.has(src),
+            destination: origin.row.storageRole === STORAGE_ROLES.DESTINATION,
         });
     }
 
     return targets;
+}
+
+/** The caller of a restore that names none: no platform admin, no permission, no tenant. */
+const NO_CALLER: RestoreCaller = { isPlatformAdmin: false, authMethod: "session" };
+
+/** The path a file is written to, null when it leaves its folder, which the write then reports. */
+function remotePathOrNull(basePath: string, relativePath: string): string | null {
+    try {
+        return safeRemoteJoin(basePath, relativePath);
+    } catch {
+        return null;
+    }
 }
 
 export interface FileRestoreResult {
@@ -439,8 +506,18 @@ export async function restoreFilesToStorage(
     }
 
     const archive = await openArchiveForRestore(input.storageConfigId, input.file, input.keyOverride);
-    const { files } = resolveContents(archive.index, input);
-    const targets = await resolveTargets(input, [...new Set(files.map((f) => f.src))]);
+    let files: ReturnType<typeof resolveContents>["files"];
+    let targets: Map<string, RestoreTarget>;
+    try {
+        files = resolveContents(archive.index, input).files;
+        targets = await resolveTargets(input, [...new Set(files.map((f) => f.src))]);
+        // Before anything is written, with the connections of an origin known only now.
+        await input.checkTargets?.([...new Set([...targets.values()].map((t) => t.connectionId))]);
+        await assertWriteTargets([...targets.values()].map((t) => ({ ...t, config: t.config as Record<string, unknown> })), input.caller ?? NO_CALLER);
+    } catch (e) {
+        await archive.dispose();
+        throw e;
+    }
 
     if (files.length === 0) {
         await archive.dispose();
@@ -451,9 +528,23 @@ export async function restoreFilesToStorage(
     let restored = 0;
     let restoredBytes = 0;
 
+    // An entry below a link of the same backup is never written, see `throughLinkOf`.
+    const throughLink = throughLinkOf(archive.index.files);
+    // A file only a platform admin restores is named as failed and never read, see `restoredFileRefusal`.
+    const writable = files.filter((file) => {
+        if (throughLink(file.src, file.file.p)) {
+            failed.push({ path: file.file.p, error: `'${file.file.p}' was not restored: ${ENTRY_THROUGH_LINK}.` });
+            return false;
+        }
+        const target = targets.get(file.src);
+        const refusal = target ? restoredFileRefusal(remotePathOrNull(target.basePath, file.file.p) ?? file.file.p, input.caller, target.destination, target.adapterId) : null;
+        if (refusal) failed.push({ path: file.file.p, error: refusal });
+        return !refusal;
+    });
+
     // Split before anything runs. Links have no entry to fetch, and they are created after
     // every file for the same reason extractArchiveFrom() does it that way.
-    const { payloads, symlinks } = partitionSymlinks(files);
+    const { payloads, symlinks } = partitionSymlinks(writable);
 
     // Write-back stages each file independently, so several run at once - the round-trip
     // win when restoring to a network destination. Each target states how many it can take;
@@ -464,7 +555,18 @@ export async function restoreFilesToStorage(
         ...[...targets.values()].map((t) => resolveTransferConcurrency(t.adapter.id, t.config)),
     );
 
-    const sessions = createDestinationSessions(concurrency);
+    // Each file is staged whole before its upload and removed after it, `concurrency` at once. The
+    // space stays promised to this restore until it ends, see `reserveTempSpace`.
+    let space: TempSpaceReservation | undefined;
+    let sessions: ReturnType<typeof createDestinationSessions>;
+    try {
+        space = await reserveTempSpace(payloads.map(({ file }) => file.s ?? 0), concurrency);
+        sessions = createDestinationSessions(concurrency);
+    } catch (error) {
+        space?.release();
+        await archive.dispose();
+        throw error;
+    }
 
     try {
         await forEachSnapshotFile(archive, payloads, async (file, content) => {
@@ -484,7 +586,7 @@ export async function restoreFilesToStorage(
                 }
 
                 const remotePath = safeRemoteJoin(target.basePath, file.p);
-                if (!(await sessions.upload(target, stagePath, remotePath, undefined, metadataFromIndex(file)))) {
+                if (!(await sessions.upload(target, stagePath, remotePath, undefined, metadataFromIndex(file, target.origin)))) {
                     throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
                 }
 
@@ -508,6 +610,12 @@ export async function restoreFilesToStorage(
             const target = targets.get(src);
             if (!target) {
                 failed.push({ path: file.p, error: "No restore target resolved for this directory source" });
+                continue;
+            }
+
+            // A link that leads out of the folder of the restore is never laid, see `link-target.ts`.
+            if (linkLeavesTarget(file.p, file.lnk, (resolved) => throughLink(src, resolved))) {
+                failed.push({ path: file.p, error: `The symbolic link '${file.p}' -> '${file.lnk}' was not restored: ${LINK_LEAVES_TARGET}.` });
                 continue;
             }
 
@@ -538,6 +646,7 @@ export async function restoreFilesToStorage(
             }
         }
     } finally {
+        space?.release();
         await sessions.close();
         await archive.dispose();
     }

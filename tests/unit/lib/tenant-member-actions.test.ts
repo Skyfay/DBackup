@@ -8,9 +8,10 @@ const mocks = vi.hoisted(() => ({
     viewer: null as unknown as { id: string; isPlatformAdmin: boolean; tenantId: string | null; allTenants: boolean; permissions: string[] },
     tenants: { find: vi.fn(), switchable: vi.fn() },
     groups: { find: vi.fn() },
-    memberships: { setRole: vi.fn(), isPlatformAdmin: vi.fn(), roleOf: vi.fn(async (): Promise<unknown> => null) },
+    memberships: { setRole: vi.fn(), isPlatformAdmin: vi.fn(), roleOf: vi.fn(async (): Promise<unknown> => null), setPlatformAdmin: vi.fn() },
     platformGroups: { reaches: vi.fn(), peopleReached: vi.fn(async (): Promise<string[]> => []) },
-    users: { permissionsIn: vi.fn() },
+    // Every account works in a tenant, so none is placed anew, see `placementRefusal`.
+    users: { accountOf: vi.fn(async () => ({ isPlatformAdmin: false, tenantIds: ["tenant-x"], groups: [{ tenantId: "tenant-x", group: { permissions: "[]", fullAccess: false } }] })), permissionsIn: vi.fn(), namesOf: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, name: id === "tom" ? "Tom Weber" : id }))) },
     audit: vi.fn(),
 }));
 
@@ -36,7 +37,7 @@ vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService:
 vi.mock("@/services/user/user-service", () => ({ userService: mocks.users }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 
-const { setTenantMember } = await import("@/app/actions/tenant/members");
+const { setPlatformAdmin, setTenantMember } = await import("@/app/actions/tenant/members");
 
 const ACME = { id: "tenant-a", name: "Acme GmbH" };
 const OPERATORS = { id: "g-ops", name: "Operators", permissions: "[]", fullAccess: false };
@@ -56,18 +57,38 @@ describe("giving an account a group in a named tenant", () => {
         mocks.memberships.setRole.mockResolvedValue(undefined);
     });
 
-    it("gives the group in the tenant it names, though All tenants has none open, and logs it into that tenant", async () => {
+    it("gives the group in the tenant it names, though All tenants has none open, and logs it into that tenant and the platform", async () => {
         expect(await setTenantMember("tenant-a", "tom", "g-ops")).toEqual({ success: true });
 
         expect(mocks.memberships.setRole).toHaveBeenCalledWith("tom", "tenant-a", "g-ops", { platformAdmin: true });
-        expect(mocks.audit).toHaveBeenCalledWith("root", "UPDATE", "USER", { change: "Tenant group set", tenant: "Acme GmbH", group: "Operators" }, "tom", { tenantId: "tenant-a" });
+        const details = { change: "Tenant group set", name: "Tom Weber", tenant: "Acme GmbH", tenantId: "tenant-a", group: "Operators" };
+        expect(mocks.audit.mock.calls).toEqual([
+            ["root", "UPDATE", "USER", details, "tom", { tenantId: "tenant-a" }],
+            ["root", "UPDATE", "USER", details, "tom", { tenantId: "default" }],
+        ]);
     });
 
     it("takes the account out of the tenant with no group, and says so in the log of the tenant", async () => {
+        mocks.memberships.roleOf.mockResolvedValue(OPERATORS);
         expect(await setTenantMember("tenant-a", "tom", null)).toEqual({ success: true });
 
         expect(mocks.memberships.setRole).toHaveBeenCalledWith("tom", "tenant-a", null, { platformAdmin: true });
-        expect(mocks.audit).toHaveBeenCalledWith("root", "UPDATE", "USER", { change: "Removed from tenant", tenant: "Acme GmbH" }, "tom", { tenantId: "tenant-a" });
+        expect(mocks.audit).toHaveBeenCalledWith("root", "UPDATE", "USER", { change: "Removed from tenant", name: "Tom Weber", tenant: "Acme GmbH", tenantId: "tenant-a" }, "tom", { tenantId: "tenant-a" });
+        expect(mocks.audit).toHaveBeenCalledWith("root", "UPDATE", "USER", { change: "Removed from tenant", name: "Tom Weber", tenant: "Acme GmbH", tenantId: "tenant-a" }, "tom", { tenantId: "default" });
+    });
+
+    it("names the account a platform admin role was given to or taken from, into the log of the platform", async () => {
+        mocks.memberships.setPlatformAdmin.mockResolvedValue(undefined);
+        expect(await setPlatformAdmin("tom", true)).toEqual({ success: true });
+        expect(mocks.audit).toHaveBeenCalledWith("root", "UPDATE", "USER", { change: "Made platform admin", name: "Tom Weber" }, "tom", { tenantId: "default" });
+    });
+
+    it("takes only true or false for the platform admin role, never a value that reads as either", async () => {
+        for (const on of ["false", 0, 1, null, undefined, {}]) {
+            expect(await setPlatformAdmin("tom", on as unknown as boolean)).toEqual({ success: false, error: "Invalid request" });
+        }
+        expect(mocks.memberships.setPlatformAdmin).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 
     it("refuses anyone who may not manage the tenants before it reads anything, also someone who may only see them", async () => {
@@ -86,10 +107,19 @@ describe("giving an account a group in a named tenant", () => {
     });
 
     it("lets the platform admin take themselves out of a tenant, since they manage every tenant anyway", async () => {
+        mocks.memberships.roleOf.mockResolvedValue(OPERATORS);
         expect(await setTenantMember("tenant-a", "root", null)).toEqual({ success: true });
 
         // The service skips the guard that keeps someone who manages the members for a platform admin.
         expect(mocks.memberships.setRole).toHaveBeenCalledWith("root", "tenant-a", null, { platformAdmin: true });
+    });
+
+    it("answers taking out someone who is no member like an account that does not exist, and logs no removal", async () => {
+        mocks.memberships.roleOf.mockResolvedValue(null);
+
+        expect(await setTenantMember("tenant-a", "tom", null)).toEqual({ success: false, error: "The account no longer exists." });
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 
     it("hands on a refusal of the service with its reason, and logs nothing", async () => {
@@ -158,8 +188,29 @@ describe("the members of a tenant, changed through a platform group", () => {
     it("never changes the own membership, nor that of a platform admin", async () => {
         expect(await setTenantMember("tenant-a", "nina", "g-ops")).toEqual({ success: false, error: "Another admin changes your own membership." });
         mocks.memberships.isPlatformAdmin.mockResolvedValue(true);
+        // Root works in Acme, which her platform group reaches, so she sees the account.
+        mocks.platformGroups.peopleReached.mockResolvedValue(["root"]);
         expect(await setTenantMember("tenant-a", "root", null)).toEqual({ success: false, error: "Only a platform admin changes the memberships of a platform admin." });
         expect(mocks.memberships.setRole).not.toHaveBeenCalled();
         expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
+    it("answers taking out an account beyond her that is no member exactly like one that does not exist", async () => {
+        mocks.platformGroups.peopleReached.mockResolvedValue([]);
+        mocks.memberships.roleOf.mockResolvedValue(null);
+
+        expect(await setTenantMember("tenant-a", "globex-user", null)).toEqual({ success: false, error: "The account no longer exists." });
+        expect(await setTenantMember("tenant-a", "nobody", null)).toEqual({ success: false, error: "The account no longer exists." });
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
+    it("answers a platform admin she may not see exactly like an account that does not exist", async () => {
+        mocks.memberships.isPlatformAdmin.mockImplementation(async (id: string) => id === "root");
+        mocks.platformGroups.peopleReached.mockResolvedValue(["tom"]);
+
+        expect(await setTenantMember("tenant-a", "root", null)).toEqual({ success: false, error: "The account no longer exists." });
+        expect(await setTenantMember("tenant-a", "nobody", "g-ops")).toEqual({ success: false, error: "The account no longer exists." });
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
     });
 });

@@ -10,11 +10,15 @@ import {
     type CredentialData,
     type CredentialProfileShape,
     type SshKeyData,
+    type UsernamePasswordData,
     parseCredentialData,
 } from "@/lib/core/credentials";
+import { PASSWORD_LINE_BREAK, fitsOptionFile } from "@/lib/adapters/database/mysql/option-file";
+import { hasControlCharacter } from "@/lib/adapters/command-values";
 import { generateSshKeyPair, readPublicKey, sshFingerprint } from "@/lib/transport/openssh-key";
 import { holdsOf } from "@/lib/core/credential-holds";
 import { rsyncUsernameProblem } from "@/lib/adapters/storage/rsync-user";
+import { loginHostReason } from "@/lib/adapters/host-local";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 
@@ -149,6 +153,9 @@ export async function createCredentialProfile(
             cause: e instanceof Error ? e : undefined,
         });
     }
+
+    assertPasswordLine(type, validated);
+    await assertLoginOffHost(type, validated);
 
     // Enforce unique name (matches Prisma `@unique` but provides better error)
     const existing = await prisma.credentialProfile.findFirst({ where: { name } });
@@ -352,6 +359,8 @@ export async function updateCredentialProfile(
                 cause: e instanceof Error ? e : undefined,
             });
         }
+        assertPasswordLine(type, stored);
+        await assertLoginOffHost(type, stored);
         patch.data = encrypt(JSON.stringify(stored));
         await assertRsyncLogin(id, type, stored);
     }
@@ -370,6 +379,82 @@ export async function updateCredentialProfile(
         ...sanitize(updated),
         ...(stored ? describeParsedPayload(stored) : describePayload(updated.data)),
     };
+}
+
+/**
+ * Refuses a login that uses the identity of the server DBackup runs on, an SSH agent login, see
+ * `loginHostReason`, unless a platform admin with a session in the home tenant saves it, see
+ * `mayReachHost`. Every connection that logs in with the profile takes the change at its next run
+ * without a save of its own, and a run in the home tenant does not check its login again, so the
+ * profile itself is the place to refuse it.
+ *
+ * @throws ValidationError saying why.
+ */
+async function assertLoginOffHost(type: CredentialType, data: CredentialData): Promise<void> {
+    const reason = loginHostReason(type, data);
+    if (!reason) return;
+    // Loaded here, the config resolver reads saved logins through this service.
+    const { mayReachHost } = await import("@/lib/adapters/config-resolver");
+    if (!(await mayReachHost())) throw new ValidationError(reason, { field: "authType" });
+}
+
+/**
+ * Refuses a password with a line break or a NUL in a username and password profile. The MySQL and
+ * MariaDB tools read the password from an option file, where a line break starts an option of its
+ * own, see `option-file.ts`, and a profile changes every connection that uses it without their save.
+ * No login of any other system holds one on purpose either, so the rule holds for every profile of
+ * the type, also one no MySQL source uses yet. The adapter refuses one again before it writes the
+ * file, for a profile saved before this check.
+ *
+ * @throws ValidationError saying so, never naming the value.
+ */
+function assertPasswordLine(type: CredentialType, data: CredentialData): void {
+    if (type !== "USERNAME_PASSWORD") return;
+    const { username, password } = data as UsernamePasswordData;
+    if (!fitsOptionFile(password)) throw new ValidationError(PASSWORD_LINE_BREAK, { field: "password" });
+    if (typeof username === "string" && hasControlCharacter(username)) {
+        throw new ValidationError("The username cannot hold a line break or another control character.", { field: "username" });
+    }
+}
+
+/**
+ * `assertLoginOffHost` for a profile as it is stored, like one that comes back from Recently
+ * deleted, which brings back every connection link it had. One whose data cannot be read counts as
+ * an agent login, the stricter way.
+ *
+ * @throws ValidationError saying why.
+ */
+export async function assertStoredLoginOffHost(type: string, encryptedData: string): Promise<void> {
+    if (type !== "SSH_KEY") return;
+    let data: unknown = { authType: "agent" };
+    try {
+        data = JSON.parse(decrypt(encryptedData));
+    } catch {
+        // Unreadable, so nothing says it does not log in with the agent of the server.
+    }
+    await assertLoginOffHost(type, data as CredentialData);
+}
+
+/**
+ * The checks of a save for a profile as it is stored, like one that comes back from Recently
+ * deleted, which a save never saw when it was stored by an earlier version: no line break in the
+ * password or the username of a username and password profile (`assertPasswordLine`), and a plain
+ * username in an SSH profile an rsync connection logs in with (`assertRsyncLogin`). One whose data
+ * cannot be read passes, it logs nobody in, and the adapters check their values again before use.
+ *
+ * @throws ValidationError saying why, never naming a secret.
+ */
+export async function assertStoredLoginFields(id: string, type: string, encryptedData: string): Promise<void> {
+    if (type !== "USERNAME_PASSWORD" && type !== "SSH_KEY") return;
+    let data: unknown;
+    try {
+        data = JSON.parse(decrypt(encryptedData));
+    } catch {
+        return;
+    }
+    if (!data || typeof data !== "object") return;
+    assertPasswordLine(type, data as CredentialData);
+    await assertRsyncLogin(id, type, data as CredentialData);
 }
 
 /**

@@ -10,6 +10,7 @@ import { logger } from "@/lib/logging/logger";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { membershipService } from "@/services/tenant/membership-service";
+import { userService } from "@/services/user/user-service";
 import { membersFor, setMemberAs, type TenantMembersData } from "@/services/tenant/member-admin";
 import type { TenantAdminActor } from "@/services/tenant/tenant-admin";
 
@@ -71,12 +72,21 @@ export async function setTenantMember(tenantId: string, userId: string, groupId:
 export async function setPlatformAdmin(userId: string, on: boolean) {
     const viewer = await checkPlatformAdmin();
     const user = IdSchema.safeParse(userId);
-    if (!user.success) return { success: false as const, error: "Invalid request" };
+    const role = z.boolean().safeParse(on);
+    if (!user.success || !role.success) return { success: false as const, error: "Invalid request" };
     if (user.data === viewer.id) return { success: false as const, error: "Another platform admin changes your own role." };
 
     try {
-        await membershipService.setPlatformAdmin(user.data, on);
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: on ? "Made platform admin" : "No platform admin any more" }, user.data, { tenantId: HOME_TENANT_ID });
+        await membershipService.setPlatformAdmin(user.data, role.data);
+        const [named] = await userService.namesOf([user.data]);
+        await auditService.log(
+            viewer.id,
+            AUDIT_ACTIONS.UPDATE,
+            AUDIT_RESOURCES.USER,
+            { change: role.data ? "Made platform admin" : "No platform admin any more", ...(named ? { name: named.name } : {}) },
+            user.data,
+            { tenantId: HOME_TENANT_ID }
+        );
         revalidatePath("/dashboard", "layout");
         return { success: true as const };
     } catch (error: unknown) {

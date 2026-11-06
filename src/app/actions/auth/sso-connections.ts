@@ -1,20 +1,24 @@
 "use server";
 
 import { headers } from "next/headers";
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { getViewer, hasPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
-import { countSignInAccounts, listSsoConnections, prepareSsoConnect, type SsoConnections } from "@/services/sso/sso-connections-service";
+import { countSignInAccounts, listSsoConnections, prepareSsoConnect, providerNameOf, type SsoConnections } from "@/services/sso/sso-connections-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 
 export type { ConnectableProvider, SsoConnection } from "@/services/sso/sso-connections-service";
 
 const log = logger.child({ action: "sso-connections" });
+
+const IdSchema = z.string().min(1).max(200);
+const UnlinkSchema = z.object({ providerId: IdSchema, accountId: IdSchema });
 
 /**
  * Self-service: list the current user's linked SSO identities plus which
@@ -43,6 +47,9 @@ export async function unlinkMySsoAccount(providerId: string, accountId: string) 
         return { success: false, error: "Your group may not change your sign-in providers." };
     }
 
+    const parsed = UnlinkSchema.safeParse({ providerId, accountId });
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+
     if ((await countSignInAccounts(currentUser.id)) <= 1) {
         return { success: false, error: "You need at least one other login method before removing this connection." };
     }
@@ -51,14 +58,14 @@ export async function unlinkMySsoAccount(providerId: string, accountId: string) 
         const headersList = await headers();
         await auth.api.unlinkAccount({
             headers: headersList,
-            body: { providerId, accountId },
+            body: parsed.data,
         });
 
         await auditService.log(
             currentUser.id,
             AUDIT_ACTIONS.DELETE,
             AUDIT_RESOURCES.AUTH,
-            { change: "SSO account unlinked", providerId },
+            { change: "SSO account unlinked", name: await providerNameOf(parsed.data.providerId), providerId: parsed.data.providerId },
             currentUser.id,
             await accountLogOrigin(currentUser, currentUser.id)
         );
@@ -66,8 +73,8 @@ export async function unlinkMySsoAccount(providerId: string, accountId: string) 
         revalidatePath("/dashboard/profile");
         return { success: true };
     } catch (error: unknown) {
-        log.error("Failed to unlink SSO account", { userId: currentUser.id, providerId }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to unlink account" };
+        const message = userMessage(error, "The account could not be unlinked. The server log has the details.", log, "Failed to unlink SSO account", { userId: currentUser.id, providerId: parsed.data.providerId });
+        return { success: false, error: message };
     }
 }
 
@@ -89,5 +96,8 @@ export async function initiateSsoConnect(
         return { success: false, error: "Your group may not change your sign-in providers." };
     }
 
-    return prepareSsoConnect(currentUser.id, providerId);
+    const parsed = IdSchema.safeParse(providerId);
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+
+    return prepareSsoConnect(currentUser.id, parsed.data);
 }

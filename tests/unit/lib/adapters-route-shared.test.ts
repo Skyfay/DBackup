@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     ctx: { userId: "u-viewer", tenantId: "acme" as string | null, allTenants: false, isPlatformAdmin: false, permissions: [] as string[] },
     checked: [] as string[],
     list: vi.fn(),
+    reachOf: vi.fn(),
 }));
 
 vi.mock("@/lib/logging/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) } }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: vi.fn() } }));
 vi.mock("@/services/adapters/adapter-create", () => ({ createAdapter: vi.fn() }));
 vi.mock("@/services/adapters/adapter-list", () => ({ listAdapters: mocks.list }));
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reachOf: mocks.reachOf } }));
 
 const { GET } = await import("@/app/api/adapters/route");
 
@@ -80,5 +82,24 @@ describe("the provided servers of the list", () => {
             await get("type=database&shared=true");
             expect(sharedOption()).toEqual({ tenantId: "acme", backups: true });
         }
+    });
+});
+
+describe("the tenants a share names in the list", () => {
+    it("are bounded by the reach of the platform group of the viewer", async () => {
+        mocks.reachOf.mockResolvedValue(["acme"]);
+        mocks.ctx = { ...mocks.ctx, permissions: ["destinations:read", "platform-sharing:read"] };
+        await get("type=storage&overview=true");
+
+        expect(mocks.reachOf).toHaveBeenCalledWith("u-viewer");
+        expect(mocks.list.mock.calls[0][1]).toMatchObject({ shares: true, shareReach: ["acme"] });
+    });
+
+    it("are not asked for without the right to see sharing", async () => {
+        mocks.ctx = { ...mocks.ctx, permissions: ["destinations:read"] };
+        await get("type=storage&overview=true");
+
+        expect(mocks.reachOf).not.toHaveBeenCalled();
+        expect(mocks.list.mock.calls[0][1]).toMatchObject({ shares: false, shareReach: undefined });
     });
 });

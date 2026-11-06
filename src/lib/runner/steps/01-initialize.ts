@@ -4,13 +4,18 @@ import { registry } from "@/lib/core/registry";
 import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
 import { registerAdapters } from "@/lib/adapters";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { ownDataRefusal, ownVolumeRefusal } from "@/lib/adapters/own-data";
+import { jobFolderRefusal } from "./job-folder-check";
 import { resolveExcludePatterns, parseJsonStringArray } from "@/lib/exclude-groups";
 import { RetentionConfiguration } from "@/lib/core/retention";
 import { isAirGapped } from "@/lib/core/air-gap";
 import { SHARED_STORAGE_FAILURE, storageView } from "@/lib/tenant/storage-view";
 import { destinationAccess } from "@/services/sharing/destination-access";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ConfigurationError, wrapError } from "@/lib/logging/errors";
+import { CONFIG_BACKUP_FOLDER_NAME, isConfigBackupFolderName } from "@/lib/core/config-backup-path";
+import { JOB_FOLDER_NAME, isUnsafeJobFolderName } from "@/lib/core/job-folder";
+import { assertSourceFolder } from "@/lib/archive/remote-paths";
 
 const log = logger.child({ step: "initialize" });
 
@@ -47,6 +52,17 @@ export async function stepInitialize(ctx: RunnerContext) {
 
     if (!job) {
         throw new Error(`Job ${ctx.jobId} not found`);
+    }
+
+    // A job writes into the folder its name gives, so one called like the folder of the
+    // configuration backup would write among its files. A save refuses the name, this stops a job
+    // that got it before or came back from Recently deleted or an older file.
+    if (isConfigBackupFolderName(job.name)) {
+        throw new ConfigurationError("job", `${CONFIG_BACKUP_FOLDER_NAME} Rename it to run it again.`);
+    }
+    // Nor one whose name leads out of its own folder, into the root of a destination or beside it.
+    if (isUnsafeJobFolderName(job.name)) {
+        throw new ConfigurationError("job", `${JOB_FOLDER_NAME} Rename it to run it again.`);
     }
 
     // A job needs at least one source: a database source, or one or more directory sources.
@@ -112,16 +128,32 @@ export async function stepInitialize(ctx: RunnerContext) {
         const ownPatterns: string[] = JSON.parse(src.excludePatterns || "[]");
         const excludePatterns = [...new Set([...presetPatterns, ...ownPatterns])];
 
+        // A save refuses a folder that leaves its connection, this stops a job saved before that.
+        try {
+            assertSourceFolder(src.path);
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new ConfigurationError(src.config.adapterId, `Job ${job.name}, source ${src.config.name}: ${reason} Edit the job to run it again.`);
+        }
+
+        const sourceConfig = await resolveAdapterConfig(src.config) as Record<string, unknown>;
+        // "/" is the form's sentinel for "the whole adapter" (see DirectoryBrowseDialog in job-form.tsx).
+        // "" is what every storage adapter's list()/download() actually treats as its own root.
+        const remotePath = src.path === "/" ? "" : src.path;
+        // No run reads the own data of DBackup, whoever saved the connection or the folder, since
+        // a link may point there by now, see `own-data.ts`.
+        const ownData = await ownDataRefusal(src.config.adapterId, sourceConfig, { subPath: remotePath })
+            ?? await ownVolumeRefusal(src.config.adapterId, sourceConfig, remotePath);
+        if (ownData) throw new ConfigurationError(src.config.adapterId, `${src.config.name}: ${ownData}`);
+
         const sourceCtx: DirectorySourceContext = {
             jobSourceId: src.id,
             configId: src.config.id,
             configName: src.config.name,
             tenantId: src.config.tenantId,
             adapter,
-            config: await resolveAdapterConfig(src.config) as any,
-            // "/" is the form's sentinel for "the whole adapter" (see DirectoryBrowseDialog in job-form.tsx);
-            // "" is what every storage adapter's list()/download() actually treats as its own root.
-            remotePath: src.path === "/" ? "" : src.path,
+            config: sourceConfig as any,
+            remotePath,
             excludePatterns,
             priority: src.priority,
             stopContainers: src.stopContainers,
@@ -192,6 +224,11 @@ export async function stepInitialize(ctx: RunnerContext) {
                 refusal = SHARED_STORAGE_FAILURE;
             }
         }
+        // No run writes into the own data of DBackup, the destination of the configuration backup
+        // only into the folder of its own files, see `own-data.ts`. The folder of the job below the
+        // destination counts too, since a link there may lead into it, for a customer below its
+        // folder on a destination another tenant shares, where its files really land.
+        if (!refusal) refusal = (await jobFolderRefusal(dest.config.adapterId, config, dest.config.id, job.name, mode?.kind === "customer" ? mode.tenantId : undefined)) ?? undefined;
 
         const destCtx: DestinationContext = {
             configId: dest.config.id,

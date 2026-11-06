@@ -11,6 +11,9 @@ vi.mock("@/lib/prisma", () => ({
     },
 }));
 
+const { loginData } = vi.hoisted(() => ({ loginData: vi.fn() }));
+vi.mock("@/services/auth/credential-service", () => ({ getDecryptedCredentialData: loginData }));
+
 import prisma from "@/lib/prisma";
 
 registerAdapters();
@@ -66,11 +69,28 @@ describe("validateCredentialAssignments", () => {
     });
 
     it("accepts matching types", async () => {
+        loginData.mockResolvedValue({ username: "backup", password: "s3cret" });
         (prisma.credentialProfile.findUnique as any)
             .mockResolvedValueOnce({ id: "cred-1", type: "USERNAME_PASSWORD" })
             .mockResolvedValueOnce({ id: "cred-2", type: "SSH_KEY" });
         await expect(
             validateCredentialAssignments("mysql", "cred-1", "cred-2")
         ).resolves.toBeUndefined();
+    });
+
+    it.each(["mysql", "mariadb"])("refuses a saved login for %s whose password would add lines to the option file of its tools", async (adapterId) => {
+        (prisma.credentialProfile.findUnique as any).mockResolvedValue({ id: "cred-1", type: "USERNAME_PASSWORD" });
+        for (const password of ["pw\nplugin-dir=/tmp", "pw\rx", "pw\0x"]) {
+            loginData.mockResolvedValue({ username: "backup", password });
+            const refusal = validateCredentialAssignments(adapterId, "cred-1", null);
+            await expect(refusal).rejects.toBeInstanceOf(ValidationError);
+            await expect(refusal).rejects.not.toThrow(password);
+        }
+    });
+
+    it("leaves the password of a saved login alone for an adapter that writes no option file", async () => {
+        (prisma.credentialProfile.findUnique as any).mockResolvedValue({ id: "cred-1", type: "USERNAME_PASSWORD" });
+        loginData.mockResolvedValue({ username: "backup", password: "pw\nx" });
+        await expect(validateCredentialAssignments("postgres", "cred-1", null)).resolves.toBeUndefined();
     });
 });

@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { google } from "googleapis";
 import { headers } from "next/headers";
-import { getAuthContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, hasPermissionWithContext, tenantRefusal } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+import { TOKEN_CHECK_FAILED } from "@/lib/server/oauth-callback";
+import { credentialName } from "@/services/auth/credential-audit";
+import { logProbe, type ProbeTarget } from "@/services/adapters/probe-audit";
 
 const log = logger.child({ route: "adapters/google-drive/validate-token" });
 
@@ -18,7 +23,7 @@ const log = logger.child({ route: "adapters/google-drive/validate-token" });
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     if (!hasPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ)) {
@@ -27,7 +32,12 @@ export async function POST(req: NextRequest) {
             { status: 403 }
         );
     }
+    // A saved login belongs to one tenant, and All tenants would check the login of any of them.
+    const outsideTenant = tenantRefusal(ctx);
+    if (outsideTenant) return NextResponse.json({ valid: false, message: outsideTenant }, { status: 403 });
 
+    // Set once the provider is asked, so a failure before writes no entry.
+    let checked: ProbeTarget | null = null;
     try {
         const { credentialId } = await req.json();
         if (!credentialId) {
@@ -50,16 +60,19 @@ export async function POST(req: NextRequest) {
         );
         oauth2Client.setCredentials({ refresh_token: profile.refreshToken });
 
+        checked = { adapterId: "google-drive", record: { id: credentialId, name: await credentialName(credentialId) } };
         await oauth2Client.getAccessToken();
+        await logProbe(ctx, "token_check", checked, true);
 
         return NextResponse.json({ valid: true });
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        const isExpired = message.includes("invalid_grant") || message.includes("Token has been expired");
-        log.warn("Google Drive token validation failed", { message });
+        if (checked) await logProbe(ctx, "token_check", checked, false);
+        const detail = error instanceof Error ? error.message : String(error);
+        const isExpired = detail.includes("invalid_grant") || detail.includes("Token has been expired");
+        log.warn("Google Drive token validation failed", { expired: isExpired }, wrapError(error));
         return NextResponse.json({
             valid: false,
-            message: isExpired ? "Authorization expired. Please re-authorize with Google." : message,
+            message: isExpired ? "Authorization expired. Please re-authorize with Google." : TOKEN_CHECK_FAILED,
         });
     }
 }

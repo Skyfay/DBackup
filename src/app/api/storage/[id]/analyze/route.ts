@@ -1,19 +1,24 @@
 
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { requestRefusal } from "@/lib/server/permission-refusal";
-import { configBackupRefusal } from "@/lib/server/config-backup-guard";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+import { backupPathRefusal, configBackupRefusal } from "@/lib/server/config-backup-guard";
 import { analyzeBackup } from "@/services/storage/backup-contents";
 import { isMissingStorage } from "@/services/storage/storage-lookup";
+
+const log = logger.child({ route: "storage/analyze" });
 
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -30,9 +35,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             ? { profileId: profileIdOverride }
             : undefined;
 
-        if (!file || typeof file !== 'string' || file.includes('..') || file.startsWith('/')) {
-            return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
-        }
+        // A path that leaves the destination answers 400, see `assertBackupPath`.
+        const badPath = backupPathRefusal(file);
+        if (badPath) return badPath;
         const configBackup = await configBackupRefusal(ctx, params.id, file);
         if (configBackup) return configBackup;
 
@@ -49,7 +54,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (isMissingStorage(e)) {
             return NextResponse.json({ error: "Storage adapter not found" }, { status: 404 });
         }
-        const message = e instanceof Error ? e.message : "Unknown error";
-        return NextResponse.json({ error: message }, { status: 500 });
+        log.error("Analyzing a backup failed", { storageId: params.id }, wrapError(e));
+        return NextResponse.json({ error: "The backup could not be read. The log of DBackup has the details." }, { status: 500 });
     }
 }

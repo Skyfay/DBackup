@@ -80,12 +80,9 @@ vi.mock('@/lib/crypto/stream', () => ({
     createDecryptionStream: (...args: any[]) => mockCreateDecryptionStream(...args),
 }));
 
-const mockAdmZipInstance = {
-    addLocalFile: vi.fn(),
-    writeZip: vi.fn(),
-};
-vi.mock('adm-zip', () => ({
-    default: function () { return mockAdmZipInstance; },
+const mockWriteStoreZip = vi.fn();
+vi.mock('@/lib/store-zip', () => ({
+    writeStoreZip: (...args: any[]) => mockWriteStoreZip(...args),
 }));
 
 vi.mock('@/lib/logging/logger', () => ({
@@ -169,8 +166,7 @@ describe('StorageService.downloadFile - encryption and .enc paths', () => {
         mockGetProfileMasterKey.mockResolvedValue(Buffer.alloc(32));
         mockResolveDecryptionKey.mockResolvedValue(Buffer.alloc(32));
         mockCreateDecryptionStream.mockReturnValue(new PassThrough());
-        mockAdmZipInstance.addLocalFile.mockReset();
-        mockAdmZipInstance.writeZip.mockReset();
+        mockWriteStoreZip.mockReset().mockResolvedValue(undefined);
     });
 
     // ===== decrypt=true with encryption metadata =====
@@ -370,6 +366,7 @@ describe('StorageService.downloadFile - encryption and .enc paths', () => {
         it('downloads .enc file and meta, creates zip, returns isZip=true', async () => {
             const adapter = makeAdapter({
                 download: vi.fn().mockResolvedValue(true),
+                read: vi.fn().mockResolvedValue('{"jobName":"nightly"}'),
             });
 
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
@@ -379,15 +376,16 @@ describe('StorageService.downloadFile - encryption and .enc paths', () => {
 
             expect(result.success).toBe(true);
             expect(result.isZip).toBe(true);
-            expect(mockAdmZipInstance.addLocalFile).toHaveBeenCalledTimes(2);
-            expect(mockAdmZipInstance.writeZip).toHaveBeenCalledWith('/tmp/out.enc');
+            expect(mockWriteStoreZip).toHaveBeenCalledWith('/tmp/out.enc', [
+                expect.objectContaining({ name: 'backup.sql.enc' }),
+                expect.objectContaining({ name: 'backup.sql.enc.meta.json' }),
+            ]);
         });
 
-        it('returns isZip=false and renames when meta download fails', async () => {
+        it('returns isZip=false and renames when there is no meta file', async () => {
             const adapter = makeAdapter({
-                download: vi.fn()
-                    .mockResolvedValueOnce(true)   // main .enc file
-                    .mockResolvedValueOnce(false),  // .meta.json not found
+                download: vi.fn().mockResolvedValue(true),
+                read: vi.fn().mockResolvedValue(null),
             });
 
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
@@ -403,13 +401,12 @@ describe('StorageService.downloadFile - encryption and .enc paths', () => {
         it('falls back to rename when zip creation fails', async () => {
             const adapter = makeAdapter({
                 download: vi.fn().mockResolvedValue(true),
+                read: vi.fn().mockResolvedValue('{"jobName":"nightly"}'),
             });
 
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
             vi.mocked(registry.get).mockReturnValue(adapter);
-            mockAdmZipInstance.writeZip.mockImplementation(() => {
-                throw new Error("Zip error");
-            });
+            mockWriteStoreZip.mockRejectedValue(new Error("Zip error"));
 
             const result = await service.downloadFile('conf-123', 'backup.sql.enc', '/tmp/out.enc', false);
 

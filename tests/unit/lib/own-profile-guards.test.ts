@@ -4,7 +4,7 @@ import { PermissionError } from "@/lib/logging/errors";
 const mocks = vi.hoisted(() => ({
     viewer: { id: "u1", name: "Lena Graf", email: "lena@example.ch", group: { name: "Operators" } },
     held: new Set<string>(),
-    service: { updateUser: vi.fn(), togglePasskeyTwoFactor: vi.fn(), ownEmailRefusal: vi.fn(async () => null) },
+    service: { updateUser: vi.fn(), togglePasskeyTwoFactor: vi.fn(), ownEmailRefusal: vi.fn(async () => null), passkeyOffEndsTwoFactor: vi.fn(async () => true), hasAuthenticatorApp: vi.fn(async () => true) },
     audit: vi.fn(),
 }));
 
@@ -47,6 +47,35 @@ describe("what a group lets someone change of the own profile", () => {
         expect(await togglePasskeyTwoFactor("u1", true)).toEqual({ success: true });
     });
 
+    it("keeps switching the passkey on to a group that may change the second factor while no authenticator app is one", async () => {
+        mocks.service.hasAuthenticatorApp.mockResolvedValue(false);
+        try {
+            mocks.held = new Set(["profile:manage_passkeys"]);
+            expect(await togglePasskeyTwoFactor("u1", true)).toEqual({ success: false, error: "Your group may not turn on your second factor." });
+            expect(mocks.service.togglePasskeyTwoFactor).not.toHaveBeenCalled();
+
+            mocks.held = new Set(["profile:manage_passkeys", "profile:manage_2fa"]);
+            expect(await togglePasskeyTwoFactor("u1", true)).toEqual({ success: true });
+            expect(mocks.service.togglePasskeyTwoFactor).toHaveBeenCalledWith("u1", true);
+        } finally {
+            mocks.service.hasAuthenticatorApp.mockResolvedValue(true);
+        }
+    });
+
+    it("keeps switching the passkey off to a group that may change the second factor while it is the whole second factor", async () => {
+        mocks.held = new Set(["profile:manage_passkeys"]);
+        expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: false, error: "Your group may not turn off your second factor." });
+        expect(mocks.service.togglePasskeyTwoFactor).not.toHaveBeenCalled();
+
+        // An authenticator app stays the second factor, so only the passkey changes.
+        mocks.service.passkeyOffEndsTwoFactor.mockResolvedValueOnce(false);
+        expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: true });
+
+        mocks.held = new Set(["profile:manage_passkeys", "profile:manage_2fa"]);
+        expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: true });
+        expect(mocks.service.togglePasskeyTwoFactor).toHaveBeenCalledTimes(2);
+    });
+
     it("changes the own name and email only as far as the group allows, also for someone who may change users", async () => {
         expect(await updateUser("u1", { name: "Someone Else" })).toEqual({ success: false, error: "Your group may not change your name." });
         expect(await updateUser("u1", { email: "boss@example.ch" })).toEqual({ success: false, error: "Your group may not change your email." });
@@ -80,5 +109,20 @@ describe("what a group lets someone change of the own profile", () => {
         const refused = { success: false, error: "Your group may not change your sign-in providers." };
         expect(await unlinkMySsoAccount("authentik", "acc-1")).toEqual(refused);
         expect(await initiateSsoConnect("authentik")).toEqual(refused);
+    });
+
+    it("refuses ids that are no strings, empty or too long before anything changes", async () => {
+        mocks.held = new Set(["profile:manage_sso", "profile:manage_passkeys"]);
+        const invalid = { success: false, error: "Invalid request" };
+        const { auth } = await import("@/lib/auth");
+
+        expect(await unlinkMySsoAccount({ id: "authentik" } as unknown as string, "acc-1")).toEqual(invalid);
+        expect(await unlinkMySsoAccount("authentik", "x".repeat(500))).toEqual(invalid);
+        expect(await initiateSsoConnect("")).toEqual(invalid);
+        expect(await initiateSsoConnect(["authentik"] as unknown as string)).toEqual(invalid);
+        expect(await togglePasskeyTwoFactor("x".repeat(500), true)).toEqual(invalid);
+        expect(await togglePasskeyTwoFactor("u1", "yes" as unknown as boolean)).toEqual(invalid);
+        expect(auth.api.unlinkAccount).not.toHaveBeenCalled();
+        expect(mocks.service.togglePasskeyTwoFactor).not.toHaveBeenCalled();
     });
 });

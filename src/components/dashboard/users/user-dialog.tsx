@@ -25,7 +25,7 @@ import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import { PLATFORM_ADMIN_GROUP_ID, type PlatformGroupsModel } from "@/services/user/platform-groups-types";
 import type { UserRow, UsersGroup } from "@/services/user/users-types";
-import { accountLock, groupLock, groupsOfTenant, newUserChoices, type TenantReach } from "./user-access";
+import { accountLock, groupLock, groupsOfTenant, managesTenant, newUserChoices, type TenantReach } from "./user-access";
 import { accessNote, platformChange, saveAccess, useAccessEdit, UserAccessFields } from "./user-dialog-access";
 import { AccountKindFields, createAccount } from "./user-dialog-kind";
 import { NO_GROUP } from "./user-columns";
@@ -94,8 +94,8 @@ export function UserDialog({ open, user, groups, passwordRules, viewerPlatformAd
     });
     const [name, email, password, tenantId, kind] = useWatch({ control: form.control, name: ["name", "email", "password", "tenantId", "kind"] });
     // Whoever gives platform groups also makes an account of the platform with New user under
-    // Platform, unless their platform group reaches only some tenants, since such an account is in none.
-    const choosesKind = pickTenant && managePlatformGroup && (tenantReach?.managedTenants ?? null) === null;
+    // Platform, while their platform group reaches the home tenant, which an account of no tenant counts as.
+    const choosesKind = pickTenant && managePlatformGroup && (!tenantReach || managesTenant(tenantReach, HOME_TENANT_ID));
     const forPlatform = choosesKind && kind === "platform";
     const { model: newPlatformModel } = usePageModel<PlatformGroupsModel>(open && choosesKind ? "/api/platform/platform-groups" : null, "The platform groups could not be loaded.");
     const { tenants: viewTenants } = useTenantView();

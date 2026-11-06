@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { listedTenants, TENANT_IDS_KEY } from "@/lib/core/audit-tenants";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
@@ -22,7 +23,11 @@ export interface LogReader {
     allTenants?: boolean;
 }
 
-/** How a reader sees the log of the tenant they work in. */
+/**
+ * How a reader sees the log of the tenant they work in. A request reads it once with `logViewOf`
+ * and hands the same object to every reader of the log, which reads what it keeps once per view,
+ * see `auditVisibleWhere`. So a view lives as long as its request, never longer.
+ */
 export interface LogView {
     /** The tenants whose accounts the reader sees in the log of the home tenant, null for every one. */
     reach: readonly string[] | null;
@@ -61,12 +66,32 @@ function accountsOf(view: LogView): Prisma.UserWhereInput {
 }
 
 /**
- * The entries about a tenant a view keeps: an entry about a tenant (`resource` TENANT) only of a
- * tenant of the reach, and an entry whose details name tenants by `tenantId`, like the databases
- * the home tenant gave away, only when one of them is of the reach. The details are JSON text, so a
- * named tenant is found by `"tenantId":"<id>"`, which also hides an entry of a tenant deleted since.
+ * The entries of the log of the home tenant that name several tenants by `tenantIds`, like a
+ * restore over databases of several customers, of which a view keeps those whose every tenant is of
+ * the reach. A list is no text a query can check entry by entry, so these few are read and checked
+ * here, like the accounts of the failed sign-ins, and the view keeps them by id. An entry whose
+ * `tenantIds` is no list of the top level, which `namedTenants` never writes, tells no tenants, so
+ * it stays hidden rather than counting as one that names none.
  */
-function aboutReachedTenants(reach: readonly string[]): Prisma.AuditLogWhereInput[] {
+async function listsOfReachedTenants(reach: readonly string[]): Promise<string[]> {
+    const listed = await prisma.auditLog.findMany({
+        where: { tenantId: HOME_TENANT_ID, details: { contains: `"${TENANT_IDS_KEY}":` } },
+        select: { id: true, details: true },
+    });
+    return listed.filter((entry) => listedTenants(entry.details)?.every((tenantId) => reach.includes(tenantId)) ?? false).map((entry) => entry.id);
+}
+
+/**
+ * The entries about a tenant a view keeps: an entry about a tenant (`resource` TENANT) only of a
+ * tenant of the reach, an entry whose details name tenants by `tenantId`, like the databases the
+ * home tenant gave away, only when one of them is of the reach, and an entry that names several
+ * tenants by `tenantIds` only when all of them are, the ids of `listsOfReachedTenants`. An entry
+ * that names a tenant by its name, like `tenant` or `customers`, carries its id in one of the two
+ * (`namedTenants` in `src/lib/core/audit-tenants.ts`), so it stays hidden rather than showing the
+ * name of a tenant beyond the reach. The details are JSON text, so a named tenant is found by
+ * `"tenantId":"<id>"`, which also hides an entry of a tenant deleted since.
+ */
+function aboutReachedTenants(reach: readonly string[], reachedLists: readonly string[]): Prisma.AuditLogWhereInput[] {
     return [
         { OR: [{ resource: { not: AUDIT_RESOURCES.TENANT } }, { resourceId: null }, { resourceId: { in: [...reach] } }] },
         {
@@ -76,8 +101,12 @@ function aboutReachedTenants(reach: readonly string[]): Prisma.AuditLogWhereInpu
                 ...reach.map((tenantId) => ({ details: { contains: `"tenantId":${JSON.stringify(tenantId)}` } })),
             ],
         },
+        { OR: [{ details: null }, { NOT: { details: { contains: `"${TENANT_IDS_KEY}":` } } }, { id: { in: [...reachedLists] } }] },
     ];
 }
+
+/** The filter of each view, read once for it, see `auditVisibleWhere`. */
+const visibleOfView = new WeakMap<LogView, Promise<Prisma.AuditLogWhereInput>>();
 
 /**
  * The entries of the log of the home tenant a view keeps, null for every entry: those of an
@@ -87,14 +116,31 @@ function aboutReachedTenants(reach: readonly string[]): Prisma.AuditLogWhereInpu
  * kept its name only, and nothing tells its tenants any more, so it stays hidden. Of these it
  * keeps only the entries about tenants of the reach, see `aboutReachedTenants`, so whoever acted,
  * an entry about a customer beyond the reach, like its rename or delete, stays hidden.
+ *
+ * Its lookups read the whole log of the home tenant, and one request reads the log several times,
+ * like the page, its counts, the Who options and the numbers of `GET /api/audit`. So the filter is
+ * read once per view, the object `logViewOf` makes for one request, and every reader of that
+ * request shares it. A failed read is not kept, so the next reader tries again.
  */
-export async function auditVisibleWhere(view: LogView): Promise<Prisma.AuditLogWhereInput | null> {
-    if (!view.reach) return null;
+export function auditVisibleWhere(view: LogView): Promise<Prisma.AuditLogWhereInput | null> {
+    const reach = view.reach;
+    if (!reach) return Promise.resolve(null);
+    let where = visibleOfView.get(view);
+    if (!where) {
+        where = readVisibleWhere(view, reach);
+        visibleOfView.set(view, where);
+        where.catch(() => visibleOfView.delete(view));
+    }
+    return where;
+}
+
+async function readVisibleWhere(view: LogView, reach: readonly string[]): Promise<Prisma.AuditLogWhereInput> {
     const tried = await prisma.auditLog.findMany({
         where: { tenantId: HOME_TENANT_ID, action: AUDIT_ACTIONS.LOGIN_FAILED, resourceId: { not: null } },
         distinct: ["resourceId"],
         select: { resourceId: true },
     });
+    const reachedLists = await listsOfReachedTenants(reach);
     const triedIds = tried.flatMap((entry) => (entry.resourceId ? [entry.resourceId] : []));
     const seen = triedIds.length === 0
         ? []
@@ -108,7 +154,7 @@ export async function auditVisibleWhere(view: LogView): Promise<Prisma.AuditLogW
                     { userId: null, actorName: null, action: AUDIT_ACTIONS.LOGIN_FAILED, OR: [{ resourceId: null }, { resourceId: { in: seen.map((user) => user.id) } }] },
                 ],
             },
-            ...aboutReachedTenants(view.reach),
+            ...aboutReachedTenants(reach, reachedLists),
         ],
     };
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { checkAnyPermissionWithContext, getAuthContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -25,7 +26,7 @@ const log = logger.child({ route: "sso-providers" });
  */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     if (ctx.authMethod !== "session") {
         return NextResponse.json({ success: false, error: "The sign-in providers are shown to a signed-in person only." }, { status: 403 });
     }

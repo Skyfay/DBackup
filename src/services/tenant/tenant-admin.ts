@@ -126,12 +126,25 @@ export async function createTenantAs(actor: TenantAdminActor, name: string, shar
     return tenant;
 }
 
+/**
+ * The entry of a change the platform made to a tenant, in the log of the platform, and in the log
+ * of the tenant, which learns of it, unless that is the same log of the home tenant.
+ */
+async function logPlatformChange(actor: Pick<TenantAdminActor, "id" | "apiKeyId">, tenantId: string, details: Record<string, unknown>) {
+    await auditService.log(actor.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, details, tenantId, platformOrigin(actor));
+    if (tenantId !== HOME_TENANT_ID) await auditService.log(actor.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, details, tenantId, tenantOrigin(actor, tenantId));
+}
+
+/**
+ * Renames a tenant the actor looks after. A taken name is named as another tenant's only to whoever
+ * sees every tenant, a platform admin or a reach of all tenants. Anyone else hears the neutral
+ * refusal, or a rename would tell them the names of tenants beyond their reach.
+ */
 export async function renameTenantAs(actor: TenantAdminActor, tenantId: string, name: string) {
     await assertManages(actor, tenantId);
-    const change = await tenantService.rename(tenantId, name);
-    if (change.name !== change.renamedFrom) {
-        await auditService.log(actor.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, renamedFrom: change.renamedFrom }, tenantId, platformOrigin(actor));
-    }
+    const seesEveryTenant = await mayCreateTenants(actor);
+    const change = await tenantService.rename(tenantId, name, { ownTenant: !seesEveryTenant });
+    if (change.name !== change.renamedFrom) await logPlatformChange(actor, tenantId, { name: change.name, renamedFrom: change.renamedFrom });
     return change;
 }
 
@@ -139,9 +152,7 @@ export async function renameTenantAs(actor: TenantAdminActor, tenantId: string, 
 export async function setTenantSharingAs(actor: TenantAdminActor, tenantId: string, on: boolean) {
     await assertManages(actor, tenantId);
     const change = await tenantService.setSharing(tenantId, on);
-    if (change.changed) {
-        await auditService.log(actor.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { name: change.name, change: on ? "Shares with customers" : "Shares nothing with customers" }, tenantId, platformOrigin(actor));
-    }
+    if (change.changed) await logPlatformChange(actor, tenantId, { name: change.name, change: on ? "Shares with customers" : "Shares nothing with customers" });
     return change;
 }
 

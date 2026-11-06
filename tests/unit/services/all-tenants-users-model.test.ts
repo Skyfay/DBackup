@@ -302,3 +302,44 @@ describe("the accounts a platform group of some tenants sees on the Platform", (
         expect(all.templates?.[0].tenantIds).toEqual(["tenant-a", "tenant-b"]);
     });
 });
+
+describe("an account of no tenant whose email the provider of another tenant claims", () => {
+    /** The provider of tenant B claims acme.ch, the provider of the platform msp.ch. */
+    const claimsOf = (args?: { where?: { domain?: unknown } }) =>
+        (args?.where?.domain ? [{ domain: "acme.ch", tenantId: "tenant-b" }, { domain: "msp.ch", tenantId: null }] : []);
+    /** Nina's platform group manages the accounts of the home tenant and of tenant A. */
+    const NINA = {
+        memberships: [],
+        platformGroup: { platformPermissions: JSON.stringify(["platform-accounts:read", "platform-accounts:write"]), tenantPermissions: "[]", allTenants: false, tenants: [{ tenantId: "default" }, { tenantId: "tenant-a" }] },
+    };
+    const LENA = account({ id: "lena", name: "Lena", email: "lena@acme.ch" });
+    const SARA = account({ id: "sara", name: "Sara", email: "sara@msp.ch" });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        prismaMock.ssoProvider.findMany.mockImplementation((async (args?: { where?: { domain?: unknown } }) => claimsOf(args)) as never);
+        prismaMock.auditLog.findMany.mockResolvedValue([] as never);
+        prismaMock.user.findUnique.mockResolvedValue(NINA as never);
+        prismaMock.group.findMany.mockResolvedValue([] as never);
+        prismaMock.tenantMembership.findMany.mockResolvedValue([] as never);
+        prismaMock.user.findMany.mockResolvedValue([{ ...LENA, _count: { ...LENA._count, memberships: 0 } }, { ...SARA, _count: { ...SARA._count, memberships: 0 } }] as never);
+    });
+
+    it("shows in the list of the home tenant as one that works elsewhere, which its admins do not change", async () => {
+        const { getUsersModel } = await import("@/services/user/users-model");
+
+        const model = await getUsersModel("hank", false, "default");
+        const byId = new Map(model.users.map((row) => [row.id, row]));
+
+        expect(byId.get("lena")?.elsewhere).toBe(true);
+        expect(byId.get("sara")?.elsewhere).toBe(false);
+    });
+
+    it("lies beyond a platform group that reaches the home tenant but not the tenant that claims the email", async () => {
+        const model = await getAllUsersModel("nina", false);
+        const byId = new Map(model.users.map((row) => [row.id, row]));
+
+        expect(byId.get("lena")).toEqual(expect.objectContaining({ beyondReach: true }));
+        expect(byId.get("sara")).not.toHaveProperty("beyondReach");
+    });
+});

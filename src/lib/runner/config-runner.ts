@@ -9,16 +9,18 @@ import { createEncryptionStream } from "@/lib/crypto/stream";
 import prisma from "@/lib/prisma";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { registry } from "@/lib/core/registry";
-import type { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
+import type { BackupMetadata, FileInfo, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, EncryptionError, ConfigurationError } from "@/lib/logging/errors";
+import { wrapError, BackupError, EncryptionError, ConfigurationError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { createConfigCopy, includesHistory } from "@/services/config/database-copy";
 import { describeBackupFromMetadata } from "@/services/storage/backup-file-fields";
-import { CONFIG_BACKUP_FOLDER } from "@/lib/core/config-backup-path";
+import { CONFIG_BACKUP_FILE_PREFIX, CONFIG_BACKUP_FOLDER } from "@/lib/core/config-backup-path";
+import { readSidecar } from "@/lib/adapters/storage/common/read-sidecar";
 import packageJson from "../../../package.json";
+import { randomUUID } from "crypto";
 
 const log = logger.child({ runner: "ConfigRunner" });
 
@@ -76,12 +78,14 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
     if (!storageAdapter) {
         throw new ConfigurationError("config-backup", `Adapter class ${storageConfig.adapterId} not registered`);
     }
-    // Resolve adapter config (merges referenced credential profile if present)
-    let decryptedConfig = {};
+    // Resolve adapter config (merges referenced credential profile if present). Without it the
+    // upload would go to the storage with an empty config, so the run fails here instead.
+    let decryptedConfig: Record<string, unknown>;
     try {
         decryptedConfig = await resolveAdapterConfig(storageConfig) as Record<string, unknown>;
     } catch (e) {
         log.error("Config parse error", {}, wrapError(e));
+        throw new ConfigurationError(storageConfig.adapterId, `The settings of ${storageConfig.name} cannot be used. Open the destination and save it again`, { cause: e instanceof Error ? e : undefined });
     }
 
     // 2. The key
@@ -101,7 +105,8 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
     // 3. The copy, compressed and encrypted
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const baseName = `config_backup_${timestamp}.db`;
-    const tempFilePath = path.join(getTempDir(), `${baseName}.gz.enc`);
+    // The name at the destination stays `baseName`, the copy on disk gets one nobody can guess.
+    const tempFilePath = path.join(getTempDir(), `${randomUUID()}-${baseName}.gz.enc`);
     const metaTempPath = `${tempFilePath}.meta.json`;
     const copy = await createConfigCopy({ includeHistory });
     try {
@@ -113,7 +118,10 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
         // 4. Upload, with its metadata beside it
         log.info("Uploading config backup to storage", { storageName: storageConfig.name });
         const remoteFilename = `${REMOTE_FOLDER}/${baseName}.gz.enc`;
-        await storageAdapter.upload(decryptedConfig, tempFilePath, remoteFilename);
+        // Most adapters answer false instead of throwing, which must not read as a stored backup.
+        if (!(await storageAdapter.upload(decryptedConfig, tempFilePath, remoteFilename))) {
+            throw new BackupError(`The configuration backup could not be stored on ${storageConfig.name}. The server log has the details`, { step: "upload" });
+        }
 
         // Like the metadata of a job: who started it, named unless Privacy leaves the name out.
         const includeActor = settings.has(ACTOR_SETTING) ? settings.get(ACTOR_SETTING) === "true" : true;
@@ -141,7 +149,14 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
             trigger: { type: trigger.type, ...(includeActor && trigger.label ? { actor: trigger.label } : {}) },
         };
         await fs.promises.writeFile(metaTempPath, JSON.stringify(metadata, null, 2));
-        await storageAdapter.upload(decryptedConfig, metaTempPath, `${remoteFilename}.meta.json`);
+        if (!(await storageAdapter.upload(decryptedConfig, metaTempPath, `${remoteFilename}.meta.json`))) {
+            // Without its metadata the file is neither listed as a backup nor ever removed by the
+            // retention, so it goes again, as far as the destination lets it.
+            await storageAdapter.delete(decryptedConfig, remoteFilename).catch((error: unknown) => {
+                log.warn("Could not remove the configuration backup whose metadata was not stored", { remoteFilename }, wrapError(error));
+            });
+            throw new BackupError(`The metadata of the configuration backup could not be stored on ${storageConfig.name}. The server log has the details`, { step: "upload" });
+        }
 
         // The Backups page lists it at once, like a backup of a job, instead of after its next scan.
         try {
@@ -187,14 +202,21 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
 /**
  * Keeps the newest config backups and deletes the rest with their metadata. A file is deleted by
  * its path from the listing, which holds the folder, and leaves the listing of the Backups page too.
+ *
+ * Only a file whose name starts like the files of the configuration backup and whose `.meta.json`
+ * says `sourceType: "SYSTEM"` counts, so nothing else in the folder is deleted or pushes the real
+ * backups out. A file of the configuration backup that lost its metadata is kept.
  */
-async function applyConfigRetention(adapter: StorageAdapter, config: any, keepParams: number, storageId: string) {
+async function applyConfigRetention(adapter: StorageAdapter, config: Record<string, unknown>, keepParams: number, storageId: string) {
     try {
         log.debug("Checking retention policy for config backups");
         const files = await adapter.list(config, REMOTE_FOLDER);
 
-        // Filter for our files specifically
-        const configFiles = files.filter(f => f.name.includes("config_backup_") && !f.name.endsWith(".meta.json"));
+        const named = files.filter((file) => file.name.startsWith(CONFIG_BACKUP_FILE_PREFIX) && !file.name.endsWith(".meta.json"));
+        const configFiles: FileInfo[] = [];
+        for (const file of named) {
+            if ((await readSidecar(adapter, config, file.path))?.sourceType === "SYSTEM") configFiles.push(file);
+        }
 
         // Sort by name (which contains timestamp) descending -> Newest first
         configFiles.sort((a, b) => b.name.localeCompare(a.name));

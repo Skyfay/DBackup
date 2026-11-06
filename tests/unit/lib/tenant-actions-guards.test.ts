@@ -61,6 +61,13 @@ describe("the tenants through a platform group", () => {
         expect(mocks.tenants.switchable).toHaveBeenCalledWith("nina", false);
     });
 
+    it("gives no numbers of a tenant the viewer may open only as a member, beyond the reach of the platform group", async () => {
+        // Nina works in Globex as a member too, but her platform group reaches Acme and Shop alone.
+        mocks.tenants.switchable.mockResolvedValue([{ id: "acme", name: "Acme GmbH" }, { id: "globex", name: "Globex" }]);
+        expect(await getTenantSummaries()).toEqual({ success: true, data: [expect.objectContaining({ id: "acme" })] });
+        expect(mocks.summaries).toHaveBeenCalledWith(["acme"]);
+    });
+
     it("refuses the numbers to someone who may not see the tenants", async () => {
         mocks.viewer = { ...SUPPORT, permissions: [P.SETTINGS.READ] };
         await expect(getTenantSummaries()).rejects.toBeInstanceOf(PermissionError);
@@ -81,6 +88,18 @@ describe("the tenants through a platform group", () => {
         expect(await createTenant("New")).toEqual({ success: true, data: { id: "new", name: "New" } });
         expect(await renameTenant("acme", "Acme AG")).toEqual({ success: true });
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "TENANT", { name: "Acme AG", renamedFrom: "Acme GmbH" }, "acme", { tenantId: "default" });
+    });
+
+    it("answers a taken name with the neutral sentence to a group of some tenants, and names the clash only to one that sees every tenant", async () => {
+        mocks.viewer = { ...SUPPORT, permissions: [P.PLATFORM.TENANTS_READ, P.PLATFORM.TENANTS_WRITE] };
+
+        mocks.platformGroups.reachesAll.mockResolvedValue(false);
+        await renameTenant("acme", "Acme AG");
+        expect(mocks.tenants.rename).toHaveBeenLastCalledWith("acme", "Acme AG", { ownTenant: true });
+
+        mocks.platformGroups.reachesAll.mockResolvedValue(true);
+        await renameTenant("acme", "Acme AG");
+        expect(mocks.tenants.rename).toHaveBeenLastCalledWith("acme", "Acme AG", { ownTenant: false });
     });
 
     it("never renames or deletes a tenant out of the group's reach, which reads as gone", async () => {

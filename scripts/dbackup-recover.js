@@ -81,6 +81,84 @@ function safeNameSegment(name) {
     return replaced.length > 0 ? replaced : "_";
 }
 
+/**
+ * Whether a name read out of a backup or a kit is a plain file name: no separator of either kind,
+ * no NUL, not empty, not `.` or `..`. Mirrors plainFileNameProblem in src/lib/archive/dump-names.ts.
+ * Only such a name is joined onto a folder, so a tampered index never opens a file elsewhere.
+ */
+function isPlainFileName(name) {
+    return typeof name === "string" && name.length > 0 && name !== "." && name !== ".." && !/[/\\\u0000]/.test(name);
+}
+
+/**
+ * Why the path of a file line is no plain path below the folder of its source, or null when it is.
+ * The checks of links count the parts as written, while a join resolves a `..` inside them, so
+ * `a/../b` would be checked at one place and written at another. Such an index is refused whole.
+ * Mirrors entryPathProblem in src/lib/archive/index-file.ts.
+ */
+function entryPathProblem(entryPath) {
+    if (typeof entryPath !== "string" || entryPath === "") return "a file without a path";
+    if (entryPath.includes("\0")) return "a path with a NUL character";
+    if (entryPath.startsWith("/") || entryPath.startsWith("\\")) return "an absolute path";
+    if (entryPath.split("/").some((part) => part === "" || part === "." || part === "..")) return "a path with an empty, '.' or '..' part";
+    if (entryPath.split(/[\\/]/).some((part) => part === "." || part === "..")) return "a path with a '.' or '..' part";
+    return null;
+}
+
+/** Whether a link target is absolute on any system: `/x`, `\\server\x` or `C:\x`. */
+function isAbsoluteLinkTarget(target) {
+    return target.startsWith("/") || target.startsWith("\\") || /^[a-zA-Z]:/.test(target);
+}
+
+/**
+ * Whether the link at `linkPath`, relative to the folder of its source, points outside of that
+ * folder: absolute, empty, climbing above it, climbing back after a folder (`up/../x`), or running
+ * through a link of the same backup. Mirrors linkLeavesTarget in src/lib/archive/link-target.ts,
+ * where the reasons are written out.
+ */
+function linkLeavesTarget(linkPath, target, isLinkFolder) {
+    if (target.trim() === "" || isAbsoluteLinkTarget(target)) return true;
+    const parts = linkPath.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".");
+    const at = parts.slice(0, -1);
+    let afterFolder = false;
+    for (const part of target.replace(/\\/g, "/").split("/")) {
+        if (part === "" || part === ".") continue;
+        if (part === "..") {
+            if (afterFolder || at.length === 0) return true;
+            at.pop();
+            continue;
+        }
+        afterFolder = true;
+        at.push(part);
+    }
+    return isLinkFolder(at.join("/"));
+}
+
+/** The folders of a path, without empty and `.` parts, compared without case. */
+function linkPathParts(entryPath) {
+    return entryPath.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".").map((part) => part.toLowerCase());
+}
+
+/**
+ * A test whether an entry lies below a symbolic link of the same backup, which a real folder never
+ * holds. Laid one after the other, `a -> /etc` and `a/cron.d/x` would reach past the output folder.
+ * Mirrors throughLinkOf in src/lib/archive/link-target.ts.
+ */
+function throughLinkOf(lines) {
+    const links = new Set();
+    for (const line of lines) {
+        if (line.lnk !== undefined) links.add(`${line.src}\0${linkPathParts(line.p).join("/")}`);
+    }
+    return (src, entryPath) => {
+        if (links.size === 0) return false;
+        const parts = linkPathParts(entryPath);
+        for (let depth = 1; depth < parts.length; depth++) {
+            if (links.has(`${src}\0${parts.slice(0, depth).join("/")}`)) return true;
+        }
+        return false;
+    };
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Crypto
 // ══════════════════════════════════════════════════════════════════════════════
@@ -168,6 +246,8 @@ function loadKeys() {
         const index = readJson(path.join(root, "keys", "keys.json"));
         if (index && Array.isArray(index.keys)) {
             for (const entry of index.keys) {
+                // A key is a file of the keys folder, never a path the index names elsewhere.
+                if (!isPlainFileName(entry.file)) continue;
                 const hex = readHexFile(path.join(root, "keys", entry.file));
                 if (hex) keys.push({ name: entry.name ?? entry.file, hex, profileId: entry.profileId });
             }
@@ -525,7 +605,14 @@ function openArchive(archivePath, hexKey) {
         else if (parsed.k === "deps") index.deps = parsed.archives;
         else if (parsed.k === "db") index.databases.push(parsed);
         else if (parsed.k === "d") index.directories.push(parsed);
-        else if (parsed.k === "f") index.files.push(parsed);
+        else if (parsed.k === "f") {
+            const problem = entryPathProblem(parsed.p);
+            if (problem) {
+                fs.closeSync(fd);
+                throw new Error(`The backup is damaged: its index names ${problem}.`);
+            }
+            index.files.push(parsed);
+        }
     }
 
     return { fd, filePath, manifest, index, keys, chain: new Map() };
@@ -548,6 +635,8 @@ function openChain(archivePath, index, hexKey) {
     const missing = [];
 
     for (const name of index.deps) {
+        // The index names its archives, and a tampered one could name any file of this machine.
+        if (!isPlainFileName(name)) throw new Error(`The backup names an archive of its chain that is no plain file name: ${JSON.stringify(name)}`);
         const siblingPath = path.join(dir, name);
         if (!fs.existsSync(siblingPath)) {
             missing.push(name);
@@ -1649,7 +1738,7 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             // A symbolic link has no entry to resolve - its whole content is the target
             // string in the index.
             if (file.lnk !== undefined) {
-                pendingSymlinks.push({ target, linkTarget: file.lnk });
+                pendingSymlinks.push({ target, linkTarget: file.lnk, src: file.src, p: file.p });
                 continue;
             }
 
@@ -1679,11 +1768,29 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             reportProgress(extracted, total);
         }
 
+        // A link below another link of the backup, or one whose target leads out of the folder of
+        // its source, would let the next link or whoever follows it reach any file of this machine,
+        // so it is skipped and named, like DBackup's own restore does.
+        const throughLink = throughLinkOf(archive.index.files);
         for (const link of pendingSymlinks) {
+            if (throughLink(link.src, link.p)) {
+                console.error(`SKIPPED (inside another link of the backup): ${link.p}`);
+                continue;
+            }
+            if (linkLeavesTarget(link.p, link.linkTarget, (resolved) => throughLink(link.src, resolved))) {
+                console.error(`SKIPPED (link leads out of the output folder): ${link.p} -> ${link.linkTarget}`);
+                continue;
+            }
             fs.mkdirSync(path.dirname(link.target), { recursive: true });
-            // Removed first: symlink() fails on an existing path. unlink takes the link
-            // itself, never what it points at, so re-running cannot delete real data.
-            try { fs.unlinkSync(link.target); } catch { /* not there, which is the normal case */ }
+            let existing = null;
+            try { existing = fs.lstatSync(link.target); } catch { /* not there, which is the normal case */ }
+            // A file or folder restored to the same path keeps its data, the index cannot be both.
+            if (existing && !existing.isSymbolicLink()) {
+                console.error(`SKIPPED (a file or folder was restored there): ${link.p}`);
+                continue;
+            }
+            // An earlier link is replaced. unlink takes the link itself, never what it points at.
+            if (existing) fs.unlinkSync(link.target);
             fs.symlinkSync(link.linkTarget, link.target);
             extracted++;
             reportProgress(extracted, total);
@@ -1808,4 +1915,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { fitRow, looksLikeBackupContent, defaultDecryptedName, keyFor };
+module.exports = { fitRow, looksLikeBackupContent, defaultDecryptedName, keyFor, entryPathProblem, openArchive };

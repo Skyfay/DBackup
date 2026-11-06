@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { SourceAssignments } from "@/services/tenant/database-assignments";
+import { TENANT_BEYOND_REACH } from "@/lib/tenant/sharing-reach";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }), usePathname: () => "/dashboard/explorer/server" }));
 vi.mock("@/lib/auth/client", () => ({ useSession: () => ({ data: { user: { timezone: "UTC", dateFormat: "yyyy-MM-dd", timeFormat: "HH:mm" } } }) }));
@@ -217,18 +218,24 @@ describe("the databases of a shared server and their tenants", () => {
     });
 
     describe("for someone of a platform group that reaches Acme alone", () => {
-        // The server lists every tenant for the names, and only Acme among those to give to.
-        const limited = () => data({
-            customers: [acme],
-            databases: [
-                ...data().databases,
-                { name: "beta_db", sizeInBytes: 512, owner: { tenantId: beta.id, tenantName: beta.name, via: "rule", since: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null }, backups: 2 },
-            ],
-            rules: [
-                ...data().rules,
-                { id: "r-beta", pattern: "beta_*", tenantId: beta.id, tenantName: beta.name, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", validUntil: null, createdAt: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null },
-            ],
-        });
+        // The server offers only Acme to give to, and sends Beta as a tenant beyond the reach, without its id and its name.
+        const beyond = { tenantId: TENANT_BEYOND_REACH.id, tenantName: TENANT_BEYOND_REACH.name };
+        const limited = () => {
+            const base = data();
+            return data({
+                customers: [acme],
+                tenants: [acme, { ...TENANT_BEYOND_REACH }],
+                databases: [
+                    ...base.databases.map((row) => (row.owner?.tenantId === beta.id ? { ...row, owner: { ...row.owner, ...beyond } } : row)),
+                    { name: "beta_db", sizeInBytes: 512, owner: { ...beyond, via: "rule", since: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null }, backups: 2 },
+                ],
+                assignments: base.assignments.map((row) => (row.tenantId === beta.id ? { ...row, ...beyond } : row)),
+                rules: [
+                    ...base.rules,
+                    { id: "r-beta", pattern: "beta_*", ...beyond, priority: 0, validFrom: "2026-10-01T00:00:00.000Z", validUntil: null, createdAt: "2026-10-01T00:00:00.000Z", onDemandPerDay: null, tenantOnDemand: null },
+                ],
+            });
+        };
 
         beforeEach(() => {
             actions.getSourceAssignments.mockResolvedValue({ success: true, data: limited() });
@@ -249,7 +256,8 @@ describe("the databases of a shared server and their tenants", () => {
 
             const shopB = await rowOf("shop_b");
             expect(within(shopB).queryByRole("combobox", { name: "Who sees shop_b" })).not.toBeInTheDocument();
-            expect(within(shopB).getByText("shop_b belongs to Beta, which your platform group does not reach, so you cannot change it.")).toBeInTheDocument();
+            expect(within(shopB).getByText("shop_b belongs to a tenant your platform group does not reach, so you cannot change it.")).toBeInTheDocument();
+            expect(within(shopB).getByText("Another tenant")).toBeInTheDocument();
             await user.click(within(shopB).getByRole("button", { name: "Open menu for shop_b" }));
             expect(await screen.findByRole("menuitem", { name: "Who held it" })).toBeInTheDocument();
             expect(screen.queryByRole("menuitem", { name: "Move to another server" })).not.toBeInTheDocument();
@@ -269,7 +277,7 @@ describe("the databases of a shared server and their tenants", () => {
             const form = await screen.findByRole("form", { name: "New rule" });
             await user.type(within(form).getByLabelText("Pattern"), "beta_*");
             await user.click(within(form).getByRole("button", { name: "Higher priority" }));
-            expect(within(form).getByText("The rule would take beta_db from Beta, which your platform group does not reach. Give it a lower priority or a narrower pattern.")).toBeInTheDocument();
+            expect(within(form).getByText("The rule would take beta_db from a tenant your platform group does not reach. Give it a lower priority or a narrower pattern.")).toBeInTheDocument();
             expect(within(form).getByRole("button", { name: "Add rule" })).toBeDisabled();
         });
     });

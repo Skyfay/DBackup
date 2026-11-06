@@ -2,6 +2,9 @@ import { transportSuffix, type ExecutionHost } from "@/lib/transport";
 import { FirebirdConfig } from "@/lib/adapters/definitions";
 import { DatabaseInfo } from "@/lib/core/interfaces";
 import { getIsqlCommand } from "./tools";
+import { AdapterError } from "@/lib/logging/errors";
+import { validPort } from "@/lib/adapters/command-values";
+import { firebirdHostProblem } from "./host";
 
 /**
  * Resolve a job-selected alias name (config.database) to its configured
@@ -30,11 +33,12 @@ export function resolveAliasPath(config: FirebirdConfig, aliasName: string): str
 export function buildConnectionString(config: FirebirdConfig, dbPath: string): string {
     // The string is a positional argument of gbak and isql, so it never starts with `-`, which
     // they would read as a switch. The path follows the host, so only the host can bring one.
-    if (String(config.host ?? "").startsWith("-")) {
-        throw new Error("A Firebird host never starts with -.");
-    }
-    const portSegment = config.port && config.port !== 3050 ? `/${config.port}` : "";
-    return `${config.host}${portSegment}:${dbPath}`;
+    // Checked here, since a stored config may predate the check on save, see `firebirdHostProblem`.
+    const problem = firebirdHostProblem(config.host);
+    if (problem) throw new AdapterError("firebird", "config", problem);
+    const port = validPort(config.port, "firebird", 3050);
+    const portSegment = port !== 3050 ? `/${port}` : "";
+    return `${String(config.host).trim()}${portSegment}:${dbPath}`;
 }
 
 /**

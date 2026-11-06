@@ -15,6 +15,7 @@ import { assertCustomerDatabasesConfirmed } from "./customer-databases";
 import { assertDatabaseTarget, normalizeDatabaseMapping } from "./database-mapping";
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 import { runAsSystem } from "@/lib/tenant/context";
+import { assertRestoreTargetsAllowed, CUSTOMER_RESTORE_CALLER, type RestoreCaller } from "./restore-targets";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -31,8 +32,12 @@ export type { RestoreInput };
  *   - pipeline.ts       → background download → decrypt → decompress → restore pipeline
  */
 export class RestoreService {
-    async restore(rawInput: RestoreInput) {
-        return this.start(rawInput);
+    /**
+     * Starts a restore for the caller, who decides whether it may write into what the configuration
+     * backup goes through, see `assertRestoreTargetsAllowed`.
+     */
+    async restore(rawInput: RestoreInput, caller: RestoreCaller) {
+        return this.start(rawInput, caller);
     }
 
     /**
@@ -44,14 +49,25 @@ export class RestoreService {
      * log in its own History.
      */
     async restoreShared(input: RestoreInput, customerTenantId: string) {
-        return runAsSystem(() => this.start(input, customerTenantId));
+        return runAsSystem(() => this.start(input, CUSTOMER_RESTORE_CALLER, customerTenantId));
     }
 
-    private async start(rawInput: RestoreInput, runTenantId?: string) {
+    private async start(rawInput: RestoreInput, caller: RestoreCaller, runTenantId?: string) {
         // One mapping shape from here on, so the preflight checks the same databases the
         // pipeline then restores.
-        const normalized: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping), confirmedCustomerDatabases: undefined };
+        // The caller goes along for the files of the directory sources, see `restoredFileRefusal`,
+        // only its rights, never a request's word for them.
+        const writer: RestoreCaller = {
+            isPlatformAdmin: caller.isPlatformAdmin,
+            authMethod: caller.authMethod,
+            tenantId: caller.tenantId,
+            allTenants: caller.allTenants,
+            permissions: caller.permissions,
+        };
+        const normalized: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping), confirmedCustomerDatabases: undefined, caller: writer };
         assertDatabaseTarget(normalized.targetDatabaseName);
+        // Every restore passes here, before anything reads a target or the archive.
+        await assertRestoreTargetsAllowed(normalized, caller);
         const { file } = normalized;
 
         // Databases customers hold now on the server go back only once the request confirms it,

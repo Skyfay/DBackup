@@ -7,6 +7,7 @@ import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { toAdapterListItem, type AdapterListItemDTO } from "@/lib/adapters/dto";
 import type { StorageRole } from "@/lib/core/storage-roles";
+import type { PlatformReach } from "@/lib/tenant/sharing-reach";
 import { getConnectionOverview, type ConnectionOverview } from "./connection-overview";
 import { listedDatabasesOf, type ListedDatabases } from "./connection-databases";
 import { providedItems } from "@/services/sharing/connection-options";
@@ -34,6 +35,8 @@ export interface ListAdaptersOptions {
     overview?: boolean;
     /** Who gets each own connection the tenant shares, for whoever may see what is shared. */
     shares?: boolean;
+    /** The reach of the viewer, which names only its tenants among who gets a connection, every tenant when left out. */
+    shareReach?: PlatformReach;
     /**
      * Databases only: the servers of other tenants whose databases the tenant holds now, one row
      * each after its own ones. Only the Connections page asks for them, never a picker or a form,
@@ -72,7 +75,7 @@ export async function listAdapters(type: string, options: ListAdaptersOptions = 
         const item = toAdapterListItem(adapter);
         return item.id === configStorage ? { ...item, configBackup: true as const } : item;
     });
-    const shares = options.shares ? await connectionShareService.summaries(own.map((item) => item.id)) : new Map();
+    const shares = options.shares ? await connectionShareService.summaries(own.map((item) => item.id), options.shareReach) : new Map();
     const items = [
         ...own.map((item) => (shares.has(item.id) ? { ...item, share: shares.get(item.id) } : item)),
         ...(await providedItems(type, role)),
@@ -94,6 +97,12 @@ export async function listAdapters(type: string, options: ListAdaptersOptions = 
 export async function getAdapterType(id: string): Promise<string | null> {
     const adapter = await prisma.adapterConfig.findUnique({ where: { id }, select: { type: true } });
     return adapter?.type ?? null;
+}
+
+/** The ids of the saved logins a connection signs in with, its login and its SSH login. Empty when it does not exist. */
+export async function getConnectionLoginIds(id: string): Promise<string[]> {
+    const adapter = await prisma.adapterConfig.findUnique({ where: { id }, select: { primaryCredentialId: true, sshCredentialId: true } });
+    return [adapter?.primaryCredentialId, adapter?.sshCredentialId].filter((login): login is string => !!login);
 }
 
 /** A saved connection of this type, or null when the id names none or one of another type. */

@@ -6,7 +6,7 @@ const reaches = (adapterId: string, config: Record<string, unknown>) => hostLoca
 
 describe("connections that reach the server DBackup runs on", () => {
     it("counts Local Filesystem in any folder, and says who adds one", () => {
-        expect(hostLocalReason("local-filesystem", { basePath: "/" })).toBe("Local Filesystem reaches the server DBackup runs on, which only the platform adds.");
+        expect(hostLocalReason("local-filesystem", { basePath: "/" })).toBe("Local Filesystem reaches the server DBackup runs on, which only a platform admin adds.");
         expect(reaches("local-filesystem", { basePath: "/backups" })).toBe(true);
         expect(isAlwaysHostLocal("local-filesystem")).toBe(true);
     });
@@ -35,7 +35,7 @@ describe("connections that reach the server DBackup runs on", () => {
         expect(reaches("postgres", { host: "localhost", connectionMode: "ssh", sshAuthType: "password", options: "-f /tmp/x" })).toBe(false);
         expect(reaches("postgres", { host: "db.customer", options: "  " })).toBe(false);
         // SQL Server and Redis store the field and never hand it to a tool.
-        expect(reaches("mssql", { host: "db.customer", options: "COMPRESSION" })).toBe(false);
+        expect(reaches("mssql", { host: "db.customer", fileTransferMode: "ssh", sshUsername: "backup", options: "COMPRESSION" })).toBe(false);
         expect(reaches("redis", { host: "cache.customer", options: "--rdb /tmp/x" })).toBe(false);
     });
 
@@ -65,18 +65,24 @@ describe("connections that reach the server DBackup runs on", () => {
     });
 
     it("leaves a database on a server of its own alone", () => {
-        for (const adapterId of ["mysql", "mariadb", "postgres", "mongodb", "mssql", "azure-sql", "redis", "valkey", "firebird"]) {
+        for (const adapterId of ["mysql", "mariadb", "postgres", "mongodb", "azure-sql", "redis", "valkey", "firebird"]) {
             expect(reaches(adapterId, { host: "db.customer", port: 1234, user: "backup" })).toBe(false);
         }
+        // SQL Server fetches its backup files over SSH, or runs over SSH altogether.
+        expect(reaches("mssql", { host: "db.customer", port: 1433, user: "backup", fileTransferMode: "ssh", sshUsername: "backup" })).toBe(false);
+        expect(reaches("mssql", { host: "localhost", connectionMode: "ssh", sshUsername: "backup", sshAuthType: "password" })).toBe(false);
     });
 
-    it("judges SQL Server staging its backup files through a local folder harmless, it only reads a name it made up", () => {
-        expect(reaches("mssql", { host: "db.customer", fileTransferMode: "local", localBackupPath: "/" })).toBe(false);
+    it("counts SQL Server that moves its backup files through a folder of the server, as its transport decides", () => {
+        expect(hostLocalReason("mssql", { host: "db.customer", fileTransferMode: "local", localBackupPath: "/" })).toContain("with a shared folder moves its backup files through a folder of the server DBackup runs on");
+        // A stored row without the field, and the older SSH transfer without a login, use the folder too.
+        expect(reaches("mssql", { host: "db.customer" })).toBe(true);
+        expect(reaches("mssql", { host: "db.customer", fileTransferMode: "ssh" })).toBe(true);
     });
 
     it("counts rsync options that name a command or a file, but not those that only tune the transfer", () => {
         const login = { host: "nas.customer", authType: "password", password: "pw" };
-        expect(hostLocalReason("rsync", { ...login, options: "-e sh" })).toBe("The rsync option -e reaches the server DBackup runs on, which only the platform sets.");
+        expect(hostLocalReason("rsync", { ...login, options: "-e sh" })).toBe("The rsync option -e reaches the server DBackup runs on, which only a platform admin sets.");
         expect(reaches("rsync", { ...login, options: "/proc/self/environ" })).toBe(true);
         expect(reaches("rsync", { ...login, options: "--log-file=/app/x" })).toBe(true);
         expect(reaches("rsync", { ...login, options: "-avze" })).toBe(true);

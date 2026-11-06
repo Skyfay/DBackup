@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { ConflictError, NotFoundError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { tenantScopeExtension } from "@/lib/tenant/prisma-scope";
 
 const holder = vi.hoisted(() => ({ client: undefined as unknown as PrismaClient }));
@@ -22,7 +22,11 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
 vi.mock("@/services/auth/auth-service", () => ({ authService: { createUser: mocks.createUser } }));
 
-const { invitationService, MAX_FAILED_SIGN_UPS } = await import("@/services/tenant/invitation-service");
+const { invitationService, INVITATION_EMAIL_REFUSED, INVITATION_SIGN_UPS_PAUSED, INVITATIONS_PER_HOUR, INVITATIONS_PER_HOUR_REFUSAL, MAX_FAILED_SIGN_UPS, OWN_INVITATION } = await import("@/services/tenant/invitation-service");
+const { resetEmailTries } = await import("@/services/user/email-tries");
+
+/** A password the rules of Settings > Passwords accept. */
+const STRONG = "Harbor-Lamp-42";
 
 let root = "";
 let base: PrismaClient;
@@ -50,8 +54,11 @@ afterAll(async () => {
     if (root) rmSync(root, { recursive: true, force: true });
 });
 
-beforeEach(() => {
+beforeEach(async () => {
     vi.clearAllMocks();
+    resetEmailTries();
+    // The links of earlier tests count against no hour of the admin.
+    await base.tenantInvitation.updateMany({ data: { createdAt: new Date(0) } });
     // Better Auth makes the account, here the row it would write.
     mocks.createUser.mockImplementation(async (data: { name: string; email: string }) => {
         const user = await base.user.create({ data: { id: `u-${data.email}`, name: data.name, email: data.email, emailVerified: true, createdAt: now, updatedAt: now } });
@@ -84,6 +91,14 @@ describe("an invitation link", () => {
         expect(await invitationService.preview(token)).toBeNull();
     });
 
+    it("never adds whoever made it, also through an API key of theirs, and stays open for the person it is for", async () => {
+        const { token } = await invite("g-view");
+
+        await expect(invitationService.accept(token, "u-admin")).rejects.toThrow(OWN_INVITATION);
+        expect(await base.tenantMembership.findUnique({ where: { userId_tenantId: { userId: "u-admin", tenantId: "acme" } } })).toBeNull();
+        expect(await invitationService.preview(token)).toEqual(expect.objectContaining({ groupName: "Viewers" }));
+    });
+
     it("keeps the group of someone who is a member already", async () => {
         const { token } = await invite("g-view");
         expect(await invitationService.accept(token, "u-lena")).toEqual(expect.objectContaining({ joined: false }));
@@ -113,12 +128,52 @@ describe("an invitation link", () => {
     it("is spent after too many failed accounts, so it is no tool to try one email after the other", async () => {
         const { token } = await invite();
         for (let attempt = 1; attempt < MAX_FAILED_SIGN_UPS; attempt++) {
-            await expect(invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: "x" })).rejects.toBeInstanceOf(ConflictError);
+            await expect(invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: STRONG })).rejects.toBeInstanceOf(ValidationError);
             expect(await invitationService.preview(token)).not.toBeNull();
         }
-        await expect(invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: "x" })).rejects.toBeInstanceOf(ConflictError);
+        await expect(invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: STRONG })).rejects.toBeInstanceOf(ValidationError);
         expect(await invitationService.preview(token)).toBeNull();
         expect(mocks.createUser).not.toHaveBeenCalled();
+    });
+
+    it("never tells whoever opens it that an email has an account", async () => {
+        const { token } = await invite();
+        const taken = invitationService.acceptWithNewAccount(token, { name: "Probe", email: "Lena@Example.ch", password: STRONG });
+        await expect(taken).rejects.toThrow(INVITATION_EMAIL_REFUSED);
+        await expect(invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: STRONG })).rejects.not.toThrow(/exist/i);
+
+        // A weak password answers the same for a taken and a free email.
+        const weakTaken = await invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: "x" }).catch((error: Error) => error.message);
+        const weakFree = await invitationService.acceptWithNewAccount(token, { name: "Probe", email: "nobody-yet@example.ch", password: "x" }).catch((error: Error) => error.message);
+        expect(weakTaken).toBe(weakFree);
+        expect(mocks.createUser).not.toHaveBeenCalled();
+    });
+
+    it("counts an email that has an account against whoever made the link, across all of their links", async () => {
+        // Each link fails fewer times than it may, so only the count of the admin stops the probing.
+        for (let probe = 0; probe < MAX_FAILED_SIGN_UPS; probe++) {
+            const { token } = await invite();
+            await expect(invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: STRONG })).rejects.toThrow(INVITATION_EMAIL_REFUSED);
+        }
+
+        // Then no link of theirs makes an account for a while, whatever the email.
+        const { token } = await invite();
+        await expect(invitationService.acceptWithNewAccount(token, { name: "Dana", email: "dana@example.ch", password: STRONG })).rejects.toThrow(INVITATION_SIGN_UPS_PAUSED);
+        await expect(invitationService.acceptWithNewAccount(token, { name: "Probe", email: "lena@example.ch", password: STRONG })).rejects.toThrow(INVITATION_SIGN_UPS_PAUSED);
+        expect(mocks.createUser).not.toHaveBeenCalled();
+        // Someone with an account still joins through it.
+        expect(await invitationService.accept(token, "u-lena")).toEqual(expect.objectContaining({ tenantId: "acme" }));
+    });
+
+    it("caps the links one person makes within an hour, the spent and revoked ones included", async () => {
+        const made = [];
+        for (let link = 0; link < INVITATIONS_PER_HOUR; link++) made.push(await invite());
+        for (const link of made) await invitationService.revoke(link.id, "acme");
+
+        await expect(invite()).rejects.toThrow(INVITATIONS_PER_HOUR_REFUSAL);
+        // An hour later they make links again.
+        await base.tenantInvitation.updateMany({ data: { createdAt: new Date(0) } });
+        expect((await invite()).token).toBeTruthy();
     });
 
     it("makes one account of two requests at once, and leaves no account without a tenant", async () => {
@@ -136,8 +191,8 @@ describe("an invitation link", () => {
 
     it("opens the link again when the account could not be made", async () => {
         const { token } = await invite();
-        mocks.createUser.mockRejectedValueOnce(new Error("Password too short"));
-        await expect(invitationService.acceptWithNewAccount(token, { name: "Cleo", email: "cleo@example.ch", password: "x" })).rejects.toThrow("Password too short");
+        mocks.createUser.mockRejectedValueOnce(new Error("Better Auth refused it"));
+        await expect(invitationService.acceptWithNewAccount(token, { name: "Cleo", email: "cleo@example.ch", password: STRONG })).rejects.toThrow("Better Auth refused it");
         expect(await invitationService.preview(token)).not.toBeNull();
     });
 

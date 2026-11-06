@@ -37,7 +37,13 @@ vi.mock("@/lib/auth/access-control", async () => {
     };
 });
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/audit-service", () => ({
+    auditService: {
+        log: (...args: unknown[]) => mocks.audit(...args),
+        // Like the real one: the entry of a request goes through `log` with the user of the request.
+        logFor: (ctx: { userId: string }, ...args: unknown[]) => mocks.audit(ctx.userId, ...args),
+    },
+}));
 vi.mock("@/services/sso/oidc-discovery", () => ({ discoverEndpoints: (...args: unknown[]) => mocks.discover(...args) }));
 vi.mock("@/services/sso/oidc-provider-service", () => ({
     OidcProviderService: {
@@ -127,7 +133,7 @@ describe("the actions of sign-in providers", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.caller.mockReturnValue(PLATFORM_ADMIN);
-        mocks.discover.mockImplementation(async (_adapterId: string, config: Record<string, unknown>) => ({ ok: true, endpoints: ENDPOINTS, config }));
+        mocks.discover.mockImplementation(async (_adapterId: string, config: Record<string, unknown>) => ({ ok: true, endpoints: ENDPOINTS, config, dialed: true }));
         mocks.claimed.mockResolvedValue([]);
         mocks.tenant.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === "acme" ? { name: "Acme GmbH" } : null));
     });
@@ -249,6 +255,33 @@ describe("the actions of sign-in providers", () => {
         });
     });
 
+    it("writes a check of a provider into the log of the platform, with the host it read and never its fields", async () => {
+        await checkSsoConnection({ adapterId: "keycloak", adapterConfig: { baseUrl: "https://auth.example.com/", realm: "staff" } });
+
+        expect(mocks.audit).toHaveBeenCalledExactlyOnceWith(
+            "admin", "EXECUTE", "SSO_PROVIDER", { action: "sso_check", adapter: "keycloak", host: "auth.example.com", success: true }, undefined, PLATFORM_LOG
+        );
+    });
+
+    it("writes a check of a provider that did not answer too", async () => {
+        mocks.discover.mockResolvedValue({ ok: false, error: "The provider could not be reached. Check its address, the server log has the details.", dialed: true });
+
+        expect((await checkSsoConnection({ adapterId: "keycloak", adapterConfig: { baseUrl: "http://10.0.0.5:8080", realm: "staff" } })).success).toBe(false);
+        expect(mocks.audit).toHaveBeenCalledExactlyOnceWith(
+            "admin", "EXECUTE", "SSO_PROVIDER", { action: "sso_check", adapter: "keycloak", host: "10.0.0.5", success: false }, undefined, PLATFORM_LOG
+        );
+    });
+
+    it("writes no check that reached nothing, like one refused for its fields or a provider typed in by hand", async () => {
+        mocks.discover.mockResolvedValue({ ok: false, error: "Check the Keycloak URL.", dialed: false });
+        expect(await checkSsoConnection({ adapterId: "keycloak", adapterConfig: { baseUrl: "not a url", realm: "staff" } })).toEqual({ success: false, error: "Check the Keycloak URL." });
+
+        mocks.discover.mockImplementation(async (_adapterId: string, config: Record<string, unknown>) => ({ ok: true, endpoints: ENDPOINTS, config, dialed: false }));
+        expect((await checkSsoConnection({ adapterId: "generic", adapterConfig: { issuer: "https://auth.example.com" } })).success).toBe(true);
+
+        expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
     it("writes switching a provider off as that, with its name", async () => {
         mocks.toggleProvider.mockResolvedValue({ ...PROVIDER, enabled: false });
 
@@ -263,6 +296,26 @@ describe("the actions of sign-in providers", () => {
         await deleteSsoProvider("sso-1");
 
         expect(mocks.audit).toHaveBeenCalledWith("admin", "DELETE", "SSO_PROVIDER", { name: "Company login", providerId: "keycloak-a1" }, "sso-1", PLATFORM_LOG);
+    });
+
+    it("answers a provider that is gone in words, and an error of the database with a fixed sentence", async () => {
+        const { NotFoundError } = await import("@/lib/logging/errors");
+        mocks.toggleProvider.mockRejectedValue(new Error("Invalid `prisma.ssoProvider.update()` invocation in /app/src/services/sso/oidc-provider-service.ts: Record to update not found."));
+        mocks.deleteProvider.mockRejectedValue(new NotFoundError("Provider", "sso-1"));
+
+        const toggled = await toggleSsoProvider("sso-1", false);
+        expect(toggled).toEqual({ success: false, error: expect.stringMatching(/server log has the details/) });
+        expect(toggled.error).not.toContain("prisma");
+        expect(await deleteSsoProvider("sso-1")).toEqual({ success: false, error: "The sign-in provider no longer exists." });
+    });
+
+    it("refuses an id that is no id and a switch that is no boolean before anything changes", async () => {
+        expect(await deleteSsoProvider({ id: "sso-1" } as unknown as string)).toEqual({ success: false, error: "Invalid request" });
+        expect(await deleteSsoProvider("")).toEqual({ success: false, error: "Invalid request" });
+        expect(await toggleSsoProvider("sso-1", "off" as unknown as boolean)).toEqual({ success: false, error: "Invalid request" });
+        expect(await toggleSsoProvider("x".repeat(500), true)).toEqual({ success: false, error: "Invalid request" });
+        expect(mocks.deleteProvider).not.toHaveBeenCalled();
+        expect(mocks.toggleProvider).not.toHaveBeenCalled();
     });
 
     describe("providers of a tenant", () => {
@@ -341,6 +394,21 @@ describe("the actions of sign-in providers", () => {
             expect(mocks.updateProvider.mock.calls[0][1]).toMatchObject({ tenantId: "acme", defaultGroupId: "group-acme" });
             // The group stays as it was in the same tenant, so it is not looked up again.
             expect(mocks.getGroup).not.toHaveBeenCalled();
+        });
+
+        it("names the tenant of the provider by its id in every entry about it, also an edit that moved nothing", async () => {
+            const ACME = { ...PROVIDER, tenantId: "acme", tenantName: "Acme GmbH", domain: "acme.ch", defaultGroupId: "group-acme", groupName: "Viewer" };
+            mocks.getAuditState.mockResolvedValueOnce(ACME).mockResolvedValueOnce({ ...ACME, name: "Acme login" });
+            mocks.toggleProvider.mockResolvedValue({ ...ACME, name: "Acme login", enabled: false });
+            mocks.deleteProvider.mockResolvedValue({ ...ACME, name: "Acme login" });
+
+            await updateSsoProvider({ ...edit({ name: "Acme login", domain: "acme.ch" }), defaultGroupId: undefined });
+            await toggleSsoProvider("sso-1", false);
+            await deleteSsoProvider("sso-1");
+
+            expect(mocks.audit).toHaveBeenNthCalledWith(1, "admin", "UPDATE", "SSO_PROVIDER", { name: "Acme login", renamedFrom: "Company login", changes: [], tenantId: "acme" }, "sso-1", PLATFORM_LOG);
+            expect(mocks.audit).toHaveBeenNthCalledWith(2, "admin", "UPDATE", "SSO_PROVIDER", { name: "Acme login", enabled: false, tenantId: "acme" }, "sso-1", PLATFORM_LOG);
+            expect(mocks.audit).toHaveBeenNthCalledWith(3, "admin", "DELETE", "SSO_PROVIDER", { name: "Acme login", providerId: "keycloak-a1", tenantId: "acme" }, "sso-1", PLATFORM_LOG);
         });
 
         it("writes a move between the platform and a tenant into the changes", () => {

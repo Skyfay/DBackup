@@ -26,7 +26,10 @@ vi.mock("@/services/user/group-service", () => ({ groupService: { find: vi.fn(as
 vi.mock("@/services/tenant/membership-service", () => ({ membershipService: mocks.memberships }));
 vi.mock("@/services/user/users-model", () => ({ getUsersModel: vi.fn() }));
 vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: mocks.platformGroups }));
-vi.mock("@/services/user/user-service", () => ({ userService: { permissionsIn: vi.fn(async () => [PERMISSIONS.USERS.READ, PERMISSIONS.USERS.WRITE]) } }));
+vi.mock("@/services/user/user-service", () => ({
+    // Every account works in a tenant, so none is placed anew, see `placementRefusal`.
+    userService: { accountOf: vi.fn(async () => ({ isPlatformAdmin: false, tenantIds: ["tenant-x"], groups: [{ tenantId: "tenant-x", group: { permissions: "[]", fullAccess: false } }] })), permissionsIn: vi.fn(async () => [PERMISSIONS.USERS.READ, PERMISSIONS.USERS.WRITE]), namesOf: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, name: id }))) },
+}));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn() } }));
 
 const { setTenantMember } = await import("@/app/actions/tenant/members");

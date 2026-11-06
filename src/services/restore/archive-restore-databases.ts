@@ -30,6 +30,7 @@ import type { RestoreInput } from "./types";
 import { findDestination } from "@/services/sharing/destination-access";
 import { listedDatabases } from "@/services/tenant/shared-servers";
 import { runAsSystem } from "@/lib/tenant/context";
+import { reserveTempSpace } from "./temp-space";
 
 export type DatabaseMapping = { originalName: string; targetName: string; selected: boolean }[];
 
@@ -119,6 +120,9 @@ export async function restoreDatabases(
     const dbConf = await resolveAdapterConfig(sourceConfig) as Record<string, unknown>;
     dbConf.type = sourceConfig.adapterId;
     if (input.privilegedAuth) dbConf.privilegedAuth = input.privilegedAuth;
+    // A customer's restore of a shared database writes content the customer controls with the
+    // provider's login, so the adapter restores it as the owner of the database where it can.
+    if (input.shared) dbConf.sharedRestore = true;
 
     const targetFor = (dbName: string) =>
         resolveDatabaseTarget(dbName, dbMapping, input.targetDatabaseName, selectedDbNames.length);
@@ -145,9 +149,21 @@ export async function restoreDatabases(
     // since the check before the run could only read what the backup's metadata lists.
     await assertTargetsConfirmed(input, selectedDbNames.map(targetFor));
 
+    // Each dump is staged whole before its restore and removed after it, one at a time. Checked
+    // before the target is touched, since a dump may declare far more than its stored bytes, and
+    // promised to this restore until it ends, so restores that run at once never count the same
+    // free space twice.
+    const space = await reserveTempSpace(selectedDbNames.map((name) => archive.index.databases.find((d) => d.name === name)?.s ?? 0), 1);
+
     // One transport for the whole database portion: the version probe, the
     // prepare step and every restoreOne share a single connection.
-    const host = createHost(resolveTransport(sourceAdapter, dbConf));
+    let host: ReturnType<typeof createHost>;
+    try {
+        host = createHost(resolveTransport(sourceAdapter, dbConf));
+    } catch (error) {
+        space.release();
+        throw error;
+    }
     try {
         if (sourceAdapter.test) {
             try {
@@ -200,7 +216,7 @@ export async function restoreDatabases(
                 log(`Fetching dump for '${dbName}' (${archive.ranged ? "ranged read" : "from downloaded archive"})...`, 'info');
                 let digest: string | undefined;
                 await pipeline(
-                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey),
+                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, dbLine.s),
                     hashingStream((d) => { digest = d; }),
                     createWriteStream(dumpPath)
                 );
@@ -243,6 +259,7 @@ export async function restoreDatabases(
             updateProgress(Math.round(((position + 1) / total) * 100));
         }
     } finally {
+        space.release();
         await host.dispose().catch(() => {});
     }
 }

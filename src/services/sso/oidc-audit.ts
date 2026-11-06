@@ -67,3 +67,11 @@ export function ssoProviderChanges(before: ProviderState, after: ProviderState):
     }
     return diffFields(from, to, fields);
 }
+
+/** What the delete of a group changed of a provider that added new people to it, in the words of its dialog. */
+export function providerPlacementChanges(
+    before: { group: string | null; allowProvisioning: boolean },
+    after: { group: string | null; allowProvisioning: boolean }
+): AuditChange[] {
+    return diffFields(before, after, { group: FIELDS.group, allowProvisioning: FIELDS.allowProvisioning });
+}

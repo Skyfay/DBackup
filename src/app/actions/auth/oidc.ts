@@ -4,17 +4,25 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { namedTenants } from "@/lib/core/audit-tenants";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { getErrorMessage, wrapError } from "@/lib/logging/errors";
-import { logger } from "@/lib/logging/logger";
+import { NotFoundError } from "@/lib/logging/errors";
+import { logger, type LogContext } from "@/lib/logging/logger";
+import { userMessage } from "@/lib/logging/user-message";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { ssoProviderChanges } from "@/services/sso/oidc-audit";
 import { discoverEndpoints } from "@/services/sso/oidc-discovery";
 import { OidcProviderService } from "@/services/sso/oidc-provider-service";
 import { settlePlacement } from "@/services/sso/sso-provider-rules";
+import { logProbe } from "@/services/adapters/probe-audit";
 
 const log = logger.child({ action: "oidc" });
+
+/** The answer for an error of a provider action: a provider that is gone, a refusal in its words, anything else a fixed sentence and the log. */
+const failure = (error: unknown, what: string, context: LogContext = {}) => error instanceof NotFoundError
+    ? "The sign-in provider no longer exists."
+    : userMessage(error, "The sign-in provider could not be saved. The server log has the details.", log, what, context);
 
 const PAGE = "/dashboard/users";
 
@@ -46,6 +54,9 @@ const updateProviderSchema = z.object({
     clientSecret: z.string().optional(),
 });
 
+const IdSchema = z.string().min(1).max(200);
+const ToggleSchema = z.object({ id: IdSchema, enabled: z.boolean() });
+
 const checkSchema = z.object({
     adapterId: z.string().min(1),
     adapterConfig: z.record(z.string(), z.unknown()),
@@ -71,13 +82,29 @@ const PLATFORM_LOG = { tenantId: HOME_TENANT_ID };
 
 // --- Actions ---
 
-/** Reads the endpoints of a provider from its fields, for the check in its dialog and in its panel. */
+/** The address a provider of a form is read at, the first field that holds a URL, for the audit log. */
+const addressOf = (config: Record<string, unknown>) => Object.values(config).find((value) => typeof value === "string" && value.includes("://"));
+
+/**
+ * Reads the endpoints of a provider from its fields, for the check in its dialog and in its panel.
+ * It fetches from an address of the caller's choosing, so the audit log keeps it like a test of a
+ * connection, in the log of the platform with the providers.
+ */
 export async function checkSsoConnection(input: z.input<typeof checkSchema>) {
-    await checkPermission(MANAGE);
+    const user = await checkPermission(MANAGE);
     const parsed = checkSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
 
     const found = await discoverEndpoints(parsed.data.adapterId, parsed.data.adapterConfig);
+    // Only a check that sent a request is kept, one refused for its fields or typed in reached nothing.
+    if (found.dialed) {
+        await logProbe(
+            { userId: user.id, authMethod: "session" },
+            "sso_check",
+            { adapterId: parsed.data.adapterId, host: addressOf(parsed.data.adapterConfig), place: PLATFORM_LOG },
+            found.ok
+        );
+    }
     if (!found.ok) return { success: false, error: found.error };
     const { issuer, authorizationEndpoint, tokenEndpoint, userInfoEndpoint, jwksEndpoint } = found.endpoints;
     return {
@@ -130,7 +157,9 @@ export async function createSsoProvider(input: CreateSsoProviderInput) {
                 name: provider.name,
                 adapterId: provider.adapterId,
                 providerId: provider.providerId,
+                // The tenant by its id too, so the log of the platform shows it only to whoever reaches that tenant.
                 ...(settled.tenantName ? { tenant: settled.tenantName } : {}),
+                ...namedTenants([placement.tenantId]),
                 ...(state?.groupName ? { group: state.groupName } : {}),
             },
             provider.id,
@@ -140,8 +169,7 @@ export async function createSsoProvider(input: CreateSsoProviderInput) {
         revalidatePath(PAGE);
         return { success: true, data: { id: provider.id } };
     } catch (error: unknown) {
-        log.error("Failed to create SSO provider", {}, wrapError(error));
-        return { success: false, error: getErrorMessage(error) };
+        return { success: false, error: failure(error, "Failed to create SSO provider") };
     }
 }
 
@@ -201,6 +229,9 @@ export async function updateSsoProvider(input: UpdateSsoProviderInput) {
                     name: after.name,
                     ...(before.name !== after.name ? { renamedFrom: before.name } : {}),
                     changes: ssoProviderChanges(before, after),
+                    // The tenant of the provider by its id, both of a move, which its changes name. One of
+                    // the platform names none.
+                    ...namedTenants([before.tenantId, after.tenantId]),
                 },
                 id,
                 PLATFORM_LOG
@@ -210,31 +241,36 @@ export async function updateSsoProvider(input: UpdateSsoProviderInput) {
         revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {
-        log.error("Failed to update SSO provider", { providerId: id }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) };
+        return { success: false, error: failure(error, "Failed to update SSO provider", { providerId: id }) };
     }
 }
 
-export async function deleteSsoProvider(id: string) {
+export async function deleteSsoProvider(providerId: string) {
     const user = await checkPermission(MANAGE);
+    const parsed = IdSchema.safeParse(providerId);
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+    const id = parsed.data;
     try {
         const deleted = await OidcProviderService.deleteProvider(id);
-        await auditService.log(user.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.SSO_PROVIDER, { name: deleted.name, providerId: deleted.providerId }, id, PLATFORM_LOG);
+        await auditService.log(user.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.SSO_PROVIDER, { name: deleted.name, providerId: deleted.providerId, ...namedTenants([deleted.tenantId]) }, id, PLATFORM_LOG);
         revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        return { success: false, error: failure(error, "Failed to delete SSO provider", { providerId: id }) };
     }
 }
 
-export async function toggleSsoProvider(id: string, enabled: boolean) {
+export async function toggleSsoProvider(providerId: string, on: boolean) {
     const user = await checkPermission(MANAGE);
+    const parsed = ToggleSchema.safeParse({ id: providerId, enabled: on });
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+    const { id, enabled } = parsed.data;
     try {
         const provider = await OidcProviderService.toggleProvider(id, enabled);
-        await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SSO_PROVIDER, { name: provider.name, enabled: provider.enabled }, id, PLATFORM_LOG);
+        await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SSO_PROVIDER, { name: provider.name, enabled: provider.enabled, ...namedTenants([provider.tenantId]) }, id, PLATFORM_LOG);
         revalidatePath(PAGE);
         return { success: true };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        return { success: false, error: failure(error, "Failed to toggle SSO provider", { providerId: id }) };
     }
 }

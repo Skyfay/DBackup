@@ -20,6 +20,8 @@ vi.mock("@aws-sdk/client-s3", () => ({
     S3Client: vi.fn(function (this: Record<string, unknown>) {
         this.send = vi.fn().mockResolvedValue({});
         this.destroy = vi.fn();
+        // Every client bounds what it reads of an answer, see `s3-response-limit.ts`.
+        this.middlewareStack = { add: vi.fn() };
     }),
     ListObjectsV2Command: vi.fn(),
     GetObjectCommand: vi.fn(),

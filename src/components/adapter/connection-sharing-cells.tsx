@@ -70,12 +70,14 @@ export function SharedWithCell({ config }: { config: AdapterConfig }) {
             </span>
         );
     }
-    const names = share.tenants.map((tenant) => tenant.name).join(", ");
+    // Tenants beyond the reach of the viewer show by no name and no number.
+    const names = [...share.tenants.map((tenant) => tenant.name), ...(share.beyond ? ["tenants beyond your reach"] : [])].join(", ");
+    const count = share.tenants.length === 1 ? "1 tenant" : `${share.tenants.length} tenants`;
     return (
         <span className="block min-w-0">
             <span className="inline-flex items-center gap-1.5 text-sm font-medium">
                 <Share2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                {share.tenants.length === 1 ? "1 tenant" : `${share.tenants.length} tenants`}
+                {share.beyond ? (share.tenants.length > 0 ? `${count} and more` : "Beyond your reach") : count}
             </span>
             <span className="block max-w-56 truncate text-xs text-muted-foreground" title={names}>{names}</span>
         </span>

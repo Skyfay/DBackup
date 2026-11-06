@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { withHost } from "@/lib/transport";
@@ -9,7 +10,8 @@ import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
 import fs from "fs";
 import { pipeline } from "stream/promises";
-import { createReadStream, createWriteStream } from "fs";
+import { createWriteStream } from "fs";
+import { createNoFollowReadStream } from "@/lib/server/no-follow";
 import { Transform } from "stream";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { getDecompressionStream, CompressionType } from "@/lib/crypto/compression";
@@ -31,6 +33,9 @@ import { createRestoreLogs, type ProviderRun } from "./run-logs";
 import { versionShown } from "./shared-restore-log";
 import { createRestoreTracker } from "./restore-record";
 import { FOLLOWS_KEY } from "@/lib/execution/follower-runs";
+import { byteLimit, DamagedBackupError, legacyInflateLimit } from "@/lib/archive/limits";
+import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
+import { isFileTooLarge } from "@/lib/adapters/storage/common/read-limit";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -206,7 +211,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         setStage(RESTORE_STAGES.DOWNLOADING);
         logs.split(`Reading backup metadata: ${shownFile}...`, `Reading backup metadata: ${file}...`);
         const tempDir = getTempDir();
-        tempFile = path.join(tempDir, path.basename(file));
+        // A name of its own per restore, so two restores of the same file never share one.
+        tempFile = path.join(tempDir, `${randomUUID()}-${path.basename(file)}`);
 
         const sConf = await resolveAdapterConfig(storageConfig) as any;
 
@@ -219,12 +225,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
         try {
             const metaRemotePath = file + ".meta.json";
-            const tempMetaPath = path.join(getTempDir(), "meta_" + Date.now() + ".json");
+            // Bounded, see `readSidecarText`. A `.meta.json` past the limit fails the restore below.
+            const metaContent = await readSidecarText(storageAdapter, sConf, metaRemotePath);
 
-            const metaDownSuccess = await storageAdapter.download(sConf, metaRemotePath, tempMetaPath, () => {}).catch(() => false);
-
-            if (metaDownSuccess) {
-                const metaContent = await fs.promises.readFile(tempMetaPath, 'utf-8');
+            if (metaContent) {
                 const metadata = JSON.parse(metaContent);
 
                 if (metadata.archive?.formatVersion === 2) {
@@ -283,10 +287,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                         }
                     } catch { /* ignore connection tests during restore init */ }
                 }
-
-                await fs.promises.unlink(tempMetaPath).catch(() => {});
             }
         } catch (e: unknown) {
+            // No guess from the name of the file stands in for a sidecar larger than any backup writes.
+            if (isFileTooLarge(e)) throw new DamagedBackupError(`its metadata is larger than the ${e.limit} bytes any backup writes`);
             const message = e instanceof Error ? e.message : String(e);
             logs.split("Warning: The metadata of the backup could not be read.", `Warning: Failed to check sidecar metadata: ${message}`, 'warning');
 
@@ -446,7 +450,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     decryptedTempFile = tempFile + ".dec";
                 }
 
-                const encFileSize = (await fs.promises.stat(tempFile)).size;
+                // The download, never a file a link of it points at, see `downloaded-file.ts`.
+                const encFileSize = (await fs.promises.lstat(tempFile)).size;
                 const decryptStart = Date.now();
                 let decProcessed = 0;
                 const decryptTracker = new Transform({
@@ -459,12 +464,18 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     }
                 });
 
-                await pipeline(
-                    createReadStream(tempFile),
-                    decryptTracker,
-                    decryptStream,
-                    createWriteStream(decryptedTempFile)
-                );
+                try {
+                    await pipeline(
+                        createNoFollowReadStream(tempFile),
+                        decryptTracker,
+                        decryptStream,
+                        createWriteStream(decryptedTempFile)
+                    );
+                } catch (e: unknown) {
+                    // A failed tag or read leaves no half decrypted file behind.
+                    await fs.promises.unlink(decryptedTempFile).catch(() => {});
+                    throw e;
+                }
 
                 log("Decryption successful.", 'success');
 
@@ -496,7 +507,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                         unpackedFile = tempFile + ".unpacked";
                     }
 
-                    const compFileSize = (await fs.promises.stat(tempFile)).size;
+                    const compFileSize = (await fs.promises.lstat(tempFile)).size;
                     const decompStart = Date.now();
                     let decompProcessed = 0;
                     const decompTracker = new Transform({
@@ -509,12 +520,21 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                         }
                     });
 
-                    await pipeline(
-                        createReadStream(tempFile),
-                        decompTracker,
-                        decompStream,
-                        createWriteStream(unpackedFile)
-                    );
+                    // The file comes from the destination, and a few MB of Brotli inflate to
+                    // terabytes, so the inflation stops at a bound of its compressed size, see
+                    // `legacyInflateLimit`. A half written file is removed on any failure.
+                    try {
+                        await pipeline(
+                            createNoFollowReadStream(tempFile),
+                            decompTracker,
+                            decompStream,
+                            byteLimit(legacyInflateLimit(compFileSize), "the decompressed dump"),
+                            createWriteStream(unpackedFile)
+                        );
+                    } catch (e: unknown) {
+                        await fs.promises.unlink(unpackedFile).catch(() => {});
+                        throw e;
+                    }
 
                     log("Decompression successful.", 'success');
 
@@ -522,6 +542,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     tempFile = unpackedFile;
                 }
             } catch (e: unknown) {
+                if (e instanceof DamagedBackupError) throw e;
                 const message = e instanceof Error ? e.message : String(e);
                 throw new Error(`Decompression failed: ${message}`);
             }
@@ -537,6 +558,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 tarManifest = await readTarManifest(tempFile);
             }
         } catch (e: unknown) {
+            // A manifest larger than any backup writes fails the restore, see `readTarManifest`.
+            if (e instanceof DamagedBackupError) throw e;
             const message = e instanceof Error ? e.message : String(e);
             log(`Note: Could not check for Multi-DB TAR format: ${message}`, 'info');
         }

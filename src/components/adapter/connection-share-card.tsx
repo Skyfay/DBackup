@@ -44,15 +44,17 @@ const plural = (count: number, one: string, many: string) => `${count.toLocaleSt
  */
 export const shareLock = (view: ConnectionShareView): string | null => (view.settings.allTenants ? view.reach.allTenants : null);
 
-/** What the viewer may do at the line of one tenant: stop sharing with it, and delete its backups on a destination. */
-function rightsAt(view: ConnectionShareView, use: ShareTenantUse, canShare: boolean) {
-    const reached = canShare && !view.reach.outside.some((tenant) => tenant.id === use.tenantId);
-    return { stop: reached && !shareLock(view), deleteBackups: reached };
+/**
+ * What the viewer may do at the line of one tenant: stop sharing with it, and delete its backups on a
+ * destination. The server lists only the tenants the viewer reaches.
+ */
+function rightsAt(view: ConnectionShareView, canShare: boolean) {
+    return { stop: canShare && !shareLock(view), deleteBackups: canShare };
 }
 
 function UseRow({ view, use, kind, canShare, onStop, onDelete }: { view: ConnectionShareView; use: ShareTenantUse; kind: ConnectionKind; canShare: boolean; onStop: () => void; onDelete: () => void }) {
     const destination = kind === "destination";
-    const rights = rightsAt(view, use, canShare);
+    const rights = rightsAt(view, canShare);
     return (
         <li className="flex min-w-0 items-center gap-3 py-2.5">
             <div className="min-w-0 flex-1">
@@ -206,7 +208,9 @@ export function ConnectionShareCard({ config, kind, onChanged }: { config: Adapt
                         <span className="min-w-0 flex-1 text-sm">
                             {view.settings.allTenants
                                 ? "All tenants, new ones too"
-                                : view.uses.length > 0 ? `${plural(view.uses.length, "tenant", "tenants")}` : "Only this tenant"}
+                                : view.uses.length > 0
+                                    ? `${plural(view.uses.length, "tenant", "tenants")}${view.reach.beyond ? " and tenants beyond your reach" : ""}`
+                                    : view.reach.beyond ? "Tenants beyond your reach" : "Only this tenant"}
                         </span>
                         {terms?.map((term) => (
                             <span key={term} className="inline-flex items-center gap-1 rounded-md bg-background px-2 py-0.5 text-xs font-medium">

@@ -1,8 +1,9 @@
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { PROFILE_CHANGE_REFUSED, profilePermissionFor, userHolds } from "@/lib/auth/profile-guard";
+import { PROFILE_CHANGE_REFUSED, SERVER_ONLY_ENDPOINT_REFUSED, TRUSTED_DEVICE_REFUSED, asksTrustedDevice, profileChangeRefused, refusedFromBrowser } from "@/lib/auth/profile-guard";
 import { refuseWeakPassword } from "@/lib/auth/password-guard";
 import { refuseLateSignUp } from "@/lib/auth/sign-up-guard";
+import { keepPasskeyFactor } from "@/lib/auth/passkey-factor-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "@/lib/prisma";
 import { twoFactor } from "better-auth/plugins";
@@ -10,6 +11,7 @@ import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
 import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
+import { noteSecurityChange, recordSecurityChange } from "@/lib/auth/security-audit";
 import { isSsoManagementRequest, refuseDisabledProvider } from "@/lib/auth/sso-guard";
 import { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser } from "@/lib/auth/sso-hooks";
 import { logger } from "@/lib/logging/logger";
@@ -142,13 +144,24 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
     if (isSsoManagementRequest(ctx.path, Boolean(ctx.request))) throw new APIError("NOT_FOUND");
     // A provider that is off signs nobody in, not only on the login page.
     await refuseDisabledProvider(ctx, (url) => ctx.redirect(url));
+    // What DBackup changes through its own actions, with their checks and audit entries, never
+    // straight from the browser.
+    if (refusedFromBrowser(ctx.path, Boolean(ctx.request))) {
+        throw new APIError("FORBIDDEN", { code: "SERVER_ONLY_ENDPOINT", message: SERVER_ONLY_ENDPOINT_REFUSED });
+    }
+    // A trusted device would skip the second factor and its sign-in entry later on.
+    if (asksTrustedDevice(ctx.path, ctx.body)) {
+        throw new APIError("FORBIDDEN", { code: "TRUSTED_DEVICE", message: TRUSTED_DEVICE_REFUSED });
+    }
     // The own profile follows the group, also where the browser calls better-auth itself.
-    const needed = profilePermissionFor(ctx.path, Boolean(ctx.request));
-    if (needed) {
-        const session = await getSessionFromCtx(ctx);
-        if (session && !(await userHolds(session.user.id, needed))) {
-            throw new APIError("FORBIDDEN", { code: "PROFILE_PERMISSION", message: PROFILE_CHANGE_REFUSED });
-        }
+    if (await profileChangeRefused(ctx.path, Boolean(ctx.request), () => getSessionFromCtx(ctx))) {
+        throw new APIError("FORBIDDEN", { code: "PROFILE_PERMISSION", message: PROFILE_CHANGE_REFUSED });
+    }
+    // What a change of the second factor or a passkey replaces, for its audit entry after it.
+    try {
+        await noteSecurityChange(ctx, () => getSessionFromCtx(ctx));
+    } catch (error) {
+        log.warn("Reading a change of the second factor or a passkey for the audit log failed", {}, wrapError(error));
     }
     // Every new password follows the rules under Settings > Passwords.
     await refuseWeakPassword(ctx, () => getSessionFromCtx(ctx));
@@ -162,12 +175,20 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
     }
 });
 
-/** Sign-ins and failed sign-ins in the audit log, whichever way someone signed in. */
+/**
+ * Sign-ins and failed sign-ins in the audit log, whichever way someone signed in, and the changes
+ * of the own second factor and passkeys the browser makes through better-auth.
+ */
 const afterAuth = createAuthMiddleware(async (ctx) => {
     try {
         await recordSignIn(ctx);
     } catch (error) {
         log.warn("Writing a sign-in to the audit log failed", {}, wrapError(error));
+    }
+    try {
+        await recordSecurityChange(ctx);
+    } catch (error) {
+        log.warn("Writing a change of the second factor or a passkey to the audit log failed", {}, wrapError(error));
     }
 });
 
@@ -281,6 +302,10 @@ export const auth = betterAuth({
                 },
                 // Someone a provider added starts in its group.
                 after: afterSsoUser,
+            },
+            update: {
+                // Turning off the authenticator app leaves a passkey as the second factor on.
+                before: keepPasskeyFactor,
             },
         },
         account: {

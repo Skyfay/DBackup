@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SHARED_ACCOUNT_REFUSAL } from "@/lib/auth/account-access";
 
 const mocks = vi.hoisted(() => ({
     prisma: {
         group: { findUnique: vi.fn() },
         tenant: { findUnique: vi.fn() },
         user: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+        ssoProvider: { findMany: vi.fn(async () => [] as { domain: string; tenantId: string | null }[]) },
         session: { deleteMany: vi.fn() },
         tenantMembership: { create: vi.fn() },
         $transaction: vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
@@ -106,6 +108,32 @@ describe("creating a user and ending their sessions", () => {
         });
         expect(await userService.accountOf("root")).toEqual({ isPlatformAdmin: true, tenantIds: [], platformGroup: null, groups: [] });
         expect(await userService.accountOf("gone")).toBeNull();
+    });
+
+    it("counts an account of no tenant whose email the provider of another tenant claims as one of that tenant, so the admin of the home tenant never sets its password", async () => {
+        mocks.prisma.ssoProvider.findMany.mockResolvedValue([{ domain: "acme.ch", tenantId: "tenant-a" }, { domain: "msp.ch", tenantId: null }]);
+        const hank = { id: "hank", isPlatformAdmin: false, tenantId: "default", permissions: ["users:read", "users:write"] };
+        const lena = { id: "lena", email: "lena@acme.ch", platformRole: null as string | null, platformGroupId: null as string | null, memberships: [] };
+        mocks.prisma.user.findUnique.mockImplementation(async () => lena);
+
+        expect(await userService.accountOf("lena")).toMatchObject({ tenantIds: ["tenant-a"] });
+        expect(await userService.placelessTenantOf("lena")).toBe("tenant-a");
+        expect(await userService.accountRefusalFor(hank, "lena")).toBe(SHARED_ACCOUNT_REFUSAL);
+        // The admin of tenant A, whose people the email is of, may.
+        expect(await userService.accountRefusalFor({ ...hank, tenantId: "tenant-a" }, "lena")).toBeNull();
+
+        // A free domain, or one a provider of the platform claims, leaves it one of the home tenant.
+        for (const email of ["lena@free.ch", "lena@msp.ch"]) {
+            lena.email = email;
+            expect(await userService.accountOf("lena"), email).toMatchObject({ tenantIds: [] });
+            expect(await userService.placelessTenantOf("lena"), email).toBe("default");
+            expect(await userService.accountRefusalFor(hank, "lena"), email).toBeNull();
+        }
+
+        // An account of a platform group counts as one of the platform whatever its email.
+        lena.email = "lena@acme.ch";
+        lena.platformRole = "ADMIN";
+        expect(await userService.accountOf("lena")).toMatchObject({ tenantIds: [] });
     });
 
     it("judges an account by the tenants the caller's platform group reaches when they manage the accounts of the platform", async () => {

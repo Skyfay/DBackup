@@ -15,19 +15,21 @@ import { tenantGroupRefusal } from "@/services/tenant/member-rules";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 import { CHANGED_EMAIL_ANSWERS, EMAIL_REFUSED, newAccountEmailRefusal, takenEmailRefusal } from "@/services/user/new-account-email";
-import { maySeeAccount } from "@/services/user/account-visibility";
+import { ACCOUNT_UNKNOWN, maySeeAccount, shownAccountName } from "@/services/user/account-visibility";
 import { Prisma } from "@prisma/client";
 import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { auditValue } from "@/lib/core/audit-diff";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
+import { wrapError, ValidationError } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { DeleteModeSchema, PERMANENT_DELETE_REFUSED, type DeleteMode } from "@/lib/core/delete-mode";
 import { getAutoRedirectOnJobStart, setAutoRedirectOnJobStart } from "@/services/user/preference-service";
+import { accountTrashPlaceOf } from "@/services/trash/account-place";
 import { runAsTenant } from "@/lib/tenant/context";
 import { z } from "zod";
 
@@ -39,11 +41,16 @@ const BEYOND_TENANT = "Your platform group does not reach this tenant, and you m
 const USER_GONE = "User not found";
 
 /**
- * Why the caller may not change this account, null when they may: the account of a platform admin,
- * and one that also works in another tenant, is for a platform admin alone. See `accountRefusal`.
+ * The name of an account the caller may change, or why they may not: the account of a platform
+ * admin, and one that also works in another tenant, is for a platform admin alone, see
+ * `accountRefusal`. An account the caller may not see answers exactly like one that does not
+ * exist, `ACCOUNT_UNKNOWN`, so the answer never tells them apart.
  */
-async function accountRefused(userId: string, caller: Viewer): Promise<string | null> {
-    return userService.accountRefusalFor(caller, userId);
+async function changeableAccount(userId: string, caller: Viewer): Promise<{ name: string; refusal: string | null }> {
+    const name = await shownAccountName({ ...caller, userId: caller.id }, userId);
+    if (name === null) return { name: "", refusal: ACCOUNT_UNKNOWN };
+    const refusal = await userService.accountRefusalFor(caller, userId);
+    return { name, refusal };
 }
 
 /** Why the caller may not give this group to anyone in their tenant, null when they may. Nobody hands out more than they hold. */
@@ -52,6 +59,22 @@ async function groupRefused(groupId: string | null, caller: Viewer): Promise<str
     const group = await groupService.find(groupId);
     if (!group) return "The group no longer exists.";
     return roleRefusal(caller, group);
+}
+
+/**
+ * Whether the caller may delete this account at once and for good, which skips Recently deleted.
+ * That takes what restoring or purging its entry there would take, in the place it would wait, see
+ * `accountTrashPlace`: a platform admin for an entry only a platform admin handles, otherwise
+ * `TRASH_ADMIN_PERMISSION` in the tenant of the entry, never only in the tenant the caller works in.
+ * An account that is gone passes, the delete then says so.
+ */
+async function mayDeletePermanently(caller: Viewer, userId: string): Promise<boolean> {
+    if (caller.isPlatformAdmin) return true;
+    const place = await accountTrashPlaceOf(userId);
+    if (!place) return true;
+    if (place.superAdminOnly) return false;
+    const permissions = place.tenantId === caller.tenantId ? caller.permissions : await userService.permissionsIn(caller.id, place.tenantId);
+    return permissions.includes(TRASH_ADMIN_PERMISSION);
 }
 
 const CreateUserSchema = z.object({
@@ -68,13 +91,12 @@ const CreateUserSchema = z.object({
 export type CreateUserInput = z.input<typeof CreateUserSchema>;
 
 export async function createUser(input: CreateUserInput) {
-    await checkPermission(ACCOUNT_CHANGE);
+    const currentUser = await checkPermission(ACCOUNT_CHANGE);
     const parsed = CreateUserSchema.safeParse(input);
     if (!parsed.success) {
         return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
     }
     const { tenantId: picked, ...data } = parsed.data;
-    const currentUser = await getViewer();
     // The new account joins the tenant of whoever creates it. Whoever manages the accounts of the
     // platform names the tenant on the list of every account, from All tenants or from inside any tenant.
     const names = currentUser && (currentUser.isPlatformAdmin || hasPermissionWithContext(currentUser, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE));
@@ -133,7 +155,10 @@ export async function createUser(input: CreateUserInput) {
 
         return { success: true, data: { id: user.id } };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        // A rule of Settings > Passwords names itself, anything else stays in the log.
+        if (error instanceof ValidationError) return { success: false, error: error.message };
+        log.error("Failed to create user", {}, wrapError(error));
+        return { success: false, error: "The user could not be created." };
     }
 }
 
@@ -141,8 +166,13 @@ export async function createUser(input: CreateUserInput) {
  * Gives a user a group in the caller's tenant, or takes them out of it with none. Nobody changes
  * their own group or gives one that may do more than they may.
  */
-export async function updateUserGroup(userId: string, groupId: string | null) {
+const UserGroupSchema = z.object({ userId: z.string().min(1).max(200), groupId: z.string().min(1).max(200).nullable() });
+
+export async function updateUserGroup(id: string, group: string | null) {
     const currentUser = await checkPermission(PERMISSIONS.USERS.WRITE);
+    const input = UserGroupSchema.safeParse({ userId: id, groupId: group });
+    if (!input.success) return { success: false, error: "Invalid request" };
+    const { userId, groupId } = input.data;
     // All tenants holds a group per tenant, which the panel of the user changes with `setTenantMember`.
     if (currentUser.allTenants) return { success: false, error: "Open a tenant, or change the group per tenant in the panel of the user." };
     if (!currentUser.tenantId) return { success: false, error: "Unauthorized" };
@@ -168,27 +198,28 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
 
         return { success: true };
     } catch (error: unknown) {
-        log.error("Failed to update user group", { userId }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to update user group" };
+        return { success: false, error: userMessage(error, "The group could not be changed. The server log has the details.", log, "Failed to update user group", { userId }) };
     }
 }
 
+const UserIdSchema = z.string().min(1).max(200);
+
 /** Deletes a user, who waits in Recently deleted unless `permanently`. */
-export async function deleteUser(userId: string, mode?: DeleteMode) {
-    await checkPermission(ACCOUNT_CHANGE);
-    const currentUser = await getViewer();
+export async function deleteUser(id: string, mode?: DeleteMode) {
+    const currentUser = await checkPermission(ACCOUNT_CHANGE);
+    const parsedId = UserIdSchema.safeParse(id);
     const parsedMode = DeleteModeSchema.safeParse(mode);
-    if (!parsedMode.success) return { success: false, error: "Invalid request" };
+    if (!parsedId.success || !parsedMode.success) return { success: false, error: "Invalid request" };
+    const userId = parsedId.data;
     const { permanently = false } = parsedMode.data;
-    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false, error: PERMANENT_DELETE_REFUSED };
 
     // Refused here and not only left out of the menus, like in the bulk delete.
-    if (!currentUser) return { success: false, error: "Unauthorized" };
     if (currentUser.id === userId) {
         return { success: false, error: "You cannot delete your own account." };
     }
-    const refused = await accountRefused(userId, currentUser);
-    if (refused) return { success: false, error: refused };
+    const target = await changeableAccount(userId, currentUser);
+    if (target.refusal) return { success: false, error: target.refusal };
+    if (permanently && !(await mayDeletePermanently(currentUser, userId))) return { success: false, error: PERMANENT_DELETE_REFUSED };
 
     try {
         // Read before the delete, which ends the memberships.
@@ -208,27 +239,40 @@ export async function deleteUser(userId: string, mode?: DeleteMode) {
 
         return { success: true };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) || "Failed to delete user" };
+        // The last platform admin and the last user stay, and say so. Anything else stays in the log.
+        if (error instanceof ValidationError) return { success: false, error: error.message };
+        log.error("Failed to delete user", { userId }, wrapError(error));
+        return { success: false, error: "The user could not be deleted." };
     }
 }
+
+const PasskeyTwoFactorSchema = z.object({ userId: z.string().min(1).max(200), enabled: z.boolean() });
 
 /**
  * Switches whether a passkey counts as the second factor of an account.
  * @no-permission-required - Self-service for the own account, as far as `profile:manage_passkeys`
  * checked below allows. Another account needs `ACCOUNT_CHANGE` and `accountRefusal`, checked below too.
  */
-export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
+export async function togglePasskeyTwoFactor(id: string, on: boolean) {
     const currentUser = await getViewer();
     if (!currentUser) throw new Error("Unauthorized");
-    if (typeof enabled !== "boolean" || typeof userId !== "string" || !userId) return { success: false, error: "Invalid request" };
+    const input = PasskeyTwoFactorSchema.safeParse({ userId: id, enabled: on });
+    if (!input.success) return { success: false, error: "Invalid request" };
+    const { userId, enabled } = input.data;
 
     // Allow user to edit their own settings, as far as their group allows, otherwise require permission
     if (currentUser.id !== userId) {
         await checkPermission(ACCOUNT_CHANGE);
-        const refused = await accountRefused(userId, currentUser);
-        if (refused) return { success: false, error: refused };
+        const target = await changeableAccount(userId, currentUser);
+        if (target.refusal) return { success: false, error: target.refusal };
     } else if (!(await hasPermission(PERMISSIONS.PROFILE.MANAGE_PASSKEYS))) {
         return { success: false, error: "Your group may not change your passkeys." };
+    } else if (!enabled && !(await hasPermission(PERMISSIONS.PROFILE.MANAGE_2FA)) && (await userService.passkeyOffEndsTwoFactor(userId))) {
+        // Without an authenticator app the passkey is the whole second factor, which the switch would end.
+        return { success: false, error: "Your group may not turn off your second factor." };
+    } else if (enabled && !(await hasPermission(PERMISSIONS.PROFILE.MANAGE_2FA)) && !(await userService.hasAuthenticatorApp(userId))) {
+        // Without an authenticator app the switch turns the second factor on, like setting up one.
+        return { success: false, error: "Your group may not turn on your second factor." };
     }
 
     try {
@@ -241,7 +285,7 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
         return { success: true };
     } catch (error: unknown) {
         log.error("Failed to toggle passkey 2FA", { userId }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to update passkey settings" };
+        return { success: false, error: "The passkey setting could not be changed." };
     }
 }
 
@@ -283,16 +327,14 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
             currentUser.id,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
-            { change: "Password Changed", signedOut },
+            { name: currentUser.name, change: "Password Changed", signedOut },
             currentUser.id,
             origin
         );
 
         return { success: true, data: { signedOut } };
     } catch (error: unknown) {
-        if (error instanceof ValidationError) return { success: false, error: error.message };
-        log.error("Failed to update password", { userId: currentUser.id }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to update password" };
+        return { success: false, error: userMessage(error, "The password could not be changed. The server log has the details.", log, "Failed to update password", { userId: currentUser.id }) };
     }
 }
 
@@ -319,18 +361,22 @@ export async function updateUser(userId: string, input: { name?: string; email?:
     const parsed = UpdateUserSchema.safeParse({ userId, data: input });
     if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
     const data = parsed.data.data;
+    // The entry always names the account, also when the name stays.
+    let accountName = currentUser.name || currentUser.email;
 
     // Allow user to edit their own profile, otherwise require permission
     if (currentUser.id !== userId) {
         await checkPermission(ACCOUNT_CHANGE);
-        const refused = await accountRefused(userId, currentUser);
-        if (refused) return { success: false, error: refused };
+        const target = await changeableAccount(userId, currentUser);
+        if (target.refusal) return { success: false, error: target.refusal };
+        accountName = target.name;
         // Compared with the email of the account being changed, so a change of its name alone never meets the check of a claimed domain.
         const emailChanges = data.email !== undefined && data.email !== (await userService.emailOf(userId));
         if (emailChanges) {
             // Someone of a platform group of some tenants gives the emails their tenants claim, see `emailClaimScope`.
+            // Beyond that only the tenants of the account count, never the one the caller works in.
             const scope = emailClaimScope({ ...currentUser, reach: await userService.accountsReachOf(currentUser) });
-            const claimed = await claimedEmailRefusal(data.email!, [...(currentUser.tenantId ? [currentUser.tenantId] : []), ...scope.tenantIds], scope.platformLevel);
+            const claimed = await claimedEmailRefusal(data.email!, [...(await userService.emailTenantsOf(userId)), ...scope.tenantIds], scope.platformLevel);
             if (claimed) return { success: false, error: claimed };
             // Whoever does not see the account that holds the email never learns that it exists, see `takenEmailRefusal`.
             const taken = await takenEmailRefusal(data.email!, { ...currentUser, userId: currentUser.id }, currentUser.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: userId });
@@ -361,7 +407,7 @@ export async function updateUser(userId: string, input: { name?: string; email?:
             currentUser.id,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
-            data,
+            { ...data, name: data.name ?? accountName },
             userId,
             origin
         );
@@ -375,22 +421,30 @@ export async function updateUser(userId: string, input: { name?: string; email?:
     }
 }
 
+const PreferencesSchema = z.object({
+    userId: z.string().min(1).max(200),
+    data: z.object({ autoRedirectOnJobStart: z.boolean().optional() }).strict(),
+});
+
 /**
  * Update user preferences (self-service)
  * Users can only update their own preferences - no admin permission required
  * @no-permission-required
  */
-export async function updateUserPreferences(userId: string, data: { autoRedirectOnJobStart?: boolean }) {
+export async function updateUserPreferences(userId: string, input: { autoRedirectOnJobStart?: boolean }) {
     const currentUser = await getViewer();
     if (!currentUser) throw new Error("Unauthorized");
+    const parsed = PreferencesSchema.safeParse({ userId, data: input });
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+    const data = parsed.data.data;
 
     // Allow user to edit their own preferences only
-    if (currentUser.id !== userId) {
+    if (currentUser.id !== parsed.data.userId) {
         throw new Error("You can only update your own preferences");
     }
 
     try {
-        await setAutoRedirectOnJobStart(userId, data.autoRedirectOnJobStart);
+        await setAutoRedirectOnJobStart(currentUser.id, data.autoRedirectOnJobStart);
 
         revalidatePath("/dashboard/profile");
 
@@ -398,7 +452,7 @@ export async function updateUserPreferences(userId: string, data: { autoRedirect
             currentUser.id,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
-            { preferences: data },
+            { name: currentUser.name, preferences: data },
             userId,
             await accountLogOrigin(currentUser, userId)
         );
@@ -406,7 +460,7 @@ export async function updateUserPreferences(userId: string, data: { autoRedirect
         return { success: true };
     } catch (error: unknown) {
         log.error("Failed to update preferences", { userId }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to update preferences" };
+        return { success: false, error: "The preferences could not be saved." };
     }
 }
 
@@ -435,8 +489,7 @@ export async function getUserPreference(key: 'autoRedirectOnJobStart'): Promise<
  * as per-user failures.
  */
 export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
-    await checkPermission(ACCOUNT_CHANGE);
-    const currentUser = await getViewer();
+    const currentUser = await checkPermission(ACCOUNT_CHANGE);
 
     const parsed = BulkIdsSchema.safeParse(userIds);
     const parsedMode = DeleteModeSchema.safeParse(mode);
@@ -444,19 +497,26 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
         return { success: false as const, error: "Invalid request" };
     }
     const { permanently = false } = parsedMode.data;
-    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false as const, error: PERMANENT_DELETE_REFUSED };
 
     try {
-        if (!currentUser) return { success: false as const, error: "Unauthorized" };
-        const guarded: { id: string; error: string }[] = [];
+        const guarded: { id: string; error: string; unseen?: boolean }[] = [];
         for (const id of parsed.data) {
             if (id === currentUser.id) continue;
-            const refused = await accountRefused(id, currentUser);
+            // An account the caller may not see reads like one that does not exist, before any rule
+            // tells them apart, and is never deleted, like in `deleteUser`.
+            if (!(await maySeeAccount({ ...currentUser, userId: currentUser.id }, id))) {
+                guarded.push({ id, error: USER_GONE, unseen: true });
+                continue;
+            }
+            const refused = await userService.accountRefusalFor(currentUser, id);
             if (refused) guarded.push({ id, error: refused });
+            // Each account waits in its own place, so each is checked there.
+            else if (permanently && !(await mayDeletePermanently(currentUser, id))) guarded.push({ id, error: PERMANENT_DELETE_REFUSED });
         }
         const deletable = parsed.data.filter((id) => id !== currentUser.id && !guarded.some((user) => user.id === id));
-        // Read before the delete, which ends the memberships.
+        // Read before the delete, which ends the memberships, and the names, which go with the accounts.
         const origin = await accountLogOrigin(currentUser, deletable);
+        const deletedNames = new Map((await userService.namesOf(deletable)).map((user) => [user.id, user.name]));
         const result = await userService.deleteUsers(deletable, { permanently, by: currentUser.id });
 
         if (currentUser && parsed.data.includes(currentUser.id)) {
@@ -466,10 +526,10 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
                 error: "You cannot delete your own account.",
             });
         }
-        const names = new Map((await userService.namesOf(guarded.map((user) => user.id))).map((user) => [user.id, user.name]));
+        const names = new Map((await userService.namesOf(guarded.filter((user) => !user.unseen).map((user) => user.id))).map((user) => [user.id, user.name]));
         for (const user of guarded) {
             // An account the caller may not see reads like one that does not exist, its name and why it stays included.
-            if (!(await maySeeAccount({ ...currentUser, userId: currentUser.id }, user.id))) result.failed.push({ id: user.id, error: USER_GONE });
+            if (user.unseen) result.failed.push({ id: user.id, error: USER_GONE });
             else result.failed.push({ id: user.id, name: names.get(user.id) ?? user.id, error: user.error });
         }
 
@@ -480,14 +540,17 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
             currentUser.id,
             AUDIT_ACTIONS.DELETE,
             AUDIT_RESOURCES.USER,
-            { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length, ...(permanently ? { permanently: true } : {}) },
+            {
+                bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length,
+                names: result.succeeded.flatMap((id) => deletedNames.get(id) ?? []),
+                ...(permanently ? { permanently: true } : {}),
+            },
             undefined,
             origin
         );
 
         return { success: true as const, data: result };
     } catch (error: unknown) {
-        log.error("Failed to bulk delete users", {}, wrapError(error));
-        return { success: false as const, error: getErrorMessage(error) || "Failed to delete users" };
+        return { success: false as const, error: userMessage(error, "The users could not be deleted. The server log has the details.", log, "Failed to bulk delete users") };
     }
 }

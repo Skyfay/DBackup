@@ -57,6 +57,13 @@ const refuse = (error: string): PlacementResult => ({ ok: false, error });
  * is saved, null for a new one. A group that stays as it was in the same tenant is not looked up
  * again. A provider that adds nobody drops a group that no longer fits instead of refusing, since
  * its form does not show the group then.
+ *
+ * One change of the group of new people does not come through here: deleting a group moves the
+ * providers that add people into it to the group its members move to, see `groupService.delete`,
+ * also a provider of the platform, which only a platform admin saves. That is meant. The delete
+ * gives the members the same group, and `deleteGroup` refuses a group to move to that may do more
+ * than whoever deletes may (`roleRefusal`), so new people never get more than that person could
+ * give them as members.
  */
 export async function settlePlacement(next: ProviderPlacement, before: (ProviderPlacement & { id: string }) | null, lookups: PlacementLookups = DATABASE): Promise<PlacementResult> {
     const tenantId = belongsTo(next.tenantId);

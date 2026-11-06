@@ -26,7 +26,8 @@ import { logger } from "@/lib/logging/logger";
 import { AdapterError } from "@/lib/logging/errors";
 import type { SnapshotHandle } from "@/lib/core/interfaces";
 import { stripTrailingSlashes } from "@/lib/paths";
-import { isSmbAddress } from "@/lib/adapters/smb-address";
+import { isSmbAddress, parseSmbAddress, SMB_LOGIN_HINT, smbLoginHasPercent, smbResolveOptions } from "@/lib/adapters/smb-address";
+import { sambaEnv } from "./smb-run";
 
 const log = logger.child({ adapter: "smb", feature: "vss" });
 
@@ -41,7 +42,7 @@ interface ExecResult {
  * Written out rather than using `promisify` so the only seam this module has to the
  * outside is `execFile` itself, which keeps it testable without mocking Node internals.
  */
-function execFileAsync(command: string, args: string[], options: { timeout: number }): Promise<ExecResult> {
+function execFileAsync(command: string, args: string[], options: { timeout: number; env: NodeJS.ProcessEnv }): Promise<ExecResult> {
     return new Promise((resolve, reject) => {
         execFile(command, args, options, (error, stdout, stderr) => {
             if (error) {
@@ -91,7 +92,7 @@ function decodeRef(id: string): ShadowCopyRef {
  * Backslashes are accepted because that is how the path is written on Windows.
  */
 export function splitShareAddress(address: string): { host: string; share: string } {
-    const normalized = address.replace(/\\/g, "/").replace(/^\/+/, "");
+    const normalized = address.trim().replace(/\\/g, "/").replace(/^\/+/, "");
     const slash = normalized.indexOf("/");
     if (slash === -1) {
         throw new AdapterError("smb", "vss", `Share address '${address}' is missing the share name (expected //server/share)`);
@@ -105,11 +106,17 @@ export function uncPath(host: string, share: string): string {
 }
 
 function credentialArgs(config: SmbVssConfig): string[] {
+    // rpcclient reads a `%` in `-U` as the start of a password that wins over `PASSWD`, see
+    // `smbLoginHasPercent`. Checked here as well as on save, since a config or a credential
+    // profile may predate that check.
+    if (smbLoginHasPercent(config.username) || smbLoginHasPercent(config.domain)) {
+        throw new AdapterError("smb", "vss", SMB_LOGIN_HINT);
+    }
     const user = config.username || "guest";
     const account = config.domain ? `${config.domain}\\${user}` : user;
-    // The password travels in the argument vector rather than the environment because
-    // rpcclient offers no other non-interactive way. It is scrubbed from every log below.
-    return ["-U", `${account}%${config.password ?? ""}`];
+    // The password travels in `PASSWD`, never in the argument vector, where anyone on the machine
+    // reads it in the process table, see `sambaEnv`. Without one, `-N` keeps rpcclient from asking.
+    return config.password ? ["-U", account] : ["-U", account, "-N"];
 }
 
 function scrub(text: string, password?: string): string {
@@ -117,12 +124,44 @@ function scrub(text: string, password?: string): string {
     return text.split(password).join("****");
 }
 
-async function runRpc(config: SmbVssConfig, command: string): Promise<string> {
-    const { host } = splitShareAddress(config.address);
-    const args = [...credentialArgs(config), "-c", command, host];
+/**
+ * A word rpcclient reads as one argument of one command. rpcclient splits its `-c` line into
+ * commands at every semicolon, then each command into words at whitespace and quotes, so a server,
+ * a share or an id with any of them would pass more arguments or run another command. A word that
+ * starts with `-` reads as an option, of rpcclient for the server and of the command for the rest. A
+ * share with a space works for a backup, smbclient takes the address as an argument of its own, but
+ * not for a shadow copy.
+ */
+const RPC_WORD = /^[^\s;"'\x00-\x1f\x7f-][^\s;"'\x00-\x1f\x7f]*$/;
+
+/** Refuses a word rpcclient would split or read as another command, see `RPC_WORD`. */
+function assertRpcWord(word: string): void {
+    if (RPC_WORD.test(word)) return;
+    throw new AdapterError("smb", "vss", `Shadow copies need a server, a share and ids without whitespace, semicolons, quotes or control characters that do not start with a hyphen, and ${JSON.stringify(word)} is not one.`);
+}
+
+/**
+ * Runs one rpcclient command. The address must have the form smbclient reads, see `isSmbAddress`,
+ * and its words, and the server and share of the address whether this command names them or not,
+ * are checked before the command line is built, so nothing of the address or of what the server
+ * answered runs as a second command or reads as an option. rpcclient dials the server of
+ * `parseSmbAddress`, the one the local network check of a tenant saw, never a binding string, and
+ * looks it up in DNS alone while the tenant of the connection blocks the local network, see
+ * `smbResolveOptions`.
+ */
+async function runRpc(config: SmbVssConfig, verb: string, words: string[] = []): Promise<string> {
+    const { host: written, share } = splitShareAddress(config.address);
+    for (const word of [written, share, ...words]) assertRpcWord(word);
+    const parsed = parseSmbAddress(config.address);
+    if (!parsed) {
+        throw new AdapterError("smb", "vss", `Share address ${JSON.stringify(config.address)} is no share address of the form //server/share`);
+    }
+    const host = parsed.server;
+    const command = [verb, ...words].join(" ");
+    const args = [...credentialArgs(config), ...smbResolveOptions(config), "-c", command, host];
 
     try {
-        const { stdout, stderr } = await execFileAsync("rpcclient", args, { timeout: RPC_TIMEOUT_MS });
+        const { stdout, stderr } = await execFileAsync("rpcclient", args, { timeout: RPC_TIMEOUT_MS, env: sambaEnv(config.password) });
         return `${stdout}${stderr}`;
     } catch (error: unknown) {
         const err = error as { stdout?: string; stderr?: string; message?: string; killed?: boolean };
@@ -130,7 +169,7 @@ async function runRpc(config: SmbVssConfig, command: string): Promise<string> {
             throw new AdapterError("smb", "vss", `Shadow copy request timed out after ${RPC_TIMEOUT_MS / 1000}s`);
         }
         const detail = scrub(`${err.stderr ?? ""}${err.stdout ?? ""}` || err.message || "unknown error", config.password);
-        throw new AdapterError("smb", "vss", `rpcclient ${command.split(" ")[0]} failed: ${detail.trim()}`);
+        throw new AdapterError("smb", "vss", `rpcclient ${verb} failed:${detail.trim()}`);
     }
 }
 
@@ -146,7 +185,7 @@ export async function probeSnapshotSupport(config: SmbVssConfig): Promise<{ supp
 
     try {
         const version = await runRpc(config, "fss_get_sup_version");
-        const out = await runRpc(config, `fss_is_path_sup ${unc}`);
+        const out = await runRpc(config, "fss_is_path_sup", [unc]);
 
         // "UNC %s %s shadow copy requests" - "supports" or "does not support".
         if (/does not support/i.test(out)) {
@@ -175,7 +214,7 @@ export async function createShadowCopy(config: SmbVssConfig): Promise<SnapshotHa
     const { host, share } = splitShareAddress(config.address);
     const unc = uncPath(host, share);
 
-    const output = await runRpc(config, `fss_create_expose ${FSS_CONTEXT} ro ${unc}`);
+    const output = await runRpc(config, "fss_create_expose", [FSS_CONTEXT, "ro", unc]);
 
     // "%s(%s): share %s exposed as a snapshot of %s" - set id, shadow copy id, the exposed
     // share, and the share it was taken from.
@@ -206,7 +245,7 @@ export async function createShadowCopy(config: SmbVssConfig): Promise<SnapshotHa
     }
 
     try {
-        await runRpc(config, `fss_recovery_complete ${setId}`);
+        await runRpc(config, "fss_recovery_complete", [setId]);
     } catch (error: unknown) {
         // Better no snapshot than one the server deletes while we are reading from it.
         await releaseShadowCopy(config, handle).catch(() => { });
@@ -221,7 +260,7 @@ export async function createShadowCopy(config: SmbVssConfig): Promise<SnapshotHa
 export async function releaseShadowCopy(config: SmbVssConfig, handle: SnapshotHandle): Promise<void> {
     const { setId, shadowCopyId, baseShare } = decodeRef(handle.id);
     try {
-        await runRpc(config, `fss_delete ${baseShare} ${setId} ${shadowCopyId}`);
+        await runRpc(config, "fss_delete", [baseShare, setId, shadowCopyId]);
         log.info("Shadow copy released", { setId });
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -243,7 +282,7 @@ export async function findOrphanedShadowCopies(config: SmbVssConfig): Promise<Sn
 
     let output: string;
     try {
-        output = await runRpc(config, `fss_has_shadow_copy ${unc}`);
+        output = await runRpc(config, "fss_has_shadow_copy", [unc]);
     } catch {
         // Not being able to ask is not the same as there being one - the caller's own
         // create attempt will produce the real error if something is genuinely wrong.
@@ -252,7 +291,7 @@ export async function findOrphanedShadowCopies(config: SmbVssConfig): Promise<Sn
 
     if (!/has an associated shadow-copy/i.test(output)) return [];
 
-    const mapping = await runRpc(config, `fss_get_mapping ${unc}`).catch(() => "");
+    const mapping = await runRpc(config, "fss_get_mapping", [unc]).catch(() => "");
     const ids = mapping.match(/([0-9a-f-]{36})\(([0-9a-f-]{36})\)/i);
     if (!ids) {
         log.warn("Share reports a leftover shadow copy but its ids could not be read", { host, share });

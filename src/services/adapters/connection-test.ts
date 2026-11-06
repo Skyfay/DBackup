@@ -6,7 +6,10 @@
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import { applyStoredSecrets, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { applyStoredSecrets, mayReachHost, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
+import { hostLocalReason } from "@/lib/adapters/host-local";
+import { sameAddress } from "@/lib/adapters/stored-secrets";
+import { decryptConfig } from "@/lib/crypto";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -50,7 +53,7 @@ export async function testConnection(input: ConnectionTestInput): Promise<Connec
     // connection submits them missing. They are filled back in, or the test would try a config
     // the saved connection never had.
     const submittedConfig = input.storedConfigId
-        ? await applyStoredSecrets(adapterId, input.storedConfigId, { ...input.config })
+        ? await applyStoredSecrets(adapterId, input.storedConfigId, { ...input.config }, { primaryCredentialId: input.primaryCredentialId, sshCredentialId: input.sshCredentialId })
         : { ...input.config };
 
     // The logins of the credential profiles go on top, so the adapter gets a config it can use as it is.
@@ -72,16 +75,31 @@ export async function testConnection(input: ConnectionTestInput): Promise<Connec
     ]);
 
     if (result.success && result.version && configId) {
-        await recordVersion(configId, result.version);
+        await recordVersion(configId, adapterId, submittedConfig, result.version);
     }
     return { ok: true, result };
 }
 
-/** Keeps the version a passing test found with the saved connection. A failure here never fails the test. */
-async function recordVersion(configId: string, version: string): Promise<void> {
+/**
+ * Keeps the version a passing test found with the saved connection, only while the test tried that
+ * connection: the same adapter at the same hosts and ports, see `sameAddress`, and for a connection
+ * to the server DBackup runs on only from whoever may test one, see `mayReachHost`. A version of
+ * another server would otherwise pass for the one of the saved connection, in the Database Explorer
+ * and the version checks of a restore. A failure here never fails the test.
+ */
+async function recordVersion(configId: string, adapterId: string, tested: Record<string, unknown>, version: string): Promise<void> {
     try {
-        const existing = await prisma.adapterConfig.findUnique({ where: { id: configId }, select: { metadata: true } });
-        const currentMeta = existing?.metadata ? JSON.parse(existing.metadata) : {};
+        const existing = await prisma.adapterConfig.findUnique({ where: { id: configId }, select: { adapterId: true, config: true, metadata: true } });
+        if (!existing || existing.adapterId !== adapterId) return;
+        let stored: Record<string, unknown>;
+        try {
+            stored = decryptConfig(JSON.parse(existing.config)) as Record<string, unknown>;
+        } catch {
+            return;
+        }
+        if (!sameAddress(adapterId, stored, tested)) return;
+        if ((hostLocalReason(adapterId, stored) || hostLocalReason(adapterId, tested)) && !(await mayReachHost())) return;
+        const currentMeta = existing.metadata ? JSON.parse(existing.metadata) : {};
         const metadata = {
             ...currentMeta,
             engineVersion: version,

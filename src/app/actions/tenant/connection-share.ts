@@ -5,7 +5,7 @@ import { z } from "zod";
 import { checkPermission, tenantRefusal } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { ConflictError, NotFoundError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
 import { auditService } from "@/services/audit-service";
@@ -14,6 +14,7 @@ import { logShareChange } from "@/services/sharing/share-audit";
 import { setRecipients } from "@/services/sharing/channel-recipients";
 import { sendRecipientsTest } from "@/services/sharing/recipients-test";
 import { platformGroupService } from "@/services/user/platform-group-service";
+import { configBackupTargetRefusal } from "@/lib/server/config-backup-target-guard";
 
 /**
  * Sharing a destination or a channel with other tenants, and naming the recipients of an email
@@ -31,6 +32,9 @@ const SettingsSchema = z.object({
     encryptedOnly: z.boolean(),
     ownRecipients: z.boolean(),
 });
+
+/** A refusal written for the user, which the answer passes on and the log leaves out. */
+const isRefusal = (error: unknown) => error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError;
 
 const messageOf = (error: unknown, fallback: string) =>
     error instanceof ValidationError || error instanceof ConflictError || error instanceof NotFoundError ? error.message : fallback;
@@ -51,6 +55,7 @@ export async function getConnectionShare(configId: string) {
     try {
         return { success: true as const, data: await connectionShareService.view(id.data, await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
+        if (!isRefusal(error)) log.error("Reading the sharing of a connection failed", { configId: id.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The sharing of this connection could not be read.") };
     }
 }
@@ -65,6 +70,7 @@ export async function previewShareLoss(configId: string, settings: Pick<ShareSet
     try {
         return { success: true as const, data: await connectionShareService.losing(id.data, parsed.data, await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
+        if (!isRefusal(error)) log.error("Checking a change of the sharing of a connection failed", { configId: id.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The change could not be checked.") };
     }
 }
@@ -79,17 +85,19 @@ export async function saveConnectionShare(configId: string, settings: ShareSetti
     const parsed = SettingsSchema.safeParse(settings);
     if (!id.success || !parsed.success || typeof confirmed !== "boolean") return { success: false as const, error: "Invalid request" };
     if (!viewer.tenantId) return outsideTenant(viewer);
+    // Customers of the destination of the configuration backup would write their backups beside it.
+    const locked = await configBackupTargetRefusal({ isPlatformAdmin: viewer.isPlatformAdmin, authMethod: "session" }, { connectionIds: [id.data] });
+    if (locked) return { success: false as const, error: locked };
     try {
         const result = await connectionShareService.save(id.data, parsed.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
-        const view = await connectionShareService.view(id.data);
-        await logShareChange({ id: viewer.id }, id.data, result, parsed.data, view.uses.map((use) => use.name));
+        await logShareChange({ id: viewer.id }, id.data, result, parsed.data);
         revalidatePath("/dashboard/connections");
         return { success: true as const, data: { gained: result.gained, lost: result.losses.map((loss) => ({ name: loss.name, backups: loss.backups, jobs: loss.jobs.length })) } };
     } catch (error: unknown) {
         // The tenants that lost it before the storage stopped answering are told all the same.
-        if (error instanceof ShareChangeError) await logShareChange({ id: viewer.id }, id.data, error.change, { allTenants: false }, []);
+        if (error instanceof ShareChangeError) await logShareChange({ id: viewer.id }, id.data, error.change, { allTenants: false });
         if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Saving the sharing of a connection failed", { configId: id.data }, wrapError(error));
-        return { success: false as const, error: messageOf(error, getErrorMessage(error) || "The sharing could not be saved.") };
+        return { success: false as const, error: messageOf(error, "The sharing could not be saved.") };
     }
 }
 
@@ -101,15 +109,15 @@ export async function stopSharingWith(configId: string, tenantId: string, confir
     if (!id.success || !customer.success || typeof confirmed !== "boolean") return { success: false as const, error: "Invalid request" };
     if (!viewer.tenantId) return outsideTenant(viewer);
     try {
+        // A stop picks the tenants that keep it, so it never shares with every tenant.
         const result = await connectionShareService.stopFor(id.data, customer.data, { confirmed, reach: await platformGroupService.reachOf(viewer.id) });
-        const view = await connectionShareService.view(id.data);
-        await logShareChange({ id: viewer.id }, id.data, result, { ...view.settings }, view.uses.map((use) => use.name));
+        await logShareChange({ id: viewer.id }, id.data, result, { allTenants: false });
         revalidatePath("/dashboard/connections");
         return { success: true as const, data: { lost: result.losses.map((loss) => ({ name: loss.name, backups: loss.backups, jobs: loss.jobs.length })) } };
     } catch (error: unknown) {
-        if (error instanceof ShareChangeError) await logShareChange({ id: viewer.id }, id.data, error.change, { allTenants: false }, []);
+        if (error instanceof ShareChangeError) await logShareChange({ id: viewer.id }, id.data, error.change, { allTenants: false });
         if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Stopping to share a connection failed", { configId: id.data }, wrapError(error));
-        return { success: false as const, error: messageOf(error, getErrorMessage(error) || "The sharing could not be changed.") };
+        return { success: false as const, error: messageOf(error, "The sharing could not be changed.") };
     }
 }
 
@@ -122,14 +130,15 @@ export async function deleteSharedBackups(configId: string, tenantId: string) {
     if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         const result = await connectionShareService.deleteBackupsOf(id.data, customer.data, await platformGroupService.reachOf(viewer.id));
-        const details = { name: result.name, action: "tenantBackups", tenant: result.tenantName, backups: result.backups };
+        // The tenant by its id too, so the log of the home tenant hides it from a reader who does not reach it.
+        const details = { name: result.name, action: "tenantBackups", tenant: result.tenantName, tenantId: customer.data, backups: result.backups };
         await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.DESTINATION, details, id.data);
         await auditService.log(viewer.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.DESTINATION, details, id.data, { tenantId: customer.data });
         revalidatePath("/dashboard/connections");
         return { success: true as const, data: { backups: result.backups } };
     } catch (error: unknown) {
         if (!(error instanceof ValidationError || error instanceof NotFoundError)) log.error("Deleting the backups of a tenant failed", { configId: id.data }, wrapError(error));
-        return { success: false as const, error: messageOf(error, getErrorMessage(error) || "The backups could not be deleted.") };
+        return { success: false as const, error: messageOf(error, "The backups could not be deleted.") };
     }
 }
 
@@ -150,6 +159,7 @@ export async function setChannelRecipients(configId: string, recipients: string[
         revalidatePath("/dashboard/connections");
         return { success: true as const, data: { recipients: result.after } };
     } catch (error: unknown) {
+        if (!isRefusal(error)) log.error("Saving the recipients of a shared channel failed", { configId: id.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The recipients could not be saved.") };
     }
 }
@@ -162,6 +172,9 @@ export async function testChannelRecipients(configId: string) {
     if (!viewer.tenantId) return outsideTenant(viewer);
     try {
         const result = await sendRecipientsTest(id.data, viewer.tenantId);
+        await auditService.log(viewer.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.ADAPTER, {
+            name: result.name, action: "recipients_test", recipients: result.recipients.length,
+        }, id.data);
         return { success: true as const, data: { recipients: result.recipients } };
     } catch (error: unknown) {
         // Why the mail server of another tenant refused it stays with that tenant.

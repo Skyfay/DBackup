@@ -5,9 +5,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { ValidationError } from "@/lib/logging/errors";
+import { ValidationError, ConflictError, NotFoundError } from "@/lib/logging/errors";
 
-const mocks = vi.hoisted(() => ({ createJob: vi.fn(), updateJob: vi.fn(), logFor: vi.fn() }));
+const mocks = vi.hoisted(() => ({ createJob: vi.fn(), updateJob: vi.fn(), deleteJob: vi.fn(), logFor: vi.fn() }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth/access-control", () => ({
@@ -15,7 +15,7 @@ vi.mock("@/lib/auth/access-control", () => ({
     checkPermissionWithContext: vi.fn(),
     hasPermissionWithContext: () => true,
 }));
-vi.mock("@/services/jobs/job-service", () => ({ jobService: { createJob: mocks.createJob, updateJob: mocks.updateJob } }));
+vi.mock("@/services/jobs/job-service", () => ({ jobService: { createJob: mocks.createJob, updateJob: mocks.updateJob, deleteJob: mocks.deleteJob } }));
 vi.mock("@/services/jobs/job-list-service", () => ({ getJobList: vi.fn() }));
 vi.mock("@/services/jobs/job-audit", () => ({ jobAuditSnapshot: vi.fn(async () => null), jobChangeDetails: vi.fn() }));
 vi.mock("@/services/audit-service", () => ({ auditService: { logFor: mocks.logFor } }));
@@ -51,7 +51,29 @@ describe("a job that names a record of another tenant over the API", () => {
     });
 
     it("still answers 409 for a name that is taken", async () => {
-        mocks.createJob.mockRejectedValue(new Error('A job with the name "Nightly" already exists.'));
+        mocks.createJob.mockRejectedValue(new ConflictError('A job with the name "Nightly" already exists.'));
         expect((await jobs.POST(request("POST", JOB))).status).toBe(409);
+    });
+});
+
+describe("deleting a job over the API", () => {
+    const remove = () => job.DELETE(new NextRequest("http://dbackup.test/api/jobs/job-1", { method: "DELETE" }), { params: Promise.resolve({ id: "job-1" }) });
+
+    beforeEach(() => vi.clearAllMocks());
+
+    it("answers a refusal of the service with its own status and sentence", async () => {
+        mocks.deleteJob.mockRejectedValue(new NotFoundError("Job", "job-1"));
+        const response = await remove();
+
+        expect(response.status).toBe(404);
+        expect(mocks.logFor).not.toHaveBeenCalled();
+    });
+
+    it("answers a failure with a fixed sentence, never the words of the error", async () => {
+        mocks.deleteJob.mockRejectedValue(new Error("SQLITE_BUSY: database is locked at /data/dbackup.db"));
+        const response = await remove();
+
+        expect(response.status).toBe(500);
+        expect(JSON.stringify(await response.json())).not.toContain("/data/dbackup.db");
     });
 });

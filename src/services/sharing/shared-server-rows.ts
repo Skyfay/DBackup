@@ -179,6 +179,8 @@ export function sharedServerItem(tenantId: string, terms: SharedServerTerms, ada
         adapterId,
         config: "{}",
         secretStatus: {},
+        // The tenant that shares it changes it, never the one that lists it.
+        hostLocal: null,
         metadata: version ? JSON.stringify({ engineVersion: version }) : null,
         createdAt: since,
         updatedAt: since,

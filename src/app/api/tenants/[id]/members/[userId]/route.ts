@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuthContext, type AuthContext } from "@/lib/auth/access-control";
@@ -32,7 +33,7 @@ async function setGroup(ctx: AuthContext, tenantId: string, userId: string, grou
  */
 export async function PATCH(req: NextRequest, props: Params) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id, userId } = await props.params;
     try {
         return await setGroup(ctx, id, userId, null, async () => {
@@ -53,7 +54,7 @@ export async function PATCH(req: NextRequest, props: Params) {
  */
 export async function DELETE(_req: NextRequest, props: Params) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id, userId } = await props.params;
     try {
         return await setGroup(ctx, id, userId, null);

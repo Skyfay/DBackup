@@ -6,6 +6,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 import { peopleOf, roleIn } from "@/services/tenant/membership-service";
 import { PER_KIND, type SearchHit, type TemplateKind } from "./search-types";
 
@@ -36,13 +37,14 @@ export async function users(query: string, tenantId: string | null): Promise<Sea
 
 /**
  * The groups with the number of people who hold them in the tenant. In All tenants (`tenantId` null)
- * the groups of every tenant, each with the people who hold it, once each, and its tenant, which
- * it opens in.
+ * the groups of every tenant `reach` covers, each with the people who hold it, once each, and its
+ * tenant, which it opens in.
  */
-export async function groups(query: string, tenantId: string | null): Promise<SearchHit[]> {
+export async function groups(query: string, tenantId: string | null, reach: PlatformReach = "all"): Promise<SearchHit[]> {
     if (tenantId === null) {
+        if (reach !== "all" && reach.length === 0) return [];
         const everywhere = await prisma.group.findMany({
-            where: { name: { contains: query } },
+            where: reach === "all" ? { name: { contains: query } } : { name: { contains: query }, tenantId: { in: [...reach] } },
             orderBy: { name: "asc" },
             take: PER_KIND,
             select: { id: true, name: true, tenantId: true, memberships: { select: { userId: true } } },

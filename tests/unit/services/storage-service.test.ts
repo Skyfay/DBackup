@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PassThrough } from 'stream';
 import { prismaMock } from '@/lib/testing/prisma-mock';
+import { SIDECAR_READ_LIMIT } from '@/lib/adapters/storage/common/read-limit';
 import { StorageService, clearListingState } from '@/services/storage/storage-service';
 import { registry } from '@/lib/core/registry';
 import { StorageAdapter, FileInfo } from '@/lib/core/interfaces';
 import { HOME_TENANT_ID } from '@/lib/tenant/home';
 import { EncryptionKeyRequiredError } from '@/lib/logging/errors';
+import { FileTooLargeError } from '@/lib/adapters/storage/common/read-limit';
 
 // ── Module Mocks ───────────────────────────────────────────────
 
@@ -84,13 +86,10 @@ vi.mock('@/lib/crypto/stream', () => ({
     createDecryptionStream: (...args: any[]) => mockCreateDecryptionStream(...args),
 }));
 
-// AdmZip
-const mockAdmZipInstance = {
-    addLocalFile: vi.fn(),
-    writeZip: vi.fn(),
-};
-vi.mock('adm-zip', () => ({
-    default: function() { return mockAdmZipInstance; },
+// The streaming ZIP writer, tested on its own in tests/unit/lib/store-zip.test.ts.
+const mockWriteStoreZip = vi.fn();
+vi.mock('@/lib/store-zip', () => ({
+    writeStoreZip: (...args: any[]) => mockWriteStoreZip(...args),
 }));
 
 // Logger / Errors
@@ -188,8 +187,7 @@ describe('StorageService', () => {
         mockGetProfileMasterKey.mockResolvedValue(Buffer.alloc(32));
         // Use PassThrough as decryption stream so real pipeline can complete
         mockCreateDecryptionStream.mockReturnValue(new PassThrough());
-        mockAdmZipInstance.addLocalFile.mockReset();
-        mockAdmZipInstance.writeZip.mockReset();
+        mockWriteStoreZip.mockReset().mockResolvedValue(undefined);
     });
 
     describe('listFiles', () => {
@@ -417,6 +415,28 @@ describe('StorageService', () => {
     });
 
     describe('listFilesWithMetadata', () => {
+        it('reads only the sidecars of the backups it lists, never one without a backup beside it', async () => {
+            // A destination a customer fills may hold any number of sidecars with nothing beside them.
+            const mockFiles: FileInfo[] = [
+                { name: 'backup.tar', path: 'job/backup.tar', size: 1024, lastModified: new Date() },
+                { name: 'backup.tar.meta.json', path: 'job/backup.tar.meta.json', size: 100, lastModified: new Date() },
+                ...Array.from({ length: 20 }, (_, i) => ({ name: `orphan${i}.tar.meta.json`, path: `job/orphan${i}.tar.meta.json`, size: 100, lastModified: new Date() })),
+                // The same name in another folder, whose backup is not listed there.
+                { name: 'backup.tar.meta.json', path: 'other/backup.tar.meta.json', size: 100, lastModified: new Date() },
+            ];
+            const read = vi.fn().mockResolvedValue(JSON.stringify({ jobName: 'Nightly', padding: 'x'.repeat(1000) }));
+            const adapter = makeAdapter({ list: vi.fn().mockResolvedValue(mockFiles), read });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ config: '{}' }));
+            prismaMock.job.findMany.mockResolvedValue([]);
+            prismaMock.execution.findMany.mockResolvedValue([]);
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            const result = await service.listFilesWithMetadata('conf-123');
+
+            expect(read.mock.calls.map(([, path]) => path)).toEqual(['job/backup.tar.meta.json']);
+            expect(result.map((f) => f.jobName)).toEqual(['Nightly']);
+        });
+
         it('should return files with enriched metadata from sidecars', async () => {
             const mockFiles: FileInfo[] = [
                 { name: 'backup.sql', path: 'backup.sql', size: 1024, lastModified: new Date() },
@@ -884,10 +904,8 @@ describe('StorageService', () => {
                 // Metadata is fetched before the backup itself, so that a file with no
                 // decrypted form is recognised without moving its bytes first.
                 const adapter = makeAdapter({
-                    download: vi.fn()
-                        .mockResolvedValueOnce(false)  // meta file not found
-                        .mockResolvedValueOnce(true),  // main file
-                    read: vi.fn().mockResolvedValue(null), // read returns null
+                    download: vi.fn().mockResolvedValue(true), // main file
+                    read: vi.fn().mockResolvedValue(null), // no sidecar
                 });
                 prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
                 vi.mocked(registry.get).mockReturnValue(adapter);
@@ -896,6 +914,9 @@ describe('StorageService', () => {
 
                 expect(result).toMatchObject({ success: true, isZip: false });
                 expect(mockGetProfileMasterKey).not.toHaveBeenCalled();
+                // A sidecar read() did not find is never fetched again by a download no limit bounds.
+                expect(adapter.download).toHaveBeenCalledTimes(1);
+                expect(adapter.download).not.toHaveBeenCalledWith(expect.anything(), 'remote.sql.meta.json', expect.anything());
             });
 
             it('serves one database dump for a seekable archive instead of the archive itself', async () => {
@@ -976,8 +997,8 @@ describe('StorageService', () => {
 
                 await service.downloadFile('conf-123', 'remote.enc', '/local/out.sql', true);
 
-                // meta was downloaded as a file and then read from disk
-                expect(fsMocks.readFile).toHaveBeenCalled();
+                // meta was downloaded as a file, since the adapter has no read()
+                expect(adapter.download).toHaveBeenCalledWith(expect.anything(), 'remote.enc.meta.json', expect.any(String));
             });
 
             it('should ask for a key when the profile is gone and the vault holds no match', async () => {
@@ -998,76 +1019,53 @@ describe('StorageService', () => {
                 expect((error as EncryptionKeyRequiredError).profileId).toBe('p');
             });
 
-            it('should fall through to download fallback when adapter.read throws', async () => {
-                const meta = { encryptionProfileId: 'p', iv: 'aabbccddeeff0011', authTag: '0011223344556677' };
+            it('should go on without metadata when adapter.read throws, a sidecar past the limit included', async () => {
                 const adapter = makeAdapter({
-                    download: vi.fn()
-                        .mockResolvedValueOnce(true)   // main file download
-                        .mockResolvedValueOnce(true),  // meta file fallback download
-                    read: vi.fn().mockRejectedValueOnce(new Error('read failed')),
+                    download: vi.fn().mockResolvedValue(true), // main file download
+                    read: vi.fn().mockRejectedValueOnce(new FileTooLargeError(8)),
                 });
                 prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
                 vi.mocked(registry.get).mockReturnValue(adapter);
-                fsMocks.readFile.mockResolvedValueOnce(JSON.stringify(meta));
 
                 const result = await service.downloadFile('conf-123', 'remote.enc', '/local/out.sql', true);
 
                 expect(result).toMatchObject({ success: true });
+                expect(adapter.download).not.toHaveBeenCalledWith(expect.anything(), 'remote.enc.meta.json', expect.anything());
             });
 
-            it('should skip decryption when meta download fallback rejects', async () => {
-                // adapter.read returns null, then meta download rejects → .catch(() => false) fires
-                const adapter = makeAdapter({
-                    download: vi.fn()
-                        .mockRejectedValueOnce(new Error('meta not found')) // meta download rejects
-                        .mockResolvedValueOnce(true),  // main file
-                    read: vi.fn().mockResolvedValue(null),
-                });
-                prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
-                vi.mocked(registry.get).mockReturnValue(adapter);
-
-                const result = await service.downloadFile('conf-123', 'remote.enc', '/local/out.sql', true);
-
-                // No encryption params found → returns success without decrypting
-                expect(result).toMatchObject({ success: true, isZip: false });
-                expect(mockGetProfileMasterKey).not.toHaveBeenCalled();
-            });
-
-            it('should silently ignore temp meta unlink error after download fallback succeeds', async () => {
-                // adapter.read returns null, meta download succeeds, unlink of temp rejects
-                const meta = { encryptionProfileId: 'p', iv: 'aabbccddeeff0011', authTag: '0011223344556677' };
-                const adapter = makeAdapter({
-                    download: vi.fn()
-                        .mockResolvedValueOnce(true)   // main file
-                        .mockResolvedValueOnce(true),  // meta fallback download succeeds
-                    read: vi.fn().mockResolvedValue(null),
-                });
-                prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
-                vi.mocked(registry.get).mockReturnValue(adapter);
-                fsMocks.readFile.mockResolvedValueOnce(JSON.stringify(meta));
-                // First unlink (temp meta cleanup) fails → .catch(()=>{}) swallows it
-                // Subsequent unlinks (decryption cleanup) succeed (from beforeEach default)
-                fsMocks.unlink.mockRejectedValueOnce(new Error('unlink failed'));
-
-                const result = await service.downloadFile('conf-123', 'remote.enc', '/local/out.sql', true);
-
-                expect(result).toMatchObject({ success: true });
-            });
         });
 
         describe('.enc file (no decrypt)', () => {
-            it('should bundle .enc and .meta.json into a ZIP', async () => {
+            it('should bundle .enc and .meta.json into a ZIP, streamed and stored', async () => {
                 const adapter = makeAdapter({
                     download: vi.fn().mockResolvedValue(true),
+                    read: vi.fn().mockResolvedValue('{"jobName":"nightly"}'),
                 });
                 prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
                 vi.mocked(registry.get).mockReturnValue(adapter);
 
                 const result = await service.downloadFile('conf-123', 'backup.enc', '/local/dest.zip');
 
-                expect(mockAdmZipInstance.addLocalFile).toHaveBeenCalledTimes(2);
-                expect(mockAdmZipInstance.writeZip).toHaveBeenCalledWith('/local/dest.zip');
+                expect(mockWriteStoreZip).toHaveBeenCalledWith('/local/dest.zip', [
+                    { name: 'backup.enc', file: expect.stringMatching(/^\/local\/tmp_main_/) },
+                    { name: 'backup.enc.meta.json', data: Buffer.from('{"jobName":"nightly"}') },
+                ]);
                 expect(result).toMatchObject({ success: true, isZip: true });
+            });
+
+            it('reads the metadata within the limit of a sidecar rather than downloading it', async () => {
+                const read = vi.fn().mockResolvedValue('{"jobName":"nightly"}');
+                const download = vi.fn().mockResolvedValue(true);
+                prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+                vi.mocked(registry.get).mockReturnValue(makeAdapter({ download, read }));
+
+                await service.downloadFile('conf-123', 'backup.enc', '/local/dest.zip');
+
+                expect(read).toHaveBeenCalledWith(expect.anything(), 'backup.enc.meta.json', { maxBytes: SIDECAR_READ_LIMIT });
+                // Only the backup itself is downloaded, into a temp file named so nobody can guess it.
+                expect(download.mock.calls.map((call) => String(call[2]))).toEqual([
+                    expect.stringMatching(/^\/local\/tmp_main_[0-9a-f-]{36}_backup\.enc$/),
+                ]);
             });
 
             it('should return {success: false} when main .enc download fails', async () => {
@@ -1082,9 +1080,8 @@ describe('StorageService', () => {
 
             it('should rename main file without ZIP when no meta file found', async () => {
                 const adapter = makeAdapter({
-                    download: vi.fn()
-                        .mockResolvedValueOnce(true)   // main .enc
-                        .mockRejectedValueOnce(new Error('Not found')), // meta
+                    download: vi.fn().mockResolvedValue(true),
+                    read: vi.fn().mockRejectedValue(new Error('Not found')),
                 });
                 prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
                 vi.mocked(registry.get).mockReturnValue(adapter);
@@ -1096,10 +1093,10 @@ describe('StorageService', () => {
             });
 
             it('should fall back to rename when ZIP creation throws', async () => {
-                const adapter = makeAdapter({ download: vi.fn().mockResolvedValue(true) });
+                const adapter = makeAdapter({ download: vi.fn().mockResolvedValue(true), read: vi.fn().mockResolvedValue('{"jobName":"nightly"}') });
                 prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
                 vi.mocked(registry.get).mockReturnValue(adapter);
-                mockAdmZipInstance.writeZip.mockImplementation(() => { throw new Error('Zip fail'); });
+                mockWriteStoreZip.mockRejectedValue(new Error('Zip fail'));
 
                 const result = await service.downloadFile('conf-123', 'backup.enc', '/local/dest');
 
@@ -1108,7 +1105,7 @@ describe('StorageService', () => {
             });
 
             it('should silently ignore temp cleanup errors in .enc finally block', async () => {
-                const adapter = makeAdapter({ download: vi.fn().mockResolvedValue(true) });
+                const adapter = makeAdapter({ download: vi.fn().mockResolvedValue(true), read: vi.fn().mockResolvedValue('{"jobName":"nightly"}') });
                 prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
                 vi.mocked(registry.get).mockReturnValue(adapter);
                 // Make all unlink calls fail - errors should be swallowed by catch {}

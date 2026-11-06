@@ -22,6 +22,8 @@ import fs from "fs/promises";
 import { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { getTempDir } from "@/lib/temp-dir";
+import { READ_NO_FOLLOW } from "@/lib/server/no-follow";
+import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 import { CompressionType } from "@/lib/crypto/compression";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -30,6 +32,8 @@ import { archiveIndexService } from "./archive-index-service";
 import { archiveIndexVerifier, KeyVerifier } from "./key-resolution";
 import { rememberKeyFor } from "@/services/vault/key-aliases";
 import { openDestination } from "@/services/sharing/destination-access";
+import { cappedRange } from "@/lib/archive/storage-source";
+import { readAll } from "@/lib/archive/sources";
 import {
     findProfileByKey,
     getEncryptionProfiles,
@@ -45,6 +49,16 @@ export interface KeyRecoveryResult {
     status: "rejected" | "imported" | "existing";
     profileId?: string;
     profileName?: string;
+    /** For a key the Vault held already: the profile id of the backup it now counts under the key, see `rememberKeyFor`. */
+    notedFor?: string;
+}
+
+export interface KeyRecoveryOptions {
+    /**
+     * Asked before a key the Vault holds already notes the profile id of the backup, which changes
+     * that key, see `rememberKeyFor`. It throws to refuse, and nothing is noted then.
+     */
+    beforeNote?: (profileId: string) => Promise<void>;
 }
 
 /**
@@ -54,12 +68,14 @@ export interface KeyRecoveryResult {
  * @param file - Remote path of the backup, without any sidecar suffix
  * @param keyHex - The 32-byte master key as 64 hex characters
  * @param name - Profile name to store it under. Generated from the backup when omitted.
+ * @param options - What is asked before an existing key changes, see `KeyRecoveryOptions`.
  */
 export async function recoverEncryptionKey(
     storageConfigId: string,
     file: string,
     keyHex: string,
-    name?: string
+    name?: string,
+    options: KeyRecoveryOptions = {}
 ): Promise<KeyRecoveryResult> {
     const clean = keyHex.trim();
     if (!MASTER_KEY_HEX.test(clean)) {
@@ -85,8 +101,9 @@ export async function recoverEncryptionKey(
     const existing = await findProfileByKey(clean);
     if (existing) {
         log.info("Recovered key already present in the vault", { profileId: existing.id });
-        await rememberKeyFor(existing.id, namedId);
-        return { status: "existing", profileId: existing.id, profileName: existing.name };
+        if (namedId && namedId !== existing.id) await options.beforeNote?.(existing.id);
+        const noted = await rememberKeyFor(existing.id, namedId);
+        return { status: "existing", profileId: existing.id, profileName: existing.name, ...(noted && namedId ? { notedFor: namedId } : {}) };
     }
 
     const profile = await importEncryptionProfile(
@@ -116,23 +133,11 @@ async function readMeta(
     config: Awaited<ReturnType<typeof resolveAdapterConfig>>,
     file: string
 ): Promise<BackupMetadata | null> {
-    const remotePath = `${file}.meta.json`;
-
-    if (adapter.read) {
-        try {
-            const content = await adapter.read(config, remotePath);
-            if (content) return JSON.parse(content) as BackupMetadata;
-        } catch { /* fall through to the download */ }
-    }
-
-    const tempFile = path.join(getTempDir(), `key-recovery-${process.pid}-${crypto.randomUUID()}.json`);
     try {
-        if (!(await adapter.download(config, remotePath, tempFile).catch(() => false))) return null;
-        return JSON.parse(await fs.readFile(tempFile, "utf-8")) as BackupMetadata;
+        const content = await readSidecarText(adapter, config, `${file}.meta.json`);
+        return content ? JSON.parse(content) as BackupMetadata : null;
     } catch {
         return null;
-    } finally {
-        await fs.unlink(tempFile).catch(() => { });
     }
 }
 
@@ -210,12 +215,9 @@ async function readHead(
 ): Promise<Buffer> {
     if (adapter.downloadRange) {
         try {
-            const stream = await adapter.downloadRange(config, file, 0, HEAD_PROBE_SIZE - 1);
-            const chunks: Buffer[] = [];
-            for await (const chunk of stream) {
-                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
-            }
-            return Buffer.concat(chunks);
+            // A server that ignores the range fails here at the first byte past it, see `cappedRange`.
+            const stream = cappedRange(await adapter.downloadRange(config, file, 0, HEAD_PROBE_SIZE - 1), 0, HEAD_PROBE_SIZE - 1);
+            return await readAll(stream, HEAD_PROBE_SIZE);
         } catch (e: unknown) {
             log.warn("Ranged read failed, falling back to a full download", { file }, wrapError(e));
         }
@@ -226,7 +228,8 @@ async function readHead(
         if (!(await adapter.download(config, file, tempFile))) {
             throw new NotFoundError("Backup file", file);
         }
-        const handle = await fs.open(tempFile, "r");
+        // The download, never a file a link of it points at, see `downloaded-file.ts`.
+        const handle = await fs.open(tempFile, READ_NO_FOLLOW);
         try {
             const buffer = Buffer.alloc(HEAD_PROBE_SIZE);
             const { bytesRead } = await handle.read(buffer, 0, HEAD_PROBE_SIZE, 0);

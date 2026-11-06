@@ -3,23 +3,27 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission, type Viewer } from "@/lib/auth/access-control";
+import { emailClaimScope } from "@/lib/auth/account-access";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { PLATFORM_PERMISSIONS } from "@/lib/auth/owner-permissions";
 import { knownPermissions, knownPlatformPermissions } from "@/lib/auth/permission-areas";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { platformGroupRefusal, type PlatformGroupActor, type PlatformGroupShape } from "@/lib/auth/platform-group-caps";
+import { platformGroupRefusal, reachCovers, type PlatformGroupActor, type PlatformGroupShape } from "@/lib/auth/platform-group-caps";
 import { scopeText } from "@/lib/auth/platform-group-summary";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { emptyBulkResult } from "@/lib/core/bulk";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { getErrorMessage, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
 import { notify } from "@/services/notifications/system-notification-service";
+import { claimedEmailRefusal, tenantlessClaimedBeyond } from "@/services/sso/email-domain-claims";
 import { platformGroupService } from "@/services/user/platform-group-service";
 import { userService } from "@/services/user/user-service";
+import { shownAccountName } from "@/services/user/account-visibility";
+import { newAccountEmailRefusal } from "@/services/user/new-account-email";
 
 /**
  * The platform groups of the people of the MSP, made, changed, deleted and given under Platform,
@@ -55,9 +59,12 @@ const PLATFORM_LOG = { tenantId: HOME_TENANT_ID };
 const PAGE = "/dashboard/platform/users";
 
 const OWN_GROUP = "You are in this platform group. Another admin changes it.";
+const ACCOUNT_GONE = "The account no longer exists.";
 const GROUP_BEYOND = "This platform group may do more than you may, so only someone who may do all of it changes it.";
 const ONLY_ADMIN = "Only a platform admin gives or takes the platform admin role.";
-const ONLY_ALL_TENANTS = "An account that runs the platform is made by a platform admin or someone of a platform group of all tenants. Make it in a tenant your platform group reaches.";
+const ONLY_ALL_TENANTS = "An account that runs the platform is in no tenant, which counts as the home tenant. Your platform group does not reach it, so make the account in a tenant your platform group reaches.";
+const CLAIMED_ACCOUNT = "This account works in no tenant, and the sign-in provider of a tenant your platform group does not reach claims its email. Without a platform group it would join that tenant, so only someone who reaches that tenant takes its platform group.";
+const CLAIMED_MEMBER = "Someone in this platform group works in no tenant, and the sign-in provider of a tenant your platform group does not reach claims their email. Without a platform group they would join that tenant, so only someone who reaches that tenant deletes it.";
 
 /** The message of a refusal the user can act on, a plain one for anything else. */
 const messageOf = (error: unknown, fallback: string) => (error instanceof ValidationError || error instanceof NotFoundError ? error.message : fallback);
@@ -67,6 +74,36 @@ async function actorOf(viewer: Viewer): Promise<PlatformGroupActor & { groupId: 
     if (viewer.isPlatformAdmin) return { isPlatformAdmin: true, permissions: viewer.permissions, group: null, groupId: null };
     const own = await platformGroupService.shapeOf(viewer.id);
     return { isPlatformAdmin: false, permissions: viewer.permissions, group: own?.shape ?? null, groupId: own?.id ?? null };
+}
+
+/**
+ * Why someone of a platform group of some tenants may not change or delete a platform group: one of
+ * its members has an account they may not change, see `accountRefusal`, like `setUserPlatformGroup`
+ * asks for one account. Null for a platform admin and a reach of all tenants.
+ */
+async function membersRefusal(viewer: Viewer, groupId: string, verb: "changes" | "deletes"): Promise<string | null> {
+    if (viewer.isPlatformAdmin) return null;
+    const reach = await platformGroupService.reachOf(viewer.id);
+    if (reach === "all") return null;
+    for (const memberId of await platformGroupService.memberIds(groupId)) {
+        if (await userService.accountRefusalFor({ ...viewer, reach }, memberId)) {
+            return `Someone in this platform group has an account you may not change, so only someone who may change all of them ${verb} it.`;
+        }
+    }
+    return null;
+}
+
+/**
+ * Whether taking their platform group from these accounts is beyond the viewer: one of them works
+ * in no tenant and has an email that the provider of a tenant beyond the viewer's claim scope
+ * claims, see `tenantlessClaimedBeyond`. Never for a platform admin or a reach of all tenants.
+ */
+async function claimedBeyond(viewer: Viewer, userIds: readonly string[]): Promise<boolean> {
+    if (viewer.isPlatformAdmin || userIds.length === 0) return false;
+    const scope = emailClaimScope({ ...viewer, reach: await platformGroupService.reachOf(viewer.id) });
+    if (scope.platformLevel) return false;
+    // An account of no tenant counts as one of the home tenant.
+    return tenantlessClaimedBeyond(userIds, [HOME_TENANT_ID, ...scope.tenantIds]);
 }
 
 /** What would be stored, so the caps compare what counts and not what was sent. */
@@ -116,6 +153,8 @@ export async function updatePlatformGroup(id: string, input: PlatformGroupFormVa
     const group = await platformGroupService.find(groupId.data);
     if (!group) return { success: false as const, error: "The platform group no longer exists." };
     if (platformGroupRefusal(actor, group.shape)) return { success: false as const, error: GROUP_BEYOND };
+    const members = await membersRefusal(viewer, groupId.data, "changes");
+    if (members) return { success: false as const, error: members };
     const shape = shapeOf(parsed.data);
     const refused = platformGroupRefusal(actor, shape);
     if (refused) return { success: false as const, error: refused };
@@ -146,7 +185,8 @@ export async function bulkDeletePlatformGroups(ids: string[]) {
         const group = await platformGroupService.find(id);
         const refused = !group
             ? "The platform group no longer exists."
-            : actor.groupId === id ? "You are in this platform group. Another admin deletes it." : platformGroupRefusal(actor, group.shape) ? GROUP_BEYOND : null;
+            : actor.groupId === id ? "You are in this platform group. Another admin deletes it." : platformGroupRefusal(actor, group.shape) ? GROUP_BEYOND : await membersRefusal(viewer, id, "deletes")
+                ?? ((await claimedBeyond(viewer, await platformGroupService.memberIds(id))) ? CLAIMED_MEMBER : null);
         if (refused) {
             result.failed.push({ id, name: group?.name, error: refused });
             continue;
@@ -175,6 +215,9 @@ export async function deletePlatformGroup(id: string) {
     const group = await platformGroupService.find(groupId.data);
     if (!group) return { success: false as const, error: "The platform group no longer exists." };
     if (platformGroupRefusal(actor, group.shape)) return { success: false as const, error: GROUP_BEYOND };
+    const members = await membersRefusal(viewer, groupId.data, "deletes");
+    if (members) return { success: false as const, error: members };
+    if (await claimedBeyond(viewer, await platformGroupService.memberIds(groupId.data))) return { success: false as const, error: CLAIMED_MEMBER };
 
     try {
         const removed = await platformGroupService.delete(groupId.data);
@@ -199,8 +242,10 @@ export async function setUserPlatformGroup(userId: string, choice: PlatformGroup
     if (!user.success || !picked.success) return { success: false as const, error: "Invalid request" };
     if (user.data === viewer.id) return { success: false as const, error: "Another admin changes your own platform group." };
 
-    const target = await platformGroupService.holderOf(user.data);
-    if (!target) return { success: false as const, error: "The account no longer exists." };
+    // An account the viewer may not see answers exactly like one that does not exist, before anything
+    // else tells them about it, like whether it is one of a platform admin.
+    const [target, name] = await Promise.all([platformGroupService.holderOf(user.data), shownAccountName({ ...viewer, userId: viewer.id }, user.data)]);
+    if (!target || name === null) return { success: false as const, error: ACCOUNT_GONE };
     if ((picked.data.kind === "admin" || target.platformAdmin) && !viewer.isPlatformAdmin) return { success: false as const, error: ONLY_ADMIN };
 
     const actor = await actorOf(viewer);
@@ -217,6 +262,7 @@ export async function setUserPlatformGroup(userId: string, choice: PlatformGroup
             const refused = await userService.accountRefusalFor({ ...viewer, reach }, user.data);
             if (refused) return { success: false as const, error: refused };
         }
+        if (picked.data.kind === "none" && target.groupId && (await claimedBeyond(viewer, [user.data]))) return { success: false as const, error: CLAIMED_ACCOUNT };
     }
     if (picked.data.kind === "group") {
         const group = await platformGroupService.find(picked.data.id);
@@ -227,7 +273,7 @@ export async function setUserPlatformGroup(userId: string, choice: PlatformGroup
 
     try {
         const change = await platformGroupService.setFor(user.data, picked.data);
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Platform group set", ...change }, user.data, PLATFORM_LOG);
+        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Platform group set", name, ...change }, user.data, PLATFORM_LOG);
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: change };
     } catch (error: unknown) {
@@ -258,8 +304,11 @@ export async function createPlatformUser(input: PlatformUserInput) {
     const { platformGroup, ...data } = parsed.data;
 
     if (platformGroup.kind === "admin" && !viewer.isPlatformAdmin) return { success: false as const, error: ONLY_ADMIN };
-    // An account of no tenant belongs to the platform, which a platform group of some tenants does not look after.
-    if (!viewer.isPlatformAdmin && (await platformGroupService.reachOf(viewer.id)) !== "all") return { success: false as const, error: ONLY_ALL_TENANTS };
+    // An account of no tenant counts as one of the home tenant, like everywhere `accountRefusal` reads
+    // the reach. A platform group that reaches the home tenant makes it here as it would in two steps,
+    // New user without a group there and then its platform group.
+    const reach = viewer.isPlatformAdmin ? "all" : await platformGroupService.reachOf(viewer.id);
+    if (!viewer.isPlatformAdmin && !reachCovers(reach, HOME_TENANT_ID)) return { success: false as const, error: ONLY_ALL_TENANTS };
     let groupName = "Platform admin";
     if (platformGroup.kind === "group") {
         const group = await platformGroupService.find(platformGroup.id);
@@ -267,6 +316,17 @@ export async function createPlatformUser(input: PlatformUserInput) {
         if (platformGroupRefusal(await actorOf(viewer), group.shape)) return { success: false as const, error: "This platform group may do more than you may, so you cannot give it to anyone." };
         groupName = group.name;
     }
+
+    // An email whose domain the provider of a tenant beyond the viewer claims would join that tenant
+    // once the account loses its platform group, like New user refuses it, see `emailClaimScope`.
+    const claims = emailClaimScope({ ...viewer, reach });
+    const claimed = await claimedEmailRefusal(data.email, [HOME_TENANT_ID, ...claims.tenantIds], claims.platformLevel);
+    if (claimed) return { success: false as const, error: claimed };
+
+    // Whoever does not see an account of this email never learns that it exists, see `newAccountEmailRefusal`.
+    // An account of no tenant counts as one of the home tenant.
+    const taken = await newAccountEmailRefusal(data.email, { ...viewer, userId: viewer.id }, HOME_TENANT_ID);
+    if (taken) return { success: false as const, error: taken };
 
     try {
         const user = await userService.createPlatformUser(data, platformGroup);
@@ -278,7 +338,9 @@ export async function createPlatformUser(input: PlatformUserInput) {
         revalidatePath("/dashboard", "layout");
         return { success: true as const, data: { id: user.id } };
     } catch (error: unknown) {
-        if (!(error instanceof ValidationError)) log.warn("Creating an account of the platform failed", {}, wrapError(error));
-        return { success: false as const, error: getErrorMessage(error) };
+        // A rule of Settings > Passwords names itself, anything else, like the words of the sign-up, stays in the log.
+        if (error instanceof ValidationError) return { success: false as const, error: error.message };
+        log.warn("Creating an account of the platform failed", {}, wrapError(error));
+        return { success: false as const, error: "The account could not be created." };
     }
 }

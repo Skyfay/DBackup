@@ -118,26 +118,6 @@ if (!globalForTokens.downloadTokenStore) {
 const tokenStore = globalForTokens.downloadTokenStore;
 
 /**
- * Generate a new download token
- */
-export function generateDownloadToken(storageId: string, file: string, decrypt: boolean = true, database?: string): string {
-    const token = crypto.randomBytes(32).toString("hex");
-    const now = Date.now();
-
-    tokenStore.set(token, {
-        storageId,
-        file,
-        decrypt,
-        ...(database ? { database } : {}),
-        createdAt: now,
-        expiresAt: now + TOKEN_TTL_MS,
-        used: false
-    });
-
-    return token;
-}
-
-/**
  * A link for a command on another host: public, single-use and five minutes long. It records
  * who made it, so that user can ask whether it was fetched yet.
  */
@@ -216,10 +196,19 @@ export function releaseLinkToken(token: string): void {
 
 export type LinkState = "open" | "fetched" | "expired";
 
-/** Whether a link was fetched, for the user who made it and nobody else. */
-export function linkStatus(token: string, userId: string): { state: LinkState; expiresAt: number; fetchedAt?: number; fetchedFrom?: string } | null {
+/** Who asks for the state of a link: the user, the tenant and API key of the request, and the destination of the address. */
+export interface LinkViewer extends TokenMaker {
+    userId: string;
+    storageId: string;
+}
+
+/**
+ * Whether a link was fetched, for the request that made it and nobody else: the same user in the
+ * same tenant with the same API key or none, see `madeBy`, and asked at the destination of the link.
+ */
+export function linkStatus(token: string, viewer: LinkViewer): { state: LinkState; expiresAt: number; fetchedAt?: number; fetchedFrom?: string } | null {
     const data = tokenStore.get(token);
-    if (!data || data.createdBy !== userId) return null;
+    if (!data || data.createdBy !== viewer.userId || !madeBy(data, viewer) || data.storageId !== viewer.storageId) return null;
     const state: LinkState = data.used ? "fetched" : Date.now() > data.expiresAt ? "expired" : "open";
     return { state, expiresAt: data.expiresAt, ...(data.fetchedAt ? { fetchedAt: data.fetchedAt } : {}), ...(data.fetchedFrom ? { fetchedFrom: data.fetchedFrom } : {}) };
 }
@@ -390,6 +379,8 @@ export function generateSharedDownloadToken(params: {
     storageId: string;
     file: string;
     tenantId: string;
+    /** The API key of the request, none for a session. */
+    apiKeyId?: string;
     userId: string;
     tempFile: string;
     fileName: string;
@@ -402,14 +393,17 @@ export function generateSharedDownloadToken(params: {
     return token;
 }
 
-/** Resolves a shared dump's token for the user and the tenant presenting it, never any other token. */
+/**
+ * Resolves a shared dump's token for the user presenting it, in the tenant and with the API key,
+ * or none, that asked for it, see `madeBy`, never any other token.
+ */
 export function consumeSharedDownloadToken(
     token: string,
     userId: string,
-    tenantId: string
+    maker: TokenMaker & { tenantId: string }
 ): (DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> }) | null {
     const data = consumeDownloadToken(token);
-    if (!data?.shared || !data.localFile || data.localFile.userId !== userId || data.tenantId !== tenantId) return null;
+    if (!data?.shared || !data.localFile || data.localFile.userId !== userId || !madeBy(data, maker)) return null;
     return data as DownloadToken & { localFile: NonNullable<DownloadToken["localFile"]> };
 }
 

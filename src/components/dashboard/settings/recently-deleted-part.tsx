@@ -137,9 +137,11 @@ export function RecentlyDeletedPart({ rows }: { rows: TrashRow[] }) {
                 const result = await purgeDeletedAction(selected.map((row) => row.id));
                 if (!result.success) throw new Error(result.error);
                 const gone = new Set(result.data.purged);
+                // A row refused with a reason, like an account whose group may do more than the viewer, says why.
+                const reasons = new Map(result.data.failed.map((row) => [row.id, row.error]));
                 return {
                     succeeded: result.data.purged,
-                    failed: selected.filter((row) => !gone.has(row.id)).map((row) => ({ id: row.id, name: row.name, error: "It is not in Recently deleted any more." })),
+                    failed: selected.filter((row) => !gone.has(row.id)).map((row) => ({ id: row.id, name: row.name, error: reasons.get(row.id) ?? "It is not in Recently deleted any more." })),
                 };
             },
         },

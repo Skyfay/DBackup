@@ -10,18 +10,25 @@ export interface ApiKeyActionHandlers {
 }
 
 /**
- * Whether the viewer may change, pause, resume, rotate or delete a key, like `keyRefusal` on the
- * server: their own, or one whose permissions that still work they may all use themselves.
+ * Whether the viewer may rotate a key, enable it again and change what it may do, like `holdsKey`
+ * on the server: its owner and a platform admin. Anyone else who may change API keys only
+ * disables, deletes, renames or shortens it.
  */
-export function mayChangeKey(key: Pick<ApiKeyRow, "isMine" | "effective">, viewerPermissions: readonly string[]): boolean {
-    if (key.isMine) return true;
-    const held = new Set(viewerPermissions);
-    return key.effective.every((permission) => held.has(permission));
+export function mayChangeKey(key: Pick<ApiKeyRow, "isMine">, viewerIsPlatformAdmin: boolean): boolean {
+    return key.isMine || viewerIsPlatformAdmin;
 }
 
-/** Why the viewer may not change a key, for a bulk action, null when they may. */
-export const keyLockReason = (key: Pick<ApiKeyRow, "isMine" | "effective">, viewerPermissions: readonly string[]): string | null =>
-    mayChangeKey(key, viewerPermissions) ? null : "It may do more than your group may, only its owner changes it";
+/** The handlers the viewer gets for a key: every one for a key they hold, for one of someone else only what takes access away. */
+export function keyHandlers(key: Pick<ApiKeyRow, "isMine" | "state">, handlers: ApiKeyActionHandlers, viewerIsPlatformAdmin: boolean): ApiKeyActionHandlers {
+    if (mayChangeKey(key, viewerIsPlatformAdmin)) return handlers;
+    const { onEdit, onToggle, onDelete } = handlers;
+    return { onEdit, onDelete, ...(key.state === "disabled" ? {} : { onToggle }) };
+}
+
+/** Why the viewer may not enable a key again, for a bulk action, null when they may. */
+export function keyLockReason(key: Pick<ApiKeyRow, "isMine">, viewerIsPlatformAdmin: boolean): string | null {
+    return mayChangeKey(key, viewerIsPlatformAdmin) ? null : "Only its owner or a platform admin enables it again";
+}
 
 /**
  * Everything one key can have done to it, as data, for the button at the end of its row, the

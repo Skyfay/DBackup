@@ -7,4 +7,5 @@
 
 export const CONFIG_BACKUP_DESTINATION_LOCKED = "This destination holds the configuration backup. Only a platform admin changes it.";
 export const CONFIG_BACKUP_LOGIN_LOCKED = "This saved login opens the destination of the configuration backup. Only a platform admin reveals or changes it.";
+export const CONFIG_BACKUP_LOGIN_APPLY_LOCKED = "This saved login opens the destination of the configuration backup. Only a platform admin signs in with it on another connection or in a connection form.";
 export const CONFIG_BACKUP_KEY_LOCKED = "This key encrypts the configuration backup. Only a platform admin reveals, exports or deletes it.";

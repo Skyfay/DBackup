@@ -6,7 +6,7 @@
 
 import prisma from "@/lib/prisma";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
-import { NotFoundError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { getAlertConfig, saveAlertConfig, type StorageAlertConfig } from "./storage-alert-service";
 
@@ -51,16 +51,18 @@ export function withAlertChanges(config: StorageAlertConfig, changes: AlertChang
 /**
  * Applies the changes to every destination on its own, so one that fails leaves the others saved.
  * An id that is no destination of the tenant is turned down rather than given settings of its own.
+ * Also says the names of the destinations it changed, for the audit log.
  */
-export async function applyAlertChanges(configIds: string[], changes: AlertChanges): Promise<BulkResult> {
+export async function applyAlertChanges(configIds: string[], changes: AlertChanges): Promise<{ result: BulkResult; names: string[] }> {
     const known = await prisma.adapterConfig.findMany({ where: { id: { in: configIds }, type: "storage", storageRole: STORAGE_ROLES.DESTINATION }, select: { id: true, name: true } });
     const names = new Map(known.map((config) => [config.id, config.name]));
-    return runBulk(
+    const result = await runBulk(
         configIds,
         async (id) => {
-            if (!names.has(id)) throw new Error("This destination does not exist anymore");
+            if (!names.has(id)) throw new ValidationError("This destination does not exist anymore");
             await saveAlertConfig(id, withAlertChanges(await getAlertConfig(id), changes));
         },
         (id) => names.get(id),
     );
+    return { result, names: result.succeeded.flatMap((id) => names.get(id) ?? []) };
 }

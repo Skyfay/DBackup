@@ -15,6 +15,7 @@ import { backupKeyOf, factsOf, serverBackupFiles, sharedBackupsOf, sharedDumpNam
 import { dumpSizes, type DumpSize } from "./shared-dump-sizes";
 import { onDemandStates, requestersByBackup, type SharedOnDemand } from "./shared-on-demand";
 import { groupOfBackup, placeKey, restoreTarget, sharesSingleDatabasesOf, tenantPlaces, type HeldPlace, type TenantPlaces } from "./shared-places";
+import { randomUUID } from "crypto";
 
 /**
  * What a customer sees of the databases given to them on a shared server: those databases, their
@@ -249,19 +250,34 @@ type SharedCopy = SharedBackupRecord["copies"][number];
 /** The key a copy names, which `writeDatabaseDump` and a restore open it with. */
 const namedKey = (copy: SharedCopy): KeyOverride | undefined => (copy.profileId ? { profileId: copy.profileId } : undefined);
 
+/** A download a customer prepared, with what the provider's audit log names, like a restore. */
+export interface SharedDownloadPrepared {
+    token: string;
+    fileName: string;
+    provider: {
+        /** The tenant of the server whose backup it is. */
+        tenantId: string;
+        serverName: string;
+        customerName: string;
+    };
+}
+
 /**
  * Pulls the dump of the one database out of a backup into a temp file, for the browser to collect
  * with the token through `GET /api/shared/download?token=`, which only the user who asked for it
  * gets, in the tenant they asked in. The address names no destination. A copy that cannot be read
  * hands over to the next one.
  */
-export function prepareSharedDownload(tenantId: string, userId: string, ref: SharedBackupRef): Promise<{ token: string; fileName: string }> {
+export function prepareSharedDownload(tenantId: string, userId: string, ref: SharedBackupRef): Promise<SharedDownloadPrepared> {
     return runAsSystem(async () => {
         const backup = await checkedBackup(tenantId, ref);
         const serverTenantId = await serverTenantOf(ref.sourceId);
+        const names = await restoreNames(tenantId, serverTenantId, ref.sourceId);
+        const provider = { tenantId: serverTenantId, serverName: names.serverName, customerName: names.customerName };
         let failure: unknown = null;
         for (const copy of backup.copies) {
-            const tempFile = path.join(getTempDir(), `shared_${backup.id}_${Date.now()}`);
+            // A name nobody can guess, so no one lays a file there first for the download to write through.
+            const tempFile = path.join(getTempDir(), `shared_${randomUUID()}`);
             const keyOverride = namedKey(copy);
             try {
                 // Read in the tenant of the server, whose backup it is: with the key the backup
@@ -272,7 +288,7 @@ export function prepareSharedDownload(tenantId: string, userId: string, ref: Sha
                 ));
                 const fileName = sharedDumpName(copy.file, written.fileName, backup.createdAt);
                 const token = generateSharedDownloadToken({ storageId: copy.destinationId, file: copy.file, tenantId, userId, tempFile, fileName, contentType: "application/octet-stream" });
-                return { token, fileName };
+                return { token, fileName, provider };
             } catch (error: unknown) {
                 failure = error;
                 await fs.unlink(tempFile).catch(() => undefined);

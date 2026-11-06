@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { registerAdapters } from "@/lib/adapters";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
 import { requestRefusal } from "@/lib/server/permission-refusal";
+import { logger } from "@/lib/logging/logger";
+import { AdapterError, wrapError } from "@/lib/logging/errors";
 import { readDatabaseStats, type StatsRefusal } from "@/services/databases/database-read-service";
+import { logDatabasesRead } from "@/services/databases/databases-read-audit";
 
 // Ensure adapters are registered
 registerAdapters();
+
+const log = logger.child({ route: "adapters/database-stats" });
 
 /** What the API answers a read that never reached the server with. */
 const REFUSALS: Record<StatsRefusal, { message: string; status: number }> = {
@@ -29,7 +35,7 @@ export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -43,7 +49,16 @@ export async function POST(req: NextRequest) {
             assertMayReadFormConfig(ctx, adapterId);
         }
 
-        const outcome = await readDatabaseStats({ adapterId, config, sourceId });
+        let outcome: Awaited<ReturnType<typeof readDatabaseStats>>;
+        try {
+            outcome = await readDatabaseStats({ adapterId, config, sourceId });
+        } catch (error: unknown) {
+            // The read ran and the server did not answer, which the log keeps like a test of a connection.
+            await logDatabasesRead(ctx, { sourceId, adapterId }, false);
+            throw error;
+        }
+        // A read that never reached the server writes nothing.
+        if (outcome.ok) await logDatabasesRead(ctx, { sourceId, adapterId }, true);
         if (!outcome.ok) {
             const { message, status } = REFUSALS[outcome.reason];
             return NextResponse.json({ success: false, message }, { status });
@@ -55,7 +70,9 @@ export async function POST(req: NextRequest) {
     } catch (error: unknown) {
         const refusal = requestRefusal(error);
         if (refusal) return refusal;
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json({ success: false, message }, { status: 500 });
+        // What the server or the adapter said is what the form shows, anything else stays in the log.
+        if (error instanceof AdapterError) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+        log.error("Reading the databases with their sizes failed", {}, wrapError(error));
+        return NextResponse.json({ success: false, message: "The databases could not be read. The log of DBackup has the details." }, { status: 500 });
     }
 }

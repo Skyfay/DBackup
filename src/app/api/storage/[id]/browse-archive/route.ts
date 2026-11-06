@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
+import { backupPathIssue } from "@/lib/server/backup-path-schema";
 import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, ValidationError, wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { browseArchive } from "@/services/storage/backup-contents";
 import { isMissingStorage } from "@/services/storage/storage-lookup";
 
@@ -15,7 +17,7 @@ const log = logger.child({ route: "storage/browse-archive" });
 
 const BrowseSchema = z.object({
     /** Remote path of the backup archive, without any sidecar suffix. */
-    file: z.string().min(1).refine((v) => !v.includes("..") && !v.startsWith("/"), "Invalid file path"),
+    file: z.string().min(1).superRefine(backupPathIssue),
     /** JobSource id of the directory source to browse. Omit to list the sources themselves. */
     jobSourceId: z.string().min(1).optional(),
     /** Directory to list, relative to that source's root. Omit for the root. */
@@ -33,7 +35,7 @@ const BrowseSchema = z.object({
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await props.params;
 
@@ -75,6 +77,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         }
 
         log.error("Failed to browse archive", { configId: id }, wrapError(e));
-        return NextResponse.json({ success: false, error: getErrorMessage(e) }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The backup could not be opened. The log of DBackup has the details." }, { status: 500 });
     }
 }

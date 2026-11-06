@@ -27,7 +27,7 @@ const OPEN_ROUTES: Record<string, string> = {
     "auth/sso-link-callback GET": "compares the session with the token minted before the redirect",
     "avatar/[userId] GET": "findVisibleAvatar answers only who may see the person (maySeePicture)",
     "health GET": "Docker health check, public",
-    "internal/rate-limit-config GET": "read by the middleware, holds no tenant data",
+    "internal/rate-limit-config GET": "only the middleware with the token of the instance (internal-token.ts), holds no tenant data",
     "login-image GET": "the picture of the login page, public",
     "login/provider POST": "the login page, names a provider and never a tenant",
     "settings/database/download POST": "a platform admin with a session only, stricter than any permission",

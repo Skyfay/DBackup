@@ -8,15 +8,18 @@ import { TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES, type AuditResource } from "@/lib/core/audit-types";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { AuthenticationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { AuthenticationError } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import { logger } from "@/lib/logging/logger";
 import { auditService, type AuditOrigin } from "@/services/audit-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 import { PLATFORM_LOG } from "@/services/system/settings-save";
+import { groupBeyondRefusals, trashAccountCaps, type AccountGroupCaller } from "@/services/trash/account-groups";
 import { latestAccountEntries, latestTrashIds, mayHandle, mayRestoreAccount, purgeFromTrash, restoreFromTrash, trashAccounts, trashEntries, type TrashViewer } from "@/services/trash/trash-service";
 import { TRASH_KINDS, isTrashKind, type TrashKind, type TrashRestoreResult } from "@/services/trash/trash-types";
 import { userService } from "@/services/user/user-service";
 import { CHANGED_EMAIL_ANSWERS, takenEmailRefusal } from "@/services/user/new-account-email";
+import type { AccountViewer } from "@/services/user/account-visibility";
 
 const log = logger.child({ action: "trash" });
 
@@ -35,6 +38,9 @@ const RESOURCES: Record<TrashKind, AuditResource> = {
  * change the tenant settings.
  */
 const UNDO_WINDOW_MS = 5 * 60 * 1000;
+
+/** The viewer as the guards of a restored connection ask for it, an action always has a session. */
+const sessionCaller = (user: { isPlatformAdmin: boolean }) => ({ isPlatformAdmin: user.isPlatformAdmin, authMethod: "session" as const });
 
 const GONE = "It is not in Recently deleted any more.";
 
@@ -111,12 +117,34 @@ async function claimedAccounts(entries: Entry[], scope: EmailClaimScope, options
 type EmailClaimScope = ReturnType<typeof emailClaimScope>;
 
 /**
+ * The accounts among these whose own email has an account by now, as conflicts the person resolves
+ * with another email. They hear what a new email hears (`takenEmailRefusal`): the account is named
+ * only to whoever may see it, and anyone else's refusal counts as a try.
+ */
+async function takenOwnEmails(entries: Entry[], viewer: AccountViewer, options: { anyTenant?: boolean } = {}): Promise<TrashRestoreResult["conflicts"]> {
+    const users = entries.filter((entry) => entry.kind === "user");
+    if (users.length === 0) return [];
+    const names = new Map(users.map((entry) => [entry.id, entry.name]));
+    const conflicts: TrashRestoreResult["conflicts"] = [];
+    for (const account of await trashAccounts(users.map((entry) => entry.id), { anyTenant: options.anyTenant })) {
+        const taken = await takenEmailRefusal(account.email, viewer, viewer.tenantId, CHANGED_EMAIL_ANSWERS);
+        if (taken) conflicts.push({ id: account.id, kind: "user", name: names.get(account.id) ?? account.email, message: taken });
+    }
+    return conflicts;
+}
+
+/**
  * What the viewer manages of the accounts of the platform: the tenants their right reaches, and
  * with it the emails they may give, see `emailClaimScope`.
  */
 async function accountsScopeOf(user: Viewer, permissions: string[]): Promise<{ reach: PlatformReach; claims: EmailClaimScope }> {
     const reach = await userService.accountsReachOf({ id: user.id, isPlatformAdmin: user.isPlatformAdmin, permissions });
     return { reach, claims: emailClaimScope({ isPlatformAdmin: user.isPlatformAdmin, permissions, reach }) };
+}
+
+/** The viewer as the cap of the groups of a deleted account reads them, see `account-groups.ts`. */
+function groupCaller(user: Viewer & { tenantId: string | null }, permissions: readonly string[]): AccountGroupCaller {
+    return { id: user.id, isPlatformAdmin: user.isPlatformAdmin, tenantId: user.tenantId, permissions };
 }
 
 /** Reports the ids that were asked for and are not among the entries the viewer may handle. */
@@ -146,26 +174,48 @@ export async function restoreDeletedAction(ids: string[], newName?: string): Pro
         const found = await allowed(viewer, parsed.data.ids);
         const newEmail = parsed.data.newName && found.length === 1 && found[0].kind === "user" ? parsed.data.newName : undefined;
         if (newEmail && !z.string().email().safeParse(newEmail).success) return { success: false, error: "An account needs a valid email." };
+        // An account whose group may do more than the viewer may comes back only through someone who
+        // may do all of it, under its own email or a new one, like a change of the live account.
+        const beyond = await groupBeyondRefusals(groupCaller(user, viewer.permissions), found);
+        if (newEmail && beyond.length > 0) return { success: false, error: beyond[0].error };
         // Whoever does not see the account that holds the new email never learns that it exists, see `takenEmailRefusal`.
-        const taken = newEmail ? await takenEmailRefusal(newEmail, { ...user, userId: user.id }, user.tenantId, CHANGED_EMAIL_ANSWERS) : null;
-        if (taken) return { success: false, error: taken };
+        const newTaken = newEmail ? await takenEmailRefusal(newEmail, { ...user, userId: user.id }, user.tenantId, CHANGED_EMAIL_ANSWERS) : null;
+        if (newTaken) return { success: false, error: newTaken };
         // An account comes back with an email, its own or a new one, whose domain the provider of
         // another tenant may claim by now.
         const { claims } = await accountsScopeOf(user, [...viewer.permissions]);
-        const claimed = await claimedAccounts(found, claims, { newName: newEmail });
+        const beyondIds = new Set(beyond.map((entry) => entry.id));
+        const claimed = await claimedAccounts(found.filter((entry) => !beyondIds.has(entry.id)), claims, { newName: newEmail });
         if (newEmail && claimed.length > 0) return { success: false, error: claimed[0].error };
-        const refused = new Set(claimed.map((entry) => entry.id));
+        const refused = new Set([...beyondIds, ...claimed.map((entry) => entry.id)]);
+        // An account that comes back under its own email meets the same check as under a new one.
+        const taken = newEmail ? [] : await takenOwnEmails(found.filter((entry) => !refused.has(entry.id)), { ...user, userId: user.id });
+        for (const conflict of taken) refused.add(conflict.id);
         const entries = found.filter((entry) => !refused.has(entry.id));
         const result = entries.length > 0
-            ? await restoreFromTrash(entries.map((entry) => entry.id), { newName: parsed.data.newName })
+            // A new name only ever belongs to the one record picked, which went through the checks
+            // above, never to one left over after others were refused.
+            ? await restoreFromTrash(entries.map((entry) => entry.id), { newName: found.length === 1 ? parsed.data.newName : undefined, caller: sessionCaller(user) })
             : { restored: [], conflicts: [], failed: [] };
-        result.failed.push(...claimed, ...missing(parsed.data.ids, found));
+        result.conflicts.push(...taken);
+        result.failed.push(...beyond, ...claimed, ...missing(parsed.data.ids, found));
         await recordRestored(user, entries, result);
         return { success: true, data: result };
     } catch (error: unknown) {
-        log.error("Restoring deleted records failed", {}, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Nothing could be restored." };
+        return { success: false, error: userMessage(error, "Nothing could be restored. The server log has the details.", log, "Restoring deleted records failed") };
     }
+}
+
+/**
+ * The viewer's own deletes of accounts they may bring back with Undo, see `mayRestoreAccount`, which
+ * also weighs the groups of each snapshot against what the viewer may in their tenants. The entries
+ * wait in any tenant.
+ */
+async function ownAccountsToUndo(user: Viewer & { tenantId: string | null }, permissions: string[], reach: PlatformReach, entries: Entry[]): Promise<Entry[]> {
+    if (entries.length === 0) return [];
+    const { groups, permissionsByTenant } = await trashAccountCaps(groupCaller(user, permissions), entries.map((entry) => entry.id), { anyTenant: true });
+    const viewer = { ...trashViewer(user, permissions), tenantId: user.tenantId, reach, permissionsByTenant };
+    return entries.filter((entry) => mayRestoreAccount(viewer, { ...entry, groups: groups.get(entry.id) ?? [] }));
 }
 
 const UndoSchema = z.object({
@@ -203,22 +253,24 @@ export async function undoDeleteAction(kind: TrashKind, recordIds: string[]): Pr
         const accounts = parsed.data.kind === "user";
         const { reach, claims } = await accountsScopeOf(user, permissions);
         const found = accounts
-            ? (await latestAccountEntries(parsed.data.recordIds)).map((entry) => ({ ...entry, kind: "user" as const })).filter((entry) => own(entry) && mayRestoreAccount({ ...viewer, tenantId: user.tenantId, reach }, entry))
+            ? await ownAccountsToUndo(user, permissions, reach, (await latestAccountEntries(parsed.data.recordIds)).map((entry) => ({ ...entry, kind: "user" as const })).filter(own))
             : (await allowed(viewer, await latestTrashIds(parsed.data.kind, parsed.data.recordIds))).filter(own);
         if (found.length === 0) return { success: false, error: "It can no longer be undone. Someone who may change the tenant settings restores it under Settings › Recently deleted." };
         const claimed = await claimedAccounts(found, claims, { anyTenant: true });
         const refused = new Set(claimed.map((entry) => entry.id));
+        const taken = accounts ? await takenOwnEmails(found.filter((entry) => !refused.has(entry.id)), { ...user, userId: user.id }, { anyTenant: true }) : [];
+        for (const conflict of taken) refused.add(conflict.id);
         const entries = found.filter((entry) => !refused.has(entry.id));
         const ids = entries.map((entry) => entry.id);
         const result: TrashRestoreResult = ids.length === 0
             ? { restored: [], conflicts: [], failed: [] }
-            : accounts ? await restoreFromTrash(ids, { anyTenantAccounts: true }) : await restoreFromTrash(ids);
+            : accounts ? await restoreFromTrash(ids, { anyTenantAccounts: true, caller: sessionCaller(user) }) : await restoreFromTrash(ids, { caller: sessionCaller(user) });
+        result.conflicts.push(...taken);
         result.failed.push(...claimed);
         await recordRestored(user, entries, result);
         return { success: true, data: result };
     } catch (error: unknown) {
-        log.error("Undoing a delete failed", { kind: parsed.data.kind }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "The delete could not be undone." };
+        return { success: false, error: userMessage(error, "The delete could not be undone. The server log has the details.", log, "Undoing a delete failed", { kind: parsed.data.kind }) };
     }
 }
 
@@ -226,7 +278,7 @@ export async function undoDeleteAction(kind: TrashKind, recordIds: string[]): Pr
  * Deletes records from Recently deleted for good, before their time is up, and answers with the ids
  * that went. Needs the right to change the settings, and for each record the right to change its kind.
  */
-export async function purgeDeletedAction(ids: string[]): Promise<TrashActionResult<{ purged: string[] }>> {
+export async function purgeDeletedAction(ids: string[]): Promise<TrashActionResult<{ purged: string[]; failed: TrashRestoreResult["failed"] }>> {
     const user = await checkPermission(TRASH_ADMIN_PERMISSION);
     const viewer = trashViewer(user, await getUserPermissions());
     const parsed = BulkIdsSchema.safeParse(ids);
@@ -234,16 +286,21 @@ export async function purgeDeletedAction(ids: string[]): Promise<TrashActionResu
     if (user.allTenants) return { success: false, error: IN_ITS_TENANT };
 
     try {
-        const entries = await allowed(viewer, parsed.data);
-        if (entries.length === 0) return { success: false, error: GONE };
+        const found = await allowed(viewer, parsed.data);
+        if (found.length === 0) return { success: false, error: GONE };
+        // An account whose group may do more than the viewer may goes for good only through someone
+        // who may do all of it, like the delete of the live account.
+        const failed = await groupBeyondRefusals(groupCaller(user, viewer.permissions), found);
+        const refused = new Set(failed.map((entry) => entry.id));
+        const entries = found.filter((entry) => !refused.has(entry.id));
+        if (entries.length === 0) return { success: false, error: failed[0].error };
         await purgeFromTrash(entries.map((entry) => entry.id));
         for (const entry of entries) {
             await auditService.log(user.id, AUDIT_ACTIONS.DELETE, RESOURCES[entry.kind], { name: entry.name, action: "trash_purge", permanently: true }, entry.recordId);
         }
         revalidatePath("/dashboard/settings");
-        return { success: true, data: { purged: entries.map((entry) => entry.id) } };
+        return { success: true, data: { purged: entries.map((entry) => entry.id), failed } };
     } catch (error: unknown) {
-        log.error("Deleting records from Recently deleted failed", {}, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Nothing could be deleted." };
+        return { success: false, error: userMessage(error, "Nothing could be deleted. The server log has the details.", log, "Deleting records from Recently deleted failed") };
     }
 }

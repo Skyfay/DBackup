@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
@@ -18,7 +19,7 @@ const TenantsSchema = z.array(z.string().min(1).max(200)).max(500);
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext(await headers());
   if (!ctx) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {

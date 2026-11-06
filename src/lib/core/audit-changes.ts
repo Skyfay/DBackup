@@ -83,11 +83,19 @@ function rowLine(row: ChangeRow): string {
     return `${row.label} ${row.from ?? "none"} to ${row.to ?? "none"}`;
 }
 
+/** Why a sign-in failed, by the reason its entry keeps. */
+const FAILED_SIGN_IN_REASONS: Record<string, string> = {
+    unknown_email: "No account has this email",
+    wrong_password: "The password was wrong",
+    wrong_code: "The code of the second factor was wrong",
+    passkey_refused: "The passkey was not accepted",
+};
+
 /** What changed in one line under the sentence of an entry, or null when there is nothing to add. */
 export function changeSummary(action: string, details: Record<string, unknown>): string | null {
     if (action === AUDIT_ACTIONS.LOGIN_FAILED) {
         const reason = text(details.reason);
-        return reason === "unknown_email" ? "No account has this email" : reason === "wrong_password" ? "The password was wrong" : null;
+        return reason && Object.hasOwn(FAILED_SIGN_IN_REASONS, reason) ? FAILED_SIGN_IN_REASONS[reason] : null;
     }
     if (details.bulk === true && typeof details.requested === "number") {
         const failed = typeof details.failed === "number" ? details.failed : 0;

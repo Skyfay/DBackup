@@ -5,6 +5,7 @@ import { StorageClient } from "./storage-client";
 import { BACKUPS_PAGE_ID, BACKUPS_TABLE_ID, DESTINATIONS_PAGE_ID } from "@/components/dashboard/storage/explorer/backup-tables";
 import { TenantKeyed } from "@/components/tenant/tenant-keyed";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
+import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -17,6 +18,7 @@ export const metadata: Metadata = { title: "Backups" };
 const log = logger.child({ page: "backups" });
 
 export default async function StoragePage() {
+    await redirectWithoutTenant();
     const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
     const canRead = permissions.includes(PERMISSIONS.STORAGE.READ);
     const [layouts, backupsView, destinationsView, hasShared] = await Promise.all([

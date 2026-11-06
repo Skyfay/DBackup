@@ -9,9 +9,32 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
-import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
+import { claimedEmailRefusal, foreignClaimsOf } from "@/services/sso/email-domain-claims";
 import { platformGroupService } from "./platform-group-service";
 import type { DeleteOptions } from "@/services/trash/trash-types";
+
+/** Whether an authenticator app is the second factor of the account. better-auth counts its code as set up unless it waits for its first code. */
+async function hasAuthenticatorApp(userId: string): Promise<boolean> {
+  const app = await prisma.twoFactor.findUnique({ where: { userId }, select: { verified: true } });
+  return !!app && app.verified !== false;
+}
+
+/**
+ * The tenant an account of no tenant counts as one of when no platform role or group holds it: the
+ * tenant other than the home tenant whose provider claims its email, null for the home tenant. See
+ * `userService.accountOf`.
+ */
+async function placelessClaimOf(user: { id: string; email: string; platformRole: string | null; platformGroupId: string | null }): Promise<string | null> {
+  if (user.platformRole || user.platformGroupId) return null;
+  return (await foreignClaimsOf([user])).get(user.id) ?? null;
+}
+
+/** The tenants of an account for a claimed email, see `userService.emailTenantsOf`. */
+function emailTenantsFrom(user: { platformGroupId: string | null; memberships: { tenantId: string }[] }): string[] {
+  const tenantIds = user.memberships.map((membership) => membership.tenantId);
+  if (user.platformGroupId || tenantIds.length === 0) tenantIds.push(HOME_TENANT_ID);
+  return tenantIds;
+}
 
 export const userService = {
   /**
@@ -99,20 +122,37 @@ export const userService = {
     return permissionsIn(user.memberships, tenantId, user.platformGroup);
   },
 
-  /** Whom an account belongs to and the group it holds in each tenant, which decide who may change it, see `accountRefusal`. */
+  /**
+   * Whom an account belongs to and the group it holds in each tenant, which decide who may change it,
+   * see `accountRefusal`. An account of no tenant counts as one of the home tenant, unless no platform
+   * role or group holds it and the provider of another tenant claims its email: then it counts as one
+   * of that tenant, since the person of the email would sign in there, so the admins of the home
+   * tenant never set its password.
+   */
   async accountOf(userId: string): Promise<AccountTarget | null> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } } },
+      select: { id: true, email: true, platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } } },
     });
     if (!user) return null;
     const platformGroup = user.platformGroupId ? (await platformGroupService.shapeOf(userId))?.shape ?? null : null;
+    const claim = user.memberships.length === 0 ? await placelessClaimOf(user) : null;
     return {
       isPlatformAdmin: user.platformRole === PLATFORM_ADMIN_ROLE,
-      tenantIds: user.memberships.map((membership) => membership.tenantId),
+      tenantIds: claim ? [claim] : user.memberships.map((membership) => membership.tenantId),
       platformGroup,
       groups: user.memberships.flatMap((membership) => (membership.group ? [{ tenantId: membership.tenantId, group: membership.group }] : [])),
     };
+  },
+
+  /**
+   * The tenant an account counts as one of once it works in no tenant: the one whose provider claims
+   * its email when that is not the home tenant and no platform role or group holds it, else the home
+   * tenant, see `accountOf`. Asked before a membership ends, see `membershipEndRefusal`.
+   */
+  async placelessTenantOf(userId: string): Promise<string> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, platformRole: true, platformGroupId: true } });
+    return (user ? await placelessClaimOf(user) : null) ?? HOME_TENANT_ID;
   },
 
   /**
@@ -123,9 +163,17 @@ export const userService = {
   async ownEmailRefusal(userId: string, email: string): Promise<string | null> {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
     if (!user) return null;
-    const tenantIds = user.memberships.map((membership) => membership.tenantId);
-    if (user.platformGroupId || tenantIds.length === 0) tenantIds.push(HOME_TENANT_ID);
-    return claimedEmailRefusal(email, tenantIds, user.platformRole === PLATFORM_ADMIN_ROLE);
+    return claimedEmailRefusal(email, emailTenantsFrom(user), user.platformRole === PLATFORM_ADMIN_ROLE);
+  },
+
+  /**
+   * The tenants whose sign-in providers may claim the email of an account, like `ownEmailRefusal`
+   * reads them: the ones it works in, and the home tenant for an account of no tenant or of a
+   * platform group. Never the tenant of whoever changes the account. None for an account that is gone.
+   */
+  async emailTenantsOf(userId: string): Promise<string[]> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformGroupId: true, memberships: { select: { tenantId: true } } } });
+    return user ? emailTenantsFrom(user) : [];
   },
 
   /**
@@ -138,14 +186,22 @@ export const userService = {
     if (!target) return null;
     // Only an account of a platform group needs the caller's own platform group to compare.
     const platformGroupShape = target.platformGroup && !caller.isPlatformAdmin ? (await platformGroupService.shapeOf(caller.id))?.shape ?? null : null;
-    // What the caller may do in the other tenants of the account, which caps the groups it holds there.
-    const permissionsByTenant: Record<string, readonly string[]> = {};
-    if (!caller.isPlatformAdmin) {
-      for (const { tenantId } of target.groups ?? []) {
-        if (tenantId !== caller.tenantId) permissionsByTenant[tenantId] = await this.permissionsIn(caller.id, tenantId);
-      }
-    }
+    const permissionsByTenant = await this.permissionsByTenantFor(caller, target.groups ?? []);
     return accountRefusal({ ...caller, platformGroupShape, reach: caller.reach ?? (await this.accountsReachOf(caller)), permissionsByTenant }, target);
+  },
+
+  /**
+   * What the caller may do in the tenants of these groups other than the one they work in now,
+   * which caps the groups an account holds there, see `heldGroupBeyond`. Empty for a platform admin,
+   * who passes that check anyway.
+   */
+  async permissionsByTenantFor(caller: { id: string; isPlatformAdmin: boolean; tenantId: string | null }, groups: readonly { tenantId: string }[]): Promise<Record<string, readonly string[]>> {
+    const permissionsByTenant: Record<string, readonly string[]> = {};
+    if (caller.isPlatformAdmin) return permissionsByTenant;
+    for (const { tenantId } of groups) {
+      if (tenantId !== caller.tenantId && !(tenantId in permissionsByTenant)) permissionsByTenant[tenantId] = await this.permissionsIn(caller.id, tenantId);
+    }
+    return permissionsByTenant;
   },
 
   /**
@@ -200,20 +256,20 @@ export const userService = {
     });
 
     if (!user) {
-      throw new Error("User not found");
+      throw new ValidationError("User not found");
     }
 
     if (user.platformRole === PLATFORM_ADMIN_ROLE) {
       const platformAdmins = await prisma.user.count({ where: { platformRole: PLATFORM_ADMIN_ROLE } });
       if (platformAdmins <= 1) {
-        throw new Error("Cannot delete the last platform admin.");
+        throw new ValidationError("Cannot delete the last platform admin.");
       }
     }
 
     // Check if user is the last one
     const userCount = await prisma.user.count();
     if (userCount <= 1) {
-      throw new Error("Cannot delete the last user.");
+      throw new ValidationError("Cannot delete the last user.");
     }
 
     return prisma.$transaction(async (tx) => {
@@ -241,18 +297,36 @@ export const userService = {
   },
 
   /**
-   * Toggle passkey two-factor authentication for a user.
+   * Switches whether a passkey counts as the second factor of an account. better-auth asks for a
+   * second factor while `twoFactorEnabled` is set, so the switch sets it too. Switching the passkey
+   * off leaves it set while an authenticator app is the second factor, which only someone who may
+   * change the second factor turns off, never the switch of the passkeys.
    */
   async togglePasskeyTwoFactor(userId: string, enabled: boolean) {
+    const keepsApp = enabled ? false : await hasAuthenticatorApp(userId);
     return await prisma.user.update({
       where: {
         id: userId,
       },
       data: {
         passkeyTwoFactor: enabled,
-        twoFactorEnabled: enabled, // Force enable native 2FA flag to trigger 2FA flow
+        twoFactorEnabled: enabled || keepsApp,
       },
     });
+  },
+
+  /** Whether an authenticator app is the second factor of the account, without which a passkey switched on starts one. */
+  async hasAuthenticatorApp(userId: string): Promise<boolean> {
+    return hasAuthenticatorApp(userId);
+  },
+
+  /**
+   * Whether switching off the passkey as the second factor ends the second factor of the account:
+   * it asks for one now and has no authenticator app to keep it, see `togglePasskeyTwoFactor`.
+   */
+  async passkeyOffEndsTwoFactor(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { twoFactorEnabled: true } });
+    return !!user?.twoFactorEnabled && !(await hasAuthenticatorApp(userId));
   },
 
   /**

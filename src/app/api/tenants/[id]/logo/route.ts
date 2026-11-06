@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { revalidatePath } from "next/cache";
 import { checkPermissionWithContext, getAuthContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -28,7 +29,7 @@ const SERVED_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/web
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return new NextResponse(null, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await params;
     const logo = (await mayViewTenantLogo(ctx, id)) ? await findTenantLogo(id) : null;
@@ -65,7 +66,7 @@ function guardChange(ctx: AuthContext, tenantId: string): NextResponse | null {
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await params;
     const refused = guardChange(ctx, id);
     if (refused) return refused;
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 /** Removes the logo of the tenant the request acts in, which shows its initials again. */
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await params;
     const refused = guardChange(ctx, id);
     if (refused) return refused;

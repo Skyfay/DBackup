@@ -27,13 +27,15 @@ const holdsAccountRights = (viewer: AccountViewer) =>
 
 /**
  * The tenants whose people the viewer sees through the right to see or manage the accounts of the
- * platform. Every tenant for a platform admin, for a platform group of all tenants and in All
- * tenants, whose Users tab lists every account of the instance. The tenants of the platform group
- * for a group of some tenants, and none without the right.
+ * platform. Every tenant for a platform admin and for a platform group of all tenants with that
+ * right, which in All tenants is who the Users tab lists every account of the instance to. The
+ * tenants of the platform group for a group of some tenants, and none without the right, in All
+ * tenants too.
  */
 export async function accountsSeenReach(viewer: AccountViewer): Promise<PlatformReach> {
-    if (viewer.isPlatformAdmin || viewer.allTenants) return "all";
-    return holdsAccountRights(viewer) ? platformGroupService.reachOf(viewer.userId) : [];
+    if (viewer.isPlatformAdmin) return "all";
+    if (!holdsAccountRights(viewer)) return [];
+    return viewer.allTenants ? "all" : platformGroupService.reachOf(viewer.userId);
 }
 
 /** Whether a reach sees an account: every one, else one with a membership in a tenant of it, see `membersOfAny`. */
@@ -50,7 +52,7 @@ async function reachSees(reach: PlatformReach, userId: string): Promise<boolean>
  * there were platform groups.
  */
 async function signInPeopleReach(viewer: AccountViewer): Promise<PlatformReach> {
-    if (viewer.isPlatformAdmin || viewer.allTenants) return "all";
+    if (viewer.isPlatformAdmin) return "all";
     if (!LISTS_PEOPLE.some((permission) => hasPermissionWithContext(viewer, permission))) return [];
     const own = await platformGroupService.shapeOf(viewer.userId);
     if (!own) return "all";
@@ -86,6 +88,20 @@ export async function maySeeAccount(viewer: AccountViewer, userId: string): Prom
     if (viewer.userId === userId) return true;
     if (await reachSees(await accountsSeenReach(viewer), userId)) return true;
     return viewer.tenantId ? membershipService.isPersonOf(userId, viewer.tenantId) : false;
+}
+
+/** What an action on one account answers for one that does not exist, and alike for one the caller may not see. */
+export const ACCOUNT_UNKNOWN = "The user no longer exists.";
+
+/**
+ * The name of an account the viewer may see (`maySeeAccount`), its email when it has no name.
+ * Null for an account that does not exist and for one the viewer may not see, which an action on
+ * one account answers alike, so its answer never tells the two apart.
+ */
+export async function shownAccountName(viewer: AccountViewer, userId: string): Promise<string | null> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+    if (!user || !(await maySeeAccount(viewer, userId))) return null;
+    return user.name || user.email;
 }
 
 /**

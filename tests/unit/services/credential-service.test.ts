@@ -38,6 +38,10 @@ vi.mock("@/lib/prisma", () => {
 const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => "trash-1") }));
 vi.mock("@/services/trash/trash-snapshot", () => trash);
 
+// Who saves the login: a platform admin with a session in the home tenant, or anyone else.
+const host = vi.hoisted(() => ({ mayReachHost: vi.fn(async () => false) }));
+vi.mock("@/lib/adapters/config-resolver", () => host);
+
 vi.mock("@/lib/crypto", async (importOriginal) => ({
     ...(await importOriginal<typeof cryptoLib>()),
     encrypt: vi.fn(),
@@ -99,6 +103,32 @@ describe("Credential Service", () => {
             await expect(
                 createCredentialProfile("Test", "USERNAME_PASSWORD", { username: "u" })
             ).rejects.toBeInstanceOf(ValidationError);
+        });
+
+        it("refuses a password with a line break or a NUL, which the MySQL tools would read as more options", async () => {
+            (prisma.credentialProfile.findFirst as any).mockResolvedValue(null);
+            (prisma.credentialProfile.findUnique as any).mockResolvedValue(baseRow);
+            for (const password of ["pw\nplugin-dir=/tmp", "pw\r", "pw\0"]) {
+                const created = createCredentialProfile("Test", "USERNAME_PASSWORD", { username: "u", password });
+                await expect(created).rejects.toBeInstanceOf(ValidationError);
+                await expect(created).rejects.toThrow("line break or a NUL");
+                await expect(updateCredentialProfile("cred-1", { data: { username: "u", password } })).rejects.toBeInstanceOf(ValidationError);
+            }
+            await expect(createCredentialProfile("Test", "USERNAME_PASSWORD", { username: "u\nx", password: "p" })).rejects.toThrow("control character");
+            expect(prisma.credentialProfile.create).not.toHaveBeenCalled();
+            expect(prisma.credentialProfile.update).not.toHaveBeenCalled();
+        });
+
+        it("creates an SSH agent login only for a platform admin", async () => {
+            (prisma.credentialProfile.findFirst as any).mockResolvedValue(null);
+            (prisma.credentialProfile.create as any).mockResolvedValue({ ...baseRow, type: "SSH_KEY" });
+
+            host.mayReachHost.mockResolvedValue(false);
+            await expect(createCredentialProfile("Agent", "SSH_KEY", { username: "backup", authType: "agent" })).rejects.toBeInstanceOf(ValidationError);
+            expect(prisma.credentialProfile.create).not.toHaveBeenCalled();
+
+            host.mayReachHost.mockResolvedValue(true);
+            await expect(createCredentialProfile("Agent", "SSH_KEY", { username: "backup", authType: "agent" })).resolves.toBeDefined();
         });
 
         it("rejects unknown credential types", async () => {
@@ -362,6 +392,33 @@ describe("Credential Service", () => {
 
             (prisma.adapterConfig.count as any).mockResolvedValue(1);
             await expect(updateCredentialProfile("cred-1", { data: { username: "backup-01.ops", authType: "password", password: "pw" } })).resolves.toBeDefined();
+        });
+
+        it("refuses to turn a login into the SSH agent of the server for anyone but a platform admin", async () => {
+            const sshProfile = { ...baseRow, type: "SSH_KEY" };
+            (prisma.credentialProfile.findUnique as any).mockResolvedValue(sshProfile);
+            (prisma.credentialProfile.update as any).mockResolvedValue(sshProfile);
+            (prisma.adapterConfig.count as any).mockResolvedValue(0);
+
+            host.mayReachHost.mockResolvedValue(false);
+            await expect(updateCredentialProfile("cred-1", { data: { username: "backup", authType: "agent" } }))
+                .rejects.toThrow(/SSH agent login uses the keys of the server DBackup runs on/);
+            expect(prisma.credentialProfile.update).not.toHaveBeenCalled();
+
+            host.mayReachHost.mockResolvedValue(true);
+            await expect(updateCredentialProfile("cred-1", { data: { username: "backup", authType: "agent" } })).resolves.toBeDefined();
+            expect(prisma.credentialProfile.update).toHaveBeenCalledTimes(1);
+        });
+
+        it("keeps a password or key login open to everyone who may change logins", async () => {
+            const sshProfile = { ...baseRow, type: "SSH_KEY" };
+            (prisma.credentialProfile.findUnique as any).mockResolvedValue(sshProfile);
+            (prisma.credentialProfile.update as any).mockResolvedValue(sshProfile);
+            (prisma.adapterConfig.count as any).mockResolvedValue(0);
+            host.mayReachHost.mockResolvedValue(false);
+
+            await expect(updateCredentialProfile("cred-1", { data: { username: "backup", authType: "password", password: "pw" } })).resolves.toBeDefined();
+            expect(host.mayReachHost).not.toHaveBeenCalled();
         });
 
         it("does not re-validate when data not provided", async () => {

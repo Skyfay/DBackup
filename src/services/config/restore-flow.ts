@@ -5,6 +5,7 @@
  */
 
 import { promises as fs } from "fs";
+import { assertBackupPath } from "@/lib/tenant/storage-view";
 import path from "path";
 import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
@@ -13,13 +14,14 @@ import { registry } from "@/lib/core/registry";
 import { isShared, openRow } from "@/services/sharing/destination-access";
 import { getTempDir } from "@/lib/temp-dir";
 import { ValidationError } from "@/lib/logging/errors";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { AppConfigurationBackup, RestorePreview } from "@/lib/types/config-backup";
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import { inspectDatabaseCopy, isDatabaseCopy, previewOfJson } from "./copy-inspect";
 import { importConfiguration } from "./import";
-import { openBackupFile } from "./open-backup";
+import { isStoredEncrypted, openBackupFile, UNENCRYPTED_AT_DESTINATION } from "./open-backup";
 import { holdRestore, peekRestore, takeRestore, type RestoreOwner } from "./pending-restores";
 import { stageDatabaseRestore } from "./restore-staging";
 
@@ -121,9 +123,16 @@ export async function checkStoredBackup(destinationId: string, file: string, ove
 }
 
 async function checkStored(destinationId: string, file: string, override: KeyOverride | undefined, owner: RestoreOwner): Promise<CheckedRestore> {
+    // The view of a destination of the home tenant passes the path on as it is, so a `..` would read
+    // beside the folder of the destination, see `assertBackupPath`. The route checks it too.
+    assertBackupPath(file);
     registerAdapters();
     const config = await prisma.adapterConfig.findUnique({ where: { id: destinationId } });
     if (!config) throw new ValidationError("The destination no longer exists, or it belongs to a customer. A configuration backup is only restored from a destination of the home tenant.");
+    // Only a destination holds configuration backups. A directory source or a database connection is no place to read one from.
+    if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.DESTINATION) {
+        throw new ValidationError(`${config.name} is no destination. A configuration backup is only restored from a destination of the home tenant.`);
+    }
     if (!registry.get(config.adapterId)) throw new ValidationError(`The adapter ${config.adapterId} of the destination is not available.`);
     // Shared with customers, the destination holds their folder too, which their jobs filled. No file of it is taken.
     const { adapter, config: resolved } = await openRow(config, (await isShared(config.id)) ? { kind: "provider" } : { kind: "own" });
@@ -138,6 +147,8 @@ async function checkStored(destinationId: string, file: string, override: KeyOve
         } catch {
             meta = null;
         }
+        // A plain file there could come from anyone who may restore files into the destination.
+        if (!isStoredEncrypted(path.basename(file), meta)) throw new ValidationError(UNENCRYPTED_AT_DESTINATION);
         const plain = await openBackupFile(local, meta, override);
         return await check(plain, path.basename(file), owner);
     } finally {

@@ -17,10 +17,14 @@ vi.mock("@aws-sdk/client-s3", () => {
         mockS3ClientCtor(params);
         this.send = mockSend;
         this.destroy = vi.fn();
+        // Every client bounds what it reads of an answer, see `s3-response-limit.ts`.
+        this.middlewareStack = { add: vi.fn() };
     });
     return {
         S3Client: MockS3Client,
         ListObjectsV2Command: vi.fn(function (this: Record<string, unknown>, params: unknown) {
+            // The listing adds its bound on the answer to the stack of the command, see `s3-listing.ts`.
+            Object.defineProperty(this, "middlewareStack", { value: { add: vi.fn() }, enumerable: false });
             Object.assign(this, { _type: "list" }, params as object);
         }),
         GetObjectCommand: vi.fn(function (this: Record<string, unknown>, params: unknown) {

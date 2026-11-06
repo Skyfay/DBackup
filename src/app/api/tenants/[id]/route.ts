@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
@@ -31,7 +32,7 @@ type PatchField = keyof z.infer<typeof PatchSchema>;
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.PLATFORM.TENANTS_READ);
@@ -53,7 +54,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     const saved: PatchField[] = [];
     try {
@@ -103,7 +104,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
  */
 export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.PLATFORM.TENANTS_WRITE);

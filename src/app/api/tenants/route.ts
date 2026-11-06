@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
@@ -25,7 +26,7 @@ const CreateSchema = z.object({
  */
 export async function GET() {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.PLATFORM.TENANTS_READ);
         return NextResponse.json({ success: true, data: await tenantsFor(await routeActor(ctx)) });
@@ -44,7 +45,7 @@ export async function GET() {
  */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.PLATFORM.TENANTS_WRITE);
         const parsed = CreateSchema.safeParse(await req.json().catch(() => null));

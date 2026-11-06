@@ -1,9 +1,13 @@
 import prisma from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import type { Tx } from "@/lib/prisma-tx";
-import { groupPermissions, PLATFORM_PERMISSIONS } from "@/lib/auth/owner-permissions";
+import { groupPermissions, PLATFORM_ADMIN_ROLE, PLATFORM_PERMISSIONS } from "@/lib/auth/owner-permissions";
 import { areaChanges, knownPermissions, TENANT_GROUP_AREAS } from "@/lib/auth/permission-areas";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { MembershipActor } from "@/services/tenant/membership-service";
+import { assertManagersStay, assertMembersUnchanged, managesMembers, settleProviders, type ProviderMove } from "./group-service";
 import { parsePermissions } from "./users-model";
 
 /**
@@ -97,7 +101,22 @@ export interface SavedTemplate {
     /** The levels of the areas that moved, as the audit log keeps them. */
     areas: { area: string; from: string; to: string }[];
     report: ReachReport;
+    /** The sign-in providers whose group of new people a removed group changed, for the log of the platform, never for the browser. */
+    ssoProviders: ProviderMove[];
 }
+
+/**
+ * Who saves or deletes, and the members they were checked for, by tenant, as `membersLeaving`
+ * listed them: those of a group whose members move to another group of the tenant or out of it.
+ * With `checkedEnds` such a group stops the change when someone holds it there who is not listed
+ * (`assertMembersUnchanged`), like a platform admin added after the checks.
+ */
+export interface TemplateActor extends MembershipActor {
+    checkedEnds?: Readonly<Record<string, readonly string[]>>;
+}
+
+/** Who saves or deletes, by default no platform admin, so a tenant keeps someone who manages its members. */
+const NO_PLATFORM_ADMIN: TemplateActor = { platformAdmin: false };
 
 /** The permissions a group for tenants may hold: those of a group of a tenant, never the settings of the instance. */
 export const templateRights = (ids: Iterable<string>) => knownPermissions(ids).filter((permission) => !PLATFORM_PERMISSIONS.has(permission));
@@ -123,7 +142,10 @@ async function targetsOf(client: Pick<Tx, "tenant">, input: { allTenants: boolea
     });
 }
 
-const LINKED = { id: true, tenantId: true, name: true, permissions: true } as const;
+const LINKED = { id: true, tenantId: true, name: true, permissions: true, fullAccess: true } as const;
+
+/** A linked group as `removeGroup` and the check of who manages the members read it. */
+type LinkedGroup = { id: string; tenantId: string; name: string; permissions: string; fullAccess: boolean };
 
 /** The members of groups by group, as people. */
 async function membersOf(client: Pick<Tx, "tenantMembership">, groupIds: string[]): Promise<Map<string, ReachPerson[]>> {
@@ -140,33 +162,56 @@ async function membersOf(client: Pick<Tx, "tenantMembership">, groupIds: string[
 /**
  * Takes a group out of its tenant: its members move to another group of that tenant, or out of the
  * tenant without one, like the delete of a group in its tenant, and a sign-in provider that adds
- * people to it adds them where its members go.
+ * people to it adds them where its members go. Like that delete it never leaves the tenant without
+ * someone who manages its members (`assertManagersStay`), and it returns what changed of each
+ * provider for the log of the platform.
  */
-async function removeGroup(tx: Tx, group: { id: string; tenantId: string }, moveTo: string | null) {
-    if (moveTo) {
-        const target = await tx.group.findFirst({ where: { id: moveTo, tenantId: group.tenantId }, select: { id: true } });
-        if (!target || target.id === group.id) throw new ValidationError("The group for its members is not one of their tenant.");
-        await tx.tenantMembership.updateMany({ where: { groupId: group.id }, data: { groupId: moveTo } });
-        await tx.ssoProvider.updateMany({ where: { defaultGroupId: group.id }, data: { defaultGroupId: moveTo } });
-    } else {
-        await tx.tenantMembership.deleteMany({ where: { groupId: group.id } });
-        await tx.ssoProvider.updateMany({ where: { defaultGroupId: group.id, tenantId: { not: null } }, data: { defaultGroupId: null, allowProvisioning: false } });
-        await tx.ssoProvider.updateMany({ where: { defaultGroupId: group.id }, data: { defaultGroupId: null } });
-    }
+async function removeGroup(tx: Tx, group: LinkedGroup, moveTo: string | null, by: TemplateActor): Promise<ProviderMove[]> {
+    const target = moveTo ? await tx.group.findFirst({ where: { id: moveTo, tenantId: group.tenantId }, select: { id: true, name: true, permissions: true, fullAccess: true } }) : null;
+    if (moveTo && (!target || target.id === group.id)) throw new ValidationError("The group for its members is not one of their tenant.");
+    await assertManagersStay(group, !!target && managesMembers(target), by, tx);
+    // Their memberships move or end here, which the caller checked for the members it listed only.
+    if (by.checkedEnds) await assertMembersUnchanged(tx, group.id, by.checkedEnds[group.tenantId] ?? []);
+    if (target) await tx.tenantMembership.updateMany({ where: { groupId: group.id }, data: { groupId: target.id } });
+    else await tx.tenantMembership.deleteMany({ where: { groupId: group.id } });
+    const providers = await settleProviders(tx, group, target ? { id: target.id, name: target.name } : null);
     await tx.group.delete({ where: { id: group.id } });
+    return providers;
 }
 
-/** Applies what was decided for a group in a tenant it leaves. A group with members needs an answer, an empty one goes. */
-async function leave(tx: Tx, group: { id: string; tenantId: string }, tenantName: string, name: string, choice: LeaveChoice | undefined, members: number, report: ReachReport) {
+/**
+ * Applies what was decided for a group in a tenant it leaves. A group with members needs an answer,
+ * an empty one goes. The providers it changes go into `providers`.
+ */
+async function leave(tx: Tx, group: LinkedGroup, tenantName: string, name: string, choice: LeaveChoice | undefined, members: number, report: ReachReport, by: TemplateActor, providers: ProviderMove[]) {
     if (!choice && members > 0) throw new ValidationError(`Decide what happens to ${name} in ${tenantName}, people hold it there.`);
     if (choice?.keep) {
         await tx.group.update({ where: { id: group.id }, data: { templateId: null } });
         report.kept.push(group.tenantId);
     } else {
-        await removeGroup(tx, group, choice && !choice.keep ? choice.moveTo : null);
+        providers.push(...await removeGroup(tx, group, choice && !choice.keep ? choice.moveTo : null, by));
         report.removed.push(group.tenantId);
     }
     report.groupIds[group.tenantId] = group.id;
+}
+
+/**
+ * The tenant of the first group of a group for tenants that accounts matching `holder` hold in a
+ * tenant a save or a delete leaves, whose answer is not to keep it there. Null when none.
+ */
+async function heldLeaving(id: string, holder: Prisma.UserWhereInput, reach: { allTenants: boolean; tenantIds: readonly string[] } | null, leaving: Record<string, LeaveChoice>): Promise<{ tenantId: string; tenantName: string } | null> {
+    return runAsSystem(async () => {
+        const held = await prisma.group.findMany({
+            where: { templateId: id, memberships: { some: { user: holder } } },
+            select: { tenantId: true },
+        });
+        if (held.length === 0) return null;
+        const staying = reach ? new Set((await targetsOf(prisma, reach)).map((tenant) => tenant.id)) : new Set<string>();
+        const lost = held.find((group) => !staying.has(group.tenantId) && !leaving[group.tenantId]?.keep);
+        if (!lost) return null;
+        const tenant = await prisma.tenant.findUnique({ where: { id: lost.tenantId }, select: { name: true } });
+        return { tenantId: lost.tenantId, tenantName: tenant?.name ?? lost.tenantId };
+    });
 }
 
 export const tenantGroupTemplates = {
@@ -217,6 +262,95 @@ export const tenantGroupTemplates = {
                 permissions: groupPermissions(group),
                 fullAccess: group.fullAccess,
             }));
+        });
+    },
+
+    /**
+     * The tenant of the first of its groups that a save or a delete takes away from a platform admin:
+     * a group a platform admin holds in a tenant it leaves, whose answer is not to keep it there,
+     * since its members move to another group or out of the tenant. Without a new reach every tenant
+     * counts as left, like a delete. Null when no platform admin loses a group.
+     */
+    async platformAdminLeaving(id: string, reach: { allTenants: boolean; tenantIds: readonly string[] } | null, leaving: Record<string, LeaveChoice> = {}): Promise<{ tenantId: string; tenantName: string } | null> {
+        return heldLeaving(id, { platformRole: PLATFORM_ADMIN_ROLE }, reach, leaving);
+    },
+
+    /** Like `platformAdminLeaving`, for the groups one account holds, so nobody moves or ends their own membership. */
+    async memberLeaving(id: string, userId: string, reach: { allTenants: boolean; tenantIds: readonly string[] } | null, leaving: Record<string, LeaveChoice> = {}): Promise<{ tenantId: string; tenantName: string } | null> {
+        return heldLeaving(id, { id: userId }, reach, leaving);
+    },
+
+    /**
+     * The members a save or a delete moves or takes out of a tenant, by tenant: the members of its
+     * group in each tenant it leaves whose answer does not keep the group there. `ends` says the
+     * answer moves them to no group, which ends their membership. Without a new reach every tenant
+     * counts as left, like a delete. For the caller to ask `membershipEndRefusal` of each that ends,
+     * since ending a membership can hand an account over, and to pass all of them as `checkedEnds`.
+     */
+    async membersLeaving(id: string, reach: { allTenants: boolean; tenantIds: readonly string[] } | null, leaving: Record<string, LeaveChoice> = {}): Promise<{ tenantId: string; tenantName: string; userIds: string[]; ends: boolean }[]> {
+        return runAsSystem(async () => {
+            const linked = await prisma.group.findMany({
+                where: { templateId: id, memberships: { some: {} } },
+                select: { tenantId: true, memberships: { select: { userId: true } } },
+            });
+            if (linked.length === 0) return [];
+            const staying = reach ? new Set((await targetsOf(prisma, reach)).map((tenant) => tenant.id)) : new Set<string>();
+            const ends = (choice: LeaveChoice | undefined) => !choice || (!choice.keep && !choice.moveTo);
+            const left = linked.filter((group) => !staying.has(group.tenantId) && !leaving[group.tenantId]?.keep);
+            if (left.length === 0) return [];
+            const names = new Map((await prisma.tenant.findMany({ where: { id: { in: left.map((group) => group.tenantId) } }, select: { id: true, name: true } })).map((tenant) => [tenant.id, tenant.name]));
+            return left.map((group) => ({
+                tenantId: group.tenantId,
+                tenantName: names.get(group.tenantId) ?? group.tenantId,
+                userIds: group.memberships.map((membership) => membership.userId),
+                ends: ends(leaving[group.tenantId]),
+            }));
+        });
+    },
+
+    /**
+     * The tenant of the first linked group the user holds in a tenant a save keeps, whose
+     * permissions the save changes, so nobody changes what their own group lets them do. Null when
+     * none.
+     */
+    async memberChanging(id: string, userId: string, input: Pick<TemplateInput, "permissions" | "allTenants" | "tenantIds">): Promise<{ tenantId: string; tenantName: string } | null> {
+        return runAsSystem(async () => {
+            const held = await prisma.group.findMany({
+                where: { templateId: id, memberships: { some: { userId } } },
+                select: { tenantId: true, permissions: true },
+            });
+            if (held.length === 0) return null;
+            const staying = new Set((await targetsOf(prisma, input)).map((tenant) => tenant.id));
+            const next = new Set(templateRights(input.permissions));
+            const changes = (stored: string) => {
+                const now = new Set(templateRights(parsePermissions(stored)));
+                return now.size !== next.size || [...now].some((permission) => !next.has(permission));
+            };
+            const changed = held.find((group) => staying.has(group.tenantId) && changes(group.permissions));
+            if (!changed) return null;
+            const tenant = await prisma.tenant.findUnique({ where: { id: changed.tenantId }, select: { name: true } });
+            return { tenantId: changed.tenantId, tenantName: tenant?.name ?? changed.tenantId };
+        });
+    },
+
+    /**
+     * The first group by this name in these tenants that the user holds and that is not linked to
+     * this group for tenants yet, which a take-over would hand to the platform with new permissions.
+     * Null when the user holds none of them.
+     */
+    async memberNamed(id: string | null, name: string, tenantIds: readonly string[], userId: string): Promise<{ tenantId: string; tenantName: string; name: string } | null> {
+        if (tenantIds.length === 0) return null;
+        return runAsSystem(async () => {
+            const held = await prisma.group.findFirst({
+                where: {
+                    tenantId: { in: [...tenantIds] }, name: name.trim(), memberships: { some: { userId } },
+                    ...(id ? { OR: [{ templateId: null }, { templateId: { not: id } }] } : {}),
+                },
+                select: { tenantId: true, name: true },
+            });
+            if (!held) return null;
+            const tenant = await prisma.tenant.findUnique({ where: { id: held.tenantId }, select: { name: true } });
+            return { tenantId: held.tenantId, tenantName: tenant?.name ?? held.tenantId, name: held.name };
         });
     },
 
@@ -292,9 +426,10 @@ export const tenantGroupTemplates = {
     /**
      * Makes a group for tenants, or saves one, with the answers to the questions of `preview`. A
      * reached tenant without the group gets one, a tenant it leaves loses it or keeps it as its
-     * own, and every linked group takes the name and the permissions. All of it or nothing.
+     * own, and every linked group takes the name and the permissions. All of it or nothing. Unless
+     * `by` is a platform admin, no tenant is left without someone who manages its members.
      */
-    async save(id: string | null, input: TemplateInput, plan: ReachPlan = {}): Promise<SavedTemplate> {
+    async save(id: string | null, input: TemplateInput, plan: ReachPlan = {}, by: TemplateActor = NO_PLATFORM_ADMIN): Promise<SavedTemplate> {
         const clean = cleanInput(input);
         return runAsSystem(() => prisma.$transaction(async (tx) => {
             const clash = await tx.tenantGroupTemplate.findFirst({ where: { name: clean.name }, select: { id: true } });
@@ -312,12 +447,14 @@ export const tenantGroupTemplates = {
             const tenantName = new Map((await tx.tenant.findMany({ select: { id: true, name: true } })).map((tenant) => [tenant.id, tenant.name]));
             const linked = await tx.group.findMany({ where: { templateId: template.id }, select: LINKED });
             const report = emptyReport();
+            const ssoProviders: ProviderMove[] = [];
+            const manages = clean.permissions.includes(PERMISSIONS.USERS.WRITE);
 
             // The tenants it leaves.
             const leaving = linked.filter((group) => !targetIds.has(group.tenantId));
             const leavingMembers = await membersOf(tx, leaving.map((group) => group.id));
             for (const group of leaving) {
-                await leave(tx, group, tenantName.get(group.tenantId) ?? group.tenantId, clean.name, plan.leaving?.[group.tenantId], leavingMembers.get(group.id)?.length ?? 0, report);
+                await leave(tx, group, tenantName.get(group.tenantId) ?? group.tenantId, clean.name, plan.leaving?.[group.tenantId], leavingMembers.get(group.id)?.length ?? 0, report, by, ssoProviders);
             }
 
             // The tenants it stays in take the name and the permissions.
@@ -335,6 +472,7 @@ export const tenantGroupTemplates = {
             }
             for (const group of staying) {
                 if (group.name === clean.name && group.permissions === permissions) continue;
+                await assertManagersStay(group, manages, by, tx);
                 await tx.group.update({ where: { id: group.id }, data: { name: clean.name, permissions } });
                 report.changed.push(group.tenantId);
                 report.groupIds[group.tenantId] = group.id;
@@ -344,7 +482,7 @@ export const tenantGroupTemplates = {
             const fresh = targets.filter((tenant) => !staying.some((group) => group.tenantId === tenant.id));
             const own = fresh.length === 0 ? [] : await tx.group.findMany({
                 where: { tenantId: { in: fresh.map((tenant) => tenant.id) }, name: clean.name },
-                select: { id: true, tenantId: true, fullAccess: true },
+                select: { id: true, tenantId: true, permissions: true, fullAccess: true },
             });
             for (const tenant of fresh) {
                 const existing = own.find((group) => group.tenantId === tenant.id);
@@ -361,6 +499,7 @@ export const tenantGroupTemplates = {
                     continue;
                 }
                 if (existing.fullAccess) throw new ValidationError(`${clean.name} holds every permission of ${tenant.name} and stays its own. Leave ${tenant.name} out.`);
+                await assertManagersStay(existing, manages, by, tx);
                 await tx.group.update({ where: { id: existing.id }, data: { templateId: template.id, permissions } });
                 report.takenOver.push(tenant.id);
                 report.groupIds[tenant.id] = existing.id;
@@ -381,6 +520,7 @@ export const tenantGroupTemplates = {
                 ...(before && before.name !== clean.name ? { renamedFrom: before.name } : {}),
                 areas: areaChanges(beforeHeld, new Set(clean.permissions), TENANT_GROUP_AREAS).map((change) => ({ area: change.area.id, from: change.from, to: change.to })),
                 report,
+                ssoProviders,
             };
         }));
     },
@@ -388,9 +528,10 @@ export const tenantGroupTemplates = {
     /**
      * Deletes a group for tenants. Its group in each tenant goes, its members moved to a group there
      * or to none, or stays as a group of that tenant, as decided by tenant. A group with members
-     * needs an answer, an empty one goes.
+     * needs an answer, an empty one goes. Unless `by` is a platform admin, no tenant is left without
+     * someone who manages its members.
      */
-    async remove(id: string, leaving: Record<string, LeaveChoice> = {}): Promise<{ name: string; report: ReachReport }> {
+    async remove(id: string, leaving: Record<string, LeaveChoice> = {}, by: TemplateActor = NO_PLATFORM_ADMIN): Promise<{ name: string; report: ReachReport; ssoProviders: ProviderMove[] }> {
         return runAsSystem(() => prisma.$transaction(async (tx) => {
             const template = await tx.tenantGroupTemplate.findUnique({ where: { id }, select: { name: true } });
             if (!template) throw new NotFoundError("Group for tenants", id);
@@ -398,11 +539,12 @@ export const tenantGroupTemplates = {
             const tenantName = new Map((await tx.tenant.findMany({ where: { id: { in: linked.map((group) => group.tenantId) } }, select: { id: true, name: true } })).map((tenant) => [tenant.id, tenant.name]));
             const members = await membersOf(tx, linked.map((group) => group.id));
             const report = emptyReport();
+            const ssoProviders: ProviderMove[] = [];
             for (const group of linked) {
-                await leave(tx, group, tenantName.get(group.tenantId) ?? group.tenantId, template.name, leaving[group.tenantId], members.get(group.id)?.length ?? 0, report);
+                await leave(tx, group, tenantName.get(group.tenantId) ?? group.tenantId, template.name, leaving[group.tenantId], members.get(group.id)?.length ?? 0, report, by, ssoProviders);
             }
             await tx.tenantGroupTemplate.delete({ where: { id } });
-            return { name: template.name, report };
+            return { name: template.name, report, ssoProviders };
         }));
     },
 };

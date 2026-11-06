@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { registry } from "@/lib/core/registry";
 import { withHost } from "@/lib/transport";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
@@ -10,15 +11,22 @@ import { getManagePermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
 import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { requestRefusal } from "@/lib/server/permission-refusal";
+import { answerOf } from "@/lib/adapters/adapter-answer";
+import { logger } from "@/lib/logging/logger";
+import { AdapterError, wrapError } from "@/lib/logging/errors";
+import { savedLoginRefusal, storedSecretsRefusal } from "@/lib/server/config-backup-target-guard";
+import { auditedDatabasesRead } from "@/services/databases/databases-read-audit";
 
 // Ensure adapters are registered
 registerAdapters();
+
+const log = logger.child({ route: "adapters/access-check" });
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -39,6 +47,9 @@ export async function POST(req: NextRequest) {
         // A config of a form runs in one tenant, All tenants belongs to none.
         tenantOf(ctx);
         if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
+        // The secrets of the destination of the configuration backup never go to a host of the form.
+        const locked = await storedSecretsRefusal(ctx, configId) ?? await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
+        if (locked) return locked;
 
         const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;
 
@@ -55,7 +66,7 @@ export async function POST(req: NextRequest) {
         // secrets held in its own config missing, because they are redacted on
         // the way to the browser.
         const submittedConfig = typeof configId === "string" && configId && canEditStoredConfig(ctx, adapterId)
-            ? await applyStoredSecrets(adapterId, configId, { ...config })
+            ? await applyStoredSecrets(adapterId, configId, { ...config }, { primaryCredentialId, sshCredentialId })
             : { ...config };
 
         const mergedConfig = await overlayCredentialsOnConfig(
@@ -65,14 +76,18 @@ export async function POST(req: NextRequest) {
             sshCredentialId ?? null
         );
 
-        const databases = await withHost(adapter, mergedConfig, (host) => listDatabases(mergedConfig, host));
+        // Written once the read ran, whether the server answered or not, like the test of a connection.
+        const databases = await auditedDatabasesRead(ctx, { sourceId: configId, adapterId }, () =>
+            answerOf(adapterId, "list databases", () => withHost(adapter, mergedConfig, (host) => listDatabases(mergedConfig, host))));
 
         return NextResponse.json({ success: true, databases });
 
     } catch (error: unknown) {
         const refusal = requestRefusal(error);
         if (refusal) return refusal;
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json({ success: false, message }, { status: 500 });
+        // What the server or the adapter said is what the form shows, anything else stays in the log.
+        if (error instanceof AdapterError) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+        log.error("Listing the databases of a form failed", {}, wrapError(error));
+        return NextResponse.json({ success: false, message: "The databases could not be listed. The log of DBackup has the details." }, { status: 500 });
     }
 }

@@ -5,13 +5,14 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { ConfigService } from "@/services/config/config-service";
 import { RestoreOptions } from "@/lib/types/config-backup";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import { connectionName } from "@/services/adapters/adapter-audit";
 import { auditService } from "@/services/audit-service";
 import { PLATFORM_LOG } from "@/services/system/settings-save";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { z } from "zod";
 
 const log = logger.child({ action: "config-management" });
 const configService = new ConfigService();
@@ -22,6 +23,21 @@ const configService = new ConfigService();
  * `/api/settings/config-backup/restore`, since a Server Action takes at most 1 MB.
  */
 const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a platform admin restores a configuration backup." };
+
+const RestoreFromStorageSchema = z.object({
+    storageConfigId: z.string().min(1).max(200),
+    file: z.string().min(1).max(4096).refine((value) => !value.includes("\0"), "Invalid path"),
+    decryptionProfileId: z.string().min(1).max(200).optional(),
+    options: z.object({
+        settings: z.boolean(),
+        adapters: z.boolean(),
+        jobs: z.boolean(),
+        users: z.boolean(),
+        sso: z.boolean(),
+        profiles: z.boolean(),
+        statistics: z.boolean().optional(),
+    }).strict().optional(),
+});
 
 /**
  * Restores a configuration backup from storage.
@@ -35,21 +51,21 @@ export async function restoreFromStorageAction(
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
     if (!user.isPlatformAdmin) return ONLY_SUPER_ADMIN;
 
+    const parsed = RestoreFromStorageSchema.safeParse({ storageConfigId, file, decryptionProfileId, options });
+    if (!parsed.success) return { success: false as const, error: parsed.error.issues[0]?.message ?? "Invalid request" };
+    const input = parsed.data;
+
     try {
-        const executionId = await configService.restoreFromStorage(storageConfigId, file, decryptionProfileId, options);
+        const executionId = await configService.restoreFromStorage(input.storageConfigId, input.file, input.decryptionProfileId, input.options);
         // Written once the restore started, it runs on in the background. The configuration backups
         // lie on a destination of the home tenant, which names it.
         await auditService.log(user.id, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.SYSTEM, {
             action: "config_restore",
-            file,
-            destination: await runAsTenant(HOME_TENANT_ID, () => connectionName(storageConfigId)),
+            file: input.file,
+            destination: await runAsTenant(HOME_TENANT_ID, () => connectionName(input.storageConfigId)),
         }, undefined, PLATFORM_LOG);
         return { success: true, executionId };
     } catch (error: unknown) {
-        log.error("Restore from storage error", {}, wrapError(error));
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : "Failed to initiate restore"
-        };
+        return { success: false, error: userMessage(error, "The restore could not be started. The server log has the details.", log, "Restore from storage error") };
     }
 }

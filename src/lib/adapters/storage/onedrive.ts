@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, StorageReadOptions } from "@/lib/core/interfaces";
 import { OneDriveSchema } from "@/lib/adapters/definitions";
 import { Client } from "@microsoft/microsoft-graph-client";
 import fs from "fs/promises";
@@ -12,6 +12,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { stripSlashes } from "@/lib/paths";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, createPageGuard, descendableName, type ListingGuard } from "@/lib/adapters/storage/common/listing-limits";
 
 const log = logger.child({ adapter: "onedrive" });
 
@@ -210,9 +212,13 @@ async function listFilesRecursive(
     client: Client,
     folderPath: string,
     prefix: string,
-    missingAsEmpty = false
+    missingAsEmpty = false,
+    // Shared by every folder of one walk, so the whole tree counts against the limits of a
+    // listing as it arrives, see `listing-limits.ts`.
+    guard: ListingGuard = createListingGuard()
 ): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
+    const pages = createPageGuard();
 
     const apiPath = folderPath
         ? `${driveItemPath(folderPath)}/children`
@@ -234,13 +240,16 @@ async function listFilesRecursive(
 
         for (const item of res.value || []) {
             const relativePath = prefix ? `${prefix}/${item.name}` : item.name;
+            guard.add(relativePath);
 
             if (item.folder) {
+                // A name of dots alone or with a slash would read this folder or one above it again.
+                if (!descendableName(item.name)) continue;
                 // Recurse into subfolder
                 const subFolderPath = folderPath
                     ? `${folderPath}/${item.name}`
                     : item.name;
-                const subFiles = await listFilesRecursive(client, subFolderPath, relativePath);
+                const subFiles = await listFilesRecursive(client, subFolderPath, relativePath, false, guard);
                 files.push(...subFiles);
             } else {
                 files.push({
@@ -254,6 +263,7 @@ async function listFilesRecursive(
 
         // Handle pagination
         url = res["@odata.nextLink"] || null;
+        pages.next(url, res.value?.length ?? 0);
     }
 
     return files;
@@ -346,6 +356,41 @@ async function performOneDriveUpload(
         log.error("OneDrive upload failed", { remotePath }, wrapError(error));
         if (onLog) onLog(`OneDrive upload failed: ${error instanceof Error ? error.message : String(error)}`, "error", "storage");
         return false;
+    }
+}
+
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. The size of the item is
+ * checked first and the download is cut at the limit, whatever the size said. Null when the file
+ * is not there.
+ */
+async function readCappedBytes(config: OneDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    try {
+        const accessToken = await getAccessToken(config);
+        const client = createGraphClient(accessToken, config);
+        const drivePath = buildDrivePath(config.folderPath, remotePath);
+
+        // Get the download URL.
+        // Do NOT use .select() - @microsoft.graph.downloadUrl is a computed
+        // property that is only returned when the full item is requested.
+        const item = await client
+            .api(driveItemPath(drivePath))
+            .get();
+
+        const downloadUrl = item["@microsoft.graph.downloadUrl"];
+        if (!downloadUrl) return null;
+        assertReadSize(typeof item.size === "number" ? item.size : undefined, limit);
+
+        const res = await fetch(downloadUrl);
+        if (!res.ok || !res.body) {
+            await res.body?.cancel().catch(() => undefined);
+            return null;
+        }
+        return await collectCapped(Readable.fromWeb(res.body as never), limit);
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        return null;
     }
 }
 
@@ -471,30 +516,11 @@ export const OneDriveAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: OneDriveConfig, remotePath: string): Promise<string | null> {
-        try {
-            const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken, config);
-            const drivePath = buildDrivePath(config.folderPath, remotePath);
-
-            // Get the download URL.
-            // Do NOT use .select() - @microsoft.graph.downloadUrl is a computed
-            // property that is only returned when the full item is requested.
-            const item = await client
-                .api(driveItemPath(drivePath))
-                .get();
-
-            const downloadUrl = item["@microsoft.graph.downloadUrl"];
-            if (!downloadUrl) return null;
-
-            const res = await fetch(downloadUrl);
-            if (!res.ok) return null;
-
-            return await res.text();
-        } catch {
-            return null;
-        }
+    async read(config: OneDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async list(config: OneDriveConfig, dir: string = ""): Promise<FileInfo[]> {
         try {

@@ -15,6 +15,7 @@ vi.mock("@/lib/crypto", () => ({
     decryptConfig: (config: unknown) => config,
     encryptConfig: (config: unknown) => config,
     mergeSecrets: (incoming: Record<string, unknown>, stored: Record<string, unknown>) => ({ ...stored, ...incoming }),
+    SENSITIVE_KEYS: ["password"],
 }));
 vi.mock("@/services/auth/credential-service", () => ({ getDecryptedCredentialData: vi.fn() }));
 vi.mock("@/lib/transport/adapter-invoke", () => ({ runAdapterTest: mocks.runAdapterTest }));

@@ -20,6 +20,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { ApiKeyRow } from "@/services/auth/api-keys-types";
+import { mayChangeKey } from "./api-key-actions";
 import { ApiKeyCreatedDialog, type CreatedKey } from "./api-key-created-dialog";
 import { expiryOf, ExpiryField, type ExpiryChoice } from "./api-key-expiry-field";
 import { ApiKeyStart, type ApiKeyStartChoice } from "./api-key-start";
@@ -38,6 +39,8 @@ interface ApiKeyFormDialogProps {
     keys: ApiKeyRow[];
     /** What the viewer may do, the most a key they make or change may get. */
     viewerPermissions: readonly string[];
+    /** A platform admin changes what any key may do, anyone else only renames or shortens a key of someone else. */
+    viewerIsPlatformAdmin?: boolean;
     onOpenChange: (open: boolean) => void;
     onSaved?: () => void;
     /** Opens the editor right away with a task and a name, like the Setup of the API trigger. */
@@ -51,7 +54,7 @@ interface ApiKeyFormDialogProps {
  * of 2, and every way ends in the same editor as the groups, with the name and when the key runs
  * out. A new key shows its secret once after that.
  */
-export function ApiKeyFormDialog({ open, mode, keys, viewerPermissions, onOpenChange, onSaved, preset, onCreated }: ApiKeyFormDialogProps) {
+export function ApiKeyFormDialog({ open, mode, keys, viewerPermissions, viewerIsPlatformAdmin = false, onOpenChange, onSaved, preset, onCreated }: ApiKeyFormDialogProps) {
     const [start, setStart] = useState<ApiKeyStartChoice | null>(null);
     const [saving, setSaving] = useState(false);
     const [created, setCreated] = useState<CreatedKey | null>(null);
@@ -81,6 +84,7 @@ export function ApiKeyFormDialog({ open, mode, keys, viewerPermissions, onOpenCh
                             presetName={preset?.name}
                             keys={keys}
                             viewerPermissions={viewerPermissions}
+                            viewerIsPlatformAdmin={viewerIsPlatformAdmin}
                             onBack={mode.kind === "create" && !preset ? () => setStart(null) : undefined}
                             onClose={() => onOpenChange(false)}
                             onSavingChange={setSaving}
@@ -106,6 +110,7 @@ interface EditorFormProps {
     presetName?: string;
     keys: ApiKeyRow[];
     viewerPermissions: readonly string[];
+    viewerIsPlatformAdmin: boolean;
     onBack?: () => void;
     onClose: () => void;
     onSavingChange: (saving: boolean) => void;
@@ -126,8 +131,11 @@ function initialOf(mode: ApiKeyFormMode, start: ApiKeyStartChoice | null, taken:
 }
 
 /** The second step: the name, when the key runs out and its permissions. */
-function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, onClose, onSavingChange, onDone }: EditorFormProps) {
+function EditorForm({ mode, start, presetName, keys, viewerPermissions, viewerIsPlatformAdmin, onBack, onClose, onSavingChange, onDone }: EditorFormProps) {
     const key = mode.kind === "edit" ? mode.key : null;
+    // A key of someone else acts as its owner, so anyone but its owner and a platform admin only
+    // renames it or lets it run out sooner, like `updateApiKey`.
+    const restricted = key !== null && !mayChangeKey(key, viewerIsPlatformAdmin);
     const { formatDate } = useDateFormatter();
     const viewer = useMemo(() => new Set(viewerPermissions), [viewerPermissions]);
     const taken = useMemo(() => keys.filter((entry) => entry.id !== key?.id).map((entry) => entry.name), [keys, key]);
@@ -220,7 +228,9 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
         }
     };
 
-    const note = key
+    const note = restricted
+        ? "You may rename it or let it run out sooner, it acts as its owner"
+        : key
         ? "A change applies to the next request of the key"
         : start?.kind === "template"
           ? `Starts as ${start.template.label}, it acts as you`
@@ -228,7 +238,9 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
             ? `Starts as a copy of ${start.key.name}, it acts as you`
             : "Starts with no permission, it acts as you";
 
-    const ownerNote = key && !key.isMine
+    const ownerNote = restricted
+        ? `The key acts as ${owner?.name}, so only they or a platform admin change what it may do, let it run longer or rotate it.`
+        : key && !key.isMine
         ? `The key acts as ${owner?.name}. The group ${owner?.groupName ?? "of the owner"} decides the most it may get, and the locked ones are beyond it.`
         : "The key acts as you. It never gets more than your group may do, and loses what your group loses.";
 
@@ -262,7 +274,12 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
                                 error={problem}
                                 placeholder="Like Deploy pipeline"
                             />
-                            <ExpiryField choice={expiry.choice} date={expiry.date} onChange={(choice, date) => setExpiry({ choice, date })} />
+                            <ExpiryField
+                                choice={expiry.choice}
+                                date={expiry.date}
+                                onChange={(choice, date) => setExpiry({ choice, date })}
+                                latest={restricted && key?.expiresAt ? new Date(key.expiresAt) : undefined}
+                            />
                         </>
                     }
                     held={held}
@@ -271,6 +288,7 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
                         setProblem(null);
                     }}
                     lockedReason={lockedReason}
+                    readOnly={restricted ? "Only its owner or a platform admin changes what the key may do" : undefined}
                     withNeeds={false}
                     areas={areas}
                     changedAreas={key ? new Set(changes.map((change) => change.area.id)) : undefined}

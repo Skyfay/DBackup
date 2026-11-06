@@ -23,6 +23,8 @@ export interface MoveInput {
 }
 
 export interface MoveResult {
+    /** The customer that holds the database, by id and name. */
+    tenantId: string;
     tenantName: string;
     toServerName: string;
     toDatabase: string;
@@ -101,7 +103,7 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
     const [facts, targetFacts] = await Promise.all([factsOf(from.id), factsOf(to.id)]);
     const holder = ownerAt(facts.assignments, facts.rules, databaseName, now);
     if (!holder) throw new ValidationError(`${databaseName} belongs to no customer now, so it has nothing to take along. Give it to the tenant on ${to.name} instead.`);
-    await assertReached(prisma, reach, holder, (tenant) => OUTSIDE_REACH.holder(databaseName, tenant));
+    assertReached(reach, holder, OUTSIDE_REACH.holder(databaseName));
     const there = ownerAt(targetFacts.assignments, targetFacts.rules, toDatabase, now);
     const tenant = await prisma.tenant.findUnique({ where: { id: holder }, select: { name: true } });
     if (there && there !== holder) {
@@ -151,5 +153,5 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
     });
 
     sharingChanged();
-    return { tenantName: tenant?.name ?? "The tenant", toServerName: to.name, toDatabase };
+    return { tenantId: holder, tenantName: tenant?.name ?? "The tenant", toServerName: to.name, toDatabase };
 }

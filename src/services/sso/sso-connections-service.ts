@@ -87,6 +87,11 @@ export async function listSsoConnections(userId: string): Promise<SsoConnections
     return { connections, connectableProviders, totalAccountCount: accounts.length };
 }
 
+/** The name of a sign-in provider for the audit log, its id once it is gone. */
+export async function providerNameOf(providerId: string): Promise<string> {
+    return (await prisma.ssoProvider.findFirst({ where: { providerId }, select: { name: true } }))?.name ?? providerId;
+}
+
 /** How many ways a user has to sign in, the password included. */
 export async function countSignInAccounts(userId: string): Promise<number> {
     return prisma.account.count({ where: { userId } });

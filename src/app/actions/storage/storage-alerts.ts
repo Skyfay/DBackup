@@ -111,13 +111,14 @@ export async function updateStorageAlertsOfMany(configIds: string[], changes: z.
   }
 
   try {
-    const data = await applyAlertChanges(result.data.configIds, result.data.changes);
+    const { result: data, names } = await applyAlertChanges(result.data.configIds, result.data.changes);
     await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
       area: SETTINGS_AREAS.STORAGE_ALERTS,
       bulk: true,
       requested: result.data.configIds.length,
       succeeded: data.succeeded.length,
       failed: data.failed.length,
+      names,
     });
     return { success: true, data };
   } catch (error: unknown) {

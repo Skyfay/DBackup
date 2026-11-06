@@ -17,6 +17,8 @@ import { keepInTrash } from "@/services/trash/trash-snapshot";
 import { keepDeletedServer } from "@/services/tenant/shared-servers";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 import { isAirGapped } from "@/lib/core/air-gap";
+import { decryptConfig } from "@/lib/crypto";
+import { assertMayManageHostLocal } from "./adapter-create";
 
 const log = logger.child({ service: "AdapterService" });
 
@@ -234,6 +236,15 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
     }
 }
 
+/** The stored config of a connection in plain text, empty when it cannot be read. */
+function storedConfig(config: string): Record<string, unknown> {
+    try {
+        return decryptConfig(JSON.parse(config)) as Record<string, unknown>;
+    } catch {
+        return {};
+    }
+}
+
 /**
  * Switches metadata settings on several adapters, reporting per-adapter outcomes. An adapter
  * whose type never reads a setting is refused with the reason instead of storing it silently.
@@ -243,7 +254,7 @@ export async function updateAdapterFlags(ids: string[], change: AdapterFlagChang
 
     const adapters = await prisma.adapterConfig.findMany({
         where: { id: { in: ids } },
-        select: { id: true, name: true, type: true, storageRole: true, metadata: true },
+        select: { id: true, name: true, type: true, adapterId: true, config: true, primaryCredentialId: true, sshCredentialId: true, storageRole: true, metadata: true },
     });
     const byId = new Map(adapters.map((adapter) => [adapter.id, adapter]));
     const keys = Object.keys(change) as (keyof AdapterFlagChange)[];
@@ -258,6 +269,8 @@ export async function updateAdapterFlags(ids: string[], change: AdapterFlagChang
                 const misplaced = rule.destinationOnly === true && adapter.storageRole !== STORAGE_ROLES.DESTINATION;
                 if (!rule.types.includes(adapter.type) || misplaced) throw new ValidationError(rule.refusal);
             }
+            // A connection that reaches the server DBackup runs on is changed by a platform admin alone.
+            await assertMayManageHostLocal(adapter.adapterId, storedConfig(adapter.config), adapter, true);
             // The rest of the metadata, like the detected version, stays as it is.
             const metadata = { ...parseMetadata(adapter.metadata), ...change };
             await prisma.adapterConfig.update({ where: { id }, data: { metadata: JSON.stringify(metadata) } });

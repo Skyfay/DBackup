@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { DropboxAuth } from "dropbox";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
@@ -7,8 +8,10 @@ import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
 import { createOAuthState } from "@/lib/auth/oauth-state";
-import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
+import { wrapError } from "@/lib/logging/errors";
 import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
+import { oauthStartRefusal } from "@/lib/server/oauth-callback";
 
 const log = logger.child({ route: "adapters/dropbox/auth" });
 
@@ -22,8 +25,11 @@ const log = logger.child({ route: "adapters/dropbox/auth" });
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
+    // An authorization is brought back by a signed-in person only, so a key never starts one.
+    const keyRefused = oauthStartRefusal(ctx);
+    if (keyRefused) return keyRefused;
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.WRITE);
@@ -69,11 +75,11 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ success: true, data: { authUrl: String(authUrl) } });
     } catch (error) {
-        const refusal = permissionRefusal(error);
+        const refusal = serviceRefusal(error);
         if (refusal) return refusal;
-        log.error("Failed to generate Dropbox OAuth URL", {}, error instanceof Error ? error : undefined);
+        log.error("Failed to generate Dropbox OAuth URL", {}, wrapError(error));
         return NextResponse.json(
-            { success: false, error: error instanceof Error ? error.message : "Failed to generate auth URL" },
+            { success: false, error: "The authorization link could not be made. The log of DBackup has the details." },
             { status: 500 }
         );
     }

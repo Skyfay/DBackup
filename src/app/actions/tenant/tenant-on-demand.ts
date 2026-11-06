@@ -85,7 +85,7 @@ export async function followTenantOnDemand(id: string, kind: "database" | "rule"
     try {
         const followed = await tenantOnDemandService.follow(tenantId.data, what.data, entry.data, await reachOf(viewer));
         const details = {
-            change: "Backups on demand", tenant: followed.tenantName, server: followed.serverName,
+            name: followed.serverName, change: "Backups on demand", tenant: followed.tenantName, tenantId: tenantId.data, server: followed.serverName,
             ...(followed.kind === "rule" ? { pattern: followed.name } : { database: followed.name }),
             changes: diffFields({ perDay: words(followed.perDay) }, { perDay: "As the tenant" }, { perDay: { label: "Backups on demand" } }),
         };

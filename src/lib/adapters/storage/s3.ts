@@ -1,6 +1,6 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry, UploadOptions, ListTreeOptions, ListTreeResult } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, UploadOptions, ListTreeOptions, ListTreeResult, StorageReadOptions } from "@/lib/core/interfaces";
 import { S3GenericSchema, S3AWSSchema, S3R2Schema, S3HetznerSchema } from "@/lib/adapters/definitions";
-import { S3Client, ListObjectsV2Command, GetObjectCommand, DeleteObjectCommand, PutObjectCommand, HeadObjectCommand, HeadBucketCommand, StorageClass } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, DeleteObjectCommand, PutObjectCommand, HeadObjectCommand, HeadBucketCommand, StorageClass } from "@aws-sdk/client-s3";
 // Type-only, deliberately. The unit suites replace the whole SDK module with a factory that
 // exports the command classes and nothing else, so a value import would break them.
 import type { _Object } from "@aws-sdk/client-s3";
@@ -17,6 +17,10 @@ import { stripSlashes } from "@/lib/paths";
 import { formatBytes } from "@/lib/utils";
 import { resolveS3UploadTuning } from "@/lib/adapters/s3-upload-tuning";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, createPageGuard } from "@/lib/adapters/storage/common/listing-limits";
+import { sendListPage } from "@/lib/adapters/storage/s3-listing";
+import { limitResponseBodies } from "@/lib/adapters/storage/s3-response-limit";
 
 const log = logger.child({ adapter: "s3" });
 
@@ -48,13 +52,14 @@ interface S3UploadConfig extends S3InternalConfig {
 }
 
 class S3ClientFactory {
+    /** A client whose every answer is read with a bound, see `limitResponseBodies`. */
     static create(config: S3InternalConfig) {
-        return new S3Client({
+        return limitResponseBodies(new S3Client({
             region: config.region,
             endpoint: config.endpoint,
             credentials: config.credentials,
             forcePathStyle: config.forcePathStyle,
-        });
+        }));
     }
 
     static getTargetKey(config: S3InternalConfig, remotePath: string): string {
@@ -188,9 +193,9 @@ function listPrefixFor(internalConfig: S3InternalConfig, dir: string): string {
  * The signal is checked before each request rather than after, so an already-cancelled walk
  * costs nothing at all.
  *
- * No `MaxKeys`, because the 1000 default is what we want. No `Delimiter`, because `list()` is
- * deliberately recursive - see the comment in `05-retention.ts` about incremental chains
- * living in subfolders.
+ * `MaxKeys` is the 1000 S3 answers by default, and the answer of a page is read only up to a bound,
+ * see `s3-listing.ts`. No `Delimiter`, because `list()` is deliberately recursive - see the
+ * comment in `05-retention.ts` about incremental chains living in subfolders.
  */
 async function* s3ListPages(
     client: S3Client,
@@ -199,19 +204,22 @@ async function* s3ListPages(
     signal?: AbortSignal
 ): AsyncGenerator<_Object[]> {
     let continuationToken: string | undefined;
+    // A server that hands out a token again, or empty pages without end, would list forever.
+    const pages = createPageGuard();
 
     do {
         signal?.throwIfAborted();
 
-        const response = await client.send(new ListObjectsV2Command({
+        const response = await sendListPage(client, {
             Bucket: bucket,
             Prefix: listPrefix,
             ContinuationToken: continuationToken,
-        }));
+        });
 
         yield response.Contents ?? [];
 
         continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+        pages.next(continuationToken, response.Contents?.length ?? 0);
     } while (continuationToken);
 }
 
@@ -251,9 +259,14 @@ async function s3List(internalConfig: S3InternalConfig, dir: string = ""): Promi
 
     try {
         const files: FileInfo[] = [];
+        // Every key passes the guard as it arrives, like those of `s3ListTree`.
+        const guard = createListingGuard();
 
         for await (const page of s3ListPages(client, internalConfig.bucket, listPrefix)) {
             for (const obj of page) {
+                // Before the folder markers are dropped, so a server that answers pages of
+                // markers alone without end still reaches the limit, see `s3ListTree`.
+                guard.add(obj.Key ?? "");
                 const file = s3ObjectToFileInfo(internalConfig, obj);
                 if (file) files.push(file);
             }
@@ -297,9 +310,15 @@ async function s3ListTree(
 
     try {
         const files: FileInfo[] = [];
+        // Every key passes the guard first, so a bucket of any size stops the walk, see `listing-limits.ts`.
+        const guard = createListingGuard();
 
         for await (const page of s3ListPages(client, internalConfig.bucket, listPrefix, options?.signal)) {
             for (const obj of page) {
+                // Every object counts, a folder marker too. A server that answered page after page
+                // of markers alone moved neither the count nor the rule of empty pages, since each
+                // page held objects, and listed forever.
+                guard.add(obj.Key ?? "");
                 const file = s3ObjectToFileInfo(internalConfig, obj);
                 if (file) files.push(file);
             }
@@ -341,16 +360,21 @@ async function s3BrowseDirectories(
     try {
         const entries: DirectoryBrowseEntry[] = [];
         let continuationToken: string | undefined;
+        // Bounded like a listing for a collection, see `listing-limits.ts`.
+        const guard = createListingGuard();
+        const pages = createPageGuard();
 
         do {
-            const response = await client.send(new ListObjectsV2Command({
+            const response = await sendListPage(client, {
                 Bucket: internalConfig.bucket,
                 Prefix: listPrefix,
                 Delimiter: "/",
                 ContinuationToken: continuationToken,
-            }));
+            });
 
+            for (const obj of response.Contents ?? []) guard.add(obj.Key ?? "");
             for (const group of response.CommonPrefixes ?? []) {
+                guard.add(group.Prefix ?? "");
                 if (!group.Prefix) continue;
                 const name = group.Prefix.slice(listPrefix.length).replace(/\/$/, "");
                 if (!name) continue;
@@ -358,6 +382,7 @@ async function s3BrowseDirectories(
             }
 
             continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+            pages.next(continuationToken, (response.Contents?.length ?? 0) + (response.CommonPrefixes?.length ?? 0));
         } while (continuationToken);
 
         return entries;
@@ -463,10 +488,11 @@ async function s3DownloadRange(
     }
 }
 
-async function s3Read(internalConfig: S3InternalConfig, remotePath: string): Promise<string | null> {
+async function s3ReadBytes(internalConfig: S3InternalConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
     const client = S3ClientFactory.create(internalConfig);
     // list() returns prefix-relative paths, so the prefix is re-applied here.
     const targetKey = S3ClientFactory.getTargetKey(internalConfig, remotePath);
+    const limit = readLimitOf(options);
 
     try {
         const command = new GetObjectCommand({
@@ -476,15 +502,26 @@ async function s3Read(internalConfig: S3InternalConfig, remotePath: string): Pro
 
         const response = await client.send(command);
         if (!response.Body) return null;
-
-        // AWS SDK v3 body has a transformToString method
-        return await response.Body.transformToString("utf-8");
-    } catch (_error) {
+        const body = response.Body as unknown as NodeJS.ReadableStream & { destroy?: () => void };
+        try {
+            // The size the server announces, then the bytes it really sends, see `read-limit.ts`.
+            assertReadSize(response.ContentLength, limit);
+        } catch (error) {
+            body.destroy?.();
+            throw error;
+        }
+        return await collectCapped(body, limit);
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
         // If file doesn't exist (e.g. meta.json missing), return null instead of throwing
         return null;
     } finally {
         client.destroy();
     }
+}
+
+async function s3Read(internalConfig: S3InternalConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+    return textOf(await s3ReadBytes(internalConfig, remotePath, options));
 }
 
 async function s3Delete(
@@ -676,6 +713,14 @@ export const S3GenericAdapter: StorageAdapter = {
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
+    readBytes: (config, ...args) => s3ReadBytes({
+        endpoint: config.endpoint,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        forcePathStyle: config.forcePathStyle,
+        pathPrefix: config.pathPrefix
+    }, ...args),
     verifyChecksum: (config, remotePath, checksums) => s3VerifyChecksum({
         endpoint: config.endpoint,
         region: config.region,
@@ -751,6 +796,12 @@ export const S3AWSAdapter: StorageAdapter = {
     }),
     readConcurrency: STATELESS_READ_CONCURRENCY,
     read: (config, ...args) => s3Read({
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
+    }, ...args),
+    readBytes: (config, ...args) => s3ReadBytes({
         region: config.region,
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
@@ -849,6 +900,13 @@ export const S3R2Adapter: StorageAdapter = {
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
         pathPrefix: config.pathPrefix
     }, ...args),
+    readBytes: (config, ...args) => s3ReadBytes({
+        endpoint: r2Endpoint(config.accountId, config.jurisdiction),
+        region: "auto",
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
+    }, ...args),
     verifyChecksum: (config, remotePath, checksums) => s3VerifyChecksum({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
@@ -931,6 +989,13 @@ export const S3HetznerAdapter: StorageAdapter = {
     }),
     readConcurrency: STATELESS_READ_CONCURRENCY,
     read: (config, ...args) => s3Read({
+        endpoint: `https://${config.region}.your-objectstorage.com`,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
+    }, ...args),
+    readBytes: (config, ...args) => s3ReadBytes({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,

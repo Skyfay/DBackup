@@ -19,7 +19,7 @@
  */
 
 import { dialedMongoHosts } from "./database/mongodb/args";
-import { parseSmbAddress, SMB_ADDRESS_HINT } from "./smb-address";
+import { namesKerberosRealm, parseSmbAddress, SMB_ADDRESS_HINT } from "./smb-address";
 
 type Config = Record<string, unknown>;
 type HostsOf = (config: Config) => string[];
@@ -149,11 +149,19 @@ function rsyncHosts(value: unknown): string[] {
     return [hostOf(after), bracketed ? bracketed[1] : after.split(":")[0]].filter(present);
 }
 
-/** The server of an SMB share address, `//server/share` or `\\server\share`, the only forms smbclient reads. */
-function smbHost(value: unknown): string[] {
-    const parsed = parseSmbAddress(value);
+/**
+ * The server of an SMB share address, `//server/share` or `\\server\share` with a server the tools
+ * dial as written, see `smb-address.ts`. A login that names a Kerberos realm, `user@realm` in the
+ * user or the domain, makes smbclient and rpcclient ask a KDC they find themselves, so no host can be
+ * named for it either.
+ */
+function smbHosts(config: Config): string[] {
+    const parsed = parseSmbAddress(config.address);
     if (!parsed) throw new HostFormatError(`The share address does not read. ${SMB_ADDRESS_HINT}`);
-    return [hostOf(parsed.server)].filter(present);
+    if (namesKerberosRealm(config.username) || namesKerberosRealm(config.domain)) {
+        throw new HostFormatError("A user or domain with @ names a Kerberos realm, whose servers smbclient looks up on its own. Enter the user without the realm and the workgroup or domain in its own field.");
+    }
+    return [parsed.server];
 }
 
 const DNS_BUCKET = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
@@ -235,8 +243,8 @@ export const DIALED_HOSTS: Readonly<Record<string, HostsOf>> = {
     ftp: host,
     // By the part after the last `@`, as rsync and OpenSSH read `user@host`, see `rsyncHosts`.
     rsync: (config) => rsyncHosts(config.host),
-    // Only `//server/share` or `\\server\share`, anything else throws `HostFormatError`.
-    smb: (config) => smbHost(config.address),
+    // Only `//server/share` or `\\server\share` and a login without a realm, anything else throws `HostFormatError`.
+    smb: smbHosts,
     webdav: (config) => [urlHost(config.url)].filter(present),
 
     // Notification channels
@@ -261,7 +269,8 @@ const unknownAdapter = directOrSsh(host);
 /**
  * The hosts DBackup connects to for a config, each once, as its clients read them.
  *
- * @throws HostFormatError for an address no client reads, like an SMB share without `//`.
+ * @throws HostFormatError for an address no client reads, like an SMB share without `//`, or a
+ * login that makes the client find a server on its own, like an SMB user with a Kerberos realm.
  */
 export function dialedHosts(adapterId: string, config: Config): string[] {
     const hostsOf = Object.hasOwn(DIALED_HOSTS, adapterId) ? DIALED_HOSTS[adapterId] : unknownAdapter;

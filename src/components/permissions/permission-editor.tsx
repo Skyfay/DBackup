@@ -29,6 +29,8 @@ interface PermissionEditorProps {
     changedAreas?: ReadonlySet<string>;
     /** The areas offered, every one by default. A group outside the home tenant leaves out the settings of the instance. */
     areas?: PermissionArea[];
+    /** Shows the permissions without a way to change them, with this sentence under every one, like a key of someone else. */
+    readOnly?: string;
 }
 
 /**
@@ -36,7 +38,7 @@ interface PermissionEditorProps {
  * left, a `Select` of them on a phone, and the open area with its level and every permission of it
  * on the right. The height stays the same from area to area, so the dialog does not jump.
  */
-export function PermissionEditor({ fields, held, onHeldChange, lockedReason, withNeeds = true, note, changedAreas, areas = PERMISSION_AREAS }: PermissionEditorProps) {
+export function PermissionEditor({ fields, held, onHeldChange, lockedReason, withNeeds = true, note, changedAreas, areas = PERMISSION_AREAS, readOnly }: PermissionEditorProps) {
     const [active, setActive] = useState(areas[0].id);
     const area = areas.find((entry) => entry.id === active) ?? areas[0];
 
@@ -90,7 +92,7 @@ export function PermissionEditor({ fields, held, onHeldChange, lockedReason, wit
             </div>
 
             <ScrollArea className="min-h-0">
-                <AreaPane area={area} held={held} onHeldChange={onHeldChange} lockedReason={lockedReason} withNeeds={withNeeds} note={note} />
+                <AreaPane area={area} held={held} onHeldChange={onHeldChange} lockedReason={lockedReason} withNeeds={withNeeds} note={note} readOnly={readOnly} />
             </ScrollArea>
         </div>
     );

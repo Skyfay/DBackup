@@ -180,7 +180,8 @@ describe("POST /api/adapters/[id]/clone – role handling", () => {
         id: "a-1",
         name: "Scripts",
         type: "storage",
-        adapterId: "local-filesystem",
+        // Over SFTP, since a copy of a Local Filesystem is for a platform admin alone, see `host-local.ts`.
+        adapterId: "sftp",
         config: "{}",
         metadata: null,
         primaryCredentialId: null,

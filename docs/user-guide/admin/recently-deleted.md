@@ -20,7 +20,7 @@ A delete that other records still depend on is refused as before, like a key a j
 
 ### Delete Permanently
 
-Someone who may change the tenant settings sees **Delete it permanently now** in the delete dialog, to skip Recently deleted, like for a key or a login that leaked. The dialog turns red and names what is lost. A key deleted this way leaves every backup it encrypted unreadable unless a [recovery kit](/user-guide/security/recovery-kit) holds it. Everyone else deletes into Recently deleted only.
+Someone who may change the tenant settings sees **Delete it permanently now** in the delete dialog, to skip Recently deleted, like for a key or a login that leaked. The dialog turns red and names what is lost. A key deleted this way leaves every backup it encrypted unreadable unless a [recovery kit](/user-guide/security/recovery-kit) holds it. A user is deleted this way only by someone who may change the settings of the tenant whose list would keep them, and by a platform admin alone for a user who would wait in the home tenant for one of the reasons at the top of this page. Everyone else deletes into Recently deleted only.
 
 ### Undo
 
@@ -38,7 +38,7 @@ Only the kinds you may change show here:
 | **Saved login** | `credentials:delete` |
 | **Connection** | Write access to its kind: `sources:write`, `destinations:write` or `notifications:write` |
 | **Job** | `jobs:write` |
-| **User** | `users:write`, and a platform admin for a user who waits in the home tenant for one of the reasons at the top of this page |
+| **User** | `users:write`, and a platform admin for a user who waits in the home tenant for one of the reasons at the top of this page. A user whose group may do more than you may still shows, but only someone who may do all of it restores it or deletes it for good |
 
 The page needs `tenant-settings:read`, which shows the list without its buttons. **Restore** and **Delete permanently** need `tenant-settings:write` as well. Both count in the open tenant, so the admin of a customer manages the Recently deleted of that customer, see [Groups & Permissions](/user-guide/admin/permissions#settings-count-in-the-home-tenant).
 
@@ -46,7 +46,8 @@ The page needs `tenant-settings:read`, which shows the list without its buttons.
 
 **Restore** brings a record back under its own id, so jobs, backups and links that name it find it again. Tick several rows to restore them together.
 
-- **A name taken meanwhile.** A key, login, connection or job whose name another one took, or a user whose email another account took, opens **Restore** with a field for another name or email. A user whose email, their own or a new one, has a domain the sign-in provider of another tenant claims comes back only through a platform admin or someone with `platform-accounts:write` whose platform group reaches that tenant, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant).
+- **A name taken meanwhile.** A key, login, connection or job whose name another one took, or a user whose email another account took, opens **Restore** with a field for another name or email. A taken email, the own one or a new one, is named as taken only to whoever may see the account that holds it, anyone else reads that the email cannot be given, and after several such answers in a row emails are refused for a while, like in **New user**. A user whose email, their own or a new one, has a domain the sign-in provider of another tenant claims comes back only through a platform admin or someone with `platform-accounts:write` whose platform group reaches that tenant, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant).
+- **A group beyond yours.** A user comes back, under their own email or a new one, only through someone who may do everything their group may in each tenant they worked in, or a platform admin, like a change of the account itself, see [Admin Actions](/user-guide/admin/users#admin-actions). Whoever restores a user could give them an email of their own and sign in as them. In a batch only those rows are refused, the same holds for **Delete permanently** and for Undo, and a group deleted meanwhile counts for nobody.
 - **Links that are gone.** A record whose links point to something deleted meanwhile comes back without them, and the message after the restore names each:
 
 | Gone meanwhile | What the restore does |

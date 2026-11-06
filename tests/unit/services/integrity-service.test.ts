@@ -52,6 +52,10 @@ vi.mock('@/lib/logging/errors', async (importOriginal) => ({
     wrapError: vi.fn((e) => e),
 }));
 
+// Whether a destination reaches the own data of DBackup, see `own-data.ts`. None does unless a test says so.
+const ownData = vi.hoisted(() => ({ scanRefusal: vi.fn() }));
+vi.mock('@/lib/adapters/own-data', () => ({ scanRefusal: (...args: unknown[]) => ownData.scanRefusal(...args) }));
+
 vi.mock('@/services/sharing/provided', () => ({
     providedConnection: vi.fn().mockResolvedValue(null),
     providedTo: vi.fn().mockResolvedValue([]),
@@ -68,6 +72,7 @@ function givenDestinations(rows: ({ id: string } & Record<string, unknown>)[]) {
 describe('IntegrityService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        ownData.scanRefusal.mockResolvedValue(null);
         // Default: files have no metadata (results in skipped)
         vi.mocked(verificationService.verifyFile).mockResolvedValue({
             status: 'no_metadata',
@@ -95,6 +100,23 @@ describe('IntegrityService', () => {
         expect(result.passed).toBe(0);
         expect(result.failed).toBe(0);
         expect(result.skipped).toBe(0);
+    });
+
+    it('never lists a destination whose folder reaches the own data of DBackup, unless the check lets it', async () => {
+        const list = vi.fn().mockResolvedValue([{ name: 'dbackup.db', path: 'dbackup.db' }]);
+        givenDestinations([
+            { id: 'data', adapterId: 'local-filesystem', name: 'Data', config: '{}', primaryCredentialId: null, sshCredentialId: null },
+        ]);
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(makeStorageAdapter({ list }));
+        ownData.scanRefusal.mockResolvedValue("This path reaches the folder of DBackup's own database, which only a platform admin connects.");
+        const onLog = vi.fn();
+
+        const result = await integrityService.runFullIntegrityCheck({ onLog, onStage: vi.fn(), onFileProgress: vi.fn() });
+
+        expect(list).not.toHaveBeenCalled();
+        expect(result.totalFiles).toBe(0);
+        expect(ownData.scanRefusal).toHaveBeenCalledWith('local-filesystem', { bucket: 'test' }, 'data');
+        expect(onLog).toHaveBeenCalledWith(expect.stringContaining('Data: This path reaches'), 'warning');
     });
 
     it('skips files without checksum metadata', async () => {

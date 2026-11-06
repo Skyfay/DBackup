@@ -31,9 +31,13 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/services/restore/preflight", () => ({ preflightRestore: (...args: unknown[]) => mocks.preflight(...args) }));
 vi.mock("@/services/restore/pipeline", () => ({ runRestorePipeline: (...args: unknown[]) => mocks.pipeline(...args) }));
 vi.mock("@/lib/server/database-maintenance", () => ({ assertNoDatabaseMaintenance: vi.fn() }));
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: "home-nas", profileId: null, credentialIds: [] }) }));
 
 const { restoreService } = await import("@/services/restore/restore-service");
 const { SharedRestoreRefused } = await import("@/services/restore/refused-restore");
+
+/** A platform admin with a session, who may restore into any target. */
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
 
 const INPUT = {
     storageConfigId: "msp-nas",
@@ -128,12 +132,12 @@ describe("the run of a restore a customer starts on a shared server", () => {
     it("refuses an ordinary restore as before, without a run", async () => {
         mocks.preflight.mockRejectedValue(new Error("Incompatible database types"));
 
-        await expect(restoreService.restore(INPUT)).rejects.toThrow("Incompatible database types");
+        await expect(restoreService.restore(INPUT, PLATFORM_ADMIN)).rejects.toThrow("Incompatible database types");
         expect(mocks.create).not.toHaveBeenCalled();
     });
 
     it("keeps the archive in the run of an ordinary restore", async () => {
-        await restoreService.restore(INPUT);
+        await restoreService.restore(INPUT, PLATFORM_ADMIN);
 
         const data = mocks.create.mock.calls[0][0].data;
         expect(data.path).toBe(INPUT.file);

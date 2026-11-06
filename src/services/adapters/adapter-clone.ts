@@ -10,6 +10,7 @@ import { registerAdapters } from "@/lib/adapters";
 import { validateStorageRole } from "@/lib/adapters/role-validation";
 import { decryptConfig } from "@/lib/crypto";
 import { ValidationError } from "@/lib/logging/errors";
+import { assertCommandFields } from "@/lib/adapters/config-check";
 import { isShared } from "@/services/sharing/destination-access";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { assertMayReachHost } from "./adapter-create";
@@ -65,6 +66,9 @@ export async function cloneAdapter(id: string, input: CloneAdapterInput): Promis
     // Nor one that reaches the server DBackup runs on or the local network its tenant blocks,
     // wherever the original came from.
     const logins = { primaryCredentialId: original.primaryCredentialId, sshCredentialId: original.sshCredentialId };
+    // Nor one whose ports, hosts or users could not reach a command line, which an earlier version
+    // may have stored. The rest of its schema is not asked, see `config-check.ts`.
+    assertCommandFields(decryptConfig(JSON.parse(original.config)) as Record<string, unknown>);
     await assertMayReachHost(original.adapterId, () => decryptConfig(JSON.parse(original.config)) as Record<string, unknown>, logins);
     // Nor one where a destination of the tenant shared with customers keeps their backups.
     if (original.type === "storage") {

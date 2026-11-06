@@ -12,7 +12,7 @@ import os from "os";
 import path from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Tx } from "@/lib/prisma-tx";
-import { ConflictError, TenantScopeError } from "@/lib/logging/errors";
+import { ConflictError, TenantScopeError, ValidationError } from "@/lib/logging/errors";
 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
@@ -179,6 +179,25 @@ describe("a job in Recently deleted", () => {
         await expect(restore("job", trashId, "Shop nightly (restored)")).resolves.toMatchObject({ name: "Shop nightly (restored)" });
         expect((await db.job.findUniqueOrThrow({ where: { id: "job-1" } })).name).toBe("Shop nightly (restored)");
     }));
+
+    it("never comes back under the name of the folder of the configuration backups", () => home(async () => {
+        const trashId = await trash("job", "job-1", (tx) => tx.job.delete({ where: { id: "job-1" } }));
+
+        await expect(restore("job", trashId, "Config-Backups.")).rejects.toBeInstanceOf(ValidationError);
+        expect(await db.job.count()).toBe(0);
+    }));
+
+    it.each(["../other-share", "www/%2e%2e%2f%2e%2e"])(
+        "never comes back with a folder source %s that leaves its connection, saved before the rule",
+        (folder) => home(async () => {
+            await db.jobSource.update({ where: { id: "src-1" }, data: { path: folder } });
+            const trashId = await trash("job", "job-1", (tx) => tx.job.delete({ where: { id: "job-1" } }));
+
+            await expect(restore("job", trashId)).rejects.toBeInstanceOf(ValidationError);
+            expect(await db.job.count()).toBe(0);
+            expect(await db.jobSource.count()).toBe(0);
+        })
+    );
 });
 
 describe("a user in Recently deleted", () => {
@@ -343,8 +362,8 @@ describe("a user in Recently deleted", () => {
         expect(await db.deletedRecord.findUniqueOrThrow({ where: { id: trashId } })).toMatchObject({ detail: "jana@example.ch · platform admin", superAdminOnly: true });
 
         await db.user.create({ data: { id: "u-new", name: "New Jana", email: "jana@example.ch", emailVerified: true, createdAt: now, updatedAt: now } });
-        await expect(restore("user", trashId)).rejects.toThrow("An account with jana@example.ch exists already");
-        // A new email taken since the action checked it never says that an account holds it.
+        // Its own email taken since the action checked it never says that an account holds it, like a new one.
+        await expect(restore("user", trashId)).rejects.toThrow("This email cannot be given to this account. Pick another email.");
         await db.user.create({ data: { id: "u-other", name: "Other", email: "other@example.ch", emailVerified: true, createdAt: now, updatedAt: now } });
         await expect(restore("user", trashId, "Other@example.ch")).rejects.toThrow("This email cannot be given to this account. Pick another email.");
         await expect(restore("user", trashId, "jana.keller@example.ch")).resolves.toMatchObject({ name: "Jana Keller" });

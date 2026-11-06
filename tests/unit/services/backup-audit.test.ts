@@ -49,7 +49,7 @@ describe("what the audit log names of a backup", () => {
     it("names a destination another tenant provides, which the filtered reads of the tenant never find", async () => {
         expect(await backupAuditDetails("msp-s3", "Shop/shop.tar")).toEqual({ file: "Shop/shop.tar", destination: "MSP S3", job: "Shop" });
         expect(await destinationAuditName("msp-s3")).toBe("MSP S3");
-        expect(mocks.findDestination).toHaveBeenCalledWith("msp-s3");
+        expect(mocks.findDestination).toHaveBeenCalledWith("msp-s3", undefined, {});
     });
 
     it("names no destination the tenant may not use", async () => {

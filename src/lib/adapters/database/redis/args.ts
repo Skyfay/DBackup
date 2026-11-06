@@ -1,4 +1,5 @@
 import type { RedisConfig } from "@/lib/adapters/definitions";
+import type { ExecOptions } from "@/lib/transport";
 
 /**
  * Argument builders for redis-cli.
@@ -17,17 +18,6 @@ export function buildConnectionArgs(config: AnyRedisConfig): string[] {
     if (config.username) {
         args.push("--user", config.username);
     }
-    if (config.password) {
-        // redis-cli takes the password on the command line. It stays visible in
-        // the process list on whichever machine runs the client, which is a
-        // pre-existing limitation of this adapter rather than something the
-        // transport introduced.
-        //
-        // --no-auth-warning suppresses the "Using a password with -a is
-        // insecure" line that would otherwise pollute every stderr stream. The
-        // table browser already passed it; now every redis-cli call does.
-        args.push("-a", config.password, "--no-auth-warning");
-    }
     if (config.tls) {
         args.push("--tls");
     }
@@ -41,6 +31,16 @@ export function buildConnectionArgs(config: AnyRedisConfig): string[] {
     }
 
     return args;
+}
+
+/**
+ * The password of a redis-cli call, as `REDISCLI_AUTH` in its environment. Never `-a` in argv,
+ * which every user of the machine that runs the client reads in the process list and which an SSH
+ * connection writes into the remote command. redis-cli sends it with the user of `--user`, and an
+ * environment value prints no warning. Every redis-cli call passes these options.
+ */
+export function redisCliOptions(config: { password?: string }): ExecOptions {
+    return config.password ? { env: { REDISCLI_AUTH: config.password } } : {};
 }
 
 /** Replace the password with stars for anything that gets logged. */

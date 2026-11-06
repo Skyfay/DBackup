@@ -2,6 +2,7 @@ import { APIError } from "better-auth/api";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { placeSsoUser, refuseClaimedSsoSignUp, refuseSsoSignUp, type SsoHookContext } from "./sso-guard";
+import { recordSsoLink } from "./sso-link-audit";
 import { allowTenantSsoLink, joinSsoTenant, refuseSsoSession } from "./sso-tenant-guard";
 
 const log = logger.child({ module: "Auth" });
@@ -36,8 +37,16 @@ export async function beforeSsoLink(account: { userId: string }, context: SsoDat
     return (await allowTenantSsoLink(account, context)) ? undefined : false;
 }
 
-/** After an account was linked: an account that signs in through a provider of a tenant for the first time joins it. */
+/**
+ * After an account was linked: a link the signed-in owner made goes into the audit log, and an
+ * account that signs in through a provider of a tenant for the first time joins it.
+ */
 export async function afterSsoLink(account: { userId: string }, context: SsoDatabaseHookContext): Promise<void> {
+    try {
+        await recordSsoLink(account, context);
+    } catch (error) {
+        log.warn("Writing a linked sign-in provider to the audit log failed", { userId: account.userId }, wrapError(error));
+    }
     try {
         await joinSsoTenant(account, context);
     } catch (error) {

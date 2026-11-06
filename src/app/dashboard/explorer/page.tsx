@@ -4,6 +4,7 @@ import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explo
 import { DATABASES_PAGE_ID } from "@/components/dashboard/explorer/explorer-ids";
 import { TenantKeyed } from "@/components/tenant/tenant-keyed";
 import { checkPermission, getViewer, getUserPermissions } from "@/lib/auth/access-control";
+import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getViewMode } from "@/services/user/preference-service";
 
@@ -13,6 +14,7 @@ export const metadata: Metadata = { title: "Database Explorer" };
 export const dynamic = "force-dynamic";
 
 export default async function ExplorerPage() {
+    await redirectWithoutTenant();
     await checkPermission(PERMISSIONS.SOURCES.VIEW);
     const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
     const view = user ? await getViewMode(user.id, DATABASES_PAGE_ID) : null;

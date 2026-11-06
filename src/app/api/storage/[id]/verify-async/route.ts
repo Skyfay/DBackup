@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { startCopyVerification } from "@/services/storage/copy-verification";
 import { userService } from "@/services/user/user-service";
 import { headers } from "next/headers";
@@ -8,9 +9,10 @@ import { auditService } from "@/services/audit-service";
 import { backupAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { requestRefusal } from "@/lib/server/permission-refusal";
 import { findDestinationPath } from "@/services/sharing/destination-access";
+import { backupPathRefusal, configBackupRefusal } from "@/lib/server/config-backup-guard";
 
 const log = logger.child({ route: "storage/verify-async" });
 
@@ -20,7 +22,7 @@ const log = logger.child({ route: "storage/verify-async" });
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const params = await props.params;
 
@@ -31,12 +33,16 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const body = await req.json();
         const { file } = body;
 
-        if (!file || typeof file !== "string" || file.includes("..") || file.startsWith("/")) {
-            return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
-        }
+        // A path that leaves the destination answers 400, see `assertBackupPath`.
+        const badPath = backupPathRefusal(file);
+        if (badPath) return badPath;
 
         // A backup in the tenant's view of the destination, the way the download reads it.
         await findDestinationPath(params.id, file, tenantId);
+        // A configuration backup is read only by a platform admin with a session, its check too,
+        // which downloads it and notes the result in its sidecar, like `verify-copies`.
+        const configBackup = await configBackupRefusal(ctx, params.id, file);
+        if (configBackup) return configBackup;
 
         const startedBy = (await userService.nameOf(ctx.userId)) ?? "Manual";
         // One copy is a check of copies with one entry, so it runs, logs and notifies the same way.
@@ -55,6 +61,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (refusal) return refusal;
         if (error instanceof NotFoundError) return NextResponse.json({ error: "Destination not found" }, { status: 404 });
         log.error("Verify-async route error", { id: params.id }, wrapError(error));
-        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+        return NextResponse.json({ error: "The check of the backup could not be started. The log of DBackup has the details." }, { status: 500 });
     }
 }

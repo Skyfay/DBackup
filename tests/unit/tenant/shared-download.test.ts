@@ -11,7 +11,7 @@ import { NextRequest } from "next/server";
 import { PermissionError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
-    ctx: { userId: "u-ana", tenantId: "acme" as string | null, permissions: ["storage:download"] as string[] },
+    ctx: { userId: "u-ana", tenantId: "acme", permissions: ["storage:download"] } as { userId: string; tenantId: string | null; permissions: string[]; apiKeyId?: string },
     prepare: vi.fn(),
     audit: vi.fn(),
 }));
@@ -39,11 +39,11 @@ const { downloadSharedBackup } = await import("@/app/actions/tenant/shared-datab
 const REF = { sourceId: "shared-mysql", databaseName: "shop_acme", backupId: "a".repeat(32) };
 
 /** A dump pulled out of a backup of the MSP, parked for Ana of Acme. */
-function parked(content = "-- dump of shop_acme") {
+function parked(content = "-- dump of shop_acme", apiKeyId?: string) {
     const tempFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "shared-download-")), "dump");
     fs.writeFileSync(tempFile, content);
     const token = generateSharedDownloadToken({
-        storageId: "msp-nas", file: "nightly/2026-10-15_0214_nightly.tar", tenantId: "acme", userId: "u-ana",
+        storageId: "msp-nas", file: "nightly/2026-10-15_0214_nightly.tar", tenantId: "acme", userId: "u-ana", apiKeyId,
         tempFile, fileName: "2026-10-15_0214_shop_acme.sql", contentType: "application/octet-stream",
     });
     return { token, tempFile };
@@ -53,12 +53,12 @@ const fetchDump = (token: string) => GET(new NextRequest(`http://dbackup.test/ap
 
 beforeEach(() => {
     vi.clearAllMocks();
-    mocks.ctx = { userId: "u-ana", tenantId: "acme", permissions: ["storage:download"] };
+    mocks.ctx = { userId: "u-ana", tenantId: "acme", permissions: ["storage:download"], apiKeyId: undefined };
 });
 
 describe("the download of a shared database's dump", () => {
     it("hands out an address with the token alone, never the destination of the server", async () => {
-        mocks.prepare.mockResolvedValue({ token: "t0k3n", fileName: "2026-10-15_0214_shop_acme.sql" });
+        mocks.prepare.mockResolvedValue({ token: "t0k3n", fileName: "2026-10-15_0214_shop_acme.sql", provider: { tenantId: "default", serverName: "MySQL", customerName: "Acme" } });
         const result = await downloadSharedBackup(REF);
         expect(result).toEqual({ success: true, data: { url: "/api/shared/download?token=t0k3n", fileName: "2026-10-15_0214_shop_acme.sql" } });
     });
@@ -81,6 +81,21 @@ describe("the download of a shared database's dump", () => {
         expect((await fetchDump(token)).status).toBe(410);
         mocks.ctx = { userId: "u-ana", tenantId: "acme", permissions: ["storage:download"] };
         expect((await fetchDump(token)).status).toBe(200);
+    });
+
+    it("sends a dump only with the API key that asked for it, and one a session asked for never with a key", async () => {
+        const { token } = parked();
+        mocks.ctx = { ...mocks.ctx, apiKeyId: "key-of-ana" };
+        expect((await fetchDump(token)).status).toBe(410);
+        mocks.ctx = { ...mocks.ctx, apiKeyId: undefined };
+        expect((await fetchDump(token)).status).toBe(200);
+
+        const byKey = parked("-- dump of shop_acme", "key-of-ana").token;
+        expect((await fetchDump(byKey)).status).toBe(410);
+        mocks.ctx = { ...mocks.ctx, apiKeyId: "another-key" };
+        expect((await fetchDump(byKey)).status).toBe(410);
+        mocks.ctx = { ...mocks.ctx, apiKeyId: "key-of-ana" };
+        expect((await fetchDump(byKey)).status).toBe(200);
     });
 
     it("sends nothing without the right to download", async () => {

@@ -104,17 +104,28 @@ const providedIdsOf = async (tenantId: string) => (await providedTo(tenantId)).m
 const customersOf = async (configId: string) => (await base.connectionShareTenant.findMany({ where: { shareId: configId }, orderBy: { tenantId: "asc" } })).map((row) => row.tenantId);
 
 describe("sharing in a platform group of some tenants", () => {
-    it("offers only the tenants it reaches, and names those beyond it that get the connection already", async () => {
+    it("offers only the tenants it reaches, and says that tenants beyond it get the connection by no name and no number", async () => {
         await share("acme-nas", settingsOf(["globex", "initech"]));
         const view = await runAsTenant("acme", () => connectionShareService.view("acme-nas", DESK));
 
         expect(view.candidates.map((tenant) => tenant.id)).toEqual(["globex"]);
-        expect(view.uses.map((use) => use.tenantId).sort()).toEqual(["globex", "initech"]);
+        expect(view.settings.tenantIds).toEqual(["globex"]);
+        expect(view.uses.map((use) => use.tenantId)).toEqual(["globex"]);
         expect(view.reach).toEqual({
-            outside: [{ id: "initech", name: "Initech" }],
+            beyond: true,
             allTenants: "Your platform group does not reach every tenant, so you cannot share with all tenants.",
-            terms: "The terms hold for Initech too, which your platform group does not reach, so you cannot change them.",
+            terms: "The terms hold for tenants your platform group does not reach too, so you cannot change them.",
         });
+        expect(JSON.stringify(view)).not.toMatch(/initech|Initech/);
+    });
+
+    it("names in the list of connections only the tenants it reaches that get one", async () => {
+        await share("acme-nas", settingsOf(["globex", "initech"]));
+        const summaries = await runAsTenant("acme", () => connectionShareService.summaries(["acme-nas"], DESK));
+        expect(summaries.get("acme-nas")).toMatchObject({ tenants: [{ id: "globex", name: "Globex" }], beyond: true });
+
+        const everyone = await runAsTenant("acme", () => connectionShareService.summaries(["acme-nas"]));
+        expect(everyone.get("acme-nas")).toMatchObject({ tenants: [{ id: "globex", name: "Globex" }, { id: "initech", name: "Initech" }], beyond: false });
     });
 
     it("shares with a tenant it reaches, and the tenants beyond its reach keep the connection as they had it", async () => {
@@ -128,7 +139,16 @@ describe("sharing in a platform group of some tenants", () => {
 
     it("cannot share with a tenant it does not reach", async () => {
         await expect(share("acme-mail", settingsOf(["globex", "umbrella"]), DESK))
-            .rejects.toThrow("Your platform group does not reach Umbrella, so you cannot share with it or stop sharing with it.");
+            .rejects.toThrow("Your platform group does not reach this tenant, so you cannot share with it or stop sharing with it.");
+        expect(await base.connectionShare.count()).toBe(0);
+    });
+
+    it("answers a tenant beyond its reach alike whether it exists or not, so the save tells nothing of the other tenants", async () => {
+        const beyond = "Your platform group does not reach this tenant, so you cannot share with it or stop sharing with it.";
+        await expect(share("acme-mail", settingsOf(["globex", "umbrella"]), DESK)).rejects.toThrow(beyond);
+        await expect(share("acme-mail", settingsOf(["globex", "no-such-tenant"]), DESK)).rejects.toThrow(beyond);
+        // Within the reach of every tenant the save names a tenant that is gone, which hides nothing.
+        await expect(share("acme-mail", settingsOf(["no-such-tenant"]))).rejects.toThrow("A tenant you picked is this one or no longer exists.");
         expect(await base.connectionShare.count()).toBe(0);
     });
 
@@ -148,9 +168,17 @@ describe("sharing in a platform group of some tenants", () => {
         await share("acme-nas", settingsOf(["globex", "initech"]));
         customerBackups();
 
-        await expect(runAsTenant("acme", () => connectionShareService.stopFor("acme-nas", "initech", { confirmed: true, reach: DESK }))).rejects.toThrow("does not reach Initech");
+        await expect(runAsTenant("acme", () => connectionShareService.stopFor("acme-nas", "initech", { confirmed: true, reach: DESK }))).rejects.toThrow("does not reach this tenant");
         await expect(runAsTenant("acme", () => connectionShareService.deleteBackupsOf("acme-nas", "initech", DESK)))
-            .rejects.toThrow("Your platform group does not reach Initech, so you cannot delete its backups.");
+            .rejects.toThrow("Your platform group does not reach this tenant, so you cannot delete its backups.");
+        // A tenant that does not exist answers alike.
+        await expect(runAsTenant("acme", () => connectionShareService.deleteBackupsOf("acme-nas", "nobody", DESK)))
+            .rejects.toThrow("Your platform group does not reach this tenant, so you cannot delete its backups.");
+        // Stopping with one it reaches keeps those beyond it on the share.
+        await runAsTenant("acme", () => connectionShareService.stopFor("acme-nas", "globex", { confirmed: true, reach: DESK }));
+        expect(await customersOf("acme-nas")).toEqual(["initech"]);
+        await share("acme-nas", settingsOf(["globex", "initech"]));
+        customerBackups();
         // Stopping with nobody ticked takes it from the tenants it reaches alone.
         await share("acme-nas", settingsOf([]), DESK);
 
@@ -167,7 +195,7 @@ describe("sharing in a platform group of some tenants", () => {
     it("changes no terms that hold for a tenant beyond its reach", async () => {
         await share("acme-nas", settingsOf(["initech"]));
         await expect(share("acme-nas", settingsOf(["globex", "initech"], { encryptedOnly: true }), DESK))
-            .rejects.toThrow("The terms hold for Initech too");
+            .rejects.toThrow("The terms hold for tenants your platform group does not reach too");
         expect(await base.connectionShare.findUnique({ where: { id: "acme-nas" } })).toMatchObject({ encryptedOnly: false });
 
         // The terms of a share it reaches alone are its own to change.
@@ -180,7 +208,8 @@ describe("sharing in a platform group of some tenants", () => {
         await share("acme-nas", settingsOf(["globex", "initech"]));
         const view = await runAsTenant("acme", () => connectionShareService.view("acme-nas", "all"));
         expect(view.candidates.map((tenant) => tenant.id).sort()).toEqual(["default", "globex", "initech", "umbrella"]);
-        expect(view.reach).toEqual({ outside: [], allTenants: null, terms: null });
+        expect(view.reach).toEqual({ beyond: false, allTenants: null, terms: null });
+        expect(view.uses.map((use) => use.tenantId).sort()).toEqual(["globex", "initech"]);
 
         await runAsTenant("acme", () => connectionShareService.stopFor("acme-nas", "initech", { confirmed: true, reach: "all" }));
         await share("acme-mail", { ...settingsOf([]), allTenants: true });

@@ -15,14 +15,9 @@ import { listedDatabases } from "./shared-servers";
 
 type Client = typeof prisma | Tx;
 
-async function nameOf(client: Client, tenantId: string): Promise<string> {
-    return (await client.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }))?.name ?? "another tenant";
-}
-
-/** Refuses a tenant beyond the reach, with the sentence `words` makes of its name. */
-export async function assertReached(client: Client, reach: PlatformReach, tenantId: string, words: (tenant: string) => string): Promise<void> {
-    if (reachCovers(reach, tenantId)) return;
-    throw new ValidationError(words(await nameOf(client, tenantId)));
+/** Refuses a tenant beyond the reach with `message`, which never names it, so it reads as gone. */
+export function assertReached(reach: PlatformReach, tenantId: string, message: string): void {
+    if (!reachCovers(reach, tenantId)) throw new ValidationError(message);
 }
 
 /**
@@ -41,9 +36,9 @@ export async function assertChangesReached(
     if (reach === "all") return;
     const assignments = await client.databaseAssignment.findMany({ where: { sourceId, databaseName: { in: [...new Set(changes.map((change) => change.databaseName))] } } });
     for (const change of changes) {
-        if (change.tenantId) await assertReached(client, reach, change.tenantId, OUTSIDE_REACH.give);
+        if (change.tenantId) assertReached(reach, change.tenantId, OUTSIDE_REACH.give);
         const holder = ownerAt(assignments.filter((entry) => entry.databaseName === change.databaseName), rules, change.databaseName, now);
-        if (holder) await assertReached(client, reach, holder, (tenant) => OUTSIDE_REACH.holder(change.databaseName, tenant));
+        if (holder) assertReached(reach, holder, OUTSIDE_REACH.holder(change.databaseName));
     }
 }
 
@@ -59,7 +54,7 @@ export async function assertRuleReached(
     now: Date
 ): Promise<void> {
     if (reach === "all") return;
-    await assertReached(prisma, reach, rule.tenantId, OUTSIDE_REACH.give);
+    assertReached(reach, rule.tenantId, OUTSIDE_REACH.give);
     const [listed, facts] = await Promise.all([listedDatabases(sourceId), factsOf(sourceId)]);
     // The youngest rule, which loses every tie, like the one about to be stored.
     const added: RuleFact = { ...rule, validUntil: null, createdAt: now };
@@ -67,7 +62,7 @@ export async function assertRuleReached(
         const before = ownerAt(facts.assignments, facts.rules, name, now);
         if (!before || reachCovers(reach, before)) continue;
         if (ownerAt(facts.assignments, [...facts.rules, added], name, now) !== before) {
-            throw new ValidationError(OUTSIDE_REACH.takes(name, await nameOf(prisma, before)));
+            throw new ValidationError(OUTSIDE_REACH.takes(name));
         }
     }
 }

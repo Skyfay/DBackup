@@ -206,6 +206,25 @@ describe("sharing a connection with other tenants", () => {
         await share("acme-chat", ["globex"], { encryptedOnly: true, ownRecipients: true });
         expect(await base.connectionShare.findUnique({ where: { id: "acme-chat" } })).toMatchObject({ encryptedOnly: false, ownRecipients: false });
     });
+
+    it("says what a save with the same tenants changed of the terms, and nothing for a save that changed nothing", async () => {
+        const first = await share("acme-nas", ["globex"]);
+        expect(first.terms).toBeUndefined();
+        expect(first.wasAllTenants).toBe(false);
+
+        const stricter = await share("acme-nas", ["globex"], { encryptedOnly: true });
+        expect(stricter).toMatchObject({ gainedTenants: [], losses: [], terms: { before: { encryptedOnly: false }, after: { encryptedOnly: true } } });
+
+        const again = await share("acme-nas", ["globex"], { encryptedOnly: true });
+        expect(again).toMatchObject({ gainedTenants: [], losses: [] });
+        expect(again.terms).toBeUndefined();
+    });
+
+    it("says a share with every tenant was one before, so its save names nobody new", async () => {
+        expect((await share("acme-mail", [], { allTenants: true })).wasAllTenants).toBe(false);
+        const again = await share("acme-mail", [], { allTenants: true, ownRecipients: false });
+        expect(again).toMatchObject({ wasAllTenants: true, terms: { before: { ownRecipients: true }, after: { ownRecipients: false } } });
+    });
 });
 
 describe("taking a destination back", () => {
@@ -251,8 +270,10 @@ describe("taking a destination back", () => {
     it("takes it off the tenants that lost everything when the storage stops answering on the way", async () => {
         storage.failOn = "tenants/initech/";
         const failed = share("acme-nas", [], {}, true);
-        await expect(failed).rejects.toThrow("Could not take it away from a tenant");
-        const error = (await failed.catch((caught: unknown) => caught)) as { change?: { losses: { tenantId: string }[] } };
+        await expect(failed).rejects.toThrow("could not be taken away from every tenant, the storage stopped answering");
+        const error = (await failed.catch((caught: unknown) => caught)) as { message: string; change?: { losses: { tenantId: string }[] } };
+        // What the storage answered, with its address, stays in the log.
+        expect(error.message).not.toContain("10.0.0.7");
         // Globex lost its backups and its jobs, so it is off the share. Initech keeps it as it was.
         expect(error.change?.losses.map((loss) => loss.tenantId)).toEqual(["globex"]);
         expect(await providedIdsOf("globex")).toEqual([]);

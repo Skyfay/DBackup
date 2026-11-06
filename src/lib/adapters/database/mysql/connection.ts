@@ -4,6 +4,7 @@ import { DatabaseInfo } from "@/lib/core/interfaces";
 import {
     MYSQL_ADMIN,
     MYSQL_CLIENT,
+    NO_LOCAL_INFILE,
     buildConnectionArgs,
     withAuthArgs,
 } from "./args";
@@ -40,7 +41,7 @@ export async function ensureDatabase(
 
         await withAuthArgs(host, pass, async (authArgs) => {
             const created = await host.exec([
-                mysqlBin, ...authArgs, ...connArgs,
+                mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs,
                 "-e", `CREATE DATABASE IF NOT EXISTS \`${escapeMysqlIdentifier(dbName)}\``,
             ]);
             if (created.code !== 0) {
@@ -55,7 +56,7 @@ export async function ensureDatabase(
                 const grantQuery =
                     `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'%'; ` +
                     `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'localhost'; FLUSH PRIVILEGES;`;
-                const granted = await host.exec([mysqlBin, ...authArgs, ...connArgs, "-e", grantQuery]);
+                const granted = await host.exec([mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-e", grantQuery]);
                 logs.push(granted.code === 0
                     ? `Permissions granted for '${dbName}'.`
                     : `Warning grants for '${dbName}': ${granted.stderr}`);
@@ -96,14 +97,14 @@ export async function test(
 
             // 2. Auth. mysqladmin ping succeeds on some MariaDB builds even when
             //    query authentication does not, so credentials get their own check.
-            const auth = await host.exec([mysqlBin, ...authArgs, ...connArgs, "-N", "-s", "-e", "SELECT 1"]);
+            const auth = await host.exec([mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-N", "-s", "-e", "SELECT 1"]);
             if (auth.code !== 0) {
                 return { success: false, message: `Connection failed: ${auth.stderr.trim()}` };
             }
 
             // 3. Version, best effort.
             const versionResult = await host.exec([
-                mysqlBin, ...authArgs, ...connArgs, "-N", "-s", "-e", "SELECT VERSION()",
+                mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-N", "-s", "-e", "SELECT VERSION()",
             ]);
             if (versionResult.code !== 0) {
                 return { success: true, message: `Connection successful${via}, version unknown` };
@@ -127,7 +128,7 @@ export async function getDatabases(config: MySQLConfig, hostArg: ExecutionHost):
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const result = await host.exec([
-            mysqlBin, ...authArgs, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
         ]);
         if (result.code !== 0) {
             throw new Error(`Failed to list databases: ${result.stderr.trim()}`);
@@ -177,7 +178,7 @@ export async function getDatabasesWithStats(config: MySQLConfig, hostArg: Execut
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const stats = await host.exec([
-            mysqlBin, ...authArgs, ...connArgs,
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs,
             "-e", statsQuery, "--skip-column-names", "--batch",
         ]);
         if (stats.code === 0) {
@@ -188,7 +189,7 @@ export async function getDatabasesWithStats(config: MySQLConfig, hostArg: Execut
         // user, so fall back to the plain listing rather than failing the page.
         // Direct mode used to skip this fallback and simply error out.
         const fallback = await host.exec([
-            mysqlBin, ...authArgs, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
         ]);
         if (fallback.code !== 0) {
             throw new Error(`Failed to list databases: ${fallback.stderr.trim()}`);

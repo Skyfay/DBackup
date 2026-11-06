@@ -130,7 +130,7 @@ describe('a job that backs up databases only', () => {
 
         const blog = index.databases[1];
         const entry = index.entries.get(entryKey(undefined, blog.n))!;
-        expect((await readAll(await openArchiveEntry(source, manifest, entry))).toString()).toContain('-- dump of blog');
+        expect((await readAll(await openArchiveEntry(source, manifest, entry, undefined, blog.s))).toString()).toContain("-- dump of blog");
 
         expect(ctx.metadata.archive).toMatchObject({ formatVersion: 2, indexFile: '.index' });
         expect(ctx.metadata.combined).toBeUndefined();

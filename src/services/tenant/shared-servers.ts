@@ -139,15 +139,15 @@ export async function serverNames(ids: readonly string[]): Promise<Map<string, s
  * The customers who hold a database of a server now, by an assignment or a rule, for the warning
  * before the server is deleted: they keep its backups to download and restore none of them.
  */
-export async function customersOfServer(sourceId: string): Promise<string[]> {
+export async function customersOfServer(sourceId: string): Promise<{ id: string; name: string }[]> {
     const [assignments, rules] = await Promise.all([
         prisma.databaseAssignment.findMany({ where: { sourceId, validUntil: null, tenantId: { not: null } }, select: { tenantId: true } }),
         prisma.databaseAssignmentRule.findMany({ where: { sourceId, validUntil: null }, select: { tenantId: true } }),
     ]);
     const ids = [...new Set([...assignments, ...rules].flatMap((entry) => (entry.tenantId ? [entry.tenantId] : [])))];
     // A tenant deleted since holds nothing any more.
-    const tenants = await prisma.tenant.findMany({ where: { id: { in: ids } }, select: { name: true } });
-    return tenants.map((tenant) => tenant.name).sort((a, b) => a.localeCompare(b));
+    const tenants = await prisma.tenant.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    return tenants.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // On globalThis, so the pages and the actions of every module graph count the same changes.

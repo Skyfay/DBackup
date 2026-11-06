@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { BackupMetadata } from '@/lib/core/interfaces';
 
 vi.mock('@/lib/prisma', () => ({
@@ -65,6 +65,12 @@ vi.mock('@/services/storage/storage-service', () => ({
     },
 }));
 
+// A verified result updates the listing cache through a dynamic import nobody awaits, so each test
+// waits for it, or it loads after the environment is torn down.
+afterEach(async () => {
+    await vi.dynamicImportSettled();
+});
+
 import prisma from '@/lib/prisma';
 import { registry } from '@/lib/core/registry';
 import { calculateFileChecksum } from '@/lib/crypto/checksum';
@@ -118,6 +124,29 @@ describe('VerificationService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(calculateFileChecksum).mockResolvedValue('sha256:abc123');
+    });
+
+    it('writes the result of two checks in the same millisecond through two temp files of their own', async () => {
+        (prisma.adapterConfig.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeAdapterConfig());
+        const adapter = makeAdapter({
+            read: vi.fn().mockResolvedValue(JSON.stringify(makeMetadata())),
+            verifyChecksum: vi.fn().mockResolvedValue('passed'),
+        });
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+        const now = vi.spyOn(Date, 'now').mockReturnValue(1_767_000_000_000);
+        try {
+            await Promise.all([
+                verificationService.verifyFile('config-1', 'a.tar', 'manual'),
+                verificationService.verifyFile('config-1', 'b.tar', 'manual'),
+            ]);
+        } finally {
+            now.mockRestore();
+        }
+
+        const written = vi.mocked(fsPromises.writeFile).mock.calls.map((call) => String(call[0]));
+        expect(written).toHaveLength(2);
+        expect(new Set(written).size).toBe(2);
+        expect(adapter.upload.mock.calls.map((call: unknown[]) => call[1])).toEqual(written);
     });
 
     it('throws when adapter config is not found', async () => {

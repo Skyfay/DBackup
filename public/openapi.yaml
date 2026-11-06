@@ -154,6 +154,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+        "400":
+          description: A value the job refuses, like a database name no tool reads or the folder of a directory source that leaves the folder of its connection (a `..` part, also between backslashes or behind `%` escapes). `/` and an empty folder are the whole connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Job with this name already exists
           content:
@@ -236,6 +242,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+        "400":
+          description: A value the job refuses, like a database name no tool reads or the folder of a directory source that leaves the folder of its connection (a `..` part, also between backslashes or behind `%` escapes). `/` and an empty folder are the whole connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Another job with this name already exists
           content:
@@ -341,6 +353,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+        "400":
+          description: The original holds a directory source whose folder leaves the folder of its connection, saved before such a folder was refused. Edit the original first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
@@ -580,7 +598,17 @@ paths:
           running in this server instance the status is forced to `Cancelled` in
           the database.
 
-        **Required permission:** `jobs:execute`
+        **Required permission:** the one that starts an execution of its type.
+
+        | Type | Permission |
+        | :--- | :--- |
+        | `Backup` | `jobs:execute` |
+        | `Restore` | `storage:restore` |
+        | `IntegrityCheck` | `settings:write` |
+        | `Verification` | `storage:read` |
+        | `System Restore` | a platform admin with a session, never an API key |
+
+        A caller without any of these permissions gets `403` before the execution is read.
       operationId: cancelExecution
       security:
         - BearerAuth: []
@@ -2588,7 +2616,8 @@ paths:
         A locked backup is never deleted - it is reported in `data.failed` instead. An
         incremental chain can be deleted as a whole, and members are removed newest-first
         so no snapshot is left depending on one that is gone. Selecting only part of a
-        chain is still refused per file.
+        chain is still refused per file. A path that is empty, starts with `/` or `\` or has a
+        `..` segment, also an encoded one, is refused on its own row as well.
 
         **Required permission:** `storage:delete`
       operationId: bulkBackupAction
@@ -2645,6 +2674,13 @@ paths:
           schema:
             type: string
           description: Filter by file type
+        - name: refresh
+          in: query
+          schema:
+            type: boolean
+          description: |
+            `true` lists the destination live with its saved login instead of the cache. Such a
+            listing goes into the audit log as `storage_check` once it ran.
       responses:
         "200":
           description: Backup file list
@@ -2661,6 +2697,12 @@ paths:
     delete:
       tags: [Storage Explorer]
       summary: Delete Backup File
+      description: |
+        Deletes one backup with its sidecars. The id names a destination: a directory source,
+        which holds files and no backups, answers `404` like every route under `/storage/{id}`
+        but `check-path`.
+
+        **Required permission:** `storage:delete`
       operationId: deleteBackupFile
       security:
         - BearerAuth: []
@@ -2676,7 +2718,7 @@ paths:
               properties:
                 path:
                   type: string
-                  description: File path to delete
+                  description: File path to delete, relative to the destination
                   example: "backups/mydb_2025-01-15.sql.gz.enc"
       responses:
         "200":
@@ -2685,10 +2727,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: The path is empty, names the root, starts with `/` or `\` or has a `..` segment, also an encoded one
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /storage/{id}/download:
     get:
@@ -2728,6 +2778,12 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: The path is empty, starts with `/` or `\` or has a `..` part, also between backslashes or behind `%` escapes. Every route under `/storage` that reads a backup by its path answers the same.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -3311,7 +3367,7 @@ paths:
 
   # ─── Vault ─────────────────────────────────────────────────────
   /vault/recovery-kit:
-    get:
+    post:
       tags: [Vault]
       summary: Download Recovery Kit
       description: |
@@ -3327,18 +3383,27 @@ paths:
 
         **Required permission:** `vault:write`
 
-        > This is a sensitive operation. An audit log entry is created.
+        > This is a sensitive operation. An audit log entry is created and each key is marked as
+        > being in a kit, so it is a POST.
       operationId: downloadRecoveryKit
       security:
         - BearerAuth: []
-      parameters:
-        - name: ids
-          in: query
-          required: true
-          description: Comma separated ids of the encryption profiles the kit holds.
-          schema:
-            type: string
-          example: clx1abc2def,clx3ghi4jkl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  description: The ids of the encryption profiles the kit holds.
+                  maxItems: 500
+                  items:
+                    type: string
+              example:
+                ids: [clx1abc2def, clx3ghi4jkl]
       responses:
         "200":
           description: ZIP file download
@@ -3348,7 +3413,7 @@ paths:
                 type: string
                 format: binary
         "400":
-          description: No encryption profile was named in `ids`
+          description: The body is no list of ids, or it names no encryption profile
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -3641,6 +3706,11 @@ paths:
         Generates a Dropbox OAuth authorization URL for an `OAUTH` credential profile.
         This starts a browser-based consent flow - opening the returned `authUrl` and
         completing consent writes the resulting refresh token back into the profile.
+
+        Only a signed-in person brings the authorization back to the callback, so an API key
+        gets `403` here.
+
+        **Required permission:** `credentials:write`, with a session
       operationId: dropboxAuth
       security:
         - BearerAuth: []
@@ -3722,6 +3792,11 @@ paths:
         Generates a Google OAuth authorization URL for an `OAUTH` credential profile.
         This starts a browser-based consent flow - opening the returned `authUrl` and
         completing consent writes the resulting refresh token back into the profile.
+
+        Only a signed-in person brings the authorization back to the callback, so an API key
+        gets `403` here.
+
+        **Required permission:** `credentials:write`, with a session
       operationId: googleDriveAuth
       security:
         - BearerAuth: []
@@ -3803,6 +3878,11 @@ paths:
         Generates a Microsoft OAuth authorization URL for an `OAUTH` credential profile.
         This starts a browser-based consent flow - opening the returned `authUrl` and
         completing consent writes the resulting refresh token back into the profile.
+
+        Only a signed-in person brings the authorization back to the callback, so an API key
+        gets `403` here.
+
+        **Required permission:** `credentials:write`, with a session
       operationId: onedriveAuth
       security:
         - BearerAuth: []

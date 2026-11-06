@@ -24,16 +24,23 @@ const mocks = vi.hoisted(() => ({
     onDemand: { set: vi.fn() },
     memberships: { members: vi.fn(), accounts: vi.fn(), isPlatformAdmin: vi.fn(), roleOf: vi.fn(), setRole: vi.fn(), isPersonOf: vi.fn() },
     groups: { find: vi.fn() },
-    users: { permissionsIn: vi.fn() },
+    users: {
+        permissionsIn: vi.fn(),
+        // Tom and Carla work in Acme, Gina in Globex, see `accountOf`.
+        accountOf: vi.fn(async (id: string) => ({ isPlatformAdmin: id === "root", tenantIds: ["tom", "carla"].includes(id) ? ["acme"] : id === "gina" ? ["globex"] : [] })),
+        namesOf: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1) }))),
+    },
     usersModel: vi.fn(),
     invitations: { create: vi.fn(), list: vi.fn(), revoke: vi.fn() },
     shares: { view: vi.fn(), losing: vi.fn(), save: vi.fn() },
     assignments: { forSource: vi.fn(), addRule: vi.fn(), removeRule: vi.fn() },
     audit: vi.fn(),
+    /** The accounts whose membership may not end, see `membershipEndRefusal`. */
+    endRefused: new Set<string>(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
-vi.mock("@/lib/prisma", () => ({ default: { user: { findUnique: async () => ({ name: "Nina" }) } } }));
+vi.mock("@/lib/prisma", () => ({ default: { user: { findUnique: async () => ({ name: "Nina" }) }, adapterConfig: { findFirst: async () => ({ name: "Shared MySQL" }) } } }));
 vi.mock("@/lib/logging/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) } }));
 // The real checks of `access-control.ts`, on the context of the request.
 vi.mock("@/lib/auth/access-control", async () => {
@@ -69,6 +76,15 @@ vi.mock("@/services/tenant/tenant-on-demand", () => ({ tenantOnDemandService: mo
 vi.mock("@/services/tenant/membership-service", () => ({ membershipService: mocks.memberships }));
 vi.mock("@/services/user/group-service", () => ({ groupService: mocks.groups }));
 vi.mock("@/services/user/user-service", () => ({ userService: mocks.users }));
+// Who sees which account, like the service: a platform admin every one, anyone else the people of their tenant and themselves.
+vi.mock("@/services/user/account-visibility", () => ({
+    ACCOUNT_UNKNOWN: "The user no longer exists.",
+    shownAccountName: async (viewer: { userId: string; tenantId: string | null; isPlatformAdmin: boolean }, id: string) => {
+        if (!["tom", "carla", "gina", "root"].includes(id)) return null;
+        const seen = viewer.isPlatformAdmin || viewer.userId === id || (viewer.tenantId !== null && (await mocks.memberships.isPersonOf(id, viewer.tenantId)));
+        return seen ? id.charAt(0).toUpperCase() + id.slice(1) : null;
+    },
+}));
 vi.mock("@/services/user/users-model", () => ({ getUsersModel: mocks.usersModel }));
 // Nina's platform group reaches Acme, a platform admin and Sam's group of all tenants every tenant.
 vi.mock("@/services/user/platform-group-service", () => ({
@@ -95,6 +111,11 @@ vi.mock("@/services/sharing/connection-shares", async () => {
 });
 vi.mock("@/services/tenant/database-assignments", () => ({ databaseAssignmentService: mocks.assignments }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
+vi.mock("@/services/tenant/membership-end", () => ({
+    membershipEndRefusal: vi.fn(async (_caller: unknown, id: string) => (mocks.endRefused.has(id) ? "Afterwards this account would work only in tenants where you manage the users." : null)),
+}));
+// The destination of the configuration backup is none of the connections shared here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 
 const tenantsRoute = await import("@/app/api/tenants/route");
 const tenantRoute = await import("@/app/api/tenants/[id]/route");
@@ -199,6 +220,7 @@ beforeEach(() => {
     mocks.memberships.roleOf.mockResolvedValue(null);
     mocks.memberships.setRole.mockResolvedValue(undefined);
     mocks.memberships.isPersonOf.mockImplementation(async (userId: string, tenantId: string) => tenantId === "acme" && ["tom", "carla"].includes(userId));
+    mocks.endRefused = new Set();
     mocks.groups.find.mockImplementation(async (id: string) => ({ "g-ops": OPERATORS, "g-admin": ADMINS })[id] ?? null);
     // What Nina's platform group lets her do in Acme, the tenant rights it gives there.
     mocks.users.permissionsIn.mockImplementation(async (userId: string) => (userId === "root" ? [...EVERY_PERMISSION] : [P.USERS.READ, P.USERS.WRITE]));
@@ -318,7 +340,8 @@ describe("one tenant through the API", () => {
 
         expect(status).toBe(200);
         expect(body.data.saved).toEqual(["name", "sharesWithCustomers", "allowances", "onDemandPerDay", "network"]);
-        expect(mocks.tenants.rename).toHaveBeenCalledWith("acme", "Acme AG");
+        // Her platform group reaches Acme alone, so a taken name would answer the neutral sentence.
+        expect(mocks.tenants.rename).toHaveBeenCalledWith("acme", "Acme AG", { ownTenant: true });
         expect(mocks.tenants.setSharing).toHaveBeenCalledWith("acme", true);
         expect(mocks.setAllowances).toHaveBeenCalledWith("acme", { databases: false });
         expect(mocks.onDemand.set).toHaveBeenCalledWith("acme", 3);
@@ -327,6 +350,9 @@ describe("one tenant through the API", () => {
         const tenant = { tenantId: "acme", apiKeyId: "key-nina" };
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "TENANT", { name: "Acme AG", renamedFrom: "Acme" }, "acme", platform);
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "TENANT", { name: "Acme", change: "Shares with customers" }, "acme", platform);
+        // The tenant learns of its new name and of its sharing in its own log too.
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "TENANT", { name: "Acme AG", renamedFrom: "Acme" }, "acme", tenant);
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "TENANT", { name: "Acme", change: "Shares with customers" }, "acme", tenant);
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "TENANT", expect.objectContaining({ changes: [{ field: "Adds database connections", from: "Yes", to: "No" }] }), "acme", tenant);
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "TENANT", expect.objectContaining({ changes: [expect.objectContaining({ field: "Allowed ranges" })] }), "acme", tenant);
     });
@@ -394,7 +420,7 @@ describe("the members of a tenant through the API", () => {
         mocks.ctx = ninaKey();
         expect((await add("acme", { userId: "carla", groupId: "g-ops" })).status).toBe(200);
         expect(mocks.memberships.setRole).toHaveBeenCalledWith("carla", "acme", "g-ops", { platformAdmin: false });
-        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "USER", { change: "Tenant group set", tenant: "Acme", group: "Operators" }, "carla", { tenantId: "acme", apiKeyId: "key-nina" });
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "USER", { change: "Tenant group set", name: "Carla", tenant: "Acme", tenantId: "acme", group: "Operators" }, "carla", { tenantId: "acme", apiKeyId: "key-nina" });
     });
 
     it("keeps the rules of Platform > Tenants: no tenant beyond the reach, no account she does not see, no group beyond her", async () => {
@@ -419,10 +445,32 @@ describe("the members of a tenant through the API", () => {
     it("changes the group of a member and takes one out of the tenant", async () => {
         mocks.ctx = ninaKey();
         expect((await memberRoute.PATCH(request("PATCH", "/api/tenants/acme/members/tom", { groupId: "g-ops" }), params({ id: "acme", userId: "tom" }))).status).toBe(200);
+        // Tom is a member of Acme now, so taking him out removes something.
+        mocks.memberships.roleOf.mockResolvedValue(OPERATORS);
         expect((await memberRoute.DELETE(request("DELETE", "/api/tenants/acme/members/tom"), params({ id: "acme", userId: "tom" }))).status).toBe(200);
         expect(mocks.memberships.setRole).toHaveBeenLastCalledWith("tom", "acme", null, { platformAdmin: false });
-        expect(mocks.audit).toHaveBeenLastCalledWith("nina", "UPDATE", "USER", { change: "Removed from tenant", tenant: "Acme" }, "tom", { tenantId: "acme", apiKeyId: "key-nina" });
+        // Into the log of the tenant, and of the platform like its other changes of a tenant.
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "USER", { change: "Removed from tenant", name: "Tom", tenant: "Acme", tenantId: "acme" }, "tom", { tenantId: "acme", apiKeyId: "key-nina" });
+        expect(mocks.audit).toHaveBeenLastCalledWith("nina", "UPDATE", "USER", { change: "Removed from tenant", name: "Tom", tenant: "Acme", tenantId: "acme" }, "tom", { tenantId: "default", apiKeyId: "key-nina" });
         expect((await memberRoute.PATCH(request("PATCH", "/api/tenants/acme/members/tom", {}), params({ id: "acme", userId: "tom" }))).status).toBe(400);
+    });
+
+    it("never takes an account out when it would then work alone where the caller manages the users", async () => {
+        mocks.endRefused = new Set(["tom", "carla"]);
+        mocks.memberships.roleOf.mockResolvedValue(OPERATORS);
+
+        mocks.ctx = ninaKey();
+        const platform = await json(await memberRoute.DELETE(request("DELETE", "/api/tenants/acme/members/tom"), params({ id: "acme", userId: "tom" })));
+        expect(platform.status).toBe(403);
+        expect(platform.body.error).toMatch(/would work only in tenants where you manage the users/);
+
+        mocks.ctx = tomKey([P.USERS.READ, P.USERS.WRITE, P.JOBS.READ]);
+        const own = await json(await memberRoute.DELETE(request("DELETE", "/api/tenants/acme/members/carla"), params({ id: "acme", userId: "carla" })));
+        expect(own.status).toBe(403);
+        expect(own.body.error).toMatch(/would work only in tenants where you manage the users/);
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
+        // A new group ends no membership.
+        expect((await memberRoute.PATCH(request("PATCH", "/api/tenants/acme/members/carla", { groupId: "g-ops" }), params({ id: "acme", userId: "carla" }))).status).toBe(200);
     });
 
     it("lets a key of the tenant itself with users:* look after its own people, never another tenant", async () => {
@@ -431,17 +479,19 @@ describe("the members of a tenant through the API", () => {
         expect(listed.body.data).toEqual({ members: expect.any(Array) });
 
         expect((await add("acme", { userId: "carla", groupId: "g-ops" })).status).toBe(200);
-        expect(mocks.audit).toHaveBeenCalledWith("tom", "UPDATE", "USER", { change: "Tenant group set", tenant: "Acme", group: "Operators" }, "carla", { tenantId: "acme", apiKeyId: "key-tom" });
+        expect(mocks.audit).toHaveBeenCalledWith("tom", "UPDATE", "USER", { change: "Tenant group set", name: "Carla", tenant: "Acme", tenantId: "acme", group: "Operators" }, "carla", { tenantId: "acme", apiKeyId: "key-tom" });
 
         expect((await membersRoute.GET(request("GET", "/api/tenants/globex/members"), params({ id: "globex" }))).status).toBe(403);
         expect((await add("globex", { userId: "carla", groupId: "g-ops" })).status).toBe(403);
     });
 
-    it("adds nobody of another tenant through a key of the tenant, who joins by an invitation", async () => {
+    it("adds nobody of another tenant through a key of the tenant, whom it answers like an account that does not exist", async () => {
         mocks.ctx = tomKey([P.USERS.READ, P.USERS.WRITE]);
-        const { status, body } = await json(await add("acme", { userId: "gina", groupId: "g-ops" }));
-        expect(status).toBe(403);
-        expect(body.error).toMatch(/Add people to this tenant with an invitation/);
+        const other = await json(await add("acme", { userId: "gina", groupId: "g-ops" }));
+        const gone = await json(await add("acme", { userId: "nobody", groupId: "g-ops" }));
+        expect(other.status).toBe(404);
+        expect(other).toEqual(gone);
+        expect(mocks.memberships.setRole).not.toHaveBeenCalled();
     });
 
     it("gives no group beyond what the key holds, and needs users:write to change anything", async () => {
@@ -473,7 +523,7 @@ describe("the invitations of a tenant through the API", () => {
         expect(status).toBe(201);
         expect(body.data).toEqual(expect.objectContaining({ id: "inv-1", token: "t".repeat(43), path: `/invite?token=${"t".repeat(43)}`, group: { id: "g-ops", name: "Operators" } }));
         expect(mocks.invitations.create).toHaveBeenCalledWith(expect.objectContaining({ tenantId: "acme", groupId: "g-ops", days: 7, note: "New hire", createdById: "tom" }));
-        expect(mocks.audit).toHaveBeenCalledWith("tom", "CREATE", "TENANT", { change: "Invitation created", group: "Operators", note: "New hire" }, "acme", { tenantId: "acme", apiKeyId: "key-tom" });
+        expect(mocks.audit).toHaveBeenCalledWith("tom", "CREATE", "TENANT", { change: "Invitation created", name: "Acme", group: "Operators", note: "New hire" }, "acme", { tenantId: "acme", apiKeyId: "key-tom" });
     });
 
     it("makes a link of a tenant the platform group reaches, capped by what the owner may there", async () => {
@@ -485,13 +535,25 @@ describe("the invitations of a tenant through the API", () => {
         expect(mocks.invitations.create).toHaveBeenCalledTimes(1);
     });
 
+    it("never revokes a link that gives a group that may do more than the key, like it makes none", async () => {
+        mocks.ctx = tomKey([P.USERS.READ, P.USERS.WRITE]);
+        mocks.invitations.revoke.mockImplementation(async (_id: string, _tenantId: string, guard?: (group: { permissions: string; fullAccess: boolean }) => void) => {
+            guard?.({ permissions: "[]", fullAccess: true });
+            return { groupName: "Admin", note: null };
+        });
+        const refused = await json(await invitationRoute.DELETE(request("DELETE", "/api/tenants/acme/invitations/inv-1"), params({ id: "acme", invitationId: "inv-1" })));
+        expect(refused.status).toBe(403);
+        expect(refused.body.error).toBe("This invitation gives a group that may do more than you may, so you cannot revoke it.");
+        expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
     it("lists the open links and revokes one, which a second time is gone", async () => {
         const { NotFoundError } = await import("@/lib/logging/errors");
         mocks.ctx = tomKey([P.USERS.READ, P.USERS.WRITE]);
         expect((await json(await invitationsRoute.GET(request("GET", "/api/tenants/acme/invitations"), params({ id: "acme" })))).body.data).toHaveLength(1);
         expect((await invitationRoute.DELETE(request("DELETE", "/api/tenants/acme/invitations/inv-1"), params({ id: "acme", invitationId: "inv-1" }))).status).toBe(200);
-        expect(mocks.invitations.revoke).toHaveBeenCalledWith("inv-1", "acme");
-        expect(mocks.audit).toHaveBeenCalledWith("tom", "DELETE", "TENANT", { change: "Invitation revoked", group: "Operators", note: "New hire" }, "acme", { tenantId: "acme", apiKeyId: "key-tom" });
+        expect(mocks.invitations.revoke).toHaveBeenCalledWith("inv-1", "acme", expect.any(Function));
+        expect(mocks.audit).toHaveBeenCalledWith("tom", "DELETE", "TENANT", { change: "Invitation revoked", name: "Acme", group: "Operators", note: "New hire" }, "acme", { tenantId: "acme", apiKeyId: "key-tom" });
 
         mocks.invitations.revoke.mockRejectedValue(new NotFoundError("Invitation", "inv-1"));
         expect((await invitationRoute.DELETE(request("DELETE", "/api/tenants/acme/invitations/inv-1"), params({ id: "acme", invitationId: "inv-1" }))).status).toBe(404);
@@ -520,7 +582,7 @@ describe("sharing a destination or a channel through the API", () => {
     beforeEach(() => {
         mocks.shares.view.mockResolvedValue({ kind: "destination", uses: [{ name: "Acme" }], settings: SETTINGS });
         mocks.shares.losing.mockResolvedValue([]);
-        mocks.shares.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: ["Acme"], losses: [] });
+        mocks.shares.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: ["Acme"], gainedTenants: [{ tenantId: "acme", name: "Acme" }], losses: [] });
     });
 
     it("reads and changes the sharing with the reach of the owner, into the log with the key", async () => {
@@ -532,7 +594,7 @@ describe("sharing a destination or a channel through the API", () => {
         expect(status).toBe(200);
         expect(body.data).toEqual({ gained: ["Acme"], lost: [] });
         expect(mocks.shares.save).toHaveBeenCalledWith("nas", SETTINGS, { confirmed: false, reach: NINA_SHARING });
-        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "DESTINATION", { name: "NAS", action: "share", tenants: "Acme" }, "nas", { apiKeyId: "key-nina" });
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "DESTINATION", { name: "NAS", action: "share", tenants: "Acme", tenantId: "acme" }, "nas", { apiKeyId: "key-nina" });
     });
 
     it("asks for confirmed while a tenant would lose the destination with its backups", async () => {
@@ -576,16 +638,16 @@ describe("the rules of a shared server through the API", () => {
         mocks.ctx = ninaSharingKey();
         mocks.assignments.forSource.mockResolvedValue({ rules: [{ id: "r-1", pattern: "shop_*" }] });
         mocks.assignments.addRule.mockResolvedValue({ id: "r-2", pattern: "acme_*", tenantId: "acme", tenantName: "Acme", onDemandPerDay: null });
-        mocks.assignments.removeRule.mockResolvedValue({ pattern: "acme_*", tenantName: "Acme" });
+        mocks.assignments.removeRule.mockResolvedValue({ pattern: "acme_*", tenantId: "acme", tenantName: "Acme" });
 
         expect((await json(await rulesRoute.GET(request("GET", "/api/adapters/srv/database-assignments/rules"), params({ id: "srv" })))).body.data).toEqual([{ id: "r-1", pattern: "shop_*" }]);
         expect((await rulesRoute.POST(request("POST", "/api/adapters/srv/database-assignments/rules", { pattern: "acme_*", tenantId: "acme", priority: 5 }), params({ id: "srv" }))).status).toBe(201);
         expect(mocks.assignments.addRule).toHaveBeenCalledWith("srv", { pattern: "acme_*", tenantId: "acme", priority: 5 }, expect.any(Date), NINA_SHARING);
-        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "ADAPTER", { change: "Assignment rule added", pattern: "acme_*", tenant: "Acme" }, "srv", { apiKeyId: "key-nina" });
+        expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "ADAPTER", { name: "Shared MySQL", change: "Assignment rule added", pattern: "acme_*", tenant: "Acme", tenantId: "acme" }, "srv", { apiKeyId: "key-nina" });
 
         expect((await ruleRoute.DELETE(request("DELETE", "/api/adapters/srv/database-assignments/rules/r-2"), params({ id: "srv", ruleId: "r-2" }))).status).toBe(200);
         expect(mocks.assignments.removeRule).toHaveBeenCalledWith("srv", "r-2", expect.any(Date), NINA_SHARING);
-        expect(mocks.audit).toHaveBeenLastCalledWith("nina", "UPDATE", "ADAPTER", { change: "Assignment rule removed", pattern: "acme_*", tenant: "Acme" }, "srv", { apiKeyId: "key-nina" });
+        expect(mocks.audit).toHaveBeenLastCalledWith("nina", "UPDATE", "ADAPTER", { name: "Shared MySQL", change: "Assignment rule removed", pattern: "acme_*", tenant: "Acme", tenantId: "acme" }, "srv", { apiKeyId: "key-nina" });
     });
 
     it("hands on the refusal of a tenant beyond the reach as a bad request", async () => {

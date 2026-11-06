@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -12,21 +13,26 @@ import { permissionRefusal } from "@/lib/server/permission-refusal";
 import { configBackupTargetRefusal } from "@/lib/server/config-backup-target-guard";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 const log = logger.child({ route: "vault/recovery-kit" });
+
+/** The keys a kit holds, by the ids of their encryption profiles. */
+const KitSchema = z.object({ ids: z.array(z.string().trim().min(1).max(200)).max(500) });
 
 /**
  * Builds a Recovery Kit for one or more encryption profiles.
  *
- * `?ids=a,b,c` selects which. Several in one kit is the point: a backup records the profile
- * that encrypted it, so a kit holding every key opens every backup without anyone having to
- * work out which of their kits belongs to which job. The ids are not secret - the keys are,
- * and those are only ever in the response body.
+ * `{ "ids": [...] }` in the body selects which. Several in one kit is the point: a backup records
+ * the profile that encrypted it, so a kit holding every key opens every backup without anyone
+ * having to work out which of their kits belongs to which job. The ids are not secret, the keys
+ * are, and those are only ever in the response body. A POST, since a kit marks its keys and
+ * writes an entry, which a GET that a link or a prefetch can send must never do.
  */
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return new NextResponse("Unauthorized", { status: 401 });
+        return unauthorized();
     }
 
     let ids: string[] = [];
@@ -34,10 +40,9 @@ export async function GET(request: NextRequest) {
         // Security: exporting master keys is the most sensitive read in the product.
         checkPermissionWithContext(ctx, PERMISSIONS.VAULT.WRITE);
 
-        ids = (request.nextUrl.searchParams.get("ids") ?? "")
-            .split(",")
-            .map((id) => id.trim())
-            .filter(Boolean);
+        const parsed = KitSchema.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) return new NextResponse("Invalid request", { status: 400 });
+        ids = [...new Set(parsed.data.ids)];
         if (ids.length === 0) {
             return new NextResponse("No encryption profiles selected", { status: 400 });
         }

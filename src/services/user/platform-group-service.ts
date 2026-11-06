@@ -133,6 +133,12 @@ export const platformGroupService = {
         return group ? { id: group.id, name: group.name, shape: shapeOf(group) } : null;
     },
 
+    /** The ids of the accounts in a platform group, for the caller to check each against what the viewer may change. */
+    async memberIds(id: string): Promise<string[]> {
+        const members = await prisma.user.findMany({ where: { platformGroupId: id }, select: { id: true } });
+        return members.map((member) => member.id);
+    },
+
     /** Every platform group with its members and its tenants, by name. */
     async list() {
         const groups = await prisma.platformGroup.findMany({

@@ -43,6 +43,11 @@ describe("the settings of the tenant a page shows", () => {
         expect(mocks.sendTest).toHaveBeenCalledWith("acme", "restore.failed");
     });
 
+    it("writes a test notification that went out into the log of the tenant with its event", async () => {
+        expect(await sendTenantTestNotificationAction("acme", "restore_complete")).toMatchObject({ success: true });
+        expect(mocks.audit).toHaveBeenCalledWith("lena", "EXECUTE", "SYSTEM", { name: "A restore finished", action: "notification_test", event: "restore_complete", sent: 1, failed: 0 }, undefined, { tenantId: "acme" });
+    });
+
     it("refuses a page of the tenant before when another tab switched the session, and changes nothing", async () => {
         // The page still shows Acme, the session works in Globex since a switch in another tab.
         mocks.viewer = { ...mocks.viewer, tenantId: "globex" };

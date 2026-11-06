@@ -3,9 +3,11 @@ import { getAdapterDefinition } from "./definitions";
 /**
  * Which connections reach the server DBackup runs on instead of a server of their own: its files,
  * its Docker, its sockets, the tools it runs with arguments of the connection, and its SSH keys.
- * That server holds the key of every secret and the database of every tenant, so only the platform
- * adds such a connection, never a customer. A plain module, since the server refuses them and the
- * adapter pickers of a customer leave out what reaches the server in every mode.
+ * That server holds the key of every secret and the database of every tenant, so only a platform
+ * admin with a session adds, changes, copies, tests or browses such a connection, and only in the
+ * home tenant, never in the tenant of a customer. Other members of the home tenant may still pick
+ * one that exists in their jobs. A plain module, since the server refuses them and the connection
+ * form offers them to a platform admin alone.
  */
 
 const HOST = "the server DBackup runs on";
@@ -61,6 +63,16 @@ function namesSocket(adapterId: string, host: unknown): boolean {
     return false;
 }
 
+/**
+ * Whether SQL Server moves its backup files through a folder of the server DBackup runs on, as its
+ * transport decides at run time, see `mssql/transport.ts`: neither over SSH nor with the older SSH
+ * file transfer and a login for it.
+ */
+export function mssqlUsesLocalFolder(config: Record<string, unknown>): boolean {
+    if (config.connectionMode === "ssh") return false;
+    return !(config.fileTransferMode === "ssh" && !blank(config.sshUsername));
+}
+
 /** Whether an adapter reaches the server DBackup runs on in every mode, which a picker of a customer leaves out. */
 export function isAlwaysHostLocal(adapterId: string): boolean {
     return ALWAYS_HOST_LOCAL.has(adapterId);
@@ -73,6 +85,22 @@ export function isAlwaysHostLocal(adapterId: string): boolean {
 function rsyncUsesHostKeys(config: Record<string, unknown>): boolean {
     if (config.authType === "password") return false;
     return !(config.authType === "privateKey" && !blank(config.privateKey));
+}
+
+/** What someone reads whose SSH login would go through the agent of the server DBackup runs on. */
+const AGENT_LOGIN = `An SSH agent login uses the keys of ${HOST}, which only a platform admin uses. Use a password or a private key instead.`;
+
+/**
+ * Why a saved login logs in with the identity of the server DBackup runs on, as the sentence that
+ * refuses it, or null. An SSH key profile with `authType: "agent"` hands its connections the SSH
+ * agent of that server, rsync its default keys as well, see `rsyncUsesHostKeys`. A change of the
+ * profile reaches every connection that logs in with it without a save of the connection, so the
+ * profile is checked on its own when it is created or changed. SFTP never asks the agent, it fails
+ * such a login instead.
+ */
+export function loginHostReason(type: string, data: unknown): string | null {
+    if (type !== "SSH_KEY" || !data || typeof data !== "object") return null;
+    return (data as { authType?: unknown }).authType === "agent" ? AGENT_LOGIN : null;
 }
 
 /** Whether an SSH login of the connection goes through the SSH agent of the server DBackup runs on. */
@@ -94,46 +122,46 @@ function usesHostAgent(adapterId: string, config: Record<string, unknown>): bool
  *   or MongoDB with a connection URI, whose options name files of it.
  * - Rsync with an option that names a file or a command, or without a login of its own.
  * - An SSH login through the agent of that server.
- *
- * SQL Server in local file transfer mode is left out on purpose: it reads and deletes only a file
- * with a name it made up itself, with a time stamp to the millisecond, in the folder of the config.
+ * - SQL Server that moves its backup files through a folder of that server, see `mssqlUsesLocalFolder`.
  */
 export function hostLocalReason(adapterId: string, config: Record<string, unknown>): string | null {
     const name = getAdapterDefinition(adapterId)?.name ?? adapterId;
 
-    if (ALWAYS_HOST_LOCAL.has(adapterId)) return `${name} reaches ${HOST}, which only the platform adds.`;
+    if (ALWAYS_HOST_LOCAL.has(adapterId)) return `${name} reaches ${HOST}, which only a platform admin adds.`;
 
     if (adapterId === "docker-volume" && direct(config)) {
-        return `${name} without SSH reach the Docker of ${HOST}, which only the platform adds. Connect to the Docker host over SSH instead.`;
+        return `${name} without SSH reach the Docker of ${HOST}, which only a platform admin adds. Connect to the Docker host over SSH instead.`;
     }
 
     if (adapterId === "sqlite" && config.mode !== "ssh") {
-        return `${name} in local mode reads a file on ${HOST}, which only the platform adds. Reach the file over SSH instead.`;
+        return `${name} in local mode reads a file on ${HOST}, which only a platform admin adds. Reach the file over SSH instead.`;
     }
 
     if (DATABASE_HOSTS.has(adapterId) && direct(config)) {
         if (namesSocket(adapterId, config.host)) {
-            return `${name} through a socket path reaches ${HOST}, which only the platform adds. Connect over the network or over SSH instead.`;
+            return `${name} through a socket path reaches ${HOST}, which only a platform admin adds. Connect over the network or over SSH instead.`;
         }
         if (TOOL_OPTIONS.has(adapterId) && !blank(config.options)) {
-            return `The additional options of ${name} run its tools on ${HOST}, which only the platform sets. Leave them empty or connect over SSH.`;
+            return `The additional options of ${name} run its tools on ${HOST}, which only a platform admin sets. Leave them empty or connect over SSH.`;
         }
         if (adapterId === "mongodb" && !blank(config.uri)) {
-            return `A connection URI of ${name} runs its tools on ${HOST} with the options it holds, which only the platform sets. Use the host, the port and a credential profile instead.`;
+            return `A connection URI of ${name} runs its tools on ${HOST} with the options it holds, which only a platform admin sets. Use the host, the port and a credential profile instead.`;
         }
+    }
+
+    if (adapterId === "mssql" && mssqlUsesLocalFolder(config)) {
+        return `${name} with a shared folder moves its backup files through a folder of ${HOST}, which only a platform admin sets. Fetch them over SSH instead.`;
     }
 
     if (adapterId === "rsync") {
         const unsafe = String(config.options ?? "").split(/\s+/).filter(Boolean).find((token) => !SAFE_RSYNC_OPTION.test(token));
-        if (unsafe) return `The rsync option ${unsafe} reaches ${HOST}, which only the platform sets.`;
+        if (unsafe) return `The rsync option ${unsafe} reaches ${HOST}, which only a platform admin sets.`;
         if (rsyncUsesHostKeys(config)) {
-            return `${name} without a password or a private key of its own logs in with the SSH keys of ${HOST}, which only the platform uses.`;
+            return `${name} without a password or a private key of its own logs in with the SSH keys of ${HOST}, which only a platform admin uses.`;
         }
     }
 
-    if (usesHostAgent(adapterId, config)) {
-        return `An SSH agent login uses the keys of ${HOST}, which only the platform uses. Use a password or a private key instead.`;
-    }
+    if (usesHostAgent(adapterId, config)) return AGENT_LOGIN;
 
     return null;
 }

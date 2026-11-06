@@ -421,6 +421,11 @@ export type FileInfo = {
      * backup with the others of the same databases, apart from the whole backups of the job.
      */
     onlyDatabases?: string[];
+    /**
+     * Set when its `.meta.json` says `sourceType: "SYSTEM"`, a file of the configuration backup,
+     * which the retention of a job never counts or deletes.
+     */
+    configBackup?: boolean;
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */
@@ -675,6 +680,12 @@ export interface SnapshotHandle {
     noun?: string;
 }
 
+/** Options of `StorageAdapter.read()` and `readBytes()`. */
+export interface StorageReadOptions {
+    /** The most bytes the read takes, `SIDECAR_READ_LIMIT` when left out. */
+    maxBytes?: number;
+}
+
 export interface StorageAdapter extends BaseAdapter {
     type: 'storage';
     /**
@@ -724,9 +735,18 @@ export interface StorageAdapter extends BaseAdapter {
     ): Promise<boolean>;
 
     /**
-     * Reads the content of a file as a string
+     * Reads the content of a file as a string, null when it is not there.
+     *
+     * Takes at most `options.maxBytes` (`SIDECAR_READ_LIMIT` when left out) and fails with
+     * `FileTooLargeError` from `common/read-limit.ts` past it, stopping the transfer there. The
+     * server of a destination may belong to a customer, so nothing is buffered without a bound.
      */
-    read?(config: AdapterConfig, remotePath: string): Promise<string | null>;
+    read?(config: AdapterConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null>;
+
+    /**
+     * The same as `read()`, as bytes, for content that is not text, like a sealed index.
+     */
+    readBytes?(config: AdapterConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null>;
 
     /**
      * How many `read()` calls a caller may run against this destination at once.

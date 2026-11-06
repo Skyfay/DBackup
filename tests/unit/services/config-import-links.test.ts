@@ -105,6 +105,26 @@ describe("restoring a configuration onto a new DBackup", () => {
         expect(result.notes).toEqual(["1 job is paused so it does not back up unencrypted, its encryption key is not here: Shop nightly."]);
     });
 
+    it("pauses a job called like the folder of the configuration backup, which would write among its files", async () => {
+        const result = await importConfiguration(backup({
+            adapters: [adapter("db-1", "Shop", "database")],
+            jobs: [job({ name: "Config-Backups" })],
+        }), "OVERWRITE");
+
+        expect(firstCall(prismaMock.job.upsert)).toMatchObject({ name: "Config-Backups", enabled: false });
+        expect(result.notes).toEqual(["1 job is paused until it is renamed, its name is the folder of the configuration backup: Config-Backups."]);
+    });
+
+    it("pauses a job whose name leads out of its own folder, which would write beside it or into the root", async () => {
+        const result = await importConfiguration(backup({
+            adapters: [adapter("db-1", "Shop", "database")],
+            jobs: [job({ name: "shop/../nightly" })],
+        }), "OVERWRITE");
+
+        expect(firstCall(prismaMock.job.upsert)).toMatchObject({ name: "shop/../nightly", enabled: false });
+        expect(result.notes).toEqual(["1 job is paused until it is renamed, its name holds a . or .. folder or a folder that starts with a hyphen: shop/../nightly."]);
+    });
+
     it("names the jobs that lose a naming template or a schedule preset the file does not hold", async () => {
         const result = await importConfiguration(backup({
             adapters: [adapter("db-1", "Shop", "database")],

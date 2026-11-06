@@ -34,10 +34,18 @@ vi.mock("@/services/trash/trash-service", async () => {
         mayHandle: actual.mayHandle,
         trashEntries: vi.fn(async (ids: string[]) => mocks.entries.filter((entry) => ids.includes(entry.id))),
         latestTrashIds: mocks.latest,
+        // The emails of the deleted accounts, none of which has an account by now.
+        trashAccounts: vi.fn(async () => []),
         restoreFromTrash: mocks.restore,
         purgeFromTrash: mocks.purge,
     };
 });
+
+// No group of a deleted account here is beyond the viewer, see tests/unit/lib/trash-account-actions.test.ts.
+vi.mock("@/services/trash/account-groups", () => ({
+    groupBeyondRefusals: vi.fn(async () => []),
+    trashAccountCaps: vi.fn(async () => ({ groups: new Map(), permissionsByTenant: {} })),
+}));
 
 const { purgeDeletedAction, restoreDeletedAction, undoDeleteAction } = await import("@/app/actions/settings/trash");
 
@@ -82,7 +90,7 @@ describe("the actions of Recently deleted", () => {
         const result = await restoreDeletedAction(["t-key", "t-job", "t-root"]);
 
         // A job needs jobs:write, and the account of a platform admin needs a platform admin.
-        expect(mocks.restore).toHaveBeenCalledWith(["t-key"], { newName: undefined });
+        expect(mocks.restore).toHaveBeenCalledWith(["t-key"], { newName: undefined, caller: { isPlatformAdmin: false, authMethod: "session" } });
         expect(result).toMatchObject({
             success: true,
             data: {
@@ -101,7 +109,8 @@ describe("the actions of Recently deleted", () => {
 
         await restoreDeletedAction(["t-root"]);
 
-        expect(mocks.restore).toHaveBeenCalledWith(["t-root"], { newName: undefined });
+        // The guards of a restored connection know a platform admin acts, see `savedLoginRefusal`.
+        expect(mocks.restore).toHaveBeenCalledWith(["t-root"], { newName: undefined, caller: { isPlatformAdmin: true, authMethod: "session" } });
     });
 
     it("leaves a restore or a delete for good to the tenant of the entry, never All tenants", async () => {
@@ -125,7 +134,7 @@ describe("the actions of Recently deleted", () => {
         const result = await purgeDeletedAction(["t-key", "t-job"]);
 
         expect(mocks.purge).toHaveBeenCalledWith(["t-key"]);
-        expect(result).toEqual({ success: true, data: { purged: ["t-key"] } });
+        expect(result).toEqual({ success: true, data: { purged: ["t-key"], failed: [] } });
         expect(mocks.audit).toHaveBeenCalledWith("lena", "DELETE", "VAULT", { name: "Offsite 2025", action: "trash_purge", permanently: true }, "key-1");
     });
 
@@ -136,7 +145,7 @@ describe("the actions of Recently deleted", () => {
         await undoDeleteAction("job", ["job-1"]);
 
         expect(mocks.latest).toHaveBeenLastCalledWith("job", ["job-1"]);
-        expect(mocks.restore).toHaveBeenCalledWith(["t-job"]);
+        expect(mocks.restore).toHaveBeenCalledWith(["t-job"], { caller: { isPlatformAdmin: false, authMethod: "session" } });
     });
 
     it("is no way around the settings for a delete of someone else or one from long ago", async () => {

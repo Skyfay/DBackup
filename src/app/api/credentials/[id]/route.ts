@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
@@ -46,7 +47,7 @@ export async function GET(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ);
@@ -63,7 +64,7 @@ export async function PUT(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.WRITE);
@@ -108,7 +109,7 @@ export async function DELETE(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.DELETE);

@@ -34,7 +34,7 @@ A tenant of the MSP shares with customers, a customer does not. The home tenant 
 
 The [page of a database server](/user-guide/features/database-explorer#the-page-of-a-server) in the **Database Explorer**, and the page of the database connection, show **Databases and tenants**: the databases DBackup last read from the server, the tenant each belongs to now, how it got there and how many backups it has. Quick filters show all, the given ones or the ones only you see. It shows in a tenant that shares with customers while there is another tenant, to whoever holds **See what is shared** (`platform-sharing:read`), and changing it needs **Share with customers** (`platform-sharing:write`). Both are rights of the platform in the area **Sharing**, which a [platform group](/user-guide/admin/tenants#platform-groups) gives and a platform admin holds, never the group of a tenant. Every other tenant can get one, also one that shares with customers itself.
 
-Someone of a platform group of selected tenants gives databases to those tenants only and takes them only from them. A database another tenant holds, by name or by a rule, shows its tenant with a lock and stays as it is: it is neither taken back, given to another tenant, moved nor changed in its backups on demand. The rules of such a tenant stay as they are too, and a new rule that would rank above one of them for a database of the server is refused. The pickers offer only the tenants they reach, and so does their [API key](#through-the-api). A platform group of all tenants and a platform admin reach every tenant.
+Someone of a platform group of selected tenants gives databases to those tenants only and takes them only from them. A database another tenant holds, by name or by a rule, shows **Another tenant** with a lock, never the name of that tenant, and stays as it is: it is neither taken back, given to another tenant, moved nor changed in its backups on demand. The rules of such a tenant stay as they are too, and a new rule that would rank above one of them for a database of the server is refused. The pickers and the filters offer only the tenants they reach, a refusal names no other tenant, and so does their [API key](#through-the-api). The warning before a server is deleted counts every customer but names only those. A platform group of all tenants and a platform admin reach every tenant.
 
 ### By Hand
 
@@ -81,7 +81,7 @@ curl -s -X PUT "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments" \
 
 The answer counts the databases whose owner changed, as `{ "success": true, "data": { "changed": 2 } }`. A database that belongs to the tenant already stays as it is, its start included. The name may be one DBackup has not read from the server yet, like a database the panel just created. A start in the future, a server of a tenant that does not share with customers (taking back included), a server of an [engine that cannot be shared](#engines-that-can-be-shared), the tenant of the server itself or a tenant that does not exist answers `400`, and so does a database given to or taken from a tenant the platform group of the owner of the key does not reach. Nothing changes then. A server of another tenant answers `404`.
 
-`GET` on the same address needs `platform-sharing:read` or `platform-sharing:write` and answers with the databases of the server and their owner now, every assignment and rule with its start and end, the tenants a database can go to under `customers`, those the owner of the key reaches, and every other tenant under `tenants`. The IDs of the tenants for the `PUT` come from `customers`.
+`GET` on the same address needs `platform-sharing:read` or `platform-sharing:write` and answers with the databases of the server and their owner now, every assignment and rule with its start and end, the tenants a database can go to under `customers`, those the owner of the key reaches, and the same tenants under `tenants`. A tenant the owner of the key does not reach holds as `{ "id": "beyond-reach", "name": "Another tenant" }` in every place, also in `tenants`. The IDs of the tenants for the `PUT` come from `customers`.
 
 ```bash
 curl -s "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments" \
@@ -127,6 +127,27 @@ A backup belongs to whoever had its database when the backup was made, never to 
 **Move to another server** in the menu of a database moves it to another server of the same engine in the same tenant, under the same name or a new one. Its tenant keeps it as one database: the backups from the old server stay in their list, each saying where it was made, and a restore of one of them goes into the database at its new place. On the old server no rule gives the name to anyone from the move on, only a new assignment by hand does. The column **How** and the timeline show the move.
 
 A Microsoft SQL Server database restored on another server than the one its backup was made on, like after a move under the same name, puts its files into the data folder of the new server instead of the paths the backup names. A Firebird database restores into the path of its alias on the server.
+
+## Who a Customer's Restore Runs As
+
+A restore a customer starts writes their own content, their functions, triggers, views and defaults, with the login of the server's connection. That login is the provider's, so a database that belongs to it would run the customer's code with the provider's rights. Set the server up so that it cannot:
+
+- Give each customer database an owner role of its own, the one the customer signs in with, and let the login of the connection act as it (`GRANT shop_acme_owner TO dbackup` on PostgreSQL).
+- Never run the connection of a shared server as a superuser or `sysadmin`. A login that may create and restore databases is enough.
+
+::: warning The owner role is no wall on PostgreSQL
+`pg_restore --role` only switches the role of the session, and code of the customer that runs during the restore, like a function in a check constraint, can switch it back to the login. Whatever the login may do, a customer with the right to create functions in their database may do during their own restore. Use a login that is no superuser, may not create roles and is a member of no other customer's owner role, or leave restores of such a server to the provider.
+:::
+
+What DBackup does in a customer's restore:
+
+| Engine | Restore |
+| :--- | :--- |
+| **PostgreSQL** | `pg_restore --role` with the owner of the database, so every object belongs to that role, see the warning above for what that does not stop. A database that belongs to the login itself restores as the login, with a warning in the run. A login that may not act as the owner stops the restore before it writes anything |
+| **Microsoft SQL Server** | The files always go to the default data and log folders of the instance, never to the paths in the backup. A backup with FILESTREAM or full-text folders is refused. Afterwards TRUSTWORTHY and cross database ownership chaining are switched off, or a warning says that the login may not |
+| **MySQL** and **MariaDB** | The dump keeps the `DEFINER` of every view, trigger, routine and event, the account that made it on the server, so they run as that account and not as the login. Give each customer an account of their own |
+
+A restore the provider starts from its own History runs as the login, as for every other connection.
 
 ## Restoring the Server Over Customers' Databases
 
@@ -192,7 +213,7 @@ A right click on a shared backup offers only what the customer may do with it: *
 
 A restore shows in the History of the customer's tenant, and every download and restore in its audit log. The run names the database alone, never the address, port or user of the server, every host of a list and the name of a MongoDB replica set, a server name of SQL Server in each spelling it takes, like `tcp:sql01,1433` or `sql01\PROD`, with its instance, an account the server names with its host, another host of its domain, the name of its Sentinel master, the data folder of SQL Server, the archive, the destination or another database of the backup or the server, and the other databases of the backup are never read. The restore notifications to the customer's channels name the database instead of the archive, without the destination, and a failure with a general message. A download goes through an address that holds a token alone, never the destination. When the first destination of a backup does not answer, a download or restore takes the next copy.
 
-The tenant of the server sees every restore of a customer too. Its History gets a run of the same restore, **Restore onto** the server with **Restore of** the database **for** the customer below it, started by the customer and the person, like *Acme · Sara*. That run holds the whole log, with the archive, the commands and the errors of the server's tools, and ends with the same status as the customer's run. **Cancel** in either History stops the restore. Its audit log keeps the restore as well, with the database, the server and the customer. When a restore fails, the customer's run ends with a line that says the tenant of the server sees the full run in its History, so the customer knows whom to ask.
+The tenant of the server sees every restore of a customer too. Its History gets a run of the same restore, **Restore onto** the server with **Restore of** the database **for** the customer below it, started by the customer and the person, like *Acme · Sara*. That run holds the whole log, with the archive, the commands and the errors of the server's tools, and ends with the same status as the customer's run. **Cancel** in either History stops the restore. Its audit log keeps the restore as well, with the database, the server and the customer, and so it keeps every download of a customer. When a restore fails, the customer's run ends with a line that says the tenant of the server sees the full run in its History, so the customer knows whom to ask.
 
 A restore the checks before the start refuse, like a backup of a newer version than the server, a local network the tenant of the server blocks, or a database the server will not prepare, leaves both runs as well, failed at once. The customer reads **The restore was refused:** with the reason in the words of its run, the version by its number and nothing of the server, and the run that says it. The provider's run holds the whole reason.
 

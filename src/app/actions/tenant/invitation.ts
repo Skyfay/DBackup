@@ -13,6 +13,7 @@ import { auditService } from "@/services/audit-service";
 import { invitationService, type InvitationPreview, type InvitationRow } from "@/services/tenant/invitation-service";
 import { createInvitationAs, INVITATION_GONE, InviteSchema, invitationsOf, revokeInvitationAs } from "@/services/tenant/invitation-admin";
 import { tenantService } from "@/services/tenant/tenant-service";
+import { TenantAdminRefusal } from "@/services/tenant/tenant-admin";
 
 const log = logger.child({ action: "invitation" });
 
@@ -71,11 +72,13 @@ export async function revokeInvitation(id: string) {
     if (!parsed.success) return { success: false as const, error: "Invalid request" };
 
     try {
-        await revokeInvitationAs({ id: viewer.id }, viewer.tenantId, parsed.data);
+        // Nobody takes back a link that gives more than they may, like they make none.
+        await revokeInvitationAs({ id: viewer.id }, viewer, viewer.tenantId, parsed.data);
         revalidatePath("/dashboard/users");
         return { success: true as const };
     } catch (error: unknown) {
         if (error instanceof NotFoundError) return { success: false as const, error: INVITATION_GONE };
+        if (error instanceof TenantAdminRefusal) return { success: false as const, error: error.message };
         log.error("Revoking an invitation failed", { invitationId: parsed.data }, wrapError(error));
         return { success: false as const, error: "The invitation could not be revoked." };
     }
@@ -112,7 +115,7 @@ export async function acceptInvitation(token: string) {
 
     try {
         const accepted = await invitationService.accept(parsed.data, viewer.id);
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { change: "Invitation accepted", joined: accepted.joined }, accepted.tenantId, { tenantId: accepted.tenantId });
+        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.TENANT, { change: "Invitation accepted", name: accepted.tenantName, joined: accepted.joined }, accepted.tenantId, { tenantId: accepted.tenantId });
         const sessionId = await currentSessionId();
         if (sessionId) await tenantService.setActive(sessionId, viewer.id, accepted.tenantId, viewer.isPlatformAdmin);
         revalidatePath("/dashboard", "layout");

@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { encrypt } from "@/lib/crypto";
+import { NotFoundError } from "@/lib/logging/errors";
 
 export interface CreateSsoProviderInput {
     name: string;
@@ -136,7 +137,7 @@ export class OidcProviderService {
 
         // We need existing data if partial update
         const existing = await prisma.ssoProvider.findUnique({ where: { id } });
-        if (!existing) throw new Error("Provider not found");
+        if (!existing) throw new NotFoundError("Provider", id);
 
         // Encrypt credentials if provided
         const encryptedClientId = data.clientId ? encrypt(data.clientId) : undefined;

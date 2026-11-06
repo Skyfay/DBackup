@@ -4,7 +4,8 @@ import type { Permission } from "@/lib/auth/permissions";
 import { ALL_TENANTS_PERMISSIONS, EVERY_PERMISSION, PLATFORM_ADMIN_ROLE, allTenantsPermissionsOf, opensAllTenants, permissionsIn, reachesTenant, type OwnerMembership, type PlatformGroupGrant } from "@/lib/auth/owner-permissions";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
-import { AuthenticationError, PermissionError, wrapError } from "@/lib/logging/errors";
+import { ApiKeyError, AuthenticationError, PermissionError, wrapError } from "@/lib/logging/errors";
+import { recordKeyRefusal } from "@/lib/auth/api-key-refusal";
 import { runAsSystem } from "@/lib/tenant/context";
 import { ALL_TENANTS, HOME_TENANT_ID } from "@/lib/tenant/home";
 import { apiKeyService } from "@/services/auth/api-key-service";
@@ -91,14 +92,42 @@ async function pickTenant(picked: string | null | undefined, memberships: readon
 }
 
 /**
+ * Set once an installation has had a platform admin, by the promotion of its first account or by
+ * the first session of a platform admin this process sees, see `notePlatformAdmin`.
+ */
+export const PLATFORM_ADMIN_SEEN_KEY = "platform.adminSeen";
+
+/** Whether this process wrote `PLATFORM_ADMIN_SEEN_KEY` already, so a session asks the database once. */
+let platformAdminNoted = false;
+
+/**
+ * Notes that the installation has a platform admin, once per process. The first account is
+ * promoted only while none was ever noted, so the last account left after every other one was
+ * deleted never becomes one.
+ */
+async function notePlatformAdmin(): Promise<void> {
+  if (platformAdminNoted) return;
+  try {
+    await prisma.systemSetting.upsert({ where: { key: PLATFORM_ADMIN_SEEN_KEY }, update: {}, create: { key: PLATFORM_ADMIN_SEEN_KEY, value: "true" } });
+    platformAdminNoted = true;
+  } catch (error: unknown) {
+    log.warn("Noting that the installation has a platform admin failed", {}, wrapError(error));
+  }
+}
+
+/**
  * The first account of an installation becomes its platform admin with the full access role in the
- * home tenant, also when the role or the membership got lost.
+ * home tenant, also when the role or the membership got lost, but only while the installation never
+ * had a platform admin. Otherwise the only account left after every other one was deleted, of
+ * whoever that is, would become the platform admin of every tenant.
  */
 async function promoteFirstUser(userId: string): Promise<boolean> {
   if ((await prisma.user.count()) !== 1) return false;
+  if (await prisma.systemSetting.findUnique({ where: { key: PLATFORM_ADMIN_SEEN_KEY }, select: { key: true } })) return false;
   log.info("Making the first user the platform admin");
   await prisma.$transaction(async (tx) => {
     const groupId = await ensureFullAccessGroup(tx);
+    await tx.systemSetting.upsert({ where: { key: PLATFORM_ADMIN_SEEN_KEY }, update: {}, create: { key: PLATFORM_ADMIN_SEEN_KEY, value: "true" } });
     await tx.user.update({ where: { id: userId }, data: { platformRole: PLATFORM_ADMIN_ROLE } });
     await tx.tenantMembership.upsert({
       where: { userId_tenantId: { userId, tenantId: HOME_TENANT_ID } },
@@ -119,6 +148,7 @@ async function sessionContext(userId: string, pickedTenantId: string | null | un
   }
 
   const isPlatformAdmin = user.platformRole === PLATFORM_ADMIN_ROLE;
+  if (isPlatformAdmin) await notePlatformAdmin();
   const platformGroup = isPlatformAdmin ? null : user.platformGroup;
   const picked = await pickTenant(pickedTenantId, user.memberships, isPlatformAdmin, platformGroup);
   const allTenants = picked === ALL_TENANTS;
@@ -157,9 +187,17 @@ async function resolveAuthContext(headersObj: Headers): Promise<AuthContext | nu
     return null;
   }
 
-  // A key is found by its hash before its tenant is known. validate() throws ApiKeyError for
-  // disabled/expired keys (re-thrown to caller).
-  const validated = await runAsSystem(() => apiKeyService.validate(bearerToken));
+  // A key is found by its hash before its tenant is known. validate() throws ApiKeyError for a
+  // disabled, expired or blocked key, which is answered like no login at all: no context, and the
+  // sentence of the key kept for the 401 of the route (`unauthorized`).
+  let validated: Awaited<ReturnType<typeof apiKeyService.validate>>;
+  try {
+    validated = await runAsSystem(() => apiKeyService.validate(bearerToken));
+  } catch (error: unknown) {
+    if (!(error instanceof ApiKeyError)) throw error;
+    recordKeyRefusal(headersObj, error.message);
+    return null;
+  }
   if (!validated) {
     return null;
   }
@@ -196,8 +234,8 @@ function contexts(): WeakMap<Headers, Promise<AuthContext | null>> {
  * Tries session first, then falls back to API key from Authorization header.
  *
  * @param headersObj - The request headers object
- * @returns AuthContext if authenticated, null if no auth present
- * @throws ApiKeyError if API key is found but invalid/disabled/expired
+ * @returns AuthContext if authenticated, null if no auth present or the API key is disabled,
+ *   expired or blocked, whose reason `unauthorized()` in `src/lib/server/unauthorized.ts` answers
  */
 export function getAuthContext(headersObj: Headers): Promise<AuthContext | null> {
   // Only an object can be a key of the map, anything else is read every time.

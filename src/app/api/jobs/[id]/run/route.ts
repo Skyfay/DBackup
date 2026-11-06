@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { z } from "zod";
 import { backupService } from "@/services/backup/backup-service";
 import { TriggerInfo } from "@/lib/runner";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext, AuthContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { ApiKeyError, NotFoundError } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
 import { apiKeyService } from "@/services/auth/api-key-service";
 import { jobAuditName } from "@/services/jobs/job-audit";
 import { userService } from "@/services/user/user-service";
-import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
+
+const log = logger.child({ route: "jobs/[id]/run" });
 
 const triggerBodySchema = z.object({
     lock: z.boolean().optional(),
@@ -21,21 +25,11 @@ export async function POST(
     req: NextRequest,
     props: { params: Promise<{ id: string }> }
 ) {
-    let ctx: AuthContext | null;
-    try {
-        ctx = await getAuthContext(await headers());
-    } catch (error) {
-        if (error instanceof ApiKeyError) {
-            return NextResponse.json(
-                { success: false, error: error.message },
-                { status: 401 }
-            );
-        }
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // A disabled, expired or blocked API key is answered by `unauthorized` with its reason.
+    const ctx = await getAuthContext(await headers()).catch(() => null);
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -58,6 +52,8 @@ export async function POST(
             }
             lock = parsed.data?.lock;
         }
+        // Locking the backup this run makes is part of running the job, as CI keys with only
+        // jobs:execute have done since the lock came. It takes no backup away from anyone.
 
         let triggerInfo: TriggerInfo;
         if (ctx.authMethod === "apikey" && ctx.apiKeyId) {
@@ -93,11 +89,11 @@ export async function POST(
         if (error instanceof NotFoundError) {
             return NextResponse.json({ success: false, error: "Job not found" }, { status: 404 });
         }
-        const refused = permissionRefusal(error);
+        const refused = serviceRefusal(error);
         if (refused) return refused;
-        const message = error instanceof Error ? error.message : "Unknown error";
+        log.error("Starting a job failed", { jobId: id }, wrapError(error));
         return NextResponse.json(
-            { success: false, error: message },
+            { success: false, error: "The job could not be started. The log of DBackup has the details." },
             { status: 500 }
         );
     }

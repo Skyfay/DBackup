@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { scheduler } from "@/lib/server/scheduler";
 import { logger } from "@/lib/logging/logger";
-import { ValidationError, wrapError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { registry } from "@/lib/core/registry";
 import { isCombinableWithDirectories } from "@/lib/adapters/combinable";
 import { registerAdapters } from "@/lib/adapters";
@@ -14,8 +14,9 @@ import type { DeleteOptions } from "@/services/trash/trash-types";
 import { assertOwnRecords } from "@/lib/tenant/references";
 import { currentTenantId } from "@/lib/tenant/current";
 import { providedTo } from "@/services/sharing/provided";
-import { TENANTS_FOLDER, isTenantsFolderName } from "@/lib/tenant/storage-view";
+import { assertJobFolderName } from "./job-folder-rules";
 import { databaseNameProblem } from "@/lib/adapters/database/common/database-name";
+import { assertSourceFolder } from "@/lib/archive/remote-paths";
 
 /**
  * Refuses a database of a job that no tool reads as a database name, like one that starts with
@@ -186,7 +187,7 @@ export class JobService {
                 select: { sourceId: true, sources: { select: { id: true } } }
             });
             if (!current) {
-                throw new Error(`Job with id "${jobId}" not found.`);
+                throw new NotFoundError("Job", jobId);
             }
             if (effectiveSourceId === undefined) effectiveSourceId = current.sourceId;
             if (effectiveSourceCount === undefined) effectiveSourceCount = current.sources.length;
@@ -199,6 +200,7 @@ export class JobService {
      * Enforces the "a job needs at least one source" invariant and validates that:
      * - every directory source points at a storage adapter whose role is SOURCE
      * - a database source combined with directory sources is on the combinable list
+     * - the folder of every directory source stays inside its connection, see `assertSourceFolder`
      * This mirrors the destinations.length===0 guard already enforced at runner init time
      * (defense in depth), plus the source-role/combinability checks this feature introduces.
      */
@@ -206,19 +208,20 @@ export class JobService {
         const { effectiveSourceId, effectiveSourceCount } = await this.resolveEffectiveSourceState(jobId, sourceId, sources);
 
         if (!effectiveSourceId && effectiveSourceCount === 0) {
-            throw new Error("Job must have at least one source: a database source or one or more directory sources.");
+            throw new ValidationError("Job must have at least one source: a database source or one or more directory sources.");
         }
 
         if (sources && sources.length > 0) {
+            for (const source of sources) assertSourceFolder(source.path);
             const configIds = [...new Set(sources.map((s) => s.configId))];
             const configs = await prisma.adapterConfig.findMany({ where: { id: { in: configIds } } });
             for (const configId of configIds) {
                 const config = configs.find((c) => c.id === configId);
                 if (!config) {
-                    throw new Error(`Directory source references unknown adapter "${configId}".`);
+                    throw new ValidationError(`Directory source references unknown adapter "${configId}".`);
                 }
                 if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.SOURCE) {
-                    throw new Error(`Adapter "${config.name}" is not a directory source.`);
+                    throw new ValidationError(`Adapter "${config.name}" is not a directory source.`);
                 }
             }
         }
@@ -226,11 +229,11 @@ export class JobService {
         if (effectiveSourceId && effectiveSourceCount > 0) {
             const sourceConfig = await prisma.adapterConfig.findUnique({ where: { id: effectiveSourceId } });
             if (!sourceConfig) {
-                throw new Error(`Source adapter "${effectiveSourceId}" not found.`);
+                throw new ValidationError(`Source adapter "${effectiveSourceId}" not found.`);
             }
             const adapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter | undefined;
             if (!adapter?.dumpOne || !isCombinableWithDirectories(sourceConfig.adapterId)) {
-                throw new Error(`Database adapter "${sourceConfig.adapterId}" does not support combined backups with directory sources.`);
+                throw new ValidationError(`Database adapter "${sourceConfig.adapterId}" does not support combined backups with directory sources.`);
             }
         }
     }
@@ -281,10 +284,10 @@ export class JobService {
             const config = configs.find((c) => c.id === configId);
             if (!config) {
                 if (shared.has(configId)) continue;
-                throw new Error(`Destination references unknown adapter "${configId}".`);
+                throw new ValidationError(`Destination references unknown adapter "${configId}".`);
             }
             if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.DESTINATION) {
-                throw new Error(`Adapter "${config.name}" is not a backup destination.`);
+                throw new ValidationError(`Adapter "${config.name}" is not a backup destination.`);
             }
         }
     }
@@ -305,20 +308,17 @@ export class JobService {
     }
 
     /**
-     * Refuses a job called like the folder a shared destination keeps for the customers, while it
-     * writes to a destination this tenant shares. Its backups would land among theirs. An update
-     * counts the name and the destinations it keeps too.
+     * Refuses a name the job may not have with its destinations, see `assertJobFolderName`. An
+     * update counts the name and the destinations it keeps too.
      */
     private async assertNotTenantsFolder(jobId: string | null, name: string | undefined, destinations: DestinationInput[] | undefined) {
         const kept = jobId && (name === undefined || destinations === undefined)
             ? await prisma.job.findUnique({ where: { id: jobId }, select: { name: true, destinations: { select: { configId: true } } } })
             : null;
         const finalName = name ?? kept?.name;
-        if (!finalName || !isTenantsFolderName(finalName)) return;
+        if (finalName === undefined) return;
         const configIds = (destinations ?? kept?.destinations ?? []).map((destination) => destination.configId);
-        if (configIds.length === 0) return;
-        const shared = await prisma.connectionShare.count({ where: { id: { in: configIds } } });
-        if (shared > 0) throw new ValidationError(`A job writing to a destination this tenant shares cannot be called ${TENANTS_FOLDER}, that folder holds the backups of its customers.`);
+        await assertJobFolderName(prisma, finalName, configIds);
     }
 
     /**
@@ -342,7 +342,7 @@ export class JobService {
         // Check name uniqueness
         const existingByName = await prisma.job.findFirst({ where: { name } });
         if (existingByName) {
-            throw new Error(`A job with the name "${name}" already exists.`);
+            throw new ConflictError(`A job with the name "${name}" already exists.`);
         }
 
         assertDatabaseNames(databases);
@@ -418,7 +418,7 @@ export class JobService {
         if (name) {
             const existingByName = await prisma.job.findFirst({ where: { name, id: { not: id } } });
             if (existingByName) {
-                throw new Error(`A job with the name "${name}" already exists.`);
+                throw new ConflictError(`A job with the name "${name}" already exists.`);
             }
         }
 
@@ -629,7 +629,7 @@ export class JobService {
         });
 
         if (!original) {
-            throw new Error(`Job with id "${id}" not found.`);
+            throw new NotFoundError("Job", id);
         }
 
         // The copy links what the original links, read through relations the tenant filter leaves
@@ -652,6 +652,9 @@ export class JobService {
             retentionPolicy: original.destinations.map((destination) => destination.retentionPolicyId),
             excludePatternPreset: original.sources.flatMap((source) => source.excludePatternPresets.map((preset) => preset.id)),
         });
+
+        // A folder saved before the rule existed is not copied into a new job, see `assertSourceFolder`.
+        for (const source of original.sources) assertSourceFolder(source.path);
 
         // The terms of a shared destination may have changed since the original was saved, so the
         // copy passes the checks of a new job: a key where only encrypted backups are taken.

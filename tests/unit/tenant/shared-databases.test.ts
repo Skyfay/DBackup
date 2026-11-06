@@ -238,7 +238,9 @@ describe("what a customer does with a backup", () => {
         );
         // The name of the archive starts with the job of the server's tenant, the time takes its place.
         // The token alone leaves the server, never the destination it was read from.
-        expect(prepared).toEqual({ token: expect.any(String), fileName: "2026-02-10_1200_shop.sql" });
+        expect(prepared).toEqual({ token: expect.any(String), fileName: "2026-02-10_1200_shop.sql", provider: expect.objectContaining({ tenantId: expect.any(String) }) });
+        // The provider is named for its own audit log, never in the address.
+        expect(Object.keys(prepared.provider).sort()).toEqual(["customerName", "serverName", "tenantId"]);
     });
 
     it("reads the next copy when the first one cannot be read", async () => {
@@ -383,11 +385,11 @@ describe("what the tenant of the server decides", () => {
     });
 
     it("takes back a database a rule gives, which no rule gives again, and counts no change for one nobody holds", async () => {
-        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: null }], "u-msp"))).toEqual({ changed: 1 });
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: null }], "u-msp"))).toMatchObject({ changed: 1 });
         const data = await runAsTenant("default", () => databaseAssignmentService.forSource("shared-mysql"));
         expect(data.databases.find((row) => row.name === "blog_one")?.owner ?? null).toBeNull();
-        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: null }], "u-msp"))).toEqual({ changed: 0 });
-        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "nobody_db", tenantId: null }], "u-msp"))).toEqual({ changed: 0 });
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "blog_one", tenantId: null }], "u-msp"))).toMatchObject({ changed: 0 });
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "nobody_db", tenantId: null }], "u-msp"))).toMatchObject({ changed: 0 });
     });
 
     it("starts a rule today or earlier, like an assignment", async () => {
@@ -428,11 +430,11 @@ describe("tenants of the MSP that share databases", () => {
             .rejects.toBeInstanceOf(ValidationError);
 
         expect(await tenantService.setSharing("msp-two", true)).toEqual({ name: "MSP Two", changed: true });
-        expect(await runAsTenant("msp-two", () => databaseAssignmentService.assign("two-mysql", [{ databaseName: "crm", tenantId: "globex" }], null))).toEqual({ changed: 1 });
+        expect(await runAsTenant("msp-two", () => databaseAssignmentService.assign("two-mysql", [{ databaseName: "crm", tenantId: "globex" }], null))).toMatchObject({ changed: 1 });
         // Every other tenant can get one, a tenant that shares as well.
         const model = await runAsTenant("msp-two", () => databaseAssignmentService.forSource("two-mysql"));
         expect(model.customers.map((tenant) => tenant.id).sort()).toEqual(["acme", "default", "globex"]);
-        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "other", tenantId: "msp-two" }], null))).toEqual({ changed: 1 });
+        expect(await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "other", tenantId: "msp-two" }], null))).toMatchObject({ changed: 1 });
         await runAsTenant("default", () => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "other", tenantId: null }], null));
     });
 

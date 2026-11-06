@@ -25,10 +25,10 @@ import { RunPage } from "@/components/dashboard/history/run-page";
 import { TenantViewProvider } from "@/components/tenant/tenant-view";
 
 Element.prototype.scrollIntoView = vi.fn();
-const access = { canExecute: true, canOpenJobs: true, canOpenBackups: true, canOpenConnections: true };
-const open = (address: string) => {
+const access = { canExecute: true, cancels: ["Backup", "Restore", "IntegrityCheck", "Verification"], canOpenJobs: true, canOpenBackups: true, canOpenConnections: true };
+const open = (address: string, given = access) => {
     search = new URLSearchParams(address);
-    return render(<RunPage access={access} />);
+    return render(<RunPage access={given} />);
 };
 
 describe("run links", () => {
@@ -122,6 +122,14 @@ describe("the page of a run", () => {
 
         await user.click(within(log).getByRole("button", { name: "Show every step" }));
         expect(within(log).getByText("Upload complete: Shop offsite/a.tar")).toBeInTheDocument();
+    });
+
+    it("offers no Cancel on a live restore to someone who may run backups but not restore", async () => {
+        serve({ run: { ...liveDetail(), type: "Restore" } });
+        open("id=crm&from=overview", { ...access, cancels: ["Backup"] });
+
+        expect(await screen.findAllByText("Live")).not.toHaveLength(0);
+        expect(screen.queryByRole("button", { name: /Cancel run/ })).not.toBeInTheDocument();
     });
 
     it("follows a live run with its progress, the upload in one row, who waits and a way to cancel it", async () => {

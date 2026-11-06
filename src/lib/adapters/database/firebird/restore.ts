@@ -5,10 +5,10 @@ import { FirebirdConfig } from "@/lib/adapters/definitions";
 import { getGbakCommand } from "./tools";
 import { resolveAliasPath, buildConnectionString } from "./connection";
 import fs from "fs/promises";
-import path from "path";
 import {
     isMultiDbTar,
     extractSelectedDatabases,
+    extractedFileOf,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
@@ -86,10 +86,19 @@ async function restoreSingleFile(
  * The file a restore writes into: the path of a configured alias when the target names one, like
  * the restore of a shared database into itself, which names the database and not its file. Any
  * other target is a path already, like the one the restore page prefills, and stays as it is.
+ *
+ * A target that is only the name the backup gives its database, `originalDbName`, and no alias of
+ * this connection is refused. The backup comes from a destination whoever wrote it chose, so its
+ * name would pick the file gbak replaces on the server, like the security database of Firebird.
+ * A path is taken only when the person who restores names it.
  */
-export function restoreTargetPath(config: FirebirdConfig, target: string): string {
+export function restoreTargetPath(config: FirebirdConfig, target: string, originalDbName?: string): string {
     const alias = (config.databases || []).find((entry) => entry.name === target);
-    return alias ? resolveAliasPath(config, alias.name) : target;
+    if (alias) return resolveAliasPath(config, alias.name);
+    if (originalDbName !== undefined && target === originalDbName) {
+        throw new Error(`The database ${originalDbName} of the backup is no alias of this connection. Name the file to restore it into.`);
+    }
+    return target;
 }
 
 /**
@@ -104,9 +113,10 @@ export async function restoreOne(
     targetDbName: string,
     _host: ExecutionHost,
     onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
-    onProgress?: (percentage: number, detail?: string) => void
+    onProgress?: (percentage: number, detail?: string) => void,
+    originalDbName?: string
 ): Promise<void> {
-    await restoreSingleFile(config, filePath, restoreTargetPath(config, targetDbName), _host, onLog ?? (() => {}), onProgress);
+    await restoreSingleFile(config, filePath, restoreTargetPath(config, targetDbName, originalDbName), _host, onLog ?? (() => {}), onProgress);
 }
 
 // LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
@@ -156,12 +166,11 @@ export async function restore(
                     // targetName is a literal filesystem path here, not an alias name - the
                     // restore UI prefills it with the source alias's configured path, but the
                     // user can edit it to any path (no live server query to verify against).
-                    const targetPath = getTargetDatabaseName(dbEntry.name, dbMapping);
-                    const dbFile = files.find((f) => path.basename(f) === dbEntry.filename);
-
-                    if (!dbFile) {
-                        throw new Error(`Database file not found in archive: ${dbEntry.filename}`);
-                    }
+                    // Without one the name of the manifest is taken only as an alias of this
+                    // connection, never as a path, see `restoreTargetPath`.
+                    const mapped = getTargetDatabaseName(dbEntry.name, dbMapping);
+                    const targetPath = mapped === dbEntry.name ? restoreTargetPath(config, mapped, dbEntry.name) : mapped;
+                    const dbFile = extractedFileOf(files, dbEntry);
 
                     await restoreSingleFile(config, dbFile, targetPath, _host, log, onProgress);
                     log(`Restored database: ${dbEntry.name} → ${targetPath}`);

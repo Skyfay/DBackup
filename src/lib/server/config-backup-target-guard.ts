@@ -1,6 +1,6 @@
 import type { AuthContext } from "@/lib/auth/access-control";
 import { readsConfigBackups } from "@/lib/server/config-backup-guard";
-import { CONFIG_BACKUP_DESTINATION_LOCKED, CONFIG_BACKUP_KEY_LOCKED, CONFIG_BACKUP_LOGIN_LOCKED } from "@/lib/core/config-backup-locks";
+import { CONFIG_BACKUP_DESTINATION_LOCKED, CONFIG_BACKUP_KEY_LOCKED, CONFIG_BACKUP_LOGIN_APPLY_LOCKED, CONFIG_BACKUP_LOGIN_LOCKED } from "@/lib/core/config-backup-locks";
 import { getConfigBackupTargets } from "@/services/config/config-backup-targets";
 
 /**
@@ -37,4 +37,33 @@ export async function configBackupTargetRefusal(caller: Caller, query: ConfigBac
 export async function configBackupTargetResponse(caller: Caller, query: ConfigBackupTargetQuery): Promise<Response | null> {
     const message = await configBackupTargetRefusal(caller, query);
     return message ? Response.json({ success: false, error: message, message }, { status: 403 }) : null;
+}
+
+/**
+ * 403 when a request names the destination of the configuration backup as the saved connection
+ * whose secrets fill a config it submits, or that it copies, else null. Such a config keeps the
+ * host the caller sent, so its stored password or keys would go wherever the caller points them.
+ * For the form routes (test connection, folder browse, access check) and the copy of a connection.
+ */
+export async function storedSecretsRefusal(caller: Caller, configId: unknown): Promise<Response | null> {
+    if (typeof configId !== "string" || !configId) return null;
+    return configBackupTargetResponse(caller, { connectionIds: [configId] });
+}
+
+/**
+ * 403 when a request names a saved login of the destination of the configuration backup for a
+ * config it brings along or for a connection it creates or changes, else null. The login would
+ * sign in wherever that config points, so its password or key would go to a host of the caller's
+ * choosing. For the form routes (test connection, folder browse, access check, snapshot check, SSH
+ * test, remote file browser) and for creating or changing a connection. An id that is no string
+ * names nothing.
+ */
+export async function savedLoginRefusal(caller: Caller, ...ids: unknown[]): Promise<Response | null> {
+    if (readsConfigBackups(caller)) return null;
+    const named = ids.filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (named.length === 0) return null;
+    const { credentialIds } = await getConfigBackupTargets();
+    if (!named.some((id) => credentialIds.includes(id))) return null;
+    const message = CONFIG_BACKUP_LOGIN_APPLY_LOCKED;
+    return Response.json({ success: false, error: message, message }, { status: 403 });
 }

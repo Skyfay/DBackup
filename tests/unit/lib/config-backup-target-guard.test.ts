@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
     decryptKey: vi.fn(),
     deleteProfile: vi.fn(),
     deleteProfiles: vi.fn(),
+    updateProfile: vi.fn(),
     recoverKey: vi.fn(),
     isConfigBackupFile: vi.fn(),
     consumeState: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock("@/services/backup/encryption-service", () => ({
     getDecryptedMasterKey: mocks.decryptKey,
     deleteEncryptionProfile: mocks.deleteProfile,
     deleteEncryptionProfiles: mocks.deleteProfiles,
+    updateEncryptionProfile: mocks.updateProfile,
     getEncryptionProfiles: async () => [],
     markRecoveryKit: vi.fn(),
 }));
@@ -98,7 +100,7 @@ const { POST: bulkAdapters } = await import("@/app/api/adapters/bulk/route");
 const credentialRoute = await import("@/app/api/credentials/[id]/route");
 const { GET: revealCredential } = await import("@/app/api/credentials/[id]/reveal/route");
 const { POST: bulkCredentials } = await import("@/app/api/credentials/bulk/route");
-const { GET: recoveryKit } = await import("@/app/api/vault/recovery-kit/route");
+const { POST: recoveryKit } = await import("@/app/api/vault/recovery-kit/route");
 const { POST: dropboxAuth } = await import("@/app/api/adapters/dropbox/auth/route");
 const { oauthCallbackCaller } = await import("@/lib/server/oauth-callback");
 const encryption = await import("@/app/actions/backup/encryption");
@@ -120,6 +122,7 @@ beforeEach(() => {
     mocks.deleteProfile.mockResolvedValue({ name: "Config key" });
     mocks.isConfigBackupFile.mockResolvedValue(true);
     mocks.recoverKey.mockResolvedValue({ status: "existing" });
+    mocks.updateProfile.mockImplementation(async (id: string, input: { name: string }) => ({ profile: { id, name: input.name, description: null }, previousName: id, previousDescription: null }));
 });
 
 describe("who changes what the configuration backup goes through", () => {
@@ -224,7 +227,7 @@ describe("the key of the configuration backup", () => {
         const revealed = await encryption.revealMasterKey("config-key");
         const deleted = await encryption.deleteEncryptionProfile("config-key");
         const bulk = await encryption.bulkDeleteEncryptionProfiles(["job-key", "config-key"]);
-        const kit = await recoveryKit(new NextRequest("http://localhost/api/vault/recovery-kit?ids=job-key,config-key"));
+        const kit = await recoveryKit(new NextRequest("http://localhost/api/vault/recovery-kit", { method: "POST", body: JSON.stringify({ ids: ["job-key", "config-key"] }) }));
 
         expect(revealed).toEqual({ success: false, error: CONFIG_BACKUP_KEY_LOCKED });
         expect(deleted).toEqual({ success: false, error: CONFIG_BACKUP_KEY_LOCKED });
@@ -240,7 +243,7 @@ describe("the key of the configuration backup", () => {
         mocks.ctx = ADMIN;
 
         expect(await encryption.revealMasterKey("config-key")).toEqual({ success: true, data: "00".repeat(32) });
-        expect((await recoveryKit(new NextRequest("http://localhost/api/vault/recovery-kit?ids=config-key"))).status).toBe(200);
+        expect((await recoveryKit(new NextRequest("http://localhost/api/vault/recovery-kit", { method: "POST", body: JSON.stringify({ ids: ["config-key"] }) }))).status).toBe(200);
     });
 
     it("leaves the other keys to the rights of the Vault", async () => {
@@ -264,5 +267,49 @@ describe("a key tried on a configuration backup file", () => {
 
         expect(result.success).toBe(true);
         expect(mocks.recoverKey).toHaveBeenCalledOnce();
+    });
+
+    it("logs a key of the Vault that now opens the backups of another profile id too, and only the try when it changed nothing", async () => {
+        mocks.isConfigBackupFile.mockResolvedValue(false);
+        mocks.recoverKey.mockResolvedValueOnce({ status: "existing", profileId: "k1", profileName: "Nightly key", notedFor: "gone-key" });
+
+        expect((await encryption.recoverEncryptionKeyAction("nas", "nightly/shop.tar", "ab".repeat(32))).success).toBe(true);
+        expect(mocks.log).toHaveBeenCalledWith(MEMBER.userId, "UPDATE", "VAULT", { type: "EncryptionProfile", name: "Nightly key", method: "Recovery", standsFor: "gone-key" }, "k1");
+
+        mocks.log.mockClear();
+        mocks.recoverKey.mockResolvedValueOnce({ status: "existing", profileId: "k1", profileName: "Nightly key" });
+        expect((await encryption.recoverEncryptionKeyAction("nas", "nightly/shop.tar", "ab".repeat(32))).success).toBe(true);
+        expect(mocks.log).toHaveBeenCalledOnce();
+        expect(mocks.log).toHaveBeenCalledWith(MEMBER.userId, "EXECUTE", "VAULT", expect.objectContaining({ action: "key_check", success: true }), "k1");
+    });
+});
+
+describe("the key of the configuration backup in the Vault", () => {
+    it("is renamed only by a platform admin with a session", async () => {
+        expect(await encryption.updateEncryptionProfile("config-key", { name: "Renamed" })).toEqual({ success: false, error: CONFIG_BACKUP_KEY_LOCKED });
+        expect(mocks.updateProfile).not.toHaveBeenCalled();
+
+        mocks.ctx = ADMIN;
+        expect((await encryption.updateEncryptionProfile("config-key", { name: "Renamed" })).success).toBe(true);
+        expect(mocks.updateProfile).toHaveBeenCalledOnce();
+    });
+
+    it("leaves the other keys to the rights of the Vault", async () => {
+        expect((await encryption.updateEncryptionProfile("job-key", { name: "Renamed" })).success).toBe(true);
+    });
+
+    it("notes no other backups it opens for a member who recovers it on a backup of a job", async () => {
+        mocks.isConfigBackupFile.mockResolvedValue(false);
+        // Like the service: it asks before a key the Vault holds notes the profile id of the backup.
+        mocks.recoverKey.mockImplementation(async (_storage: string, _file: string, _key: string, _name: string | undefined, options?: { beforeNote?: (id: string) => Promise<void> }) => {
+            await options?.beforeNote?.("config-key");
+            return { status: "existing", profileId: "config-key", profileName: "Config key", notedFor: "gone-key" };
+        });
+
+        expect(await encryption.recoverEncryptionKeyAction("nas", "nightly/shop.tar", "ab".repeat(32))).toEqual({ success: false, error: CONFIG_BACKUP_KEY_LOCKED });
+        expect(mocks.log).not.toHaveBeenCalled();
+
+        mocks.ctx = ADMIN;
+        expect((await encryption.recoverEncryptionKeyAction("nas", "nightly/shop.tar", "ab".repeat(32))).success).toBe(true);
     });
 });

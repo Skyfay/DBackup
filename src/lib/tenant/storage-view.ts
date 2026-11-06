@@ -1,7 +1,9 @@
-import type { FileInfo, StorageAdapter, StorageSession } from "@/lib/core/interfaces";
+import type { FileInfo, StorageAdapter, StorageReadOptions, StorageSession } from "@/lib/core/interfaces";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { stripTrailingDotsAndSpaces } from "@/lib/paths";
+import { firstFolders } from "@/lib/core/job-folder";
 import { logger } from "@/lib/logging/logger";
+import { isFileTooLarge } from "@/lib/adapters/storage/common/read-limit";
 
 const log = logger.child({ module: "StorageView" });
 
@@ -43,11 +45,13 @@ function decoded(part: string): string {
  * the view, so it is refused, and so is any other segment of dots and spaces alone, like `.. ` or
  * `...`, which Windows and the storages on it read as `..` once they drop the dots and spaces at
  * the end of a name. A segment like `%2e%2e` counts as well, since a storage that puts the path into
- * a URL may read it as `..`.
+ * a URL may read it as `..`, and so does one that only holds such a part once read, like
+ * `a%2F..%2Fb` or `%2E%2E%5Cb`, whose escaped separators such a storage reads as separators.
  */
 export function cleanPath(remotePath: string): string {
     const parts = remotePath.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".");
-    if (parts.some((part) => /^[. ]+$/.test(part) || /^[. ]+$/.test(decoded(part)))) throw new ValidationError(`The path ${remotePath} leaves its folder.`);
+    const onlyDots = (part: string) => /^[. ]+$/.test(part);
+    if (parts.some((part) => onlyDots(part) || decoded(part).split(/[\\/]/).some(onlyDots))) throw new ValidationError(`The path ${remotePath} leaves its folder.`);
     return parts.join("/");
 }
 
@@ -61,8 +65,16 @@ export function isTenantsSegment(part: string): boolean {
     return name.toLowerCase() === TENANTS_FOLDER || name.toUpperCase() === TENANTS_FOLDER.toUpperCase();
 }
 
-/** Whether a path lies in the folder of the customers, see `isTenantsSegment`. */
-const inTenantsFolder = (clean: string) => isTenantsSegment(clean.split("/")[0]);
+/**
+ * Whether a path lies in the folder of the customers, see `isTenantsSegment`. The first part counts
+ * with its percent escapes read as well, like `cleanPath` reads them, since a storage that puts the
+ * path into a URL reads `%74enants` or `tenants%2Facme` as that folder.
+ */
+const inTenantsFolder = (clean: string) => {
+    const first = clean.split("/")[0];
+    const firstDecoded = decoded(first).split(/[\\/]/).find((part) => part !== "" && part !== ".") ?? "";
+    return isTenantsSegment(first) || isTenantsSegment(firstDecoded);
+};
 
 /**
  * What a customer reads when the storage of another tenant fails. The message of the storage names
@@ -72,8 +84,8 @@ export const SHARED_STORAGE_FAILURE = "The destination did not answer. The tenan
 
 /** A failure of the storage as the view shows it: as it is, or without a word of the storage for a customer. */
 function failure(mode: StorageViewMode, error: unknown): unknown {
-    // A path the view refuses says nothing of the storage.
-    if (mode.kind !== "customer" || error instanceof ValidationError) return error;
+    // A path the view refuses says nothing of the storage, and neither does a file past the limit of a read.
+    if (mode.kind !== "customer" || error instanceof ValidationError || isFileTooLarge(error)) return error;
     log.warn("The storage of a destination shared with a tenant failed", { tenantId: mode.tenantId }, wrapError(error));
     return new Error(SHARED_STORAGE_FAILURE);
 }
@@ -92,11 +104,11 @@ const logOf = <T>(mode: StorageViewMode, onLog: T | undefined): T | undefined =>
 
 /**
  * Whether a job of this name would write into the folder of the customers of a shared destination.
- * A job writes into the folder its name gives, so `tenants` does and so does `tenants/acme`.
+ * A job writes into the folder its name gives, so `tenants` does and so does `tenants/acme`, and
+ * `x/../tenants` too, whose first folder a path resolves to that one.
  */
 export function isTenantsFolderName(name: string): boolean {
-    const first = name.trim().replace(/\\/g, "/").split("/").find((part) => part !== "" && part !== ".");
-    return first !== undefined && isTenantsSegment(first.trim());
+    return firstFolders(name).some(isTenantsSegment);
 }
 
 /** Whether a path names the root of what a view sees, like `""`, `/` or `./`, and no file in it. */
@@ -111,6 +123,31 @@ export function isRootPath(remotePath: string): boolean {
  */
 export function assertFilePath(remotePath: string): void {
     if (isRootPath(remotePath)) throw new ValidationError("Name a file. The root of a destination is never deleted or written as a whole.");
+}
+
+/**
+ * Refuses a path a caller names for a backup that could reach past the folder of the destination,
+ * on every destination, also one nobody shares, whose view hands the path to the storage as it
+ * is: an empty path, one that starts at a root with `/` or `\`, and one with a `..` segment, also
+ * between backslashes or behind percent escapes, see `cleanPath`. The same rule as the download.
+ */
+export function assertBackupPath(remotePath: unknown): asserts remotePath is string {
+    if (typeof remotePath !== "string" || remotePath.trim() === "") throw new ValidationError("Name a file.");
+    for (const variant of [remotePath, decoded(remotePath)]) {
+        if (/^[\\/]/.test(variant)) throw new ValidationError(`The path ${remotePath} starts at the root of the storage. Name it inside the destination.`);
+        cleanPath(variant);
+    }
+}
+
+/** Why `assertBackupPath` refuses a path, null for a path it takes. For a schema that checks the field. */
+export function backupPathProblem(remotePath: unknown): string | null {
+    try {
+        assertBackupPath(remotePath);
+        return null;
+    } catch (error) {
+        if (error instanceof ValidationError) return error.message;
+        throw error;
+    }
 }
 
 /** The path of a file on the destination for a delete or an upload, never the root of the view. */
@@ -219,9 +256,15 @@ export function storageView(adapter: StorageAdapter, mode: StorageViewMode): Sto
             }
             : undefined,
         read: adapter.read
-            ? (config: Config, remotePath: string) => {
+            ? (config: Config, remotePath: string, options?: StorageReadOptions) => {
                 const inner = at(remotePath);
-                return guarded(mode, () => adapter.read!(config, inner));
+                return guarded(mode, () => adapter.read!(config, inner, options));
+            }
+            : undefined,
+        readBytes: adapter.readBytes
+            ? (config: Config, remotePath: string, options?: StorageReadOptions) => {
+                const inner = at(remotePath);
+                return guarded(mode, () => adapter.readBytes!(config, inner, options));
             }
             : undefined,
         verifyChecksum: adapter.verifyChecksum

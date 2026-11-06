@@ -148,6 +148,7 @@ describe("a key with rights of the platform", () => {
         expect(platform("k-ci")).toBe(false);
         expect(model.keys.find((row) => row.id === "k-msp")?.effective).toEqual(["platform-tenants:write", "platform-tenants:read"]);
     });
+
 });
 
 describe("the names a key had before", () => {

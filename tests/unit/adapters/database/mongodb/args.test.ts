@@ -5,6 +5,7 @@ import {
     buildShellConnectionArgs,
     maskSecrets,
     parseMongoTarget,
+    toolConnection,
 } from "@/lib/adapters/database/mongodb/args";
 
 const base = { host: "mongo.internal", port: 27017, database: "shop" };
@@ -189,5 +190,30 @@ describe("maskSecrets", () => {
     it("leaves a connection string without credentials alone", () => {
         const argv = ["--uri=mongodb+srv://cluster0.ab12c.mongodb.net/"];
         expect(maskSecrets(argv)).toBe(argv[0]);
+    });
+});
+
+describe("the login mongodump and mongorestore read from the file of --config", () => {
+    it("keeps the password of a single host out of the flags", () => {
+        const { args, secrets } = toolConnection(withAuth as never);
+        expect(args).toEqual(["--host", "mongo.internal", "--port", "27017", "--username", "root", "--authenticationDatabase", "admin"]);
+        expect(secrets).toBe('password: "s3cr3t"\n');
+    });
+
+    it("puts a connection string of an SRV name or a seed list into the file whole, since it carries the login", () => {
+        for (const host of ["cluster0.ab12c.mongodb.net", "a.internal:27017,b.internal:27017"]) {
+            const { args, secrets } = toolConnection({ ...withAuth, host } as never);
+            expect(args, host).toEqual([]);
+            expect(secrets, host).toMatch(/^uri: "mongodb(\+srv)?:\/\/root:s3cr3t@/);
+        }
+    });
+
+    it("escapes what YAML would read as a line break", () => {
+        const { secrets } = toolConnection({ ...withAuth, password: "a\u2028b\u0085c" } as never);
+        expect(secrets).toBe('password: "a\\u2028b\\u0085c"\n');
+    });
+
+    it("needs no file without a password", () => {
+        expect(toolConnection(base as never)).toEqual({ args: ["--host", "mongo.internal", "--port", "27017"], secrets: null });
     });
 });

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
+import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getAdapterOptions } from "@/lib/adapters/dto";
 import { connectionOptions } from "@/services/sharing/connection-options";
@@ -13,6 +14,7 @@ import { JobsClient } from "./jobs-client";
 export const metadata: Metadata = { title: "Jobs" };
 
 export default async function JobsPage() {
+    await redirectWithoutTenant();
     const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
 
     // The key list goes through its Server Action, which checks who may read the Vault.

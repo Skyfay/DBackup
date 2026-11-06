@@ -118,6 +118,13 @@ describe("where the check runs", () => {
         await expect(resolveAdapterConfig(row("acme", { host: "db.internal" }))).rejects.toThrow("db.internal is 10.0.0.5");
     });
 
+    it("refuses a saved SMB share at run time whose server smbclient would read otherwise than the check", async () => {
+        // A share saved before the address rules got stricter never went through today's schema.
+        const smb = (address: string) => ({ ...row("acme", { address }), adapterId: "smb" });
+        await expect(resolveAdapterConfig(smb("//10.0.0.9#20/backups"))).rejects.toThrow("names no host to check");
+        await expect(resolveAdapterConfig(smb("//db.example.com/backups"))).resolves.toEqual(expect.objectContaining({ address: "//db.example.com/backups" }));
+    });
+
     it("follows the tenant of the connection, so a destination another tenant shares runs in a customer's run by its own setting", async () => {
         // The run belongs to Acme, which blocks the local network. The connection belongs to Open GmbH, which does not.
         const resolved = await runAsTenant("acme", () => resolveAdapterConfig(row("open", { host: "db.internal" })));

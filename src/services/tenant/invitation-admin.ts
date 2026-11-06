@@ -8,6 +8,7 @@ import { INVITATION_MAX_DAYS, invitationService, type InvitationRow } from "@/se
 import { GROUP_GONE, MemberGoneError } from "@/services/tenant/member-rules";
 import { TenantAdminRefusal, tenantOrigin } from "@/services/tenant/tenant-admin";
 import { groupService } from "@/services/user/group-service";
+import { tenantService } from "@/services/tenant/tenant-service";
 
 /**
  * The links that add someone to a tenant, made by the admin of the tenant on its Users tab and by
@@ -25,6 +26,13 @@ export interface InvitationMaker {
 }
 
 export const INVITATION_GONE = "The invitation is gone already.";
+/** Why a link stays: it gives a group that may do more than whoever takes it back. */
+export const INVITATION_BEYOND = "This invitation gives a group that may do more than you may, so you cannot revoke it.";
+
+/** The name of a tenant for the audit log, which keeps it after the tenant is gone. */
+async function tenantName(tenantId: string): Promise<string | null> {
+    return (await tenantService.find(tenantId))?.name ?? null;
+}
 
 /** A new link: the group it gives, a note on who it is for, and how many days it works. */
 export const InviteSchema = z.object({
@@ -51,7 +59,14 @@ export async function createInvitationAs(maker: InvitationMaker, caps: AccountAc
 
     const name = maker.name !== undefined ? maker.name : (await prisma.user.findUnique({ where: { id: maker.id }, select: { name: true } }))?.name ?? null;
     const invitation = await invitationService.create({ tenantId, groupId: group.id, note: input.note, days: input.days, createdById: maker.id, createdByName: name });
-    await auditService.log(maker.id, AUDIT_ACTIONS.CREATE, AUDIT_RESOURCES.TENANT, { change: "Invitation created", group: group.name, note: input.note ?? null }, tenantId, tenantOrigin(maker, tenantId));
+    await auditService.log(
+        maker.id,
+        AUDIT_ACTIONS.CREATE,
+        AUDIT_RESOURCES.TENANT,
+        { change: "Invitation created", name: await tenantName(tenantId), group: group.name, note: input.note ?? null },
+        tenantId,
+        tenantOrigin(maker, tenantId)
+    );
     return { id: invitation.id, token: invitation.token, path: invitationPath(invitation.token), expiresAt: invitation.expiresAt, group: { id: group.id, name: group.name } };
 }
 
@@ -60,9 +75,21 @@ export async function invitationsOf(tenantId: string): Promise<InvitationRow[]> 
     return invitationService.list(tenantId);
 }
 
-/** Takes back a link of a tenant nobody used yet. */
-export async function revokeInvitationAs(maker: InvitationMaker, tenantId: string, invitationId: string) {
-    const revoked = await invitationService.revoke(invitationId, tenantId);
-    await auditService.log(maker.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.TENANT, { change: "Invitation revoked", group: revoked.groupName, note: revoked.note }, tenantId, tenantOrigin(maker, tenantId));
+/**
+ * Takes back a link of a tenant nobody used yet. Like making one, nobody takes back a link that
+ * gives a group that may do more than they may in that tenant (`roleRefusal`).
+ */
+export async function revokeInvitationAs(maker: InvitationMaker, caps: AccountActor, tenantId: string, invitationId: string) {
+    const revoked = await invitationService.revoke(invitationId, tenantId, (group) => {
+        if (roleRefusal(caps, group)) throw new TenantAdminRefusal(INVITATION_BEYOND);
+    });
+    await auditService.log(
+        maker.id,
+        AUDIT_ACTIONS.DELETE,
+        AUDIT_RESOURCES.TENANT,
+        { change: "Invitation revoked", name: await tenantName(tenantId), group: revoked.groupName, note: revoked.note },
+        tenantId,
+        tenantOrigin(maker, tenantId)
+    );
     return revoked;
 }

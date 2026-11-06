@@ -109,6 +109,10 @@ vi.mock('@/services/storage/storage-service', () => ({
     },
 }));
 
+// Whether the folder of the job or its chain on a destination reaches the own data of DBackup. None does unless a test says so.
+const folderCheck = vi.hoisted(() => ({ jobFolderRefusal: vi.fn() }));
+vi.mock('@/lib/runner/steps/job-folder-check', () => ({ jobFolderRefusal: (...args: unknown[]) => folderCheck.jobFolderRefusal(...args) }));
+
 // Deliberately NOT mocked: the row appended to the listing cache is derived by this mapper, and
 // the point of the test below is that the runner and the explorer derive it the same way.
 
@@ -170,6 +174,7 @@ function makeCtx(overrides: Partial<RunnerContext> = {}): RunnerContext {
 describe('stepUpload', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        folderCheck.jobFolderRefusal.mockResolvedValue(null);
     });
 
     it('throws when context is not ready (no job)', async () => {
@@ -213,6 +218,43 @@ describe('stepUpload', () => {
             await stepUpload(ctx);
 
             expect(ctx.finalRemotePath).toBe('Test Job/chain-2026-05-07T10-00-00-000/Test_Job_2026-05-07_inc-002.tar');
+        });
+
+        it('writes nothing into a destination whose folder of the chain reaches the own data of DBackup', async () => {
+            const own = makeDestination({ configId: 'nas', config: { basePath: '/backups' } });
+            const other = makeDestination({ configId: 's3', adapterId: 's3-aws', config: { bucket: 'b' } });
+            const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-05-07.tar', chain, chainInFileName: false, destinations: [own, other] } as never);
+            (ctx.job as any).backupMode = 'INCREMENTAL';
+            folderCheck.jobFolderRefusal.mockImplementation(async (_adapterId: string, _config: unknown, configId: string) =>
+                (configId === 'nas' ? 'This path reaches the folder of DBackup\'s own database.' : null));
+
+            await stepUpload(ctx);
+
+            expect(folderCheck.jobFolderRefusal).toHaveBeenCalledWith('local-filesystem', { basePath: '/backups' }, 'nas', 'Test Job/chain-2026-05-07T10-00-00-000', undefined);
+            expect(own.uploadResult).toEqual({ success: false, error: 'This path reaches the folder of DBackup\'s own database.' });
+            expect(own.adapter.upload).not.toHaveBeenCalled();
+            expect(other.uploadResult?.success).toBe(true);
+        });
+
+        it('checks the folder of the chain of a customer below its folder on the shared destination', async () => {
+            const shared = makeDestination({ configId: 'nas', config: { basePath: '/backups' }, customer: 'acme' } as never);
+            const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-05-07.tar', chain, chainInFileName: false, destinations: [shared] } as never);
+            (ctx.job as any).backupMode = 'INCREMENTAL';
+
+            await stepUpload(ctx);
+
+            expect(folderCheck.jobFolderRefusal).toHaveBeenCalledWith('local-filesystem', { basePath: '/backups' }, 'nas', 'Test Job/chain-2026-05-07T10-00-00-000', 'acme');
+        });
+
+        it('writes nowhere when the folder of the chain from the run before leaves the folder of the job', async () => {
+            const dest = makeDestination();
+            const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-05-07.tar', chain: { ...chain, chainDir: '..' }, chainInFileName: false, destinations: [dest] } as never);
+            (ctx.job as any).backupMode = 'INCREMENTAL';
+
+            await expect(stepUpload(ctx)).rejects.toThrow('All 1 destination upload(s) failed');
+
+            expect(dest.adapter.upload).not.toHaveBeenCalled();
+            expect(dest.uploadResult?.error).toContain('leaves the folder of the job');
         });
 
         it('keeps the flat layout for a job that is not in incremental mode', async () => {

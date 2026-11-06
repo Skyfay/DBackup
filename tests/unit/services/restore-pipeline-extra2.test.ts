@@ -316,6 +316,24 @@ describe('runRestorePipeline (extra coverage 2)', () => {
         );
     });
 
+    it('downloads into temp files of its own, so two restores of the same backup never share one', async () => {
+        const storageAdapter = makeStorageAdapter();
+        prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) =>
+            (where.id === 'storage-1' ? mockStorageConfig : mockPostgresConfig)) as never);
+        useAdapters(storageAdapter, makeDbAdapter());
+
+        await runRestorePipeline('exec-a', makeInput());
+        await runRestorePipeline('exec-b', makeInput());
+
+        const targets = storageAdapter.download.mock.calls.map((call: unknown[]) => String(call[2]));
+        const dumps = targets.filter((target: string) => target.endsWith('backup.sql'));
+        const metas = targets.filter((target: string) => target.endsWith('.json'));
+        expect(dumps).toHaveLength(2);
+        expect(new Set(dumps).size).toBe(2);
+        expect(dumps.every((target: string) => target !== '/tmp/dbackup-test/backup.sql')).toBe(true);
+        expect(new Set(metas).size).toBe(metas.length);
+    });
+
     it('calls processQueue after a successful restore (line 560)', async () => {
         const storageAdapter = makeStorageAdapter();
         const dbAdapter = makeDbAdapter();

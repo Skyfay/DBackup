@@ -142,18 +142,26 @@ Request with "Authorization: Bearer dbackup_abc123..."
                    │ Valid
                    ▼
           ┌─────────────────┐
-          │ 6. Update Usage │  Fire-and-forget: lastUsedAt = now()
+          │ 6. Tenant       │  Tenant deleted → throw ApiKeyError("tenant_gone")
+          │                 │  Tenant.addsApiKeys off → throw ApiKeyError("blocked")
+          └────────┬────────┘
+                   │ Allowed
+                   ▼
+          ┌─────────────────┐
+          │ 7. Update Usage │  Fire-and-forget: lastUsedAt = now()
           └────────┬────────┘
                    │
                    ▼
           ┌─────────────────┐
-          │ 7. Owner Cap    │  permissions ∩ what the owner may do in the key's tenant
+          │ 8. Owner Cap    │  permissions ∩ what the owner may do in the key's tenant
           │                 │  platform admin → all it holds, no group there → none
           └────────┬────────┘
                    │
                    ▼
           Return { id, userId, permissions, tenantId }
 ```
+
+`getAuthContext` answers every `ApiKeyError` like no login at all, and `unauthorized()` in `src/lib/server/unauthorized.ts` names its reason in the 401: "API key is disabled", "API key has expired", "The tenant of this API key no longer exists" or "API keys are switched off for this tenant".
 
 ## Unified Authentication (`getAuthContext`)
 
@@ -170,7 +178,8 @@ export interface AuthContext {
   isPlatformAdmin: boolean;    // Never through an API key
   authMethod: "session" | "apikey";
   apiKeyId?: string;           // Only set for API key auth
-  tenantId: string | null;     // The tenant the request acts in
+  tenantId: string | null;     // The tenant the request acts in, null in All tenants
+  allTenants: boolean;         // A session that reads every tenant and changes none, never an API key
 }
 ```
 
@@ -192,7 +201,16 @@ async function resolveAuthContext(headersObj: Headers): Promise<AuthContext | nu
   // 2. Fall back to API key (Bearer token). A key is found by its hash before its tenant is known.
   const token = extractBearerToken(headersObj);
   if (!token) return null;
-  const validated = await runAsSystem(() => apiKeyService.validate(token));
+  let validated;
+  try {
+    validated = await runAsSystem(() => apiKeyService.validate(token));
+  } catch (error) {
+    // A disabled or expired key, a deleted tenant or API keys switched off: no context, and the
+    // reason kept for the 401 of the route (unauthorized()).
+    if (!(error instanceof ApiKeyError)) throw error;
+    recordKeyRefusal(headersObj, error.message);
+    return null;
+  }
   if (!validated) return null;
   return {
     userId: validated.userId,
@@ -201,6 +219,7 @@ async function resolveAuthContext(headersObj: Headers): Promise<AuthContext | nu
     authMethod: "apikey",
     apiKeyId: validated.id,
     tenantId: validated.tenantId,
+    allTenants: false,       // A key acts in its one tenant
   };
 }
 ```
@@ -212,8 +231,9 @@ export function checkPermissionWithContext(
   ctx: AuthContext,
   permission: Permission
 ): void {
-  // Platform admin bypass (session-only - API keys never have this)
-  if (ctx.isPlatformAdmin) return;
+  // Platform admin bypass (session-only - API keys never have this), outside All tenants,
+  // where a platform admin holds only the permissions of that view
+  if (ctx.isPlatformAdmin && !ctx.allTenants) return;
 
   if (!ctx.permissions.includes(permission)) {
     throw new PermissionError(permission);
@@ -384,7 +404,8 @@ export class ApiKeyError extends DBackupError {
 | Scenario | Status | Response |
 |----------|--------|----------|
 | No auth header | `401` | `{ error: "Unauthorized" }` |
-| Invalid/expired/disabled key | `401` | `{ error: "Unauthorized" }` |
+| Unknown key | `401` | `{ error: "Unauthorized" }` |
+| Disabled or expired key, tenant deleted, API keys switched off for the tenant | `401` | `{ error: "<the reason>" }`, like `"API key is disabled"` |
 | Valid key, missing permission | `403` | `{ error: "Forbidden" }` |
 | Job not found | `404` | `{ error: "Job not found" }` |
 
@@ -392,12 +413,13 @@ export class ApiKeyError extends DBackupError {
 
 1. **No Platform Admin for API Keys**: Even if the key owner is a platform admin, the API key only has its explicitly assigned permissions, and the routes only a platform admin may call refuse every key
 2. **Hash-Only Storage**: Raw keys are never persisted - only scrypt hashes
-3. **Owner Cap**: A key never exceeds what its owner may do in the tenant of the key, at every request. Creating a key or adding a permission also needs the caller to hold it, and only the owner or a user who holds everything the key holds may rotate it
+3. **Owner Cap**: A key never exceeds what its owner may do in the tenant of the key, at every request. Creating a key or adding a permission also needs the caller to hold it. A key acts as its owner, so only its owner or a platform admin rotates it, enables it again, changes its permissions or lets it run longer (`holdsKey` in `src/lib/auth/api-key-change-rule.ts`), and anyone else with `api-keys:write` only disables, deletes or renames it or lets it run out sooner
 4. **One Tenant**: A key reads and writes only the tenant it was made in, since the tenant filter narrows every query of its requests
 5. **One-Time Reveal**: The full key is displayed exactly once, after creation or rotation
 6. **Expiration**: New keys run out after 90 days by default
 7. **Rate Limiting**: API key requests go through the same IP-based rate limiter as browser requests
 8. **Cascade Deletion**: When a user is deleted, all their API keys are automatically removed
+9. **No OAuth Consent**: The start of an authorization of a Dropbox, Google Drive or OneDrive login (`/api/adapters/{dropbox,google-drive,onedrive}/auth`) answers `403` to a key, `oauthStartRefusal` in `src/lib/server/oauth-callback.ts`, since only a signed-in person brings it back to the callback
 
 ## UI Components
 

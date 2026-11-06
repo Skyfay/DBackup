@@ -118,7 +118,7 @@ export function RunPageHead({ run, access, onChanged }: { run: RunDetail; access
                 {run.job && run.type === "Backup" && access.canExecute && !live && (
                     <Button variant="outline" size="sm" onClick={() => void startRun(run.job!.id, run.job!.name).then((id) => (id ? go(id) : onChanged()))}><Play />{runAgainLabel(run)}</Button>
                 )}
-                {live && access.canExecute && (
+                {live && access.cancels.includes(run.type) && (
                     <Button variant="outline" size="sm" tone="destructive" className="border-tone/50 text-tone hover:text-tone" onClick={() => setCancelling(true)}><Square />Cancel run</Button>
                 )}
             </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
 import { getReadPermissionForAdapterType } from "@/lib/auth/permissions";
@@ -19,7 +20,7 @@ const MAX_LIMIT = 10_080;
  */
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await context.params;
     const { searchParams } = new URL(req.url);

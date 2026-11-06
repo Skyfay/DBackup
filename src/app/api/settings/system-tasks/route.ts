@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
@@ -38,7 +39,7 @@ const updateSchema = z.object({
 
 export async function GET(_req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ));
     if (refused) return refused;
 
@@ -55,7 +56,7 @@ export async function GET(_req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
     if (refused) return refused;
 
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
     // Run Task immediately manual trigger
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
     if (refused) return refused;
 

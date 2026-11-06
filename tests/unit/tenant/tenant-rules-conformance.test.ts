@@ -125,6 +125,21 @@ describe("All tenants", () => {
         expect(allTenantsPermissionsOf([], OWNERS.platformGroupOfAll.platformGroup).filter((permission) => tenantWrites.includes(permission))).toEqual([]);
     });
 
+    it("gives no right of the platform through a stored list of the rights in the tenants that holds one", () => {
+        // Written by hand or by a broken import: rights of the platform and of the instance among the rights in the tenants.
+        const broken = {
+            platformPermissions: "[]",
+            tenantPermissions: JSON.stringify([PERMISSIONS.JOBS.READ, PERMISSIONS.PLATFORM.ACCOUNTS_READ, PERMISSIONS.PLATFORM.TENANTS_READ, PERMISSIONS.SETTINGS.READ, "made-up:read"]),
+            allTenants: true,
+            tenants: [],
+        };
+        const held = allTenantsPermissionsOf([], broken);
+
+        expect(held).toContain(PERMISSIONS.JOBS.READ);
+        expect(held.filter((permission) => PLATFORM_ONLY.includes(permission) || PLATFORM_PERMISSIONS.has(permission))).toEqual([]);
+        expect(held).not.toContain("made-up:read");
+    });
+
     const CACHES = new Set(["StorageListCache", "DatabaseListCache", "HealthCheckLog", "DbVersionHistory"]);
     const WRITES = ["create", "createMany", "createManyAndReturn", "update", "updateMany", "updateManyAndReturn", "upsert", "delete", "deleteMany"];
     for (const model of [...TENANT_MODELS, ...Object.keys(CHILD_MODELS)].filter((name) => !CACHES.has(name))) {

@@ -1,10 +1,10 @@
 /**
- * The API keys tab offers Edit, Rotate, Enable or Disable and Delete only on a key the viewer may
- * change, like `keyRefusal` on the server: their own, or one whose permissions that still work they
- * may all use themselves.
+ * The API keys tab offers Rotate, Enable and the full editor only on a key the viewer holds, like
+ * `holdsKey` on the server: their own, or any key for a platform admin. On a key of someone else
+ * it offers only what takes access away: Edit for the name and a sooner end, Disable and Delete.
  */
 import { describe, expect, it } from "vitest";
-import { apiKeyActions, keyLockReason, mayChangeKey } from "@/components/dashboard/api-keys/api-key-actions";
+import { apiKeyActions, keyHandlers, keyLockReason, mayChangeKey } from "@/components/dashboard/api-keys/api-key-actions";
 import type { ApiKeyRow } from "@/services/auth/api-keys-types";
 
 const key = (over: Partial<ApiKeyRow>): ApiKeyRow => ({
@@ -29,22 +29,28 @@ const key = (over: Partial<ApiKeyRow>): ApiKeyRow => ({
 
 const noop = () => {};
 const ALL_HANDLERS = { onEdit: noop, onRotate: noop, onToggle: noop, onDelete: noop };
+const ids = (row: ApiKeyRow, platformAdmin: boolean) => apiKeyActions(row, keyHandlers(row, ALL_HANDLERS, platformAdmin)).flatMap((group) => group.actions.map((action) => action.id));
 
 describe("the keys the viewer may change", () => {
-    it("refuses a key of someone else that may do more than the viewer", () => {
-        expect(mayChangeKey(key({}), ["jobs:read", "jobs:execute"])).toBe(false);
-        expect(keyLockReason(key({}), ["jobs:read"])).not.toBeNull();
+    it("lets only the owner and a platform admin change what a key may do, whatever the viewer's group may", () => {
+        expect(mayChangeKey(key({}), false)).toBe(false);
+        expect(mayChangeKey(key({ isMine: true }), false)).toBe(true);
+        expect(mayChangeKey(key({}), true)).toBe(true);
     });
 
-    it("allows the own key, and one the viewer may do all of", () => {
-        expect(mayChangeKey(key({ isMine: true }), [])).toBe(true);
-        expect(mayChangeKey(key({}), ["jobs:execute", "history:read", "jobs:read"])).toBe(true);
-        // What the key holds but its owner lost does not count.
-        expect(mayChangeKey(key({ permissions: ["jobs:execute", "storage:delete"], effective: ["jobs:execute"] }), ["jobs:execute"])).toBe(true);
+    it("offers on a key of someone else only Edit, Disable and Delete, and no Enable once it is disabled", () => {
+        expect(ids(key({}), false)).toEqual(["edit", "toggle", "delete"]);
+        expect(ids(key({ state: "disabled" }), false)).toEqual(["edit", "delete"]);
+        expect(keyLockReason(key({ state: "disabled" }), false)).toMatch(/owner or a platform admin/);
     });
 
-    it("offers no action at all once the tab leaves out the handlers of such a key", () => {
+    it("offers every action on the own key and to a platform admin", () => {
+        expect(ids(key({ isMine: true }), false)).toEqual(["edit", "rotate", "toggle", "delete"]);
+        expect(ids(key({ state: "disabled" }), true)).toEqual(["edit", "rotate", "toggle", "delete"]);
+        expect(keyLockReason(key({}), true)).toBeNull();
+    });
+
+    it("offers no action at all without the handlers", () => {
         expect(apiKeyActions(key({}), {})).toEqual([]);
-        expect(apiKeyActions(key({}), ALL_HANDLERS).flatMap((group) => group.actions.map((action) => action.id))).toEqual(["edit", "rotate", "toggle", "delete"]);
     });
 });

@@ -1,4 +1,5 @@
 import type { MongoDBConfig } from "@/lib/adapters/definitions";
+import type { ExecutionHost } from "@/lib/transport";
 
 /**
  * Connection arguments and URIs for the MongoDB tools.
@@ -135,7 +136,50 @@ export function connectsDirectly(config: AnyMongoConfig): boolean {
     return !srv && !multiHost;
 }
 
-/** Connection flags for mongosh, mongodump and mongorestore. */
+/**
+ * A value of the YAML file of `--config`, as a double quoted string. JSON escapes every control
+ * character and quote the way YAML reads them, and the characters YAML reads as a line break on
+ * top are escaped too.
+ */
+function yamlString(value: string): string {
+    return JSON.stringify(value).replace(/[\u007f-\u009f\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+/**
+ * The connection flags of mongodump and mongorestore, and the secrets they read from the YAML file
+ * of `--config` instead of argv: the password, or the whole connection string, which carries the
+ * login. The Database Tools read `password` and `uri` from that file since 100.3.0.
+ */
+export function toolConnection(config: AnyMongoConfig): { args: string[]; secrets: string | null } {
+    if (config.uri) return { args: [], secrets: `uri: ${yamlString(config.uri)}\n` };
+
+    const { host, port, srv, multiHost } = parseMongoTarget(config);
+    // See `buildConnectionArgs`, an SRV name or a seed list only fit into a connection string.
+    if (srv || multiHost) return { args: [], secrets: `uri: ${yamlString(buildConnectionUri(config))}\n` };
+
+    const args = ["--host", host, "--port", String(port)];
+    if (config.user && config.password) {
+        args.push("--username", config.user, "--authenticationDatabase", config.authenticationDatabase || "admin");
+        return { args, secrets: `password: ${yamlString(config.password)}\n` };
+    }
+    return { args, secrets: null };
+}
+
+/**
+ * Runs `fn` with the connection flags of mongodump or mongorestore. The secrets go into a file of
+ * mode 0600 on the execution host, named by `--config` and removed afterwards, so the password is
+ * in no process list and in no command an SSH server logs.
+ */
+export async function withToolConnection<T>(host: ExecutionHost, config: AnyMongoConfig, fn: (args: string[]) => Promise<T>): Promise<T> {
+    const { args, secrets } = toolConnection(config);
+    if (secrets === null) return fn(args);
+    return host.withTempFile({ content: secrets, mode: 0o600, suffix: ".yaml" }, (path) => fn([...args, `--config=${path}`]));
+}
+
+/**
+ * Connection flags with the password in argv, for mongosh, which has no file or environment
+ * variable for it. mongodump and mongorestore go through `withToolConnection`.
+ */
 export function buildConnectionArgs(config: AnyMongoConfig): string[] {
     if (config.uri) {
         return [`--uri=${config.uri}`];

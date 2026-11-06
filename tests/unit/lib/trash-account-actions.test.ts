@@ -4,7 +4,7 @@
  * own delete, and checks that the viewer may bring that account back. An account comes back with
  * its email only while no provider of another tenant claims its domain.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
 type Entry = { id: string; kind: string; recordId: string; name: string; permission: string; superAdminOnly: boolean; deletedById: string | null; deletedAt: Date; tenantId: string };
@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
     audit: vi.fn(),
     /** The check of an email that has an account, see tests/unit/services/new-account-email.test.ts. */
     taken: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
+    purge: vi.fn(),
+    /** The groups of the snapshot of each entry, see tests/unit/services/trash-account-groups.test.ts. */
+    groups: new Map<string, { tenantId: string; group: { permissions: string; fullAccess: boolean } }[]>(),
 }));
 
 vi.mock("@/lib/auth/access-control", async () => {
@@ -64,11 +67,20 @@ vi.mock("@/services/trash/trash-service", async () => {
         latestAccountEntries: mocks.latest,
         trashAccounts: vi.fn(async (ids: string[]) => mocks.accounts.filter((account) => ids.includes(account.id))),
         restoreFromTrash: mocks.restore,
-        purgeFromTrash: vi.fn(),
+        purgeFromTrash: mocks.purge,
+    };
+});
+// The groups of each snapshot, weighed against what the caller may in the tenant they work in.
+vi.mock("@/services/trash/account-groups", async () => {
+    const { GROUP_BEYOND_ACCOUNT_REFUSAL, heldGroupBeyond } = await vi.importActual<typeof import("@/lib/auth/account-access")>("@/lib/auth/account-access");
+    return {
+        trashAccountCaps: vi.fn(async (_caller: unknown, ids: string[]) => ({ groups: new Map(ids.map((id) => [id, mocks.groups.get(id) ?? []])), permissionsByTenant: {} })),
+        groupBeyondRefusals: vi.fn(async (caller: { isPlatformAdmin: boolean; tenantId: string | null; permissions: string[] }, entries: { id: string; kind: string; name: string }[]) =>
+            entries.filter((entry) => entry.kind === "user" && heldGroupBeyond(caller, mocks.groups.get(entry.id) ?? [])).map((entry) => ({ id: entry.id, name: entry.name, error: GROUP_BEYOND_ACCOUNT_REFUSAL }))),
     };
 });
 
-const { restoreDeletedAction, undoDeleteAction } = await import("@/app/actions/settings/trash");
+const { purgeDeletedAction, restoreDeletedAction, undoDeleteAction } = await import("@/app/actions/settings/trash");
 
 /** Carla works in Acme alone. Deleted from the home tenant, her entry waits in Acme. */
 const CARLA: Entry = { id: "t-carla", kind: "user", recordId: "u-carla", name: "Carla", permission: "users:write", superAdminOnly: false, deletedById: "nina", deletedAt: new Date(), tenantId: "acme" };
@@ -76,6 +88,9 @@ const CARLA: Entry = { id: "t-carla", kind: "user", recordId: "u-carla", name: "
 const TOM: Entry = { ...CARLA, id: "t-tom", recordId: "u-tom", name: "Tom", superAdminOnly: true, tenantId: "default" };
 
 /** Nina manages the accounts of the platform and works in the home tenant. */
+/** The caller the guards of a restored connection get, an action always has a session. */
+const SESSION = expect.objectContaining({ authMethod: "session" });
+
 const NINA: Viewer = { id: "nina", isPlatformAdmin: false, tenantId: "default", permissions: [PERMISSIONS.USERS.WRITE, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE, "tenant-settings:write"] };
 
 const restoredAll = async (ids: string[]) => ({ restored: ids.map((id) => ({ id, recordId: `r-${id}`, kind: "user", name: "back", notes: [] })), conflicts: [], failed: [] });
@@ -97,7 +112,7 @@ describe("Undo of a deleted account", () => {
 
         expect(result).toMatchObject({ success: true });
         expect(mocks.latest).toHaveBeenCalledWith(["u-carla"]);
-        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { anyTenantAccounts: true });
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { anyTenantAccounts: true, caller: SESSION });
     });
 
     it("is no way to someone else's delete", async () => {
@@ -136,7 +151,7 @@ describe("Undo of a deleted account", () => {
 
         mocks.reach = ["acme", "globex"];
         expect(await undoDeleteAction("user", ["u-carla"])).toMatchObject({ success: true });
-        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { anyTenantAccounts: true });
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { anyTenantAccounts: true, caller: SESSION });
     });
 
     it("writes the Undo into the log of the tenant the account waited in, else into the log of the platform", async () => {
@@ -196,7 +211,7 @@ describe("restoring a deleted account under its own email", () => {
 
         await restoreDeletedAction(["t-carla"]);
 
-        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined });
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined, caller: SESSION });
     });
 
     it("lets whoever manages the accounts of the platform give any email", async () => {
@@ -205,7 +220,7 @@ describe("restoring a deleted account under its own email", () => {
 
         await restoreDeletedAction(["t-carla"]);
 
-        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined });
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined, caller: SESSION });
     });
 
     it("lets a platform group of some tenants give the emails its tenants claim, never one of a tenant beyond them", async () => {
@@ -219,7 +234,30 @@ describe("restoring a deleted account under its own email", () => {
 
         mocks.reach = ["acme", "globex"];
         await restoreDeletedAction(["t-carla"]);
-        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined });
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined, caller: SESSION });
+    });
+
+    it("answers an own email someone holds by now like a new one, which counts a try, and asks for another email", async () => {
+        mocks.claimedBy = null;
+        mocks.taken.mockResolvedValueOnce("This email cannot be given to this account. Pick another email.");
+
+        const result = await restoreDeletedAction(["t-carla"]);
+
+        expect(mocks.taken).toHaveBeenCalledWith("carla@globex.example", expect.objectContaining({ userId: "lena" }), "acme", expect.anything());
+        expect(mocks.restore).not.toHaveBeenCalled();
+        expect(result).toEqual({ success: true, data: { restored: [], conflicts: [{ id: "t-carla", kind: "user", name: "Carla", message: "This email cannot be given to this account. Pick another email." }], failed: [] } });
+    });
+
+    it("checks the own email on Undo too", async () => {
+        mocks.claimedBy = null;
+        mocks.viewer = { id: "nina", isPlatformAdmin: false, tenantId: "acme", permissions: [PERMISSIONS.USERS.WRITE] };
+        mocks.latest.mockResolvedValue([CARLA]);
+        mocks.taken.mockResolvedValueOnce("This email cannot be given to this account. Pick another email.");
+
+        const result = await undoDeleteAction("user", ["u-carla"]);
+
+        expect(mocks.restore).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ success: true, data: { conflicts: [{ id: "t-carla", message: "This email cannot be given to this account. Pick another email." }] } });
     });
 });
 
@@ -242,9 +280,92 @@ describe("restoring a deleted account under another email", () => {
         expect(mocks.restore).not.toHaveBeenCalled();
     });
 
+    it("never gives a new email to the one account left after another of the pick was refused", async () => {
+        const dora: Entry = { ...CARLA, id: "t-dora", recordId: "u-dora", name: "Dora" };
+        mocks.entries = [CARLA, dora];
+        mocks.accounts = [...mocks.accounts, { id: "t-dora", email: "dora@acme.example", tenantIds: ["acme"] }];
+        // Dora's own email is held by someone by now, so she drops out and Carla is left alone.
+        mocks.taken.mockImplementation(async (email: unknown) => email === "dora@acme.example" ? "This email cannot be given to this account. Pick another email." : null);
+
+        await restoreDeletedAction(["t-carla", "t-dora"], "boss@globex.example");
+
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined, caller: SESSION });
+        mocks.taken.mockReset();
+    });
+
     it("restores it under a free email", async () => {
         await restoreDeletedAction(["t-carla"], "carla.new@acme.example");
 
-        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: "carla.new@acme.example" });
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: "carla.new@acme.example", caller: SESSION });
+    });
+});
+
+describe("a deleted account whose group may do more than the viewer", () => {
+    const REFUSED = "This user's group may do more than you may, so only someone who may do all of it can change their account.";
+    /** The Admin of Acme, a group with every permission. */
+    const ADMIN_OF_ACME = [{ tenantId: "acme", group: { permissions: "[]", fullAccess: true } }];
+    const BOSS: Entry = { ...CARLA, id: "t-boss", recordId: "u-boss", name: "Boss" };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.reach = "all";
+        mocks.claimedBy = null;
+        // Lena manages the users of Acme and may change its settings, nothing more.
+        mocks.viewer = { id: "lena", isPlatformAdmin: false, tenantId: "acme", permissions: [PERMISSIONS.USERS.WRITE, "tenant-settings:write"] };
+        mocks.entries = [CARLA, BOSS];
+        mocks.accounts = [{ id: "t-carla", email: "carla@acme.example", tenantIds: ["acme"] }, { id: "t-boss", email: "boss@acme.example", tenantIds: ["acme"] }];
+        mocks.groups = new Map([["t-boss", ADMIN_OF_ACME]]);
+        mocks.restore.mockImplementation(restoredAll);
+        mocks.purge.mockImplementation(async (ids: string[]) => ids.length);
+    });
+
+    afterEach(() => {
+        mocks.groups = new Map();
+    });
+
+    it("stays in Recently deleted when the admin of the tenant restores it under its own email", async () => {
+        const result = await restoreDeletedAction(["t-boss"]);
+
+        expect(mocks.restore).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ success: true, data: { restored: [], failed: [{ id: "t-boss", error: REFUSED }] } });
+    });
+
+    it("is refused under a new email before the email is looked at", async () => {
+        const result = await restoreDeletedAction(["t-boss"], "lena.owns.this@acme.example");
+
+        expect(result).toEqual({ success: false, error: REFUSED });
+        expect(mocks.taken).not.toHaveBeenCalled();
+        expect(mocks.restore).not.toHaveBeenCalled();
+    });
+
+    it("leaves only that row out of a batch", async () => {
+        const result = await restoreDeletedAction(["t-carla", "t-boss"]);
+
+        expect(mocks.restore).toHaveBeenCalledWith(["t-carla"], { newName: undefined, caller: SESSION });
+        expect(result).toMatchObject({ success: true, data: { failed: [{ id: "t-boss", error: REFUSED }] } });
+    });
+
+    it("comes back through a platform admin", async () => {
+        mocks.viewer = { ...mocks.viewer!, isPlatformAdmin: true };
+
+        await restoreDeletedAction(["t-boss"]);
+
+        expect(mocks.restore).toHaveBeenCalledWith(["t-boss"], { newName: undefined, caller: SESSION });
+    });
+
+    it("is not deleted for good by the admin of the tenant, alone or in a batch", async () => {
+        expect(await purgeDeletedAction(["t-boss"])).toEqual({ success: false, error: REFUSED });
+        expect(mocks.purge).not.toHaveBeenCalled();
+
+        const batch = await purgeDeletedAction(["t-carla", "t-boss"]);
+        expect(mocks.purge).toHaveBeenCalledWith(["t-carla"]);
+        expect(batch).toMatchObject({ success: true, data: { purged: ["t-carla"], failed: [{ id: "t-boss", error: REFUSED }] } });
+    });
+
+    it("is no Undo for someone whose own rights fall short of its group", async () => {
+        mocks.latest.mockResolvedValue([{ ...BOSS, deletedById: "lena" }]);
+
+        expect(await undoDeleteAction("user", ["u-boss"])).toMatchObject({ success: false });
+        expect(mocks.restore).not.toHaveBeenCalled();
     });
 });

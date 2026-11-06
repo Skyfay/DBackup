@@ -14,6 +14,9 @@ vi.mock('@/lib/core/registry', () => ({ registry: { get: vi.fn() } }));
 vi.mock('@/services/system/update-service', () => ({ updateService: { checkForUpdates: vi.fn() } }));
 vi.mock('@/services/notifications/system-notification-service', () => ({ notify: vi.fn(), getNotificationConfig: vi.fn() }));
 vi.mock('@/services/databases/database-list-service', () => ({ databaseListService: {} }));
+// Whether a destination reaches the own data of DBackup, see `own-data.ts`. None does unless a test says so.
+const ownData = vi.hoisted(() => ({ storedScanRefusal: vi.fn() }));
+vi.mock('@/lib/adapters/own-data', () => ({ storedScanRefusal: (...args: unknown[]) => ownData.storedScanRefusal(...args) }));
 
 import { warmupStorageCache } from '@/services/system/system-task-runs';
 
@@ -27,7 +30,20 @@ describe('the warmup of the storage lists', () => {
         prismaMock.storageListCache.findMany.mockImplementation((async (args: { where: { adapterConfigId: { in: string[] } } }) =>
             args.where.adapterConfigId.in.map((adapterConfigId) => ({ adapterConfigId, tenantId: 'acme' }))) as never);
         storage.reconcileStorageListCache.mockResolvedValue(undefined);
+        ownData.storedScanRefusal.mockResolvedValue(null);
         access.viewModeOf.mockImplementation(async (_row: unknown, tenantId: string) => ({ kind: 'customer', tenantId }));
+    });
+
+    it('never lists a destination whose folder reaches the own data of DBackup, and drops what was cached of it', async () => {
+        const data = { ...nas, id: 'data', name: 'Data' };
+        prismaMock.adapterConfig.findMany.mockResolvedValue([data, nas] as never);
+        prismaMock.storageListCache.deleteMany.mockResolvedValue({ count: 1 } as never);
+        ownData.storedScanRefusal.mockImplementation(async (row: { id: string }) => (row.id === 'data' ? "This path reaches the folder of DBackup's own database." : null));
+
+        await expect(warmupStorageCache()).resolves.toEqual({ summary: '1 destination' });
+        expect(storage.reconcileStorageListCache).toHaveBeenCalledTimes(1);
+        expect(storage.reconcileStorageListCache).toHaveBeenCalledWith('nas', 'acme');
+        expect(prismaMock.storageListCache.deleteMany).toHaveBeenCalledWith({ where: { adapterConfigId: { in: ['data'] } } });
     });
 
     it('leaves out an air-gapped destination that is not connected', async () => {

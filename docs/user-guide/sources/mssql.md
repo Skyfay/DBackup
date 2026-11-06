@@ -109,6 +109,10 @@ DBackup supports two modes to access the `.bak` files that SQL Server creates on
 
 Use this when DBackup and SQL Server share a filesystem - typically via Docker volume mounts or NFS shares.
 
+::: info Platform admins only
+A shared folder is a folder of the server DBackup runs on, so only a platform admin, signed in with a session in the home tenant, adds, changes, copies or tests a source that uses it, also one saved before this mode had a name, which uses `/tmp`. Anyone else is offered **Over SSH** alone, opens such a source read-only and may still pick it in a job. See [Connections to the Server DBackup Runs On](/user-guide/admin/tenants#connections-to-the-server-dbackup-runs-on). The folder must not be or hold the folder of DBackup's database, of its TLS certificate or of the configuration backup.
+:::
+
 ```yaml
 services:
   dbackup:
@@ -280,7 +284,9 @@ BACKUP DATABASE [master] TO DISK = N'\\synology-nas\sql-backup\permission-test.b
 
 ### Restoring to a Windows server
 
-Restore uses the same route the backup used and needs no extra setting. When the target database name differs from the one in the backup, DBackup relocates the data and log files into the instance's own default directories, which it reads from the server. On a server too old to report them, SQL Server 2008 R2 and earlier, the files stay in the directory the backup records.
+Restore uses the same route the backup used and needs no extra setting. When the target database name differs from the one in the backup, DBackup relocates the data and log files into the instance's own default directories, which it reads from the server. On a server too old to report them, SQL Server 2008 R2 and earlier, the files stay in the directory the backup records. The files are named after the target database, `<name>.mdf` and `<name>.ldf`, a further data file `<name>_2.ndf` and a further log file `<name>_log2.ldf`. A restore whose file would land on a file of another database of the server, offline ones included, is refused before it starts.
+
+A customer's restore of a [shared database](/user-guide/admin/shared-databases#who-a-customer-s-restore-runs-as) always relocates the files into those default directories, also under the original name, and never falls back to the directories the backup records. A server that reports no default data directory, or a backup with FILESTREAM or full-text folders, refuses such a restore. Afterwards it switches off TRUSTWORTHY and cross database ownership chaining of the database.
 
 ## Setting Up a Backup User
 
@@ -517,10 +523,10 @@ To restore a SQL Server backup:
 The restore process depends on the configured **File Transfer Mode**:
 
 **Local mode:**
-1. Copy `.bak` file to shared volume (the same folder on this machine)
+1. Copy `.bak` file to shared volume (the same folder on this machine), under a name DBackup makes up, `dbackup-restore-<uuid>.bak`, also for a backup of an older format that holds several `.bak` files
 2. Execute `RESTORE DATABASE` command
 3. Verify restore integrity
-4. Cleanup temporary files
+4. Cleanup: Delete the copy in the shared folder and every temporary file, also when the restore fails
 
 **SSH mode:**
 1. Upload `.bak` file to server via SFTP (the backup folder on the server)

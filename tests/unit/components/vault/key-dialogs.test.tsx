@@ -144,7 +144,7 @@ describe("RecoveryKitDialog", () => {
         await user.click(screen.getByRole("button", { name: "Download 2 keys" }));
 
         await waitFor(() => expect(onDownloaded).toHaveBeenCalledWith(["production", "offsite"]));
-        expect(fetch).toHaveBeenCalledWith("/api/vault/recovery-kit?ids=production,offsite");
+        expect(fetch).toHaveBeenCalledWith("/api/vault/recovery-kit", expect.objectContaining({ method: "POST", body: JSON.stringify({ ids: ["production", "offsite"] }) }));
     });
 
     it("opens with only the keys it was asked for", () => {
@@ -168,6 +168,6 @@ describe("RecoveryKitDialog", () => {
         await user.click(screen.getByRole("button", { name: "Download kit" }));
 
         await waitFor(() => expect(onDownloaded).toHaveBeenCalledWith(["production"]));
-        expect(fetch).toHaveBeenCalledWith("/api/vault/recovery-kit?ids=production");
+        expect(fetch).toHaveBeenCalledWith("/api/vault/recovery-kit", expect.objectContaining({ method: "POST", body: JSON.stringify({ ids: ["production"] }) }));
     });
 });

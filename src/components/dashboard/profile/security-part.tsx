@@ -85,8 +85,12 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
         }
     };
 
+    // Without an authenticator app the switch turns the second factor on or off, which the group may keep as it is.
+    const keepsFactor = !app && !can.manage2FA;
     const factorHint = app
         ? "Turn off the authenticator app first, one second factor is enough."
+        : keepsFactor
+        ? `Your group may not turn ${passkeyFactor ? "off" : "on"} your second factor.`
         : passkeys && passkeys.length === 0
             ? "Add a passkey first."
             : "Sign in with the password and a passkey instead of a code from the app.";
@@ -125,7 +129,7 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
                                 description={factorHint}
                                 checked={passkeyFactor}
                                 onCheckedChange={(checked) => void switchPasskeyFactor(checked)}
-                                disabled={!can.managePasskeys || switching || (!passkeyFactor && (app || !passkeys || passkeys.length === 0))}
+                                disabled={!can.managePasskeys || switching || keepsFactor || (!passkeyFactor && (app || !passkeys || passkeys.length === 0))}
                             />
                         </div>
                     </div>
@@ -136,7 +140,7 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
                 </p>
             )}
 
-            <PasskeysSection userId={model.user.id} canManage={can.managePasskeys} passkeyFactor={passkeyFactor} passkeys={passkeys} reload={load} onFactorChanged={changed} />
+            <PasskeysSection userId={model.user.id} canManage={can.managePasskeys} canEndFactor={can.manage2FA} passkeyFactor={passkeyFactor} passkeys={passkeys} reload={load} onFactorChanged={changed} />
 
             {model.showSignInProviders && <SignInProviders canManage={can.manageSso} />}
 

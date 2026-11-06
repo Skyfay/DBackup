@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "stream";
 import { NextRequest } from "next/server";
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import os from "os";
+import path from "path";
 import { PermissionError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     auditLog: vi.fn(),
     auditLogFor: vi.fn(),
     findDestination: vi.fn(),
+    tempDir: "",
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -34,6 +38,7 @@ vi.mock("@/services/storage/backup-audit", () => ({
     backupAuditDetails: async (_destinationId: string, file: string) => ({ file, destination: "NAS", job: "Shop" }),
 }));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { downloadFile: vi.fn() } }));
+vi.mock("@/lib/temp-dir", () => ({ getTempDir: () => mocks.tempDir }));
 vi.mock("@/services/restore/archive-download", () => ({ planArchiveDownload: mocks.planArchiveDownload, openArchiveDownload: mocks.openArchiveDownload }));
 vi.mock("@/services/sharing/destination-access", async () => {
     const { innerPath } = await import("@/lib/tenant/storage-view");
@@ -121,7 +126,7 @@ describe("download links for a pick", () => {
             "BACKUP",
             expect.objectContaining({ action: "download_link", file: "Shop/backup.tar", destination: "NAS", databases: ["billing"] }),
             "nas",
-            { ipAddress: "10.0.0.5", userAgent: "curl/8.7.1", tenantId: "acme" }
+            { ipAddress: "10.0.0.5", userAgent: "curl/8.7.1", tenantId: "acme", apiKeyId: null }
         ));
         // The address stays where `originShown` hides it from the log of a customer, never in the details.
         expect(mocks.auditLog.mock.calls[0][3]).not.toHaveProperty("from");
@@ -135,6 +140,16 @@ describe("download links for a pick", () => {
 
         expect(response.status).toBe(404);
         expect(mocks.findDestination).toHaveBeenCalledWith("nas", "acme");
+        expect(mocks.auditLogFor).not.toHaveBeenCalled();
+    });
+
+    it("makes no link for a path that reaches past the destination, between backslashes or behind escapes", async () => {
+        for (const file of ["Shop\\..\\..\\other\\backup.tar", "%2e%2e/other/backup.tar", "Shop/%2e%2e%2f%2e%2e%2fbackup.tar"]) {
+            const response = await makeLink({ file });
+            expect(response.status).toBe(400);
+        }
+
+        expect(mocks.planArchiveDownload).not.toHaveBeenCalled();
         expect(mocks.auditLogFor).not.toHaveBeenCalled();
     });
 
@@ -162,12 +177,11 @@ describe("download links for a pick", () => {
     });
 
     it("serves no token another download hands to its own session, which is no link", async () => {
-        const { generateDownloadToken, generateFileDownloadToken, generateSelectionDownloadToken } = await import("@/lib/auth/download-tokens");
+        const { generateFileDownloadToken, generateSelectionDownloadToken } = await import("@/lib/auth/download-tokens");
         const { storageService } = await import("@/services/storage/storage-service");
         const tokens = [
             generateSelectionDownloadToken({ storageId: "nas", file: "Shop/backup.tar", userId: "u1", fileName: "pick.tar.gz", databases: ["billing"] }),
             generateFileDownloadToken({ storageId: "nas", file: "Shop/backup.tar", userId: "u1", tempFile: "/nonexistent/dbackup-test/never-written", fileName: "billing.sql", contentType: "application/sql" }),
-            generateDownloadToken("nas", "Shop/backup.tar"),
         ];
 
         for (const token of tokens) {
@@ -219,6 +233,20 @@ describe("download links for a pick", () => {
         expect(mocks.makerMayDownload).toHaveBeenCalledWith({ userId: "u1", tenantId: "acme", apiKeyId: "key-ci" });
     });
 
+    it("names the API key a link was made with in the entry of its download", async () => {
+        mocks.apiKeyId = "key-ci";
+        const { data } = await (await makeLink({ file: "Shop/backup.tar", databases: ["billing"] })).json();
+
+        await (await fetchLink(data.url)).text();
+
+        await vi.waitFor(() => expect(mocks.auditLog).toHaveBeenCalledWith(
+            "u1", "EXPORT", "BACKUP",
+            expect.objectContaining({ action: "download_link" }),
+            "nas",
+            expect.objectContaining({ apiKeyId: "key-ci", tenantId: "acme" })
+        ));
+    });
+
     it("makes no link to a configuration backup, not even for a platform admin, and notes none", async () => {
         mocks.isPlatformAdmin = true;
         mocks.isConfigBackupFile.mockResolvedValue(true);
@@ -249,5 +277,74 @@ describe("download links for a pick", () => {
 
         expect(response.status).toBe(403);
         expect(mocks.planArchiveDownload).not.toHaveBeenCalled();
+    });
+});
+
+describe("a download link for a whole backup", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.permissions = ["storage:download"];
+        mocks.userId = "u1";
+        mocks.apiKeyId = undefined;
+        mocks.makerMayDownload.mockResolvedValue(true);
+        mocks.isConfigBackupFile.mockResolvedValue(false);
+        mocks.findDestination.mockResolvedValue({ row: { id: "nas", name: "NAS" }, mode: { kind: "own" }, tenantId: "acme" });
+        mocks.tempDir = mkdtempSync(path.join(os.tmpdir(), "dbackup-link-"));
+    });
+
+    it("stages the file in the temporary folder of DBackup under a name nobody can guess, and removes it once it was sent", async () => {
+        const { storageService } = await import("@/services/storage/storage-service");
+        let staged = "";
+        vi.mocked(storageService.downloadFile).mockImplementation(async (_id: string, _file: string, local: string) => {
+            staged = local;
+            writeFileSync(local, "whole backup");
+            return { success: true, isZip: false };
+        });
+        const { data } = await (await makeLink({ file: "Shop/backup.tar" })).json();
+
+        const response = await fetchLink(data.url);
+
+        expect(path.dirname(staged)).toBe(mocks.tempDir);
+        expect(path.basename(staged)).toMatch(/^download_[0-9a-f-]{36}$/);
+        expect(await response.text()).toBe("whole backup");
+        await vi.waitFor(() => expect(existsSync(staged)).toBe(false));
+        rmSync(mocks.tempDir, { recursive: true, force: true });
+    });
+
+    it("never sends a file of this server that the storage laid there as a link", async () => {
+        const { storageService } = await import("@/services/storage/storage-service");
+        const secret = path.join(mocks.tempDir, "secret");
+        writeFileSync(secret, "a file of the DBackup server");
+        let staged = "";
+        vi.mocked(storageService.downloadFile).mockImplementation(async (_id: string, _file: string, local: string) => {
+            staged = local;
+            symlinkSync(secret, local);
+            return { success: true, isZip: false };
+        });
+        const { data } = await (await makeLink({ file: "Shop/backup.tar" })).json();
+
+        const response = await fetchLink(data.url);
+
+        expect(response.status).toBe(500);
+        expect(await response.text()).not.toContain("DBackup server");
+        await vi.waitFor(() => expect(existsSync(staged)).toBe(false));
+        expect(existsSync(secret)).toBe(true);
+        rmSync(mocks.tempDir, { recursive: true, force: true });
+    });
+
+    it("removes the staged file when the download fails", async () => {
+        const { storageService } = await import("@/services/storage/storage-service");
+        let staged = "";
+        vi.mocked(storageService.downloadFile).mockImplementation(async (_id: string, _file: string, local: string) => {
+            staged = local;
+            writeFileSync(local, "half a backup");
+            throw new Error("connection reset");
+        });
+        const { data } = await (await makeLink({ file: "Shop/backup.tar" })).json();
+
+        expect((await fetchLink(data.url)).status).toBe(500);
+        expect(staged).not.toBe("");
+        expect(existsSync(staged)).toBe(false);
+        rmSync(mocks.tempDir, { recursive: true, force: true });
     });
 });

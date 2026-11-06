@@ -60,7 +60,7 @@ beforeEach(() => {
     mocks.granted = new Set();
     mocks.viewer = { id: "u-lena", name: "Lena Graf", tenantId: "acme", allTenants: false };
     mocks.service.view.mockResolvedValue({ uses: [], settings: SETTINGS });
-    mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: ["Globex"], losses: [] });
+    mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: ["Globex"], gainedTenants: [{ tenantId: "globex", name: "Globex" }], losses: [] });
     mocks.reachOf.mockResolvedValue("all");
 });
 
@@ -93,9 +93,36 @@ describe("what is shared with customers", () => {
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", expect.objectContaining({ name: "NAS", action: "share" }), "acme-nas");
     });
 
+    it("names each tenant that got or lost a connection in an entry of its own, by its id", async () => {
+        mocks.granted.add(SHARE_PERMISSION);
+        mocks.service.save.mockResolvedValue({
+            name: "NAS", kind: "destination", gained: ["Globex", "Initech"],
+            gainedTenants: [{ tenantId: "globex", name: "Globex" }, { tenantId: "initech", name: "Initech" }],
+            losses: [{ tenantId: "hooli", name: "Hooli", jobs: [], templates: [], backups: 0, used: true, noted: true }],
+        });
+        await actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: ["globex", "initech"] }, true);
+        const own = mocks.audit.mock.calls.filter((call) => call.length === 5).map((call) => call[3]);
+        expect(own).toEqual([
+            { name: "NAS", action: "share", tenants: "Globex", tenantId: "globex" },
+            { name: "NAS", action: "share", tenants: "Initech", tenantId: "initech" },
+            { name: "NAS", action: "unshare", tenants: "Hooli", tenantId: "hooli" },
+        ]);
+        // The service reads nobody else after the save, so no entry can name a tenant beyond the reach.
+        expect(mocks.service.view).not.toHaveBeenCalled();
+    });
+
+    it("names the tenant whose backups it deleted by its id, in both logs", async () => {
+        mocks.granted.add(SHARE_PERMISSION);
+        mocks.service.deleteBackupsOf.mockResolvedValue({ name: "NAS", tenantName: "Globex", backups: 2 });
+        await actions.deleteSharedBackups("acme-nas", "globex");
+        const details = { name: "NAS", action: "tenantBackups", tenant: "Globex", tenantId: "globex", backups: 2 };
+        expect(mocks.audit).toHaveBeenCalledWith("u-lena", "DELETE", "DESTINATION", details, "acme-nas");
+        expect(mocks.audit).toHaveBeenCalledWith("u-lena", "DELETE", "DESTINATION", details, "acme-nas", { tenantId: "globex" });
+    });
+
     it("tells each tenant that lost a connection in its own log", async () => {
         mocks.granted.add(SHARE_PERMISSION);
-        mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "globex", name: "Globex", jobs: ["Nightly"], templates: [], backups: 3, used: true, noted: true }] });
+        mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], gainedTenants: [], losses: [{ tenantId: "globex", name: "Globex", jobs: ["Nightly"], templates: [], backups: 3, used: true, noted: true }] });
         await actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: [] }, true);
         expect(mocks.audit).toHaveBeenCalledWith(
             "u-lena", "UPDATE", "DESTINATION",
@@ -107,9 +134,9 @@ describe("what is shared with customers", () => {
 
     it("names a tenant that never used a connection shared with every tenant in no log of its own", async () => {
         mocks.granted.add(SHARE_PERMISSION);
-        mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "hooli", name: "Hooli", jobs: [], templates: [], backups: 0, used: false, noted: false }] });
+        mocks.service.save.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], gainedTenants: [], losses: [{ tenantId: "hooli", name: "Hooli", jobs: [], templates: [], backups: 0, used: false, noted: false }] });
         await actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: [] }, true);
-        expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", { name: "NAS", action: "unshare", tenants: "Hooli" }, "acme-nas");
+        expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", { name: "NAS", action: "unshare", tenants: "Hooli", tenantId: "hooli" }, "acme-nas");
         expect(mocks.audit).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), "acme-nas", { tenantId: "hooli" });
     });
 
@@ -117,17 +144,25 @@ describe("what is shared with customers", () => {
         mocks.granted.add(SHARE_PERMISSION);
         const { ShareChangeError } = await import("@/services/sharing/connection-shares");
         mocks.service.save.mockRejectedValue(new ShareChangeError("Could not take it away from a tenant: timeout", {
-            name: "NAS", kind: "destination", gained: [], losses: [{ tenantId: "globex", name: "Globex", jobs: [], templates: [], backups: 2, used: true, noted: true }],
+            name: "NAS", kind: "destination", gained: [], gainedTenants: [], losses: [{ tenantId: "globex", name: "Globex", jobs: [], templates: [], backups: 2, used: true, noted: true }],
         }));
         await expect(actions.saveConnectionShare("acme-nas", { ...SETTINGS, tenantIds: [] }, true)).resolves.toMatchObject({ success: false, error: "Could not take it away from a tenant: timeout" });
         expect(mocks.audit).toHaveBeenCalledWith("u-lena", "UPDATE", "DESTINATION", { name: "NAS", action: "unshare", tenants: "Globex", backups: 2 }, "acme-nas", { tenantId: "globex" });
+    });
+
+    it("answers what the storage said with a fixed sentence, never its own words", async () => {
+        mocks.granted.add(SHARE_PERMISSION);
+        mocks.service.deleteBackupsOf.mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.7:22"));
+        mocks.service.stopFor.mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.7:22"));
+        expect(await actions.deleteSharedBackups("acme-nas", "globex")).toEqual({ success: false, error: "The backups could not be deleted." });
+        expect(await actions.stopSharingWith("acme-nas", "globex", true)).toEqual({ success: false, error: "The sharing could not be changed." });
     });
 
     it("hands the tenants the platform group of the viewer reaches to the view and every change", async () => {
         mocks.granted = new Set([SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
         mocks.reachOf.mockResolvedValue(["globex"]);
         mocks.service.losing.mockResolvedValue([]);
-        mocks.service.stopFor.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], losses: [] });
+        mocks.service.stopFor.mockResolvedValue({ name: "NAS", kind: "destination", gained: [], gainedTenants: [], losses: [] });
         mocks.service.deleteBackupsOf.mockResolvedValue({ name: "NAS", tenantName: "Globex", backups: 1 });
 
         await actions.getConnectionShare("acme-nas");
@@ -191,6 +226,13 @@ describe("the recipients of a channel another tenant shares", () => {
         mocks.setRecipients.mockResolvedValue({ name: "Mail", before: [], after: ["ops@globex.example"] });
         await expect(actions.setChannelRecipients("acme-mail", ["ops@globex.example"])).resolves.toMatchObject({ success: true });
         expect(mocks.setRecipients).toHaveBeenCalledWith("acme-mail", "globex", ["ops@globex.example"]);
+    });
+
+    it("write a test that went out into the log with the channel", async () => {
+        mocks.granted.add(PERMISSIONS.NOTIFICATIONS.WRITE);
+        mocks.sendTest.mockResolvedValue({ name: "Mail", recipients: ["ops@acme.example", "it@acme.example"] });
+        await expect(actions.testChannelRecipients("acme-mail")).resolves.toMatchObject({ success: true });
+        expect(mocks.audit).toHaveBeenCalledWith("u-lena", "EXECUTE", "ADAPTER", { name: "Mail", action: "recipients_test", recipients: 2 }, "acme-mail");
     });
 
     it("are never shown the reason why the mail server of the other tenant refused a test", async () => {

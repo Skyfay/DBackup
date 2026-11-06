@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import path from "path";
 import fs from "fs";
 import { registry } from "@/lib/core/registry";
@@ -45,7 +46,8 @@ export async function analyzeBackup(
     keyOverride?: KeyOverride
 ): Promise<BackupContents> {
     const { adapter, config } = await openStorage(storageId);
-    const tempFile = path.join(getTempDir(), path.basename(file));
+    // A name of its own per read, so two reads of the same file never share one.
+    const tempFile = path.join(getTempDir(), `${randomUUID()}-${path.basename(file)}`);
     try {
         // For combined (manifest v2) archives the metadata sidecar points at the archive's index
         // sidecar, which describes every database and directory source without touching the

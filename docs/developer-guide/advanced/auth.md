@@ -122,6 +122,10 @@ if (user.twoFactorEnabled) {
 }
 ```
 
+**A passkey as the second factor** is `passkeyTwoFactor` on the user, which only DBackup knows. better-auth asks for a second factor while `twoFactorEnabled` is set, so each of the two keeps that flag on while the other one is the second factor: `userService.togglePasskeyTwoFactor` while the app is set up, and `keepPasskeyFactor` in `src/lib/auth/passkey-factor-guard.ts`, a database hook on the update of a user, when `/two-factor/disable` removes the app while a passkey is the second factor. The login page then asks for the passkey, since better-auth names no code to ask for.
+
+**No trusted devices.** better-auth lets `/two-factor/verify-totp`, `/two-factor/verify-otp` and `/two-factor/verify-backup-code` trust the device with `trustDevice`, which skips the second factor on later sign-ins of that browser for 30 days, and those sign-ins write no `LOGIN` entry. DBackup never offers it, so the `before` hook in `src/lib/auth/index.ts` refuses any truthy `trustDevice` on `/two-factor/verify-*` with `403 TRUSTED_DEVICE` (`asksTrustedDevice` in `src/lib/auth/profile-guard.ts`), and every sign-in asks the second factor.
+
 ### Passkeys (WebAuthn)
 
 Allows passwordless login using biometric sensors (TouchID, FaceID, Windows Hello).

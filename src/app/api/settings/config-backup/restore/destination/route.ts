@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { requireConfigRestorer } from "@/lib/server/config-restore-guard";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { backupPathIssue } from "@/lib/server/backup-path-schema";
 import { checkStoredBackup, keyOverride } from "@/services/config/restore-flow";
 
 const log = logger.child({ route: "settings/config-backup/restore/destination" });
 
 const bodySchema = z.object({
     destinationId: z.string().min(1),
-    file: z.string().min(1),
+    file: z.string().min(1).superRefine(backupPathIssue),
     keyHex: z.string().optional(),
     profileId: z.string().optional(),
 });
@@ -35,6 +36,6 @@ export async function POST(req: NextRequest) {
         if (keyRequired) return keyRequired;
         if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
         log.error("Checking a configuration backup at a destination failed", { destinationId }, wrapError(error));
-        return NextResponse.json({ success: false, error: getErrorMessage(error) || "The backup could not be read." }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The backup could not be read. The log of DBackup has the details." }, { status: 500 });
     }
 }

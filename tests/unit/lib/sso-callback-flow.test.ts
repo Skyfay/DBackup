@@ -178,6 +178,8 @@ describe("a callback of a provider, through the hooks of DBackup", () => {
         expect(response.status).toBe(200);
         expect(state.db.account).toEqual([expect.objectContaining({ userId: "lena", providerId: "authentik" })]);
         expect(sessionsOf("lena")).toHaveLength(2);
+        // The link of the own account goes into the audit log, whichever page started it.
+        expect(state.log).toHaveBeenCalledWith("lena", "UPDATE", "AUTH", { change: "SSO account connected", name: "Authentik", providerId: "authentik" }, "lena", expect.objectContaining({ tenantId: expect.any(String) }));
     });
 
     it("signs in a member of the tenant through its provider, and links them on the first sign-in", async () => {
@@ -190,6 +192,8 @@ describe("a callback of a provider, through the hooks of DBackup", () => {
         // The next sign-in finds the link.
         expect((await callback("entra-acme", "anna@acme.ch", "idp-anna")).status).toBe(200);
         expect(sessionsOf("anna")).toHaveLength(2);
+        // A link while signing in, without a session, is part of the sign-in and no change of the profile.
+        expect(state.log).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.objectContaining({ change: "SSO account connected" }), expect.anything(), expect.anything());
     });
 
     it("adds someone new through the provider of a tenant into its group, links them and signs them in", async () => {

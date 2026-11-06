@@ -9,6 +9,7 @@ import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/
 import { logger } from "@/lib/logging/logger";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
+import { getEventDefinition } from "@/lib/notifications/events";
 import { sendTenantEventTest } from "@/services/notifications/tenant-notification-delivery";
 import { saveTenantDefaultChannels, saveTenantEventSettings, type TenantNotificationConfig } from "@/services/notifications/tenant-notification-settings";
 import type { SaveResult } from "@/services/system/settings-save";
@@ -131,6 +132,9 @@ export async function sendTenantTestNotificationAction(tenantId: string, eventId
     if (!parsed.success) return { success: false, error: "Unknown notification event" };
     try {
         const { sent, failed } = await sendTenantEventTest(scope.tenantId, parsed.data);
+        await auditService.log(viewer.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, {
+            name: getEventDefinition(parsed.data)?.name ?? parsed.data, action: "notification_test", event: parsed.data, sent, failed,
+        }, undefined, { tenantId: scope.tenantId });
         const channels = (count: number) => (count === 1 ? "1 channel" : `${count} channels`);
         return { success: true, message: failed > 0 ? `Sent to ${channels(sent)}, ${channels(failed)} did not take it` : `Sent to ${channels(sent)}` };
     } catch (error: unknown) {

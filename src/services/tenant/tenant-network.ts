@@ -28,6 +28,18 @@ export function networkOfRow(row: { id: string; blocksLocalNetwork: boolean; all
     return { blocks: row.id !== HOME_TENANT_ID && row.blocksLocalNetwork, allowed: rangesOfColumn(row.allowedNetworks) };
 }
 
+/**
+ * Whether the connections of a tenant stay off the local network, for the adapters whose tools find
+ * a server on their own, see `network-fact.ts`. The home tenant never does. A tenant nobody named, or
+ * one that is gone, counts as one that does, so a fact nobody knows keeps the tools to DNS.
+ */
+export async function tenantBlocksLocalNetwork(tenantId: string | null | undefined): Promise<boolean> {
+    if (tenantId === HOME_TENANT_ID) return false;
+    if (!tenantId) return true;
+    const row = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { blocksLocalNetwork: true } });
+    return row ? row.blocksLocalNetwork : true;
+}
+
 /** The sentence that refuses a host of the local network, which names the platform as the one to ask. */
 export function localNetworkRefusal(tenantName: string, hit: LocalHit): string {
     const what = hit.host === hit.address ? `${hit.address} is one` : `${hit.host} is ${hit.address}`;

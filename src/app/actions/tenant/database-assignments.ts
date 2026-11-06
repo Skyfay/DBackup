@@ -5,13 +5,13 @@ import { z } from "zod";
 import { checkPermission, hasPermissionWithContext, tenantRefusal } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { diffFields } from "@/lib/core/audit-diff";
-import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { namedTenants } from "@/lib/core/audit-tenants";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { ON_DEMAND_OFF, SEE_SHARING_PERMISSION, SHARE_PERMISSION } from "@/lib/tenant/sharing";
-import { auditService } from "@/services/audit-service";
+import { reachCovers } from "@/lib/tenant/sharing-reach";
 import { databaseAssignmentService, type SourceAssignments } from "@/services/tenant/database-assignments";
-import { logRuleAdded, logRuleRemoved } from "@/services/tenant/assignment-audit";
+import { logAssignmentChange, logDatabasesAssigned, logRuleAdded, logRuleRemoved } from "@/services/tenant/assignment-audit";
 import { AssignmentPerDaySchema, AssignmentRuleSchema } from "@/lib/tenant/tenant-schemas";
 import { moveDatabase, moveTargets, type MoveTarget } from "@/services/tenant/database-moves";
 import { customersOfServer } from "@/services/tenant/shared-servers";
@@ -59,7 +59,7 @@ export async function getSourceAssignments(sourceId: string): Promise<{ success:
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {
-        // The pickers offer the tenants the viewer reaches, every holder still shows by its name.
+        // The pickers offer the tenants the viewer reaches, a holder beyond the reach shows by no name.
         return { success: true, data: await databaseAssignmentService.forSource(id.data, new Date(), await platformGroupService.reachOf(viewer.id)) };
     } catch (error: unknown) {
         if (!(error instanceof NotFoundError)) log.error("Reading the assignments failed", { sourceId: id.data }, wrapError(error));
@@ -78,14 +78,9 @@ export async function assignDatabases(sourceId: string, changes: z.input<typeof 
 
     try {
         const result = await databaseAssignmentService.assign(id.data, parsed.data, viewer.id, new Date(), await platformGroupService.reachOf(viewer.id));
-        if (result.changed > 0) {
-            await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
-                change: "Databases assigned",
-                databases: parsed.data.map((change) => ({ name: change.databaseName, tenantId: change.tenantId })),
-            }, id.data);
-        }
+        if (result.changed > 0) await logDatabasesAssigned({ id: viewer.id }, id.data, parsed.data, result.tenants);
         revalidatePath("/dashboard/explorer");
-        return { success: true as const, data: result };
+        return { success: true as const, data: { changed: result.changed } };
     } catch (error: unknown) {
         if (!expected(error)) log.error("Assigning databases failed", { sourceId: id.data }, wrapError(error));
         return { success: false as const, error: messageOf(error, "The databases could not be assigned.") };
@@ -160,13 +155,14 @@ export async function moveSharedDatabase(sourceId: string, input: z.input<typeof
 
     try {
         const moved = await moveDatabase(id.data, parsed.data, viewer.id, new Date(), await platformGroupService.reachOf(viewer.id));
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
+        await logAssignmentChange({ id: viewer.id }, id.data, {
             change: "Database moved",
             database: parsed.data.databaseName,
             to: moved.toServerName,
             toDatabase: moved.toDatabase,
             tenant: moved.tenantName,
-        }, id.data);
+            ...namedTenants([moved.tenantId]),
+        });
         revalidatePath("/dashboard/explorer");
         return { success: true as const, data: moved };
     } catch (error: unknown) {
@@ -187,10 +183,10 @@ export async function setDatabaseOnDemand(sourceId: string, databaseName: string
 
     try {
         const changed = await databaseAssignmentService.setOnDemand(id.data, name.data, value.data, await platformGroupService.reachOf(viewer.id));
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
-            change: "Backups on demand", database: name.data, tenant: changed.tenantName,
+        await logAssignmentChange({ id: viewer.id }, id.data, {
+            change: "Backups on demand", database: name.data, tenant: changed.tenantName, ...namedTenants([changed.tenantId]),
             changes: onDemandChanges(changed.before, value.data),
-        }, id.data);
+        });
         revalidatePath("/dashboard/explorer");
         return { success: true as const };
     } catch (error: unknown) {
@@ -211,10 +207,10 @@ export async function setRuleOnDemand(sourceId: string, ruleId: string, perDay: 
 
     try {
         const changed = await databaseAssignmentService.setRuleOnDemand(id.data, rule.data, value.data, await platformGroupService.reachOf(viewer.id));
-        await auditService.log(viewer.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
-            change: "Backups on demand", pattern: changed.pattern, tenant: changed.tenantName,
+        await logAssignmentChange({ id: viewer.id }, id.data, {
+            change: "Backups on demand", pattern: changed.pattern, tenant: changed.tenantName, ...namedTenants([changed.tenantId]),
             changes: onDemandChanges(changed.before, value.data),
-        }, id.data);
+        });
         revalidatePath("/dashboard/explorer");
         return { success: true as const };
     } catch (error: unknown) {
@@ -225,17 +221,20 @@ export async function setRuleOnDemand(sourceId: string, ruleId: string, perDay: 
 
 /**
  * The customers who hold a database of a server now, for the warning before it is deleted, which
- * only someone who may delete it sees. Their names go to whoever may see or share the databases of
- * shared servers, everyone else learns how many there are.
+ * only someone who may delete it sees. The names of those their platform group reaches go to whoever
+ * may see or share the databases of shared servers, everyone learns how many there are.
  */
 export async function getServerCustomers(sourceId: string): Promise<{ success: true; data: { count: number; names: string[] | null } } | { success: false; error: string }> {
     const viewer = await checkPermission(PERMISSIONS.SOURCES.WRITE);
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {
-        const names = await customersOfServer(id.data);
+        const customers = await customersOfServer(id.data);
         const named = hasPermissionWithContext(viewer, SEE_SHARING_PERMISSION) || hasPermissionWithContext(viewer, SHARE_PERMISSION);
-        return { success: true, data: { count: names.length, names: named ? names : null } };
+        if (!named) return { success: true, data: { count: customers.length, names: null } };
+        // A tenant beyond the reach counts, but by no name.
+        const reach = await platformGroupService.reachOf(viewer.id);
+        return { success: true, data: { count: customers.length, names: customers.filter((tenant) => reachCovers(reach, tenant.id)).map((tenant) => tenant.name) } };
     } catch (error: unknown) {
         log.warn("Reading the customers of a server failed", { sourceId: id.data }, wrapError(error));
         return { success: false, error: "The customers of the server could not be read." };
@@ -245,8 +244,8 @@ export async function getServerCustomers(sourceId: string): Promise<{ success: t
 /**
  * Of the names a restore writes into on a server, the databases a customer holds now, for the restore
  * page, which marks them and asks before it overwrites them. Whoever may restore sees which, the names
- * of the customers go to whoever may see or share the databases of shared servers, everyone else
- * reads that a customer holds it.
+ * of the customers their platform group reaches go to whoever may see or share the databases of
+ * shared servers, everyone else reads that a customer holds it.
  */
 export async function getCustomerDatabases(sourceId: string, names: string[]): Promise<{ success: true; data: { database: string; customer: string | null }[] } | { success: false; error: string }> {
     const viewer = await checkPermission(PERMISSIONS.STORAGE.RESTORE);
@@ -256,7 +255,9 @@ export async function getCustomerDatabases(sourceId: string, names: string[]): P
     try {
         const held = await customerDatabases(id.data, wanted.data);
         const named = hasPermissionWithContext(viewer, SEE_SHARING_PERMISSION) || hasPermissionWithContext(viewer, SHARE_PERMISSION);
-        return { success: true, data: held.map((entry) => ({ database: entry.database, customer: named ? entry.customer : null })) };
+        // A customer beyond the reach of the viewer reads as a customer without a name.
+        const reach = named ? await platformGroupService.reachOf(viewer.id) : [];
+        return { success: true, data: held.map((entry) => ({ database: entry.database, customer: named && reachCovers(reach, entry.tenantId) ? entry.customer : null })) };
     } catch (error: unknown) {
         log.warn("Reading the databases customers hold on a server failed", { sourceId: id.data }, wrapError(error));
         return { success: false, error: "The databases of customers could not be read." };

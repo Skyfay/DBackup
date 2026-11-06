@@ -29,7 +29,7 @@ const ACME_CLIENT = { id: "g-acme-client", tenantId: "acme", tenantName: "Acme",
 
 const mocks = vi.hoisted(() => ({
     viewer: null as unknown as Viewer,
-    templates: { find: vi.fn(), preview: vi.fn(), save: vi.fn(), remove: vi.fn(), groupsNamed: vi.fn() },
+    templates: { find: vi.fn(), preview: vi.fn(), save: vi.fn(), remove: vi.fn(), groupsNamed: vi.fn(), memberNamed: vi.fn(async () => null) },
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({ checkPermission: vi.fn(async () => mocks.viewer) }));
@@ -54,7 +54,7 @@ beforeEach(() => {
     mocks.viewer = NINA;
     mocks.templates.groupsNamed.mockImplementation(async (_name: string, tenantIds: string[]) => [ACME_CLIENT, SHOP_CLIENT].filter((group) => tenantIds.includes(group.tenantId)));
     mocks.templates.preview.mockResolvedValue({ clashes: [clash(ACME_CLIENT), clash(SHOP_CLIENT)], leaving: [] });
-    mocks.templates.save.mockResolvedValue({ id: "tpl-client", name: "Client", permissions: [P.STORAGE.READ], allTenants: false, tenantIds: ["acme", "shop"], areas: [], report });
+    mocks.templates.save.mockResolvedValue({ id: "tpl-client", name: "Client", permissions: [P.STORAGE.READ], allTenants: false, tenantIds: ["acme", "shop"], areas: [], report, ssoProviders: [] });
 });
 
 describe("taking over the own group of a tenant", () => {
@@ -72,6 +72,19 @@ describe("taking over the own group of a tenant", () => {
         expect(result).toEqual(expect.objectContaining({ success: true }));
         expect(mocks.templates.groupsNamed).toHaveBeenCalledWith("Client", ["acme"]);
         expect(mocks.templates.save).toHaveBeenCalled();
+    });
+
+    it("looks up no group of a tenant beyond the save or the viewer, so the answer names none there", async () => {
+        // Globex is in neither the group for tenants nor Nina's platform group.
+        const result = await saveTenantGroupTemplate(null, values, { clashes: { acme: "takeOver", globex: "takeOver" } });
+
+        expect(mocks.templates.groupsNamed).toHaveBeenCalledWith("Client", ["acme"]);
+        expect(result).toEqual(expect.objectContaining({ success: true }));
+
+        // Shop is in her reach, but not in a save that keeps to Acme.
+        mocks.templates.groupsNamed.mockClear();
+        await saveTenantGroupTemplate(null, { ...values, tenantIds: ["acme"] }, { clashes: { shop: "takeOver" } });
+        expect(mocks.templates.groupsNamed).toHaveBeenCalledWith("Client", []);
     });
 
     it("lets a platform admin take over any group a tenant has", async () => {

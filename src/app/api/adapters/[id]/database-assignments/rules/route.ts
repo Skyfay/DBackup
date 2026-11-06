@@ -9,6 +9,7 @@ import { AssignmentRuleSchema } from "@/lib/tenant/tenant-schemas";
 import { logRuleAdded } from "@/services/tenant/assignment-audit";
 import { databaseAssignmentService } from "@/services/tenant/database-assignments";
 import { platformGroupService } from "@/services/user/platform-group-service";
+import { unauthorized } from "@/lib/server/unauthorized";
 
 const log = logger.child({ route: "adapters/[id]/database-assignments/rules" });
 
@@ -19,7 +20,7 @@ const log = logger.child({ route: "adapters/[id]/database-assignments/rules" });
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         checkAnyPermissionWithContext(ctx, [SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
@@ -41,7 +42,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
     const { id } = await props.params;
     try {
         checkPermissionWithContext(ctx, SHARE_PERMISSION);

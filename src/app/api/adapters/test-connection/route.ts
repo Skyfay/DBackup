@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { registerAdapters } from "@/lib/adapters";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
@@ -7,7 +8,15 @@ import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
 import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { withoutBinaryPaths } from "@/lib/adapters/config-resolver";
 import { requestRefusal } from "@/lib/server/permission-refusal";
+import { savedLoginRefusal, storedSecretsRefusal } from "@/lib/server/config-backup-target-guard";
 import { testConnection } from "@/services/adapters/connection-test";
+import { connectionName } from "@/services/adapters/adapter-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+
+const log = logger.child({ route: "adapters/test-connection" });
 
 // Ensure adapters are registered
 registerAdapters();
@@ -23,7 +32,7 @@ export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -43,6 +52,9 @@ export async function POST(req: NextRequest) {
         checkPermissionWithContext(ctx, requiredPermission);
         tenantOf(ctx);
         if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
+        // The secrets of the destination of the configuration backup never go to a host of the form.
+        const locked = await storedSecretsRefusal(ctx, configId) ?? await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
+        if (locked) return locked;
 
         // Only someone who may change the saved connection gets its secrets filled in, and has the
         // version the test finds kept with it.
@@ -63,12 +75,22 @@ export async function POST(req: NextRequest) {
                 : NextResponse.json({ success: false, message: "This adapter does not support connection testing." });
         }
 
+        // Written once the test ran, whether the server answered or not, naming the saved connection.
+        const testedId = typeof configId === "string" && configId ? configId : undefined;
+        const name = testedId ? await connectionName(testedId) : null;
+        await auditService.logFor(ctx, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.ADAPTER, {
+            action: "connection_test",
+            ...(name ? { name } : {}),
+            adapter: adapterId,
+            success: outcome.result.success === true,
+        }, name ? testedId : undefined);
+
         return NextResponse.json(outcome.result);
 
     } catch (error: unknown) {
         const refusal = requestRefusal(error);
         if (refusal) return refusal;
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json({ success: false, message }, { status: 500 });
+        log.error("Connection test failed", {}, wrapError(error));
+        return NextResponse.json({ success: false, message: "The connection could not be tested. The log of DBackup has the details." }, { status: 500 });
     }
 }

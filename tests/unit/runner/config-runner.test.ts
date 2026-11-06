@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
     copy: vi.fn(),
     upload: vi.fn(),
     list: vi.fn(),
+    read: vi.fn(),
     delete: vi.fn(),
+    resolve: vi.fn(),
     notify: vi.fn(),
     writeFile: vi.fn(),
     unlink: vi.fn(),
@@ -29,9 +31,9 @@ vi.mock("@/lib/prisma", () => ({
     },
 }));
 vi.mock("@/lib/core/registry", () => ({
-    registry: { get: () => ({ upload: mocks.upload, list: mocks.list, delete: mocks.delete }) },
+    registry: { get: () => ({ upload: mocks.upload, list: mocks.list, read: mocks.read, delete: mocks.delete }) },
 }));
-vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: vi.fn(async () => ({ bucket: "test" })) }));
+vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: (...args: unknown[]) => mocks.resolve(...args) }));
 vi.mock("@/services/config/database-copy", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/config/database-copy")>()),
     createConfigCopy: (...args: unknown[]) => mocks.copy(...args),
@@ -76,9 +78,12 @@ describe("the configuration backup, a copy of the whole database", () => {
         mocks.adapterConfig.mockResolvedValue({ id: "nas", name: "NAS", adapterId: "local-filesystem" });
         mocks.profile.mockResolvedValue({ id: "key-1", secretKey: "encrypted" });
         mocks.copy.mockResolvedValue({ file: "/tmp/dbackup-database-copy.db", sizeBytes: 4096 });
-        mocks.upload.mockResolvedValue(undefined);
+        mocks.upload.mockResolvedValue(true);
         mocks.list.mockResolvedValue([]);
+        // Every file the runner wrote carries metadata that marks it a configuration backup.
+        mocks.read.mockResolvedValue(JSON.stringify({ kind: "database", sourceType: "SYSTEM" }));
         mocks.delete.mockResolvedValue(undefined);
+        mocks.resolve.mockResolvedValue({ bucket: "test" });
         mocks.notify.mockResolvedValue(undefined);
         mocks.writeFile.mockResolvedValue(undefined);
         mocks.unlink.mockResolvedValue(undefined);
@@ -132,7 +137,8 @@ describe("the configuration backup, a copy of the whole database", () => {
         expect(mocks.copy).toHaveBeenCalledWith({ includeHistory: true });
         const [, localFile, remoteFile] = mocks.upload.mock.calls[0];
         expect(remoteFile).toMatch(/^config-backups\/config_backup_.+\.db\.gz\.enc$/);
-        expect(localFile).toMatch(/^\/tmp\/config_backup_.+\.db\.gz\.enc$/);
+        // A temp name nobody can guess, never one that only the time tells.
+        expect(localFile).toMatch(/^\/tmp\/[0-9a-f-]{36}-config_backup_.+\.db\.gz\.enc$/);
         expect(mocks.upload.mock.calls[1][2]).toBe(`${remoteFile}.meta.json`);
 
         const meta = JSON.parse(mocks.writeFile.mock.calls[0][1] as string);
@@ -169,6 +175,27 @@ describe("the configuration backup, a copy of the whole database", () => {
 
         await expect(runConfigBackup()).rejects.toThrow("NAS is offline");
         expect(mocks.unlink).toHaveBeenCalledWith("/tmp/dbackup-database-copy.db");
+    });
+
+    it("fails without notifying when the destination did not store the file", async () => {
+        settings(ON);
+        mocks.upload.mockResolvedValue(false);
+
+        await expect(runConfigBackup()).rejects.toThrow("The configuration backup could not be stored on NAS");
+        expect(mocks.upload).toHaveBeenCalledTimes(1);
+        expect(mocks.notify).not.toHaveBeenCalled();
+        expect(mocks.appendEntry).not.toHaveBeenCalled();
+    });
+
+    it("fails without notifying when the destination did not store the metadata, and removes the file without it", async () => {
+        settings(ON);
+        mocks.upload.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+        await expect(runConfigBackup()).rejects.toThrow("The metadata of the configuration backup could not be stored on NAS");
+        const remoteFile = mocks.upload.mock.calls[0][2];
+        expect(mocks.delete).toHaveBeenCalledWith({ bucket: "test" }, remoteFile);
+        expect(mocks.notify).not.toHaveBeenCalled();
+        expect(mocks.appendEntry).not.toHaveBeenCalled();
     });
 
     it("names the schedule as who started it, like a job the scheduler runs", async () => {
@@ -255,6 +282,60 @@ describe("the configuration backup, a copy of the whole database", () => {
         await runConfigBackup();
 
         expect(mocks.removeEntries).not.toHaveBeenCalled();
+    });
+
+    it("counts only its own files, so nothing else in the folder is deleted or pushes a backup out", async () => {
+        settings({ ...ON, "config.backup.retention": "2" });
+        const file = (name: string) => ({ name, path: `config-backups/${name}` });
+        mocks.list.mockResolvedValue([
+            file("config_backup_2026-09-28.db.gz.enc"),
+            file("config_backup_2026-09-29.db.gz.enc"),
+            // A backup of a job that wrote here, named so it sorts after the real ones.
+            file("config_backup_2026-12-31.tar"),
+            file("config_backup_2026-12-31.tar.meta.json"),
+            // Names that only hold the prefix, and a file of the prefix without metadata.
+            file("old-config_backup_2026-12-30.db.gz.enc"),
+            file("notes.txt"),
+            file("config_backup_2026-12-29.db.gz.enc"),
+        ]);
+        mocks.read.mockImplementation(async (_config: unknown, path: string) => {
+            if (path.includes("2026-12-31")) return JSON.stringify({ jobId: "job-1", sourceType: "mysql" });
+            if (path.includes("2026-12-29")) return null;
+            return JSON.stringify({ kind: "database", sourceType: "SYSTEM" });
+        });
+
+        await runConfigBackup();
+
+        // The folder holds two of its own files, as many as it keeps, so nothing goes.
+        expect(mocks.delete).not.toHaveBeenCalled();
+    });
+
+    it("deletes the oldest of its own files once there are more than it keeps, past files that are not its own", async () => {
+        settings({ ...ON, "config.backup.retention": "1" });
+        const file = (name: string) => ({ name, path: `config-backups/${name}` });
+        mocks.list.mockResolvedValue([
+            file("config_backup_2026-09-28.db.gz.enc"),
+            file("config_backup_2026-09-29.db.gz.enc"),
+            file("config_backup_2026-12-31.tar"),
+        ]);
+        mocks.read.mockImplementation(async (_config: unknown, path: string) =>
+            JSON.stringify(path.includes("2026-12-31") ? { jobId: "job-1" } : { kind: "database", sourceType: "SYSTEM" }));
+
+        await runConfigBackup();
+
+        expect(mocks.delete.mock.calls.map(([, path]) => path)).toEqual([
+            "config-backups/config_backup_2026-09-28.db.gz.enc",
+            "config-backups/config_backup_2026-09-28.db.gz.enc.meta.json",
+        ]);
+    });
+
+    it("fails before it uploads when the settings of the destination cannot be used", async () => {
+        settings(ON);
+        mocks.resolve.mockRejectedValue(new Error("Failed to parse or decrypt adapter config"));
+
+        await expect(runConfigBackup()).rejects.toBeInstanceOf(ConfigurationError);
+        expect(mocks.copy).not.toHaveBeenCalled();
+        expect(mocks.upload).not.toHaveBeenCalled();
     });
 
     it("still reports the backup when the retention cannot list the destination", async () => {

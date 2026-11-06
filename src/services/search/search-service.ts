@@ -11,6 +11,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { apiKeys, credentials, groups, keys, templates, users } from "./search-admin";
 import { MIN_QUERY_LENGTH, PER_KIND, type SearchHit, type SearchScope } from "./search-types";
 import { isNotConnected } from "@/lib/core/air-gap";
+import type { PlatformReach } from "@/lib/auth/platform-group-caps";
 
 const log = logger.child({ service: "SearchService" });
 
@@ -122,9 +123,10 @@ async function runs(query: string): Promise<SearchHit[]> {
  * Everything of the allowed kinds whose name holds the query, regardless of case. `tenantId` is the
  * tenant the viewer works in, null for a platform admin in All tenants, who searches every tenant.
  * The records of a tenant are narrowed by the scope of the request, the people and groups, which
- * belong to the whole instance, by the tenant here.
+ * belong to the whole instance, by the tenant here. `reach` narrows the groups of All tenants to
+ * the tenants whose people the viewer sees, see `accountsSeenReach`.
  */
-export async function searchRecords(query: string, scope: SearchScope, tenantId: string | null): Promise<SearchHit[]> {
+export async function searchRecords(query: string, scope: SearchScope, tenantId: string | null, reach: PlatformReach = "all"): Promise<SearchHit[]> {
     const term = query.trim();
     if (term.length < MIN_QUERY_LENGTH) return [];
     const parts = await Promise.all([
@@ -133,7 +135,7 @@ export async function searchRecords(query: string, scope: SearchScope, tenantId:
         scope.databases ? databases(term) : [],
         scope.runs ? runs(term) : [],
         scope.users ? users(term, tenantId) : [],
-        scope.groups ? groups(term, tenantId) : [],
+        scope.groups ? groups(term, tenantId, reach) : [],
         scope.apiKeys ? apiKeys(term) : [],
         scope.templates ? templates(term) : [],
         scope.keys ? keys(term) : [],

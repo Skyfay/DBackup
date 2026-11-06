@@ -17,9 +17,13 @@ interface TestViewer {
 const mocks = vi.hoisted(() => ({
     denied: new Set<string>(),
     viewer: null as unknown as TestViewer,
-    groups: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), find: vi.fn(), heldBy: vi.fn() },
+    groups: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), find: vi.fn(), heldBy: vi.fn(), holdsPlatformAdmin: vi.fn(), namesOf: vi.fn(), memberIds: vi.fn(async (..._args: unknown[]): Promise<string[]> => []) },
+    /** Why a membership may not end, see `membershipEndRefusal`, by the account. */
+    endRefused: new Set<string>(),
     memberships: { roleOf: vi.fn(), setRoles: vi.fn(), isPersonOf: vi.fn(async (..._args: unknown[]) => true), isPlatformAdmin: vi.fn(async () => false) },
-    users: { namesOf: vi.fn() },
+    users: { namesOf: vi.fn(), accountOf: vi.fn(), permissionsIn: vi.fn(async (..._args: unknown[]): Promise<string[]> => []) },
+    /** The tenants the platform group of the viewer reaches. */
+    reach: [] as string[],
     audit: vi.fn(),
     /** The accounts the viewer sees, see `maySeeAccount`. */
     seen: new Set<string>(),
@@ -31,13 +35,19 @@ vi.mock("@/lib/auth/access-control", () => ({
         return mocks.viewer;
     }),
     getViewer: vi.fn(async () => mocks.viewer),
+    hasPermissionWithContext: (ctx: TestViewer, permission: string) => (ctx.isPlatformAdmin && !ctx.allTenants) || ctx.permissions.includes(permission),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/services/user/group-service", () => ({ groupService: mocks.groups }));
 vi.mock("@/services/tenant/membership-service", () => ({ membershipService: mocks.memberships }));
 vi.mock("@/services/user/user-service", () => ({ userService: mocks.users }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
+vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reachOf: vi.fn(async () => mocks.reach) } }));
 vi.mock("@/services/user/account-visibility", () => ({ maySeeAccount: vi.fn(async (_viewer: unknown, id: string) => mocks.seen.has(id)) }));
+vi.mock("@/services/tenant/membership-end", () => ({
+    MEMBERSHIP_END_HANDS_OVER: "hands over",
+    membershipEndRefusal: vi.fn(async (_caller: unknown, id: string) => (mocks.endRefused.has(id) ? "hands over" : null)),
+}));
 
 const { bulkDeleteGroups, createGroup, deleteGroup, moveUsersToGroup, updateGroup } = await import("@/app/actions/auth/group");
 
@@ -82,14 +92,21 @@ function reset(viewer: TestViewer) {
     mocks.denied = new Set();
     mocks.viewer = viewer;
     mocks.groups.heldBy.mockResolvedValue(false);
-    mocks.groups.delete.mockResolvedValue({ name: "Operators", moved: 2 });
+    mocks.groups.holdsPlatformAdmin.mockResolvedValue(false);
+    mocks.groups.delete.mockResolvedValue({ name: "Operators", moved: 2, ssoProviders: [] });
     mocks.groups.create.mockImplementation(async (input: { name: string; permissions: string[] }) => ({ id: "g-new", ...input }));
     mocks.groups.update.mockResolvedValue({ name: "Operators", added: [], removed: [], areas: [] });
-    mocks.groups.deleteMany.mockImplementation(async (ids: string[]) => ({ succeeded: ids, failed: [] }));
+    mocks.groups.deleteMany.mockImplementation(async (ids: string[]) => ({ succeeded: ids, failed: [], ssoProviders: [] }));
     mocks.groups.find.mockImplementation(async (id: string) => [VIEWERS, FULL_ACCESS, SETTINGS_ADMINS, DELETERS, OPERATORS].find((group) => group.id === id) ?? null);
+    mocks.groups.namesOf.mockImplementation(async (ids: string[]) => new Map([VIEWERS, FULL_ACCESS, SETTINGS_ADMINS, DELETERS, OPERATORS].filter((group) => ids.includes(group.id)).map((group) => [group.id, group.name])));
     mocks.memberships.roleOf.mockResolvedValue(VIEWERS);
     mocks.memberships.setRoles.mockImplementation(async (ids: string[]) => ({ succeeded: ids, failed: [] }));
     mocks.users.namesOf.mockImplementation(async (ids: string[]) => ids.map((id) => ({ id, name: id === "root" ? "Root" : id })));
+    mocks.groups.memberIds.mockResolvedValue([]);
+    mocks.users.accountOf.mockResolvedValue(null);
+    mocks.users.permissionsIn.mockResolvedValue([]);
+    mocks.reach = [];
+    mocks.endRefused = new Set();
 }
 
 describe("what may be done to groups and their people", () => {
@@ -120,13 +137,71 @@ describe("what may be done to groups and their people", () => {
 
     it("deletes a group and moves its members to the picked one", async () => {
         expect(await deleteGroup("g-ops", "g-view")).toEqual({ success: true, data: { moved: 2 } });
-        expect(mocks.groups.delete).toHaveBeenCalledWith("g-ops", "g-view", { platformAdmin: false });
+        expect(mocks.groups.delete).toHaveBeenCalledWith("g-ops", "g-view", { platformAdmin: false }, []);
         expect(mocks.audit).toHaveBeenCalledWith("admin", "DELETE", "GROUP", { name: "Operators", moved: 2, moveTo: "g-view" }, "g-ops");
+    });
+
+    it("writes each sign-in provider the delete sent elsewhere into the log of the platform, like an edit of the provider", async () => {
+        mocks.groups.delete.mockResolvedValue({
+            name: "Operators",
+            moved: 2,
+            ssoProviders: [
+                { id: "sso-acme", name: "Acme Entra", tenantId: "acme", before: { group: "Operators", allowProvisioning: true }, after: { group: null, allowProvisioning: false } },
+                { id: "sso-staff", name: "Staff", tenantId: null, before: { group: "Operators", allowProvisioning: true }, after: { group: null, allowProvisioning: true } },
+            ],
+        });
+
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: true, data: { moved: 2 } });
+
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "SSO_PROVIDER", {
+            name: "Acme Entra",
+            changes: [
+                { field: "Group of new people", from: "Operators", to: null },
+                { field: "Adds new people", from: "On", to: "Off" },
+            ],
+            // The tenant of the provider by its id, so the log of the platform hides it from whoever does not reach it.
+            tenantId: "acme",
+        }, "sso-acme", { tenantId: HOME_TENANT_ID });
+        // A provider of the platform names no tenant, so every reader of the log of the platform sees it.
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "SSO_PROVIDER", {
+            name: "Staff",
+            changes: [{ field: "Group of new people", from: "Operators", to: null }],
+        }, "sso-staff", { tenantId: HOME_TENANT_ID });
+    });
+
+    it("writes the sign-in providers a bulk delete changed into the log of the platform", async () => {
+        mocks.groups.deleteMany.mockImplementation(async (ids: string[]) => ({
+            succeeded: ids,
+            failed: [],
+            ssoProviders: [{ id: "sso-acme", name: "Acme Entra", tenantId: "acme", before: { group: "Operators", allowProvisioning: true }, after: { group: null, allowProvisioning: false } }],
+        }));
+
+        await bulkDeleteGroups(["g-ops"]);
+
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "SSO_PROVIDER", {
+            name: "Acme Entra",
+            changes: [
+                { field: "Group of new people", from: "Operators", to: null },
+                { field: "Adds new people", from: "On", to: "Off" },
+            ],
+            // The tenant of the provider by its id, so the log of the platform hides it from whoever does not reach it.
+            tenantId: "acme",
+        }, "sso-acme", { tenantId: HOME_TENANT_ID });
+    });
+
+    it("hands the members it checked to the delete, which stops when someone joined since", async () => {
+        mocks.groups.memberIds.mockResolvedValue(["lena", "tech"]);
+        const { ConflictError } = await import("@/lib/logging/errors");
+        mocks.groups.delete.mockRejectedValueOnce(new ConflictError("The members of this group changed meanwhile, try again."));
+
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: false, error: "The members of this group changed meanwhile, try again." });
+        expect(mocks.groups.delete).toHaveBeenCalledWith("g-ops", null, { platformAdmin: false }, ["lena", "tech"]);
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 
     it("deletes a group without a group for its members, which takes them out of the tenant", async () => {
         expect(await deleteGroup("g-ops", null)).toEqual({ success: true, data: { moved: 2 } });
-        expect(mocks.groups.delete).toHaveBeenCalledWith("g-ops", null, { platformAdmin: false });
+        expect(mocks.groups.delete).toHaveBeenCalledWith("g-ops", null, { platformAdmin: false }, []);
     });
 
     it("tells the service who changes a group, so only a platform admin skips the guard that keeps a manager", async () => {
@@ -137,7 +212,18 @@ describe("what may be done to groups and their people", () => {
         expect(await updateGroup("g-ops", { name: "Ops", permissions: ["jobs:read"] })).toEqual({ success: true });
         expect(await deleteGroup("g-ops", null)).toEqual({ success: true, data: { moved: 2 } });
         expect(mocks.groups.update).toHaveBeenLastCalledWith("g-ops", { name: "Ops", permissions: ["jobs:read"] }, { platformAdmin: true });
-        expect(mocks.groups.delete).toHaveBeenLastCalledWith("g-ops", null, { platformAdmin: true });
+        expect(mocks.groups.delete).toHaveBeenLastCalledWith("g-ops", null, { platformAdmin: true }, undefined);
+    });
+
+    it("never deletes a group a platform admin is in unless a platform admin deletes it, since that moves or ends their membership", async () => {
+        mocks.groups.holdsPlatformAdmin.mockResolvedValue(true);
+
+        expect(await deleteGroup("g-ops", "g-view")).toEqual({ success: false, error: "A platform admin is in this group, so only a platform admin deletes it." });
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: false, error: "A platform admin is in this group, so only a platform admin deletes it." });
+        expect(mocks.groups.delete).not.toHaveBeenCalled();
+
+        mocks.viewer = PLATFORM_ADMIN;
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: true, data: { moved: 2 } });
     });
 
     it("never deletes the group of the one who deletes", async () => {
@@ -190,6 +276,35 @@ describe("what may be done to groups and their people", () => {
         expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "USER", { change: "Updating Group", name: "lena", groupId: "g-view", group: "Viewers" }, "lena");
     });
 
+    it("says why a platform admin who works here stays in their group", async () => {
+        mocks.memberships.isPlatformAdmin.mockImplementation(async (...args: unknown[]) => args[0] === "root");
+        try {
+            const result = await moveUsersToGroup(["lena", "root"], "g-view");
+
+            expect(mocks.memberships.setRoles).toHaveBeenCalledWith(["lena"], HOME_TENANT_ID, "g-view", { platformAdmin: false });
+            expect(result).toEqual({ success: true, data: { succeeded: ["lena"], failed: [{ id: "root", name: "Root", error: "Only a platform admin changes the memberships of a platform admin." }] } });
+        } finally {
+            mocks.memberships.isPlatformAdmin.mockImplementation(async () => false);
+        }
+    });
+
+    it("never takes someone out of the tenant when they would then work alone where the viewer manages the users", async () => {
+        mocks.endRefused = new Set(["tech"]);
+
+        const result = await moveUsersToGroup(["lena", "tech"], null);
+        expect(mocks.memberships.setRoles).toHaveBeenCalledWith(["lena"], HOME_TENANT_ID, null, { platformAdmin: false });
+        expect(result).toEqual({ success: true, data: { succeeded: ["lena"], failed: [{ id: "tech", name: "tech", error: "hands over" }] } });
+
+        // Moving them to another group ends no membership.
+        expect((await moveUsersToGroup(["tech"], "g-view")).data?.succeeded).toEqual(["tech"]);
+
+        // Nor through the delete of their group without a group to go to.
+        mocks.groups.memberIds.mockResolvedValue(["lena", "tech"]);
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: false, error: expect.stringContaining("would afterwards work only in tenants where you manage the users") });
+        expect(mocks.groups.delete).not.toHaveBeenCalled();
+        expect(await deleteGroup("g-ops", "g-view")).toEqual({ success: true, data: { moved: 2 } });
+    });
+
     it("names an account of another tenant only while the viewer may see it, and answers any other like one that does not exist", async () => {
         mocks.memberships.isPersonOf.mockImplementation(async (...args: unknown[]) => args[0] === "lena");
         mocks.users.namesOf.mockImplementation(async (ids: string[]) => ids.filter((id) => id !== "gone").map((id) => ({ id, name: id === "gina" ? "Gina Globex" : id === "tech" ? "Tom Tech" : id })));
@@ -213,6 +328,42 @@ describe("what may be done to groups and their people", () => {
             mocks.memberships.isPersonOf.mockImplementation(async () => true);
             mocks.seen = new Set();
         }
+    });
+
+    it("never moves an account of no tenant into the home tenant when the provider of another tenant claims its email", async () => {
+        mocks.users.accountOf.mockImplementation(async (id: string) => (id === "claimed" ? { isPlatformAdmin: false, tenantIds: ["t-acme"], platformGroup: null, groups: [] } : null));
+        mocks.seen = new Set(["claimed"]);
+        try {
+            const result = await moveUsersToGroup(["lena", "claimed"], "g-view");
+
+            expect(result.data?.succeeded).toEqual(["lena"]);
+            expect(result.data?.failed).toEqual([{ id: "claimed", name: "claimed", error: "This account works in another tenant. Add people to this tenant with an invitation." }]);
+            expect(mocks.memberships.setRoles).toHaveBeenCalledWith(["lena"], HOME_TENANT_ID, "g-view", { platformAdmin: false });
+        } finally {
+            mocks.seen = new Set();
+        }
+    });
+
+    it("moves such an account in for someone whose rights of the platform reach the tenant that claims it", async () => {
+        mocks.users.accountOf.mockImplementation(async (id: string) => (id === "claimed" ? { isPlatformAdmin: false, tenantIds: ["t-acme"], platformGroup: null, groups: [] } : null));
+        mocks.users.permissionsIn.mockResolvedValue([PERMISSIONS.PLATFORM.ACCOUNTS_WRITE]);
+        mocks.reach = [HOME_TENANT_ID, "t-acme"];
+
+        expect((await moveUsersToGroup(["claimed"], "g-view")).data?.succeeded).toEqual(["claimed"]);
+        expect(mocks.memberships.setRoles).toHaveBeenCalledWith(["claimed"], HOME_TENANT_ID, "g-view", { platformAdmin: false });
+    });
+
+    it("deletes a group with members only for someone who may also manage users, since its members move", async () => {
+        mocks.viewer = { ...ADMIN, permissions: ADMIN.permissions.filter((permission) => permission !== PERMISSIONS.USERS.WRITE) };
+        mocks.groups.memberIds.mockResolvedValue(["lena"]);
+
+        expect(await deleteGroup("g-ops", "g-view")).toEqual({ success: false, error: "People are in this group, and moving them takes the right to manage users." });
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: false, error: "People are in this group, and moving them takes the right to manage users." });
+        expect(mocks.groups.delete).not.toHaveBeenCalled();
+
+        // An empty group moves nobody.
+        mocks.groups.memberIds.mockResolvedValue([]);
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: true, data: { moved: 2 } });
     });
 
     it("needs the right to change groups, and to change users for moving people", async () => {
@@ -258,6 +409,8 @@ describe("the permissions a group may get", () => {
 
         expect(mocks.groups.deleteMany).toHaveBeenCalledWith(["g-ops"]);
         expect(result).toEqual({ success: true, data: { succeeded: ["g-ops"], failed: [{ id: "g-deleters", name: "Deleters", error: GROUP_BEYOND }] } });
+        // The log names the groups that went.
+        expect(mocks.audit).toHaveBeenCalledWith(mocks.viewer.id, "DELETE", "GROUP", expect.objectContaining({ bulk: true, succeeded: 1, names: ["Operators"] }));
     });
 
     it("keeps the group with every permission as it is, also for a platform admin", async () => {

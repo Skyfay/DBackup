@@ -35,6 +35,9 @@ vi.mock("@/services/backup/encryption-service", () => ({
     importEncryptionProfile: (...a: unknown[]) => importEncryptionProfile(...a),
 }));
 
+const rememberKeyFor = vi.fn(async (..._a: unknown[]) => false);
+vi.mock("@/services/vault/key-aliases", () => ({ rememberKeyFor: (...a: unknown[]) => rememberKeyFor(...a) }));
+
 const { recoverEncryptionKey } = await import("@/services/backup/key-recovery");
 
 const ARCHIVE_META = {
@@ -110,6 +113,28 @@ describe("recoverEncryptionKey", () => {
         expect(result).toMatchObject({ status: "existing", profileId: "already-here", profileName: "My Key" });
         expect(findProfileByKey).toHaveBeenCalledWith(RIGHT_KEY.toString("hex"));
         expect(importEncryptionProfile).not.toHaveBeenCalled();
+    });
+
+    it("says which profile id the key it held already now stands for, and nothing when that was known", async () => {
+        findProfileByKey.mockResolvedValue({ id: "already-here", name: "My Key" });
+        rememberKeyFor.mockResolvedValueOnce(true);
+
+        const noted = await recoverEncryptionKey("dest-1", "FileBackup/inc-001.tar", RIGHT_KEY.toString("hex"));
+        expect(noted).toEqual({ status: "existing", profileId: "already-here", profileName: "My Key", notedFor: "deleted-profile" });
+        expect(rememberKeyFor).toHaveBeenCalledWith("already-here", "deleted-profile");
+
+        const known = await recoverEncryptionKey("dest-1", "FileBackup/inc-001.tar", RIGHT_KEY.toString("hex"));
+        expect(known).toEqual({ status: "existing", profileId: "already-here", profileName: "My Key" });
+    });
+
+    it("asks before a key it held already notes the backups it opens, and notes nothing when that is refused", async () => {
+        findProfileByKey.mockResolvedValue({ id: "config-key", name: "Config key" });
+        const beforeNote = vi.fn(async () => { throw new Error("Only a platform admin changes the key of the configuration backup."); });
+
+        await expect(recoverEncryptionKey("dest-1", "FileBackup/inc-001.tar", RIGHT_KEY.toString("hex"), undefined, { beforeNote }))
+            .rejects.toThrow("Only a platform admin changes the key of the configuration backup.");
+        expect(beforeNote).toHaveBeenCalledWith("config-key");
+        expect(rememberKeyFor).not.toHaveBeenCalled();
     });
 
     it("avoids colliding with a profile name that is already taken", async () => {

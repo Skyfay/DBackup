@@ -88,7 +88,7 @@ async function applySidecar(
     file: FileInfo,
     result: SidecarLoadResult
 ): Promise<void> {
-    let meta: { locked?: boolean; chain?: { id?: string }; jobId?: string; timestamp?: string; onlyDatabases?: unknown };
+    let meta: { locked?: boolean; chain?: { id?: string }; jobId?: string; timestamp?: string; onlyDatabases?: unknown; sourceType?: unknown };
     try {
         const content = await adapter.read!(config, file.path + METADATA_SIDECAR_SUFFIX);
         if (!content) return;
@@ -100,6 +100,8 @@ async function applySidecar(
         return;
     }
 
+    // A file of the configuration backup, which no job counts as its own, see 05-retention.ts.
+    if (meta.sourceType === "SYSTEM") file.configBackup = true;
     if (meta.locked) file.locked = true;
     if (meta.chain?.id) file.chainId = meta.chain.id;
     if (typeof meta.jobId === "string" && meta.jobId) file.jobId = meta.jobId;

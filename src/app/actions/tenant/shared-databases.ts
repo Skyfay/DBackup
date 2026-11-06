@@ -42,7 +42,9 @@ export async function getSharedOverview(): Promise<{ success: true; data: Shared
 
 /**
  * Pulls the dump of the database out of a backup, for the browser to collect with the token. The
- * address carries the token alone, never the destination of the server's tenant.
+ * address carries the token alone, never the destination of the server's tenant. The backup belongs
+ * to the tenant of the server, so both audit logs keep it, like a restore: the customer's names the
+ * database, the provider's the database, the server and the customer.
  */
 export async function downloadSharedBackup(input: z.input<typeof RefSchema>) {
     const viewer = await checkPermission(PERMISSIONS.STORAGE.DOWNLOAD);
@@ -54,6 +56,10 @@ export async function downloadSharedBackup(input: z.input<typeof RefSchema>) {
         await auditService.log(viewer.id, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP, {
             action: "download", shared: true, name: parsed.data.databaseName, file: prepared.fileName, databases: [parsed.data.databaseName],
         });
+        await auditService.log(viewer.id, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP, {
+            action: "shared_download", name: parsed.data.databaseName, file: prepared.fileName, databases: [parsed.data.databaseName],
+            server: prepared.provider.serverName, tenant: prepared.provider.customerName, tenantId: viewer.tenantId,
+        }, undefined, { tenantId: prepared.provider.tenantId });
         return { success: true as const, data: { url: `/api/shared/download?token=${prepared.token}`, fileName: prepared.fileName } };
     } catch (error: unknown) {
         if (error instanceof NotFoundError) return { success: false as const, error: GONE };
@@ -80,7 +86,7 @@ export async function restoreSharedDatabase(input: z.input<typeof RefSchema>) {
             ...(target.databaseName !== parsed.data.databaseName ? { target: target.databaseName } : {}),
         });
         await auditService.log(viewer.id, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, {
-            action: "shared_restore", name: target.databaseName, databases: [target.databaseName], server: provider.serverName, tenant: provider.customerName,
+            action: "shared_restore", name: target.databaseName, databases: [target.databaseName], server: provider.serverName, tenant: provider.customerName, tenantId: viewer.tenantId,
             ...(provider.executionId ? { executionId: provider.executionId } : {}),
         }, undefined, { tenantId: provider.tenantId });
         return { success: true as const, data: { executionId } };
@@ -117,7 +123,7 @@ export async function backUpSharedDatabase(input: z.input<typeof PlaceSchema>) {
             action: "backup_on_demand", shared: true, name: started.databaseName, databases: [started.databaseName], executionId: started.customerExecutionId,
         });
         await auditService.log(viewer.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.JOB, {
-            action: "backup_on_demand", name: started.jobName, database: started.databaseName, tenant: started.customerName, executionId: started.executionId,
+            action: "backup_on_demand", name: started.jobName, database: started.databaseName, tenant: started.customerName, tenantId: viewer.tenantId, executionId: started.executionId,
         }, started.jobId, { tenantId: started.serverTenantId });
         return { success: true as const, data: { requestId: started.requestId, executionId: started.customerExecutionId } };
     } catch (error: unknown) {

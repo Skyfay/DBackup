@@ -22,6 +22,16 @@ vi.mock("@/lib/auth/access-control", () => ({
     checkPermissionWithContext: () => undefined,
     hasPermissionWithContext: (context: typeof ctx, permission: string) => context.isPlatformAdmin || context.permissions.includes(permission),
 }));
+// The records by their names, read before a bulk route changes them.
+vi.mock("@/services/audit/record-names", () => {
+    const named = async (ids: string[]) => new Map(ids.map((id) => [id, `Name of ${id}`]));
+    return {
+        jobNames: named,
+        connectionNames: named,
+        credentialNames: named,
+        changedNames: (succeeded: string[], names: Map<string, string>) => succeeded.flatMap((id) => names.get(id) ?? []),
+    };
+});
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: mocks.logFor } }));
 vi.mock("@/services/jobs/job-service", () => ({ jobService: { deleteJob: mocks.deleteJob, deleteJobs: mocks.deleteJobs } }));
 vi.mock("@/services/adapters/adapter-service", () => ({ deleteAdapter: mocks.deleteAdapter }));
@@ -89,5 +99,7 @@ describe("the delete routes and Recently deleted", () => {
         expect(mocks.deleteJobs).toHaveBeenCalledWith(["a", "b"], { permanently: true, by: "u1" });
         expect(mocks.deleteCredentialProfiles).toHaveBeenCalledWith(["c"], { permanently: false, by: "u1" });
         expect(refused.status).toBe(400);
+        // Each entry names the records it deleted, read before they were gone.
+        expect(mocks.logFor).toHaveBeenCalledWith(expect.anything(), "DELETE", "CREDENTIAL", expect.objectContaining({ names: ["Name of c"] }));
     });
 });

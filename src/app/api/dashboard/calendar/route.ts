@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -8,7 +9,7 @@ import { permissionRefusal } from "@/lib/server/permission-refusal";
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext(await headers());
   if (!ctx) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {

@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, StorageReadOptions } from "@/lib/core/interfaces";
 import { DropboxSchema } from "@/lib/adapters/definitions";
 import { Dropbox, DropboxAuth } from "dropbox";
 import fs from "fs/promises";
@@ -10,6 +10,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { stripTrailingSlashes } from "@/lib/paths";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { collectCapped, FileTooLargeError, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, createPageGuard } from "@/lib/adapters/storage/common/listing-limits";
 
 const log = logger.child({ adapter: "dropbox" });
 
@@ -250,8 +252,15 @@ async function listFilesRecursive(
         return display.split("/").filter(Boolean).slice(baseDepth).join("/");
     };
 
+    // Dropbox lists the whole tree itself, page by page. Every entry, a folder too, passes the guard
+    // as it arrives, and a cursor handed out twice or pages without end stop the listing, see
+    // `listing-limits.ts`.
+    const guard = createListingGuard();
+    const pages = createPageGuard();
+
     const processEntries = (entries: typeof result.result.entries) => {
         for (const entry of entries) {
+            guard.add(entry.path_display || entry.path_lower || entry.name);
             if (entry[".tag"] === "file") {
                 // Build relative path by stripping the base folder path
                 const display = entry.path_display || entry.path_lower || "";
@@ -270,6 +279,7 @@ async function listFilesRecursive(
     processEntries(result.result.entries);
 
     while (result.result.has_more) {
+        pages.next(result.result.cursor, result.result.entries.length);
         result = await dbx.filesListFolderContinue({
             cursor: result.result.cursor,
         });
@@ -277,6 +287,42 @@ async function listFilesRecursive(
     }
 
     return files;
+}
+
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. Streamed from the
+ * content endpoint rather than through the SDK, which buffers a whole download, so the transfer
+ * stops at the first chunk past the limit. Null when the file is not there.
+ */
+async function readCappedBytes(config: DropboxConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    try {
+        const auth = createDropboxAuth(config);
+        await auth.checkAndRefreshAccessToken();
+        const accessToken = auth.getAccessToken();
+        if (!accessToken) return null;
+
+        const res = await fetch("https://content.dropboxapi.com/2/files/download", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Dropbox-API-Arg": JSON.stringify({ path: buildDropboxPath(config.folderPath, remotePath) }),
+            },
+        });
+        if (!res.ok || !res.body) {
+            await res.body?.cancel().catch(() => undefined);
+            return null;
+        }
+        const announced = Number(res.headers.get("content-length"));
+        if (Number.isFinite(announced) && announced > limit) {
+            await res.body.cancel().catch(() => undefined);
+            throw new FileTooLargeError(limit);
+        }
+        return await collectCapped(Readable.fromWeb(res.body as never), limit);
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        return null;
+    }
 }
 
 export const DropboxAdapter: StorageAdapter = {
@@ -449,24 +495,11 @@ export const DropboxAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: DropboxConfig, remotePath: string): Promise<string | null> {
-        try {
-            const dbx = createDropboxClient(config);
-            const dropboxPath = buildDropboxPath(config.folderPath, remotePath);
-
-            const res = await dbx.filesDownload({ path: dropboxPath });
-            const buffer = await getFileBuffer(res.result as unknown as Record<string, unknown>);
-
-            if (!buffer) {
-                log.warn("No file data received from Dropbox read", { remotePath });
-                return null;
-            }
-
-            return buffer.toString("utf-8");
-        } catch {
-            return null;
-        }
+    async read(config: DropboxConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async list(config: DropboxConfig, dir: string = ""): Promise<FileInfo[]> {
         try {

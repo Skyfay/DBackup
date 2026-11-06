@@ -1,21 +1,23 @@
+import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
 import { StorageAdapter, FileInfo, BackupMetadata } from "@/lib/core/interfaces";
 import { pipeline } from "stream/promises";
-import { createReadStream, createWriteStream, promises as fs } from "fs";
+import { createWriteStream, promises as fs } from "fs";
 import { resolveDecryptionKey } from "@/services/restore/smart-recovery";
 import { writeDatabaseDump } from "@/services/restore/archive-download";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { CompressionType } from "@/lib/crypto/compression";
 import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
-import AdmZip from "adm-zip";
+import { writeStoreZip } from "@/lib/store-zip";
+import { createNoFollowReadStream } from "@/lib/server/no-follow";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
-import { EncryptionKeyRequiredError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ConflictError, EncryptionKeyRequiredError, NotFoundError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
 import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
-import { assertFilePath } from "@/lib/tenant/storage-view";
+import { assertBackupPath, assertFilePath } from "@/lib/tenant/storage-view";
 import { isBackupFile, sidecarPathsFor, chainFolderOf, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 import { dependentsOf, fileNameOf } from "./bulk-delete-order";
 
@@ -25,6 +27,8 @@ const log = logger.child({ service: "StorageService" });
 registerAdapters();
 
 import { describeBackupFromMetadata } from "./backup-file-fields";
+import { readListedSidecars } from "./listed-sidecars";
+import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 
 export { describeBackupFromMetadata } from "./backup-file-fields";
 
@@ -186,6 +190,8 @@ export function isListingStale(listedAt: Date, now = Date.now()): boolean {
 
 export class StorageService {
     async toggleLock(adapterConfigId: string, filePath: string) {
+        // A path that leaves the destination is refused before the storage is opened.
+        assertBackupPath(filePath);
         const { adapter, config } = await openDestination(adapterConfigId);
 
         const metadata = await this.readLockMetadata(adapter, config, filePath);
@@ -199,6 +205,7 @@ export class StorageService {
      * converge on one state instead of flipping each row and staying mixed.
      */
     async setLocked(adapterConfigId: string, filePath: string, locked: boolean): Promise<boolean> {
+        assertBackupPath(filePath);
         const { adapter, config } = await openDestination(adapterConfigId);
 
         return this.setLockedWith(adapterConfigId, adapter, config, filePath, locked);
@@ -220,6 +227,8 @@ export class StorageService {
         // listing blob after every file.
         options: { deferCacheUpdate?: boolean } = {}
     ): Promise<boolean> {
+        // The sidecar is written next to the backup, so its path never leaves the destination.
+        assertBackupPath(filePath);
         const metadata = await this.readLockMetadata(adapter, config, filePath);
         if (metadata.locked === locked) return locked;
         return this.writeLockState(adapterConfigId, adapter, config, filePath, metadata, locked, options);
@@ -251,8 +260,8 @@ export class StorageService {
         const metaPath = filePath + METADATA_SIDECAR_SUFFIX;
         metadata.locked = locked;
 
-        const tempPath = path.join(getTempDir(), `meta-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
-        await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2));
+        const tempPath = path.join(getTempDir(), `meta-${randomUUID()}.json`);
+        await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2), { flag: "wx" });
 
         try {
             await adapter.upload(config as never, tempPath, metaPath);
@@ -289,7 +298,7 @@ export class StorageService {
         const given = tenantId ?? (await currentTenantId());
         if (given) return given;
         const row = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: adapterConfigId }, select: { tenantId: true } }));
-        if (!row) throw new Error(`Storage configuration with ID ${adapterConfigId} not found.`);
+        if (!row) throw new NotFoundError("Storage configuration", adapterConfigId);
         return row.tenantId;
     }
 
@@ -559,17 +568,9 @@ export class StorageService {
         let updatedFiles = cachedFiles.filter(f => !removedPaths.has(f.path));
 
         if (newFiles.length > 0) {
-            const metadataMap = new Map<string, BackupMetadata>();
-            if (adapter.read) {
-                const newFileNames = new Set(newFiles.map(f => f.name));
-                const relevantMetaFiles = remoteMetaFiles.filter(mf => newFileNames.has(mf.name.slice(0, -10)));
-                await Promise.all(relevantMetaFiles.map(async (metaFile) => {
-                    try {
-                        const content = await adapter.read!(config, metaFile.path);
-                        if (content) metadataMap.set(metaFile.name.slice(0, -10), JSON.parse(content) as BackupMetadata);
-                    } catch { /* ignore */ }
-                }));
-            }
+            const newFileNames = new Set(newFiles.map(f => f.name));
+            const relevantMetaFiles = remoteMetaFiles.filter(mf => newFileNames.has(mf.name.slice(0, -10)));
+            const metadataMap = await readListedSidecars(adapter, config, relevantMetaFiles, adapterConfigId);
 
             // The jobs and runs of the tenant whose listing it is, also where the scope reads every tenant.
             const allJobs = await prisma.job.findMany({ where: { tenantId }, include: { source: true } });
@@ -741,24 +742,13 @@ export class StorageService {
         });
 
         const backups = allFiles.filter(f => isBackupFile(f.name));
-        const metadataFiles = allFiles.filter(f => f.name.endsWith(METADATA_SIDECAR_SUFFIX));
+        // Only the sidecars of the backups listed, like the reconciliation reads them. A sidecar
+        // with no backup beside it describes nothing of the listing.
+        const backupPaths = new Set(backups.map(f => f.path));
+        const metadataFiles = allFiles.filter(f =>
+            f.name.endsWith(METADATA_SIDECAR_SUFFIX) && backupPaths.has(f.path.slice(0, -METADATA_SIDECAR_SUFFIX.length)));
 
-        const metadataMap = new Map<string, BackupMetadata>();
-        if (adapter.read) {
-            const metaReads = metadataFiles.map(async (metaFile) => {
-                try {
-                    const content = await adapter.read!(config, metaFile.path);
-                    if (content) {
-                        const meta = JSON.parse(content) as BackupMetadata;
-                        const originalName = metaFile.name.substring(0, metaFile.name.length - 10);
-                        metadataMap.set(originalName, meta);
-                    }
-                } catch {
-                    // ignore read errors
-                }
-            });
-            await Promise.all(metaReads);
-        }
+        const metadataMap = await readListedSidecars(adapter, config, metadataFiles, adapterConfigId);
 
         // The jobs and runs of the tenant whose listing it is, also where the scope reads every tenant.
         const allJobs = await prisma.job.findMany({
@@ -815,10 +805,12 @@ export class StorageService {
 
     /**
      * Deletes a file via a specific storage adapter configuration. Never the root of a destination,
-     * which some storages delete with everything in it.
+     * which some storages delete with everything in it, and never a path that leaves it, see
+     * `assertBackupPath`, whatever the view of the destination.
      */
     async deleteFile(adapterConfigId: string, filePath: string): Promise<boolean> {
         assertFilePath(filePath);
+        assertBackupPath(filePath);
         const { adapter, config } = await openDestination(adapterConfigId);
 
         // Refuse to gut an incremental chain. Later snapshots reference bytes that live in
@@ -828,7 +820,7 @@ export class StorageService {
         // whole; manual deletion has to hold the same line.
         const dependents = await this.chainDependentsOf(adapterConfigId, filePath, adapter, config);
         if (dependents.length > 0) {
-            throw new Error(
+            throw new ConflictError(
                 `This backup is part of an incremental chain that ${dependents.length} later backup(s) still build on: ` +
                 `${dependents.slice(0, 3).join(", ")}${dependents.length > 3 ? ", ..." : ""}. ` +
                 `Delete the whole chain folder instead, or let retention remove it as a unit.`
@@ -877,7 +869,7 @@ export class StorageService {
         } catch (e) {
             // Cannot prove it is safe, so do not claim it is.
             log.warn("Could not check chain membership before delete", { adapterConfigId, filePath }, wrapError(e));
-            throw new Error("Could not verify whether this backup is part of an incremental chain. Refusing to delete it.");
+            throw new ConflictError("Could not verify whether this backup is part of an incremental chain. Refusing to delete it.");
         }
     }
 
@@ -892,23 +884,12 @@ export class StorageService {
         config: unknown,
         remotePath: string
     ): Promise<BackupMetadata | null> {
-        const metaRemotePath = remotePath + METADATA_SIDECAR_SUFFIX;
-
-        if (adapter.read) {
-            try {
-                const content = await adapter.read(config, metaRemotePath);
-                if (content) return JSON.parse(content) as BackupMetadata;
-            } catch { /* fall through to the download below */ }
-        }
-
-        const tempMetaPath = path.join(getTempDir(), "dlmeta_" + Date.now() + ".json");
         try {
-            if (!(await adapter.download(config, metaRemotePath, tempMetaPath).catch(() => false))) return null;
-            return JSON.parse(await fs.readFile(tempMetaPath, 'utf-8')) as BackupMetadata;
+            // Bounded, see `readSidecarText`.
+            const content = await readSidecarText(adapter, config as never, remotePath + METADATA_SIDECAR_SUFFIX);
+            return content ? JSON.parse(content) as BackupMetadata : null;
         } catch {
             return null;
-        } finally {
-            await fs.unlink(tempMetaPath).catch(() => { });
         }
     }
 
@@ -997,13 +978,21 @@ export class StorageService {
                     const authTag = Buffer.from(encryptionParams.authTag, 'hex');
 
                     const decryptStream = createDecryptionStream(masterKey, iv, authTag);
-                    const decryptedPath = localDestination + ".dec";
+                    // A name nobody can guess and a new file only, so no file or link laid beside the
+                    // download first receives the decrypted bytes.
+                    const decryptedPath = `${localDestination}.${randomUUID()}.dec`;
 
-                    await pipeline(
-                        createReadStream(localDestination),
-                        decryptStream,
-                        createWriteStream(decryptedPath)
-                    );
+                    try {
+                        await pipeline(
+                            // The download, read without following a link, see `downloaded-file.ts`.
+                            createNoFollowReadStream(localDestination),
+                            decryptStream,
+                            createWriteStream(decryptedPath, { flags: "wx", mode: 0o600 })
+                        );
+                    } catch (error) {
+                        await fs.unlink(decryptedPath).catch(() => { });
+                        throw error;
+                    }
 
                     await fs.unlink(localDestination);
                     await fs.rename(decryptedPath, localDestination);
@@ -1023,44 +1012,39 @@ export class StorageService {
        if (remotePath.endsWith('.enc')) {
            const tempDir = path.dirname(localDestination);
            const baseName = path.basename(remotePath);
-           const tempMain = path.join(tempDir, `tmp_main_${Date.now()}_${baseName}`);
-           const tempMeta = path.join(tempDir, `tmp_meta_${Date.now()}_${baseName}.meta.json`);
-           const metaRemotePath = remotePath + ".meta.json";
+           // A name nobody can guess, so no one lays a link there first for the download to write through.
+           const tempMain = path.join(tempDir, `tmp_main_${randomUUID()}_${baseName}`);
 
            try {
                const mainSuccess = await adapter.download(config, remotePath, tempMain);
                if (!mainSuccess) return { success: false };
 
-               let metaFound = false;
-               try {
-                   const metaSuccess = await adapter.download(config, metaRemotePath, tempMeta);
-                   if (metaSuccess) metaFound = true;
-               } catch {}
+               // Bounded, see `readSidecarText`. One that cannot be read leaves the file alone.
+               const meta = await readSidecarText(adapter, config, remotePath + METADATA_SIDECAR_SUFFIX).catch((error: unknown) => {
+                   log.warn("Could not read the metadata of an encrypted backup, serving it without", { remotePath }, wrapError(error));
+                   return null;
+               });
 
-               if (metaFound) {
-                   try {
-                       const zip = new AdmZip();
-                       zip.addLocalFile(tempMain, "", baseName);
-                       zip.addLocalFile(tempMeta, "", baseName + ".meta.json");
-                       zip.writeZip(localDestination);
-
-                       return { success: true, isZip: true };
-                   } catch (zipError) {
-                       log.error("Zip creation failed", { remotePath }, wrapError(zipError));
-                       await fs.rename(tempMain, localDestination);
-                       return { success: true, isZip: false };
-                   } finally {
-                       try { await fs.unlink(tempMain); } catch {}
-                       try { await fs.unlink(tempMeta); } catch {}
-                   }
-               } else {
+               if (meta === null) {
                    await fs.rename(tempMain, localDestination);
                    return { success: true, isZip: false };
                }
-           } catch (e) {
-               try { await fs.unlink(tempMain).catch(()=>{}); } catch {}
-               try { await fs.unlink(tempMeta).catch(()=>{}); } catch {}
-               throw e;
+
+               // Streamed and stored without compression, see `writeStoreZip`. The file is ciphertext,
+               // which no compression shrinks, and the event loop serves every tenant.
+               try {
+                   await writeStoreZip(localDestination, [
+                       { name: baseName, file: tempMain },
+                       { name: baseName + METADATA_SIDECAR_SUFFIX, data: Buffer.from(meta, "utf8") },
+                   ]);
+                   return { success: true, isZip: true };
+               } catch (zipError) {
+                   log.error("Zip creation failed", { remotePath }, wrapError(zipError));
+                   await fs.rename(tempMain, localDestination);
+                   return { success: true, isZip: false };
+               }
+           } finally {
+               await fs.unlink(tempMain).catch(() => { });
            }
        }
 

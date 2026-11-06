@@ -124,7 +124,8 @@ const ADAPTER_RULES: Rule[] = [
                 "tunnel so SSH mode cannot use the driver. A real capability difference, not a transport fork.",
             "database/mysql/args.ts":
                 "MySQL only forces TCP in direct mode. Over SSH the client is local to the server and the " +
-                "socket path is the documented setup (docs/user-guide/sources/mysql.md).",
+                "socket path is the documented setup (docs/user-guide/sources/mysql.md). The same check makes a " +
+                "restore fail closed when the client beside DBackup cannot be locked down (`runsBesideDBackup`).",
         },
         reason: "A kind check is a transport fork wearing a new hat. Use a host primitive instead.",
     },

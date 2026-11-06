@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { capToOwner, ownerPermissionsIn, permissionsIn, PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { capToOwner, ownerPermissionsIn, permissionsIn, PLATFORM_ADMIN_ROLE, storedPermissionList } from "@/lib/auth/owner-permissions";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAsSystem } from "@/lib/tenant/context";
 
@@ -39,12 +39,6 @@ export async function makerMayDownload(maker: DownloadMaker): Promise<boolean> {
         const key = await prisma.apiKey.findUnique({ where: { id: maker.apiKeyId }, select: { userId: true, tenantId: true, enabled: true, expiresAt: true, permissions: true } });
         if (!key || key.userId !== maker.userId || key.tenantId !== maker.tenantId || !key.enabled || !tenant.addsApiKeys) return false;
         if (key.expiresAt && key.expiresAt < new Date()) return false;
-        let held: string[];
-        try {
-            held = JSON.parse(key.permissions) as string[];
-        } catch {
-            return false;
-        }
-        return capToOwner(held, ownerPermissionsIn(user, maker.tenantId, tenant.sharesWithCustomers)).includes(PERMISSIONS.STORAGE.DOWNLOAD);
+        return capToOwner(storedPermissionList(key.permissions), ownerPermissionsIn(user, maker.tenantId, tenant.sharesWithCustomers)).includes(PERMISSIONS.STORAGE.DOWNLOAD);
     });
 }

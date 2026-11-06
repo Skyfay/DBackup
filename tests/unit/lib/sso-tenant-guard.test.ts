@@ -64,6 +64,7 @@ describe("sign-ins through the provider of a tenant", () => {
     });
 
     it("links no account of another domain and no platform admin to a tenant's provider", async () => {
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }] });
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
 
         mocks.user.mockResolvedValue(MANU);
@@ -111,6 +112,7 @@ describe("sign-ins through the provider of a tenant", () => {
     });
 
     it("sends a refused sign-in back to the login page with the reason, also for a link made before", async () => {
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }] });
         await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).resolves.toBeUndefined();
 
         mocks.user.mockResolvedValue(MANU);
@@ -154,11 +156,19 @@ describe("sign-ins through the provider of a tenant", () => {
         });
     });
 
-    it("lets a provider that adds people sign in someone who is no member yet, who joins on the link", async () => {
+    it("links no account of no tenant to the provider of another tenant, since the admins of the home tenant set its password", async () => {
         mocks.user.mockResolvedValue({ ...LENA, memberships: [] });
 
-        await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).resolves.toBeUndefined();
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+        await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_NOT_MEMBER_URL}`);
+    });
+
+    it("links an account of no tenant to a provider of the home tenant, where it already counts", async () => {
+        mocks.provider.mockResolvedValue({ ...ACME, tenantId: "default", domain: "acme.ch" });
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [] });
+
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
+        await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).resolves.toBeUndefined();
     });
 
     it("lets every other sign-in start its session", async () => {

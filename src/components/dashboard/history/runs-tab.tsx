@@ -25,6 +25,8 @@ import { useNow } from "./use-now";
 
 export interface RunsAccess {
     canExecute: boolean;
+    /** The types of runs the viewer may cancel, from `cancellableRunTypes`. */
+    cancels: readonly string[];
     canOpenJobs: boolean;
     canOpenBackups: boolean;
 }
@@ -103,7 +105,7 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
                 ...(row.jobId && row.type === "Backup" && canExecute && !live
                     ? [{ id: "again", label: runAgainLabel(row), icon: Play, onSelect: () => void startRun(row.jobId!, row.name).then(() => list.refresh()), tone: "neutral" as const }]
                     : []),
-                ...(live && canExecute
+                ...(live && !allTenants && access.cancels.includes(row.type)
                     ? [{ id: "cancel", label: "Cancel run", icon: Square, onSelect: () => setCancelling(row), tone: "destructive" as const }]
                     : []),
             ],

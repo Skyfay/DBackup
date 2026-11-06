@@ -66,6 +66,16 @@ function cancelledRun(run: RunRecord): CancelledRun {
 }
 
 /**
+ * The type of a run, like `Backup` or `Restore`, which decides who may cancel it (`mayCancelRun`).
+ * Throws `NotFoundError` when there is no such run in the tenant of the caller.
+ */
+export async function runTypeOf(id: string): Promise<string> {
+    const execution = await prisma.execution.findUnique({ where: { id }, select: { type: true } });
+    if (!execution) throw new NotFoundError("Execution", id);
+    return execution.type;
+}
+
+/**
  * Cancels a pending or running run. A pending run is marked cancelled before it starts. A running
  * one gets the abort signal when it runs in this process, and is marked cancelled in the database
  * when it does not, like after a reload or in another process.

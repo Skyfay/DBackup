@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
+import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { redirect } from "next/navigation";
 import { RestoreAllTenants } from "./restore-all-tenants";
@@ -9,6 +10,7 @@ import { RestoreClient } from "./restore-client";
 export const metadata: Metadata = { title: "Restore" };
 
 export default async function RestorePage() {
+    await redirectWithoutTenant();
     const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
     const canRestore = permissions.includes(PERMISSIONS.STORAGE.RESTORE);
 

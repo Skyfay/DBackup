@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
 import { ON_DEMAND_MAX, ON_DEMAND_MIN } from "@/lib/tenant/sharing";
-import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
+import { OUTSIDE_REACH, reachCovers, TENANT_BEYOND_REACH, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { sharingChanged } from "./shared-servers";
 
 /**
@@ -15,7 +15,7 @@ import { sharingChanged } from "./shared-servers";
  */
 
 /** What a tenant that shares beyond the reach of the viewer is called. */
-export const PROVIDER_BEYOND_REACH = "Another tenant";
+export const PROVIDER_BEYOND_REACH = TENANT_BEYOND_REACH.name;
 
 /** A database given by name or a rule of a customer that sets a number of its own. */
 export interface OnDemandOverride {

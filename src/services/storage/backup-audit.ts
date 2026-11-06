@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { normalizeDatabaseMapping } from "@/services/restore/database-mapping";
-import { findDestination } from "@/services/sharing/destination-access";
+import { findDestination, type DestinationLookup } from "@/services/sharing/destination-access";
 import type { FileRestoreTarget } from "@/services/restore/file-restore";
 import type { RestoreScope } from "@/services/restore/types";
 
@@ -46,11 +46,12 @@ async function connectionNames(ids: string[]): Promise<Map<string, string>> {
 
 /**
  * The name of a destination as the tenant that runs now sees it, also one another tenant provides
- * to it, which the tenant filter keeps out of `connectionNames`. Null when it could not be read.
+ * to it, which the tenant filter keeps out of `connectionNames`. Null when it could not be read. A
+ * directory source only when the lookup asks for one, like the target of a restore of files.
  */
-export async function destinationAuditName(destinationId: string): Promise<string | null> {
+export async function destinationAuditName(destinationId: string, lookup: DestinationLookup = {}): Promise<string | null> {
     try {
-        return (await findDestination(destinationId)).row.name;
+        return (await findDestination(destinationId, undefined, lookup)).row.name;
     } catch (error) {
         // A destination the tenant may not use reads like one that is gone, without a name.
         if (!(error instanceof NotFoundError)) log.warn("Could not name a destination for the audit log", { destinationId }, wrapError(error));

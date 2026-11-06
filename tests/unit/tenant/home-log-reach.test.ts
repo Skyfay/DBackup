@@ -211,8 +211,8 @@ describe("the entries of the home log about a tenant beyond the reach", () => {
     beforeAll(async () => {
         await entry("about-acme", 20, { userId: "nina", action: "UPDATE", resource: "TENANT", resourceId: "acme", details: { name: "Acme AG", renamedFrom: "Acme" } });
         await entry("about-globex", 21, { userId: "nina", action: "UPDATE", resource: "TENANT", resourceId: "globex", details: { name: "Globex AG", renamedFrom: "Globex" } });
-        await entry("names-acme", 22, { userId: "nina", action: "UPDATE", resource: "ADAPTER", resourceId: "srv", details: { change: "Databases assigned", databases: [{ name: "shop", tenantId: "acme" }] } });
-        await entry("names-globex", 23, { userId: "nina", action: "UPDATE", resource: "ADAPTER", resourceId: "srv", details: { change: "Databases assigned", databases: [{ name: "crm", tenantId: "globex" }] } });
+        await entry("names-acme", 22, { userId: "nina", action: "UPDATE", resource: "ADAPTER", resourceId: "srv", details: { change: "Databases assigned", databases: [{ name: "shop", to: "acme" }], tenantId: "acme" } });
+        await entry("names-globex", 23, { userId: "nina", action: "UPDATE", resource: "ADAPTER", resourceId: "srv", details: { change: "Databases assigned", databases: [{ name: "crm", to: "globex" }], tenantId: "globex" } });
         await entry("about-globex-by-nobody", 24, { action: "DELETE", resource: "TENANT", resourceId: "globex", details: { name: "Globex" } });
     });
 

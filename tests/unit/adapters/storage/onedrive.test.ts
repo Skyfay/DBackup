@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { OneDriveAdapter } from "@/lib/adapters/storage/onedrive";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
 import { Readable } from "stream";
 
 // --- Hoisted mocks (available in vi.mock factories) ---
@@ -476,14 +477,37 @@ describe("OneDriveAdapter", () => {
                 }),
             });
 
-            mockFetch.mockResolvedValueOnce({
-                ok: true,
-                text: async () => '{"compression":"gzip"}',
-            });
+            mockFetch.mockResolvedValueOnce(new Response('{"compression":"gzip"}'));
 
             const result = await OneDriveAdapter.read!(validConfig, "backup.meta.json");
 
             expect(result).toBe('{"compression":"gzip"}');
+        });
+
+        it("refuses an item larger than the limit of the read without downloading it", async () => {
+            mockTokenRefresh();
+            mockClient.api.mockReturnValue({
+                get: vi.fn().mockResolvedValue({
+                    "@microsoft.graph.downloadUrl": "https://download.example.com/meta",
+                    size: SIDECAR_READ_LIMIT + 1,
+                }),
+            });
+
+            await expect(OneDriveAdapter.read!(validConfig, "backup.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(mockFetch).not.toHaveBeenCalledWith("https://download.example.com/meta");
+        });
+
+        it("stops a download that sends more than the limit, whatever the item said", async () => {
+            mockTokenRefresh();
+            mockClient.api.mockReturnValue({
+                get: vi.fn().mockResolvedValue({
+                    "@microsoft.graph.downloadUrl": "https://download.example.com/meta",
+                    size: 2,
+                }),
+            });
+            mockFetch.mockResolvedValueOnce(new Response(new Uint8Array(500)));
+
+            await expect(OneDriveAdapter.readBytes!(validConfig, "backup.index", { maxBytes: 100 })).rejects.toBeInstanceOf(FileTooLargeError);
         });
 
         it("should return null when file does not exist", async () => {

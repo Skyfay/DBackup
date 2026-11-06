@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
-const mocks = vi.hoisted(() => ({ providers: vi.fn() }));
+const mocks = vi.hoisted(() => ({ providers: vi.fn(), users: vi.fn() }));
 
-vi.mock("@/lib/prisma", () => ({ default: { ssoProvider: { findMany: (...args: unknown[]) => mocks.providers(...args) } } }));
+vi.mock("@/lib/prisma", () => ({
+    default: {
+        ssoProvider: { findMany: (...args: unknown[]) => mocks.providers(...args) },
+        user: { findMany: (...args: unknown[]) => mocks.users(...args) },
+    },
+}));
 
-const { CLAIMED_EMAIL, claimedEmailRefusal, tenantClaimingEmail } = await import("@/services/sso/email-domain-claims");
+const { CLAIMED_EMAIL, claimedEmailRefusal, tenantClaimingEmail, tenantlessClaimedBeyond } = await import("@/services/sso/email-domain-claims");
 
 describe("the tenant an email belongs to by its domain", () => {
     beforeEach(() => {
@@ -30,5 +35,36 @@ describe("the tenant an email belongs to by its domain", () => {
         expect(await claimedEmailRefusal("bob@beta.ch", ["beta"], false)).toBeNull();
         expect(await claimedEmailRefusal("someone@free.ch", ["acme"], false)).toBeNull();
         expect(await claimedEmailRefusal("bob@beta.ch", ["acme"], true)).toBeNull();
+    });
+});
+
+describe("an account of no tenant whose email the provider of a tenant claims", () => {
+    beforeEach(() => {
+        mocks.providers.mockResolvedValue([{ domain: "beta.ch", tenantId: "beta" }, { domain: "msp.ch", tenantId: null }]);
+        mocks.users.mockResolvedValue([{ email: "bob@beta.ch" }]);
+    });
+
+    it("reads only the accounts of no tenant among those asked about", async () => {
+        await tenantlessClaimedBeyond(["bob", "eve"], ["acme"]);
+        expect(mocks.users).toHaveBeenCalledWith({ where: { id: { in: ["bob", "eve"] }, memberships: { none: {} } }, select: { email: true } });
+    });
+
+    it("counts when the claim is of a tenant beyond those given, the home tenant for a provider of the platform", async () => {
+        expect(await tenantlessClaimedBeyond(["bob"], ["default", "acme"])).toBe(true);
+        expect(await tenantlessClaimedBeyond(["bob"], ["default", "beta"])).toBe(false);
+
+        mocks.users.mockResolvedValue([{ email: "new.hire@msp.ch" }]);
+        expect(await tenantlessClaimedBeyond(["hire"], ["acme"])).toBe(true);
+        expect(await tenantlessClaimedBeyond(["hire"], ["default"])).toBe(false);
+    });
+
+    it("never counts a free domain, an account of a tenant or no account at all", async () => {
+        mocks.users.mockResolvedValue([{ email: "someone@free.ch" }]);
+        expect(await tenantlessClaimedBeyond(["someone"], ["acme"])).toBe(false);
+        mocks.users.mockResolvedValue([]);
+        expect(await tenantlessClaimedBeyond(["of-a-tenant"], ["acme"])).toBe(false);
+        mocks.users.mockClear();
+        expect(await tenantlessClaimedBeyond([], ["acme"])).toBe(false);
+        expect(mocks.users).not.toHaveBeenCalled();
     });
 });

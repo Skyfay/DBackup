@@ -333,8 +333,9 @@ export const tenantService = {
     },
 
     /**
-     * Renames a tenant. `ownTenant` for a rename from the tenant settings of the tenant itself, whose
-     * refusal of a taken name never says that another tenant has it.
+     * Renames a tenant. `ownTenant` for a rename by someone who may not see every tenant, from the
+     * tenant settings of the tenant itself or by a platform group of some tenants, whose refusal of a
+     * taken name never says that another tenant has it.
      */
     async rename(id: string, name: string, options: { ownTenant?: boolean } = {}): Promise<{ name: string; renamedFrom: string }> {
         const tenant = await prisma.tenant.findUnique({ where: { id }, select: { name: true } });

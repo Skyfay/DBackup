@@ -90,17 +90,20 @@ export class AuditService {
 
   /**
    * Writes an entry for the caller of an API route, naming the API key when the request came with
-   * one. The key acts as its owner, so the entry belongs to the owner too.
+   * one. The key acts as its owner, so the entry belongs to the owner too. `place` names the tenant
+   * whose log keeps it, like the tenant of the record it is about in All tenants, see `AuditOrigin`.
    */
   async logFor(
     ctx: Pick<AuthContext, "userId" | "authMethod" | "apiKeyId">,
     action: string,
     resource: string,
     details?: Record<string, unknown>,
-    resourceId?: string
+    resourceId?: string,
+    place: Pick<AuditOrigin, "tenantId"> = {}
   ) {
     return this.log(ctx.userId, action, resource, details, resourceId, {
       apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
+      ...(place.tenantId ? { tenantId: place.tenantId } : {}),
     });
   }
 

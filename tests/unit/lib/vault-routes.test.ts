@@ -97,8 +97,14 @@ describe("GET /api/vault/credentials", () => {
         expect(mocks.getVaultCredentials).not.toHaveBeenCalled();
     });
 
-    it("answers with the model of the tab", async () => {
+    it("needs the right to read the Vault too, like the page the tab lies on and the search in the header", async () => {
         signedIn(PERMISSIONS.CREDENTIALS.READ);
+        expect((await getCredentials()).status).toBe(403);
+        expect(mocks.getVaultCredentials).not.toHaveBeenCalled();
+    });
+
+    it("answers with the model of the tab", async () => {
+        signedIn(PERMISSIONS.VAULT.READ, PERMISSIONS.CREDENTIALS.READ);
         expect((await getCredentials()).status).toBe(200);
     });
 });

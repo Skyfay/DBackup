@@ -404,7 +404,20 @@ describe("ApiKeyService", () => {
         user: ownerWith({ tenantId: HOME_TENANT_ID, permissions: '["users:write"]' }, { tenantId: "tenant-a", permissions: '["jobs:read"]' }),
       } as any);
 
-      await expect(service.ownerOf("key-1")).resolves.toEqual({ ownerId: "user-1", name: "Key", permissions: ["jobs:read", "users:write"], ownerPermissions: ["jobs:read"] });
+      await expect(service.ownerOf("key-1")).resolves.toEqual({
+        ownerId: "user-1",
+        name: "Key",
+        permissions: ["jobs:read", "users:write"],
+        ownerPermissions: ["jobs:read"],
+      });
+    });
+
+    it("reads broken stored permissions of a key as none, so its owner can still change or delete it", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        userId: "user-1", name: "Key", permissions: "{broken", tenantId: "tenant-a", user: ownerWith({ tenantId: "tenant-a", permissions: '["jobs:read"]' }),
+      } as any);
+
+      await expect(service.ownerOf("key-1")).resolves.toMatchObject({ permissions: [], ownerPermissions: ["jobs:read"] });
     });
 
     it("should throw NotFoundError if key does not exist", async () => {
@@ -435,6 +448,23 @@ describe("ApiKeyService", () => {
   // validate()
   // ========================================================================
   describe("validate", () => {
+    // The tenant of the key exists and lets its keys work, unless a test says otherwise.
+    beforeEach(() => {
+      prismaMock.tenant.findUnique.mockResolvedValue({ addsApiKeys: true, sharesWithCustomers: false } as any);
+    });
+
+    it("refuses a key whose tenant no longer exists, as a key the request cannot use", async () => {
+      prismaMock.tenant.findUnique.mockResolvedValue(null);
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-orphan", userId: "user-1", permissions: '["jobs:read"]', enabled: true, tenantId: "t-gone", user: owner, expiresAt: null,
+      } as any);
+
+      const refused = await service.validate("dbackup_" + "g".repeat(40)).catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(ApiKeyError);
+      expect((refused as ApiKeyError).reason).toBe("tenant_gone");
+      expect(prismaMock.apiKey.update).not.toHaveBeenCalled();
+    });
+
     it("should return null for key without dbackup_ prefix", async () => {
       const result = await service.validate("invalid_key_without_prefix");
 
@@ -497,6 +527,17 @@ describe("ApiKeyService", () => {
         permissions: ["jobs:read"],
         tenantId: HOME_TENANT_ID,
       });
+    });
+
+    it("lets a key whose stored permissions are broken do nothing, instead of failing its request", async () => {
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+      for (const permissions of ["not json", '{"jobs:read":true}', "null"]) {
+        prismaMock.apiKey.findUnique.mockResolvedValue({
+          id: "key-3", userId: "user-1", permissions, enabled: true, tenantId: HOME_TENANT_ID, user: owner, expiresAt: null,
+        } as any);
+
+        await expect(service.validate("dbackup_" + "d".repeat(40))).resolves.toMatchObject({ id: "key-3", permissions: [] });
+      }
     });
 
     it("should throw ApiKeyError for disabled key", async () => {

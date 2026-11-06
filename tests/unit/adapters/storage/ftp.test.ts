@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FTPAdapter } from "@/lib/adapters/storage/ftp";
+import { FileTooLargeError } from "@/lib/adapters/storage/common/read-limit";
 
 // --- Hoisted mocks ---
 const { mockAccess, mockClose, mockUploadFrom, mockDownloadTo, mockList, mockRemove, mockSize, mockEnsureDir, mockCd, mockTrackProgress, mockConstructed, MockFTPError } = vi.hoisted(() => ({
@@ -336,6 +337,30 @@ describe("FTPAdapter", () => {
 
             expect(result).toBeNull();
         });
+
+        it("aborts the transfer at the first chunk past the limit of the read", async () => {
+            let accepted = 0;
+            mockDownloadTo.mockImplementation(async (sink: NodeJS.WritableStream) => {
+                // A server that sends without end: each chunk waits for the sink, and its failure ends the transfer.
+                for (let i = 0; i < 1000; i++) {
+                    await new Promise<void>((resolve, reject) => {
+                        sink.write(Buffer.alloc(1024), (error?: Error | null) => (error ? reject(error) : resolve()));
+                    });
+                    accepted++;
+                }
+            });
+
+            await expect(FTPAdapter.readBytes!(config, "Job/x.index", { maxBytes: 4096 })).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(accepted).toBe(4);
+        });
+
+        it("returns the text of a file within the limit", async () => {
+            mockDownloadTo.mockImplementation(async (sink: NodeJS.WritableStream) => {
+                await new Promise<void>((resolve) => sink.write(Buffer.from("{\"a\":1}"), () => resolve()));
+            });
+
+            expect(await FTPAdapter.read!(config, "Job/backup.sql.meta.json")).toBe("{\"a\":1}");
+        });
     });
 
     // ===== test() =====
@@ -355,6 +380,48 @@ describe("FTPAdapter", () => {
 
             expect(result.success).toBe(false);
             expect(result.message).toContain("Connection refused");
+        });
+
+        it("uploads its test file from memory, so no file under a name that can be guessed lands in the temp folder", async () => {
+            const fsPromises = (await import("fs/promises")).default;
+
+            const result = await FTPAdapter.test!(config);
+
+            expect(result.success).toBe(true);
+            expect(fsPromises.writeFile).not.toHaveBeenCalled();
+            const { createReadStream } = await import("fs");
+            expect(createReadStream).not.toHaveBeenCalled();
+            expect(mockUploadFrom).toHaveBeenCalledWith(expect.objectContaining({ readable: true }), expect.stringContaining(".dbackup/test/connection-test-ftp-"));
+        });
+    });
+
+    describe("the certificate of an FTPS server", () => {
+        const access = () => mockAccess.mock.calls[0][0] as { secure: boolean; secureOptions?: { rejectUnauthorized: boolean } };
+
+        it("is checked for a connection that does not trust its server, like every new one", async () => {
+            await FTPAdapter.ping!({ ...config, tls: true, trustServerCertificate: false } as never);
+
+            expect(access().secure).toBe(true);
+            expect(access().secureOptions).toEqual({ rejectUnauthorized: true });
+        });
+
+        it("is accepted unchecked for a connection that trusts its server", async () => {
+            await FTPAdapter.ping!({ ...config, tls: true, trustServerCertificate: true } as never);
+
+            expect(access().secureOptions).toEqual({ rejectUnauthorized: false });
+        });
+
+        it("is accepted unchecked for a connection saved before the switch existed, as it was then", async () => {
+            await FTPAdapter.ping!({ ...config, tls: true } as never);
+
+            expect(access().secureOptions).toEqual({ rejectUnauthorized: false });
+        });
+
+        it("plays no part without TLS", async () => {
+            await FTPAdapter.ping!({ ...config, tls: false, trustServerCertificate: false } as never);
+
+            expect(access().secure).toBe(false);
+            expect(access().secureOptions).toBeUndefined();
         });
     });
 

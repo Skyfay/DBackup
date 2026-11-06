@@ -3,7 +3,8 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 
-const { mockExecuteQuery, mockExecuteWithMessages, mockSupportsCompression, mockAssertSupported } = vi.hoisted(() => ({
+const { mockExecuteQuery, mockExecuteWithMessages, mockSupportsCompression, mockAssertSupported, mockOwnData } = vi.hoisted(() => ({
+    mockOwnData: vi.fn(),
     mockExecuteQuery: vi.fn(),
     mockExecuteWithMessages: vi.fn(),
     mockSupportsCompression: vi.fn(),
@@ -18,6 +19,9 @@ vi.mock("@/lib/adapters/database/mssql/connection", () => ({
     supportsCompression: (...args: unknown[]) => mockSupportsCompression(...args),
     getDatabases: vi.fn(),
 }));
+
+// Whether a folder reaches the own data of DBackup, see `own-data.ts`, which reads the database.
+vi.mock("@/lib/adapters/own-data", () => ({ ownDataRefusal: (...args: unknown[]) => mockOwnData(...args) }));
 
 import { createFakeHost, type FakeHost } from "@/lib/testing/fake-host";
 import { dumpOne } from "@/lib/adapters/database/mssql/dump-one";
@@ -67,6 +71,7 @@ beforeEach(async () => {
     mountDir = await mkdtemp(join(os.tmpdir(), "dbackup-mssql-mount-"));
     workDir = await mkdtemp(join(os.tmpdir(), "dbackup-mssql-work-"));
     mockAssertSupported.mockResolvedValue(undefined);
+    mockOwnData.mockResolvedValue(null);
     mockSupportsCompression.mockResolvedValue(true);
     mockExecuteWithMessages.mockResolvedValue({ result: {}, messages: [] });
     mockExecuteQuery.mockResolvedValue({
@@ -218,5 +223,33 @@ describe("MSSQL single-database restore", () => {
     it("refuses a target name SQL Server cannot accept", async () => {
         await expect(restoreOne(config() as never, await dumpFile(), "", createFakeHost({ kind: "direct" })))
             .rejects.toThrow(/Invalid database name/);
+    });
+});
+
+describe("MSSQL shared folder on the server DBackup runs on", () => {
+    const REFUSED = "This path reaches the folder of DBackup's own database, which only a platform admin connects.";
+
+    it("refuses a backup through a shared folder that reaches the own data of DBackup before SQL Server writes there", async () => {
+        mockOwnData.mockResolvedValue(REFUSED);
+
+        await expect(dumpOne(config() as never, "shop", join(workDir, "0001.bak"), createFakeHost({ kind: "direct" }))).rejects.toThrow(REFUSED);
+        expect(mockOwnData).toHaveBeenCalledWith("mssql", { localBackupPath: mountDir });
+        expect(mockExecuteWithMessages).not.toHaveBeenCalled();
+    });
+
+    it("refuses a restore that would stage its backup there", async () => {
+        mockOwnData.mockResolvedValue(REFUSED);
+        const file = join(workDir, "restore-db-1.bak");
+        await writeFile(file, "BAKDATA");
+
+        await expect(restoreOne(config() as never, file, "shop", createFakeHost({ kind: "direct" }))).rejects.toThrow(REFUSED);
+        expect(await readdir(mountDir)).toEqual([]);
+        expect(mockExecuteWithMessages).not.toHaveBeenCalled();
+    });
+
+    it("asks nothing over SSH, where the file never touches a folder of the server DBackup runs on", async () => {
+        mockOwnData.mockResolvedValue(REFUSED);
+        await dumpOne(config() as never, "shop", join(workDir, "0001.bak"), sshHostThatDelivers());
+        expect(mockOwnData).not.toHaveBeenCalled();
     });
 });

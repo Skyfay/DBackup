@@ -68,6 +68,12 @@ describe("GET /api/users/[id]", () => {
         expect(prismaMock.user.count).not.toHaveBeenCalled();
     });
 
+    it("refuses the panel in All tenants to whoever may not see the accounts of the platform, before anything is read", async () => {
+        mocks.ctx = { ...viewer(null), allTenants: true };
+        expect((await open("someone-of-globex")).status).toBe(403);
+        expect(mocks.details).not.toHaveBeenCalled();
+    });
+
     it("still needs the right to see the users", async () => {
         mocks.ctx = { ...viewer("t-acme"), permissions: [] };
         expect((await open("lena")).status).toBe(403);

@@ -4,6 +4,7 @@ import { PermissionError, ApiKeyError, AuthenticationError } from "@/lib/logging
 import { PERMISSIONS, AVAILABLE_PERMISSIONS, PLATFORM_ONLY_PERMISSIONS } from "@/lib/auth/permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { PlatformGroupGrant } from "@/lib/auth/owner-permissions";
+import { keyRefusalOf } from "@/lib/auth/api-key-refusal";
 
 // Mock logger
 vi.mock("@/lib/logging/logger", () => ({
@@ -43,7 +44,10 @@ const mockPrismaMembership = { findUnique: vi.fn() };
 const mockTx = {
   user: { update: vi.fn() },
   tenantMembership: { upsert: vi.fn() },
+  systemSetting: { upsert: vi.fn() },
 };
+// Whether the installation ever had a platform admin, see `notePlatformAdmin`.
+const mockPrismaSetting = { findUnique: vi.fn(), upsert: vi.fn() };
 // The full access group the first account gets, found or made by the group service.
 const mockEnsureFullAccessGroup = vi.fn();
 vi.mock("@/services/user/group-service", () => ({
@@ -61,6 +65,10 @@ vi.mock("@/lib/prisma", () => ({
     },
     tenantMembership: {
       findUnique: (...args: any[]) => mockPrismaMembership.findUnique(...args),
+    },
+    systemSetting: {
+      findUnique: (...args: any[]) => mockPrismaSetting.findUnique(...args),
+      upsert: (...args: any[]) => mockPrismaSetting.upsert(...args),
     },
     $transaction: (fn: (tx: typeof mockTx) => unknown) => fn(mockTx),
   },
@@ -127,6 +135,9 @@ describe("Access Control", () => {
     // One tenant, as every installation starts.
     mockPrismaTenant.count.mockResolvedValue(1);
     mockPrismaMembership.findUnique.mockResolvedValue(null);
+    // No platform admin was ever noted. The note fails, so the next test asks again.
+    mockPrismaSetting.findUnique.mockResolvedValue(null);
+    mockPrismaSetting.upsert.mockRejectedValue(new Error("not kept between the tests"));
   });
 
   // ========================================================================
@@ -239,26 +250,28 @@ describe("Access Control", () => {
       expect(ctx).toBeNull();
     });
 
-    it("should rethrow ApiKeyError for disabled keys", async () => {
+    // A route that asks outside its try answered a disabled key with a 500, as if DBackup broke.
+    it.each([
+      ["disabled", "API key is disabled"],
+      ["expired", "API key has expired"],
+      ["blocked", "API keys are switched off for this tenant"],
+    ])("answers a %s key with no context and keeps its reason for the 401", async (reason, message) => {
       mockGetSession.mockResolvedValue(null);
-      mockValidate.mockRejectedValue(new ApiKeyError("disabled", "API key is disabled"));
+      mockValidate.mockRejectedValue(new ApiKeyError(reason, message));
 
       const headers = new Headers({
-        authorization: "Bearer dbackup_disabledkey",
+        authorization: `Bearer dbackup_${reason}key`,
       });
 
-      await expect(getAuthContext(headers)).rejects.toThrow(ApiKeyError);
+      await expect(getAuthContext(headers)).resolves.toBeNull();
+      expect(keyRefusalOf(headers)).toBe(message);
     });
 
-    it("should rethrow ApiKeyError for expired keys", async () => {
+    it("still fails on an error of the database while it reads a key", async () => {
       mockGetSession.mockResolvedValue(null);
-      mockValidate.mockRejectedValue(new ApiKeyError("expired", "API key has expired"));
+      mockValidate.mockRejectedValue(new Error("database is locked"));
 
-      const headers = new Headers({
-        authorization: "Bearer dbackup_expiredkey",
-      });
-
-      await expect(getAuthContext(headers)).rejects.toThrow(ApiKeyError);
+      await expect(getAuthContext(new Headers({ authorization: "Bearer dbackup_somekey" }))).rejects.toThrow("database is locked");
     });
 
     it("should prefer session over API key when both are present", async () => {
@@ -715,6 +728,29 @@ describe("Access Control", () => {
         where: { userId_tenantId: { userId: "user-1", tenantId: HOME_TENANT_ID } },
         create: { userId: "user-1", tenantId: HOME_TENANT_ID, groupId: "g-1" },
       }));
+      // Noted with it, so no later account is ever promoted this way.
+      expect(mockTx.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { key: "platform.adminSeen" } }));
+    });
+
+    it("does not make the only account left a platform admin once the installation had one", async () => {
+      signedIn(account("user-9"));
+      mockPrismaUser.count.mockResolvedValue(1);
+      mockPrismaSetting.findUnique.mockResolvedValue({ key: "platform.adminSeen" });
+
+      const result = await getViewer();
+
+      expect(mockEnsureFullAccessGroup).not.toHaveBeenCalled();
+      expect(mockTx.user.update).not.toHaveBeenCalled();
+      expect(result!.isPlatformAdmin).toBe(false);
+      expect(result!.permissions).toEqual([]);
+    });
+
+    it("notes that the installation has a platform admin when one signs in", async () => {
+      signedIn(account("admin-1", { platformRole: "ADMIN" }));
+
+      await getViewer();
+
+      expect(mockPrismaSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { key: "platform.adminSeen" }, update: {} }));
     });
 
     it("should not auto-promote when multiple users exist", async () => {

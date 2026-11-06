@@ -1,5 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { restoreService } from "@/services/restore/restore-service";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
@@ -10,8 +11,9 @@ import { auditService } from "@/services/audit-service";
 import { userService } from "@/services/user/user-service";
 import { restoreAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { namedTenants } from "@/lib/core/audit-tenants";
 import { requestRefusal } from "@/lib/server/permission-refusal";
-import { configBackupRefusal } from "@/lib/server/config-backup-guard";
+import { backupPathRefusal, configBackupRefusal } from "@/lib/server/config-backup-guard";
 
 const log = logger.child({ route: "storage/restore" });
 
@@ -19,7 +21,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const params = await props.params;
@@ -30,9 +32,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const body = await req.json();
         const { file, scope, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, excludePatterns, privilegedAuth, profileIdOverride, overwriteCustomerDatabases } = body;
 
-        if (!file || typeof file !== 'string' || file.includes('..') || file.startsWith('/')) {
-            return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
-        }
+        // A path that leaves the destination answers 400, see `assertBackupPath`.
+        const badPath = backupPathRefusal(file);
+        if (badPath) return badPath;
         // A configuration backup goes back through the configuration restore, only for a platform admin.
         const configBackup = await configBackupRefusal(ctx, params.id, file);
         if (configBackup) return configBackup;
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             triggerInfo: { type: "Manual", label: startedBy },
             // Databases customers hold now on a shared server go back only once this is true.
             overwriteCustomerDatabases: overwriteCustomerDatabases === true,
-        });
+        }, ctx);
 
         // Written once the restore was accepted and runs, with where it goes and what it picked.
         const details = await restoreAuditDetails({
@@ -74,9 +76,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             databaseMapping,
             directoryMapping,
         });
-        // The customers whose databases it overwrote, which their own History never shows.
-        const customers = [...new Set((result.overwritten ?? []).map((entry) => entry.customer))].sort((a, b) => a.localeCompare(b));
-        await auditService.logFor(ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, customers.length > 0 ? { ...details, customers } : details, params.id);
+        // The customers whose databases it overwrote, which their own History never shows, with
+        // their ids, so the log of the home tenant shows the entry only to whoever reaches them all.
+        const overwritten = result.overwritten ?? [];
+        const customers = [...new Set(overwritten.map((entry) => entry.customer))].sort((a, b) => a.localeCompare(b));
+        const named = customers.length > 0 ? { customers, ...namedTenants(overwritten.map((entry) => entry.tenantId)) } : {};
+        await auditService.logFor(ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP, { ...details, ...named }, params.id);
 
         // result contains { success: true, executionId: string, message: "Restore started" }
         const { overwritten: _overwritten, ...answer } = result;

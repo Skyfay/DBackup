@@ -10,13 +10,14 @@ pnpm <command> [args]           # the same, every command is a script in package
 
 | Group | Command | What it does |
 | :--- | :--- | :--- |
-| Release | `version:bump` | Checks the fragments and the CodeQL alerts on dev, then writes the changelog block and the next version |
-| Release | `release:tag` | Tags the release on main with the title from the changelog and pushes the tag |
+| Release | `version:bump` | Checks the fragments and the CodeQL alerts on dev, then writes the changelog block and the next version. `beta` sets the next beta and leaves the fragments |
+| Release | `release:tag` | Tags the release on main with the title from the changelog and pushes the tag. `dev` tags the beta on dev |
 | Release | `release:untag` | Deletes a tag here and on GitHub |
 | Release | `version:sync` | Copies the current version to the docs and the OpenAPI files |
 | Changelog | `changelog:check` | Checks every fragment under `changelog/unreleased/` |
 | Changelog | `changelog:preview` | Prints the block the next release writes |
 | Changelog | `changelog:amend [version]` | Adds the fragments to a version block the bump wrote already, the newest unless another is named |
+| Changelog | `changelog:notes <tag>` | Prints the notes of the GitHub release of a tag, which the release workflow publishes |
 | Security | `codeql:check` | Lists the CodeQL alerts open on dev that main does not have |
 | Security | `audit:check` | Runs `pnpm audit` for the app, the docs and the website |
 | Maintenance | `update:check` | Runs `pnpm outdated` for the app, the docs and the website |
@@ -28,6 +29,7 @@ pnpm <command> [args]           # the same, every command is a script in package
 | `index.mjs` | The menu and `COMMANDS`, the list of every command |
 | `cli.mjs` | What the commands share: running git and gh, asking on the terminal |
 | `changelog.mjs` | The changelog fragments, the release block and adding to it |
+| `release-notes.mjs` | The notes of a GitHub release, of a beta from the fragments |
 | `version.mjs` | The version bump and sync |
 | `release-tag.mjs` | Creating and deleting the tag of a release |
 | `codeql.mjs` | The CodeQL alerts on dev |

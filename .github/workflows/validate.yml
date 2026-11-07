@@ -93,8 +93,9 @@ jobs:
   # Whether the end-to-end tests have anything to test. A pull request into dev that only changes
   # the docs, the website, the changelog or the unit tests skips them and asks for no approval. A
   # pull request into main and a run by hand always run them. The release skips them, the pull
-  # request into main ran them on the same code. Compares the merge commit with its base, which
-  # takes the last two commits only.
+  # request into main ran them on the same code. A beta runs them, its tag is on dev, where no pull
+  # request into main ran them. Compares the merge commit with its base, which takes the last two
+  # commits only.
   changes:
     name: Changes
     runs-on: ubuntu-latest
@@ -110,14 +111,21 @@ jobs:
           # A workflow called by the release sees the event of the release, the push of its tag.
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
+          TAG: ${{ github.ref_name }}
           # What neither the image nor the tests read. Anything else runs them, a new folder or
           # workflow too, so a path missing here costs a run and never skips one.
           SKIP: >-
             ^(docs|website|changelog|api-docs|tests|\.claude)/|(^|/)CLAUDE\.md$|^[^/]+\.md$|^(LICENSE|codecov\.yml)$|^\.github/(ISSUE_TEMPLATE|sponsors)/|^\.github/FUNDING\.yml$|^\.github/workflows/(docker-build|release|sponsors|sync-gitlab)\.yml$
         run: |
           if [ "$EVENT" = "push" ]; then
-            echo "The release skips them, the pull request into main ran them on this code."
-            echo "e2e=false" >> "$GITHUB_OUTPUT"
+            case "$TAG" in
+              *-*)
+                echo "A beta is tagged on dev, so the release runs them."
+                echo "e2e=true" >> "$GITHUB_OUTPUT" ;;
+              *)
+                echo "The release skips them, the pull request into main ran them on this code."
+                echo "e2e=false" >> "$GITHUB_OUTPUT" ;;
+            esac
             exit 0
           fi
           if [ "$EVENT" != "pull_request" ] || [ "$BASE" != "dev" ]; then
@@ -161,7 +169,11 @@ jobs:
   e2e:
     name: E2E (${{ matrix.family }})
     needs: approve
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 and later refuse to start on a kernel from 6.19 to 7.0.13, which ubuntu-latest and
+    # ubuntu-24.04 run now, see https://jira.mongodb.org/browse/SERVER-121912. The mongodb family runs
+    # on ubuntu-22.04 with its kernel 6.8 until the newer images get 7.0.14 or later. GitHub stops
+    # supporting ubuntu-22.04 in April 2027.
+    runs-on: ${{ matrix.family == 'mongodb' && 'ubuntu-22.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:

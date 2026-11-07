@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { JobService } from '@/services/jobs/job-service';
 import { scheduler } from '@/lib/server/scheduler';
+import { BULK_ROW_FAILED } from '@/lib/core/bulk';
 
 vi.mock('@/lib/server/scheduler', () => ({
     scheduler: {
@@ -76,7 +77,8 @@ describe('JobService bulk operations', () => {
 
             expect(result.succeeded).toEqual(['a', 'c']);
             expect(result.failed).toEqual([
-                { id: 'b', name: 'Weekly Archive', error: 'Record not found' },
+                // The words of the database stay in the log.
+                { id: 'b', name: 'Weekly Archive', error: BULK_ROW_FAILED },
             ]);
             expect(scheduler.refresh).toHaveBeenCalledTimes(1);
         });

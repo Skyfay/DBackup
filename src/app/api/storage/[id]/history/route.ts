@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getStorageHistory } from "@/services/dashboard-service";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "storage/history" });
 
@@ -19,10 +21,7 @@ export async function GET(
   const ctx = await getAuthContext(await headers());
 
   if (!ctx) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return unauthorized();
   }
 
   try {
@@ -39,13 +38,15 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: history });
   } catch (error) {
+    const refused = serviceRefusal(error);
+    if (refused) return refused;
     log.error(
       "Failed to fetch storage history",
       { configId: (await props.params).id },
       wrapError(error)
     );
     return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
+      { success: false, error: "The history of the destination could not be loaded. The log of DBackup has the details." },
       { status: 500 }
     );
   }

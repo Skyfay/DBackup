@@ -5,15 +5,28 @@ import prisma from '@/lib/prisma';
 import { registry } from '@/lib/core/registry';
 import { compareVersions } from '@/lib/utils';
 
+/** A platform admin with a session, who may restore into any target. */
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+
 // Mocks
 vi.mock('@/lib/prisma', () => ({
     default: {
         adapterConfig: {
             findUnique: vi.fn(),
+            // The server, looked up for the databases its customers hold, which these servers have none of.
+            findFirst: vi.fn().mockResolvedValue(null),
         },
         execution: {
             create: vi.fn()
-        }
+        },
+        // Whether the tenant of a destination shares it with customers.
+        connectionShare: {
+            count: vi.fn().mockResolvedValue(0),
+        },
+        // The tenant of the target, which reaches the local network. Its empty host is 127.0.0.1.
+        tenant: {
+            findUnique: vi.fn().mockResolvedValue({ name: "Tenant", blocksLocalNetwork: false, allowedNetworks: "[]" }),
+        },
     }
 }));
 
@@ -70,8 +83,8 @@ describe('Restore Service Safety Checks', () => {
         // Default Prisma mocks
         // @ts-expect-error -- Mock setup -- Mock setup
         prisma.adapterConfig.findUnique.mockImplementation(({ where }: any) => {
-            if (where.id === 'storage-1') return { id: 'storage-1', adapterId: 's3', config: '{}', type: 'storage' };
-            if (where.id === 'target-1') return { id: 'target-1', adapterId: 'postgres', config: '{}', type: 'database' };
+            if (where.id === 'storage-1') return { id: 'storage-1', adapterId: 's3', config: '{}', type: 'storage', tenantId: 'tenant-1' };
+            if (where.id === 'target-1') return { id: 'target-1', adapterId: 'postgres', config: '{}', type: 'database', tenantId: 'tenant-1' };
             return null;
         });
 
@@ -102,7 +115,7 @@ describe('Restore Service Safety Checks', () => {
             storageConfigId: 'storage-1',
             file: '/backup.sql',
             targetSourceId: 'target-1'
-        })).rejects.toThrow(/newer database version/);
+        }, PLATFORM_ADMIN)).rejects.toThrow(/newer database version/);
 
         // Ensure we didn't start execution
         expect(prisma.execution.create).not.toHaveBeenCalled();
@@ -131,7 +144,7 @@ describe('Restore Service Safety Checks', () => {
             storageConfigId: 'storage-1',
             file: '/backup.sql',
             targetSourceId: 'target-1'
-        })).rejects.toThrow('PASSED_CHECKS');
+        }, PLATFORM_ADMIN)).rejects.toThrow('PASSED_CHECKS');
     });
 
     it('should skip check if metadata is missing', async () => {
@@ -144,7 +157,7 @@ describe('Restore Service Safety Checks', () => {
              storageConfigId: 'storage-1',
              file: '/backup.sql',
              targetSourceId: 'target-1'
-         })).rejects.toThrow('PASSED_CHECKS');
+         }, PLATFORM_ADMIN)).rejects.toThrow('PASSED_CHECKS');
     });
 
     it('should fail if target adapter is not found', async () => {
@@ -155,6 +168,6 @@ describe('Restore Service Safety Checks', () => {
             storageConfigId: 'storage-1',
             file: '/backup.sql',
             targetSourceId: 'invalid-id'
-        })).rejects.toThrow('Target source not found');
+        }, PLATFORM_ADMIN)).rejects.toThrow('Target source not found');
     });
 });

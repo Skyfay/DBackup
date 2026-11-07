@@ -1,7 +1,5 @@
-import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { StorageAdapter, BackupMetadata } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { getTempDir } from "@/lib/temp-dir";
 import { registerAdapters } from "@/lib/adapters";
@@ -10,6 +8,8 @@ import { wrapError } from "@/lib/logging/errors";
 import path from "path";
 import fs from "fs/promises";
 import crypto from "crypto";
+import { openDestination } from "@/services/sharing/destination-access";
+import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 
 const log = logger.child({ service: "VerificationService" });
 
@@ -50,36 +50,16 @@ export class VerificationService {
     ): Promise<FileVerificationResult> {
         const verifiedAt = new Date().toISOString();
 
-        const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
-        if (!adapterConfig) throw new Error("Storage configuration not found");
-
-        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        if (!adapter) throw new Error(`Adapter '${adapterConfig.adapterId}' not found`);
-
-        const config = await resolveAdapterConfig(adapterConfig);
+        const { adapter, config } = await openDestination(adapterConfigId);
 
         // 1. Read .meta.json sidecar
         const metaPath = remotePath + ".meta.json";
         let metadata: BackupMetadata | null = null;
 
         try {
-            if (adapter.read) {
-                const content = await adapter.read(config, metaPath);
-                if (content) metadata = JSON.parse(content) as BackupMetadata;
-            }
-
-            if (!metadata) {
-                const tempMeta = path.join(getTempDir(), `verify_meta_${crypto.randomUUID()}.json`);
-                try {
-                    const ok = await adapter.download(config, metaPath, tempMeta);
-                    if (ok) {
-                        const content = await fs.readFile(tempMeta, 'utf-8');
-                        metadata = JSON.parse(content) as BackupMetadata;
-                    }
-                } finally {
-                    await fs.unlink(tempMeta).catch(() => {});
-                }
-            }
+            // Bounded, see `readSidecarText`.
+            const content = await readSidecarText(adapter, config, metaPath);
+            if (content) metadata = JSON.parse(content) as BackupMetadata;
         } catch (e: unknown) {
             log.warn("Could not read metadata for verification", { remotePath }, wrapError(e));
         }
@@ -187,7 +167,7 @@ export class VerificationService {
         verification: NonNullable<BackupMetadata['verification']>
     ) {
         metadata.verification = verification;
-        const tempPath = path.join(getTempDir(), `meta-verify-${Date.now()}.json`);
+        const tempPath = path.join(getTempDir(), `meta-verify-${crypto.randomUUID()}.json`);
         await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2));
         try {
             await adapter.upload(config, tempPath, metaPath);

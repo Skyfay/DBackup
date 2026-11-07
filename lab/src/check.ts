@@ -10,6 +10,8 @@ import { registerAdapters } from "@/lib/adapters";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { registry } from "@/lib/core/registry";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 export interface CheckResult {
     name: string;
@@ -21,9 +23,14 @@ const FINISHED = ["Success", "Partial", "Failed", "Cancelled"];
 
 /**
  * Runs every job of the lab once through the real queue and runner, one after the other, and
- * waits for each. Proves that a backup really goes from each source to each destination.
+ * waits for each. Proves that a backup really goes from each source to each destination. The lab
+ * lives in the tenant every installation starts with, like the seed puts it.
  */
-export async function runJobs(onStart: (name: string) => void): Promise<CheckResult[]> {
+export function runJobs(onStart: (name: string) => void): Promise<CheckResult[]> {
+    return runAsTenant(HOME_TENANT_ID, () => runLabJobs(onStart));
+}
+
+async function runLabJobs(onStart: (name: string) => void): Promise<CheckResult[]> {
     const { runJob } = await import("@/lib/runner");
     const { extractLastError } = await import("@/services/dashboard/health");
     const jobs = await prisma.job.findMany({ where: { name: { startsWith: "Lab " } }, orderBy: { name: "asc" } });
@@ -65,7 +72,9 @@ export async function checkConnection(row: AdapterConfig): Promise<CheckResult> 
     }
 }
 
-export async function checkConnections(): Promise<CheckResult[]> {
-    const rows = await prisma.adapterConfig.findMany({ where: { name: { startsWith: "Lab " } }, orderBy: [{ type: "asc" }, { name: "asc" }] });
-    return Promise.all(rows.map(checkConnection));
+export function checkConnections(): Promise<CheckResult[]> {
+    return runAsTenant(HOME_TENANT_ID, async () => {
+        const rows = await prisma.adapterConfig.findMany({ where: { name: { startsWith: "Lab " } }, orderBy: [{ type: "asc" }, { name: "asc" }] });
+        return Promise.all(rows.map(checkConnection));
+    });
 }

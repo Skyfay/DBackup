@@ -1,11 +1,16 @@
 import { z } from "zod";
 import { safePath, safePathRegex, safeBinaryPath, sshFields } from "./shared";
+import { PASSWORD_LINE_BREAK, fitsOptionFile } from "../database/mysql/option-file";
+import { firebirdHostProblem } from "../database/firebird/host";
+
+/** A password the MySQL and MariaDB tools read from their option file, see `option-file.ts`. */
+const optionFilePassword = () => z.string().refine(fitsOptionFile, PASSWORD_LINE_BREAK).optional();
 
 export const MySQLSchema = z.object({
     host: z.string().default("localhost"),
     port: z.coerce.number().default(3306),
     user: z.string().min(1, "User is required"),
-    password: z.string().optional(),
+    password: optionFilePassword(),
     database: z.union([z.string(), z.array(z.string())]).default(""),
     options: z.string().optional().describe("Additional mysqldump options"),
     // What the dump holds besides tables, views and triggers. A source saved before these existed
@@ -21,7 +26,7 @@ export const MariaDBSchema = z.object({
     host: z.string().default("localhost"),
     port: z.coerce.number().default(3306),
     user: z.string().min(1, "User is required"),
-    password: z.string().optional(),
+    password: optionFilePassword(),
     database: z.union([z.string(), z.array(z.string())]).default(""),
     options: z.string().optional().describe("Additional mariadb-dump options"),
     // What the dump holds besides tables, views and triggers. A source saved before these existed
@@ -117,7 +122,11 @@ export const AzureSQLSchema = z.object({
 });
 
 export const FirebirdSchema = z.object({
-    host: z.string().default("localhost"),
+    // The host goes in front of `:path` in the connection string of gbak and isql, see `firebird/host.ts`.
+    host: z.string().superRefine((value, ctx) => {
+        const problem = firebirdHostProblem(value);
+        if (problem) ctx.addIssue({ code: "custom", message: problem });
+    }).default("localhost"),
     port: z.coerce.number().default(3050),
     user: z.string().min(1, "User is required").default("SYSDBA"),
     password: z.string().optional(),

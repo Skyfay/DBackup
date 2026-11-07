@@ -1,6 +1,7 @@
 import path from "path";
 import type { AdapterConfig, FileInfo, StorageAdapter } from "@/lib/core/interfaces";
 import { isBackupFile } from "@/lib/core/backup-files";
+import { isInConfigBackupFolder } from "@/lib/core/config-backup-path";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import type { RichFileInfo } from "@/services/storage/storage-service";
@@ -95,7 +96,8 @@ export async function loadFormerBackups(
         const inside = (file: FileInfo) => folderKey(file.path).startsWith(`${folder}/`);
         const backups = listing.filter((file) => isBackupFile(file.name) && inside(file) && !seen.has(folderKey(file.path)));
         const sidecars = await loadBackupSidecars(adapter, config, listing, backups);
-        const mine = backups.filter((file) => file.jobId === jobId);
+        // Never a file of the configuration backup, by its path or its sidecar, see 05-retention.ts.
+        const mine = backups.filter((file) => file.jobId === jobId && !file.configBackup && !isInConfigBackupFolder(file.path));
         if (mine.length === 0) continue;
 
         for (const file of mine) seen.add(folderKey(file.path));

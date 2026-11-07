@@ -7,15 +7,10 @@ import { templatesAttention } from "@/components/dashboard/templates/template-at
 const quiet = { usageSpike: { active: false }, storageLimit: { active: false }, missingBackup: { active: false } };
 
 describe("the dots of the page tabs that work out what needs a look in the browser", () => {
-    it("marks the Jobs tab red for a failed last run and amber for one that missed a copy, a live run skipped", () => {
-        const jobs = [
-            { name: "Nightly MySQL", overview: { runs: [{ status: "Success" }, { status: "Failed" }] } },
-            { name: "Files to NAS", overview: { runs: [{ status: "Partial" }, { status: "Running" }] } },
-            { name: "CRM daily", overview: { runs: [{ status: "Failed" }, { status: "Success" }] } },
-        ];
-
-        expect(jobsAttention(jobs as never)).toEqual({ tone: "destructive", note: "Nightly MySQL failed on its last run. Files to NAS missed a copy on its last run" });
-        expect(jobsAttention([jobs[2]] as never)).toBeUndefined();
+    it("marks the Jobs tab red for a failed last run and amber for one that missed a copy, from the counts of the server", () => {
+        expect(jobsAttention({ failed: { count: 1, names: ["Nightly MySQL"] }, partial: { count: 1, names: ["Files to NAS"] } }))
+            .toEqual({ tone: "destructive", note: "Nightly MySQL failed on its last run. Files to NAS missed a copy on its last run" });
+        expect(jobsAttention({ failed: { count: 0, names: [] }, partial: { count: 0, names: [] } })).toBeUndefined();
     });
 
     it("marks the Backups tab for failed integrity checks and missing copies", () => {

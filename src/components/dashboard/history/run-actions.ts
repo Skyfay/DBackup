@@ -6,6 +6,14 @@ import { wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ component: "RunActions" });
 
+/**
+ * The name of the button that starts the job of a run again. A run of some databases alone, like
+ * one a customer started, is no run its job repeats, so the button says it runs the whole job.
+ */
+export function runAgainLabel(run: { someDatabases?: true }): string {
+    return run.someDatabases ? "Run the job" : "Run again";
+}
+
 /** Start a job again. Returns the id of the new run, or null when it did not start. */
 export async function startRun(jobId: string, name: string): Promise<string | null> {
     try {

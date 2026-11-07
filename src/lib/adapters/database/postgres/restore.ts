@@ -2,17 +2,17 @@ import type { ExecutionHost } from "@/lib/transport";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { BackupResult } from "@/lib/core/interfaces";
 import fs from "fs/promises";
-import path from "path";
 import {
     isMultiDbTar,
     extractSelectedDatabases,
+    extractedFileOf,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
     getTargetDatabaseName,
 } from "../common/tar-utils";
 import { PostgresConfig } from "@/lib/adapters/definitions";
-import { PG_RESTORE, PSQL, buildConnectionArgs, pgEnv } from "./args";
+import { PG_RESTORE, PSQL, buildConnectionArgs, pgEnv, dbArg, sqlLiteral } from "./args";
 
 /**
  * Extended PostgreSQL config for restore operations with runtime fields
@@ -28,7 +28,11 @@ type PostgresRestoreConfig = PostgresConfig & {
         targetName: string;
         selected: boolean;
     }>;
+    /** A customer's restore of a shared database, set by the archive restore. See `sharedRestoreRole`. */
+    sharedRestore?: boolean;
 };
+
+type RestoreLog = (msg: string, level?: LogLevel, type?: LogType, details?: string) => void;
 
 export async function prepareRestore(
     config: PostgresRestoreConfig,
@@ -40,7 +44,7 @@ export async function prepareRestore(
     const pass = usePrivileged ? config.privilegedAuth!.password : config.password;
 
     const psql = await host.which(...PSQL);
-    const args = [...buildConnectionArgs(config, { user }), "-d", "postgres"];
+    const args = [...buildConnectionArgs(config, { user }), "-d", dbArg("postgres")];
     const env = pgEnv(pass);
 
     for (const dbName of databases) {
@@ -93,7 +97,8 @@ async function restoreSingleDatabase(
     targetDb: string,
     config: PostgresRestoreConfig,
     host: ExecutionHost,
-    log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    log: RestoreLog,
+    role?: string
 ): Promise<void> {
     const pgRestore = await host.which(...PG_RESTORE);
     const pass = config.privilegedAuth?.password || config.password;
@@ -101,7 +106,7 @@ async function restoreSingleDatabase(
     await host.stageInput(sourcePath, {}, async (stagedPath) => {
         const args = [
             ...buildConnectionArgs(config),
-            "-d", targetDb,
+            "-d", dbArg(targetDb),
             "-w",
             "--clean",
             "--if-exists",
@@ -110,6 +115,8 @@ async function restoreSingleDatabase(
             "--no-comments",
             "--no-tablespaces",
             "--no-security-labels",
+            // SET ROLE right after connecting, so every object is created by that role and belongs to it.
+            ...(role ? [`--role=${role}`] : []),
             "-v",
             stagedPath,
         ];
@@ -120,6 +127,13 @@ async function restoreSingleDatabase(
 
         // pg_restore reports recoverable problems with exit code 1. Treating that
         // as a failure would reject restores that actually succeeded.
+        if (role && result.code !== 0 && /permission denied to set role/i.test(result.stderr)) {
+            throw new Error(
+                `The login of the connection may not act as the owner '${role}' of database '${targetDb}', so nothing was restored. ` +
+                `Grant that role to the login of the connection.`
+            );
+        }
+
         if (result.code !== 0 && result.code !== 1) {
             const detail = result.stderr.trim() ? `. Error: ${result.stderr.trim()}` : "";
             throw new Error(`pg_restore exited with code ${result.code}${detail}`);
@@ -160,7 +174,7 @@ export async function restoreOne(
     filePath: string,
     targetDbName: string,
     _host: ExecutionHost,
-    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    onLog?: RestoreLog
 ): Promise<void> {
     const env = { ...process.env };
     const priv = config.privilegedAuth;
@@ -168,7 +182,62 @@ export async function restoreOne(
     const password = (priv && priv.password) ? priv.password : config.password;
     if (password) env.PGPASSWORD = password;
     const usageConfig = { ...config, user };
-    await restoreSingleDatabase(filePath, targetDbName, usageConfig, _host, onLog ?? (() => {}));
+    const log: RestoreLog = onLog ?? (() => {});
+    const role = config.sharedRestore ? await sharedRestoreRole(usageConfig, targetDbName, _host, password, log) : undefined;
+    await restoreSingleDatabase(filePath, targetDbName, usageConfig, _host, log, role);
+}
+
+/**
+ * The role a customer's restore of a shared database runs as: the owner of the database.
+ *
+ * The dump holds the customer's own functions, triggers, defaults and expression indexes, and
+ * pg_restore runs them while it restores. With `--no-owner` every object it creates belongs to the
+ * login that restores, so a `SECURITY DEFINER` function of the customer would run with the rights
+ * of the provider's login ever after. `--role` makes pg_restore `SET ROLE` to the owner right after
+ * it connects, so the objects belong to the customer's role and their code runs with its rights.
+ * `--role` rather than `PGOPTIONS=-c role=...`, whose value libpq splits at spaces: only pg_restore
+ * restores here, since the adapter writes custom format dumps alone and has no psql path for plain SQL.
+ *
+ * When the owner is the login itself nothing changes, and the log says that the restore runs with
+ * the rights of the provider's login. An owner that cannot be read stops the restore, which never
+ * falls back to the provider's login on its own.
+ */
+async function sharedRestoreRole(
+    config: PostgresRestoreConfig,
+    targetDb: string,
+    host: ExecutionHost,
+    password: string | undefined,
+    log: RestoreLog,
+): Promise<string | undefined> {
+    const psql = await host.which(...PSQL);
+    // The two flags first and the name last, since only a name can hold a `|`.
+    const query =
+        "SELECT r.rolname = current_user, r.rolsuper, r.rolname FROM pg_database d " +
+        `JOIN pg_roles r ON r.oid = d.datdba WHERE d.datname = ${sqlLiteral(targetDb)}`;
+    const result = await host.exec(
+        [psql, ...buildConnectionArgs(config), "-d", dbArg(targetDb), "-w", "-X", "-t", "-A", "-c", query],
+        { env: pgEnv(password) },
+    );
+    const line = result.code === 0 ? result.stdout.replace(/\r?\n$/, "") : "";
+    const [same, superuser, ...name] = line.split("|");
+    const owner = name.join("|");
+    if (!owner || (same !== "t" && same !== "f")) {
+        const detail = result.code !== 0 && result.stderr.trim() ? `: ${result.stderr.trim()}` : "";
+        throw new Error(`Could not read the owner of database '${targetDb}', so nothing was restored${detail}`);
+    }
+
+    if (same === "t") {
+        log(
+            `Database '${targetDb}' belongs to the login of the connection, so the restore runs with its rights. Give each customer database an owner role of its own.`,
+            'warning',
+        );
+        return undefined;
+    }
+    if (superuser === "t") {
+        log(`Database '${targetDb}' belongs to a superuser role, so the restore and the functions of the database run with superuser rights.`, 'warning');
+    }
+    log(`Restoring as the owner of database '${targetDb}': ${owner}`, 'info');
+    return owner;
 }
 
 // LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
@@ -240,7 +309,7 @@ export async function restore(
                 }
 
                 const targetDb = getTargetDatabaseName(dbEntry.name, mapping);
-                const dumpPath = path.join(tempDir, dbEntry.filename);
+                const dumpPath = extractedFileOf(files, dbEntry);
 
                 log(`Restoring database: ${dbEntry.name} -> ${targetDb}`, 'info');
 

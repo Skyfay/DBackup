@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -7,6 +8,8 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { NotFoundError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { refusedUnless } from "@/lib/server/permission-refusal";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 
 const log = logger.child({ route: "credentials/[id]/reveal" });
 
@@ -20,10 +23,14 @@ export async function GET(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.REVEAL));
+    if (refused) return refused;
 
     try {
-        checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.REVEAL);
+        // The login of the destination of the configuration backup shows only to a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: [id] });
+        if (locked) return locked;
 
         // The profile without its secret, which names the entry. An unknown id ends here as a 404.
         const profile = await credentialService.getCredentialProfile(id);

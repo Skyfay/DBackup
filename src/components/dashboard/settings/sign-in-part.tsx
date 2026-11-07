@@ -103,7 +103,7 @@ export function SignInPart({ model }: { model: SettingsModel["signIn"] }) {
                         <p className="text-sm font-medium">Sign-in providers</p>
                         <p className="text-xs text-muted-foreground">
                             {model.providers.length === 0
-                                ? "None yet. Only a SuperAdmin adds one, under Users & Groups."
+                                ? "None yet. Only a platform admin adds one, under Users & Groups."
                                 : `${providerNames(enabled.map((provider) => provider.name)) || "None on"}${enabled.length < model.providers.length ? `, ${model.providers.length - enabled.length} off` : ""}. They are set up under Users & Groups.`}
                         </p>
                     </div>

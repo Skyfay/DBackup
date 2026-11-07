@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
@@ -10,6 +11,8 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 
 const log = logger.child({ route: "credentials/[id]" });
 
@@ -19,7 +22,9 @@ const UpdateCredentialSchema = z.object({
     data: z.unknown().optional(),
 });
 
-function errorResponse(error: unknown): NextResponse {
+function errorResponse(error: unknown): Response {
+    const refused = permissionRefusal(error);
+    if (refused) return refused;
     if (error instanceof ValidationError) {
         return NextResponse.json(
             { error: error.message, details: error.details },
@@ -42,7 +47,7 @@ export async function GET(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.READ);
@@ -59,10 +64,13 @@ export async function PUT(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.WRITE);
+        // The login of the destination of the configuration backup changes only with a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: [id] });
+        if (locked) return locked;
 
         const body = await req.json();
         const parsed = UpdateCredentialSchema.safeParse(body);
@@ -101,10 +109,12 @@ export async function DELETE(
 ) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.DELETE);
+        const locked = await configBackupTargetResponse(ctx, { credentialIds: [id] });
+        if (locked) return locked;
 
         // Into Recently deleted, unless `?permanently=true`, which needs the right to change the settings too.
         const permanently = permanentlyFrom(req.nextUrl.searchParams);

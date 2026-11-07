@@ -1,11 +1,11 @@
 "use client";
 
-import { CircleCheck, CircleDashed, CircleX, TriangleAlert } from "lucide-react";
+import { CircleCheck, CircleDashed, CircleX, Database, Folder, TriangleAlert } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { stageLabel } from "@/lib/core/logs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn, formatDuration } from "@/lib/utils";
-import type { RunDetail, RunStep, RunStepState, RunUpload } from "@/services/history/run-types";
+import { cn, formatBytes, formatDuration } from "@/lib/utils";
+import type { RunDetail, RunDump, RunStep, RunStepState, RunSummaryItem, RunUpload } from "@/services/history/run-types";
 import { LiveBar } from "./run-cells";
 import { RunningIcon } from "./run-live";
 import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
@@ -34,9 +34,28 @@ export function ProblemBadges({ errors, warnings }: { errors: number; warnings: 
     );
 }
 
+function counted(count: number, one: string): string {
+    return `${count.toLocaleString("en-US")} ${count === 1 ? one : `${one}s`}`;
+}
+
+/** What a step of a restore went through: how much it read, how many databases and folders it restored. */
+function restoreNote(step: RunStep, run: RunDetail): string | null {
+    const summary = run.summary.find((entry) => entry.step === step.name);
+    if (step.name === "Downloading" && run.restore && run.restore.bytes > 0) {
+        return `${run.restore.ranged ? "read" : "fetched"} ${formatBytes(run.restore.bytes)}${run.restore.ranged ? " with ranged reads" : " in full"}`;
+    }
+    if (step.name === "Restoring Databases" && summary && summary.dumps.length > 0) {
+        const done = summary.dumps.filter((dump) => dump.state === "done").length;
+        return done === summary.dumps.length ? counted(done, "database") : `${done} of ${summary.dumps.length} restored`;
+    }
+    if (step.name === "Restoring Files" && summary && summary.items.length > 0) return counted(summary.items.length, "folder");
+    return null;
+}
+
 function noteOf(step: RunStep, run: RunDetail): string | null {
     if (step.state === "skipped") return "skipped";
     if (step.state === "pending") return "next";
+    if (run.type === "Restore") return restoreNote(step, run);
     if (step.name === "Dumping Databases" && run.databases.length > 0) return `${run.databases.length} ${run.databases.length === 1 ? "database" : "databases"}`;
     if (step.name === "Uploading" && run.uploads.length > 0) {
         // An air-gapped destination that was away is no copy that should be there.
@@ -56,19 +75,62 @@ function uploadText(upload: RunUpload): string {
     return upload.state === "done" ? "stored" : "skipped";
 }
 
-function SubLine({ adapterId, name, text, state, share }: { adapterId: string; name: string; text: string; state: "done" | "failed" | "running" | "waiting" | "skipped"; share?: number | null }) {
-    const icon: RunStepState = state === "done" ? "done" : state === "failed" ? "failed" : state === "running" ? "running" : state === "skipped" ? "skipped" : "pending";
+interface SubLineProps {
+    /** The adapter whose logo leads the line, or a plain icon for a database or a folder. */
+    adapterId?: string | null;
+    icon?: typeof Database;
+    name: string;
+    text: string;
+    state: "done" | "failed" | "running" | "waiting" | "skipped" | "warning";
+    share?: number | null;
+}
+
+function SubLine({ adapterId, icon: Icon, name, text, state, share }: SubLineProps) {
+    const icon: RunStepState = state === "done" ? "done" : state === "failed" ? "failed" : state === "running" ? "running" : state === "skipped" ? "skipped" : state === "warning" ? "warning" : "pending";
     return (
         <div className="py-1.5 pr-2.5 pl-9">
             <div className="flex min-w-0 items-center gap-2 text-sm">
                 <StepIcon state={icon} className="size-3.5" />
-                <AdapterIcon adapterId={adapterId} className="size-3.5 shrink-0" />
+                {adapterId ? <AdapterIcon adapterId={adapterId} className="size-3.5 shrink-0" /> : Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
                 <span className="min-w-0 truncate">{name}</span>
                 <span className={cn("ml-auto max-w-[55%] shrink-0 truncate text-xs", state === "failed" ? "text-destructive" : "text-muted-foreground")} title={text}>{text}</span>
             </div>
             {state === "running" && <LiveBar percent={share ?? null} className="mt-1.5 ml-5.5" />}
         </div>
     );
+}
+
+const DUMP_LINE: Record<RunDump["state"], SubLineProps["state"]> = { waiting: "waiting", dumping: "running", done: "done", failed: "failed" };
+
+function dumpLine(dump: RunDump): string {
+    if (dump.state === "failed") return "not restored";
+    if (dump.state === "waiting") return "waits";
+    if (dump.state === "dumping") return dump.progress?.share !== null && dump.progress?.share !== undefined ? `${Math.round(dump.progress.share * 100)} %` : "restoring";
+    return dump.durationMs !== null ? `restored in ${formatDuration(dump.durationMs)}` : "restored";
+}
+
+/** The databases and folders of a restore under the step that restored them, like the copies under Uploading. */
+function RestoreLines({ step, run }: { step: RunStep; run: RunDetail }) {
+    const summary = run.summary.find((entry) => entry.step === step.name);
+    if (!summary || run.type !== "Restore") return null;
+    if (step.name === "Restoring Databases") {
+        return summary.dumps.map((dump) => (
+            <SubLine
+                key={dump.name}
+                icon={Database}
+                name={dump.target !== undefined && dump.target !== dump.name ? `${dump.name} → ${dump.target}` : dump.name}
+                text={dumpLine(dump)}
+                state={DUMP_LINE[dump.state]}
+                share={dump.progress?.share !== null && dump.progress?.share !== undefined ? Math.round(dump.progress.share * 100) : null}
+            />
+        ));
+    }
+    if (step.name === "Restoring Files") {
+        return summary.items.map((item: RunSummaryItem) => (
+            <SubLine key={item.key} adapterId={item.adapterId} icon={Folder} name={item.label} text={item.text} state={item.state} />
+        ));
+    }
+    return null;
 }
 
 interface StepsPaneProps {
@@ -134,6 +196,7 @@ export function StepsPane({ run, now, picked, onPick, className }: StepsPaneProp
                                         share={upload.bytes !== null && upload.total ? Math.round((upload.bytes / upload.total) * 100) : null}
                                     />
                                 ))}
+                                <RestoreLines step={step} run={run} />
                                 {step.name === "Sending Notifications" && run.notifications.map((entry) => (
                                     <SubLine key={entry.id} adapterId={entry.adapterId} name={entry.channelName} text={entry.status === "Success" ? "sent" : entry.error ?? "failed"} state={entry.status === "Success" ? "done" : "failed"} />
                                 ))}

@@ -13,6 +13,8 @@ Single sign-on runs on the **SSO plugin of better-auth**, which speaks the proto
 | `src/services/sso/oidc-provider-service.ts` | Creates, changes, switches and deletes providers, encrypting the credentials |
 | `src/services/sso/sso-providers-model.ts` | The SSO tab of Users & Groups, never the client secret |
 | `src/lib/auth/sso-guard.ts` | The hooks that refuse a provider that is off, refuse unwanted sign-ups and place new people in a group |
+| `src/lib/auth/sso-tenant-guard.ts` | Which link and which session a provider of a tenant, or a callback of any provider, lets through |
+| `src/lib/auth/sso-hooks.ts` | The database hooks of better-auth for a user, an account link and a session, which `src/lib/auth/index.ts` runs and which call the two guards |
 | `src/components/oidc/provider-logos.ts` | The logos of the provider types |
 
 ## Database Schema
@@ -44,7 +46,7 @@ model SsoProvider {
 }
 ```
 
-`defaultGroupId` has no foreign key. Deleting a group moves it to the group its members move to, or clears it, in `group-service.ts`, and a group that is gone anyway leaves new people without one.
+`defaultGroupId` has no foreign key. Deleting a group moves it to the group its members move to, or clears it, in `group-service.ts`, and a group that is gone anyway leaves new people without one. A provider of a tenant adds people only into a group, so clearing its group also switches `allowProvisioning` off. The delete hands back each provider it changed (`ssoProviders`), and the actions of `group.ts` write an `UPDATE` of the `SSO_PROVIDER` with its `name` and `changes` into the log of the platform, like an edit of the provider.
 
 ### The client secret
 
@@ -62,17 +64,32 @@ The hooks in `sso-guard.ts` decide what the browser cannot:
 
 | Hook | Refuses or does |
 | :--- | :--- |
-| `refuseDisabledProvider`, before every endpoint | Starting a sign-in through a provider that is off, and its callback, which goes back to the login page. Hiding it on the login page is not enough, the endpoints are public |
-| `refuseSsoSignUp`, before a user is created | Someone new through a provider that is off or does not add new people, whatever `requestSignUp` said |
-| `placeSsoUser`, after a user is created | Puts them into `defaultGroupId` and writes `CREATE USER` with `via: "sso"` to the audit log |
+| `refuseDisabledProvider`, before every endpoint | Starting a sign-in through a provider that is off, and its callback, which goes back to the login page. Hiding it on the login page is not enough, the endpoints are public. A callback that names no provider (`isSsoCallback`, also the shared `/sso/callback` better-auth keeps) goes back as well, since it would pass every check that reads the provider |
+| `refuseSsoSignUp`, before a user is created | Someone new through a provider that is off or does not add new people, whatever `requestSignUp` said, through a provider of a tenant without a group, and an email outside the domain of a provider of a tenant |
+| `refuseClaimedSsoSignUp`, before a user is created | Someone new through a provider of the platform whose email has a domain that the provider of a tenant claims (`claimedEmailRefusal`). better-auth hands on `sign in through your tenant`, which `/api/auth/error/error` turns into `?error=sso_tenant_domain`, and the login page tells the person from `src/components/auth/login-problems.ts` to enter their email for the provider of their tenant |
+| `placeSsoUser`, after a user is created | Gives them a membership of the provider's tenant, the home tenant for a provider of the platform, with `defaultGroupId`, none without one, and writes `CREATE USER` with `via: "sso"` to the audit log of that tenant |
+| `isSsoManagementRequest`, before every endpoint | The endpoints of the SSO plugin that manage providers and domains, like `/sso/register` or `/sso/update-provider`, answer `NOT_FOUND` to the browser. Providers change only through the actions below |
 
 The sign-in itself is written as `LOGIN` with `method: "sso"`, the provider name and its ID, see [Audit Log](/developer-guide/advanced/audit).
 
+`OIDC_AUTO_REDIRECT` names a provider of the platform. `validateOidcAutoRedirect` in `src/lib/server/startup-checks.ts` logs an error at the start for an unknown or disabled provider and for one of a tenant, and `login-page-service.ts` redirects only to a provider among the buttons of the login page, which never holds a provider of a tenant. Such a value leaves the redirect off.
+
+### Links and Providers of a Tenant
+
+better-auth links an account by its email, so `src/lib/auth/sso-tenant-guard.ts` decides which link and which session go on:
+
+- `tenantSignInRefusal`: a provider of a tenant never signs in a platform admin or an account of a platform group, only emails of exactly its domain, and while it adds nobody only the members of its tenant.
+- `allowTenantSsoLink`: a provider of a tenant never links an account that works in tenants but not in its own, which another tenant made, an account of no tenant counting as one of the home tenant (`madeElsewhere`). A provider of the platform links an account that works only in customer tenants just for someone whose session belongs to that account already, which is **Link** of a provider under Profile.
+- `refuseSsoSession`, from `beforeSsoSession`, lets a callback of a provider start a session only for an account linked to that provider. better-auth finds an account by its email and signs it in even when `allowTenantSsoLink` refused the link, so a refused link ends here, on the login page with `sso_account_not_linked`. Someone new is linked before their session starts. It asks `refuseTenantSsoSession` first, so the login page says why a provider of a tenant refused.
+- `refuseTenantSsoSession` sends a refused sign-in back to the login page with its reason, also for an account another tenant made that was linked while it was a member here, and `joinSsoTenant` adds an account that signs in through a provider of a tenant for the first time to that tenant with its group, while the provider adds people. Someone new joins the tenant when they are added (`placeSsoUser`), so this is left for an account of no tenant and a provider of the home tenant.
+
+`claimedEmailRefusal` in `src/services/sso/email-domain-claims.ts` keeps the other side closed: an account gets an email of a domain that a provider of another tenant claims, a provider of the platform counting as the home tenant, only from a platform admin or someone with `platform-accounts:write`.
+
 ## Changing Providers
 
-`GET /api/sso-providers` needs `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for a SuperAdmin the groups new people can start in.
+`GET /api/sso-providers` needs `platform-sign-in:read` or `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for a platform admin the groups new people can start in.
 
-The Server Actions in `src/app/actions/auth/oidc.ts` check `settings:write` first and then refuse anyone who is no SuperAdmin:
+The Server Actions in `src/app/actions/auth/oidc.ts` check `platform-sign-in:write`, which no group gives, so only a platform admin passes:
 
 | Action | Does |
 | :--- | :--- |
@@ -81,7 +98,7 @@ The Server Actions in `src/app/actions/auth/oidc.ts` check `settings:write` firs
 | `updateSsoProvider` | The same without the type and the provider ID, which stay. An empty secret keeps the saved one |
 | `toggleSsoProvider`, `deleteSsoProvider` | Switches a provider, deletes it with every link to it |
 
-Whoever controls a provider signs in as any user whose email it names, and skips their second factor, so no permission is enough to change one. The configuration restore in `src/app/actions/backup/config-management.ts` is for a SuperAdmin only for the same reason, it writes users and groups from a file.
+Whoever controls a provider signs in as any user whose email it names, in every tenant they work in, and skips their second factor, so no permission is enough to change one. The configuration restore in `src/app/actions/backup/config-management.ts` is for a platform admin only for the same reason, it writes every tenant, user and group from a file.
 
 ## Implementing an Adapter
 
@@ -103,7 +120,7 @@ export interface OIDCAdapter {
 3. Return `discoveryEndpoint` too. better-auth calls it in the callback, and providers like Authentik keep it at an unusual path.
 4. Add its logo to `provider-logos.ts` and its line and setup steps to `src/components/dashboard/sign-in/sign-in-adapters.ts`.
 
-`discoverEndpoints` runs the schema, calls `getEndpoints`, and refuses a provider without authorization, token or user info endpoint, or one reached over HTTPS that names them over plain HTTP.
+`discoverEndpoints` runs the schema, calls `getEndpoints`, and refuses a provider without authorization, token or user info endpoint, or one reached over HTTPS that names them over plain HTTP. Its `dialed` says whether it sent a request, false for an unknown type, fields that do not pass and a type in `READ_FROM_FIELDS` like Generic OIDC, whose endpoints are its fields. A new type that reads nothing from the provider goes there.
 
 ## Testing Locally
 

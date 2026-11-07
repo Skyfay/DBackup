@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { isStorageRole } from "@/lib/core/storage-roles";
-import prisma from "@/lib/prisma";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { SEE_SHARING_PERMISSION } from "@/lib/tenant/sharing";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { wrapError, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
-import { getConnectionOverview } from "@/services/adapters/connection-overview";
 import { createAdapter } from "@/services/adapters/adapter-create";
+import { listAdapters } from "@/services/adapters/adapter-list";
+import { platformGroupService } from "@/services/user/platform-group-service";
 
 registerAdapters();
 
@@ -20,7 +24,7 @@ const log = logger.child({ route: "adapters" });
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const { searchParams } = new URL(req.url);
@@ -40,45 +44,47 @@ export async function GET(req: NextRequest) {
              checkPermissionWithContext(ctx, PERMISSIONS.NOTIFICATIONS.READ);
         }
         // Security: Require type parameter to prevent leaking all adapter configs
-        else if (!type) {
+        else {
             return NextResponse.json(
                 { error: "Type parameter is required (database, storage, or notification)" },
                 { status: 400 }
             );
         }
 
-        const adapters = await prisma.adapterConfig.findMany({
-            where: {
-                ...(type ? { type } : {}),
-                ...(role && type === 'storage' ? { storageRole: role } : {}),
-            },
-            orderBy: { createdAt: 'desc' }
+        // The servers of other tenants whose databases the tenant holds, which only the Connections
+        // page asks for with `shared=true`. A tenant has to be open, All tenants lists none of them.
+        // The newest backup of each database comes along for whoever may see, restore or download it.
+        const sharedServers = type === "database" && searchParams.get("shared") === "true" && ctx.tenantId && !ctx.allTenants
+            ? {
+                  tenantId: ctx.tenantId,
+                  backups: [PERMISSIONS.STORAGE.READ, PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD].some((permission) => hasPermissionWithContext(ctx, permission)),
+              }
+            : undefined;
+
+        // Every row is the safe DTO, so a decrypted secret never reaches the client whatever the
+        // caller may see. The connection tables ask for usage, last backup and health on top.
+        const shares = hasPermissionWithContext(ctx, SEE_SHARING_PERMISSION);
+        const items = await listAdapters(type, {
+            role,
+            overview: searchParams.get("overview") === "true",
+            shares,
+            // The tenants a share names, within the reach of the platform group of the viewer.
+            shareReach: shares ? await platformGroupService.reachOf(ctx.userId) : undefined,
+            sharedServers,
         });
-
-        // Map every row through the safe DTO. `toAdapterListItem` redacts all
-        // sensitive keys (deletes them, not blanks them) and reports `secretStatus`,
-        // so a decrypted secret can never reach the client regardless of caller
-        // permission level. See src/lib/adapters/dto.ts.
-        const items = adapters.map(toAdapterListItem);
-
-        // The connection tables ask for usage, last backup and health on top. Other callers
-        // skip it, because it costs several aggregate queries.
-        if (searchParams.get("overview") === "true") {
-            const overview = await getConnectionOverview(items.map((item) => item.id));
-            return NextResponse.json(items.map((item) => ({ ...item, overview: overview.get(item.id) ?? null })));
-        }
-
         return NextResponse.json(items);
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Failed to fetch adapters";
-        return NextResponse.json({ error: message }, { status: 500 });
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
+        log.error("Listing connections failed", {}, wrapError(error));
+        return NextResponse.json({ error: "The connections could not be loaded. The log of DBackup has the details." }, { status: 500 });
     }
 }
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -92,7 +98,13 @@ export async function POST(req: NextRequest) {
             checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.WRITE);
         } else if (type === 'notification') {
             checkPermissionWithContext(ctx, PERMISSIONS.NOTIFICATIONS.WRITE);
+        } else {
+            // A kind without a permission of its own is no connection, so nothing is created.
+            return NextResponse.json({ success: false, error: "The type must be database, storage or notification" }, { status: 400 });
         }
+        // A new connection never signs in with the logins of the destination of the configuration backup.
+        const locked = await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
+        if (locked) return locked;
 
         let newAdapter;
         try {
@@ -114,7 +126,9 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(toAdapterListItem(newAdapter), { status: 201 });
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         log.error("Create adapter error", {}, wrapError(error));
-        return NextResponse.json({ error: getErrorMessage(error) || "Failed to create adapter" }, { status: 500 });
+        return NextResponse.json({ error: "The connection could not be created. The log of DBackup has the details." }, { status: 500 });
     }
 }

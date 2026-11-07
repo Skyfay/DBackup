@@ -54,6 +54,7 @@ Nothing locks you in. Every database backup is a standard dump and every file ba
 - **Restore what you need** - a whole database, a database under a new name, or a single file from a folder backup
 - **Know what happens** - live progress, a history of every run, storage alerts and nine notification channels
 - **Built for teams** - SSO through OIDC, groups with fine-grained permissions, 2FA and passkeys, an audit log and a REST API with scoped keys
+- **Tenants for MSPs** - one instance serves many customers, each with its own connections, jobs, backups, keys, people and audit log
 
 ## 🗄️ Supported
 
@@ -75,6 +76,12 @@ Nothing locks you in. Every database backup is a standard dump and every file ba
 **Notifications**: Discord, Slack, Microsoft Teams, Telegram, Gotify, ntfy, webhooks, SMS through Twilio and email.
 
 Every one of them has a setup guide in the [documentation](https://docs.dbackup.app).
+
+## 🏢 For MSPs
+
+One DBackup serves many customers. Each tenant keeps its own connections, jobs, backups, encryption keys, people and audit log, and sees nothing of the others. Your team works across them in All tenants and through platform groups, on every tenant or on selected ones, while customers join with an invitation link or through a sign-in provider of their own.
+
+A tenant of the MSP can give single databases of a shared server to the customers they belong to, and share its destinations and notification channels with them. The platform decides what each tenant may add itself, how many backups it may start on demand and whether its connections reach the local network. An existing instance moves into its first tenant with the update and works as before. The [tenants guide](https://docs.dbackup.app/user-guide/admin/tenants) shows how to set it up.
 
 ## 🚀 Quick Start
 

@@ -94,7 +94,7 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL dump over a %s host", (ki
         const argv = host.calls.spawn[0];
         expect(argv[0]).toBe("pg_dump");
         expect(argv[argv.indexOf("-F") + 1]).toBe("c");
-        expect(argv[argv.indexOf("-d") + 1]).toBe("shop");
+        expect(argv[argv.indexOf("-d") + 1]).toBe("dbname='shop'");
     });
 
     it("passes connection settings as separate arguments", async () => {

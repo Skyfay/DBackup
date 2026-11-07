@@ -1,29 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { detail, dumpingDetail, integrityDetail, liveDetail, serve } from "./history-fixtures";
+import { detail, dumpingDetail, integrityDetail, liveDetail, restoreDetail, serve } from "./history-fixtures";
 
 let search = new URLSearchParams();
 const push = vi.fn();
 const replace = vi.fn();
 const back = vi.fn();
+const refresh = vi.fn();
 vi.mock("next/navigation", () => ({
-    useRouter: () => ({ push, replace, back }),
+    useRouter: () => ({ push, replace, back, refresh }),
     useSearchParams: () => search,
+    usePathname: () => "/dashboard/history/run",
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/auth/client", () => ({
     useSession: () => ({ data: { user: { timezone: "UTC", dateFormat: "yyyy-MM-dd", timeFormat: "HH:mm" } } }),
 }));
+const switchTenant = vi.hoisted(() => vi.fn());
+vi.mock("@/app/actions/tenant/tenant", () => ({ switchTenant }));
 
 import { originOf, runHref } from "@/components/dashboard/history/run-links";
 import { RunPage } from "@/components/dashboard/history/run-page";
+import { TenantViewProvider } from "@/components/tenant/tenant-view";
 
 Element.prototype.scrollIntoView = vi.fn();
-const access = { canExecute: true, canOpenJobs: true, canOpenBackups: true, canOpenConnections: true };
-const open = (address: string) => {
+const access = { canExecute: true, cancels: ["Backup", "Restore", "IntegrityCheck", "Verification"], canOpenJobs: true, canOpenBackups: true, canOpenConnections: true };
+const open = (address: string, given = access) => {
     search = new URLSearchParams(address);
-    return render(<RunPage access={access} />);
+    return render(<RunPage access={given} />);
 };
 
 describe("run links", () => {
@@ -65,6 +70,26 @@ describe("the page of a run", () => {
         expect(screen.getByText("Google Drive failed")).toBeInTheDocument();
     });
 
+    it("tells a restore like a backup: the archive it read, how much, every database with where it went and every folder", async () => {
+        serve({ run: restoreDetail() });
+        const user = userEvent.setup();
+        open("id=restore");
+
+        const summary = await screen.findByRole("region", { name: "Summary" });
+        expect(within(summary).getByText("Shop_offsite_2026-10-17.tar")).toBeInTheDocument();
+        expect(within(summary).getByText("NAS Backups")).toBeInTheDocument();
+        expect(within(summary).getByText("uploads → Local:/srv/www/uploads")).toBeInTheDocument();
+        await user.click(within(summary).getByRole("button", { name: /shop → shop_test/ }));
+        expect(within(summary).getByText("connecting to database for restore")).toBeInTheDocument();
+
+        const steps = screen.getByRole("region", { name: "Steps" });
+        expect(within(steps).getByText("read 5.5 KB with ranged reads")).toBeInTheDocument();
+        expect(within(steps).getByText("shop → shop_test")).toBeInTheDocument();
+        expect(within(steps).getByText("restored in 1s")).toBeInTheDocument();
+        expect(within(steps).getByText("1 folder")).toBeInTheDocument();
+        expect(screen.getByText("of an archive of 11 KB")).toBeInTheDocument();
+    });
+
     it("tells each problem once in plain words, with what to do and a way to its lines", async () => {
         serve();
         const user = userEvent.setup();
@@ -97,6 +122,14 @@ describe("the page of a run", () => {
 
         await user.click(within(log).getByRole("button", { name: "Show every step" }));
         expect(within(log).getByText("Upload complete: Shop offsite/a.tar")).toBeInTheDocument();
+    });
+
+    it("offers no Cancel on a live restore to someone who may run backups but not restore", async () => {
+        serve({ run: { ...liveDetail(), type: "Restore" } });
+        open("id=crm&from=overview", { ...access, cancels: ["Backup"] });
+
+        expect(await screen.findAllByText("Live")).not.toHaveLength(0);
+        expect(screen.queryByRole("button", { name: /Cancel run/ })).not.toBeInTheDocument();
     });
 
     it("follows a live run with its progress, the upload in one row, who waits and a way to cancel it", async () => {
@@ -241,5 +274,57 @@ describe("the page of a run", () => {
 
         expect(await screen.findByText("The log of this run was removed")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Copy the log" })).toBeDisabled();
+    });
+});
+
+describe("the page of a run in All tenants", () => {
+    const tenants = [{ id: "acme", name: "Acme GmbH" }, { id: "globex", name: "Globex AG" }];
+    const openInAllTenants = (address: string) => {
+        search = new URLSearchParams(address);
+        return render(
+            <TenantViewProvider value={{ tenants, activeTenantId: null, allTenants: true, isPlatformAdmin: true }}>
+                <RunPage access={access} />
+            </TenantViewProvider>
+        );
+    };
+
+    beforeEach(() => {
+        push.mockClear();
+        refresh.mockClear();
+        switchTenant.mockReset();
+    });
+
+    it("reads the run with a note that opens it in its tenant, where it can be run again", async () => {
+        serve({ run: detail({ tenantId: "acme" }) });
+        const user = userEvent.setup();
+        openInAllTenants("id=offsite&from=history");
+
+        expect(await screen.findByText("You look at this in All tenants")).toBeInTheDocument();
+        expect(screen.getByText("Open it in Acme GmbH to change it.")).toBeInTheDocument();
+        expect(screen.getByRole("region", { name: "Steps" })).toBeInTheDocument();
+        // A finished backup offers Run again only in its tenant.
+        expect(screen.queryByRole("button", { name: /Run again/ })).not.toBeInTheDocument();
+
+        switchTenant.mockResolvedValue({ success: true, data: { id: "acme", name: "Acme GmbH" } });
+        await user.click(screen.getByRole("button", { name: /Open in Acme GmbH/ }));
+        expect(switchTenant).toHaveBeenCalledWith("acme");
+        expect(push).toHaveBeenCalledWith("/dashboard/history/run?id=offsite&from=history");
+    });
+
+    it("offers no way to cancel a live run of a tenant", async () => {
+        serve({ run: { ...liveDetail(), tenantId: "acme" } });
+        openInAllTenants("id=crm");
+
+        expect(await screen.findByText("You look at this in All tenants")).toBeInTheDocument();
+        expect(screen.getAllByText("Live").length).toBeGreaterThan(0);
+        expect(screen.queryByRole("button", { name: /Cancel run/ })).not.toBeInTheDocument();
+    });
+
+    it("shows no note inside a tenant", async () => {
+        serve({ run: detail({ tenantId: "acme" }) });
+        open("id=offsite");
+
+        expect(await screen.findByRole("button", { name: /Run again/ })).toBeInTheDocument();
+        expect(screen.queryByText("You look at this in All tenants")).not.toBeInTheDocument();
     });
 });

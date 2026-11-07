@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Database, Info, TriangleAlert } from "lucide-react";
+import { ChevronRight, Database, EyeOff, Info, TriangleAlert } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
@@ -57,12 +57,18 @@ export function NowRow({ lead, name, part, percent, text, eta, hint, flat = fals
     );
 }
 
+/** "shop → shop_test", the name of a database a restore wrote into another, its plain name otherwise. */
+export function dumpName(dump: RunDump): string {
+    return dump.target !== undefined ? `${dump.name} → ${dump.target}` : dump.name;
+}
+
 export function dumpNow(dump: RunDump): Omit<NowRowProps, "lead" | "flat"> {
     const progress = dump.progress;
     const percent = progress?.share !== null && progress?.share !== undefined ? Math.round(progress.share * 100) : null;
-    const share = percent === null ? "" : `${progress?.exact ? "" : "about "}${percent} % · `;
+    // A share counted by the tool already says how far it is.
+    const share = percent === null || progress?.text === `${percent} %` ? "" : `${progress?.exact ? "" : "about "}${percent} % · `;
     return {
-        name: dump.name,
+        name: dumpName(dump),
         part: progress?.part ?? null,
         percent,
         text: `${share}${progress?.text ?? "starting"}`,
@@ -215,7 +221,7 @@ export function DumpRow({ dump, live }: { dump: RunDump; live: boolean }) {
     const running = dump.state === "dumping";
     const [open, setOpen] = useState(dump.state === "failed" || dump.warnings.length > 0);
     const lines = dump.outputs.reduce((sum, output) => sum + output.lines.length, 0);
-    const openable = Boolean(dump.command) || lines > 0 || dump.warnings.length > 0 || dump.errors.length > 0;
+    const openable = Boolean(dump.command) || Boolean(dump.note) || lines > 0 || dump.warnings.length > 0 || dump.errors.length > 0;
     const shown = (running || open) && openable;
     const { facts, right } = dumpFacts(dump);
     const state = dump.state === "done" && dump.warnings.length > 0 ? "warning" : DUMP_STATE[dump.state];
@@ -228,7 +234,7 @@ export function DumpRow({ dump, live }: { dump: RunDump; live: boolean }) {
                 <RowButton open={open} openable={openable} onToggle={() => setOpen((value) => !value)}>
                     <StepIcon state={state} className="size-3.5" />
                     <Database className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className={cn("shrink-0 font-medium", dump.state === "waiting" && "text-muted-foreground")}>{dump.name}</span>
+                    <span className={cn("shrink-0 font-medium", dump.state === "waiting" && "text-muted-foreground")}>{dumpName(dump)}</span>
                     {facts && <span className={cn("min-w-0 truncate", dump.state === "failed" ? "text-destructive" : "text-muted-foreground")}>{facts}</span>}
                     <span className="ml-auto shrink-0 pl-2 text-muted-foreground tabular-nums">{right}<Count count={lines} /></span>
                 </RowButton>
@@ -236,6 +242,7 @@ export function DumpRow({ dump, live }: { dump: RunDump; live: boolean }) {
             {shown && (
                 <Panel>
                     {dump.command && <CommandLine command={dump.command} />}
+                    {dump.note && <p className="flex items-center gap-2 text-xs text-muted-foreground"><EyeOff className="size-3.5 shrink-0" aria-hidden="true" />{dump.note}</p>}
                     {dump.errors.length > 0 && <div className="space-y-1">{dump.errors.map((error, index) => <p key={index}><Mono tone="error">{error}</Mono></p>)}</div>}
                     {dump.warnings.length > 0 && <WarningList kinds={dump.warnings} />}
                     {dump.outputs.map((output) => <LinesBlock key={output.source} output={output} label={dump.name} live={running && live} />)}
@@ -281,14 +288,18 @@ export function Rows({ children }: { children: React.ReactNode }) {
     return <div className="mt-2.5 divide-y overflow-hidden rounded-xl border">{children}</div>;
 }
 
-/** A sentence of the summary, with the program the step ran as a badge where it says {tool}. */
-export function Told({ text, tool }: { text: string; tool: string | null }) {
-    const [before, after] = text.split("{tool}");
+/**
+ * A sentence of the summary, with the program the step ran as a badge where it says {tool}, and
+ * the archive a restore read in a monospace font where it says {file}.
+ */
+export function Told({ text, tool, file = null }: { text: string; tool: string | null; file?: string | null }) {
     return (
         <p className="mt-1 text-sm leading-6">
-            {before}
-            {after !== undefined && tool && <SourceBadge source={tool} />}
-            {after}
+            {text.split(/(\{tool\}|\{file\})/).map((part, index) => {
+                if (part === "{tool}") return tool ? <SourceBadge key={index} source={tool} /> : null;
+                if (part === "{file}") return file ? <Mono key={index}>{file}</Mono> : null;
+                return part;
+            })}
         </p>
     );
 }

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { registerAdapters } from "@/lib/adapters";
 import { storageService } from "@/services/storage/storage-service";
-import { backupAuditDetails } from "@/services/storage/backup-audit";
+import { backupAuditDetails, destinationAuditName } from "@/services/storage/backup-audit";
+import { auditedProbe } from "@/services/adapters/probe-audit";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
+import { configBackupRefusal } from "@/lib/server/config-backup-guard";
 
 const log = logger.child({ route: "storage/files" });
 
@@ -19,7 +23,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -30,25 +34,22 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const typeFilter = url.searchParams.get("typeFilter") || undefined;
         const bypassCache = url.searchParams.get("refresh") === "true";
 
-        // Delegate logic to Service
-        const enrichedFiles = await storageService.listFilesWithMetadata(params.id, typeFilter, bypassCache);
+        const list = () => storageService.listFilesWithMetadata(params.id, typeFilter, bypassCache);
+        if (!bypassCache) return NextResponse.json(await list());
 
-        return NextResponse.json(enrichedFiles);
+        // A refresh lists the destination live with its saved login, so it gets an entry like Check now,
+        // once it ran. A destination the tenant may not use is a refusal and writes none.
+        const name = await destinationAuditName(params.id);
+        const target = { record: { id: params.id, name }, ...(name ? { names: [name] } : {}) };
+        return NextResponse.json(await auditedProbe(ctx, "storage_check", target, list));
 
     } catch (error: unknown) {
+        // A destination the tenant may not use reads like one that does not exist.
+        const refused = serviceRefusal(error);
+        if (refused) return refused;
         const resolvedParams = await props.params.catch(() => ({ id: "unknown" }));
         log.error("List files error", { storageId: resolvedParams.id }, wrapError(error));
-
-        // Handle specific service errors (like Not Found) with correct status mappings
-        const errorMessage = getErrorMessage(error) || "An unknown error occurred";
-        if (errorMessage.includes("not found")) {
-            return NextResponse.json({ error: errorMessage }, { status: 404 });
-        }
-        if (errorMessage.includes("not a storage adapter")) {
-            return NextResponse.json({ error: errorMessage }, { status: 400 });
-        }
-
-        return NextResponse.json({ error: errorMessage }, { status: 500 });
+        return NextResponse.json({ error: "The files of the destination could not be listed. The log of DBackup has the details." }, { status: 500 });
     }
 }
 
@@ -56,7 +57,7 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -68,6 +69,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
         if (!path) {
             return NextResponse.json({ error: "Path is required" }, { status: 400 });
         }
+        // A configuration backup is the platform's, deleting it takes away the copy of every tenant.
+        const configBackup = await configBackupRefusal(ctx, params.id, path);
+        if (configBackup) return configBackup;
 
         // Delegate logic to Service
         const success = await storageService.deleteFile(params.id, path);
@@ -86,14 +90,12 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
         return NextResponse.json({ success: true });
 
     } catch (error: unknown) {
+        // A path that names no file, like the root of the destination, a destination that is gone and a
+        // backup later ones of its chain build on are the caller's to fix.
+        const refused = serviceRefusal(error);
+        if (refused) return refused;
         const resolvedParams = await props.params.catch(() => ({ id: "unknown" }));
         log.error("Delete file error", { storageId: resolvedParams.id }, wrapError(error));
-         const errorMessage = getErrorMessage(error) || "An unknown error occurred";
-
-         if (errorMessage.includes("not found")) {
-             return NextResponse.json({ error: errorMessage }, { status: 404 });
-         }
-
-        return NextResponse.json({ error: errorMessage }, { status: 500 });
+        return NextResponse.json({ error: "The file could not be deleted. The log of DBackup has the details." }, { status: 500 });
     }
 }

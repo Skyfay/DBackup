@@ -147,5 +147,5 @@ export function uiSelected(): boolean {
     return !names?.length || names.includes("ui");
 }
 
-/** The UI tests back up one database, PostgreSQL 18. */
-export const UI_SERVICES = ["postgres-18"];
+/** The UI tests back up one database, PostgreSQL 18, and read the mail of a shared channel in Mailpit. */
+export const UI_SERVICES = ["postgres-18", NOTIFY.mailpit.service];

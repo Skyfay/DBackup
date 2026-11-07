@@ -11,6 +11,7 @@ import type { DayKey } from "@/components/dashboard/storage/explorer/timeline-mo
 import { useBackupActions } from "@/components/dashboard/storage/explorer/use-backup-actions";
 import { needsRestoreScopeChoice } from "@/components/dashboard/storage/restore-scope";
 import { useRunJob } from "@/components/dashboard/widgets/use-run-job";
+import { useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -81,6 +82,8 @@ function DayBackup({ run, picked, access, fallback }: {
         canViewHistory: access.canViewHistory,
         copiesOf: () => backup?.copies ?? [],
     });
+    // A check of the copies records a run, which All tenants never writes, so there the day only shows its backup.
+    const { allTenants } = useTenantView();
 
     if (loaded.loading) return <PanelSkeleton />;
     if (!loaded.data) return <p className="p-5 text-sm text-muted-foreground">{loaded.error ?? "The backup could not be loaded."}</p>;
@@ -101,7 +104,10 @@ function DayBackup({ run, picked, access, fallback }: {
                 frame="panel"
                 data={data}
                 destinations={destinations}
-                handlersFor={(file, destinationId) => actions.handlersFor({ file, destinationId })}
+                handlersFor={(file, destinationId) => {
+                    const handlers = actions.handlersFor({ file, destinationId });
+                    return allTenants ? { ...handlers, onVerify: undefined } : handlers;
+                }}
                 onDeleteEverywhere={access.canDelete ? () => actions.askDelete(targetsOf(backup, []), "Delete this backup everywhere?") : undefined}
                 canViewHistory={access.canViewHistory}
                 picked={picked ? {

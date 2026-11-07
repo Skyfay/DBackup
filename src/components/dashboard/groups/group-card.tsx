@@ -36,7 +36,7 @@ export function GroupCard({ group, onOpen, actions }: GroupCardProps) {
                 <div className="-mt-1 -mr-2">{actions}</div>
             </div>
             <p className="min-h-10 text-sm">{groupLine(group)}</p>
-            <LevelStrip permissions={group.permissions} superAdmin={group.superAdmin} />
+            <LevelStrip permissions={group.permissions} fullAccess={group.superAdmin} />
             <div className="flex items-center gap-3 border-t pt-3">
                 <MemberFaces members={group.members} />
                 <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">

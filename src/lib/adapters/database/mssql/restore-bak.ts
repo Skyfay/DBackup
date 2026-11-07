@@ -4,11 +4,12 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { MSSQLConfig } from "@/lib/adapters/definitions";
 import { executeQuery, executeQueryWithMessages, type SqlServerMessage } from "./connection";
 import { getDialect, type MSSQLDatabaseDialect } from "./dialects";
-import { assertValidDatabaseName, toPhysicalFileName } from "./identifiers";
+import { assertValidDatabaseName, escapeTSqlString, toPhysicalFileName, validateDatabaseName } from "./identifiers";
 import { buildMoveTargets, getInstanceDefaultPaths, joinServerPath, serverDirname, type MoveTarget } from "./server-paths";
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
+import { assertSharedFolderOffOwnData } from "./shared-folder";
 
 type RestoreLog = (msg: string, level?: LogLevel, type?: LogType, details?: string) => void;
 
@@ -16,13 +17,72 @@ type MSSQLRestoreOneConfig = MSSQLConfig & {
     detectedVersion?: string;
     backupPath?: string;
     localBackupPath?: string;
+    /** A customer's restore of a shared database, set by the archive restore. See `restoreBakFromServer`. */
+    sharedRestore?: boolean;
 };
+
+const nameOf = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
+
+/**
+ * Whether the .bak was made on another server than the one it goes to, by the name of the server
+ * the backup records against the names this one answers to. The file paths in such a backup are
+ * those of the other server, which may not exist here or belong to another database, like a
+ * database moved to another server under the same name. A name that cannot be read counts as the
+ * same server, so a restore that worked before works as it did.
+ */
+async function madeElsewhere(config: MSSQLConfig, host: ExecutionHost, serverPath: string): Promise<boolean> {
+    try {
+        const header = await executeQuery(config, host, `RESTORE HEADERONLY FROM DISK = N'${serverPath.replace(/'/g, "''")}'`);
+        const made = nameOf((header.recordset?.[0] as Record<string, unknown> | undefined)?.ServerName);
+        const here = await executeQuery(config, host, "SELECT @@SERVERNAME AS ServerName, CAST(SERVERPROPERTY('ServerName') AS nvarchar(256)) AS PropertyName");
+        const row = here.recordset?.[0] as Record<string, unknown> | undefined;
+        const names = [nameOf(row?.ServerName), nameOf(row?.PropertyName)].filter((name): name is string => name !== null);
+        if (!made || names.length === 0) return false;
+        return !names.some((name) => name.toLowerCase() === made.toLowerCase());
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Refuses MOVE targets that are files of another database of the server. The restore runs with
+ * `REPLACE`, which overwrites such a file where its database is offline, and SQL Server lists the
+ * files of every attached database, offline ones included, in `sys.master_files`. A file of the
+ * target database itself is what a restore over it replaces, so it stays allowed.
+ */
+async function assertMoveTargetsFree(config: MSSQLConfig, host: ExecutionHost, targetDb: string, moves: MoveTarget[]): Promise<void> {
+    if (moves.length === 0) return;
+    const paths = moves.map((move) => `N'${escapeTSqlString(move.physicalPath)}'`).join(", ");
+    const result = await executeQuery(
+        config,
+        host,
+        "SELECT physical_name AS TakenPath FROM sys.master_files " +
+            `WHERE physical_name IN (${paths}) AND database_id <> ISNULL(DB_ID(N'${escapeTSqlString(targetDb)}'), -1)`
+    );
+    const taken = (result.recordset ?? [])
+        .map((row: Record<string, unknown>) => row.TakenPath)
+        .find((value: unknown): value is string => typeof value === "string" && value.length > 0);
+    if (taken) {
+        throw new Error(
+            `Cannot restore ${targetDb}: its file ${taken} is a file of another database on the server. ` +
+                "Restore under another name, or move or drop that database first."
+        );
+    }
+}
 
 /**
  * Restores one .bak that is already on the server's filesystem into `target.target`.
  *
- * Only a rename needs MOVE. Restoring under the original name leaves the files where the
- * backup already says they belong.
+ * A rename needs MOVE, and so does a backup made on another server, whose files go to the data
+ * folder of this one. Restoring under the original name on the server that made the backup leaves
+ * the files where the backup already says they belong.
+ *
+ * A customer's restore of a shared database (`options.shared`) never follows the paths of the
+ * backup. Its files always go to the default data and log folders of the instance under the name
+ * of the database, since a customer who may change the files of their database could otherwise
+ * point a later restore at a file of another database. Afterwards it switches off TRUSTWORTHY and
+ * cross database ownership chaining, should the backup carry them, so the code of the database
+ * stays inside it.
  */
 export async function restoreBakFromServer(
     config: MSSQLConfig,
@@ -30,8 +90,10 @@ export async function restoreBakFromServer(
     dialect: MSSQLDatabaseDialect,
     serverPath: string,
     target: { original: string; target: string },
-    log: RestoreLog
+    log: RestoreLog,
+    options: { shared?: boolean } = {}
 ): Promise<void> {
+    const shared = options.shared === true;
     log(`Restoring from: ${serverPath}`);
 
     // Get file list from backup to determine logical names
@@ -48,15 +110,19 @@ export async function restoreBakFromServer(
     log(`Restoring database: ${target.original} -> ${target.target}`);
 
     let moveOptions: MoveTarget[] | undefined;
-    if (target.original !== target.target) {
+    const elsewhere = !shared && target.original === target.target && (await madeElsewhere(config, host, serverPath));
+    if (elsewhere) log("The backup was made on another server, so its files go to the data folder of this one.");
+    if (shared) log("A restore of a shared database puts its files into the data folder of the server.");
+    if (target.original !== target.target || elsewhere || shared) {
         // The target name becomes a filename here, so path separators have
         // to go - same substitution SQL Server applies to its own files.
         const fileBaseName = toPhysicalFileName(target.target);
         const defaults = await getInstanceDefaultPaths(config, host);
-        moveOptions = buildMoveTargets(logicalFiles, fileBaseName, defaults);
+        moveOptions = buildMoveTargets(logicalFiles, fileBaseName, defaults, { backupFolders: !shared });
 
         const directory = moveOptions.length > 0 ? serverDirname(moveOptions[0].physicalPath) : null;
         if (directory) log(`Placing database files in: ${directory}`);
+        await assertMoveTargetsFree(config, host, target.target, moveOptions);
     }
 
     const restoreQuery = dialect.getRestoreQuery(target.target, serverPath, {
@@ -82,6 +148,29 @@ export async function restoreBakFromServer(
         const message = error instanceof Error ? error.message : String(error);
         log(`Restore failed for ${target.target}: ${message}`, "error");
         throw error;
+    }
+
+    if (shared) await keepCodeInsideDatabase(config, host, target.target, log);
+}
+
+/**
+ * Switches off TRUSTWORTHY and cross database ownership chaining of a restored shared database
+ * where the backup brought either along. With TRUSTWORTHY on, a module of the database that runs
+ * `EXECUTE AS OWNER` reaches the server with the rights of the database's owner, which after a
+ * restore is often the provider's login. Only a sysadmin changes either setting, so a login that is none
+ * leaves a warning instead of failing a restore that already wrote the database.
+ */
+async function keepCodeInsideDatabase(config: MSSQLConfig, host: ExecutionHost, database: string, log: RestoreLog): Promise<void> {
+    const literal = escapeTSqlString(database);
+    const quoted = validateDatabaseName(database);
+    const query =
+        `IF EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${literal}' AND is_trustworthy_on = 1) ALTER DATABASE [${quoted}] SET TRUSTWORTHY OFF; ` +
+        `IF EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${literal}' AND is_db_chaining_on = 1) ALTER DATABASE [${quoted}] SET DB_CHAINING OFF;`;
+    try {
+        await executeQuery(config, host, query);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Could not switch off TRUSTWORTHY and cross database ownership chaining of ${database}: ${message}`, "warning");
     }
 }
 
@@ -111,6 +200,8 @@ export async function restoreOne(
     const fileName = `dbackup-restore-${crypto.randomUUID()}.bak`;
     const serverPath = joinServerPath(serverBackupPath, fileName);
     const sharedPath = path.join(localBackupPath, fileName);
+    // No restore stages a backup in the own data of DBackup, also through a link that points there by now.
+    if (!useSSH) await assertSharedFolderOffOwnData(localBackupPath);
 
     try {
         if (useSSH) {
@@ -125,7 +216,7 @@ export async function restoreOne(
         await restoreBakFromServer(config, host, dialect, serverPath, {
             original: originalDbName ?? targetDbName,
             target: targetDbName,
-        }, log);
+        }, log, { shared: config.sharedRestore === true });
     } finally {
         if (useSSH) {
             await host.removeFile(serverPath).catch(() => {});

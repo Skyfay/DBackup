@@ -2,7 +2,8 @@
 
 import { Database } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
-import { lineGroups, type DbFilter, type DbRow, type LineGroup } from "./restore-model";
+import { customerNote, lineGroups, type DbFilter, type DbRow, type LineGroup } from "./restore-model";
+import { CustomerNote } from "./database-rows";
 import { LinesView, NameChips, type Line } from "./restore-lines";
 import { OutcomeTag } from "./restore-parts";
 
@@ -19,6 +20,12 @@ function Title({ children, meta }: { children: React.ReactNode; meta?: React.Rea
 function bytes(rows: DbRow[], pick: (row: DbRow) => number | null): string | null {
     const known = rows.map(pick).filter((value): value is number => value !== null);
     return known.length > 0 ? formatBytes(known.reduce((sum, value) => sum + value, 0)) : null;
+}
+
+/** Which of the databases a customer holds on the shared server, like the rows of the table say. */
+function heldNote(rows: DbRow[]): React.ReactNode {
+    const text = customerNote(rows);
+    return text ? <CustomerNote text={text} /> : null;
 }
 
 /** One group of the lines view as a line: a bundle of many shares one thick line, a single database has a thin one. */
@@ -70,6 +77,7 @@ function lineOf(group: LineGroup, onOpen: (filter: DbFilter) => void): Line {
                         <OutcomeTag tone="warning" icon="alert">Overwritten</OutcomeTag>
                     </span>
                     {!one && <NameChips names={names} />}
+                    {heldNote(rows)}
                 </>
             ),
         };

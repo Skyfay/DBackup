@@ -21,20 +21,25 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn().mockResolvedValue({ userId: "user-1" }),
     checkPermissionWithContext: vi.fn(),
+    // The caller may not see what the tenant shares, so no row carries a share.
+    hasPermissionWithContext: vi.fn().mockReturnValue(false),
 }));
+
+// The roles are about the own connections, nothing another tenant shares is listed beside them.
+vi.mock("@/services/sharing/connection-options", () => ({ providedItems: vi.fn().mockResolvedValue([]) }));
 
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: vi.fn() } }));
 vi.mock("@/lib/core/audit-types", () => ({ AUDIT_ACTIONS: {}, AUDIT_RESOURCES: {} }));
 vi.mock("@/lib/adapters/credential-validation", () => ({ validateCredentialAssignments: vi.fn() }));
 
-vi.mock("@/lib/auth/permissions", () => ({
-    PERMISSIONS: {
-        DESTINATIONS: { READ: "destinations:read", WRITE: "destinations:write" },
-        SOURCES: { VIEW: "sources:view", WRITE: "sources:write" },
-        NOTIFICATIONS: { READ: "notifications:read", WRITE: "notifications:write" },
-    },
+// The real constants: the owner permissions read every group of them and AVAILABLE_PERMISSIONS
+// when they load, so a subset takes the import of the routes down.
+vi.mock("@/lib/auth/permissions", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/lib/auth/permissions")>()),
     getWritePermissionForAdapterType: (type: string) =>
         type === "storage" ? "destinations:write"
             : type === "notification" ? "notifications:write"
@@ -59,6 +64,8 @@ vi.mock("@/lib/prisma", () => ({
         },
         jobDestination: { findMany: (...args: any[]) => mockJobDestinationFindMany(...args) },
         jobSource: { findMany: (...args: any[]) => mockJobSourceFindMany(...args) },
+        // No connection of these tests is shared with other tenants.
+        connectionShare: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
     },
 }));
 
@@ -173,7 +180,8 @@ describe("POST /api/adapters/[id]/clone – role handling", () => {
         id: "a-1",
         name: "Scripts",
         type: "storage",
-        adapterId: "local-filesystem",
+        // Over SFTP, since a copy of a Local Filesystem is for a platform admin alone, see `host-local.ts`.
+        adapterId: "sftp",
         config: "{}",
         metadata: null,
         primaryCredentialId: null,

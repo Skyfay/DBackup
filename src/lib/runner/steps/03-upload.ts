@@ -18,7 +18,10 @@ import { chainSegment } from "@/lib/templates/naming-template-engine";
 import { withStorageSession } from "./upload-helpers";
 import { verificationService } from "@/services/storage/verification-service";
 import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
+import { isUnsafeJobFolderName } from "@/lib/core/job-folder";
+import { jobFolderRefusal } from "./job-folder-check";
 import { isConnected, reportSkippedAirGaps } from "./air-gap";
+import { providedConnection } from "@/services/sharing/provided";
 
 export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0 || !ctx.tempFile) throw new Error("Context not ready for upload");
@@ -196,6 +199,8 @@ export async function stepUpload(ctx: RunnerContext) {
             : {}),
         trigger,
         locked: ctx.lock === true,
+        // A backup of some databases alone, which retention judges apart from the whole backups.
+        ...(ctx.onlyDatabases ? { onlyDatabases: ctx.onlyDatabases } : {}),
     };
 
     const metaPath = ctx.tempFile + ".meta.json";
@@ -224,6 +229,20 @@ export async function stepUpload(ctx: RunnerContext) {
         : `${job.name}/${path.basename(ctx.tempFile)}`;
     const totalDests = ctx.destinations.length;
 
+    // The folder of the chain comes from the path of the previous run, so it is checked like the
+    // folder of the job: it stays below that folder and reaches none of the own data of DBackup.
+    if (inChain) {
+        const chainFolder = `${job.name}/${ctx.chain!.chainDir}`;
+        const unsafe = isUnsafeJobFolderName(ctx.chain!.chainDir) || ctx.chain!.chainDir.includes("/") || ctx.chain!.chainDir.includes("\\");
+        for (const dest of ctx.destinations) {
+            if (dest.refusal) continue;
+            const refusal = unsafe
+                ? `The folder of the chain ${ctx.chain!.chainDir} leaves the folder of the job`
+                : await jobFolderRefusal(dest.adapterId, dest.config as Record<string, unknown>, dest.configId, chainFolder, dest.customer);
+            if (refusal) dest.refusal = refusal;
+        }
+    }
+
     ctx.setStage(PIPELINE_STAGES.UPLOADING);
 
     // Where the upload stands at each destination, for the page of the run while it is live.
@@ -240,6 +259,19 @@ export async function stepUpload(ctx: RunnerContext) {
     for (let i = 0; i < totalDests; i++) {
         const dest = ctx.destinations[i];
         const destLabel = `[${dest.configName}]`;
+        // A share that ended while the dump ran writes nothing more into the folder of the tenant, and
+        // one switched to encrypted backups only takes nothing of a job without a key.
+        if (!dest.refusal && dest.customer) {
+            const provided = await providedConnection(dest.configId, dest.customer);
+            if (!provided) dest.refusal = `${dest.configName} is no longer shared with this tenant`;
+            else if (provided.encryptedOnly && !job.encryptionProfileId) dest.refusal = `${dest.configName} takes only encrypted backups. Pick a key under Encryption`;
+        }
+        if (dest.refusal) {
+            dest.uploadResult = { success: false, error: dest.refusal };
+            reportUpload(i, { state: "failed", error: dest.refusal, endedAt: new Date().toISOString() });
+            ctx.log(`${destLabel} ${dest.refusal}`, "error");
+            continue;
+        }
         // An air-gapped destination that is not connected is left out, which is no failure.
         if (dest.airGapped && !(await isConnected(dest))) {
             dest.uploadResult = { success: false, skipped: true, error: AIR_GAP_SKIP };

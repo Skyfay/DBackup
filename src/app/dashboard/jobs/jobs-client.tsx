@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { CalendarClock, CirclePause, ListChecks, Plus } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CalendarClock, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { ApiTriggerDialog } from "@/components/dashboard/jobs/api-trigger-dialog";
@@ -16,17 +16,16 @@ import { JobDetailsSheet } from "@/components/dashboard/jobs/job-details-sheet";
 import { JobForm } from "@/components/dashboard/jobs/job-form";
 import type { AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form-schema";
 import { JobContextMenu, JobRowActions } from "@/components/dashboard/jobs/job-menus";
-import { jobsAttention, matchesJobFilter, type JobFilter } from "@/components/dashboard/jobs/job-status";
+import { jobsAttention, type JobFilter } from "@/components/dashboard/jobs/job-status";
 import { JobsStrip } from "@/components/dashboard/jobs/jobs-strip";
 import { JobStatusFilter } from "@/components/dashboard/jobs/job-status-filter";
-import { JobsTimeline } from "@/components/dashboard/jobs/timeline/jobs-timeline";
-import { JobsUpcoming } from "@/components/dashboard/jobs/timeline/jobs-upcoming";
+import { JobsTimelineViews } from "@/components/dashboard/jobs/timeline/jobs-timeline-views";
 import { useJobTimeline } from "@/components/dashboard/jobs/timeline/use-job-timeline";
 import { JOBS_PAGE_ID, JOBS_TABLE_ID } from "@/components/dashboard/jobs/job-tables";
-import { useJobList } from "@/components/dashboard/jobs/use-job-list";
+import { useJobClone } from "@/components/dashboard/jobs/use-job-clone";
+import { useJobList, useJobsBeside } from "@/components/dashboard/jobs/use-job-list";
 import { useRunJob } from "@/components/dashboard/widgets/use-run-job";
 import { Button } from "@/components/ui/button";
-import { CloneDialog } from "@/components/ui/clone-dialog";
 import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
 import { DataTable } from "@/components/ui/data-table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -45,6 +44,10 @@ import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import { runHref } from "@/components/dashboard/history/run-links";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
+import { useNewFromLink } from "@/hooks/use-new-from-link";
+import { useNewInTenant, useOpenRecord } from "@/components/tenant/tenant-actions";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { withTenantColumn, withTenantCounts } from "@/components/tenant/tenant-rows";
 
 interface JobsClientProps {
     canManage: boolean;
@@ -60,6 +63,9 @@ interface JobsClientProps {
     /** The view this user picked last. */
     initialView: ViewMode;
 }
+
+const tenantOfJob = (job: JobListItem) => job.tenantId;
+const jobHref = (job: JobListItem) => `/dashboard/jobs?job=${encodeURIComponent(job.id)}`;
 
 /** The views the Jobs page offers: the table, cards, the runs over the hours, and the runs to come by time. */
 const VIEWS: ViewMode[] = ["table", "cards", "timeline", "upcoming"];
@@ -83,7 +89,6 @@ export function JobsClient({
     canManage, canExecute, canViewHistory, canViewStorage, sources, destinations, notificationChannels, encryptionProfiles, initialLayout, initialView,
 }: JobsClientProps) {
     const router = useRouter();
-    const { jobs, setJobs, hasLoaded, isLoading, refresh, reload } = useJobList();
     const { runJob, startingJobId } = useRunJob("jobs");
     const layout = useTableLayout(JOBS_TABLE_ID, initialLayout);
     const [filter, setFilter] = useState<JobFilter>("all");
@@ -95,14 +100,21 @@ export function JobsClient({
     // Timeline and Upcoming draw the jobs the search and filters leave above rows they hide.
     const timelineView = shownView === "timeline" || shownView === "upcoming";
     const timeline = useJobTimeline(timelineView);
+    // The server pages, searches and filters the jobs, and counts them for the quick filters and the numbers.
+    const list = useJobList({ filter, timeline: timelineView, pageSize: initialLayout?.pageSize, enabled: shownView !== undefined });
+    const { rows: jobs, page, loaded: hasLoaded, isLoading, refresh } = list;
+    const reload = refresh;
 
     const [form, setForm] = useState<{ open: boolean; job: JobListItem | null }>({ open: false, job: null });
     const [deletingId, setDeletingId] = useState<string | null>(null);
-    const [cloneTarget, setCloneTarget] = useState<{ id: string; name: string } | null>(null);
-    const [cloningId, setCloningId] = useState<string | null>(null);
     const [apiTrigger, setApiTrigger] = useState<{ id: string; name: string } | null>(null);
     // The id stays after closing, so the panel keeps its content while it slides out.
     const [details, setDetails] = useState<{ id: string; open: boolean } | null>(null);
+    // A job a link names, or whose panel or dialog stays open while the list shows another page, is
+    // read on its own.
+    const linked = useSearchParams().get("job");
+    const beside = useJobsBeside(jobs, [linked, details?.id, deletingId]);
+    const jobOf = useCallback((id: string) => jobs.find((job) => job.id === id) ?? beside.jobs.find((job) => job.id === id) ?? null, [jobs, beside.jobs]);
 
     const changeView = useCallback((next: ViewMode) => {
         setView(next);
@@ -132,33 +144,31 @@ export function JobsClient({
         }
     }, [reload]);
 
-    const clone = async (id: string, name: string) => {
-        setCloningId(id);
-        try {
-            const res = await fetch(`/api/jobs/${encodeURIComponent(id)}/clone`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
-            });
-            const data = await res.json().catch(() => null);
-            if (res.ok) {
-                toast.success("Job cloned");
-                void reload();
-            } else {
-                toast.error(data?.error || "The job could not be cloned.");
-            }
-        } catch {
-            toast.error("The job could not be cloned.");
-        } finally {
-            setCloningId(null);
-            setCloneTarget(null);
-        }
-    };
+    const shownNames = useMemo(() => jobs.map((job) => job.name), [jobs]);
+    const { start: startClone, cloningId, dialog: cloneDialog } = useJobClone(shownNames, () => void reload());
 
     const openForm = useCallback((job: JobListItem | null) => setForm({ open: true, job }), []);
-    const openDetails = useCallback((job: JobListItem) => setDetails({ id: job.id, open: true }), []);
-    // A link like Open job of the Backups page or the search in the header names a job with `?job=`.
-    useOpenFromLink(hasLoaded ? jobs : null, openDetails, "job");
+    // In All tenants the list holds the jobs of every tenant, and one opens in its tenant. Without
+    // rows, since the server pages the list, the Tenant filter offers every tenant.
+    const tenant = useTenantColumns(tenantOfJob);
+    const { allTenants: inAllTenants, nameOf: tenantNameOf } = tenant;
+    const openRecord = useOpenRecord();
+    const showDetails = useCallback((job: JobListItem) => setDetails({ id: job.id, open: true }), []);
+    const openDetails = useCallback((job: JobListItem) => openRecord(job.tenantId, jobHref(job), () => showDetails(job)), [openRecord, showDetails]);
+    // A link like Open job of the Backups page or the search in the header names a job with `?job=`,
+    // which may be on another page than the first.
+    const linkRows = useMemo(() => (hasLoaded && beside.ready ? [...jobs, ...beside.jobs] : null), [hasLoaded, beside.ready, jobs, beside.jobs]);
+    useOpenFromLink(linkRows, showDetails, "job");
+    // A job belongs to one tenant, so in All tenants New asks for it and opens the form there.
+    const openNewForm = useCallback(() => openForm(null), [openForm]);
+    const newJob = useNewInTenant({
+        canCreate: canManage,
+        title: "New job",
+        description: "A job belongs to one tenant, pick the one it runs in.",
+        href: "/dashboard/jobs?new=1",
+        onCreate: openNewForm,
+    });
+    useNewFromLink(hasLoaded && canManage, openNewForm);
 
     /** What one job can do. The panel shows Run now and Edit as buttons of their own, so its menu leaves them out. */
     const handlers = useCallback((job: JobListItem, inPanel = false): JobActionHandlers => ({
@@ -168,25 +178,30 @@ export function JobsClient({
             ? [{ label: "Open backups", onSelect: () => router.push(`/dashboard/backups?job=${encodeURIComponent(job.id)}`) }]
             : [],
         onApiTrigger: canExecute ? () => setApiTrigger({ id: job.id, name: job.name }) : undefined,
+        openInTenant: inAllTenants && tenantNameOf(job.tenantId)
+            ? { label: `Open in ${tenantNameOf(job.tenantId)}`, onSelect: () => openDetails(job) }
+            : undefined,
         onEdit: canManage && !inPanel ? () => openForm(job) : undefined,
-        onClone: canManage ? () => setCloneTarget({ id: job.id, name: job.name }) : undefined,
+        onClone: canManage ? () => startClone(job) : undefined,
         toggle: canManage ? { paused: !job.enabled, onSelect: () => void toggle(job) } : undefined,
         onDelete: canManage ? () => setDeletingId(job.id) : undefined,
         busy: startingJobId === job.id || cloningId === job.id,
-    }), [canExecute, canViewHistory, canViewStorage, canManage, run, toggle, openForm, router, startingJobId, cloningId]);
+    }), [canExecute, canViewHistory, canViewStorage, canManage, run, toggle, openForm, startClone, router, startingJobId, cloningId, inAllTenants, tenantNameOf, openDetails]);
 
     const renderActions = useCallback(
         (job: JobListItem) => <JobRowActions name={job.name} starting={startingJobId === job.id} {...handlers(job)} />,
         [handlers, startingJobId]
     );
-    const columns = useMemo(() => jobColumns({ renderActions, onOpen: openDetails }), [renderActions, openDetails]);
+    const columns = useMemo(() => withTenantColumn(jobColumns({ renderActions, onOpen: openDetails }), tenant.column), [renderActions, openDetails, tenant.column]);
+    // The numbers of the Tenant filter come from the server, which counts under the search and the quick filter.
+    const tenantCounts = page?.tenants;
+    const filterableColumns = useMemo(() => (tenant.filter ? [withTenantCounts(tenant.filter, tenantCounts)] : []), [tenant.filter, tenantCounts]);
     const trash = useTrash("job", reload);
     const bulkActions = useMemo(() => jobBulkActions(canManage, trash), [canManage, trash]);
-    const visibleJobs = useMemo(() => jobs.filter((job) => matchesJobFilter(job, filter)), [jobs, filter]);
 
     // A deleted job has no row left to show, so its panel closes with it.
-    const detailsJob = details ? jobs.find((job) => job.id === details.id) ?? null : null;
-    const deleting = deletingId ? jobs.find((job) => job.id === deletingId) : undefined;
+    const detailsJob = details ? jobOf(details.id) : null;
+    const deleting = deletingId ? jobOf(deletingId) ?? undefined : undefined;
     const directorySourceOptions = useMemo(() => destinations.filter((option) => option.storageRole === STORAGE_ROLES.SOURCE), [destinations]);
 
     return (
@@ -195,15 +210,15 @@ export function JobsClient({
                 between kinds of connections. The filters of the list sit beside its search. */}
             <PageHead>
                 <Tabs value="jobs" className="min-w-0 flex-1">
-                    <PageTabs tabs={[{ value: "jobs", label: "Jobs", icon: CalendarClock, attention: hasLoaded ? jobsAttention(jobs) : undefined }]} value="jobs" onValueChange={() => undefined} label="Job list" />
+                    <PageTabs tabs={[{ value: "jobs", label: "Jobs", icon: CalendarClock, attention: page ? jobsAttention(page.stats) : undefined }]} value="jobs" onValueChange={() => undefined} label="Job list" />
                 </Tabs>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}
                     <div className="hidden md:block">
                         <ViewSwitch value={view} onChange={changeView} views={VIEWS} />
                     </div>
-                    {canManage && (
-                        <Button tone="create" onClick={() => openForm(null)} aria-label="New job">
+                    {newJob.available && (
+                        <Button tone="create" onClick={newJob.start} aria-label="New job">
                             <Plus />
                             <span className="hidden sm:inline">New job</span>
                         </Button>
@@ -211,25 +226,34 @@ export function JobsClient({
                 </div>
             </PageHead>
 
-            {!hasLoaded || !shownView ? (
+            {!hasLoaded || !page || !shownView ? (
                 <LoadingList />
-            ) : jobs.length === 0 ? (
+            ) : page.stats.total === 0 ? (
                 <ListEmpty
                     icon={CalendarClock}
                     title="No backup jobs yet"
                     description="A job backs up a database or folders on a schedule and keeps the backups where you say."
-                    action={canManage ? { label: "New job", onClick: () => openForm(null) } : undefined}
+                    action={newJob.available ? { label: "New job", onClick: newJob.start } : undefined}
                 />
             ) : (
                 <>
-                    <JobsStrip jobs={jobs} />
+                    <JobsStrip stats={page.stats} />
                     <DataTable
                         joined
                         columns={columns}
-                        data={visibleJobs}
+                        data={jobs}
                         searchKey="name"
                         searchPlaceholder="Search jobs"
-                        toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} jobs={jobs} />}
+                        filterableColumns={filterableColumns}
+                        manualPagination
+                        manualFiltering
+                        pagination={list.pagination}
+                        onPaginationChange={list.setPagination}
+                        columnFilters={list.columnFilters}
+                        onColumnFiltersChange={list.onColumnFiltersChange}
+                        pageCount={list.pageCount}
+                        rowCount={list.total}
+                        toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} counts={page.counts} />}
                         onRefresh={() => {
                             if (timelineView) timeline.reload();
                             return refresh();
@@ -245,12 +269,10 @@ export function JobsClient({
                         onRowClick={openDetails}
                         view={shownView === "cards" ? "cards" : "table"}
                         aboveRows={timelineView
-                            ? (rows) => shownView === "timeline"
-                                ? <JobsTimeline jobs={rows.map((row) => row.original)} allJobs={jobs} timeline={timeline} canViewHistory={canViewHistory} onOpenJob={openDetails} />
-                                : <JobsUpcoming jobs={rows.map((row) => row.original)} allJobs={jobs} timeline={timeline} onOpenJob={openDetails} />
+                            ? <JobsTimelineViews view={shownView} jobs={jobs} total={list.total} timeline={timeline} canViewHistory={canViewHistory} onOpenJob={openDetails} />
                             : undefined}
                         hideRows={timelineView}
-                        renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} />}
+                        renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} tenantName={tenant.allTenants ? tenant.nameOf(row.original.tenantId) : null} />}
                         // A card shows the way of a backup from left to right, which needs more room than three abreast leave.
                         cardGridClassName="lg:grid-cols-2"
                         renderRowMenu={(job, bulk) => <JobContextMenu job={job} bulk={bulk} {...handlers(job)} />}
@@ -295,31 +317,18 @@ export function JobsClient({
                 <JobDeleteDialog
                     job={deleting}
                     onClose={() => setDeletingId(null)}
-                    onDeleted={(id) => setJobs((current) => current.filter((job) => job.id !== id))}
+                    onDeleted={() => void reload()}
                     onRestored={reload}
                 />
             )}
+
+            {newJob.dialog}
 
             {apiTrigger && (
                 <ApiTriggerDialog jobId={apiTrigger.id} jobName={apiTrigger.name} open onOpenChange={(open) => !open && setApiTrigger(null)} />
             )}
 
-            {cloneTarget && (
-                <CloneDialog
-                    title="Clone job"
-                    from={cloneTarget.name}
-                    noun="job"
-                    existingNames={jobs.map((job) => job.name)}
-                    facts={[
-                        { icon: ListChecks, text: `The copy has every setting of ${cloneTarget.name}, the retention policy of each destination included.` },
-                        { icon: CirclePause, text: "It starts paused and only runs once you turn it on." },
-                    ]}
-                    confirmLabel="Clone job"
-                    isLoading={cloningId !== null}
-                    onConfirm={(name) => clone(cloneTarget.id, name)}
-                    onClose={() => setCloneTarget(null)}
-                />
-            )}
+            {cloneDialog}
         </div>
     );
 }

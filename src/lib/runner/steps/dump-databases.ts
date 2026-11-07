@@ -62,6 +62,18 @@ export function stripAllDatabasesOption(options: unknown): { options: unknown; s
     };
 }
 
+/**
+ * The databases a run limited to some of them dumps: the ones it names that the job backs up, in the
+ * order of the job. A name the job does not back up is left out and reported as missing. When the
+ * server could not list its databases, the named ones are dumped by their names, as the job would
+ * have to name every database then.
+ */
+export function limitDatabases(available: readonly string[], only: readonly string[], listingFailed: boolean): { names: string[]; missing: string[] } {
+    if (listingFailed && available.length === 0) return { names: [...only], missing: [] };
+    const wanted = new Set(only);
+    return { names: available.filter((name) => wanted.has(name)), missing: only.filter((name) => !available.includes(name)) };
+}
+
 export interface DumpedDatabases {
     entries: ArchiveSourceEntry[];
     dbNames: string[];
@@ -117,6 +129,16 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
                 discoveryError = e instanceof Error ? e.message : String(e);
                 ctx.log(`Warning: Could not auto-discover databases: ${discoveryError}`, "warning");
             }
+        }
+
+        if (ctx.onlyDatabases) {
+            const limited = limitDatabases(dbNames, ctx.onlyDatabases, discoveryError !== undefined);
+            if (limited.names.length === 0) {
+                throw new Error(`The job does not back up ${ctx.onlyDatabases.join(", ")}, so this run has nothing to back up.`);
+            }
+            if (limited.missing.length > 0) ctx.log(`Not among the databases of the job, left out: ${limited.missing.join(", ")}`, "warning");
+            ctx.log(`This run backs up ${limited.names.join(", ")} alone. The job itself stays as it is.`);
+            dbNames = limited.names;
         }
 
         if (dbNames.length === 0) {

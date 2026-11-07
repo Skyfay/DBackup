@@ -162,8 +162,17 @@ describe('validateOidcAutoRedirect', () => {
 
         expect(prisma.ssoProvider.findUnique).toHaveBeenCalledWith({
             where: { providerId: 'authentik-742' },
-            select: { providerId: true, name: true, enabled: true },
+            select: { providerId: true, name: true, enabled: true, tenantId: true },
         });
+    });
+
+    it('starts normally when it names a provider of a tenant, which is never a target of the login page', async () => {
+        process.env.OIDC_AUTO_REDIRECT = 'entra-acme';
+        (prisma.ssoProvider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+            providerId: 'entra-acme', name: 'Acme Entra ID', enabled: true, tenantId: 'acme',
+        });
+
+        await expect(validateOidcAutoRedirect()).resolves.toBeUndefined();
     });
 
     it('starts normally when the provider does not exist', async () => {

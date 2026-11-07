@@ -119,7 +119,9 @@ export async function writeFile(
     const entry = tar.entry({
         name: inner,
         size,
-        ...(options?.mode !== undefined ? { mode: options.mode } : {}),
+        // The permission bits alone, never setuid, setgid or sticky, whoever passed the mode,
+        // see `metadataFromIndex`, which also keeps the owners to the volume the backup read.
+        ...(options?.mode !== undefined ? { mode: options.mode & 0o777 } : {}),
         ...(options?.uid !== undefined ? { uid: options.uid } : {}),
         ...(options?.gid !== undefined ? { gid: options.gid } : {}),
     });

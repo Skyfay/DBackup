@@ -98,6 +98,8 @@ interface DataTableProps<TData, TValue> {
     columnLayout?: ColumnLayoutOption;
     /** Extra controls after the filters, such as quick status filters. */
     toolbarExtra?: React.ReactNode;
+    /** A control before the search, like the switch between the platform groups and the groups of the tenants. */
+    toolbarStart?: React.ReactNode;
     /** A line under the toolbar of the card look, like a legend for the marks in the rows. */
     toolbarNote?: React.ReactNode;
     /**
@@ -165,6 +167,7 @@ export function DataTable<TData, TValue>({
     frameless = false,
     columnLayout,
     toolbarExtra,
+    toolbarStart,
     toolbarNote,
     aboveRows,
     hideRows = false,
@@ -336,6 +339,7 @@ export function DataTable<TData, TValue>({
             isLoading={isLoading}
             searchPlaceholder={searchPlaceholder}
             toolbarExtra={toolbarExtra}
+            toolbarStart={toolbarStart}
             columnSettings={layout ? (
                 <DataTableColumnSettings
                     {...layout.settings}

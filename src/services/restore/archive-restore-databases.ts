@@ -24,7 +24,13 @@ import { entryKey } from "@/lib/archive/types";
 import { getTempDir } from "@/lib/temp-dir";
 import type { openArchiveForRestore } from "./file-restore";
 import type { ArchiveRestoreCallbacks } from "./archive-restore";
+import { sharedLogScrubber, type RunLog } from "./shared-restore-log";
+import { assertTargetsConfirmed } from "./customer-databases";
 import type { RestoreInput } from "./types";
+import { findDestination } from "@/services/sharing/destination-access";
+import { listedDatabases } from "@/services/tenant/shared-servers";
+import { runAsSystem } from "@/lib/tenant/context";
+import { reserveTempSpace } from "./temp-space";
 
 export type DatabaseMapping = { originalName: string; targetName: string; selected: boolean }[];
 
@@ -48,6 +54,39 @@ export function resolveDatabaseTarget(
 }
 
 /**
+ * The scrubber of a customer's run, from the connection of the server, the archive, its
+ * destination and the databases of both, which are what the adapter and the archive can name.
+ */
+async function sharedScrubber(
+    input: RestoreInput,
+    archive: Awaited<ReturnType<typeof openArchiveForRestore>>,
+    connection: Record<string, unknown>,
+    names: string[]
+) {
+    const destination = await findDestination(input.storageConfigId, input.shared?.copyTenantId).then((found) => found.row).catch(() => null);
+    // The databases the server listed last, which its tools name in an error as readily as those of the backup.
+    const listed = input.targetSourceId
+        ? await runAsSystem(() => listedDatabases(input.targetSourceId!)).catch(() => [])
+        : [];
+    return sharedLogScrubber({
+        keep: [...(input.shared ? [input.shared.databaseName] : []), ...names],
+        archive: input.file,
+        destination: destination?.name,
+        connection,
+        otherDatabases: [...archive.index.databases.map((database) => database.name), ...listed.map((database) => database.name)],
+    });
+}
+
+/** The log of a customer's restore: the scrubbed line for their run, the whole one for the provider's. */
+function sharedLog(customer: RunLog, provider: RunLog | undefined): RunLog {
+    if (!provider) return customer;
+    return (message, level, type, details) => {
+        provider(message, level, type, details);
+        customer(message, level, type, details);
+    };
+}
+
+/**
  * Restores the selected database entries of an opened archive.
  *
  * Database entries always live in the snapshot's own archive (incrementals never carry them
@@ -61,7 +100,7 @@ export async function restoreDatabases(
     dbMapping: DatabaseMapping | undefined,
     restoredDatabases: string[],
     errors: { entry: string; error: string }[],
-    { log, updateProgress }: ArchiveRestoreCallbacks
+    callbacks: ArchiveRestoreCallbacks
 ): Promise<void> {
     if (!input.targetSourceId) {
         throw new Error("Missing targetSourceId: this archive contains database(s) to restore");
@@ -81,7 +120,23 @@ export async function restoreDatabases(
     const dbConf = await resolveAdapterConfig(sourceConfig) as Record<string, unknown>;
     dbConf.type = sourceConfig.adapterId;
     if (input.privilegedAuth) dbConf.privilegedAuth = input.privilegedAuth;
+    // A customer's restore of a shared database writes content the customer controls with the
+    // provider's login, so the adapter restores it as the owner of the database where it can.
+    if (input.shared) dbConf.sharedRestore = true;
 
+    const targetFor = (dbName: string) =>
+        resolveDatabaseTarget(dbName, dbMapping, input.targetDatabaseName, selectedDbNames.length);
+
+    // The run of a customer lands in their History, so every line of it, the adapter's included,
+    // names their database and nothing else of the server or the backup. The provider's run reads
+    // each line in full.
+    const scrubber = input.shared ? await sharedScrubber(input, archive, dbConf, [...selectedDbNames, ...selectedDbNames.map(targetFor)]) : null;
+    const log = scrubber ? sharedLog(scrubber.wrap(callbacks.sharedLogs?.customer ?? callbacks.log), callbacks.sharedLogs?.provider) : callbacks.log;
+    const reason = (message: string) => (scrubber ? scrubber.text(message) : message);
+    const updateProgress = (percent: number, detail?: string) =>
+        (detail === undefined ? callbacks.updateProgress?.(percent) : callbacks.updateProgress?.(percent, reason(detail)));
+
+    const record = callbacks.record;
     const hasMapping = !!dbMapping && dbMapping.length > 0;
     if (!hasMapping && input.targetDatabaseName && selectedDbNames.length > 1) {
         log(
@@ -89,30 +144,50 @@ export async function restoreDatabases(
             'warning'
         );
     }
-    const targetFor = (dbName: string) =>
-        resolveDatabaseTarget(dbName, dbMapping, input.targetDatabaseName, selectedDbNames.length);
+
+    // The names it writes into, checked against the databases of customers the request confirmed,
+    // since the check before the run could only read what the backup's metadata lists.
+    await assertTargetsConfirmed(input, selectedDbNames.map(targetFor));
+
+    // Each dump is staged whole before its restore and removed after it, one at a time. Checked
+    // before the target is touched, since a dump may declare far more than its stored bytes, and
+    // promised to this restore until it ends, so restores that run at once never count the same
+    // free space twice.
+    const space = await reserveTempSpace(selectedDbNames.map((name) => archive.index.databases.find((d) => d.name === name)?.s ?? 0), 1);
 
     // One transport for the whole database portion: the version probe, the
     // prepare step and every restoreOne share a single connection.
-    const host = createHost(resolveTransport(sourceAdapter, dbConf));
+    let host: ReturnType<typeof createHost>;
+    try {
+        host = createHost(resolveTransport(sourceAdapter, dbConf));
+    } catch (error) {
+        space.release();
+        throw error;
+    }
     try {
         if (sourceAdapter.test) {
             try {
                 const testResult = await sourceAdapter.test(dbConf, host) as { success: boolean; version?: string };
                 if (testResult.success && testResult.version) {
                     dbConf.detectedVersion = testResult.version;
+                    record?.versions({ target: testResult.version });
                     log(`Target server version: ${testResult.version}`, 'info');
                 }
             } catch { /* ignore - cosmetic binary-selection hint only */ }
         }
 
         const targetNames = selectedDbNames.map(targetFor);
+        record?.planDatabases(selectedDbNames.map((name) => ({ name, target: targetFor(name), bytes: archive.index.databases.find((d) => d.name === name)?.s ?? null })));
         if (sourceAdapter.prepareRestore) {
             log(`Preparing target database(s): ${targetNames.join(', ')}...`, 'info');
             try {
                 await sourceAdapter.prepareRestore(dbConf, targetNames, host);
             } catch (e: unknown) {
                 const message = e instanceof Error ? e.message : String(e);
+                // The run of a customer ends on a line that says nothing of the error, so the
+                // reason stands here, in their words.
+                if (scrubber) log(`Failed to prepare ${targetNames.join(', ')}: ${message}`, 'error');
+                for (const name of selectedDbNames) record?.endDatabase(name, false);
                 throw new Error(`Failed to prepare target database(s): ${message}`);
             }
         }
@@ -123,6 +198,7 @@ export async function restoreDatabases(
             const entry = dbLine ? archive.index.entries.get(entryKey(undefined, dbLine.n)) : undefined;
             if (!dbLine || !entry) {
                 errors.push({ entry: `database:${dbName}`, error: "Not found in the archive index" });
+                record?.endDatabase(dbName, false);
                 log(`Database '${dbName}' is missing from the archive index`, 'error');
                 continue;
             }
@@ -136,13 +212,15 @@ export async function restoreDatabases(
             );
 
             try {
+                record?.startDatabase(dbName);
                 log(`Fetching dump for '${dbName}' (${archive.ranged ? "ranged read" : "from downloaded archive"})...`, 'info');
                 let digest: string | undefined;
                 await pipeline(
-                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey),
+                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, dbLine.s),
                     hashingStream((d) => { digest = d; }),
                     createWriteStream(dumpPath)
                 );
+                record?.read(entry.size);
 
                 // For an unencrypted archive this is the only integrity check a dump gets, and
                 // restoring a damaged one would overwrite a working database with it.
@@ -161,22 +239,27 @@ export async function restoreDatabases(
                         // Each database gets an equal slice of the bar, so a multi-database
                         // restore moves forward instead of restarting at 0 for every dump.
                         const overall = Math.round(((position + Math.min(100, Math.max(0, percent)) / 100) / total) * 100);
-                        updateProgress?.(overall, `${dbName}: ${detail ?? `${Math.round(percent)}%`}`);
+                        record?.databaseProgress(dbName, percent, detail ? reason(detail) : null);
+                        updateProgress(overall, `${dbName}: ${detail ?? `${Math.round(percent)}%`}`);
                     },
                     dbName
                 );
                 restoredDatabases.push(targetName);
+                record?.endDatabase(dbName, true);
                 log(`Database restored: ${targetName}`, 'success');
             } catch (e: unknown) {
+                // The log scrubs the line for a customer's run, the provider's run keeps the error whole.
                 const message = e instanceof Error ? e.message : String(e);
-                errors.push({ entry: `database:${dbName}`, error: message });
+                errors.push({ entry: `database:${dbName}`, error: reason(message) });
+                record?.endDatabase(dbName, false);
                 log(`Failed to restore database '${dbName}': ${message}`, 'error');
             } finally {
                 await fs.unlink(dumpPath).catch(() => { });
             }
-            updateProgress?.(Math.round(((position + 1) / total) * 100));
+            updateProgress(Math.round(((position + 1) / total) * 100));
         }
     } finally {
+        space.release();
         await host.dispose().catch(() => {});
     }
 }

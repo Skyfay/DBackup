@@ -1,22 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import prisma from "@/lib/prisma";
 import { auditService } from "@/services/audit-service";
 import { apiKeyService } from "@/services/auth/api-key-service";
-import { isSystemTaskId } from "@/services/system/system-task-definitions";
+import { userService } from "@/services/user/user-service";
+import { isPlatformAdminTask, isSystemTaskId, PLATFORM_ADMIN_TASK_REFUSAL, type SystemTaskId } from "@/services/system/system-task-definitions";
 import { getSystemTaskRows, saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { getGeneralSettings } from "@/services/system/system-settings-service";
 import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
+import { platformLogFor } from "@/services/system/settings-save";
+import { refusedUnless } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "system-tasks" });
 
 const taskId = z.string().refine(isSystemTaskId, { message: "Unknown system task" });
+
+/**
+ * A task of `platformAdminOnly`, the configuration backup, changes and starts only for a platform
+ * admin with a session, never through an API key, since its file holds every secret of the instance.
+ */
+function platformTaskRefusal(ctx: AuthContext, task: SystemTaskId): Response | null {
+    if (!isPlatformAdminTask(task) || (ctx.isPlatformAdmin && ctx.authMethod === "session")) return null;
+    return NextResponse.json({ success: false, error: PLATFORM_ADMIN_TASK_REFUSAL }, { status: 403 });
+}
 
 const updateSchema = z.object({
     taskId,
@@ -27,8 +39,9 @@ const updateSchema = z.object({
 
 export async function GET(_req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ);
+    if (!ctx) return unauthorized();
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ));
+    if (refused) return refused;
 
     const { timezone } = await getGeneralSettings();
     const rows = await getSystemTaskRows(timezone);
@@ -43,8 +56,9 @@ export async function GET(_req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
+    if (!ctx) return unauthorized();
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
+    if (refused) return refused;
 
     const parsed = updateSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success || !isSystemTaskId(parsed.data.taskId)) {
@@ -52,6 +66,8 @@ export async function POST(req: NextRequest) {
     }
     const { taskId: task, ...input } = parsed.data;
     if (!isSystemTaskId(task)) return NextResponse.json({ error: "Unknown system task" }, { status: 400 });
+    const platformOnly = platformTaskRefusal(ctx, task);
+    if (platformOnly) return platformOnly;
 
     const before = await taskSnapshot(task);
     try {
@@ -65,8 +81,8 @@ export async function POST(req: NextRequest) {
     const after = await taskSnapshot(task);
     // Switching a task on or off alone reads as that, anything else as a change with its values.
     const switchedOnly = input.enabled !== undefined && input.schedule === undefined && input.runOnStartup === undefined;
-    await auditService.logFor(
-        ctx,
+    await auditService.log(
+        ctx.userId,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.SYSTEM,
         {
@@ -75,7 +91,8 @@ export async function POST(req: NextRequest) {
             ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
             ...(switchedOnly ? {} : { changes: taskChanges(before, after) }),
         },
-        task
+        task,
+        platformLogFor(ctx)
     );
 
     return NextResponse.json({ success: true });
@@ -84,14 +101,17 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
     // Run Task immediately manual trigger
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
+    if (!ctx) return unauthorized();
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
+    if (refused) return refused;
 
     const parsed = z.object({ taskId }).safeParse(await req.json().catch(() => null));
     if (!parsed.success || !isSystemTaskId(parsed.data.taskId)) {
         return NextResponse.json({ error: "Unknown system task" }, { status: 400 });
     }
     const task = parsed.data.taskId;
+    const platformOnly = platformTaskRefusal(ctx, task);
+    if (platformOnly) return platformOnly;
 
     // Like a job started through the API, the run names the key instead of its owner.
     let started;
@@ -99,18 +119,18 @@ export async function PUT(req: NextRequest) {
         const apiKey = await apiKeyService.getById(ctx.apiKeyId);
         started = await startSystemTask(task, apiKey.name, "Api");
     } else {
-        const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
-        started = await startSystemTask(task, user?.name ?? "Manual");
+        started = await startSystemTask(task, (await userService.nameOf(ctx.userId)) ?? "Manual");
     }
     if (!started.started) return NextResponse.json({ error: started.reason }, { status: 409 });
 
     const name = taskName(task);
-    await auditService.logFor(
-        ctx,
+    await auditService.log(
+        ctx.userId,
         AUDIT_ACTIONS.EXECUTE,
         AUDIT_RESOURCES.SYSTEM,
         { task: name, name },
-        task
+        task,
+        platformLogFor(ctx)
     );
 
     return NextResponse.json({ success: true, ...(started.executionId ? { executionId: started.executionId } : {}) });

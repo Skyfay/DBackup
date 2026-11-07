@@ -10,6 +10,7 @@ import type { CredentialProfileSummary } from "@/components/settings/credential-
 import type { AdapterConfig } from "./types";
 import { buildConnectionFormSchema, type ConnectionFormValues } from "./connection-form-schema";
 import { defaultConfig, fillMissingSwitches, fillRequiredText, initialRole, parseObject } from "./connection-form-defaults";
+import { serverFreeDefaults, useMayReachServer } from "./host-local-access";
 
 export type ConnectionTestState =
     | { status: "idle" }
@@ -82,12 +83,15 @@ interface Options {
  */
 export function useConnectionForm({ adapter, initialData, defaultRole, lockRole = false, onSaved }: Options) {
     const schema = useMemo(() => buildConnectionFormSchema(adapter), [adapter]);
+    // A new connection opens on a mode the viewer may save, see `host-local.ts`.
+    const mayReachServer = useMayReachServer();
+    const fresh = () => (mayReachServer ? defaultConfig(adapter) : serverFreeDefaults(adapter.id, defaultConfig(adapter)));
     const form = useForm<ConnectionFormValues>({
         resolver: zodResolver(schema) as unknown as Resolver<ConnectionFormValues>,
         defaultValues: {
             name: initialData?.name ?? "",
             adapterId: adapter.id,
-            config: fillRequiredText(adapter, initialData ? fillMissingSwitches(adapter, parseObject(initialData.config)) : defaultConfig(adapter)),
+            config: fillRequiredText(adapter, initialData ? fillMissingSwitches(adapter, parseObject(initialData.config)) : fresh()),
         },
         // The form moves to the part with the error itself. Focusing a field in a hidden part fails.
         shouldFocusError: false,

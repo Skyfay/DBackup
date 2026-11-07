@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { ArrowLeftRight, BarChart3, Copy, Pencil, SearchCode, Trash } from "lucide-react";
+import { ArrowLeftRight, BarChart3, Building2, Copy, Pencil, SearchCode, Share2, Trash } from "lucide-react";
 import type { Tone } from "@/components/ui/tone";
 
 export interface ConnectionAction {
@@ -21,10 +21,14 @@ export interface ConnectionActionGroup {
 export interface ConnectionActionHandlers {
     onExplore?: () => void;
     onHistory?: () => void;
+    /** In All tenants: opens the connection in its tenant, where it can be changed. */
+    openInTenant?: { label: string; onSelect: () => void };
     onEdit?: () => void;
     onClone?: () => void;
     /** Creates the same connection in the other storage role, where the adapter supports it. */
     counterpart?: { label: string; onSelect: () => void };
+    /** Decides which other tenants get a destination or a channel, see src/services/sharing/. */
+    onShare?: () => void;
     onDelete?: () => void;
     /** A clone of this row is being created. */
     busy?: boolean;
@@ -39,9 +43,11 @@ export interface ConnectionActionHandlers {
 export function connectionActions({
     onExplore,
     onHistory,
+    openInTenant,
     onEdit,
     onClone,
     counterpart,
+    onShare,
     onDelete,
     busy = false,
 }: ConnectionActionHandlers): ConnectionActionGroup[] {
@@ -50,7 +56,9 @@ export function connectionActions({
         ...(onHistory ? [{ id: "history", label: "Storage history", icon: BarChart3, onSelect: onHistory, tone: "neutral" as const }] : []),
     ];
     const manage: ConnectionAction[] = [
+        ...(openInTenant ? [{ id: "open-in-tenant", label: openInTenant.label, icon: Building2, onSelect: openInTenant.onSelect, tone: "neutral" as const }] : []),
         ...(onEdit ? [{ id: "edit", label: "Edit", icon: Pencil, onSelect: onEdit, tone: "edit" as const }] : []),
+        ...(onShare ? [{ id: "share", label: "Share with tenants", icon: Share2, onSelect: onShare, tone: "edit" as const }] : []),
         // Both add a new connection, a copy or the same one in the other role.
         ...(onClone ? [{ id: "clone", label: "Clone", icon: Copy, onSelect: onClone, disabled: busy, tone: "create" as const }] : []),
         ...(counterpart

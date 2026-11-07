@@ -56,6 +56,17 @@ vi.mock("@/services/storage/bulk-delete", () => ({
     setBackupsLocked: (...args: unknown[]) => mocks.setBackupsLocked(...args),
 }));
 
+// The records by their names, read before a bulk route changes them.
+vi.mock("@/services/audit/record-names", () => {
+    const named = async (ids: string[]) => new Map(ids.map((id) => [id, `Name of ${id}`]));
+    return {
+        jobNames: named,
+        connectionNames: named,
+        credentialNames: named,
+        changedNames: (succeeded: string[], names: Map<string, string>) => succeeded.flatMap((id) => names.get(id) ?? []),
+    };
+});
+
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn() }) },
 }));
@@ -69,7 +80,7 @@ const request = (body: unknown) =>
 
 const storageParams = { params: Promise.resolve({ id: "dest-1" }) };
 
-const authed = (permissions: string[] = []) => ({ userId: "u1", permissions, isSuperAdmin: false });
+const authed = (permissions: string[] = []) => ({ userId: "u1", permissions, isPlatformAdmin: false });
 
 describe("POST /api/jobs/bulk", () => {
     beforeEach(() => {
@@ -93,7 +104,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("rejects a caller without job write permission without touching the service", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [], isPlatformAdmin: false });
         mocks.checkPermissionWithContext.mockImplementation(() => {
             throw new PermissionError("jobs:write");
         });
@@ -105,7 +116,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("checks job write permission before doing anything", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
 
         await bulkJobs(request({ action: "delete", ids: ["a"] }));
 
@@ -121,7 +132,7 @@ describe("POST /api/jobs/bulk", () => {
         ["a missing id list", { action: "delete" }],
         ["a batch over the limit", { action: "delete", ids: Array.from({ length: 201 }, (_, i) => `id-${i}`) }],
     ])("rejects %s", async (_label, body) => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
 
         const res = await bulkJobs(request(body));
 
@@ -131,7 +142,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("maps enable and disable onto an absolute enabled state", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
 
         await bulkJobs(request({ action: "enable", ids: ["a"] }));
         expect(mocks.setJobsEnabled).toHaveBeenCalledWith(["a"], true);
@@ -143,7 +154,7 @@ describe("POST /api/jobs/bulk", () => {
     // A row that could not be deleted is not a failed request. Answering 4xx here would
     // make the client discard the rows that did succeed.
     it("answers 200 with the per-row outcomes when only some rows failed", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
         mocks.deleteJobs.mockResolvedValue({
             succeeded: ["a", "b"],
             failed: [{ id: "c", name: "Nightly", error: "still running" }],
@@ -160,7 +171,7 @@ describe("POST /api/jobs/bulk", () => {
     });
 
     it("writes one audit entry for the batch rather than one per job", async () => {
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isSuperAdmin: false });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
         mocks.deleteJobs.mockResolvedValue({ succeeded: ["a", "b", "c"], failed: [] });
 
         await bulkJobs(request({ action: "delete", ids: ["a", "b", "c"] }));
@@ -172,6 +183,15 @@ describe("POST /api/jobs/bulk", () => {
             "JOB",
             expect.objectContaining({ bulk: true, requested: 3, succeeded: 3 })
         );
+    });
+
+    it("names the jobs it changed in its entry, and leaves out those it did not", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: ["jobs:write"], isPlatformAdmin: false });
+        mocks.deleteJobs.mockResolvedValue({ succeeded: ["a", "c"], failed: [{ id: "b", name: "b", error: "Running" }] });
+
+        await bulkJobs(request({ action: "delete", ids: ["a", "b", "c"] }));
+
+        expect(mocks.auditLogFor).toHaveBeenCalledWith(expect.anything(), "DELETE", "JOB", expect.objectContaining({ names: ["Name of a", "Name of c"] }));
     });
 });
 
@@ -265,7 +285,7 @@ describe("POST /api/adapters/bulk", () => {
             expect.objectContaining({ userId: "u1" }),
             "UPDATE",
             expect.any(String),
-            expect.objectContaining({ bulk: true, change: "exclude-from-restore", succeeded: 2 })
+            expect.objectContaining({ bulk: true, change: "exclude-from-restore", succeeded: 2, names: ["Name of a", "Name of b"] })
         );
         expect(mocks.checkPermissionWithContext).toHaveBeenCalledWith(expect.anything(), PERMISSIONS.SOURCES.WRITE);
     });
@@ -300,6 +320,16 @@ describe("POST /api/storage/[id]/files/bulk", () => {
         const res = await bulkFiles(request({ action: "delete", paths: ["a"] }), storageParams);
 
         expect(res.status).toBe(401);
+        expect(mocks.deleteBackupsBulk).not.toHaveBeenCalled();
+    });
+
+    it("answers 400 for a path that leaves the destination, and deletes nothing", async () => {
+        mocks.getAuthContext.mockResolvedValue(authed());
+
+        const res = await bulkFiles(request({ action: "delete", paths: ["nightly/a.tar", "../../other/b.tar"] }), storageParams);
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toMatch(/leaves its folder/);
         expect(mocks.deleteBackupsBulk).not.toHaveBeenCalled();
     });
 

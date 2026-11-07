@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CONFIG_UPLOAD_MAX_BYTES, CONFIG_UPLOAD_TOO_BIG } from "@/lib/core/config-upload";
-import { ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { checkUploadedBackup, hasNoAccountYet } from "@/services/config/restore-flow";
@@ -37,6 +37,6 @@ export async function POST(req: NextRequest) {
         if (keyRequired) return keyRequired;
         if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
         log.error("Checking a configuration backup on the sign-up page failed", {}, wrapError(error));
-        return NextResponse.json({ success: false, error: getErrorMessage(error) || "The backup could not be read." }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The backup could not be read. The log of DBackup has the details." }, { status: 500 });
     }
 }

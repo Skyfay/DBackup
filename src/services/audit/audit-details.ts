@@ -1,9 +1,12 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { changesOf } from "@/lib/core/audit-changes";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getDataRetentionValues } from "@/services/system/data-retention-service";
-import { AUDIT_ROW_SELECT, deviceOf, networkOf, newPlacesOf, parseDetails, resolveTargets, targetOf, toLine, type AuditRecord } from "./audit-rows";
+import { TENANT_SETTINGS_AREA } from "@/services/tenant/tenant-settings-audit";
+import { AUDIT_ROW_SELECT, deviceOf, networkOf, newPlacesOf, originShown, parseDetails, resolveTargets, targetOf, toLine, type AuditRecord } from "./audit-rows";
 import type { AuditDetails } from "./audit-types";
+import { auditVisibleWhere, FULL_VIEW, type LogView } from "./log-reach";
 
 /** The earlier entries of a record the panel lists, and the entries of a session at most. */
 const EARLIER_LIMIT = 3;
@@ -21,10 +24,17 @@ function recordLink(record: AuditRecord, name: string | null): AuditDetails["rec
             return page("Users", `${USERS}?tab=users`);
         case AUDIT_RESOURCES.GROUP:
             return page("Groups", `${USERS}?tab=groups`);
+        case AUDIT_RESOURCES.PLATFORM_GROUP:
+            return page("the platform groups", "/dashboard/platform/users?tab=groups");
         case AUDIT_RESOURCES.API_KEY:
             return page("API keys", `${USERS}?tab=apikeys`);
         case AUDIT_RESOURCES.SSO_PROVIDER:
             return page("SSO", `${USERS}?tab=sso`);
+        case AUDIT_RESOURCES.TENANT:
+            // A change of the tenant settings stays in the tenant, the rest is the platform's Tenants page.
+            return parseDetails(record.details).area === TENANT_SETTINGS_AREA
+                ? page("the tenant settings", "/dashboard/settings")
+                : page("Tenants", "/dashboard/platform/tenants");
         case AUDIT_RESOURCES.ADAPTER:
         case AUDIT_RESOURCES.SOURCE:
             return page("Connections", "/dashboard/connections");
@@ -37,7 +47,8 @@ function recordLink(record: AuditRecord, name: string | null): AuditDetails["rec
         case AUDIT_RESOURCES.DESTINATION:
             return page("Backups", "/dashboard/backups");
         case AUDIT_RESOURCES.SYSTEM:
-            return page("Settings", "/dashboard/settings");
+            // The settings of the instance, which stay at Settings while there is one tenant.
+            return page("Settings", "/dashboard/platform/settings");
         default:
             return null;
     }
@@ -46,10 +57,13 @@ function recordLink(record: AuditRecord, name: string | null): AuditDetails["rec
 /**
  * The panel of one entry: what changed, the sign-in it came from, the entries of the same record
  * before it, and for a sign-in what happened in that session and where the person signed in from
- * before. Null when the entry is gone.
+ * before. Null when the entry is gone or the view does not see it, which read the same, and every
+ * entry around it is one the view sees too.
  */
-export async function getAuditEntryDetails(id: string): Promise<AuditDetails | null> {
-    const record = await prisma.auditLog.findUnique({ where: { id }, select: AUDIT_ROW_SELECT });
+export async function getAuditEntryDetails(id: string, view: LogView = FULL_VIEW): Promise<AuditDetails | null> {
+    const visible = await auditVisibleWhere(view);
+    const seen = (where: Prisma.AuditLogWhereInput): Prisma.AuditLogWhereInput => (visible ? { AND: [where, visible] } : where);
+    const record = await prisma.auditLog.findFirst({ where: seen({ id }), select: AUDIT_ROW_SELECT });
     if (!record) return null;
     const details = parseDetails(record.details);
     const isSignIn = record.action === AUDIT_ACTIONS.LOGIN;
@@ -58,14 +72,14 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
         getDataRetentionValues(),
         record.userId && !isSignIn
             ? prisma.auditLog.findFirst({
-                  where: { userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lte: record.createdAt } },
+                  where: seen({ userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lte: record.createdAt } }),
                   orderBy: { createdAt: "desc" },
                   select: { createdAt: true, details: true, userAgent: true, ipAddress: true },
               })
             : null,
         record.resourceId
             ? prisma.auditLog.findMany({
-                  where: { resource: record.resource, resourceId: record.resourceId, createdAt: { lt: record.createdAt } },
+                  where: seen({ resource: record.resource, resourceId: record.resourceId, createdAt: { lt: record.createdAt } }),
                   orderBy: { createdAt: "desc" },
                   take: EARLIER_LIMIT,
                   select: AUDIT_ROW_SELECT,
@@ -74,7 +88,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
         // A session ends with the next sign-in or sign-out of the same person.
         isSignIn && record.userId
             ? prisma.auditLog.findFirst({
-                  where: { userId: record.userId, action: { in: [AUDIT_ACTIONS.LOGIN, AUDIT_ACTIONS.LOGOUT] }, createdAt: { gt: record.createdAt } },
+                  where: seen({ userId: record.userId, action: { in: [AUDIT_ACTIONS.LOGIN, AUDIT_ACTIONS.LOGOUT] }, createdAt: { gt: record.createdAt } }),
                   orderBy: { createdAt: "asc" },
                   select: { createdAt: true, action: true },
               })
@@ -84,12 +98,12 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
     const [sessionRecords, before, newPlaces] = await Promise.all([
         isSignIn && record.userId
             ? prisma.auditLog.findMany({
-                  where: {
+                  where: seen({
                       userId: record.userId,
                       apiKeyId: null,
                       action: { not: AUDIT_ACTIONS.LOGIN },
                       createdAt: { gt: record.createdAt, ...(boundary ? { lte: boundary.createdAt } : {}) },
-                  },
+                  }),
                   orderBy: { createdAt: "asc" },
                   take: SESSION_LIMIT,
                   select: AUDIT_ROW_SELECT,
@@ -97,7 +111,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
             : [],
         isSignIn && record.userId
             ? prisma.auditLog.findMany({
-                  where: { userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lt: record.createdAt } },
+                  where: seen({ userId: record.userId, action: AUDIT_ACTIONS.LOGIN, createdAt: { lt: record.createdAt } }),
                   select: { ipAddress: true },
               })
             : [],
@@ -106,6 +120,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
 
     const targets = await resolveTargets([record, ...earlier, ...sessionRecords]);
     const name = typeof details.name === "string" ? details.name : targetOf(targets, record);
+    const shown = originShown(record, view);
 
     return {
         id: record.id,
@@ -114,8 +129,8 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
             ? {
                   at: signIn.createdAt.toISOString(),
                   method: typeof parseDetails(signIn.details).method === "string" ? String(parseDetails(signIn.details).method) : null,
-                  device: deviceOf(signIn.userAgent),
-                  ipAddress: signIn.ipAddress,
+                  device: shown ? deviceOf(signIn.userAgent) : null,
+                  ipAddress: shown ? signIn.ipAddress : null,
               }
             : null,
         session: isSignIn
@@ -130,7 +145,7 @@ export async function getAuditEntryDetails(id: string): Promise<AuditDetails | n
             : [],
         earlier: earlier.map((entry) => toLine(entry, targets)),
         record: recordLink(record, name),
-        browser: record.userAgent && record.userAgent !== "unknown" ? record.userAgent : null,
+        browser: shown && record.userAgent && record.userAgent !== "unknown" ? record.userAgent : null,
         stored: record.details ? JSON.stringify(details, null, 2) : null,
         keptDays: retention.auditLog,
     };

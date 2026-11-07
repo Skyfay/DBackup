@@ -53,6 +53,8 @@ export interface VaultCredential {
     /** The last time its secret was revealed, and how often the audit log saw it. */
     revealed: VaultActor | null;
     reveals: number;
+    /** A login of the destination of the configuration backup, which only a platform admin reveals or changes. */
+    configBackup?: boolean;
 }
 
 export interface VaultCredentialStats {

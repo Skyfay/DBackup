@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDashboardStats, getStorageVolumeCacheAge } from "@/services/dashboard-service";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, ApiKeyError, PermissionError } from "@/lib/logging/errors";
+import { wrapError, PermissionError } from "@/lib/logging/errors";
 
 const log = logger.child({ route: "dashboard/stats" });
 
@@ -16,18 +17,11 @@ const log = logger.child({ route: "dashboard/stats" });
  * handed to a widget only ever sees totals and cannot list anything.
  */
 export async function GET() {
-  let ctx;
-  try {
-    ctx = await getAuthContext(await headers());
-  } catch (error) {
-    if (error instanceof ApiKeyError) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 401 });
-    }
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  // A disabled, expired or blocked API key is answered by `unauthorized` with its reason.
+  const ctx = await getAuthContext(await headers()).catch(() => null);
 
   if (!ctx) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {

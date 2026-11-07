@@ -27,7 +27,7 @@ which type they accept, and the credential picker filters the list accordingly.
 
 | Type | Payload | Used by |
 |---|---|---|
-| `USERNAME_PASSWORD` | `username`, `password` | MySQL, MariaDB, Postgres, MongoDB, MSSQL, Redis, FTP, SMB, WebDAV |
+| `USERNAME_PASSWORD` | `username`, `password`, neither with a line break, and no NUL in the password, which the MySQL tools would read as options of their own | MySQL, MariaDB, Postgres, MongoDB, MSSQL, Redis, FTP, SMB, WebDAV |
 | `SSH_KEY` | `username`, `authType` (`password` / `privateKey` / `agent`), and `password` / `privateKey` / `passphrase` depending on `authType` | SFTP, Rsync, and the SSH tunnel slot of any DB adapter |
 | `ACCESS_KEY` | `accessKeyId`, `secretAccessKey` | S3 (AWS, generic, R2, Hetzner) |
 | `TOKEN` | `token` | Gotify, ntfy, Telegram, Twilio |
@@ -40,6 +40,10 @@ The `OAUTH` profile type is managed automatically during the OAuth authorization
 :::
 
 Local Filesystem adapters do not use a credential profile.
+
+::: warning SSH agent logins
+An `SSH_KEY` profile with `authType` `agent` logs in with the SSH agent of the server DBackup runs on, and Rsync with its default keys too. Every connection that uses the profile takes a change of it at its next run, so only a platform admin signed in with a session creates such a profile or changes one, in the home tenant. Anyone else gets an error and uses a password or a private key instead. SFTP never asks the agent, a login of that kind fails there.
+:::
 
 ## The Credentials Tab
 
@@ -152,7 +156,7 @@ either slot. Deleting a profile that is still in use is refused with a
 `409 Conflict`. The dialog names every connection with a link that opens it,
 and **Delete profile** stays off until none uses the profile anymore.
 
-A deleted profile waits in [Recently deleted](/user-guide/admin/recently-deleted) for 30 days with its secret. With the right to change the settings, tick **Delete it permanently now** for a login that leaked.
+A deleted profile waits in [Recently deleted](/user-guide/admin/recently-deleted) for 30 days with its secret. With the right to change the tenant settings, tick **Delete it permanently now** for a login that leaked.
 
 Adapters whose required primary credential is missing (e.g. you deleted a
 profile by force, or imported a config without profiles) are flagged as
@@ -176,6 +180,11 @@ credentials to adapters without exposing the raw secrets to them. **Reveal
 secret** shows each field of the profile with a copy button, and every reveal
 is recorded in the audit log before the secret leaves the server.
 
+The logins of the destination the [configuration backup](/user-guide/features/system-backup)
+writes to are revealed, changed and authorized again only by a platform admin, since
+they lead to a file with every secret of the instance. Everyone else may still pick
+them for a connection, and an API key never reveals or changes them.
+
 ## Encryption at Rest
 
 Profile payloads are stored AES-256-GCM encrypted in SQLite, using the same
@@ -197,7 +206,7 @@ under the `Vault` tag. The endpoints are:
 | `DELETE` | `/api/credentials/{id}` | `409` if referenced |
 | `GET` | `/api/credentials/{id}/usage` | List adapter references |
 | `GET` | `/api/credentials/{id}/reveal` | Audited, requires `CREDENTIALS.REVEAL` |
-| `GET` | `/api/vault/credentials` | Every profile with the connections that use it, what it holds and its audit facts, for the Vault page |
+| `GET` | `/api/vault/credentials` | Every profile with the connections that use it, what it holds and its audit facts, for the Vault page. Requires `vault:read` and `credentials:read` |
 
 ## Related
 

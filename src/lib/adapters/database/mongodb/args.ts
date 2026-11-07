@@ -1,4 +1,5 @@
 import type { MongoDBConfig } from "@/lib/adapters/definitions";
+import type { ExecutionHost } from "@/lib/transport";
 
 /**
  * Connection arguments and URIs for the MongoDB tools.
@@ -52,6 +53,25 @@ interface MongoTarget {
  * which is what makes an Atlas cluster work with nothing but its hostname typed in.
  */
 export function parseMongoTarget(config: AnyMongoConfig): MongoTarget {
+    const { hosts, srv } = readMongoHosts(config);
+
+    // An SRV record carries a port per host, so naming one alongside it is
+    // rejected as an invalid connection string.
+    const authority = srv
+        ? hosts[0].host
+        : hosts.map((entry) => `${entry.host}:${entry.port}`).join(",");
+
+    return {
+        authority,
+        host: hosts[0].host,
+        port: hosts[0].port,
+        srv,
+        multiHost: !srv && hosts.length > 1,
+    };
+}
+
+/** The Host field read into its hosts with their ports, never empty, and whether it names an SRV record. */
+function readMongoHosts(config: AnyMongoConfig): { hosts: { host: string; port: number }[]; srv: boolean } {
     let raw = (config.host || "127.0.0.1").trim();
     let srv = false;
 
@@ -91,22 +111,75 @@ export function parseMongoTarget(config: AnyMongoConfig): MongoTarget {
         srv = SRV_ZONES.some((zone) => lower.endsWith(zone));
     }
 
-    // An SRV record carries a port per host, so naming one alongside it is
-    // rejected as an invalid connection string.
-    const authority = srv
-        ? hosts[0].host
-        : hosts.map((entry) => `${entry.host}:${entry.port}`).join(",");
-
-    return {
-        authority,
-        host: hosts[0].host,
-        port: hosts[0].port,
-        srv,
-        multiHost: !srv && hosts.length > 1,
-    };
+    return { hosts, srv };
 }
 
-/** Connection flags for mongosh, mongodump and mongorestore. */
+/**
+ * The hosts the tools and the driver dial for the Host field, read by `parseMongoTarget` itself:
+ * after the user info, before a path or a query, every entry of a list, `127.0.0.1` when nothing
+ * is left. An SRV name alone, the hosts its record names come from DNS. Without the brackets of
+ * an IPv6 address, so the local network check reads them as addresses.
+ */
+export function dialedMongoHosts(config: AnyMongoConfig): string[] {
+    const { hosts, srv } = readMongoHosts(config);
+    return (srv ? hosts.slice(0, 1) : hosts).map((entry) => entry.host.replace(/^\[|\]$/g, ""));
+}
+
+/**
+ * Whether the driver connects to the one host it names and to nobody it announces: a Host field
+ * of one host without an SRV record and without the older connection URI. The tools connect
+ * directly to a single `--host` on their own, since no replica set name is given.
+ */
+export function connectsDirectly(config: AnyMongoConfig): boolean {
+    if (config.uri) return false;
+    const { srv, multiHost } = parseMongoTarget(config);
+    return !srv && !multiHost;
+}
+
+/**
+ * A value of the YAML file of `--config`, as a double quoted string. JSON escapes every control
+ * character and quote the way YAML reads them, and the characters YAML reads as a line break on
+ * top are escaped too.
+ */
+function yamlString(value: string): string {
+    return JSON.stringify(value).replace(/[\u007f-\u009f\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+/**
+ * The connection flags of mongodump and mongorestore, and the secrets they read from the YAML file
+ * of `--config` instead of argv: the password, or the whole connection string, which carries the
+ * login. The Database Tools read `password` and `uri` from that file since 100.3.0.
+ */
+export function toolConnection(config: AnyMongoConfig): { args: string[]; secrets: string | null } {
+    if (config.uri) return { args: [], secrets: `uri: ${yamlString(config.uri)}\n` };
+
+    const { host, port, srv, multiHost } = parseMongoTarget(config);
+    // See `buildConnectionArgs`, an SRV name or a seed list only fit into a connection string.
+    if (srv || multiHost) return { args: [], secrets: `uri: ${yamlString(buildConnectionUri(config))}\n` };
+
+    const args = ["--host", host, "--port", String(port)];
+    if (config.user && config.password) {
+        args.push("--username", config.user, "--authenticationDatabase", config.authenticationDatabase || "admin");
+        return { args, secrets: `password: ${yamlString(config.password)}\n` };
+    }
+    return { args, secrets: null };
+}
+
+/**
+ * Runs `fn` with the connection flags of mongodump or mongorestore. The secrets go into a file of
+ * mode 0600 on the execution host, named by `--config` and removed afterwards, so the password is
+ * in no process list and in no command an SSH server logs.
+ */
+export async function withToolConnection<T>(host: ExecutionHost, config: AnyMongoConfig, fn: (args: string[]) => Promise<T>): Promise<T> {
+    const { args, secrets } = toolConnection(config);
+    if (secrets === null) return fn(args);
+    return host.withTempFile({ content: secrets, mode: 0o600, suffix: ".yaml" }, (path) => fn([...args, `--config=${path}`]));
+}
+
+/**
+ * Connection flags with the password in argv, for mongosh, which has no file or environment
+ * variable for it. mongodump and mongorestore go through `withToolConnection`.
+ */
 export function buildConnectionArgs(config: AnyMongoConfig): string[] {
     if (config.uri) {
         return [`--uri=${config.uri}`];

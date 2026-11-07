@@ -7,12 +7,16 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
+import type { NotificationEventData } from "@/lib/notifications/types";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
-import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { invalidateDashboardCache, invalidateTenantCaches } from "@/services/dashboard/cache";
+import { queueRunEnded } from "@/services/jobs/queue-snapshot";
 import { jobReason } from "@/services/notifications/notification-reason";
 import { loadNotificationBrand } from "@/lib/notifications/brand";
 import { backupEventData } from "./notification-data";
+import { channelTarget } from "@/services/sharing/channel-recipients";
+import { SHARED_FAILURE } from "@/services/notifications/channel-send";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -138,8 +142,18 @@ export async function stepFinalize(ctx: RunnerContext) {
         }
     });
 
-    // The dashboard caches its charts and counts. This run changes them, whatever its outcome.
-    invalidateDashboardCache();
+    // The run that follows this one ends with it, before the notifications, which can take a while.
+    await ctx.follower?.end({ status: ctx.status, dumps: ctx.metadata?.dumps }).catch((error: unknown) => {
+        log.error("Ending the run that follows this one failed", { executionId: ctx.execution?.id }, wrapError(error));
+    });
+
+    // The dashboard caches its charts and counts. This run changes them, whatever its outcome, in
+    // its own tenant and in All tenants. A customer's run that follows it changes those of the
+    // customer too, which the run does not know, so then every tenant's.
+    if (ctx.follower) invalidateDashboardCache();
+    else invalidateTenantCaches([ctx.execution.tenantId]);
+    // The usual length of a run of the job, which the plan of the queue of every tenant reads.
+    queueRunEnded(ctx.execution.jobId);
 
     // 2. Refresh storage statistics cache of the destinations of this run (non-blocking)
     if (ctx.status === "Success" || ctx.status === "Partial") {
@@ -193,15 +207,27 @@ export async function stepFinalize(ctx: RunnerContext) {
         }
     }
 
-    if (channelsToNotify.length > 0 && ctx.job) {
+    const eventType = isSuccess
+        ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
+        : isPartial
+            ? NOTIFICATION_EVENTS.BACKUP_PARTIAL
+            : NOTIFICATION_EVENTS.BACKUP_FAILURE;
+
+    // The tenant of the job hears about the run on its own channels too, once it picked any for it
+    // in its settings. The home tenant does not, its jobs report through their own channels.
+    const tenantId = ctx.job?.tenantId;
+    const tenantHears = tenantId
+        ? await import("@/services/notifications/tenant-notification-settings")
+            .then(({ tenantHearsAbout }) => tenantHearsAbout(tenantId, eventType))
+            .catch((e: unknown) => {
+                log.warn("Could not read the notifications of the tenant", { tenantId }, wrapError(e));
+                return false;
+            })
+        : false;
+
+    if ((channelsToNotify.length > 0 || tenantHears) && ctx.job) {
         ctx.setStage(PIPELINE_STAGES.NOTIFICATIONS);
         ctx.log("Sending notifications...");
-
-        const eventType = isSuccess
-            ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
-            : isPartial
-                ? NOTIFICATION_EVENTS.BACKUP_PARTIAL
-                : NOTIFICATION_EVENTS.BACKUP_FAILURE;
 
         // What the run did, read once for every channel.
         const brand = await loadNotificationBrand();
@@ -211,14 +237,18 @@ export async function stepFinalize(ctx: RunnerContext) {
             log.warn("Could not gather the details of the run for its notification", { jobId: job.id }, wrapError(e));
             return { jobName: job.name, jobId: job.id, executionId: ctx.execution?.id, timestamp: new Date().toISOString() };
         });
-        const basePayload = renderTemplate({ eventType, data }, { timeZone: brand.timeZone });
+        // Its links name the tenant of the job, so they open the run there from any other tenant.
+        const basePayload = renderTemplate({ eventType, data }, { timeZone: brand.timeZone, tenantId });
 
         for (const { channel, events } of channelsToNotify) {
             try {
                 const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
 
                 if (notifyAdapter) {
-                    const channelConfig = await resolveAdapterConfig(channel) as any;
+                    // A channel another tenant shares sends where the tenant of the job named, or nowhere.
+                    const target = await channelTarget(channel, tenantId);
+                    if (target.refusal) throw new Error(target.refusal);
+                    const channelConfig = { ...(await resolveAdapterConfig(channel) as any), ...(target.to ? { to: target.to } : {}) };
                     const payload = { ...basePayload, reason: jobReason(channel.name, ctx.job.name, events) };
 
                     let renderedPayload: string | undefined;
@@ -283,6 +313,7 @@ export async function stepFinalize(ctx: RunnerContext) {
                         renderedHtml,
                         renderedPayload,
                         executionId: ctx.execution?.id,
+                        tenantId,
                     });
                 }
             } catch (e) {
@@ -297,10 +328,21 @@ export async function stepFinalize(ctx: RunnerContext) {
                     status: "Failed",
                     title: "Backup Notification",
                     message: "",
-                    error: getErrorMessage(e),
+                    // Why the server of the tenant that shares the channel refused it stays with that tenant.
+                    error: channel.tenantId !== tenantId && !(e instanceof Error && /shared with this tenant|No recipients/.test(e.message)) ? SHARED_FAILURE : getErrorMessage(e),
                     executionId: ctx.execution?.id,
+                    tenantId,
                 });
             }
+        }
+
+        if (tenantHears && tenantId) {
+            // Only the channels of the tenant, the platform hears about runs through the jobs alone.
+            const { notify } = await import("@/services/notifications/system-notification-service");
+            // A channel the job told already gets it once.
+            const skipChannelIds = channelsToNotify.map(({ channel }) => channel.id);
+            const sent = await notify({ eventType, data } as NotificationEventData, { executionId: ctx.execution?.id, tenantId, platform: false, skipChannelIds });
+            if (sent && sent.failed > 0) ctx.log(`${sent.failed} channel(s) of the tenant did not take the notification`);
         }
     }
 }

@@ -10,12 +10,14 @@ const UNAVAILABLE = "No entries with the other filters";
 
 /**
  * The filters of the entries: who, with people and API keys under headings of their own, the area
- * and the action. The numbers come from the server, which counts under the other filters.
+ * and the action, and in All tenants the tenant. The numbers come from the server, which counts
+ * under the other filters.
  */
-export function auditFilters(page: AuditPage | null): DataTableFilterableColumn<AuditRow>[] {
+export function auditFilters(page: AuditPage | null, tenant: DataTableFilterableColumn<AuditRow> | null = null): DataTableFilterableColumn<AuditRow>[] {
     const facets = page?.facets;
     const shared = { note: "The numbers count the entries", unavailableLabel: UNAVAILABLE };
     return [
+        ...(tenant ? [{ ...tenant, ...shared, options: tenant.options.map((option) => ({ ...option, count: facets?.tenant?.[option.value] ?? 0 })) }] : []),
         {
             id: "who",
             title: "Who",

@@ -47,6 +47,9 @@ vi.mock('@/lib/core/registry', () => ({
     registry: { get: vi.fn() },
 }));
 
+// A destination whose adapter is not registered yet registers them all first.
+vi.mock('@/lib/adapters', () => ({ registerAdapters: vi.fn() }));
+
 vi.mock('@/lib/adapters/config-resolver', () => ({
     resolveAdapterConfig: vi.fn(async (adapter: any) => {
         try { return JSON.parse(adapter.config); } catch { return {}; }
@@ -105,6 +108,7 @@ vi.mock('@/lib/execution/queue-manager', () => ({
 const mockStorageConfig = {
     id: 'storage-1',
     type: 'storage',
+    tenantId: 'tenant-1',
     adapterId: 'local-fs',
     config: JSON.stringify({ basePath: '/tmp/backups' }),
     name: 'Local FS',
@@ -115,6 +119,7 @@ const mockStorageConfig = {
 const mockPostgresConfig = {
     id: 'source-1',
     type: 'database',
+    tenantId: 'tenant-1',
     adapterId: 'postgres',
     config: JSON.stringify({ host: 'localhost', database: 'mydb' }),
     name: 'Postgres DB',
@@ -146,11 +151,23 @@ function makeDbAdapter(overrides = {}) {
     };
 }
 
+/**
+ * The registry answers by adapter id, as it does at runtime: the destination's id gets the storage
+ * adapter, any other id the database adapter. Opening a destination asks for its adapter twice.
+ */
+function useAdapters(storageAdapter: unknown, dbAdapter: unknown) {
+    vi.mocked(registry.get).mockImplementation(((id: string) => (id === mockStorageConfig.adapterId ? storageAdapter : dbAdapter)) as any);
+}
+
 // --- Tests ---
 
 describe('runRestorePipeline (extra coverage 3)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Nothing answers from the registry until a test says so with useAdapters.
+        vi.mocked(registry.get).mockReset();
+        // No destination of these tests is shared with other tenants.
+        prismaMock.connectionShare.count.mockResolvedValue(0);
 
         prismaMock.execution.update.mockResolvedValue({} as any);
         vi.mocked(abortModule.registerExecution).mockReturnValue(new AbortController());
@@ -190,9 +207,7 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce(makeDbAdapter() as any);
+            useAdapters(makeStorageAdapter(), makeDbAdapter());
 
             const input = makeInput({ file: 'backup.sql.br' });
 
@@ -212,9 +227,7 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce(makeDbAdapter() as any);
+            useAdapters(makeStorageAdapter(), makeDbAdapter());
 
             const input = makeInput({ file: 'backup.sql.br' });
 
@@ -234,9 +247,7 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce(makeDbAdapter() as any);
+            useAdapters(makeStorageAdapter(), makeDbAdapter());
 
             const input = makeInput({ file: 'backup.sql.br' });
 
@@ -254,9 +265,7 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce(makeDbAdapter() as any);
+            useAdapters(makeStorageAdapter(), makeDbAdapter());
 
             const input = makeInput({ file: 'backup.sql.br' });
 
@@ -290,12 +299,10 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce({
-                    restore: restoreMock,
-                    test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
-                } as any);
+            useAdapters(makeStorageAdapter(), {
+                restore: restoreMock,
+                test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
+            });
 
             await runRestorePipeline('exec-1', makeInput());
 
@@ -319,12 +326,10 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce({
-                    restore: restoreMock,
-                    test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
-                } as any);
+            useAdapters(makeStorageAdapter(), {
+                restore: restoreMock,
+                test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
+            });
 
             await runRestorePipeline('exec-1', makeInput());
 
@@ -346,12 +351,10 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce({
-                    restore: restoreMock,
-                    test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
-                } as any);
+            useAdapters(makeStorageAdapter(), {
+                restore: restoreMock,
+                test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
+            });
 
             await runRestorePipeline('exec-1', makeInput());
 
@@ -379,12 +382,10 @@ describe('runRestorePipeline (extra coverage 3)', () => {
                 .mockResolvedValueOnce(mockStorageConfig as any)
                 .mockResolvedValueOnce(mockPostgresConfig as any);
 
-            vi.mocked(registry.get)
-                .mockReturnValueOnce(makeStorageAdapter() as any)
-                .mockReturnValueOnce({
-                    restore: restoreMock,
-                    test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
-                } as any);
+            useAdapters(makeStorageAdapter(), {
+                restore: restoreMock,
+                test: vi.fn().mockResolvedValue({ success: true, version: '14.0' }),
+            });
 
             await runRestorePipeline('exec-1', makeInput());
 

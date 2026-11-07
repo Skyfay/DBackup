@@ -17,6 +17,10 @@ import type { AdapterConfig } from "./types";
 import { healthOf, kindNames, statusDetail, type ConnectionKind } from "./connection-columns";
 import { connectionAddress, connectionFacts, connectionVersion } from "@/lib/adapters/connection-summary";
 import { DetailStats, FactList, HealthTimeline, IssueBanner, Section, UsageList, type DetailStat } from "./connection-details-sections";
+import { ConnectionSharing } from "./connection-sharing";
+import { ConnectionShareCard } from "./connection-share-card";
+import { ProvidedSection } from "./connection-provided";
+import { useMayReachServer } from "./host-local-access";
 
 const log = logger.child({ component: "connection-details" });
 
@@ -88,6 +92,8 @@ export interface ConnectionDetailsProps {
     onEdit?: () => void;
     /** The remaining actions, as the menu the row shows. */
     menu: React.ReactNode;
+    /** Loads the list again after a change in the details, like who gets a shared connection. */
+    onChanged?: () => void;
 }
 
 interface ContentProps extends ConnectionDetailsProps {
@@ -96,15 +102,20 @@ interface ContentProps extends ConnectionDetailsProps {
 }
 
 /** Everything about one connection: what is wrong, how its checks went, what uses it, and how it is set up. */
-export function ConnectionDetailsContent({ variant, config, kind, canTest, canViewHistory, exploreHref, onEdit, menu }: ContentProps) {
+export function ConnectionDetailsContent({ variant, config, kind, canTest, canViewHistory, exploreHref, onEdit, menu, onChanged }: ContentProps) {
     const { details, loadError } = useConnectionDetails(config.id);
     const [testing, setTesting] = useState(false);
+    // A connection that reaches the server DBackup runs on is tested by a platform admin alone.
+    const mayReachServer = useMayReachServer();
+    const mayTest = canTest && (mayReachServer || !config.hostLocal);
 
     const overview = config.overview;
     const health = healthOf(config);
     const version = connectionVersion(config.metadata);
     const address = connectionAddress(config.adapterId, config.config);
     const notification = kind === "notification";
+    // Another tenant shares it, so this tenant sees what it does with it and nothing of how it is set up.
+    const provided = config.provided;
     const inSheet = variant === "sheet";
     const Title = inSheet ? SheetTitle : "h2";
     const Description = inSheet ? SheetDescription : "p";
@@ -152,11 +163,12 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
                             {kindNames.get(config.adapterId) ?? config.adapterId}
                             {version && ` ${version}`}
                             {address && ` · ${address}`}
+                            {provided && ` · provided by ${provided.providerName}`}
                         </Description>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    {canTest && (
+                    {mayTest && (
                         <Button variant="outline" size="sm" onClick={runTest} disabled={testing}>
                             {testing ? <Loader2 className="animate-spin" /> : <Zap />}
                             Test connection
@@ -189,7 +201,7 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
 
                     <DetailStats stats={stats} />
 
-                    {!notification && overview && (
+                    {!notification && !provided && overview && (
                         <Section
                             title="Health, last 24 hours"
                             aside={details?.averageLatencyMs != null ? `avg ${details.averageLatencyMs} ms` : undefined}
@@ -206,9 +218,16 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
                         )}
                     </Section>
 
-                    <Section title="Settings">
-                        <FactList facts={facts} />
-                    </Section>
+                    {provided ? (
+                        <ProvidedSection config={config} kind={kind} onChanged={onChanged} />
+                    ) : (
+                        <Section title="Settings">
+                            <FactList facts={facts} />
+                        </Section>
+                    )}
+
+                    <ConnectionShareCard config={config} kind={kind} onChanged={onChanged} />
+                    <ConnectionSharing config={config} kind={kind} />
                 </div>
             </ScrollArea>
         </>
@@ -216,7 +235,7 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
 }
 
 /** The sheet's header inside a sheet, a plain block anywhere else. */
-function SheetHeaderOr({ inSheet, className, children }: { inSheet: boolean; className: string; children: React.ReactNode }) {
+export function SheetHeaderOr({ inSheet, className, children }: { inSheet: boolean; className: string; children: React.ReactNode }) {
     if (inSheet) return <SheetHeader className={className}>{children}</SheetHeader>;
     return <div className={cn("flex flex-col", className)}>{children}</div>;
 }

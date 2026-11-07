@@ -129,14 +129,19 @@ describe.each<HostKind>(["direct", "ssh"])("Redis connection over a %s host", (k
 });
 
 describe("Redis connection transport handling", () => {
-    it("suppresses the insecure-password warning on every call", async () => {
-        // Without --no-auth-warning redis-cli writes a warning to stderr for
-        // every single invocation. Only the table browser used to pass it.
+    it("hands redis-cli the password in REDISCLI_AUTH on every call, never in its argv", async () => {
         for (const kind of ["direct", "ssh"] as HostKind[]) {
-            const host = redisHost(kind, {});
+            const envs: Array<Record<string, string | undefined> | undefined> = [];
+            const host = createFakeHost({ kind, onExec: (_argv, options) => { envs.push(options?.env); return { stdout: "PONG" }; } });
             await testConnection(baseConfig as never, host);
+            await getDatabases(baseConfig as never, host);
 
-            expect(host.calls.exec[0]).toContain("--no-auth-warning");
+            expect(host.calls.exec.length).toBeGreaterThan(1);
+            for (const argv of host.calls.exec) {
+                expect(argv).not.toContain("-a");
+                expect(argv.join(" ")).not.toContain(String(baseConfig.password));
+            }
+            for (const env of envs) expect(env).toEqual({ REDISCLI_AUTH: baseConfig.password });
         }
     });
 

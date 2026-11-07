@@ -1,8 +1,10 @@
+import { Readable } from "stream";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
 import { SFTPAdapter } from "@/lib/adapters/storage/sftp";
 
 // --- Hoisted mocks ---
-const { mockSftpConnect, mockSftpEnd, mockSftpPut, mockSftpGet, mockSftpFastGet, mockSftpFastPut, mockSftpList, mockSftpExists, mockSftpMkdir, mockSftpDelete, mockSftpStat, mockSftpCwd, mockFsStat } = vi.hoisted(() => ({
+const { mockSftpConnect, mockSftpEnd, mockSftpPut, mockSftpGet, mockSftpFastGet, mockSftpFastPut, mockSftpList, mockSftpExists, mockSftpMkdir, mockSftpDelete, mockSftpStat, mockSftpCwd, mockSftpCreateReadStream, mockFsStat } = vi.hoisted(() => ({
     mockSftpConnect: vi.fn(),
     mockSftpEnd: vi.fn().mockResolvedValue(undefined),
     mockSftpPut: vi.fn().mockResolvedValue(undefined),
@@ -14,6 +16,7 @@ const { mockSftpConnect, mockSftpEnd, mockSftpPut, mockSftpGet, mockSftpFastGet,
     mockSftpDelete: vi.fn().mockResolvedValue(undefined),
     mockSftpStat: vi.fn(),
     mockSftpCwd: vi.fn(),
+    mockSftpCreateReadStream: vi.fn(),
     mockSftpFastPut: vi.fn().mockResolvedValue(undefined),
     mockFsStat: vi.fn().mockResolvedValue({ size: 1024 }),
 }));
@@ -32,6 +35,7 @@ vi.mock("ssh2-sftp-client", () => {
         stat = mockSftpStat;
         cwd = mockSftpCwd;
         fastPut = mockSftpFastPut;
+        createReadStream = mockSftpCreateReadStream;
     }
     return { default: MockSFTPClient };
 });
@@ -378,6 +382,20 @@ describe("SFTPAdapter", () => {
             // path should be relative to pathPrefix, not including /backups
             expect(result[0].path).not.toContain("/backups");
         });
+
+        it("strips a prefix typed with a double slash, a dot or a slash at the end, so a view finds the folder of the customers", async () => {
+            for (const pathPrefix of ["/srv//backups/", "/srv/./backups", "/srv/backups/"]) {
+                mockSftpExists.mockResolvedValue("d");
+                mockSftpList
+                    .mockResolvedValueOnce([{ name: "tenants", type: "d", size: 0, modifyTime: Date.now() }])
+                    .mockResolvedValueOnce([{ name: "acme", type: "d", size: 0, modifyTime: Date.now() }])
+                    .mockResolvedValueOnce([{ name: "shop.tar", type: "-", size: 10, modifyTime: Date.now() }]);
+
+                const result = await SFTPAdapter.list({ ...config, pathPrefix }, "");
+
+                expect(result.map((file) => file.path), pathPrefix).toEqual(["tenants/acme/shop.tar"]);
+            }
+        });
     });
 
     // ===== delete() =====
@@ -601,17 +619,16 @@ describe("SFTPAdapter", () => {
 
     // ===== read() non-Buffer result =====
 
-    describe("read() non-Buffer result", () => {
-        it("returns null when sftp.get() returns non-Buffer value", async () => {
-            mockSftpGet.mockResolvedValue(null);
+    describe("read()", () => {
+        /** A remote file of `content` that serves only the range asked for, like a real stream. */
+        const remoteFile = (content: Buffer, size = content.length) => {
+            mockSftpStat.mockResolvedValue({ size });
+            mockSftpCreateReadStream.mockImplementation((_path: string, { start, end }: { start: number; end: number }) =>
+                Readable.from([content.subarray(start, end + 1)]));
+        };
 
-            const result = await SFTPAdapter.read!(config, "Job/meta.json");
-
-            expect(result).toBeNull();
-        });
-
-        it("returns null when sftp.get() throws", async () => {
-            mockSftpGet.mockRejectedValue(new Error("File not found"));
+        it("returns null when the file is not there", async () => {
+            mockSftpStat.mockRejectedValue(new Error("No such file"));
 
             const result = await SFTPAdapter.read!(config, "Job/missing.meta.json");
 
@@ -620,11 +637,27 @@ describe("SFTPAdapter", () => {
 
         it("works without pathPrefix (uses remotePath directly)", async () => {
             const noPrefix = { ...config, pathPrefix: undefined };
-            mockSftpGet.mockResolvedValue(Buffer.from("content"));
+            remoteFile(Buffer.from("content"));
 
             const result = await SFTPAdapter.read!(noPrefix, "backup.meta.json");
 
             expect(result).toBe("content");
+            expect(mockSftpCreateReadStream).toHaveBeenCalledWith("backup.meta.json", expect.anything());
+        });
+
+        it("refuses a file larger than the limit without reading it", async () => {
+            remoteFile(Buffer.from("{}"), SIDECAR_READ_LIMIT + 1);
+
+            await expect(SFTPAdapter.read!(config, "Job/huge.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(mockSftpCreateReadStream).not.toHaveBeenCalled();
+            expect(mockSftpEnd).toHaveBeenCalled();
+        });
+
+        it("asks for one byte past the limit at most, so a file that grows is refused too", async () => {
+            remoteFile(Buffer.alloc(100), 4);
+
+            await expect(SFTPAdapter.readBytes!(config, "Job/x.index", { maxBytes: 10 })).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(mockSftpCreateReadStream).toHaveBeenCalledWith(expect.any(String), { start: 0, end: 10 });
         });
     });
 

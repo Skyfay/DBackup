@@ -39,3 +39,25 @@ export function databaseDownloadFileName(archiveFile: string, name: string, form
     const stem = base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base;
     return `${stem}_${databaseDumpFileName(name, format)}`;
 }
+
+/**
+ * Why a file name read out of a backup is no plain file name, or `null` when it is one.
+ *
+ * A backup comes from a destination its owner can write to, so every name inside it, like a
+ * TAR member or the `filename` of a manifest, is chosen by whoever wrote the file. Only a name
+ * that is a single path segment may become a local path: no separator of either kind, no NUL,
+ * not empty, not `.` or `..`. Every place that turns such a name into a path asks this first.
+ */
+export function plainFileNameProblem(name: unknown): string | null {
+    if (typeof name !== "string" || name.length === 0) return "the name is empty";
+    if (name === "." || name === "..") return `'${name}' is no file name`;
+    if (/[/\\\u0000]/.test(name)) return `'${name.replace(/\u0000/g, "\\0")}' is a path, not a file name`;
+    return null;
+}
+
+/** Throws unless the name is a plain file name, see `plainFileNameProblem`, and returns it. */
+export function assertPlainFileName(name: unknown, what: string): string {
+    const problem = plainFileNameProblem(name);
+    if (problem) throw new Error(`Refusing ${what}: ${problem}`);
+    return name as string;
+}

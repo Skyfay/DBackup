@@ -4,6 +4,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
 import { stripTrailingSlashes } from "@/lib/paths";
+import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "gotify" });
 
@@ -61,7 +62,7 @@ export const GotifyAdapter: NotificationAdapter = {
             const url = `${baseUrl}/message`;
 
             validateOutboundUrl(url);
-            const response = await fetch(url, {
+            const response = await webhookFetch(url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -77,6 +78,8 @@ export const GotifyAdapter: NotificationAdapter = {
                 }),
             });
 
+            const redirect = redirectRefusal("Gotify", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: "Test notification sent successfully!" };
             } else {
@@ -97,7 +100,7 @@ export const GotifyAdapter: NotificationAdapter = {
             const formattedMessage = buildMarkdownMessage(message, context);
 
             validateOutboundUrl(url);
-            const response = await fetch(url, {
+            const response = await webhookFetch(url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

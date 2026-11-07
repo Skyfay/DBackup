@@ -8,7 +8,7 @@ import { NextRequest } from "next/server";
 vi.stubEnv("ENCRYPTION_KEY", "d".repeat(64));
 
 const mocks = vi.hoisted(() => ({
-    ctx: { userId: "u1", permissions: ["credentials:write", "credentials:delete", "credentials:reveal"], isSuperAdmin: false, authMethod: "apikey", apiKeyId: "key-1" },
+    ctx: { userId: "u1", permissions: ["credentials:write", "credentials:delete", "credentials:reveal"], isPlatformAdmin: false, authMethod: "apikey", apiKeyId: "key-1" },
     findUnique: vi.fn(),
     logFor: vi.fn(),
     updateCredentialProfile: vi.fn(),
@@ -25,6 +25,8 @@ vi.mock("@/lib/auth/access-control", () => ({
     checkPermissionWithContext: vi.fn(),
 }));
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers()) }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
 vi.mock("@/services/auth/credential-service", () => ({
     updateCredentialProfile: (...args: unknown[]) => mocks.updateCredentialProfile(...args),

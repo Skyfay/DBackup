@@ -3,7 +3,8 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 
-const { mockExecuteQuery, mockExecuteWithMessages, mockSupportsCompression, mockAssertSupported } = vi.hoisted(() => ({
+const { mockExecuteQuery, mockExecuteWithMessages, mockSupportsCompression, mockAssertSupported, mockOwnData } = vi.hoisted(() => ({
+    mockOwnData: vi.fn(),
     mockExecuteQuery: vi.fn(),
     mockExecuteWithMessages: vi.fn(),
     mockSupportsCompression: vi.fn(),
@@ -18,6 +19,9 @@ vi.mock("@/lib/adapters/database/mssql/connection", () => ({
     supportsCompression: (...args: unknown[]) => mockSupportsCompression(...args),
     getDatabases: vi.fn(),
 }));
+
+// Whether a folder reaches the own data of DBackup, see `own-data.ts`, which reads the database.
+vi.mock("@/lib/adapters/own-data", () => ({ ownDataRefusal: (...args: unknown[]) => mockOwnData(...args) }));
 
 import { createFakeHost, type FakeHost } from "@/lib/testing/fake-host";
 import { dumpOne } from "@/lib/adapters/database/mssql/dump-one";
@@ -67,6 +71,7 @@ beforeEach(async () => {
     mountDir = await mkdtemp(join(os.tmpdir(), "dbackup-mssql-mount-"));
     workDir = await mkdtemp(join(os.tmpdir(), "dbackup-mssql-work-"));
     mockAssertSupported.mockResolvedValue(undefined);
+    mockOwnData.mockResolvedValue(null);
     mockSupportsCompression.mockResolvedValue(true);
     mockExecuteWithMessages.mockResolvedValue({ result: {}, messages: [] });
     mockExecuteQuery.mockResolvedValue({
@@ -160,6 +165,43 @@ describe("MSSQL single-database restore", () => {
         expect(queries().find(q => q.startsWith("RESTORE DATABASE"))).toContain("MOVE");
     });
 
+    /** A server that answers to `here` and a backup made on the server `made`, its files on drive D. */
+    function servers(made: string, here: string) {
+        mockExecuteQuery.mockImplementation(async (_cfg, _host, query: string) => {
+            if (query.includes("FILELISTONLY")) {
+                return {
+                    recordset: [
+                        { LogicalName: "shop", Type: "D", PhysicalName: "D:\\SQLData\\shop.mdf" },
+                        { LogicalName: "shop_log", Type: "L", PhysicalName: "D:\\SQLData\\shop_log.ldf" },
+                    ],
+                };
+            }
+            if (query.includes("HEADERONLY")) return { recordset: [{ ServerName: made, DatabaseName: "shop" }] };
+            if (query.includes("@@SERVERNAME")) return { recordset: [{ ServerName: here, PropertyName: here }] };
+            return { recordset: [{ DataPath: "/var/opt/mssql/data/", LogPath: "/var/opt/mssql/log/" }] };
+        });
+    }
+
+    // A database moved to another server keeps its name, and the paths in its backup are the old server's.
+    it("moves the files to the data folder of this server when the backup was made on another one", async () => {
+        servers("SQL-OLD", "sql-new");
+
+        await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
+
+        const restore = queries().find(q => q.startsWith("RESTORE DATABASE"))!;
+        expect(restore).toContain("MOVE N'shop' TO N'/var/opt/mssql/data/shop.mdf'");
+        expect(restore).toContain("MOVE N'shop_log' TO N'/var/opt/mssql/log/shop.ldf'");
+        expect(restore).not.toContain("D:\\SQLData");
+    });
+
+    it("keeps the files where they were when the backup comes from this very server", async () => {
+        servers("SQL01", "sql01");
+
+        await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
+
+        expect(queries().find(q => q.startsWith("RESTORE DATABASE"))).not.toContain("MOVE");
+    });
+
     it("uploads the dump over SSH under a unique name and removes it afterwards", async () => {
         const host = createFakeHost({ kind: "ssh" });
         await restoreOne(config() as never, await dumpFile(), "shop", host, undefined, undefined, "shop");
@@ -181,5 +223,33 @@ describe("MSSQL single-database restore", () => {
     it("refuses a target name SQL Server cannot accept", async () => {
         await expect(restoreOne(config() as never, await dumpFile(), "", createFakeHost({ kind: "direct" })))
             .rejects.toThrow(/Invalid database name/);
+    });
+});
+
+describe("MSSQL shared folder on the server DBackup runs on", () => {
+    const REFUSED = "This path reaches the folder of DBackup's own database, which only a platform admin connects.";
+
+    it("refuses a backup through a shared folder that reaches the own data of DBackup before SQL Server writes there", async () => {
+        mockOwnData.mockResolvedValue(REFUSED);
+
+        await expect(dumpOne(config() as never, "shop", join(workDir, "0001.bak"), createFakeHost({ kind: "direct" }))).rejects.toThrow(REFUSED);
+        expect(mockOwnData).toHaveBeenCalledWith("mssql", { localBackupPath: mountDir });
+        expect(mockExecuteWithMessages).not.toHaveBeenCalled();
+    });
+
+    it("refuses a restore that would stage its backup there", async () => {
+        mockOwnData.mockResolvedValue(REFUSED);
+        const file = join(workDir, "restore-db-1.bak");
+        await writeFile(file, "BAKDATA");
+
+        await expect(restoreOne(config() as never, file, "shop", createFakeHost({ kind: "direct" }))).rejects.toThrow(REFUSED);
+        expect(await readdir(mountDir)).toEqual([]);
+        expect(mockExecuteWithMessages).not.toHaveBeenCalled();
+    });
+
+    it("asks nothing over SSH, where the file never touches a folder of the server DBackup runs on", async () => {
+        mockOwnData.mockResolvedValue(REFUSED);
+        await dumpOne(config() as never, "shop", join(workDir, "0001.bak"), sshHostThatDelivers());
+        expect(mockOwnData).not.toHaveBeenCalled();
     });
 });

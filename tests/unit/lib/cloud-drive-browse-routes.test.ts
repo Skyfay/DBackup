@@ -40,6 +40,7 @@ vi.mock("@microsoft/microsoft-graph-client", () => {
         },
     };
 });
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: "home-drive", profileId: null, credentialIds: ["config-login"] }) }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -55,7 +56,7 @@ const STEPPING_OUT = ["Backups/../../users/someone", "Backups/%2e%2E/x", "Backup
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.graphPaths.length = 0;
-    mocks.checkPermission.mockResolvedValue(undefined);
+    mocks.checkPermission.mockResolvedValue({ id: "ada", isPlatformAdmin: false });
     // The access token of the OneDrive route.
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ access_token: "access" }) })));
 });
@@ -121,5 +122,23 @@ describe("the login and permission of the cloud drive routes", () => {
 
         expect(mocks.filesListFolder).not.toHaveBeenCalled();
         expect(fetch).not.toHaveBeenCalled();
+    });
+});
+
+describe("the folders of the saved login of the configuration backup's destination", () => {
+    it("are listed for nobody but a platform admin, before the login is opened", async () => {
+        const dropbox = await browseDropbox(request("dropbox", { credentialId: "config-login" }));
+        const oneDrive = await browseOneDrive(request("onedrive", { credentialId: "config-login" }));
+
+        expect([dropbox.status, oneDrive.status]).toEqual([403, 403]);
+        expect(mocks.filesListFolder).not.toHaveBeenCalled();
+        expect(mocks.graphGet).not.toHaveBeenCalled();
+    });
+
+    it("are listed for a platform admin signed in", async () => {
+        mocks.checkPermission.mockResolvedValue({ id: "ada", isPlatformAdmin: true });
+        mocks.filesListFolder.mockResolvedValue({ result: { entries: [], has_more: false } });
+
+        expect((await browseDropbox(request("dropbox", { credentialId: "config-login" }))).status).toBe(200);
     });
 });

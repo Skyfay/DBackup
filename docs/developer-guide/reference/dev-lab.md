@@ -9,7 +9,7 @@ Everything lives in `lab/` of the repository. It needs Docker and the client too
 ```bash
 pnpm lab:init --email you@example.com   # writes ~/.config/dbackup/lab.json with a new password
 pnpm lab:up                             # starts the containers and loads the test data
-pnpm lab:seed                           # fills prisma/dev.db: user, connections, Vault key, jobs
+pnpm lab:seed                           # fills prisma/dev.db: user, connections, Vault key, jobs, customers
 pnpm dev
 ```
 
@@ -24,7 +24,7 @@ Sign in with the email and the password `lab:init` printed. They stay in `~/.con
 | `pnpm lab:status` | Checks everything and says what to run next, see [Status](#status) |
 | `pnpm lab:up [--full]` | Starts the lab on its Docker host and loads the test data once. Prints one line per part and one per service that did not come up |
 | `pnpm lab:down [--volumes]` | Stops the containers and removes them. `--volumes` also removes their data |
-| `pnpm lab:seed [--history]` | Adds the lab to the database of this checkout. `--history` adds 30 days of runs and storage snapshots |
+| `pnpm lab:seed [--history]` | Adds the lab to the database of this checkout, with two customer tenants, see [Customer Tenants](#customer-tenants). `--history` adds 30 days of runs and storage snapshots |
 | `pnpm lab:check [--run]` | Runs Test connection on every lab connection. `--run` also runs every lab job once and waits for it |
 | `pnpm lab:reset [--empty] [--history]` | A new `dev.db` from the migrations, then the seed. `--empty` leaves it without a user, for the first start and the configuration restore |
 | `pnpm lab:clean <workspace>` | Removes the backups of a workspace from every destination |
@@ -32,7 +32,7 @@ Sign in with the email and the password `lab:init` printed. They stay in `~/.con
 | `pnpm lab:init [--email] [--name] [--storage <folder>]` | Writes your config with a generated password, unless it exists |
 | `pnpm test:e2e` | The end-to-end tests: the image of this checkout beside the lab, see [Testing](/developer-guide/reference/testing#end-to-end-tests) |
 
-The seed can run as often as you like. It creates the first user only while there is none, finds every other record by its name and brings it up to date.
+The seed can run as often as you like. It creates the first user only while there is none, finds every other record by its name or email and brings it up to date.
 
 ## Status
 
@@ -42,7 +42,7 @@ The seed can run as often as you like. It creates the first user only while ther
 | :--- | :--- |
 | Every service | Its state and address, whether a database holds the test data, and why a container stopped, like a CPU without the AVX that MongoDB 5 and later need |
 | Native servers | Whether OpenSSH answers and which database services run |
-| Dev database | Whether `dev.db` exists, is migrated and seeded, and whether its destinations point at the folders of this workspace |
+| Dev database | Whether `dev.db` exists, is migrated and seeded, whether its destinations point at the folders of this workspace, and what of the customer tenants exists |
 | Client tools | The version of every tool DBackup runs when it backs up from this machine, and where the Docker image ships another |
 | Port 3000 | Whether DBackup answers there, and from which checkout |
 
@@ -59,6 +59,20 @@ It ends with the commands that fix what it found. It is a report, so it exits wi
 Every database holds the same `shop` and `inventory` databases: Unicode, NULLs, binary data, decimals and dates, plus what the engine adds, like routines and events in MySQL or schemas and sequences in PostgreSQL. The SSH host reaches the databases by name, so a few sources also come in SSH mode, and it holds a SQLite database.
 
 All of it is one Compose project, `dbackup-lab`, made of `lab/compose/databases.yml`, `storage.yml` and `notify.yml`. `e2e.yml` adds DBackup itself, a customer server with the databases of Ubuntu and a second FTP server under the profile `e2e`, which only the [end-to-end tests](/developer-guide/reference/testing#end-to-end-tests) start. The versions, ports and test credentials of each engine are in its file under `lab/src/engines/`, the storage servers and receivers in `lab/src/catalog.ts`. Mailpit shows every mail at port 8025. Every container restarts with Docker, so the lab is back after a restart of its host, until `pnpm lab:down` removes it.
+
+## Customer Tenants
+
+Everything above goes into the home tenant. The seed also sets up what an MSP has after a few days with customers, so the [tenants](/user-guide/admin/tenants) can be tried by hand without clicking it together first:
+
+| Part | What the seed makes |
+| :--- | :--- |
+| **Acme** | A customer with `acme@dbackup.lab` as its Admin. It gets the database `shop` of Lab PostgreSQL 18, and the home tenant shares Lab Local and Lab Mail with it, where it names its own address as the recipient. Its own server is the MySQL 9 of the lab, `Acme MySQL 9`, backed up by the paused job `Acme MySQL 9 to Lab Local` with the key `Acme key` and the template `Acme alerts` |
+| **Globex** | A customer with `globex@dbackup.lab` as its Admin and the local network blocked, which a new tenant starts with |
+| **Lab Support** | A platform group of Acme and Globex, never the home tenant, with `support@dbackup.lab` in it. It sees and manages those two tenants and their accounts, and may do everything inside them |
+
+Every one of these people signs in with the password of `admin` in the lab config. Acme blocks the local network too, but allows the address of the Docker host of the lab, like `100.100.30.1/32`, so its server is reached while every other address of the network is not. With a name instead of an address under `docker` Acme reaches the local network instead, since a name is no range.
+
+The seed finds each part by its name or email and only adds what is missing, so a second run changes nothing. What you changed by hand stays, like the network of a customer, another recipient or a share with Globex as well, and a tenant called Acme or Globex that you made yourself keeps its settings and gets only the missing parts. `pnpm lab:status` shows a line for each customer and the platform group, with its people, jobs, the databases given to it and what is shared with it, and asks for `pnpm lab:seed` while one is missing.
 
 ## Workspaces
 

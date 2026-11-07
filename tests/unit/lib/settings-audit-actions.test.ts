@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
     saveAlertConfig: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/access-control", () => ({ checkPermission: vi.fn(async () => ({ id: "admin" })) }));
+// An admin working in the tenant of a customer, whose log must not get the changes of the platform.
+vi.mock("@/lib/auth/access-control", () => ({ checkPermission: vi.fn(async () => ({ id: "admin", tenantId: "acme", allTenants: false })) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/lib/rate-limit/server", () => ({ reloadRateLimits: vi.fn() }));
@@ -33,6 +34,9 @@ const { updateRateLimitSettings } = await import("@/app/actions/settings/rate-li
 const { saveDataRetentionAction } = await import("@/app/actions/settings/data-retention");
 const { uploadCertificate } = await import("@/app/actions/settings/certificate");
 const { updateStorageAlertSettings } = await import("@/app/actions/storage/storage-alerts");
+
+/** The log of the home tenant, where every change of the platform goes. */
+const PLATFORM = { tenantId: "default" };
 
 const RATE_LIMITS = { auth: { points: 10, duration: 120 }, api: { points: 100, duration: 60 }, mutation: { points: 20, duration: 60 } };
 const RETENTION = { executionLogs: 90, executionHistory: 0, auditLog: 90, notificationHistory: 90, storageUsage: 90, healthChecks: 2 };
@@ -56,7 +60,7 @@ describe("the audit entry of a settings change", () => {
                 { field: "Sign-ins", from: "5 requests", to: "10 requests" },
                 { field: "Sign-ins window", from: "60 seconds", to: "120 seconds" },
             ],
-        });
+        }, undefined, PLATFORM);
     });
 
     it("refuses a window under 10 seconds and names its field", async () => {
@@ -83,7 +87,7 @@ describe("the audit entry of a settings change", () => {
         expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "SYSTEM", {
             area: "Data retention",
             changes: [{ field: "Audit log", from: "90 days", to: "1 year" }],
-        });
+        }, undefined, PLATFORM);
     });
 
     it("writes what a new certificate says about itself and its private key only as changed", async () => {
@@ -109,15 +113,15 @@ describe("the audit entry of a settings change", () => {
                 { field: "Fingerprint", from: "AA:BB", to: "CC:DD" },
                 { field: "Private key", from: null, to: null, secret: true },
             ],
-        });
+        }, undefined, PLATFORM);
         expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("TOPSECRETKEYMATERIAL");
     });
 
-    it("names the destination whose alerts changed", async () => {
+    it("names the destination whose alerts changed, in the log of its tenant", async () => {
         mocks.alertConfig.mockResolvedValue({
             usageSpikeEnabled: false, usageSpikeThresholdPercent: 50, storageLimitEnabled: false, storageLimitBytes: 10737418240, missingBackupEnabled: false, missingBackupHours: 48,
         });
-        prismaMock.adapterConfig.findUnique.mockResolvedValue({ name: "Office NAS" } as never);
+        prismaMock.adapterConfig.findFirst.mockResolvedValue({ name: "Office NAS" } as never);
 
         await updateStorageAlertSettings("nas", {
             usageSpikeEnabled: true, usageSpikeThresholdPercent: 30, storageLimitEnabled: false, storageLimitBytes: 10737418240, missingBackupEnabled: false, missingBackupHours: 48,

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { getCurrentUserWithGroup, hasPermission } from "@/lib/auth/access-control";
+import { getViewer, hasPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { diffFields } from "@/lib/core/audit-diff";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -11,10 +11,12 @@ import { DATE_FORMAT_VALUES, TIME_FORMAT_VALUES, isKnownTimezone } from "@/lib/c
 import { TaskColorsSchema, type TaskColors } from "@/lib/core/task-colors";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { invalid, type SaveResult } from "@/lib/settings/save-part";
+import { invalid, type SaveResult } from "@/services/system/settings-save";
 import { auditService } from "@/services/audit-service";
+import { accountLogOrigin } from "@/services/audit/account-log";
 import { setTaskColors } from "@/services/user/preference-service";
 import { userService } from "@/services/user/user-service";
+import { CHANGED_EMAIL_ANSWERS, EMAIL_REFUSED, takenEmailRefusal } from "@/services/user/new-account-email";
 
 const log = logger.child({ action: "profile" });
 
@@ -32,7 +34,7 @@ const ACCOUNT_FIELDS = { name: { label: "Name" }, email: { label: "Email" } };
  * @no-permission-required - Self-service: only the own account, the permission of each changed field is checked below.
  */
 export async function saveProfileAccountAction(input: { name: string; email: string }): Promise<SaveResult> {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
     const parsed = AccountSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -44,19 +46,27 @@ export async function saveProfileAccountAction(input: { name: string; email: str
     if (email !== user.email && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_EMAIL))) {
         return { success: false, error: "Your group may not change your email.", field: "email" };
     }
+    const claimed = email !== user.email ? await userService.ownEmailRefusal(user.id, email) : null;
+    if (claimed) return { success: false, error: claimed, field: "email" };
+    // Whoever does not see the account that holds the email never learns that it exists, see `takenEmailRefusal`.
+    const taken = email !== user.email ? await takenEmailRefusal(email, { ...user, userId: user.id }, user.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: user.id }) : null;
+    if (taken) return { success: false, error: taken, field: "email" };
 
+    // A change of the own account goes into the log of the tenant only while the account is one of
+    // its people, so a customer never reads the old and new email of someone of the platform.
+    const origin = await accountLogOrigin(user, user.id);
     try {
         await userService.updateUser(user.id, { name, email });
     } catch (error: unknown) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-            return { success: false, error: "Another account signs in with this email.", field: "email" };
+            return { success: false, error: EMAIL_REFUSED, field: "email" };
         }
         log.error("Saving the own account failed", { userId: user.id }, wrapError(error));
         return { success: false, error: "The account could not be saved." };
     }
 
     const changes = diffFields({ name: user.name, email: user.email }, { name, email }, ACCOUNT_FIELDS);
-    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name, changes }, user.id);
+    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name, changes }, user.id, origin);
     revalidatePath("/dashboard", "layout");
     return { success: true };
 }
@@ -76,7 +86,7 @@ const DATE_FIELDS = { timezone: { label: "Time zone" }, dateFormat: { label: "Da
  * @no-permission-required - Self-service: how the own dashboard shows dates, for the signed-in user alone.
  */
 export async function saveProfileDatesAction(input: { timezone: string; dateFormat: string; timeFormat: string }): Promise<SaveResult> {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
     const parsed = DatesSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -93,7 +103,7 @@ export async function saveProfileDatesAction(input: { timezone: string; dateForm
         { ...parsed.data, timezone: parsed.data.timezone || "This browser" },
         DATE_FIELDS
     );
-    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name: user.name, changes }, user.id);
+    if (changes.length > 0) await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { name: user.name, changes }, user.id, await accountLogOrigin(user, user.id));
     revalidatePath("/dashboard", "layout");
     return { success: true };
 }
@@ -104,7 +114,7 @@ export async function saveProfileDatesAction(input: { timezone: string; dateForm
  * @no-permission-required - Self-service: a display preference of the signed-in user, like the table defaults.
  */
 export async function saveTaskColorsAction(colors: TaskColors): Promise<SaveResult> {
-    const user = await getCurrentUserWithGroup();
+    const user = await getViewer();
     if (!user) return { success: false, error: "Unauthorized" };
     const parsed = TaskColorsSchema.safeParse(colors);
     if (!parsed.success) return invalid(parsed.error.issues);

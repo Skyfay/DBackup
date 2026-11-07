@@ -1,11 +1,12 @@
 "use server"
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { savePrivacySettings } from "@/services/system/system-settings-service";
 import { privacySettings, SETTINGS_AREAS } from "@/services/system/settings-audit";
-import { invalid, savePart, type SaveResult } from "@/lib/settings/save-part";
+import { invalid, savePart, type SaveResult } from "@/services/system/settings-save";
 
 const privacySettingsSchema = z.object({
     includeActorInMetadata: z.boolean(),
@@ -16,5 +17,7 @@ export async function savePrivacySettingsAction(input: z.infer<typeof privacySet
 
     const parsed = privacySettingsSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    return savePart(user.id, SETTINGS_AREAS.PRIVACY, privacySettings, () => savePrivacySettings(parsed.data));
+    const result = await savePart(user.id, SETTINGS_AREAS.PRIVACY, privacySettings, () => savePrivacySettings(parsed.data));
+    if (result.success) revalidatePath("/dashboard/settings");
+    return result;
 }

@@ -1,4 +1,6 @@
 import prisma from "@/lib/prisma";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { LogEntry, LogLevel, LogType, INTEGRITY_CHECK_STAGE_PROGRESS_MAP } from "@/lib/core/logs";
 import { createLogFlusher, LogFlusher } from "@/lib/execution/log-flusher";
 import { formatDuration } from "@/lib/utils";
@@ -49,6 +51,9 @@ export class SystemTaskRunner {
 
     const execution = await prisma.execution.create({
       data: {
+        // The run belongs to the tenant of the code that makes it: a check of copies someone starts
+        // in their tenant, the integrity check of each tenant in `runAsTenant`, else the home tenant.
+        tenantId: (await currentTenantId()) ?? HOME_TENANT_ID,
         jobId: null,
         type: taskType,
         status: "Pending",

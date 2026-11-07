@@ -106,6 +106,8 @@ interface DatabaseAdapter {
 The Zod schema for an adapter's configuration lives in `src/lib/adapters/definitions/database.ts` (or `storage.ts` / `notification.ts`), registered in `ADAPTER_DEFINITIONS`. It is not a property on the adapter instance itself.
 :::
 
+Its entry in `ADAPTER_DEFINITIONS` also declares `sharesSingleDatabases`: whether one database of a server can go to a customer of a [shared server](/developer-guide/advanced/tenants#shared-databases) alone. It is true where every database is a dump of its own and a restore writes that one back, and false for an engine like Redis, whose backup is one snapshot of all of them. `tests/unit/adapters/shares-single-databases.test.ts` fails for a database adapter without it.
+
 ::: warning `host` is required and positional
 It sits after the mandatory arguments and before the optional callbacks. That position is deliberate: `AdapterConfig` is `any`, so a misplaced argument next to it would be swallowed silently. Next to a typed parameter, forgetting the host is an arity error the compiler cannot suppress.
 :::
@@ -130,7 +132,7 @@ Each database adapter can optionally return size and table count information. Th
 
 `POST /api/adapters/database-stats`
 
-Accepts either a saved source ID or raw adapter config:
+Accepts either a saved source ID or raw adapter config. Both need `sources:view`. A raw config runs with a host and a login of the caller's choosing, so `assertMayReadFormConfig` in `src/lib/auth/form-config-access.ts` also asks for `sources:write` and a tenant, the same as for `database-tables` and `database-table-data`:
 
 ```json
 // By source ID (loads config from database)
@@ -472,43 +474,19 @@ const MongoDBSchema = z.object({
 
 ### Dump Implementation
 
+The password never goes into argv. `withToolConnection` in `mongodb/args.ts` writes it, or the whole connection string of an SRV name or a seed list, into a YAML file of mode 0600 on the execution host through `host.withTempFile`, which `mongodump` and `mongorestore` read with `--config` (Database Tools 100.3.0 and later), and removes it afterwards. Only `mongosh` over SSH still takes it as an argument, since it reads it from nowhere else.
+
 ```typescript
-async dump(config, destinationPath) {
-  const validated = MongoDBSchema.parse(config);
+async function dumpSingleDatabase(dbName: string, outputPath: string, config: MongoDBConfig, host: ExecutionHost) {
+  const mongodump = await host.which(...MONGODUMP);
 
-  let args: string[] = [];
-
-  if (validated.connectionString) {
-    args.push(`--uri="${validated.connectionString}"`);
-  } else {
-    args.push(
-      `--host=${validated.host}`,
-      `--port=${validated.port}`,
-    );
-
-    if (validated.username) {
-      args.push(
-        `--username=${validated.username}`,
-        `--password=${validated.password}`,
-        `--authenticationDatabase=${validated.authSource}`,
-      );
-    }
-  }
-
-  if (validated.database) {
-    args.push(`--db=${validated.database}`);
-  }
-
-  // Output as archive
-  args.push(`--archive=${destinationPath}`);
-
-  await execAsync(`mongodump ${args.join(" ")}`);
-
-  return {
-    success: true,
-    size: (await stat(destinationPath)).size,
-    logs: [],
-  };
+  await host.captureOutput(outputPath, {}, (hostPath) => withToolConnection(host, config, async (connection) => {
+    // connection: --host, --port, --username, --authenticationDatabase and --config=<file>
+    const args = [...connection, "--db", assertDatabaseArgument(dbName), `--archive=${hostPath}`, "--gzip"];
+    const proc = await host.spawn([mongodump, ...args]);
+    const { code } = await proc.exit();
+    if (code !== 0) throw new Error(`mongodump exited with code ${code}`);
+  }));
 }
 ```
 
@@ -564,40 +542,20 @@ const RedisSchema = z.object({
 
 ### Dump Implementation
 
-Redis backups download the RDB snapshot directly from the server:
+Redis backups download the RDB snapshot directly from the server. The password never goes into argv: `redisCliOptions` in `redis/args.ts` hands it to every `redis-cli` call as `REDISCLI_AUTH`, which `SshHost` renders into an `export` prefix, and the user stays `--user` in argv:
 
 ```typescript
-async dump(config, destinationPath, onLog) {
-  const validated = RedisSchema.parse(config);
+async function dump(config: RedisConfig, destinationPath: string, host: ExecutionHost, onLog?) {
+  const redisCli = await host.which(...REDIS_CLI);
+  const args = buildConnectionArgs(config); // -h, -p, --user, --tls, -n, never -a
 
-  const args = [
-    "-h", validated.host,
-    "-p", validated.port.toString(),
-  ];
+  await host.captureOutput(destinationPath, {}, async (hostPath) => {
+    const argv = [redisCli, ...args, "--rdb", hostPath];
+    onLog?.("Executing redis-cli", "info", "command", argv.join(" "));
 
-  if (validated.password) {
-    args.push("-a", validated.password);
-  }
-
-  if (validated.tls) {
-    args.push("--tls");
-  }
-
-  // Download RDB snapshot
-  args.push("--rdb", destinationPath);
-
-  // Log command with collapsible details (password masked)
-  const maskedArgs = args.map(a => a === validated.password ? "******" : a);
-  const command = `redis-cli ${maskedArgs.join(" ")}`;
-  onLog?.("Executing redis-cli", "info", "command", command);
-
-  await execAsync(`redis-cli ${args.join(" ")}`);
-
-  return {
-    success: true,
-    size: (await stat(destinationPath)).size,
-    logs: ["RDB snapshot downloaded"],
-  };
+    const result = await host.exec(argv, redisCliOptions(config)); // { env: { REDISCLI_AUTH } }
+    if (result.code !== 0) throw new Error(`redis-cli exited with code ${result.code}`);
+  });
 }
 ```
 
@@ -828,7 +786,8 @@ interface DatabaseEntry {
 ```typescript
 import {
   createMultiDbTar,
-  extractMultiDbTar,
+  extractSelectedDatabases,
+  extractedFileOf,
   isMultiDbTar,
   readTarManifest,
   shouldRestoreDatabase,
@@ -840,13 +799,14 @@ const isTar = await isMultiDbTar(sourcePath);
 
 // Extract and restore
 if (isTar) {
-  const { manifest, files } = await extractMultiDbTar(sourcePath, tempDir);
+  // Writes only the dumps of the selected databases to disk, all of them for an empty list.
+  const { manifest, files } = await extractSelectedDatabases(sourcePath, tempDir, selectedNames);
 
   for (const dbEntry of manifest.databases) {
     if (!shouldRestoreDatabase(dbEntry.name, mapping)) continue;
 
     const targetDb = getTargetDatabaseName(dbEntry.name, mapping);
-    await restoreSingleDatabase(path.join(tempDir, dbEntry.filename), targetDb);
+    await restoreSingleDatabase(extractedFileOf(files, dbEntry), targetDb);
   }
 }
 ```
@@ -886,23 +846,22 @@ Redis cannot load an RDB snapshot over the network. The file has to be placed in
 
 ### Token-Based Public Downloads
 
-For wget/curl access (where session cookies aren't available), the app generates temporary download tokens:
+For wget/curl access (where session cookies aren't available), the app generates temporary download links:
 
 ```typescript
-// src/lib/download-tokens.ts
-import { generateDownloadToken, consumeDownloadToken } from "@/lib/auth/download-tokens";
+import { claimLinkToken, generateLinkToken } from "@/lib/auth/download-tokens";
 
-// Generate (5-min TTL, single-use)
-const token = generateDownloadToken(storageConfigId, filePath, decrypt);
+// Generate (5-min TTL, single-use), with the tenant and the user who made it
+const { token } = generateLinkToken({ tenantId, storageId, file, userId, decrypt });
 
 // wget example
 `wget "${baseUrl}/api/storage/public-download?token=${token}" -O backup.rdb`
 
-// Consume (returns null if invalid/expired)
-const data = consumeDownloadToken(token);
+// Claim for one request (returns null if invalid, expired, used or no link)
+const data = claimLinkToken(token);
 ```
 
-The public download endpoint (`/api/storage/public-download`) validates the token and streams the file without requiring session authentication.
+The public download endpoint (`/api/storage/public-download`) claims the link and streams the file without requiring session authentication.
 
 The download dialog of the Backups page (`DownloadDialog`) makes these links for any pick, see [Download Tokens](/developer-guide/core/download-tokens).
 

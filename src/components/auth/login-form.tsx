@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useRouter } from "next/navigation"
@@ -11,10 +11,12 @@ import { ProviderTile } from "@/components/oidc/provider-logo"
 import { Button } from "@/components/ui/button"
 import { wrapError } from "@/lib/logging/errors"
 import { logger } from "@/lib/logging/logger"
-import type { LoginProvider } from "@/services/auth/login-page-service"
-import { needsSecondFactor, providerOfEmail, signInError, ssoProblem, type LoginProblem } from "./login-problems"
+import type { DomainProvider, LoginProvider } from "@/services/auth/login-page-service"
+import { needsSecondFactor, signInError, ssoProblem, type LoginProblem } from "./login-problems"
 import { SecondFactorStep } from "./second-factor-step"
 import { SignInStep, type LoginValues } from "./sign-in-step"
+import { useDomainProvider } from "./use-domain-provider"
+import { rememberedSsoNext, rememberSsoNext } from "./sign-in-next"
 import { AFTER_SIGN_IN } from "@/lib/auth/sign-in-target"
 
 const log = logger.child({ component: "LoginForm" })
@@ -35,15 +37,23 @@ const schema = z.object({
 /** A passkey prompt the person closed is no failure worth a note. */
 const CANCELLED = /not allowed|timed out|cancel/i
 
+/** Where better-auth sends a sign-in a provider or a hook refused, which turns it into a message of the page. */
+const SSO_ERROR_URL = "/api/auth/error/error"
+
 interface LoginFormProps {
     /** The name under General, or DBackup. */
     instance: string;
+    /** The providers of the platform, each a button. */
     providers: LoginProvider[];
+    /** A provider of a tenant claims a domain, which the server tells for the typed email. */
+    domainRouting?: boolean;
     emailLogin: boolean;
     passkeyLogin: boolean;
     autoRedirectProviderId: string | null;
     /** What a provider answered, from `?error=`. */
     errorCode?: string;
+    /** The page to go to after signing in, like an invitation, from `?next=` as the server checked it. */
+    next?: string | null;
 }
 
 /** While OIDC_AUTO_REDIRECT goes to a provider, with a way out in case it does not answer. */
@@ -77,10 +87,13 @@ function RedirectStep({ provider }: { provider: LoginProvider }) {
 /**
  * The sign-in of the login page: a provider, the email with its password, a passkey, and the
  * second factor after the password. With a provider that claims a domain the email comes first
- * and its button says where it leads, without one email and password are one step.
+ * and its button says where it leads, without one email and password are one step. A provider of
+ * a tenant is never a button, only the email reaches it, so the email field stays even while
+ * passwords are off.
  */
-export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoRedirectProviderId, errorCode }: LoginFormProps) {
+export function LoginForm({ instance, providers, domainRouting = false, emailLogin, passkeyLogin, autoRedirectProviderId, errorCode, next: nextPage = null }: LoginFormProps) {
     const router = useRouter()
+    const [target, setTarget] = useState(nextPage ?? AFTER_SIGN_IN)
     const [step, setStep] = useState<"sign-in" | "password" | "factor">("sign-in")
     const [loading, setLoading] = useState(false)
     const [passkeyBusy, setPasskeyBusy] = useState(false)
@@ -93,17 +106,29 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
     // redirect. The effect clears it if it stays, or if the redirect fails.
     const [redirecting, setRedirecting] = useState(Boolean(autoProvider) && !errorCode)
     const fired = useRef(false)
-    const twoStep = emailLogin && providers.some((provider) => provider.domain)
+    const emailField = emailLogin || domainRouting
+    const twoStep = emailField && (domainRouting || providers.some((provider) => provider.domain))
     const form = useForm<LoginValues>({ resolver: zodResolver(schema), defaultValues: { email: "", password: "" } })
+    const email = useWatch({ control: form.control, name: "email" })
+    const { claimed, resolve } = useDomainProvider(email ?? "", providers, domainRouting)
 
     /** Returns false when the provider could not be reached, so the caller can fall back to the form. */
-    const sso = useCallback(async (provider: LoginProvider): Promise<boolean> => {
+    const sso = useCallback(async (provider: Pick<DomainProvider, "providerId" | "name" | "allowProvisioning">, loginHint?: string): Promise<boolean> => {
         setLoading(true)
         setProblem(null)
         const failed = (text?: string) => setProblem({ title: `${provider.name} did not answer`, text: text || "Try again, or sign in another way." })
+        rememberSsoNext(target === AFTER_SIGN_IN ? null : target)
         try {
-            // sso-guard.ts checks the wish to create an account against the saved provider.
-            const result = await signIn.sso({ providerId: provider.providerId, callbackURL: AFTER_SIGN_IN, requestSignUp: provider.allowProvisioning })
+            // sso-guard.ts checks the wish to create an account against the saved provider. The
+            // provider is named by its ID, also one found by the domain of the email, which goes
+            // along as the hint of who signs in.
+            const result = await signIn.sso({
+                providerId: provider.providerId,
+                callbackURL: target,
+                errorCallbackURL: SSO_ERROR_URL,
+                requestSignUp: provider.allowProvisioning,
+                ...(loginHint ? { loginHint } : {}),
+            })
             if (result.error) {
                 failed(result.error.message)
                 return false
@@ -116,7 +141,14 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [target])
+
+    // A provider that refused comes back with its error alone, the tab kept the page it was for.
+    useEffect(() => {
+        if (!errorCode || nextPage) return
+        const kept = rememberedSsoNext()
+        if (kept) setTarget(kept)
+    }, [errorCode, nextPage])
 
     // OIDC_AUTO_REDIRECT goes straight to its provider. Never with an error on screen, which would
     // loop and swallow it, and never on the load right after a sign-out.
@@ -146,7 +178,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
             if (!message || !CANCELLED.test(message)) setProblem({ title: "The passkey did not sign you in", text: message || "Try again, or use your password." })
         }
         try {
-            const result = await signIn.passkey({ fetchOptions: { onSuccess: () => router.push(AFTER_SIGN_IN) } })
+            const result = await signIn.passkey({ fetchOptions: { onSuccess: () => router.push(target) } })
             if (result?.error) failed(String(result.error.message ?? ""))
         } catch (error: unknown) {
             failed(error instanceof Error ? error.message : undefined)
@@ -157,9 +189,16 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
 
     const next = async () => {
         if (!(await form.trigger("email"))) return
-        const provider = providerOfEmail(providers, form.getValues("email"))
+        const typed = form.getValues("email").trim()
+        setLoading(true)
+        const provider = await resolve(typed)
+        setLoading(false)
         if (provider) {
-            await sso(provider)
+            await sso(provider, typed)
+            return
+        }
+        if (!emailLogin) {
+            form.setError("email", { message: "No sign-in provider takes this email. Sign in another way." }, { shouldFocus: true })
             return
         }
         form.clearErrors("password")
@@ -173,7 +212,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
             await signIn.email({
                 email,
                 password,
-                callbackURL: AFTER_SIGN_IN,
+                callbackURL: target,
                 fetchOptions: {
                     onSuccess: (context) => {
                         if (context.data?.twoFactorRedirect) {
@@ -183,7 +222,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
                             setLoading(false)
                             return
                         }
-                        router.push(AFTER_SIGN_IN)
+                        router.push(target)
                     },
                     onError: (context) => {
                         setLoading(false)
@@ -213,7 +252,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
     if (redirecting && autoProvider) return <RedirectStep provider={autoProvider} />
 
     if (step === "factor") {
-        return <SecondFactorStep email={form.getValues("email")} factors={factors} onBack={backToStart} onPasskey={() => void passkey()} passkeyBusy={passkeyBusy} problem={problem} />
+        return <SecondFactorStep email={form.getValues("email")} factors={factors} target={target} onBack={backToStart} onPasskey={() => void passkey()} passkeyBusy={passkeyBusy} problem={problem} />
     }
 
     return (
@@ -222,6 +261,8 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
             instance={instance}
             providers={providers}
             emailLogin={emailLogin}
+            emailField={emailField}
+            claimed={twoStep && step !== "password" ? claimed : undefined}
             passkeyLogin={passkeyLogin}
             twoStep={twoStep}
             passwordStep={step === "password"}

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     getBackup: vi.fn(),
     checkNow: vi.fn(),
     getPlan: vi.fn(),
+    logFor: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -21,6 +22,10 @@ vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
     checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
+    },
+    tenantOf: (ctx: { tenantId: string | null }) => {
+        if (!ctx.tenantId) throw new PermissionError("a tenant", { message: "All tenants only reads." });
+        return ctx.tenantId;
     },
 }));
 
@@ -34,6 +39,9 @@ vi.mock("@/services/storage/explorer-service", () => ({
     },
 }));
 
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
+vi.mock("@/services/storage/backup-audit", () => ({ destinationAuditName: async (id: string) => ({ nas: "Office NAS", r2: "R2" })[id] ?? null }));
+
 vi.mock("@/services/storage/explorer-plan-service", () => ({
     storageExplorerPlanService: { getPlan: (...args: unknown[]) => mocks.getPlan(...args) },
 }));
@@ -45,7 +53,7 @@ import { GET as getBackup } from "@/app/api/storage/explorer/backup/route";
 import { POST as refresh } from "@/app/api/storage/explorer/refresh/route";
 import { GET as getPlan } from "@/app/api/storage/explorer/plan/route";
 
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false, tenantId: "default" });
 const backups = () => getBackups(new NextRequest("http://localhost/api/storage/explorer/runs"));
 const plan = () => getPlan(new NextRequest("http://localhost/api/storage/explorer/plan"));
 const execution = (path?: string) =>
@@ -115,7 +123,7 @@ describe("Backups page API", () => {
 
         expect((await execution()).status).toBe(400);
         const response = await execution("Shop nightly/a b.tar");
-        expect(mocks.getExecution).toHaveBeenCalledWith("Shop nightly/a b.tar");
+        expect(mocks.getExecution).toHaveBeenCalledWith("Shop nightly/a b.tar", null);
         expect(await response.json()).toMatchObject({ success: true, data: { id: "exec-1", status: "Partial" } });
     });
 
@@ -150,5 +158,27 @@ describe("Backups page API", () => {
         const response = await check({ destinationIds: ["nas", "r2"] });
         expect(await response.json()).toEqual({ success: true, data: { listing: ["nas"] } });
         expect(mocks.checkNow).toHaveBeenCalledWith(["nas", "r2"]);
+    });
+
+    it("notes the destinations Check now started for in the audit log, and nothing when none started", async () => {
+        signedIn(PERMISSIONS.STORAGE.READ);
+        mocks.logFor.mockClear();
+        mocks.checkNow.mockResolvedValue(["nas"]);
+
+        await check({ destinationIds: ["nas", "r2"] });
+        expect(mocks.logFor).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ userId: "u1" }), "EXECUTE", "ADAPTER", { action: "storage_check", names: ["Office NAS"], success: true });
+
+        mocks.logFor.mockClear();
+        mocks.checkNow.mockResolvedValue([]);
+        await check({ destinationIds: ["r2"] });
+        expect(mocks.logFor).not.toHaveBeenCalled();
+    });
+
+    it("starts no Check now in All tenants, which only reads", async () => {
+        mocks.checkNow.mockClear();
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [PERMISSIONS.STORAGE.READ], isPlatformAdmin: true, tenantId: null, allTenants: true });
+
+        expect((await check({ destinationIds: ["nas"] })).status).toBe(403);
+        expect(mocks.checkNow).not.toHaveBeenCalled();
     });
 });

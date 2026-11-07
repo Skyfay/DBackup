@@ -1,0 +1,153 @@
+import type { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
+import { hasPermissionWithContext, type AuthContext } from "@/lib/auth/access-control";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { PlatformReach } from "@/lib/auth/platform-group-caps";
+import type { ImageType } from "@/lib/core/image-type";
+import { runAsTenant } from "@/lib/tenant/context";
+import { membersOfAny, membershipService, peopleOf } from "@/services/tenant/membership-service";
+import { logReachOf } from "@/services/audit/log-reach";
+import { platformGroupService } from "./platform-group-service";
+
+/**
+ * Who sees which account. An account belongs to no tenant, so the tenant filter never narrows a
+ * lookup of one by an id from the request, and these decide whether the caller may see it. Anyone
+ * else gets the answer of an account that does not exist.
+ */
+
+export type AccountViewer = Pick<AuthContext, "userId" | "tenantId" | "allTenants" | "isPlatformAdmin" | "permissions">;
+
+/** The platform rights whose pages list the people of the sign-in providers by name. */
+const LISTS_PEOPLE = [PERMISSIONS.PLATFORM.SIGN_IN_READ, PERMISSIONS.SETTINGS.READ] as const;
+
+/** Whether the viewer may see or manage the accounts of the platform. */
+const holdsAccountRights = (viewer: AccountViewer) =>
+    hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.ACCOUNTS_READ) || hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
+
+/**
+ * The tenants whose people the viewer sees through the right to see or manage the accounts of the
+ * platform. Every tenant for a platform admin and for a platform group of all tenants with that
+ * right, which in All tenants is who the Users tab lists every account of the instance to. The
+ * tenants of the platform group for a group of some tenants, and none without the right, in All
+ * tenants too.
+ */
+export async function accountsSeenReach(viewer: AccountViewer): Promise<PlatformReach> {
+    if (viewer.isPlatformAdmin) return "all";
+    if (!holdsAccountRights(viewer)) return [];
+    return viewer.allTenants ? "all" : platformGroupService.reachOf(viewer.userId);
+}
+
+/** Whether a reach sees an account: every one, else one with a membership in a tenant of it, see `membersOfAny`. */
+async function reachSees(reach: PlatformReach, userId: string): Promise<boolean> {
+    if (reach === "all") return true;
+    if (reach.length === 0) return false;
+    return (await prisma.user.count({ where: { AND: [{ id: userId }, membersOfAny(reach)] } })) > 0;
+}
+
+/**
+ * The tenants whose people the viewer sees by the pages that list the people of the sign-in
+ * providers: the reach of their platform group, every tenant for a platform admin and for whoever
+ * reads the settings through their group of the home tenant without a platform group, as before
+ * there were platform groups.
+ */
+async function signInPeopleReach(viewer: AccountViewer): Promise<PlatformReach> {
+    if (viewer.isPlatformAdmin) return "all";
+    if (!LISTS_PEOPLE.some((permission) => hasPermissionWithContext(viewer, permission))) return [];
+    const own = await platformGroupService.shapeOf(viewer.userId);
+    if (!own) return "all";
+    return own.shape.allTenants ? "all" : own.shape.tenantIds;
+}
+
+/**
+ * Whether whoever may see the tenants sees an account among their members: the Tenants page lists
+ * the members of the tenants their platform group reaches, every tenant for a group of all tenants.
+ */
+async function amongTenantMembers(viewer: AccountViewer, userId: string): Promise<boolean> {
+    if (!hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_READ)) return false;
+    if (await platformGroupService.reachesAll(viewer.userId)) return true;
+    return (await platformGroupService.peopleReached(viewer.userId)).includes(userId);
+}
+
+/** The people of the MSP who open a tenant through the platform, see `platformPeopleOf`. */
+function reachesTenant(tenantId: string): Prisma.UserWhereInput {
+    return {
+        OR: [
+            { platformRole: PLATFORM_ADMIN_ROLE },
+            { platformGroup: { OR: [{ allTenants: true }, { tenants: { some: { tenantId } } }] } },
+        ],
+    };
+}
+
+/**
+ * Whether the viewer may open the panel of an account, with its sessions, their addresses and its
+ * sign-in methods: their own, one the Users tab of the tenant they work in lists, or one the
+ * accounts of the platform show them, see `accountsSeenReach`.
+ */
+export async function maySeeAccount(viewer: AccountViewer, userId: string): Promise<boolean> {
+    if (viewer.userId === userId) return true;
+    if (await reachSees(await accountsSeenReach(viewer), userId)) return true;
+    return viewer.tenantId ? membershipService.isPersonOf(userId, viewer.tenantId) : false;
+}
+
+/** What an action on one account answers for one that does not exist, and alike for one the caller may not see. */
+export const ACCOUNT_UNKNOWN = "The user no longer exists.";
+
+/**
+ * The name of an account the viewer may see (`maySeeAccount`), its email when it has no name.
+ * Null for an account that does not exist and for one the viewer may not see, which an action on
+ * one account answers alike, so its answer never tells the two apart.
+ */
+export async function shownAccountName(viewer: AccountViewer, userId: string): Promise<string | null> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+    if (!user || !(await maySeeAccount(viewer, userId))) return null;
+    return user.name || user.email;
+}
+
+/**
+ * Whether the viewer may see the picture of an account, which shows beside its name wherever the
+ * name shows: the accounts of `maySeeAccount`, the people of the sign-in providers they see, the
+ * people of the platform who open the tenant, whoever acted in it as the owner of one of its API
+ * keys, and for a reader of its audit log whoever acted in it there. Every sign-in goes into the
+ * log of the home tenant, so without the right to read the log a member of the home tenant would
+ * get the picture of every account.
+ */
+export async function maySeePicture(viewer: AccountViewer, userId: string): Promise<boolean> {
+    if (viewer.userId === userId) return true;
+    if (await reachSees(await accountsSeenReach(viewer), userId)) return true;
+    if (await reachSees(await signInPeopleReach(viewer), userId)) return true;
+    if (await amongTenantMembers(viewer, userId)) return true;
+    const tenantId = viewer.tenantId;
+    if (!tenantId) return false;
+
+    const known = await prisma.user.count({ where: { AND: [{ id: userId }, { OR: [peopleOf(tenantId), reachesTenant(tenantId)] }] } });
+    if (known > 0) return true;
+    // Read in the tenant of the viewer, the filter leaves the entries and keys of the others out. In
+    // the log of the home tenant someone of a platform group of some tenants sees the entries of the
+    // accounts of those tenants alone (`log-reach.ts`), and so only their pictures.
+    const readsLog = hasPermissionWithContext(viewer, PERMISSIONS.AUDIT.READ);
+    const logReach = readsLog ? await logReachOf(viewer) : null;
+    const readsEntries = readsLog && (!logReach || (await reachSees([...logReach], userId)));
+    const [entries, keys] = await runAsTenant(tenantId, () => Promise.all([
+        readsEntries ? prisma.auditLog.count({ where: { userId } }) : 0,
+        prisma.apiKey.count({ where: { userId } }),
+    ]));
+    return entries + keys > 0;
+}
+
+/** File names of the versions that kept pictures as files, like `<id>-1727000000000.png`, which a session may still hold. */
+const LEGACY_NAME = /^(.+)-\d{10,}(\.[a-z0-9]+)?$/i;
+
+/**
+ * The picture a part of its address names, when the viewer may see the account it belongs to.
+ * Null for an account without a picture and for one the viewer may not see, which look the same.
+ */
+export async function findVisibleAvatar(viewer: AccountViewer, name: string): Promise<{ data: Uint8Array; mimeType: ImageType } | null> {
+    const legacy = LEGACY_NAME.exec(name);
+    for (const userId of legacy ? [name, legacy[1]] : [name]) {
+        if (!(await maySeePicture(viewer, userId))) continue;
+        const row = await prisma.avatar.findUnique({ where: { userId }, select: { data: true, mimeType: true } });
+        if (row) return { data: new Uint8Array(row.data), mimeType: row.mimeType as ImageType };
+    }
+    return null;
+}

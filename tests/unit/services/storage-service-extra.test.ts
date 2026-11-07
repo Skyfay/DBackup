@@ -4,6 +4,7 @@ import { prismaMock } from '@/lib/testing/prisma-mock';
 import { StorageService, CACHE_SCHEMA_VERSION, clearListingState } from '@/services/storage/storage-service';
 import { registry } from '@/lib/core/registry';
 import { StorageAdapter, FileInfo } from '@/lib/core/interfaces';
+import { HOME_TENANT_ID } from '@/lib/tenant/home';
 
 // ── Module Mocks ───────────────────────────────────────────────
 
@@ -95,10 +96,14 @@ vi.mock('@/lib/logging/logger', () => ({
         }),
     },
 }));
-vi.mock('@/lib/logging/errors', () => ({
+vi.mock('@/lib/logging/errors', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/lib/logging/errors')>()),
     wrapError: vi.fn((e: any) => e),
     getErrorMessage: (e: any) => e?.message ?? String(e),
 }));
+
+// No tenant shares the destination with another.
+vi.mock('@/services/sharing/provided', () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -120,6 +125,7 @@ function makeDbConfig(overrides?: Record<string, any>) {
         sshCredentialId: null,
         defaultRetentionPolicyId: null,
         storageRole: 'DESTINATION',
+        tenantId: HOME_TENANT_ID,
         ...overrides,
     };
 }
@@ -175,14 +181,14 @@ describe('StorageService - extra coverage', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.listFiles('missing-id'))
-                .rejects.toThrow('Storage configuration with ID missing-id not found');
+                .rejects.toThrow('Storage adapter not found: missing-id');
         });
 
         it('throws when adapter type is not storage', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ type: 'database' }));
 
             await expect(service.listFiles('conf-123'))
-                .rejects.toThrow('Adapter configuration conf-123 is not a storage adapter');
+                .rejects.toThrow('Storage adapter not found: conf-123');
         });
 
         it('throws when adapter not found in registry', async () => {
@@ -190,7 +196,7 @@ describe('StorageService - extra coverage', () => {
             vi.mocked(registry.get).mockReturnValue(undefined);
 
             await expect(service.listFiles('conf-123'))
-                .rejects.toThrow("Storage adapter implementation 'unknown' not found in registry");
+                .rejects.toThrow('Storage adapter implementation not found: unknown');
         });
 
         it('throws when resolveAdapterConfig fails', async () => {
@@ -199,7 +205,7 @@ describe('StorageService - extra coverage', () => {
             mockResolveAdapterConfig.mockRejectedValue(new Error('Decryption error'));
 
             await expect(service.listFiles('conf-123'))
-                .rejects.toThrow('Failed to decrypt configuration for conf-123: Decryption error');
+                .rejects.toThrow('Decryption error');
         });
     });
 
@@ -210,14 +216,14 @@ describe('StorageService - extra coverage', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.deleteFile('missing-id', 'backup.sql'))
-                .rejects.toThrow('Storage configuration with ID missing-id not found');
+                .rejects.toThrow('Storage adapter not found: missing-id');
         });
 
         it('throws when adapter type is not storage', async () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ type: 'database' }));
 
             await expect(service.deleteFile('conf-123', 'backup.sql'))
-                .rejects.toThrow('Adapter configuration conf-123 is not a storage adapter');
+                .rejects.toThrow('Storage adapter not found: conf-123');
         });
 
         it('throws when adapter is missing from registry', async () => {
@@ -225,7 +231,7 @@ describe('StorageService - extra coverage', () => {
             vi.mocked(registry.get).mockReturnValue(undefined);
 
             await expect(service.deleteFile('conf-123', 'backup.sql'))
-                .rejects.toThrow("Storage adapter implementation 'ghost' not found in registry");
+                .rejects.toThrow('Storage adapter implementation not found: ghost');
         });
 
         it('throws when resolveAdapterConfig fails', async () => {
@@ -234,7 +240,7 @@ describe('StorageService - extra coverage', () => {
             mockResolveAdapterConfig.mockRejectedValue(new Error('Bad key'));
 
             await expect(service.deleteFile('conf-123', 'backup.sql'))
-                .rejects.toThrow('Failed to decrypt configuration for conf-123: Bad key');
+                .rejects.toThrow('Bad key');
         });
 
         it('returns true and silently swallows meta deletion failure', async () => {
@@ -461,9 +467,12 @@ describe('StorageService - extra coverage', () => {
                 cachedAt: new Date(), // fresh
             } as any);
 
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+
             const result = await service.listFilesWithMetadata('conf-123');
 
-            expect(prismaMock.adapterConfig.findUnique).not.toHaveBeenCalled();
+            // The destination is looked up to check the tenant may see it, the storage is never asked.
+            expect(registry.get).not.toHaveBeenCalled();
             expect(result).toHaveLength(1);
             expect(result[0].name).toBe('cached.sql');
         });
@@ -480,12 +489,13 @@ describe('StorageService - extra coverage', () => {
             } as any);
 
             const reconcileSpy = vi.spyOn(service, 'reconcileStorageListCache').mockResolvedValue();
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
 
             const result = await service.listFilesWithMetadata('conf-123');
 
             expect(result).toHaveLength(1);
             // Background reconcile should have been triggered.
-            expect(reconcileSpy).toHaveBeenCalledWith('conf-123');
+            expect(reconcileSpy).toHaveBeenCalledWith('conf-123', HOME_TENANT_ID);
         });
 
         it('rebuilds instead of serving a cache written by an older version', async () => {
@@ -533,11 +543,11 @@ describe('StorageService - extra coverage', () => {
 
             expect(result.map((f) => f.name)).toEqual(['stale.sql']);
             await vi.waitFor(() => expect(adapter.list).toHaveBeenCalledTimes(1));
-            expect(service.isListing('conf-123')).toBe(true);
+            expect(service.isListing('conf-123', HOME_TENANT_ID)).toBe(true);
 
             finish([]);
             await vi.waitFor(() => expect(prismaMock.storageListCache.upsert).toHaveBeenCalled());
-            await vi.waitFor(() => expect(service.isListing('conf-123')).toBe(false));
+            await vi.waitFor(() => expect(service.isListing('conf-123', HOME_TENANT_ID)).toBe(false));
             expect(JSON.parse(prismaMock.storageListCache.upsert.mock.calls[0][0].update.filesJson as string).v).toBe(CACHE_SCHEMA_VERSION);
         });
 
@@ -565,7 +575,7 @@ describe('StorageService - extra coverage', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
 
             await expect(service.listFilesWithMetadata('conf-missing', undefined, true))
-                .rejects.toThrow('Storage configuration with ID conf-missing not found');
+                .rejects.toThrow('Storage adapter not found: conf-missing');
         });
     });
 

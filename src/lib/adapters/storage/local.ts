@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry, ListTreeOptions, ListTreeResult, PrunedDirectory } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, ListTreeOptions, ListTreeResult, PrunedDirectory, StorageReadOptions } from "@/lib/core/interfaces";
 import { canPruneDirectory } from "@/lib/exclude-patterns";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { LogLevel, LogType } from "@/lib/core/logs";
@@ -15,6 +15,8 @@ import { pipeline } from "stream/promises";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, AdapterError } from "@/lib/logging/errors";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { TooManyLinksError, inside, pathParts, realExisting as realPathOf, walkParts } from "@/lib/server/real-path";
 
 const log = logger.child({ adapter: "local-filesystem" });
 
@@ -32,7 +34,7 @@ const log = logger.child({ adapter: "local-filesystem" });
  * Stripping is safe: the containment check below still runs on the resolved result, so
  * `/../etc/passwd` and `/restore/../../etc/passwd` are both still rejected.
  */
-function resolveSafePath(basePath: string, relativePath: string): string {
+function resolveLexicalPath(basePath: string, relativePath: string): string {
     const resolvedBase = path.resolve(basePath);
     const relativeToRoot = relativePath.replace(/^[/\\]+/, "");
     const resolvedTarget = path.resolve(resolvedBase, relativeToRoot);
@@ -40,10 +42,84 @@ function resolveSafePath(basePath: string, relativePath: string): string {
     // Compared against `base + separator`, not the bare base: a plain prefix check would
     // accept a sibling directory whose name merely starts with the base name (base
     // "/srv/data" would let "/srv/dataEVIL/secret" through).
-    if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
+    if (!inside(resolvedTarget, resolvedBase)) {
         throw new AdapterError("local-filesystem", "path-validation", `Access denied: Illegal path traversal detected. Base: ${resolvedBase}, Target: ${resolvedTarget}`);
     }
     return resolvedTarget;
+}
+
+/**
+ * `realExisting` of the shared module, with a loop of links refused like any other path that leaves
+ * the base folder, as the `Access denied` the callers of this adapter look for.
+ */
+async function realExisting(target: string): Promise<string> {
+    try {
+        return await realPathOf(target);
+    } catch (error) {
+        if (error instanceof TooManyLinksError) throw new AdapterError("local-filesystem", "path-validation", `Access denied: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Resolves a remote path like `resolveLexicalPath` and refuses one that a symbolic link below the
+ * base leads out of it, which a lexical check cannot see: a folder `jobs` that is a link to `/etc`
+ * would let a write to `jobs/x` land in `/etc`. The real path of the parent folder is compared with
+ * the real base, and with `follow` the real path of the target itself, for a call that opens or
+ * lists what the path names. A call that only removes or replaces the entry, like a delete or a
+ * new link, never follows it and checks the parent alone.
+ */
+async function resolveSafePath(basePath: string, relativePath: string, follow: "target" | "parent" = "target"): Promise<string> {
+    const resolvedTarget = resolveLexicalPath(basePath, relativePath);
+    const resolvedBase = path.resolve(basePath);
+    if (resolvedTarget === resolvedBase) return resolvedTarget;
+
+    const realBase = await realExisting(resolvedBase);
+    const checked = [await realExisting(path.dirname(resolvedTarget))];
+    if (follow === "target") checked.push(await realExisting(resolvedTarget));
+    const outside = checked.find((real) => !inside(real, realBase));
+    if (outside) {
+        throw new AdapterError("local-filesystem", "path-validation", `Access denied: The path leads out of the base folder through a symbolic link. Base: ${realBase}, Target: ${outside}`);
+    }
+    return resolvedTarget;
+}
+
+/** Refuses a new link whose target leads out of the base folder, see `assertLinkStaysInside`. */
+function linkLeaves(realBase: string, target: string, why: string): AdapterError {
+    return new AdapterError("local-filesystem", "path-validation", `Access denied: The target ${JSON.stringify(target)} of the link ${why}. Base: ${realBase}`);
+}
+
+/**
+ * Refuses a new link at `linkPath` whose target leads out of the real base folder. Every later read,
+ * write, listing or run that follows the link would otherwise reach whatever it points at, like the
+ * database of DBackup. The target is resolved the way the kernel follows it once the link exists: a
+ * relative one from the real folder the link lies in, through every link on the way, an absolute one
+ * as it is. A `..` after a folder is refused as well, since it climbs from wherever that folder leads
+ * when the link is read, and a later link or an emptied folder there can change that, the same rule
+ * `linkLeavesTarget` applies to a restore.
+ */
+async function assertLinkStaysInside(basePath: string, linkPath: string, target: string): Promise<void> {
+    const realBase = await realExisting(path.resolve(basePath));
+    if (target.trim() === "") throw linkLeaves(realBase, target, "is empty");
+    let afterFolder = false;
+    // The parts as the kernel of this platform reads them, see `pathParts`.
+    for (const part of pathParts(target)) {
+        if (part === "" || part === ".") continue;
+        if (part === ".." && afterFolder) throw linkLeaves(realBase, target, "climbs with .. after a folder");
+        if (part !== "..") afterFolder = true;
+    }
+    let lands: string;
+    try {
+        const seen = { links: 0, target };
+        const root = path.parse(target).root;
+        lands = path.isAbsolute(target)
+            ? await walkParts(root, target.slice(root.length), seen)
+            : await walkParts(await realExisting(path.dirname(linkPath)), target, seen);
+    } catch (error) {
+        if (error instanceof TooManyLinksError) throw linkLeaves(realBase, target, "runs through too many symbolic links");
+        throw error;
+    }
+    if (!inside(lands, realBase)) throw linkLeaves(realBase, target, `leads out of the base folder to ${lands}`);
 }
 
 /**
@@ -154,6 +230,36 @@ async function walkLocalTree(
     return { files, pruned };
 }
 
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. Null when the file is
+ * not there.
+ */
+async function readCappedBytes(config: { basePath: string }, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    try {
+        const sourcePath = await resolveSafePath(config.basePath, remotePath);
+        let handle: fs.FileHandle;
+        try {
+            handle = await fs.open(sourcePath, "r");
+        } catch {
+            return null;
+        }
+        try {
+            assertReadSize((await handle.stat()).size, limit);
+            // `end` is inclusive, so this reads at most `limit + 1` bytes, however the file grows.
+            return await collectCapped(handle.createReadStream({ start: 0, end: limit, autoClose: false }), limit);
+        } finally {
+            await handle.close().catch(() => undefined);
+        }
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        // Rethrow security errors
+        if (error instanceof Error && error.message.includes("Access denied")) throw error;
+        log.error("Local read failed", { remotePath }, wrapError(error));
+        return null;
+    }
+}
+
 export const LocalFileSystemAdapter: StorageAdapter = {
     id: "local-filesystem",
     type: "storage",
@@ -163,7 +269,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
     async upload(config: { basePath: string }, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
         let destPath: string;
         try {
-            destPath = resolveSafePath(config.basePath, remotePath);
+            destPath = await resolveSafePath(config.basePath, remotePath);
         } catch (error: unknown) {
             log.error("Local upload security check failed", { basePath: config.basePath, remotePath }, wrapError(error));
             if (onLog && error instanceof Error) onLog(error.message, 'error', 'security');
@@ -206,7 +312,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         start: number,
         end: number
     ): Promise<NodeJS.ReadableStream> {
-        const sourcePath = resolveSafePath(config.basePath, remotePath);
+        const sourcePath = await resolveSafePath(config.basePath, remotePath);
         // An empty range is legal - a zero-length file's archive entry produces one.
         if (end < start) return Readable.from([]);
         return createReadStream(sourcePath, { start, end });
@@ -221,7 +327,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
     ): Promise<boolean> {
         let sourcePath: string;
         try {
-            sourcePath = resolveSafePath(config.basePath, remotePath);
+            sourcePath = await resolveSafePath(config.basePath, remotePath);
         } catch (error) {
              log.error("Local download security check failed", { basePath: config.basePath, remotePath }, wrapError(error));
              throw error;
@@ -263,26 +369,15 @@ export const LocalFileSystemAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: { basePath: string }, remotePath: string): Promise<string | null> {
-        try {
-             const sourcePath = resolveSafePath(config.basePath, remotePath);
-             try {
-                 await fs.access(sourcePath);
-             } catch {
-                 return null;
-             }
-             return await fs.readFile(sourcePath, 'utf-8');
-        } catch (error) {
-            // Rethrow security errors
-            if (error instanceof Error && error.message.includes("Access denied")) throw error;
-            log.error("Local read failed", { remotePath }, wrapError(error));
-            return null;
-        }
+    async read(config: { basePath: string }, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async list(config: { basePath: string }, remotePath: string = ""): Promise<FileInfo[]> {
         try {
-            const dirPath = resolveSafePath(config.basePath, remotePath);
+            const dirPath = await resolveSafePath(config.basePath, remotePath);
             await fs.access(dirPath);
 
             const entries = await fs.readdir(dirPath, { withFileTypes: true, recursive: true });
@@ -324,7 +419,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
     },
 
     async listTree(config: { basePath: string }, remotePath: string = "", options?: ListTreeOptions): Promise<ListTreeResult> {
-        const dirPath = resolveSafePath(config.basePath, remotePath);
+        const dirPath = await resolveSafePath(config.basePath, remotePath);
         try {
             await fs.access(dirPath);
         } catch {
@@ -336,20 +431,22 @@ export const LocalFileSystemAdapter: StorageAdapter = {
     },
 
     async createSymlink(config: { basePath: string }, remotePath: string, target: string): Promise<void> {
-        const linkPath = resolveSafePath(config.basePath, remotePath);
+        const linkPath = await resolveSafePath(config.basePath, remotePath, "parent");
+        await assertLinkStaysInside(config.basePath, linkPath, target);
         await fs.mkdir(path.dirname(linkPath), { recursive: true });
         // Replaced rather than merged. `symlink` fails on an existing path, and a restore that
         // stops at the first link the target already has is not a restore. `unlink` is used
         // deliberately instead of `rm -r`: it removes the link itself, never what it points
         // at, so re-running a restore cannot walk through an old link and delete real data.
         await fs.unlink(linkPath).catch(() => { });
-        // `target` is written verbatim. Resolving it would break every relative link, which is
-        // the common case - `../../archive/cert1.pem` only means anything from where it lives.
+        // `target` is written verbatim once it is known to stay inside. Resolving it would break every
+        // relative link, which is the common case - `../../archive/cert1.pem` only means anything
+        // from where it lives.
         await fs.symlink(target, linkPath);
     },
 
     async browseDirectories(config: { basePath: string }, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
-        const dirPath = resolveSafePath(config.basePath, subPath);
+        const dirPath = await resolveSafePath(config.basePath, subPath);
         let entries;
         try {
             entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -369,9 +466,9 @@ export const LocalFileSystemAdapter: StorageAdapter = {
 
     async delete(config: { basePath: string }, remotePath: string): Promise<boolean> {
         try {
-            const targetPath = resolveSafePath(config.basePath, remotePath);
+            const targetPath = await resolveSafePath(config.basePath, remotePath, "parent");
             try {
-                await fs.access(targetPath);
+                await fs.lstat(targetPath);
             } catch {
                 return true; // Already gone
             }
@@ -385,10 +482,23 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         }
     },
 
+    async deleteEmptyFolder(config: { basePath: string }, remotePath: string): Promise<boolean> {
+        const target = await resolveSafePath(config.basePath, remotePath, "parent");
+        // The folder the destination is set to stays, whatever is in it.
+        if (target === path.resolve(config.basePath)) return false;
+        try {
+            // Not recursive, so a folder that holds anything refuses.
+            await fs.rmdir(target);
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
     async verifyChecksum(config: { basePath: string }, remotePath: string, checksums: { sha256?: string; md5?: string }): Promise<'passed' | 'failed' | 'unsupported'> {
         if (!checksums.sha256) return 'unsupported';
         try {
-            const filePath = resolveSafePath(config.basePath, remotePath);
+            const filePath = await resolveSafePath(config.basePath, remotePath);
             await fs.access(filePath);
             const actual = await calculateFileChecksum(filePath);
             return actual === checksums.sha256 ? 'passed' : 'failed';

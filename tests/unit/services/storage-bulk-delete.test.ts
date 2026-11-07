@@ -13,8 +13,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/prisma', () => ({
-    default: { adapterConfig: { findUnique: (...a: unknown[]) => mocks.findUnique(...a) } },
+    default: {
+        adapterConfig: { findUnique: (...a: unknown[]) => mocks.findUnique(...a) },
+        // Nobody shares the destination, so its tenant sees it as it is.
+        connectionShare: { count: async () => 0 },
+    },
 }));
+
+vi.mock('@/services/sharing/provided', () => ({ providedConnection: vi.fn().mockResolvedValue(null) }));
 
 vi.mock('@/lib/core/registry', () => ({
     registry: { get: (...a: unknown[]) => mocks.registryGet(...a) },
@@ -38,6 +44,7 @@ vi.mock('@/lib/logging/logger', () => ({
 }));
 
 const { deleteBackupsBulk, setBackupsLocked } = await import('@/services/storage/bulk-delete');
+const { BULK_ROW_FAILED } = await import('@/lib/core/bulk');
 
 const file = (path: string, locked = false) => ({ path, name: path.split('/').pop(), locked });
 const chain = (name: string) => `backups/nightly/chain-1700/${name}`;
@@ -45,7 +52,7 @@ const chain = (name: string) => `backups/nightly/chain-1700/${name}`;
 describe('deleteBackupsBulk', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3' });
+        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3', tenantId: 'acme' });
         mocks.registryGet.mockReturnValue({
             delete: (...a: unknown[]) => mocks.adapterDelete(...a),
             list: (...a: unknown[]) => mocks.adapterList(...a),
@@ -78,6 +85,17 @@ describe('deleteBackupsBulk', () => {
         expect(mocks.adapterDelete).not.toHaveBeenCalled();
     });
 
+    it('never deletes the root of the destination, which takes every folder along', async () => {
+        mocks.listFilesWithMetadata.mockResolvedValue([file('backups/a.sql.gz')]);
+
+        const result = await deleteBackupsBulk('dest-1', ['/', './', 'backups/a.sql.gz']);
+
+        expect(result.succeeded).toEqual(['backups/a.sql.gz']);
+        expect(result.failed.map((entry) => entry.error)).toEqual([expect.stringContaining('root'), expect.stringContaining('root')]);
+        expect(mocks.adapterDelete).not.toHaveBeenCalledWith(expect.anything(), '/');
+        expect(mocks.adapterDelete).not.toHaveBeenCalledWith(expect.anything(), './');
+    });
+
     it('deletes the unlocked backups in a mixed selection', async () => {
         mocks.listFilesWithMetadata.mockResolvedValue([
             file('backups/a.sql.gz'),
@@ -97,7 +115,17 @@ describe('deleteBackupsBulk', () => {
         const result = await deleteBackupsBulk('dest-1', ['backups/a.sql.gz']);
 
         expect(result.succeeded).toEqual([]);
-        expect(result.failed).toHaveLength(1);
+        expect(result.failed).toEqual([{ id: 'backups/a.sql.gz', name: 'a.sql.gz', error: 'The storage provider did not delete this file.' }]);
+    });
+
+    // The words of the provider of a shared destination may name its hosts and paths.
+    it('answers the fixed sentence for an error of the provider, whose words stay in the log', async () => {
+        mocks.listFilesWithMetadata.mockResolvedValue([file('backups/a.sql.gz')]);
+        mocks.adapterDelete.mockRejectedValue(new Error('connect ECONNREFUSED 10.0.4.17:22 as backup@nas01'));
+
+        const result = await deleteBackupsBulk('dest-1', ['backups/a.sql.gz']);
+
+        expect(result.failed).toEqual([{ id: 'backups/a.sql.gz', name: 'a.sql.gz', error: BULK_ROW_FAILED }]);
     });
 
     it('writes the listing cache once for the whole batch', async () => {
@@ -169,7 +197,7 @@ describe('deleteBackupsBulk', () => {
 describe('setBackupsLocked', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3' });
+        mocks.findUnique.mockResolvedValue({ id: 'dest-1', type: 'storage', adapterId: 's3', tenantId: 'acme' });
         mocks.registryGet.mockReturnValue({ delete: mocks.adapterDelete, list: mocks.adapterList });
         mocks.resolveAdapterConfig.mockResolvedValue({ bucket: 'b' });
         mocks.setLockedWith.mockResolvedValue(true);
@@ -192,12 +220,13 @@ describe('setBackupsLocked', () => {
     it('reports the backups it could not change', async () => {
         mocks.setLockedWith
             .mockResolvedValueOnce(true)
-            .mockRejectedValueOnce(new Error('Metadata file not found'));
+            .mockRejectedValueOnce(new Error('Could not read metadata for this backup: open /mnt/nas01/backups/b.meta.json failed'));
 
         const result = await setBackupsLocked('dest-1', ['a', 'b'], true);
 
         expect(result.succeeded).toEqual(['a']);
-        expect(result.failed[0].error).toBe('Metadata file not found');
+        // The words of the provider stay in the log.
+        expect(result.failed).toEqual([{ id: 'b', name: 'b', error: BULK_ROW_FAILED }]);
         expect(mocks.updateStorageListCacheEntries).toHaveBeenCalledWith('dest-1', ['a'], { locked: true });
     });
 });

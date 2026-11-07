@@ -11,22 +11,24 @@ const at = (iso: string) => new Date(iso);
 const member = (id: string, name: string) => ({ id, name, email: `${id}@example.ch`, image: null });
 
 const GROUPS: Build["groups"] = [
-    { id: "g-view", name: "Viewers", permissions: JSON.stringify(["jobs:read"]), createdAt: at("2026-03-12T09:00:00Z"), users: [member("jana", "Jana Keller")] },
-    { id: "g-super", name: "SuperAdmin", permissions: "[]", createdAt: at("2026-01-01T09:00:00Z"), users: [member("manu", "Manu")] },
+    { id: "g-view", name: "Viewers", permissions: JSON.stringify(["jobs:read"]), fullAccess: false, createdAt: at("2026-03-12T09:00:00Z"), users: [member("jana", "Jana Keller")] },
+    // The full access group stores no list, it holds every permission anyway.
+    { id: "g-full", name: "Admin", permissions: "[]", fullAccess: true, createdAt: at("2026-01-01T09:00:00Z"), users: [member("manu", "Manu")] },
     {
         id: "g-ops",
         name: "Operators",
         permissions: JSON.stringify(["storage:read", "storage:delete"]),
+        fullAccess: false,
         createdAt: at("2026-03-12T09:00:00Z"),
         users: [member("tom", "Tom Weber"), member("lena", "Lena Graf")],
     },
-    { id: "g-empty", name: "Backup admins", permissions: JSON.stringify(["credentials:read", "credentials:reveal"]), createdAt: at("2026-09-29T09:00:00Z"), users: [] },
+    { id: "g-empty", name: "Backup admins", permissions: JSON.stringify(["credentials:read", "credentials:reveal"]), fullAccess: false, createdAt: at("2026-09-29T09:00:00Z"), users: [] },
 ];
 
 const PEOPLE: Build["people"] = [
-    { id: "manu", name: "Manu", email: "manu@example.ch", groupId: "g-super", group: { name: "SuperAdmin" } },
-    { id: "lena", name: "Lena Graf", email: "lena@example.ch", groupId: "g-ops", group: { name: "Operators" } },
-    { id: "sara", name: "Sara Nguyen", email: "sara@example.ch", groupId: null, group: null },
+    { id: "manu", name: "Manu", email: "manu@example.ch", groupId: "g-full", platformAdmin: true },
+    { id: "lena", name: "Lena Graf", email: "lena@example.ch", groupId: "g-ops", platformAdmin: false },
+    { id: "sara", name: "Sara Nguyen", email: "sara@example.ch", groupId: null, platformAdmin: false },
 ];
 
 function build(overrides: Partial<Build> = {}) {
@@ -39,17 +41,18 @@ function build(overrides: Partial<Build> = {}) {
             { resourceId: "g-ops", action: "CREATE", createdAt: at("2026-03-12T09:00:00Z"), user: { name: "Manu" } },
         ],
         viewerId: "manu",
-        viewerSuperAdmin: true,
+        viewerPlatformAdmin: true,
         withPeople: true,
         ...overrides,
     });
 }
 
 describe("the groups of the Groups tab", () => {
-    it("lists the SuperAdmin group first, then by name, with the members in order", () => {
+    it("lists the full access group first, then by name, with the members in order", () => {
         const model = build();
 
-        expect(model.groups.map((group) => group.name)).toEqual(["SuperAdmin", "Backup admins", "Operators", "Viewers"]);
+        expect(model.groups.map((group) => group.name)).toEqual(["Admin", "Backup admins", "Operators", "Viewers"]);
+        expect(model.groups.map((group) => group.superAdmin)).toEqual([true, false, false, false]);
         expect(model.groups.find((group) => group.id === "g-ops")?.members.map((entry) => entry.name)).toEqual(["Lena Graf", "Tom Weber"]);
         expect(model.groups[0].members[0].isYou).toBe(true);
     });
@@ -72,11 +75,17 @@ describe("the groups of the Groups tab", () => {
     it("counts who may delete backups or reveal secrets, and the empty groups", () => {
         const { stats } = build();
 
-        expect(stats.canDelete).toEqual(["SuperAdmin", "Operators"]);
-        expect(stats.canReveal).toEqual(["SuperAdmin", "Backup admins"]);
+        expect(stats.canDelete).toEqual(["Admin", "Operators"]);
+        expect(stats.canReveal).toEqual(["Admin", "Backup admins"]);
         expect(stats.empty).toEqual(["Backup admins"]);
         expect(stats.inGroup).toBe(2);
         expect(stats.withoutGroup).toEqual(["Sara Nguyen"]);
+    });
+
+    it("marks the platform admins among the people by their account, not by their group", () => {
+        const people = build({ people: [...PEOPLE, { id: "root", name: "Root", email: "root@example.ch", groupId: null, platformAdmin: true }] }).people;
+
+        expect(people?.filter((person) => person.superAdmin).map((person) => person.id)).toEqual(["manu", "root"]);
     });
 
     it("names nobody outside the groups for a viewer who may not see the users", () => {

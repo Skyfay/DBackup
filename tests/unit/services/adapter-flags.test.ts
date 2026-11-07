@@ -1,6 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { updateAdapterFlags } from "@/services/adapters/adapter-service";
+
+// Whether the code that runs now is a platform admin with a session, see `mayReachHost`.
+const mocks = vi.hoisted(() => ({ mayReachHost: vi.fn(async () => true) }));
+vi.mock("@/lib/adapters/config-resolver", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/lib/adapters/config-resolver")>()),
+    mayReachHost: () => mocks.mayReachHost(),
+}));
+
+const { updateAdapterFlags } = await import("@/services/adapters/adapter-service");
 
 const adapter = (id: string, type: string, metadata: Record<string, unknown> | null = null, storageRole: string | null = null) => ({
     id,
@@ -63,5 +71,19 @@ describe("updateAdapterFlags", () => {
         expect(result.succeeded).toEqual([]);
         expect(result.failed.map((entry) => entry.id)).toEqual(["discord", "gone"]);
         expect(prismaMock.adapterConfig.update).not.toHaveBeenCalled();
+    });
+
+    it("switches nothing on a connection that reaches the server DBackup runs on for anyone but a platform admin", async () => {
+        const files = { ...adapter("files", "storage", null, "DESTINATION"), adapterId: "local-filesystem", config: JSON.stringify({ basePath: "/srv/backups" }), primaryCredentialId: null, sshCredentialId: null };
+        const nas = { ...adapter("nas", "storage", null, "DESTINATION"), adapterId: "sftp", config: JSON.stringify({ host: "nas" }), primaryCredentialId: null, sshCredentialId: null };
+        prismaMock.adapterConfig.findMany.mockResolvedValue([files, nas] as never);
+        prismaMock.adapterConfig.update.mockClear();
+        mocks.mayReachHost.mockResolvedValue(false);
+
+        const result = await updateAdapterFlags(["files", "nas"], { skipVerification: true });
+
+        expect(result.succeeded).toEqual(["nas"]);
+        expect(result.failed).toEqual([{ id: "files", name: "conn-files", error: "Local Filesystem reaches the server DBackup runs on, which only a platform admin adds." }]);
+        expect(prismaMock.adapterConfig.update).toHaveBeenCalledTimes(1);
     });
 });

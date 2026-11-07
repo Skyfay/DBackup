@@ -36,6 +36,9 @@ fi
 
 # ── MySQL ──────────────────────────────────────────────────
 mkdir -p /var/run/mysqld && chown mysql:mysql /var/run/mysqld
+# A container stopped hard keeps the socket and its lock files, and MySQL refuses to start beside
+# them, which left the container restarting for good. Nothing of MySQL runs yet at this point.
+rm -f /var/run/mysqld/mysqld.sock /var/run/mysqld/mysqld.sock.lock /var/run/mysqld/mysqlx.sock /var/run/mysqld/mysqlx.sock.lock
 service mysql start >/dev/null
 wait_for mysql -e "SELECT 1"
 # Ubuntu makes the folder of the socket readable for everyone through systemd, which is not here.

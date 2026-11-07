@@ -35,7 +35,7 @@ A click on a run opens it as a page of its own. Every link to a run in DBackup l
 
 The button in the top left names the page the run was opened from, like **Overview**, and leads back there like the Back of the browser, to the same spot. A run opened from outside, like from a link in a notification, leads to History. The field beside the name opens another run of the same job, and the arrows step to the run before and after it.
 
-- **Steps**: every step with its time next to its usual time, every copy under **Uploading** and every channel under **Sending Notifications**. A step the job has no use for, like **Dumping Databases** in a backup of folders only, is left out.
+- **Steps**: every step with its time next to its usual time, every copy under **Uploading**, every channel under **Sending Notifications**, and in a restore every database under **Restoring Databases** and every folder under **Restoring Files**. A step the job has no use for, like **Dumping Databases** in a backup of folders only, is left out.
 - **Summary** and **Log**: the two tabs in the middle, described below.
 - **To look at**: each problem told once, in plain words, with the message of the server, where and when it came up, how often it was tried and what to do about it.
 
@@ -48,6 +48,8 @@ The **Summary** tells each step in a sentence or two, with a row for every datab
 - A row says how many lines it holds, and one click opens it in place. A database shows the whole command it was dumped with, the lines of its tool, like **mongodump**, and its warnings grouped by what they say. A destination shows the lines it wrote.
 - A long output shows its newest lines, **Show all** the rest.
 - The database dumped now and the copy uploaded now fill a row marked **now**, with how far they are and how long they still take, and are open with their newest lines.
+
+A restore is told the same way. **Initializing** says what it restores out of which archive onto which server, **Downloading** where it read from, how much, and whether the version of the backup fits the server. **Restoring Databases** has a row for every database with the one it went into, like **shop → shop_test**, its size, its time, the command and the lines of its tool, and **Restoring Files** a row for every folder with where its files went and how many arrived. **Read** in the numbers on top counts what the restore read, which with ranged reads is only the part it needed. A customer's restore of a shared database names neither the archive nor the destination of the provider and leaves the command out, since it names the server.
 
 How far a dump is comes from the tool where it counts. MongoDB counts the documents of each collection and SQL Server reports its progress in steps of ten percent. The other tools tell nothing, so DBackup compares what is written with the dump of the same database in the last backup of the job and says **about**. The first backup of a database shows only what is written and how fast.
 
@@ -97,14 +99,30 @@ A click opens the message in a side panel:
 - The run it was sent for, which **Open run** opens
 - The other channels that got the same message
 
+## Tenants
+
+With several [tenants](/user-guide/admin/tenants) every tenant has its own History. A run belongs to the tenant of its job, and a restore or a verification to the tenant it was started in. The integrity check records a run in each tenant with copies to check, and the other system tasks belong to the home tenant. [All tenants](/user-guide/admin/tenants#all-tenants) lists the runs of every tenant, with the tenant in a column you can filter by.
+
+A database another tenant [shares](/user-guide/admin/shared-databases) shows in both Histories:
+
+- A backup a customer starts is a run of the job of the server's tenant for that database alone, with the whole log there. Like every run of some databases of a job, it offers **Run the job** in place of **Run again**, which backs up every database of the job. The customer gets a short run of its own that follows it.
+- A restore by a customer shows in both Histories as **Restore onto** the server with **Restore of** the database below it. The run of the server's tenant adds **for** the customer and holds the whole log.
+- A short run that follows another one ends with it. When the run it follows is gone or ended without it, the **Stuck run watchdog** ends it 10 minutes later, see [What the Customer Sees](/user-guide/admin/shared-databases#what-the-customer-sees).
+
+The notification log of the home tenant opens the run of a message only for a run of the home tenant, see [Audit Log](/user-guide/admin/tenants#audit-log) of Tenants.
+
 ## Required Permissions
 
 | Permission | What it grants |
 | :--- | :--- |
 | `history:read` | The page, the runs, their logs and the notifications |
-| `jobs:execute` | **Run again** and **Cancel run** |
+| `jobs:execute` | **Run again**, and **Cancel run** on a backup |
+| `storage:restore` | **Cancel run** on a restore |
+| `settings:write` | **Cancel run** on an integrity check |
 | `jobs:read` | **Open job** |
-| `storage:read` | **Open backups** |
+| `storage:read` | **Open backups**, and **Cancel run** on a verification |
+
+Only a platform admin cancels a configuration restore.
 
 ## Troubleshooting
 

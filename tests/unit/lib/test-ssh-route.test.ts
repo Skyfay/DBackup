@@ -1,14 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PermissionError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     getAuthContext: vi.fn(),
     checkPermissionWithContext: vi.fn(),
+    /** What the caller holds, the right to change sources of every kind unless a test says otherwise. */
+    held: ["sources:write"] as string[],
     headers: vi.fn(),
     registryGet: vi.fn(),
     checkBackupPath: vi.fn(),
     checkBackupPathShared: vi.fn(),
     exec: vi.fn(),
     dispose: vi.fn(),
+    /** The local network check of the tenant, which passes unless a test says otherwise. */
+    reach: vi.fn(),
+    logFor: vi.fn(),
+}));
+
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
+
+vi.mock("@/services/tenant/tenant-network", () => ({
+    assertHostsReachable: (...args: unknown[]) => mocks.reach(...args),
 }));
 
 vi.mock("next/headers", () => ({ headers: () => mocks.headers() }));
@@ -16,6 +28,11 @@ vi.mock("next/headers", () => ({ headers: () => mocks.headers() }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
     checkPermissionWithContext: (...args: unknown[]) => mocks.checkPermissionWithContext(...args),
+    hasPermissionWithContext: (_ctx: unknown, permission: string) => mocks.held.includes(permission),
+    tenantOf: (ctx: { tenantId: string | null }) => {
+        if (!ctx.tenantId) throw new PermissionError("a tenant");
+        return ctx.tenantId;
+    },
 }));
 
 vi.mock("@/lib/core/registry", () => ({
@@ -26,6 +43,8 @@ vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 
 vi.mock("@/lib/adapters/config-resolver", () => ({
     overlayCredentialsOnConfig: vi.fn(),
+    // Every test here is about the SSH login of a server of its own, not about the server DBackup runs on.
+    assertConfigOffHost: vi.fn(),
 }));
 
 vi.mock("@/lib/adapters/database/mssql/preflight", () => ({
@@ -68,14 +87,16 @@ const sshConfig = {
 describe("POST /api/adapters/test-ssh", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getAuthContext.mockResolvedValue({ userId: "u1" });
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", tenantId: "default", allTenants: false });
         mocks.checkPermissionWithContext.mockResolvedValue(undefined);
+        mocks.held = ["sources:write"];
         mocks.headers.mockResolvedValue(new Headers());
         mocks.registryGet.mockReturnValue({ id: "mysql" });
         mocks.exec.mockResolvedValue({ code: 0, stdout: "connected\n", stderr: "" });
         mocks.dispose.mockResolvedValue(undefined);
         mocks.checkBackupPath.mockResolvedValue({ readable: false, writable: false, error: "Path not found" });
         mocks.checkBackupPathShared.mockResolvedValue({ shared: true });
+        mocks.reach.mockResolvedValue(undefined);
     });
 
     it("does not check the SQL Server backup path for other adapters", async () => {
@@ -88,6 +109,48 @@ describe("POST /api/adapters/test-ssh", () => {
         expect(mocks.checkBackupPath).not.toHaveBeenCalled();
         expect(body.success).toBe(true);
         expect(body.message).not.toContain("backup path");
+    });
+
+    it("writes the test into the audit log with its host and whether it worked, like the test of a connection", async () => {
+        await POST(request({ config: sshConfig, adapterId: "mysql" }));
+        mocks.exec.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
+        await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        const ctx = { userId: "u1", tenantId: "default", allTenants: false };
+        expect(mocks.logFor.mock.calls).toEqual([
+            [ctx, "EXECUTE", "ADAPTER", { action: "ssh_test", adapter: "mysql", host: "192.168.252.4", success: true }],
+            [ctx, "EXECUTE", "ADAPTER", { action: "ssh_test", adapter: "mysql", host: "192.168.252.4", success: false }],
+        ]);
+    });
+
+    it("says why the host of a saved SSH login is refused, like one in the local network of the tenant", async () => {
+        const { overlayCredentialsOnConfig } = await import("@/lib/adapters/config-resolver");
+        const { ValidationError } = await import("@/lib/logging/errors");
+        vi.mocked(overlayCredentialsOnConfig).mockRejectedValueOnce(new ValidationError("Acme reaches no address of the local network, db1 is 10.0.0.5."));
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql", sshCredentialId: "login-1" }));
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ success: false, message: "Acme reaches no address of the local network, db1 is 10.0.0.5." });
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("answers a fixed sentence when the test fails for a reason of DBackup, never the words of that error", async () => {
+        mocks.reach.mockRejectedValueOnce(new Error("SQLITE_BUSY: database is locked at /data/dbackup.db"));
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        expect(response.status).toBe(500);
+        expect(await response.json()).toEqual({ success: false, message: "The SSH login could not be tested. The log of DBackup has the details." });
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("still answers what the SSH server said when the login fails", async () => {
+        mocks.exec.mockRejectedValueOnce(new Error("All configured authentication methods failed"));
+
+        const body = await (await POST(request({ config: sshConfig, adapterId: "mysql" }))).json();
+
+        expect(body).toEqual({ success: false, message: "All configured authentication methods failed" });
     });
 
     it("does not check it for a SQLite source either", async () => {
@@ -212,5 +275,82 @@ describe("POST /api/adapters/test-ssh", () => {
 
         expect(mocks.checkBackupPath).toHaveBeenCalled();
         expect(body.success).toBe(true);
+    });
+
+    it("answers 403, not 500, to someone who may only see the sources, since the config of a form logs in to any host", async () => {
+        mocks.held = ["sources:view"];
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        expect(response.status).toBe(403);
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("needs the right to change sources for SSH without an adapter", async () => {
+        mocks.checkPermissionWithContext.mockImplementation((_ctx: unknown, permission: string) => {
+            if (!mocks.held.includes(permission)) throw new PermissionError(permission);
+        });
+        mocks.held = ["sources:view", "destinations:write"];
+
+        const response = await POST(request({ config: sshConfig }));
+
+        expect(response.status).toBe(403);
+        expect(mocks.checkPermissionWithContext).toHaveBeenCalledWith(expect.anything(), "sources:write");
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    it("tries no SSH login in All tenants, which belongs to no tenant", async () => {
+        mocks.getAuthContext.mockResolvedValue({ userId: "root", tenantId: null, allTenants: true, isPlatformAdmin: true });
+
+        const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+        expect(response.status).toBe(403);
+        expect(mocks.exec).not.toHaveBeenCalled();
+    });
+
+    describe("the SSH host the login dials", () => {
+        beforeEach(() => {
+            mocks.getAuthContext.mockResolvedValue({ userId: "u1", tenantId: "acme", allTenants: false });
+        });
+
+        it("is checked against the local network of the tenant for every adapter with an SSH mode", async () => {
+            const { sqliteTransport } = await import("@/lib/adapters/database/sqlite/transport");
+            const { mssqlTransport } = await import("@/lib/adapters/database/mssql/transport");
+            const cases: [string, Record<string, unknown>, unknown, string][] = [
+                ["mysql", sshConfig, undefined, "192.168.252.4"],
+                ["postgres", { ...sshConfig, sshHost: "[fd00::4]" }, undefined, "fd00::4"],
+                ["sqlite", { mode: "ssh", host: "10.0.0.4", username: "ops", authType: "password", password: "pw" }, sqliteTransport, "10.0.0.4"],
+                // SQL Server falls back to its database host when no SSH host is set.
+                ["mssql", { connectionMode: "ssh", host: "10.0.0.7", sshUsername: "ops", sshAuthType: "password", sshPassword: "pw" }, mssqlTransport, "10.0.0.7"],
+            ];
+            for (const [adapterId, config, transport, host] of cases) {
+                mocks.reach.mockClear();
+                mocks.registryGet.mockReturnValue({ id: adapterId, transport });
+                await POST(request({ config, adapterId }));
+                expect(mocks.reach, adapterId).toHaveBeenCalledWith("acme", expect.arrayContaining([host]));
+            }
+        });
+
+        it("is refused before any login when the tenant may not reach it", async () => {
+            const { ValidationError } = await import("@/lib/logging/errors");
+            mocks.reach.mockRejectedValueOnce(new ValidationError("Acme reaches no address of the local network, 192.168.252.4 is one."));
+
+            const response = await POST(request({ config: sshConfig, adapterId: "mysql" }));
+
+            expect(response.status).toBe(400);
+            expect(await response.json()).toEqual({ success: false, message: "Acme reaches no address of the local network, 192.168.252.4 is one." });
+            expect(mocks.exec).not.toHaveBeenCalled();
+        });
+
+        it("refuses an adapter without an SSH mode, whatever SSH fields its form sends", async () => {
+            mocks.held = ["sources:write", "destinations:write", "notifications:write"];
+            for (const adapterId of ["azure-sql", "s3-generic", "sftp", "smb", "discord"]) {
+                const response = await POST(request({ config: sshConfig, adapterId }));
+                expect(response.status, adapterId).toBe(400);
+                expect((await response.json()).message, adapterId).toBe("This kind of connection has no SSH mode.");
+            }
+            expect(mocks.exec).not.toHaveBeenCalled();
+            expect(mocks.reach).not.toHaveBeenCalled();
+        });
     });
 });

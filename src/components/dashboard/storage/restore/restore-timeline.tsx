@@ -6,6 +6,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { madeAt, startedBy } from "@/components/dashboard/storage/explorer/explorer-format";
 import { useExplorerData } from "@/components/dashboard/storage/explorer/explorer-data";
 import type { FileInfo } from "@/components/dashboard/storage/file-info";
+import { restoreHref } from "@/components/dashboard/storage/restore-scope";
+import { useTenantView } from "@/components/tenant/tenant-view";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -38,6 +40,7 @@ interface RestoreTimelineProps {
  */
 export function RestoreTimeline({ file, destinationId, mode }: RestoreTimelineProps) {
     const router = useRouter();
+    const { activeTenantId } = useTenantView();
     const { formatDate } = useDateFormatter();
     const backups = useExplorerData<ExplorerBackups>(file.jobId ? "/api/storage/explorer/runs" : null);
     const runs = useMemo(
@@ -57,8 +60,7 @@ export function RestoreTimeline({ file, destinationId, mode }: RestoreTimelinePr
     const open = (run: BackupRun) => {
         const copy = copyOf(run, destinationId);
         if (!copy?.file) return;
-        const scope = mode && mode !== "all" ? `&mode=${mode}` : "";
-        router.push(`/dashboard/backups/restore?destinationId=${encodeURIComponent(copy.destinationId)}&file=${encodeURIComponent(encodeUrlPayload(copy.file))}${scope}`);
+        router.push(restoreHref({ destinationId: copy.destinationId, file: encodeUrlPayload(copy.file), tenantId: activeTenantId, mode }));
     };
 
     const label = (

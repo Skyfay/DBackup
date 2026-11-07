@@ -4,15 +4,30 @@ import { ActivityPanel } from "@/components/dashboard/widgets/activity-panel";
 import { BackupCalendar } from "@/components/dashboard/widgets/backup-calendar";
 import { DashboardRefresh } from "@/components/dashboard/widgets/dashboard-refresh";
 import { KpiCards } from "@/components/dashboard/widgets/kpi-cards";
+import { NoTenantNote } from "@/components/dashboard/no-tenant-note";
 import { StatsStrip } from "@/components/dashboard/widgets/stats-strip";
 import { StatusBanner } from "@/components/dashboard/widgets/status-banner";
 import { StorageDestinations } from "@/components/dashboard/widgets/storage-destinations";
+import { TenantsCard } from "@/components/dashboard/widgets/tenants-card";
 import { UpcomingRuns } from "@/components/dashboard/widgets/upcoming-runs";
-import { getUserPermissions } from "@/lib/auth/access-control";
+import { getTenantSummaries } from "@/app/actions/tenant/tenant";
+import { getUserPermissions, getViewer, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canUseQuickSetup } from "@/lib/auth/sign-in-target";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";
-import { hasNothingToBackUp } from "@/services/dashboard/start-page";
+import { hasNothingToBackUp, ownBackupReach, quickSetupFits } from "@/services/dashboard/start-page";
+import { listSharedDatabases } from "@/services/tenant/shared-databases";
+import type { ProvidedSummary } from "@/components/dashboard/widgets/status-banner";
+
+/** The databases other tenants back up for this one now, for the banner of a tenant without jobs. */
+async function providedSummary(tenantId: string): Promise<ProvidedSummary> {
+    const held = (await listSharedDatabases(tenantId)).filter((database) => database.until === null && !database.serverGone);
+    return {
+        providers: [...new Set(held.map((database) => database.providerName))],
+        databases: held.length,
+        servers: new Set(held.map((database) => database.sourceId)).size,
+    };
+}
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
 export const metadata: Metadata = { title: "Overview" };
@@ -20,20 +35,34 @@ export const metadata: Metadata = { title: "Overview" };
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+    const viewer = await getViewer();
+    // An account that works in no tenant yet reads nothing of one, and every page it may not open
+    // leads here, so it gets a calm note instead of widgets that would fail.
+    if (!viewer || (!viewer.tenantId && !viewer.allTenants)) return <NoTenantNote />;
+
     // Right after signing in, someone who may set DBackup up and has nothing to back up yet
     // starts on the Quick Setup. Only then: the Overview stays reachable from the sidebar.
+    // A tenant with nothing to back up itself, whose databases another tenant backs up, never starts
+    // there, and neither does one without a database that may add none, since a database is required.
+    const reach = await ownBackupReach();
     if ((await searchParams).from === "sign-in") {
-        const permissions = await getUserPermissions();
-        redirect(canUseQuickSetup(permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
+        redirect(quickSetupFits(reach) && canUseQuickSetup(viewer.permissions) && await hasNothingToBackUp() ? "/dashboard/setup" : "/dashboard");
     }
 
-    const [overview, permissions] = await Promise.all([getDashboardOverview(), getUserPermissions()]);
+    // In All tenants whoever may see the tenants sees each with how it is doing, the failed ones first.
+    const showsTenants = Boolean(viewer.allTenants && hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_READ));
+    const [overview, permissions, summaries] = await Promise.all([
+        getDashboardOverview(),
+        getUserPermissions(),
+        showsTenants ? getTenantSummaries() : null,
+    ]);
 
     const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);
     const canViewStorage = permissions.includes(PERMISSIONS.STORAGE.READ);
     const canViewJobs = permissions.includes(PERMISSIONS.JOBS.READ);
     const canExecute = permissions.includes(PERMISSIONS.JOBS.EXECUTE);
     const hasLiveRuns = overview.strip.runningNow + overview.strip.queuedNow > 0;
+    const provided = overview.health.state === "empty" && !reach.jobs && viewer.tenantId ? await providedSummary(viewer.tenantId) : null;
 
     return (
         <DashboardRefresh hasRunningJobs={hasLiveRuns}>
@@ -43,8 +72,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     health={overview.health}
                     canExecute={canExecute}
                     canViewHistory={canViewHistory}
-                    canManageJobs={permissions.includes(PERMISSIONS.JOBS.WRITE)}
+                    canManageJobs={permissions.includes(PERMISSIONS.JOBS.WRITE) && reach.jobs}
+                    ownJobs={reach.jobs}
+                    provided={provided && provided.databases > 0 ? provided : null}
+                    canViewBackups={canViewStorage}
                 />
+                {summaries?.success && <TenantsCard summaries={summaries.data} />}
                 <KpiCards
                     kpis={overview.kpis}
                     historyHref={canViewHistory ? "/dashboard/history" : undefined}

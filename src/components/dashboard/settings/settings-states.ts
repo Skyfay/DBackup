@@ -46,7 +46,7 @@ export function partStates(model: SettingsModel): Partial<Record<SettingsPartId,
         notifications: notificationState(model.notifications),
         database: model.database ? { text: formatBytes(model.database.totalBytes, 0) } : null,
         "config-backup": configBackupState(model.configBackup),
-        "recently-deleted": model.trash.length > 0 ? { text: String(model.trash.length) } : null,
+        "recently-deleted": model.trash && model.trash.rows.length > 0 ? { text: String(model.trash.rows.length) } : null,
         passwords: { text: LEVEL_NAMES[model.passwords.level] },
         https: certificateState(model.certificate),
     };

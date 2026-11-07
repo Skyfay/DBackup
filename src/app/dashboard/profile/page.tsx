@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { ProfileClient } from "@/components/dashboard/profile/profile-client";
 import { getProfileModel } from "@/services/user/profile-model";
 
@@ -8,12 +8,12 @@ import { getProfileModel } from "@/services/user/profile-model";
 export const metadata: Metadata = { title: "Profile" };
 
 export default async function ProfilePage() {
-    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    const [permissions, user] = await Promise.all([getUserPermissions(), getViewer()]);
     if (!user) {
         redirect("/");
     }
 
-    const model = await getProfileModel(user.id, { permissions, isSuperAdmin: user.group?.name === "SuperAdmin" });
+    const model = await getProfileModel(user.id, { permissions, isPlatformAdmin: user.isPlatformAdmin, tenantId: user.tenantId, allTenants: user.allTenants });
 
     return (
         <>

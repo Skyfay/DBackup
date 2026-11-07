@@ -5,14 +5,14 @@ import type { ConfigBackupSettings } from "@/services/config/config-backup-setti
 import type { NotificationsModel } from "@/services/notifications/notification-settings-service";
 import type { CertificateInfo } from "./certificate-service";
 import type { DatabaseInfo } from "./database-service";
-import type { TrashRow } from "@/services/trash/trash-types";
 import type { TaskRunRecord } from "./system-task-service";
 import type { IntegritySettings, SystemTaskRow } from "./system-task-settings";
 import type { GeneralSettings, PrivacySettings, SignInSettings } from "./system-settings-service";
 import type { LoginImageInfo } from "./login-image-service";
 import type { PasswordPolicy } from "@/lib/auth/password-policy";
+import type { TrashPart } from "@/services/trash/trash-types";
 
-export type { ConfigBackupSettings, CertificateInfo, DatabaseInfo, GeneralSettings, IntegritySettings, PasswordPolicy, PrivacySettings, RateLimitConfig, SignInSettings, SystemTaskRow, TaskRunRecord, TrashRow };
+export type { ConfigBackupSettings, CertificateInfo, DatabaseInfo, GeneralSettings, IntegritySettings, PasswordPolicy, PrivacySettings, RateLimitConfig, SignInSettings, SystemTaskRow, TaskRunRecord };
 
 /** A sign-in provider as the Sign-in part names it. */
 export interface SettingsProvider {
@@ -32,7 +32,10 @@ export interface SettingsKey {
 /** Everything the Settings page shows, read once on the server. */
 export interface SettingsModel {
     canManage: boolean;
-    isSuperAdmin: boolean;
+    /** The viewer is a platform admin, who downloads the database and restores a configuration. */
+    isPlatformAdmin: boolean;
+    /** A platform admin looks at every tenant at once. */
+    allTenants: boolean;
     general: GeneralSettings;
     signIn: SignInSettings & {
         /** DISABLE_EMAIL_LOGIN on the container. */
@@ -66,6 +69,9 @@ export interface SettingsModel {
     integrity: IntegritySettings;
     /** Every notification event with where it goes, and the default channels. */
     notifications: NotificationsModel;
-    /** What Recently deleted holds that the viewer may restore, newest first. */
-    trash: TrashRow[];
+    /**
+     * Recently deleted of the one tenant, a part of Settings as before tenants. Null with more than
+     * one tenant, where it is a part of the tenant settings, and for a viewer who may not read them.
+     */
+    trash: TrashPart | null;
 }

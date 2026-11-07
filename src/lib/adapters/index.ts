@@ -20,6 +20,7 @@ import { RsyncAdapter } from "./storage/rsync";
 import { GoogleDriveAdapter } from "./storage/google-drive";
 import { DropboxAdapter } from "./storage/dropbox";
 import { OneDriveAdapter } from "./storage/onedrive";
+import { withCheckedDownloads } from "./storage/common/downloaded-file";
 import { DiscordAdapter } from "./notification/discord";
 import { SlackAdapter } from "./notification/slack";
 import { TeamsAdapter } from "./notification/teams";
@@ -52,20 +53,22 @@ export function registerAdapters() {
     registry.register(ValkeyAdapter);
     registry.register(FirebirdAdapter);
 
-    registry.register(LocalFileSystemAdapter);
-    registry.register(DockerVolumeAdapter);
-    registry.register(S3GenericAdapter);
-    registry.register(S3AWSAdapter);
-    registry.register(S3R2Adapter);
-    registry.register(S3HetznerAdapter);
-    registry.register(SFTPAdapter);
-    registry.register(SMBAdapter);
-    registry.register(WebDAVAdapter);
-    registry.register(FTPAdapter);
-    registry.register(RsyncAdapter);
-    registry.register(GoogleDriveAdapter);
-    registry.register(DropboxAdapter);
-    registry.register(OneDriveAdapter);
+    // Every storage adapter is registered with its downloads checked, so a download that leaves a
+    // link or anything else than a regular file fails, see `downloaded-file.ts`.
+    registry.register(withCheckedDownloads(LocalFileSystemAdapter));
+    registry.register(withCheckedDownloads(DockerVolumeAdapter));
+    registry.register(withCheckedDownloads(S3GenericAdapter));
+    registry.register(withCheckedDownloads(S3AWSAdapter));
+    registry.register(withCheckedDownloads(S3R2Adapter));
+    registry.register(withCheckedDownloads(S3HetznerAdapter));
+    registry.register(withCheckedDownloads(SFTPAdapter));
+    registry.register(withCheckedDownloads(SMBAdapter));
+    registry.register(withCheckedDownloads(WebDAVAdapter));
+    registry.register(withCheckedDownloads(FTPAdapter));
+    registry.register(withCheckedDownloads(RsyncAdapter));
+    registry.register(withCheckedDownloads(GoogleDriveAdapter));
+    registry.register(withCheckedDownloads(DropboxAdapter));
+    registry.register(withCheckedDownloads(OneDriveAdapter));
 
     registry.register(DiscordAdapter);
     registry.register(SlackAdapter);

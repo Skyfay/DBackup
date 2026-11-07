@@ -6,17 +6,26 @@ const mocks = vi.hoisted(() => ({
     permissions: [] as string[],
     start: vi.fn(),
     read: vi.fn(),
+    configBackups: new Set<string>(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/prisma", () => ({ default: { user: { findUnique: vi.fn(async () => ({ name: "Manu" })) } } }));
 vi.mock("@/lib/auth/access-control", () => ({
-    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isSuperAdmin: false }),
+    getAuthContext: async () => ({ userId: "u1", permissions: mocks.permissions, isPlatformAdmin: false, tenantId: "default" }),
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
     },
+    tenantOf: (ctx: { tenantId: string }) => ctx.tenantId,
 }));
 vi.mock("@/services/storage/copy-verification", () => ({ startCopyVerification: mocks.start, readCopyVerification: mocks.read }));
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: vi.fn() } }));
+vi.mock("@/services/sharing/destination-access", () => ({ findDestinationPath: vi.fn(async (id: string) => ({ row: { id }, mode: { kind: "own" }, tenantId: "default" })) }));
+// The real guard, with a sidecar or path that marks the copy as a configuration backup.
+vi.mock("@/services/storage/config-backup-access", () => ({
+    isConfigBackupFile: async (storageId: string, file: string) => mocks.configBackups.has(`${storageId}:${file}`),
+}));
+vi.mock("@/services/storage/backup-audit", () => ({ backupAuditDetails: async (_destinationId: string, file: string) => ({ file }) }));
 
 const { POST, GET } = await import("@/app/api/storage/verify-copies/route");
 
@@ -29,6 +38,16 @@ describe("checking the copies of a backup over the API", () => {
         vi.clearAllMocks();
         mocks.permissions = ["storage:read"];
         mocks.start.mockResolvedValue({ executionId: "exec-1" });
+        mocks.configBackups.clear();
+    });
+
+    it("checks no copy of a configuration backup for anyone but a platform admin with a session", async () => {
+        mocks.configBackups.add("sftp:UI Test/UI_Test.tar");
+
+        const response = await start({ copies: COPIES });
+
+        expect(response.status).toBe(403);
+        expect(mocks.start).not.toHaveBeenCalled();
     });
 
     it("starts one run for every copy named, in the name of the user", async () => {

@@ -29,8 +29,6 @@ describe("the numbers and states of the list", () => {
     it("counts what is backed up, what is in no job and what the servers do not size", () => {
         const summary = summarize({
             servers: [server("s1")],
-            jobs: [],
-            coverage: true,
             databases: [database("s1", "shop", ["nightly"], 300), database("s1", "analytics", [], 1200), database("s1", "hidden", [], null)],
         });
         expect(summary).toMatchObject({ databases: 3, backedUp: 1, noJob: 2, noJobSize: 1200, size: 1500, unsized: 1 });
@@ -38,7 +36,7 @@ describe("the numbers and states of the list", () => {
     });
 
     it("counts a Redis server once and its keys as no tables", () => {
-        const summary = summarize({ servers: [server("s1"), server("cache", { adapterId: "redis" })], jobs: [], coverage: true, databases: [database("s1", "shop"), instance("cache")] });
+        const summary = summarize({ servers: [server("s1"), server("cache", { adapterId: "redis" })], databases: [database("s1", "shop"), instance("cache")] });
         expect(summary).toMatchObject({ databases: 2, tables: 10 });
     });
 

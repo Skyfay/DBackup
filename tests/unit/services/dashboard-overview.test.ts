@@ -10,6 +10,11 @@ vi.mock("@/services/dashboard-service", () => ({
     getLatestJobs: vi.fn().mockResolvedValue([]),
 }));
 
+// The jobs of the queue of every tenant, here none but those the test lists, whose schedules the plan reads.
+vi.mock("@/services/jobs/queue-snapshot", () => ({
+    queueJobs: async () => [],
+}));
+
 import { getAggregates, type Aggregates } from "@/services/dashboard/aggregates";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { ValidationError } from "@/lib/logging/errors";
+import { ValidationError, ConflictError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     logFor: vi.fn(),
@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     restore: vi.fn(),
 }));
 
-const ctx = { userId: "u1", permissions: [], isSuperAdmin: true, authMethod: "apikey", apiKeyId: "key-1" };
+const ctx = { userId: "u1", permissions: [], isPlatformAdmin: true, authMethod: "apikey", apiKeyId: "key-1" };
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth/access-control", () => ({
@@ -19,6 +19,10 @@ vi.mock("@/lib/auth/access-control", () => ({
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: mocks.logFor } }));
 vi.mock("@/services/jobs/job-service", () => ({ jobService: { updateJob: mocks.updateJob } }));
 vi.mock("@/services/restore/restore-service", () => ({ restoreService: { restore: mocks.restore } }));
+// The entry names the destination as the tenant sees it, see backup-audit.ts.
+vi.mock("@/services/sharing/destination-access", () => ({
+    findDestination: async (id: string) => ({ row: { id, name: id === "nas" ? "NAS" : id }, mode: { kind: "own" }, tenantId: "default" }),
+}));
 
 const { PUT } = await import("@/app/api/jobs/[id]/route");
 const { POST: RESTORE } = await import("@/app/api/storage/[id]/restore/route");
@@ -88,7 +92,7 @@ describe("saving a job through the API", () => {
 
     it("notes nothing when the save is refused", async () => {
         prismaMock.job.findUnique.mockResolvedValueOnce(jobRow() as never);
-        mocks.updateJob.mockRejectedValue(new Error('A job with the name "Shop" already exists.'));
+        mocks.updateJob.mockRejectedValue(new ConflictError('A job with the name "Shop" already exists.'));
 
         const response = await saveJob({ name: "Shop" });
 
@@ -134,6 +138,30 @@ describe("starting a restore through the API", () => {
             },
             "nas"
         );
+    });
+
+    it("passes the confirmation of a restore over customers' databases and names those customers in the entry, never in the answer", async () => {
+        mocks.restore.mockResolvedValue({
+            success: true, executionId: "exec-9", message: "Restore started",
+            overwritten: [{ database: "shop_acme", tenantId: "acme", customer: "Acme" }, { database: "cust_1", tenantId: "globex", customer: "Globex" }],
+        });
+
+        const response = await startRestore({
+            file: "Shop/shop_2026-09-28.tar.gz",
+            targetSourceId: "pg-prod",
+            databaseMapping: [{ originalName: "shop_acme", targetName: "shop_acme", selected: true }, { originalName: "cust_1", targetName: "cust_1", selected: true }],
+            overwriteCustomerDatabases: true,
+        });
+
+        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: true }), expect.anything());
+        expect(mocks.logFor).toHaveBeenCalledWith(ctx, "RESTORE", "BACKUP", expect.objectContaining({ customers: ["Acme", "Globex"] }), "nas");
+        expect(JSON.stringify(await response.json())).not.toContain("Acme");
+    });
+
+    it("never confirms a restore over customers' databases by anything but true", async () => {
+        await startRestore({ file: "Shop/shop_2026-09-28.tar.gz", targetSourceId: "pg-prod", overwriteCustomerDatabases: "yes" });
+
+        expect(mocks.restore).toHaveBeenCalledWith(expect.objectContaining({ overwriteCustomerDatabases: false }), expect.anything());
     });
 
     it("notes nothing when the restore is refused before it starts", async () => {

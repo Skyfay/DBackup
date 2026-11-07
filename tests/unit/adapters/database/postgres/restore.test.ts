@@ -20,13 +20,15 @@ const {
     mockFsOpen: vi.fn(),
 }));
 
-vi.mock("@/lib/adapters/database/common/tar-utils", () => ({
+vi.mock("@/lib/adapters/database/common/tar-utils", async (importOriginal) => ({
     isMultiDbTar: (...args: unknown[]) => mockIsMultiDbTar(...args),
     extractSelectedDatabases: (...args: unknown[]) => mockExtractSelected(...args),
     createTempDir: (...args: unknown[]) => mockCreateTempDir(...args),
     cleanupTempDir: (...args: unknown[]) => mockCleanupTempDir(...args),
     shouldRestoreDatabase: (...args: unknown[]) => mockShouldRestore(...args),
     getTargetDatabaseName: (...args: unknown[]) => mockGetTargetName(...args),
+    // The real lookup, so a dump is found among the files the extraction wrote, never joined from the manifest.
+    extractedFileOf: (await importOriginal<typeof import("@/lib/adapters/database/common/tar-utils")>()).extractedFileOf,
 }));
 
 vi.mock("fs/promises", () => ({
@@ -198,7 +200,7 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL restore over a %s host", 
             await restoreOne(baseConfig as never, "/tmp/a.dump", "target", host);
 
             const restoreCall = host.calls.exec.find(a => a[0] === "pg_restore")!;
-            expect(restoreCall[restoreCall.indexOf("-d") + 1]).toBe("target");
+            expect(restoreCall[restoreCall.indexOf("-d") + 1]).toBe("dbname='target'");
         });
 
         it("works without callbacks", async () => {

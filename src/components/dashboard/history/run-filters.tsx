@@ -3,7 +3,7 @@
 import { Archive, Clock, KeyRound, RotateCcw, ShieldCheck, UserRound } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import type { DataTableFilterableColumn } from "@/components/ui/data-table";
-import type { RunPage, RunRow, RunStarterOption } from "@/services/history/run-types";
+import type { RunJobOption, RunPage, RunRow, RunStarterOption } from "@/services/history/run-types";
 import { TYPE_GROUPS, TYPE_LABELS } from "./run-format";
 
 const UNAVAILABLE = "No runs with the other filters";
@@ -21,11 +21,26 @@ const STARTER_ICONS: Record<RunStarterOption["group"], React.ComponentType<{ cla
     Other: null,
 };
 
+/** The Tenant filter of All tenants, and the names the jobs of the Job filter are grouped by there. */
+export interface RunTenantFilter {
+    filter: DataTableFilterableColumn<RunRow>;
+    nameOf: (tenantId: string | null | undefined) => string | null;
+}
+
+/** The jobs of the Job filter, by tenant in All tenants, where two tenants may name a job alike. */
+function jobOptions(jobs: RunJobOption[], tenant: RunTenantFilter | null) {
+    const groupOf = (job: RunJobOption) => (tenant ? tenant.nameOf(job.tenantId) ?? job.tenantId : undefined);
+    return tenant
+        ? [...jobs].sort((a, b) => (groupOf(a) ?? "").localeCompare(groupOf(b) ?? "") || a.name.localeCompare(b.name)).map((job) => ({ job, group: groupOf(job) }))
+        : jobs.map((job) => ({ job, group: undefined }));
+}
+
 /**
  * The filters of the runs: the type, with the system tasks under a heading of their own, the job
- * and who started it. The numbers come from the server, which counts under the other filters.
+ * and who started it, and in All tenants the tenant. The numbers come from the server, which
+ * counts under the other filters, the tenants included, since the list is paged there.
  */
-export function runFilters(page: RunPage | null): DataTableFilterableColumn<RunRow>[] {
+export function runFilters(page: RunPage | null, tenant: RunTenantFilter | null = null): DataTableFilterableColumn<RunRow>[] {
     const facets = page?.facets;
     const shared = { note: "The numbers count the runs", unavailableLabel: UNAVAILABLE };
     const types = [...new Set([...Object.keys(TYPE_LABELS), ...Object.keys(facets?.type ?? {})])];
@@ -49,9 +64,10 @@ export function runFilters(page: RunPage | null): DataTableFilterableColumn<RunR
             id: "job",
             title: "Job",
             ...shared,
-            options: (page?.jobs ?? []).map((job) => ({
+            options: jobOptions(page?.jobs ?? [], tenant).map(({ job, group }) => ({
                 value: job.id,
                 label: job.name,
+                group,
                 lead: job.adapterId ? <AdapterIcon adapterId={job.adapterId} className="size-4 shrink-0" /> : undefined,
                 count: facets?.job[job.id] ?? 0,
             })),
@@ -72,5 +88,12 @@ export function runFilters(page: RunPage | null): DataTableFilterableColumn<RunR
                 };
             }),
         },
+        ...(tenant
+            ? [{
+                ...tenant.filter,
+                ...shared,
+                options: tenant.filter.options.map((option) => ({ ...option, count: facets?.tenant?.[option.value] ?? 0 })),
+            }]
+            : []),
     ];
 }

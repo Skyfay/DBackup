@@ -1,4 +1,4 @@
-import { createReadStream } from "fs";
+import { createNoFollowReadStream } from "@/lib/server/no-follow";
 import crypto from "crypto";
 import { CompressionType } from "@/lib/crypto/compression";
 import {
@@ -85,7 +85,8 @@ function checkKeyCandidate(
     return new Promise((resolve) => {
         try {
             const chunks: Buffer[] = [];
-            const input = createReadStream(tempFile, { start: 0, end: HEAD_PROBE_SIZE - 1 });
+            // The download, never a file a link of it points at, see `downloaded-file.ts`.
+            const input = createNoFollowReadStream(tempFile, { start: 0, end: HEAD_PROBE_SIZE - 1 });
 
             input.on('error', () => resolve(false));
             input.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));

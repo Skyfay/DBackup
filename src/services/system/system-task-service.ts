@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
 import { registerAdapters } from "@/lib/adapters";
 import { isValidCron } from "@/lib/core/cron";
 import { healthCheckService } from "./healthcheck-service";
@@ -202,7 +203,12 @@ export class SystemTaskService {
         }
     }
 
-    async runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
+    /** Runs a system task for every tenant, also when someone starts it from a page of one. */
+    runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
+        return runAsSystem(() => this.runForAllTenants(taskId, triggerType, triggerLabel));
+    }
+
+    private async runForAllTenants(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
         // VACUUM or a database download holds Prisma's only connection. A task started now
         // would just queue behind it until the pool timeout fails it.
         if (isDatabaseMaintenanceActive()) {
@@ -210,10 +216,23 @@ export class SystemTaskService {
             return undefined;
         }
 
+        // A start while the task still runs is skipped, like the health check of every minute that
+        // takes longer than a minute on a busy instance. Taken before the first await, so two starts
+        // at once cannot both pass.
+        if (running.has(taskId)) {
+            log.info("Skipping system task, it is still running", { taskId });
+            return undefined;
+        }
+        running.add(taskId);
+
         log.info("Running system task", { taskId });
         const startedAt = new Date();
-        await this.setTaskLastRunAt(taskId, startedAt);
-        running.add(taskId);
+        try {
+            await this.setTaskLastRunAt(taskId, startedAt);
+        } catch (error: unknown) {
+            running.delete(taskId);
+            throw error;
+        }
 
         let outcome: TaskOutcome;
         try {

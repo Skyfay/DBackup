@@ -85,14 +85,17 @@
     "q7": "What license is DBackup released under?",
     "a7": "GPL-3.0. The source code is fully open and available on GitHub.",
     "q8": "Can I send one backup to multiple storage destinations?",
-    "a8": "Yes. Multi-destination jobs upload each backup to several storage adapters at once for redundancy or off-site copies."
+    "a8": "Yes. Multi-destination jobs upload each backup to several storage adapters at once for redundancy or off-site copies.",
+    "q9": "Can one DBackup serve several customers?",
+    "a9": "Yes. Tenants keep the connections, jobs, backups, keys, people and audit log of each customer apart, and your team works across them through platform groups. A tenant of the MSP can give single databases of a shared server to their customers and share its destinations and channels with them. The platform decides what each tenant may add itself and whether it reaches the local network. <tenants>Read the tenants guide</tenants>."
   },
   "home": {
     "featureDatabase": "{name} backups",
     "featureFiles": "File and folder backups",
     "featureEncryption": "AES-256-GCM encryption",
     "featureRetention": "Compression and smart retention",
-    "featureRecovery": "Restore without DBackup through the Recovery Kit"
+    "featureRecovery": "Restore without DBackup through the Recovery Kit",
+    "featureTenants": "Tenants for managed service providers"
   },
   "blog": {
     "eyebrow": "Blog",
@@ -138,6 +141,10 @@
   },
   "roadmap": {
     "items": {
+      "tenants": {
+        "title": "Tenants for MSPs",
+        "description": "One instance for many customers, each with its own connections, jobs, backups, keys, people and audit log. Platform groups for the team of the MSP, invitation links, sign-in providers per tenant, single databases of a shared server given to their customer, shared destinations and channels, and a block of the local network per tenant."
+      },
       "dbackup-agent": {
         "title": "DBackup Agent",
         "description": "A small container on the target host that DBackup talks to instead of opening an SSH session, for hosts where SSH access is not an option. Dumps still stream back to DBackup for compression and encryption, so the encryption key and the storage credentials never leave it."
@@ -483,7 +490,23 @@
     "cmdExplorer": "Open Database Explorer",
     "cmdFailed": "Show failed runs",
     "cmdRecoveryKit": "Download Recovery Kit",
-    "alertStorage": "Email · Storage limit warning"
+    "alertStorage": "Email · Storage limit warning",
+    "tenantsTitle": "Many customers, one instance",
+    "tenantsText": "Tenants keep the connections, jobs, backups, keys, people and audit log of each customer apart. Built for MSPs, agencies and hosting companies.",
+    "tenantsPlatformGroups": "Platform groups on all tenants or selected ones",
+    "tenantsInvitations": "Invitation links and SSO per tenant",
+    "tenantsSharing": "Shared databases, destinations and channels",
+    "tenantsNetwork": "Local network blocked per tenant",
+    "tenantsGuide": "Read the tenants guide",
+    "tenantsSwitcher": "Switch tenants",
+    "allTenants": "All tenants",
+    "tenantCount": "{count} tenants",
+    "tenantOf": "Tenant {index} of {total}",
+    "findTenant": "Find a tenant",
+    "tenantStats": "{jobs} jobs · {databases} databases",
+    "tenantShared": "{count} shared",
+    "sharesWithCustomers": "Shares with customers",
+    "tenantFailed": "The newest backup failed"
   },
   "liveRun": {
     "stepDump": "Dump the database nextcloud",

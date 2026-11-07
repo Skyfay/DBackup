@@ -31,6 +31,7 @@ vi.mock('@/lib/notifications/events', () => ({
 }));
 vi.mock('@/lib/auth/permissions', () => ({
     PERMISSIONS: { SYSTEM: { ADMIN: 'system.admin' } },
+    AVAILABLE_PERMISSIONS: [{ id: 'system.admin', label: 'Admin', category: 'System' }],
 }));
 
 // Dynamic-import mocks (used inside runTask() switch branches)
@@ -40,6 +41,7 @@ vi.mock('@/lib/runner/config-runner', () => ({
 vi.mock('@/services/backup/integrity-service', () => ({
     integrityService: {
         runFullIntegrityCheck: vi.fn().mockResolvedValue({ totalFiles: 5, passed: 5, failed: 0, skipped: 0 }),
+        tenantsToCheck: vi.fn().mockResolvedValue(['default']),
     },
 }));
 vi.mock('@/lib/runner/system-task-runner', () => ({
@@ -256,14 +258,15 @@ describe('SystemTaskService', () => {
             expect(updateService.checkForUpdates).toHaveBeenCalledTimes(1);
         });
 
-        it('calls prisma.group.updateMany for SYNC_PERMISSIONS', async () => {
+        it('gives the full access groups every permission for SYNC_PERMISSIONS, whatever they are named', async () => {
             prismaMock.group.updateMany.mockResolvedValue({ count: 1 });
 
             await service.runTask(SYSTEM_TASKS.SYNC_PERMISSIONS);
 
-            expect(prismaMock.group.updateMany).toHaveBeenCalledWith(
-                expect.objectContaining({ where: { name: 'SuperAdmin' } })
-            );
+            expect(prismaMock.group.updateMany).toHaveBeenCalledWith({
+                where: { fullAccess: true },
+                data: { permissions: JSON.stringify(['system.admin']) },
+            });
         });
 
         it('calls runConfigBackup for CONFIG_BACKUP', async () => {
@@ -279,7 +282,8 @@ describe('SystemTaskService', () => {
 
             await service.runTask(SYSTEM_TASKS.INTEGRITY_CHECK);
 
-            expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1);
+            // The check goes on in the background once the run is handed back.
+            await vi.waitFor(() => expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1));
         });
 
         it('keeps the plan and every copy an integrity check checked in the metadata of its run', async () => {
@@ -532,6 +536,33 @@ describe('SystemTaskService', () => {
             });
         });
 
+        it('skips a start while the same task still runs, like a health check that takes longer than its minute', async () => {
+            const { healthCheckService } = await import('@/services/system/healthcheck-service');
+            vi.mocked(healthCheckService.performHealthCheck).mockClear();
+            let finish: () => void = () => {};
+            vi.mocked(healthCheckService.performHealthCheck).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+
+            const first = service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            // The schedule starts it again while the first run is still checking.
+            await service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            await vi.waitFor(() => expect(healthCheckService.performHealthCheck).toHaveBeenCalledTimes(1));
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(true);
+
+            finish();
+            await first;
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(false);
+            await service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            expect(healthCheckService.performHealthCheck).toHaveBeenCalledTimes(2);
+        });
+
+        it('lets the task start again when it could not record its start', async () => {
+            prismaMock.systemSetting.upsert.mockRejectedValueOnce(new Error('database is locked'));
+
+            await expect(service.runTask(SYSTEM_TASKS.HEALTH_CHECK)).rejects.toThrow('database is locked');
+
+            expect(service.isRunning(SYSTEM_TASKS.HEALTH_CHECK)).toBe(false);
+        });
+
         it('records lastRunAt timestamp when runTask is called', async () => {
             prismaMock.systemSetting.upsert.mockResolvedValue({} as any);
 
@@ -642,7 +673,7 @@ describe('SystemTaskService', () => {
             await expect(service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS)).resolves.toBeUndefined();
         });
 
-        it('logs when no SuperAdmin group is found during SYNC_PERMISSIONS', async () => {
+        it('runs without error when no full access group exists during SYNC_PERMISSIONS', async () => {
             prismaMock.group.updateMany.mockResolvedValue({ count: 0 });
 
             await service.runTask(SYSTEM_TASKS.SYNC_PERMISSIONS);

@@ -27,6 +27,8 @@ export const AUDIT_RESOURCES = {
   TEMPLATE: "TEMPLATE", // Retention policies, naming templates, schedule presets, exclude pattern presets
   BACKUP: "BACKUP", // One backup at a destination: downloaded, restored, locked or deleted
   SSO_PROVIDER: "SSO_PROVIDER", // A way to sign in through an identity provider
+  TENANT: "TENANT", // A customer of the instance and the boundary of its data
+  PLATFORM_GROUP: "PLATFORM_GROUP", // A group of the people of the MSP, with rights on the platform and in the tenants of its scope
 } as const;
 
 export type AuditResource = typeof AUDIT_RESOURCES[keyof typeof AUDIT_RESOURCES];
@@ -41,3 +43,21 @@ export interface AuditChange {
   to: string | null;
   secret?: true;
 }
+
+/**
+ * What a change of the own second factor or passkeys was, in `change` of an `UPDATE USER` entry,
+ * written by the hooks of better-auth in `src/lib/auth/security-audit.ts`.
+ */
+export const SECURITY_CHANGES = {
+  appSetUp: "Authenticator app set up",
+  appRemoved: "Authenticator app removed",
+  on: "Second factor turned on",
+  off: "Second factor turned off",
+  backupCodes: "Backup codes renewed",
+  passkeyAdded: "Passkey added",
+  passkeyRenamed: "Passkey renamed",
+  passkeyDeleted: "Passkey deleted",
+  sessionEnded: "Own session ended",
+  otherSessionsEnded: "Other own sessions ended",
+  allSessionsEnded: "Every own session ended",
+} as const;

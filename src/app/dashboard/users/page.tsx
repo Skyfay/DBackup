@@ -7,20 +7,26 @@ import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/g
 import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
 import { UsersClient } from "@/components/dashboard/users/users-client";
 import { USERS_TABLE_ID, type UsersPageAttention } from "@/components/dashboard/users/users-tables";
-import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
+import { PickTenantPage } from "@/components/tenant/tenant-pick";
+import { getViewer, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 import { getUsersPageAttention } from "@/services/user/users-model";
+import { tenantService } from "@/services/tenant/tenant-service";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { firstOf, type PageSearchParams } from "../search-params";
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
 export const metadata: Metadata = { title: "Users & Groups" };
 
 /**
- * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and
- * the ways to sign in. Every tab loads in the browser, the page only decides which ones show.
+ * Users & Groups under Administration: the members of the open tenant with how they sign in, its
+ * groups, its API keys and its audit log, and with one tenant the ways to sign in. With more than
+ * one tenant the sign-in providers and every account of the instance are under Platform. Every tab
+ * loads in the browser, the page only decides which ones show.
  */
-export default async function UsersPage() {
-    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+export default async function UsersPage({ searchParams }: { searchParams: Promise<PageSearchParams> }) {
+    const [permissions, user, params, tenantCount] = await Promise.all([getUserPermissions(), getViewer(), searchParams, tenantService.count()]);
     // The login lives on the root page, there is no /login.
     if (!user) redirect("/");
 
@@ -29,11 +35,28 @@ export default async function UsersPage() {
     const canReadGroups = can(PERMISSIONS.GROUPS.READ);
     const canReadAudit = can(PERMISSIONS.AUDIT.READ);
     const canReadApiKeys = can(PERMISSIONS.API_KEYS.READ);
-    const canReadSettings = can(PERMISSIONS.SETTINGS.READ);
-    if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
+    // The providers are seen with the settings too, as on an install of one tenant before platform groups.
+    const canReadSignIn = can(PERMISSIONS.PLATFORM.SIGN_IN_READ) || can(PERMISSIONS.SETTINGS.READ);
+    // With more than one tenant the sign-in providers are the platform's, an old link to them lands there.
+    if (tenantCount > 1 && firstOf(params, "tab") === "sso" && canReadSignIn) redirect("/dashboard/platform/users?tab=providers");
+    // With one tenant the providers are a tab of this page, which may be all the viewer sees here.
+    const showsSignIn = canReadSignIn && tenantCount <= 1;
+    if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys && !showsSignIn) redirect("/dashboard");
+
+    // All tenants changes no tenant: the members, groups and keys belong to one, every account is under Platform.
+    // The tab and the record the address names open in the tenant picked, like the part of Settings.
+    if (user.allTenants) {
+        const kept = new URLSearchParams();
+        for (const key of ["tab", "open"]) {
+            const value = firstOf(params, key);
+            if (value) kept.set(key, value);
+        }
+        const query = kept.toString();
+        return <PickTenantPage href={query ? `/dashboard/users?${query}` : "/dashboard/users"} />;
+    }
 
     const [attention, layouts, groupsView, apiKeysView, auditView, signInView] = await Promise.all([
-        getUsersPageAttention(),
+        getUsersPageAttention(user.tenantId ?? HOME_TENANT_ID),
         getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID, API_KEYS_TABLE_ID, SIGN_IN_TABLE_ID]),
         getViewMode(user.id, GROUPS_PAGE_ID),
         getViewMode(user.id, API_KEYS_PAGE_ID),
@@ -61,8 +84,10 @@ export default async function UsersPage() {
                     canManageApiKeys={can(PERMISSIONS.API_KEYS.WRITE)}
                     canOpenRuns={can(PERMISSIONS.HISTORY.READ)}
                     canReadAudit={canReadAudit}
-                    canReadSignIn={canReadSettings}
-                    viewerSuperAdmin={user.group?.name === "SuperAdmin"}
+                    // With more than one tenant the providers are the platform's, under Platform, Users & Groups.
+                    canReadSignIn={showsSignIn}
+                    canManageSignIn={can(PERMISSIONS.PLATFORM.SIGN_IN_WRITE)}
+                    viewerPlatformAdmin={user.isPlatformAdmin}
                     attention={visibleAttention}
                     layouts={layouts}
                     groupsView={groupsView ?? "table"}

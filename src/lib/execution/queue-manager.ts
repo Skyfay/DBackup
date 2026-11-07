@@ -1,9 +1,21 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { logger } from "@/lib/logging/logger";
 import { isShutdownRequested } from "@/lib/server/shutdown";
 import { isDatabaseMaintenanceActive, isRunHoldActive } from "@/lib/server/database-maintenance";
+import { LEADING_RUNS } from "./follower-runs";
 
 const log = logger.child({ module: "Queue" });
+
+/**
+ * The waiting runs the queue starts: those of a job, and a backup whose job was deleted, which then
+ * ends at once. A system task, like the integrity check of a tenant or a check of copies, waits as
+ * `Pending` without a job only until its own runner claims it, and is never the queue's to start.
+ */
+export const QUEUED_RUNS: Prisma.ExecutionWhereInput = {
+    OR: [{ jobId: { not: null } }, { type: "Backup" }],
+};
 
 /**
  * Checks the queue and starts jobs if slots are available.
@@ -12,8 +24,15 @@ const log = logger.child({ module: "Queue" });
  * during the scheduled one. Two runs of one job at once would plan the same position of an
  * incremental chain and could write the same file, so the waiting run starts right after,
  * when the queue is checked again at the end of the first.
+ *
+ * The queue is one for every tenant, so it reads the runs of all of them, whoever asks for it, and
+ * starts each run in the tenant of its job.
  */
-export async function processQueue() {
+export function processQueue(): Promise<void> {
+    return runAsSystem(processAllTenants);
+}
+
+async function processAllTenants() {
     // Skip queue processing during shutdown
     if (isShutdownRequested()) {
         log.info("Shutdown in progress - skipping queue processing");
@@ -37,10 +56,11 @@ export async function processQueue() {
     // concurrent call claims after this read is still in this list as the first of its job, so
     // this call picks that one, and its claim in performExecution fails. A run claimed before
     // this read shows up as running below. Either way no second run of a job starts beside it.
+    // A run that follows another one waits for that one, never for a slot of its own.
     const pending = await prisma.execution.findMany({
-        where: { status: "Pending" },
+        where: { status: "Pending", AND: [LEADING_RUNS, QUEUED_RUNS] },
         orderBy: { startedAt: 'asc' }, // Creation time
-        select: { id: true, jobId: true },
+        select: { id: true, jobId: true, tenantId: true },
     });
 
     if (pending.length === 0) {
@@ -48,9 +68,11 @@ export async function processQueue() {
         return;
     }
 
-    // 3. Running runs fill slots, and their jobs are busy
+    // 3. The running runs the queue started fill slots, and their jobs are busy. A run that follows
+    // another fills none, and neither does a restore or a system task like a check of copies, which
+    // the queue never starts, so a long restore of one tenant holds no backup of another.
     const running = await prisma.execution.findMany({
-        where: { status: "Running" },
+        where: { status: "Running", AND: [LEADING_RUNS, QUEUED_RUNS] },
         select: { jobId: true },
     });
 
@@ -87,7 +109,7 @@ export async function processQueue() {
     for (const execution of pendingJobs) {
         // Trigger execution asynchronously
         // We push to array to possibly await them, or just to catch errors
-        promises.push(executeQueuedJob(execution.id, execution.jobId!));
+        promises.push(runAsTenant(execution.tenantId, () => executeQueuedJob(execution.id, execution.jobId!)));
     }
 
     // For testing purposes, we wait significantly longer than we think is needed.

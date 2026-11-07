@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig } from "./lib/rate-limit";
 import type { RateLimitConfig } from "./lib/rate-limit";
+import { INTERNAL_TOKEN_HEADER, internalToken } from "./lib/rate-limit/internal-token";
 import { logger } from "./lib/logging/logger";
 import { clientAddress, rateLimitKey } from "./lib/core/client-address";
+import { loginHref } from "./lib/auth/sign-in-target";
 
 const log = logger.child({ module: "Middleware" });
 
@@ -27,7 +29,11 @@ async function syncRateLimitConfig(origin: string): Promise<void> {
 
     _fetchInFlight = (async () => {
         try {
+            // The route answers only the token of this instance, see `internal-token.ts`.
+            const token = await internalToken();
+            if (!token) return;
             const res = await fetch(new URL("/api/internal/rate-limit-config", origin), {
+                headers: { [INTERNAL_TOKEN_HEADER]: token },
                 signal: AbortSignal.timeout(3000),
             });
             if (res.ok) {
@@ -92,6 +98,11 @@ export async function middleware(request: NextRequest) {
         if (path.startsWith("/api/auth/sign-in")) {
              rateLimitType = "auth";
              await getAuthLimiter().consume(key);
+        } else if (path === "/invite" && method === "POST") {
+             // The Server Actions of an invitation, which make accounts without a session. They post
+             // to the page and would otherwise pass every limiter.
+             rateLimitType = "auth";
+             await getAuthLimiter().consume(key);
         } else if (path.startsWith("/api/")) {
              if (method === 'GET' || method === 'HEAD') {
                 rateLimitType = "api";
@@ -139,8 +150,9 @@ export async function middleware(request: NextRequest) {
             request.cookies.get("better-auth.session_token") ||
             request.cookies.get("__Secure-better-auth.session_token");
 
+        // The login page leads back to the page asked for once someone signed in.
         if (!sessionToken) {
-            return NextResponse.redirect(new URL("/", request.url));
+            return NextResponse.redirect(new URL(loginHref(`${request.nextUrl.pathname}${request.nextUrl.search}`), request.url));
         }
     }
 

@@ -34,6 +34,16 @@ src/services/
 │   ├── restore-service.ts     # Orchestrates the restore flow
 │   ├── smart-recovery.ts      # Auto-matches encryption profiles
 │   └── types.ts               # RestoreInput, RestoreResult interfaces
+├── sharing/                   # Destinations and channels a tenant shares with other tenants
+│   ├── provided.ts            # What other tenants share with a tenant, read across tenants on purpose
+│   ├── connection-shares.ts   # Gives and takes back a share, with what each tenant lost
+│   ├── connection-options.ts  # The own connections of a tenant and the ones shared with it
+│   ├── destination-access.ts  # Opens a destination as the tenant that runs now sees it
+│   ├── channel-recipients.ts  # The recipients a customer names on a shared email channel
+│   ├── share-cleanup.ts       # What a tenant loses with a connection it no longer gets
+│   ├── share-reach.ts         # Keeps a change of a share inside the reach of a platform group
+│   ├── shared-server-rows.ts  # The servers of other tenants on the Connections page
+│   └── withdrawn.ts           # The note of what a customer lost when a share stopped
 ├── sso/
 │   ├── oidc-provider-service.ts # SSO provider CRUD
 │   ├── oidc-registry.ts         # The provider types the dialogs offer
@@ -54,6 +64,20 @@ src/services/
 │   ├── system-task-runs.ts      # What each task does, with a short result
 │   ├── system-task-settings.ts  # The System tasks part: rows, Edit, Run now
 │   └── update-service.ts        # New version detection
+├── tenant/                      # Tenants, their people and the databases shared with customers
+│   ├── tenant-service.ts        # Create, rename, delete and switch tenants, setSharing
+│   ├── tenant-seed.ts           # The built-in templates of a new tenant
+│   ├── membership-service.ts    # The group of a user in a tenant, platform admins
+│   ├── invitation-service.ts    # Links into a tenant, kept as the hash of their token
+│   ├── tenant-logo-service.ts   # The logo of a tenant, in the database
+│   ├── tenant-allowances.ts     # What a tenant adds itself
+│   ├── tenant-network.ts        # Whether the connections of a tenant reach the local network
+│   ├── tenant-settings-model.ts # The tenant settings page model
+│   ├── database-assignments.ts  # The databases of a shared server given to customers
+│   ├── shared-servers.ts        # A shared server that outlives its connection
+│   ├── shared-databases.ts      # What a customer sees of its shared databases
+│   ├── shared-backups.ts        # Their backups, the one path that reads across tenants on purpose
+│   └── shared-on-demand.ts      # A backup a customer starts of a shared database
 ├── trash/
 │   ├── trash-snapshot.ts      # keepInTrash: the snapshot a delete keeps, with what belongs to the record
 │   ├── trash-restore.ts       # Brings a snapshot back under its own id, dropping links to what is gone
@@ -323,7 +347,7 @@ interface IntegrityCheckResult {
 }
 ```
 
-**Integration:** Registered as a system task (`system.integrity_check`) in `system-task-service.ts`. Runs weekly (Sunday 4 AM), disabled by default. Can be triggered manually via Settings → System tasks → Run now.
+**Integration:** Registered as a system task (`system.integrity_check`) in `system-task-service.ts`. Runs weekly (Sunday 4 AM), disabled by default. Can be triggered manually via Settings → System tasks → Run now. `runFullIntegrityCheck` checks what the scope it runs in sees, so the task in `system-task-runs.ts` runs it once per tenant from `tenantsToCheck()`, each in `runAsTenant` with a run of that tenant, the home tenant first.
 
 ### NotificationLogService
 
@@ -458,8 +482,8 @@ await prisma.$transaction(async (tx) => {
 });
 ```
 
-- The snapshot holds the rows as they were stored, secrets still encrypted with `ENCRYPTION_KEY`, and everything that belongs to the record: the destinations, folders, channels and run ids of a job, the accounts, second factor, passkeys, API keys, preferences and picture of a user, the picture in base64, the version history of a connection.
-- Each row keeps the permission of its kind, and `superAdminOnly` for the account of a SuperAdmin. `listTrash` only lists rows the viewer may handle. Restoring, purging and `permanently` need `TRASH_ADMIN_PERMISSION` (`settings:write`) on top, checked by the actions in `src/app/actions/settings/trash.ts` and by every delete action and route. Undo needs only the right of the kind, for the viewer's own delete of the last 5 minutes.
+- The snapshot holds the rows as they were stored, secrets still encrypted with `ENCRYPTION_KEY`, and everything that belongs to the record: the destinations, folders, channels and run ids of a job, the accounts, second factor, passkeys, API keys of every tenant, memberships, preferences and picture of a user, the picture in base64, the version history of a connection and the databases it gave to customers. `DeletedRecord` is a tenant model, so every tenant has its own list.
+- Each row keeps the tenant whose list holds it and the permission of its kind. An account waits in its one tenant only when it worked there alone, with no platform role, no platform group and no API key elsewhere, and any other account in the home tenant with `superAdminOnly`, which only a platform admin restores or purges. `listTrash` only lists rows the viewer may handle. Restoring, purging and `permanently` need `TRASH_ADMIN_PERMISSION` (`tenant-settings:write`) on top, checked by the actions in `src/app/actions/settings/trash.ts` and by every delete action and route. Undo needs only the right of the kind, for the viewer's own delete of the last 5 minutes, and finds a deleted account in whichever tenant it waits, see [Tenants](/developer-guide/advanced/tenants).
 - `restoreSnapshot` creates the rows again under their old ids in one transaction. A link to a record that is gone meanwhile is dropped with a note, a taken name throws `ConflictError` and the caller asks for another.
 - A new kind of record adds its kind to `TRASH_KINDS`, a snapshot in `trash-snapshot.ts` and a restore in `trash-restore.ts`. A new table that cascades from a kept record belongs in its snapshot, or the restore loses it.
 

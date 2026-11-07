@@ -24,11 +24,13 @@ import { databaseLayout } from "./database-form-layout";
 import { DatabaseSection, DatabaseSectionAction } from "./database-form-sections";
 import { notificationLayout } from "./notification-form-layout";
 import { NotificationSection, NotificationSectionAction } from "./notification-form-sections";
+import { formHostLocalReason, useMayReachServer } from "./host-local-access";
 import { SecretStatusProvider } from "./secret-status-context";
 import { storageLayout } from "./storage-form-layout";
 import { StorageSection, StorageSectionAction } from "./storage-form-sections";
 import type { AdapterConfig } from "./types";
 import { useConnectionForm, type ConnectionTestState, type SavedConnection } from "./use-connection-form";
+import { parseObject } from "./connection-form-defaults";
 
 const SECTION_ICONS: Record<SectionId, LucideIcon> = {
     connection: Plug,
@@ -154,10 +156,21 @@ export function ConnectionForm({
     };
     const statuses = sectionStatuses(layout, values, errorKeysOf(errors));
 
-    const submit = form.handleSubmit(connection.onValid, (invalid) => {
+    const submit = form.handleSubmit((values) => (lockedReason || blockedReason ? undefined : connection.onValid(values)), (invalid) => {
         const target = firstSectionWithError(layout, errorKeysOf(invalid));
         if (target) setPicked(target);
     });
+
+    // A connection that reaches the server DBackup runs on is changed by a platform admin alone. A
+    // saved one opens read-only for anyone else, and a form that turns into one cannot be saved.
+    const mayReachServer = useMayReachServer();
+    const lockedReason = initialData && !mayReachServer
+        ? (initialData.hostLocal !== undefined ? initialData.hostLocal : formHostLocalReason(adapter.id, parseObject(initialData.config), initialData.secretStatus))
+        : null;
+    const blockedReason = !lockedReason && !mayReachServer ? formHostLocalReason(adapter.id, config, initialData?.secretStatus) : null;
+    const hostLocalNote = lockedReason
+        ? `Only a platform admin changes this connection, so it opens read-only. ${lockedReason}`
+        : blockedReason;
 
     const busy = isSubmitting || connection.saving;
     // Blue while a connection is added, violet while one is edited. The form hands the tone to its
@@ -205,21 +218,31 @@ export function ConnectionForm({
                                         : "*:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-15rem)] md:h-full md:*:data-[slot=scroll-area-viewport]:max-h-none"
                                 )}
                             >
-                                {sections.map((section) => (
-                                    <TabsContent key={section.id} value={section.id} forceMount className="space-y-5 p-5 data-[state=inactive]:hidden">
-                                        <SectionHeading
-                                            section={section}
-                                            action={<SectionAction id={section.id} adapter={adapter} sshCredentialId={connection.sshCredentialId} />}
-                                        />
-                                        <Section id={section.id} keys={section.keys} {...sectionProps} />
-                                    </TabsContent>
-                                ))}
+                                {/* Read-only: every field, switch and button of the parts is disabled, the list beside them is not. */}
+                                <fieldset disabled={!!lockedReason} className="contents">
+                                    {sections.map((section) => (
+                                        <TabsContent key={section.id} value={section.id} forceMount className="space-y-5 p-5 data-[state=inactive]:hidden">
+                                            <SectionHeading
+                                                section={section}
+                                                action={<SectionAction id={section.id} adapter={adapter} sshCredentialId={connection.sshCredentialId} />}
+                                            />
+                                            <Section id={section.id} keys={section.keys} {...sectionProps} />
+                                        </TabsContent>
+                                    ))}
+                                </fieldset>
                             </ScrollArea>
                         </Tabs>
 
+                        {hostLocalNote && (
+                            <div className="flex shrink-0 gap-3 border-t border-warning/30 bg-warning/5 px-5 py-3 text-sm" role="note">
+                                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                                <p>{hostLocalNote}</p>
+                            </div>
+                        )}
+
                         <div className={cn(DIALOG_FOOTER, "flex flex-wrap items-center justify-between gap-3")}>
-                            <div className="flex min-w-0 items-center gap-3" aria-live="polite">
-                                <Button type="button" variant="outline" onClick={connection.runTest} disabled={connection.test.status === "running" || busy}>
+                            <div className={cn("flex min-w-0 items-center gap-3", lockedReason && "hidden")} aria-live="polite">
+                                <Button type="button" variant="outline" onClick={connection.runTest} disabled={connection.test.status === "running" || busy || !!blockedReason}>
                                     {connection.test.status === "running" ? <Loader2 className="animate-spin" /> : isNotification ? <Send /> : <Zap />}
                                     {/* A channel is tested by sending it a real message, so the button says so. */}
                                     {isNotification ? "Send test" : "Test connection"}
@@ -228,12 +251,14 @@ export function ConnectionForm({
                             </div>
                             <div className="ml-auto flex shrink-0 items-center gap-2">
                                 <DialogClose asChild>
-                                    <Button type="button" variant="ghost">Cancel</Button>
+                                    <Button type="button" variant={lockedReason ? "outline" : "ghost"}>{lockedReason ? "Close" : "Cancel"}</Button>
                                 </DialogClose>
-                                <Button type="submit" disabled={busy}>
-                                    {busy && <Loader2 className="animate-spin" />}
-                                    {initialData ? "Save changes" : `Create ${short}`}
-                                </Button>
+                                {!lockedReason && (
+                                    <Button type="submit" disabled={busy || !!blockedReason}>
+                                        {busy && <Loader2 className="animate-spin" />}
+                                        {initialData ? "Save changes" : `Create ${short}`}
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     </form>

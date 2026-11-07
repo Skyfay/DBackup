@@ -91,7 +91,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 
 | Variable | Required | Description |
 | :--- | :---: | :--- |
-| `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars) for encrypting credentials at rest. |
+| `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars, only 0-9 and a-f) for encrypting credentials at rest. DBackup does not start with another value. |
 | `BETTER_AUTH_SECRET` | ✅ | Base64 secret for authentication sessions. |
 | `BETTER_AUTH_URL` | ✅ | **Primary** URL where users access DBackup (for auth redirects). |
 | `TRUSTED_ORIGINS` | ❌ | Additional access URLs, comma-separated (see below). |
@@ -422,11 +422,13 @@ docker compose up -d
 
 The first start of a new version runs its database migrations, which can take a while on an instance with a long history. Leave the container running until its log (`docker compose logs -f dbackup`) shows `All migrations have been successfully applied`. A container stopped halfway leaves a migration marked as failed, and the next start stops with an error.
 
+A start that is about to apply a migration first keeps a copy of the database beside it in `/data/db`, the three newest stay. To go back to the version you ran before, put that copy in place before you start the older image, see [Going Back](/user-guide/admin/tenants#going-back).
+
 ### Beta Versions
 
 Before a larger release, a beta like `skyfay/dbackup:v4.1.0-beta.1` lets you try it early. The tag `skyfay/dbackup:beta` always points to the newest beta, and the [release notes on GitHub](https://github.com/Skyfay/DBackup/releases) list what it brings. `latest` never points to a beta.
 
-- Try a beta on a copy of your instance, or back up the `db` folder first as above. An older version cannot run on a database a beta migrated, so going back means starting it on that backup.
+- Try a beta on a copy of your instance, or back up the `db` folder first as above. An older version cannot run on a database a beta migrated, so going back means starting it on that backup or on the copy the first start of the beta kept.
 - An instance on a beta tells you about the newer betas and about the release once it is out. An instance on a release never offers a beta.
 - When the release is out, switch the image from `beta` back to `latest`. The release takes over the database of the beta as it is.
 

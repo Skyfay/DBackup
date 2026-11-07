@@ -143,4 +143,13 @@ describe("toAdapterListItem (adapter list DTO)", () => {
         expect(dto.config).toBe("{}");
         expect(dto.secretStatus).toEqual({});
     });
+
+    it("says why a connection reaches the server DBackup runs on, so the form opens it read-only for anyone but a platform admin", async () => {
+        const { encryptConfig, toAdapterListItem } = await getModules();
+        const row = (adapterId: string, config: Record<string, unknown>) => ({ ...baseRow(JSON.stringify(encryptConfig(config))), adapterId });
+
+        expect(toAdapterListItem(row("local-filesystem", { basePath: "/srv" })).hostLocal).toBe("Local Filesystem reaches the server DBackup runs on, which only a platform admin adds.");
+        expect(toAdapterListItem({ ...row("sqlite", { mode: "local", path: "/srv/app.db" }), type: "database" }).hostLocal).toContain("SQLite in local mode");
+        expect(toAdapterListItem(row("google-drive", { folderId: "root" })).hostLocal).toBeNull();
+    });
 });

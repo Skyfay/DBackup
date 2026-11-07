@@ -204,6 +204,9 @@ export default defineConfig({
           items: [
             { text: 'User Management', link: '/user-guide/admin/users' },
             { text: 'Groups & Permissions', link: '/user-guide/admin/permissions' },
+            { text: 'Tenants', link: '/user-guide/admin/tenants' },
+            { text: 'Shared Databases', link: '/user-guide/admin/shared-databases' },
+            { text: 'Shared Destinations and Channels', link: '/user-guide/admin/shared-connections' },
             { text: 'Audit Log', link: '/user-guide/admin/audit-log' },
             { text: 'SSO / OIDC', link: '/user-guide/admin/sso' },
             { text: 'Settings & System Tasks', link: '/user-guide/admin/settings' },
@@ -257,6 +260,7 @@ export default defineConfig({
             { text: 'API Keys & Webhooks', link: '/developer-guide/advanced/api-keys' },
             { text: 'SSO / OIDC', link: '/developer-guide/advanced/sso' },
             { text: 'Permission System (RBAC)', link: '/developer-guide/advanced/permissions' },
+            { text: 'Tenants', link: '/developer-guide/advanced/tenants' },
             { text: 'Audit Logging', link: '/developer-guide/advanced/audit' },
             { text: 'Encryption Pipeline', link: '/developer-guide/advanced/encryption' },
             { text: 'Retention System', link: '/developer-guide/advanced/retention' },

@@ -35,6 +35,8 @@ The **Timeline** draws a row per job over the hours, the last 6 and the next 24,
 
 Both views show the jobs the search and the filters leave.
 
+The queue is one for every [tenant](/user-guide/admin/tenants), so the runs of other tenants take its slots too. **Every job** counts them where they run beside a run of your tenant, and a run that waits for one names **a job of another tenant**, never which one. All tenants shows the jobs of every tenant anyway.
+
 A click on a job opens its details: the last run and how often the last 30 days succeeded, the next run, the size of the last backup, the last 30 runs as bars, what goes in, the destinations with what each keeps, and the settings.
 
 ## Creating a Job
@@ -168,7 +170,7 @@ The button at the end of a row, a right click on the row and the details of a jo
 | **Edit** | Opens the job form |
 | **Clone** | Copies the job with every setting under a new name, the retention policy of each destination included. The copy starts paused, so it cannot run before you checked it |
 | **Pause** or **Resume** | A paused job does not run on its schedule, it can still be started by hand |
-| **Delete** | Moves the job to [Recently deleted](/user-guide/admin/recently-deleted) for 30 days, or removes it at once with **Delete it permanently now**, which needs the right to change the settings. Backups it stored stay where they are, under **Deleted jobs** on the Backups page |
+| **Delete** | Moves the job to [Recently deleted](/user-guide/admin/recently-deleted) for 30 days, or removes it at once with **Delete it permanently now**, which needs the right to change the tenant settings. Backups it stored stay where they are, under **Deleted jobs** on the Backups page |
 
 Tick several jobs in the table to pause, resume or delete them together. A right click on one of the ticked rows offers the same.
 
@@ -217,6 +219,8 @@ Use descriptive names:
 - `staging-postgres-hourly` - Staging PostgreSQL, hourly
 - `mongodb-weekly-archive` - MongoDB weekly archive
 
+The name becomes the folder of the job on every destination. So it cannot hold a `.` or `..` folder, a folder that starts with a hyphen (`-`), a semicolon, a double quote or a control character, and the form refuses such a name before the save. A job that already has one stops at its next run until it is renamed.
+
 ### One Source Per Job
 
 For clarity, create separate jobs for:
@@ -246,7 +250,7 @@ By default, one backup runs at a time. Configure concurrency:
 2. Set **Runs at the same time**
 3. Higher values = more parallel backups
 
-Runs of the same job never overlap, whatever the setting. A run started by hand, by the API or by the schedule while the job is still running waits as **Queued** and starts right after. Two runs of one job at once would plan the same step of an incremental chain and could write the same file.
+Only backups count, a restore or a check of copies runs beside them without taking a slot, so a long restore never holds the backups of another tenant. Runs of the same job never overlap, whatever the setting. A run started by hand, by the API or by the schedule while the job is still running waits as **Queued** and starts right after. Two runs of one job at once would plan the same step of an incremental chain and could write the same file.
 
 ::: warning Resource Usage
 More concurrent jobs = higher CPU/memory/disk usage

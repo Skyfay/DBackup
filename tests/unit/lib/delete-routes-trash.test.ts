@@ -11,15 +11,27 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // An admin who may change the settings, unless a test takes that away.
-const ADMIN = ["jobs:write", "destinations:write", "credentials:delete", "settings:write"];
-const ctx = { userId: "u1", permissions: [...ADMIN], isSuperAdmin: false, authMethod: "session", apiKeyId: undefined };
+const ADMIN = ["jobs:write", "destinations:write", "credentials:delete", "tenant-settings:write"];
+const ctx = { userId: "u1", permissions: [...ADMIN], isPlatformAdmin: false, authMethod: "session", apiKeyId: undefined };
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// The configuration backup goes through nothing here.
+vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTargets: async () => ({ storageId: null, profileId: null, credentialIds: [] }) }));
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: async () => ctx,
     checkPermissionWithContext: () => undefined,
-    hasPermissionWithContext: (context: typeof ctx, permission: string) => context.isSuperAdmin || context.permissions.includes(permission),
+    hasPermissionWithContext: (context: typeof ctx, permission: string) => context.isPlatformAdmin || context.permissions.includes(permission),
 }));
+// The records by their names, read before a bulk route changes them.
+vi.mock("@/services/audit/record-names", () => {
+    const named = async (ids: string[]) => new Map(ids.map((id) => [id, `Name of ${id}`]));
+    return {
+        jobNames: named,
+        connectionNames: named,
+        credentialNames: named,
+        changedNames: (succeeded: string[], names: Map<string, string>) => succeeded.flatMap((id) => names.get(id) ?? []),
+    };
+});
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: mocks.logFor } }));
 vi.mock("@/services/jobs/job-service", () => ({ jobService: { deleteJob: mocks.deleteJob, deleteJobs: mocks.deleteJobs } }));
 vi.mock("@/services/adapters/adapter-service", () => ({ deleteAdapter: mocks.deleteAdapter }));
@@ -61,7 +73,7 @@ describe("the delete routes and Recently deleted", () => {
     });
 
     it("refuses a permanent delete, one or several, from someone who may not change the settings", async () => {
-        ctx.permissions = ADMIN.filter((permission) => permission !== "settings:write");
+        ctx.permissions = ADMIN.filter((permission) => permission !== "tenant-settings:write");
 
         const single = await deleteJobRoute(new NextRequest("http://localhost/api/jobs/job-1?permanently=true", { method: "DELETE" }), params("job-1"));
         const connection = await deleteAdapterRoute(new NextRequest("http://localhost/api/adapters/nas?permanently=true", { method: "DELETE" }), params("nas"));
@@ -87,5 +99,7 @@ describe("the delete routes and Recently deleted", () => {
         expect(mocks.deleteJobs).toHaveBeenCalledWith(["a", "b"], { permanently: true, by: "u1" });
         expect(mocks.deleteCredentialProfiles).toHaveBeenCalledWith(["c"], { permanently: false, by: "u1" });
         expect(refused.status).toBe(400);
+        // Each entry names the records it deleted, read before they were gone.
+        expect(mocks.logFor).toHaveBeenCalledWith(expect.anything(), "DELETE", "CREDENTIAL", expect.objectContaining({ names: ["Name of c"] }));
     });
 });

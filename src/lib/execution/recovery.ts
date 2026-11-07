@@ -3,6 +3,16 @@ import { logger } from "@/lib/logging/logger";
 
 const log = logger.child({ module: "ExecutionRecovery" });
 
+function storedMetadata(metadata: string | null): Record<string, unknown> {
+    if (!metadata) return {};
+    try {
+        const value: unknown = JSON.parse(metadata);
+        return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    } catch {
+        return {};
+    }
+}
+
 /**
  * Recovers stale executions on application startup.
  *
@@ -22,6 +32,7 @@ export async function recoverStaleExecutions(): Promise<void> {
                 status: true,
                 jobId: true,
                 logs: true,
+                metadata: true,
             },
         });
 
@@ -61,7 +72,10 @@ export async function recoverStaleExecutions(): Promise<void> {
                         status: "Failed",
                         endedAt: new Date(),
                         logs: JSON.stringify(existingLogs),
+                        // What else the metadata says stays, like the server a restore went to,
+                        // which names the run in History.
                         metadata: JSON.stringify({
+                            ...storedMetadata(execution.metadata),
                             progress: 0,
                             stage: "Failed (Application Restart)",
                         }),

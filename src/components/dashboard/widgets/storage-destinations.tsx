@@ -6,6 +6,7 @@ import { cn, formatBytes } from "@/lib/utils";
 import type { StorageVolumeEntry } from "@/services/dashboard-service";
 import { RelativeTime } from "./relative-time";
 import { StorageHistoryModal } from "./storage-history-modal";
+import { useTenantName, useTenantView } from "@/components/tenant/tenant-view";
 
 interface StorageDestinationsProps {
     entries: StorageVolumeEntry[];
@@ -16,6 +17,9 @@ interface StorageDestinationsProps {
 /** Size per destination with its share of the total. A click opens the usage history. */
 export function StorageDestinations({ entries, updatedAt, className }: StorageDestinationsProps) {
     const [selected, setSelected] = useState<{ configId: string; name: string; adapterId: string } | null>(null);
+    // In All tenants two destinations of different tenants can share a name, so each names its tenant.
+    const { allTenants } = useTenantView();
+    const tenantName = useTenantName();
     const total = entries.reduce((sum, entry) => sum + entry.size, 0);
     const sorted = [...entries].sort((a, b) => b.size - a.size);
 
@@ -46,6 +50,7 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                         // Connection problems are flagged once, by "Offline connections" in the stats strip.
                         const stale = entry.scanError === true;
                         const neverScanned = stale && !entry.lastScanAt;
+                        const tenant = allTenants ? tenantName(entry.tenantId) : null;
                         return (
                             <li key={entry.configId ?? entry.name}>
                                 <button
@@ -68,9 +73,10 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                                         <div className="h-full rounded-full bg-foreground/80" style={{ width: `${Math.max(share, share > 0 ? 1 : 0)}%` }} />
                                     </div>
                                     <div
-                                        className="mt-1 text-xs text-muted-foreground"
+                                        className="mt-1 truncate text-xs text-muted-foreground"
                                         title={stale ? "Not reachable at the last refresh. The values are from its last successful scan." : undefined}
                                     >
+                                        {tenant && <>{tenant} · </>}
                                         {neverScanned ? (
                                             "Not scanned yet"
                                         ) : (

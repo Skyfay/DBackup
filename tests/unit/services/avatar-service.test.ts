@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { ValidationError } from "@/lib/logging/errors";
-import { AVATAR_MAX_BYTES, avatarUrl, findAvatar, removeAvatar, saveAvatar } from "@/services/user/avatar-service";
+import { AVATAR_MAX_BYTES, avatarUrl, removeAvatar, saveAvatar } from "@/services/user/avatar-service";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
@@ -43,13 +43,7 @@ describe("the pictures of the people", () => {
         expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
-    it("finds a picture by the id, and by a file name of the versions that kept files", async () => {
-        prismaMock.avatar.findUnique.mockImplementation((async ({ where }: { where: { userId: string } }) =>
-            where.userId === "u1" ? { data: Buffer.from(PNG), mimeType: "image/png" } : null) as never);
-
-        expect(await findAvatar("u1")).toEqual({ data: PNG, mimeType: "image/png" });
-        expect(await findAvatar("u1-1727000000000.png")).toEqual({ data: PNG, mimeType: "image/png" });
-        expect(await findAvatar("u2")).toBeNull();
+    it("serves a picture at an address that changes with the picture", () => {
         expect(avatarUrl("u 1", new Date(5))).toBe("/api/avatar/u%201?v=5");
     });
 });

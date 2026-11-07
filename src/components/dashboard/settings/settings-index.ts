@@ -24,14 +24,14 @@ const SETTINGS: SettingEntry[] = [
     { part: "notifications", id: "notifications.events", label: "Default channels", text: "Where every event goes unless it has channels of its own." },
     ...DATA_RETENTION_SETTINGS.map((setting): SettingEntry => ({ part: "retention", id: `retention.${setting.id}`, label: setting.label, text: setting.description })),
     { part: "database", id: "database.optimize", label: "Optimize", text: "Rebuilds the database file without its unused space." },
-    { part: "database", id: "database.download", label: "Download the database", text: "A copy of the whole database, only for a SuperAdmin." },
+    { part: "database", id: "database.download", label: "Download the database", text: "A copy of the whole database, only for a platform admin." },
     { part: "config-backup", id: "config.enabled", label: "Back up the configuration", text: "On its schedule, to its destination." },
     { part: "config-backup", id: "config.destination", label: "Destination", text: "Where the configuration backup goes." },
     { part: "config-backup", id: "config.key", label: "Encryption key", text: "The key the configuration backup is encrypted with." },
     { part: "config-backup", id: "config.schedule", label: "Schedule", text: "When the configuration backup runs." },
     { part: "config-backup", id: "config.keeps", label: "Keeps", text: "How many configuration backups stay at the destination." },
     { part: "config-backup", id: "config.history", label: "Include the history", text: "Runs, logs, the audit log and the storage history." },
-    { part: "config-backup", id: "config.restore", label: "Restore from a file", text: "Brings back connections, jobs, users and settings, only for a SuperAdmin." },
+    { part: "config-backup", id: "config.restore", label: "Restore from a file", text: "Brings back connections, jobs, users and settings, only for a platform admin." },
     { part: "sign-in", id: "signin.look", label: "Login page", text: "The logos of DBackup or a picture of your own beside the sign-in." },
     { part: "sign-in", id: "signin.sessions", label: "Sessions last", text: "How long someone stays signed in." },
     { part: "sign-in", id: "signin.passkey", label: "Sign in with a passkey", text: "The passkey button on the login page." },
@@ -55,10 +55,14 @@ const SETTINGS: SettingEntry[] = [
 
 type Named = { id: string; name: string; description: string };
 
-/** The settings with the tasks and the notification events, which the page knows only from its model, and the parts themselves. */
-export function settingsIndex(tasks: Named[], events: Named[] = []): SettingEntry[] {
+/**
+ * The settings with the tasks and the notification events, which the page knows only from its
+ * model, and the parts themselves. The parts of the open tenant, like Recently deleted, only with
+ * `withTenantParts`, since with more than one tenant they are parts of the tenant settings.
+ */
+export function settingsIndex(tasks: Named[], events: Named[] = [], withTenantParts = false): SettingEntry[] {
     return [
-        ...SETTINGS_PARTS.map((part): SettingEntry => ({ part: part.id, id: part.id, label: part.label, text: part.description })),
+        ...SETTINGS_PARTS.filter((part) => withTenantParts || !part.tenant).map((part): SettingEntry => ({ part: part.id, id: part.id, label: part.label, text: part.description })),
         ...SETTINGS,
         ...tasks.map((task): SettingEntry => ({ part: "tasks", id: `task:${task.id}`, label: task.name, text: task.description })),
         ...events.map((event): SettingEntry => ({ part: "notifications", id: `event:${event.id}`, label: event.name, text: event.description })),

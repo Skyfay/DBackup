@@ -1,9 +1,7 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { auth } from "@/lib/auth";
-import { checkPermission } from "@/lib/auth/access-control";
+import { checkPermission, type Viewer } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import * as retentionPolicyService from "@/services/templates/retention-policy-service";
 import * as namingTemplateService from "@/services/templates/naming-template-service";
@@ -14,7 +12,8 @@ import { auditService } from "@/services/audit-service";
 import { templateNames, type TemplateType } from "@/services/templates/template-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
+import { userMessage } from "@/lib/logging/user-message";
 import { logger } from "@/lib/logging/logger";
 import { scheduler } from "@/lib/server/scheduler";
 import type { BulkResult } from "@/lib/core/bulk";
@@ -38,13 +37,11 @@ const TEMPLATE_PATHS = ["/dashboard/templates", "/dashboard/jobs", "/dashboard/c
  * themselves valid Server Actions.
  */
 async function runTemplateBulkDelete(
+    viewer: Viewer,
     templateType: TemplateType,
     ids: string[],
     deleteMany: (ids: string[]) => Promise<BulkResult>
 ) {
-    const session = await auth.api.getSession({ headers: await headers() });
-    if (!session) return { success: false as const, error: "Unauthorized" };
-
     const parsed = BulkIdsSchema.safeParse(ids);
     if (!parsed.success) return { success: false as const, error: "Invalid request" };
 
@@ -53,43 +50,41 @@ async function runTemplateBulkDelete(
         const names = await templateNames(templateType, parsed.data);
         const result = await deleteMany(parsed.data);
 
-        if (session.user) {
-            await auditService.log(
-                session.user.id,
-                AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.TEMPLATE,
-                {
-                    type: templateType,
-                    bulk: true,
-                    requested: parsed.data.length,
-                    succeeded: result.succeeded.length,
-                    failed: result.failed.length,
-                    names: result.succeeded.flatMap((id) => names.get(id) ?? []),
-                }
-            );
-        }
+        await auditService.log(
+            viewer.id,
+            AUDIT_ACTIONS.DELETE,
+            AUDIT_RESOURCES.TEMPLATE,
+            {
+                type: templateType,
+                bulk: true,
+                requested: parsed.data.length,
+                succeeded: result.succeeded.length,
+                failed: result.failed.length,
+                names: result.succeeded.flatMap((id) => names.get(id) ?? []),
+            }
+        );
 
         for (const path of TEMPLATE_PATHS) revalidatePath(path);
 
         return { success: true as const, data: result };
     } catch (e: unknown) {
-        return { success: false as const, error: getErrorMessage(e) };
+        return { success: false as const, error: userMessage(e, "The templates could not be deleted. The server log has the details.", log, "Failed to bulk delete templates", { type: templateType }) };
     }
 }
 
 export async function bulkDeleteRetentionPolicies(ids: string[]) {
-    await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
-    return runTemplateBulkDelete("RetentionPolicy", ids, retentionPolicyService.deleteRetentionPolicyMany);
+    const viewer = await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+    return runTemplateBulkDelete(viewer, "RetentionPolicy", ids, retentionPolicyService.deleteRetentionPolicyMany);
 }
 
 export async function bulkDeleteNamingTemplates(ids: string[]) {
-    await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
-    return runTemplateBulkDelete("NamingTemplate", ids, namingTemplateService.deleteNamingTemplateMany);
+    const viewer = await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+    return runTemplateBulkDelete(viewer, "NamingTemplate", ids, namingTemplateService.deleteNamingTemplateMany);
 }
 
 export async function bulkDeleteSchedulePresets(ids: string[]) {
-    await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
-    const result = await runTemplateBulkDelete("SchedulePreset", ids, schedulePresetService.deleteSchedulePresetMany);
+    const viewer = await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+    const result = await runTemplateBulkDelete(viewer, "SchedulePreset", ids, schedulePresetService.deleteSchedulePresetMany);
     // The jobs that followed a deleted preset run on the copy of its schedule they got now.
     if (result.success && result.data.succeeded.length > 0) {
         scheduler.refresh().catch((error: unknown) => log.error("Scheduler refresh failed after deleting presets", {}, wrapError(error)));
@@ -98,11 +93,11 @@ export async function bulkDeleteSchedulePresets(ids: string[]) {
 }
 
 export async function bulkDeleteNotificationTemplates(ids: string[]) {
-    await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
-    return runTemplateBulkDelete("NotificationTemplate", ids, notificationTemplateService.deleteNotificationTemplateMany);
+    const viewer = await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+    return runTemplateBulkDelete(viewer, "NotificationTemplate", ids, notificationTemplateService.deleteNotificationTemplateMany);
 }
 
 export async function bulkDeleteExcludePatternPresets(ids: string[]) {
-    await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
-    return runTemplateBulkDelete("ExcludePatternPreset", ids, excludePatternPresetService.deleteExcludePatternPresetMany);
+    const viewer = await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+    return runTemplateBulkDelete(viewer, "ExcludePatternPreset", ids, excludePatternPresetService.deleteExcludePatternPresetMany);
 }

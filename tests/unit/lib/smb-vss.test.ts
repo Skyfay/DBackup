@@ -11,8 +11,8 @@ const execFileMock = vi.fn();
 vi.mock('child_process', async (importOriginal) => {
     const actual = await importOriginal<typeof import('child_process')>();
     // Node's callback signature: the module under test wraps this itself.
-    const execFile = (cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string, err: string) => void) => {
-        Promise.resolve(execFileMock(cmd, args)).then(
+    const execFile = (cmd: string, args: string[], opts: unknown, cb: (e: unknown, out: string, err: string) => void) => {
+        Promise.resolve(execFileMock(cmd, args, opts)).then(
             (r: { stdout?: string; stderr?: string }) => cb(null, r?.stdout ?? "", r?.stderr ?? ""),
             (e: { stdout?: string; stderr?: string }) => cb(e, e?.stdout ?? "", e?.stderr ?? "")
         );
@@ -105,6 +105,35 @@ describe('probeSnapshotSupport', () => {
         expect(result.message).toContain('NT_STATUS_OBJECT_NAME_NOT_FOUND');
     });
 
+    it('hands rpcclient the password in PASSWD, never in its arguments, where the process table shows it', async () => {
+        respond({ fss_get_sup_version: 'server versions from 1 to 2', fss_is_path_sup: 'UNC \\\\fileserver\\data supports shadow copy requests' });
+
+        await probeSnapshotSupport(CONFIG);
+
+        expect(execFileMock).toHaveBeenCalled();
+        for (const [, args, opts] of execFileMock.mock.calls as [string, string[], { env: NodeJS.ProcessEnv }][]) {
+            expect(args.join(' ')).not.toContain('s3cret');
+            expect(args.slice(0, 2)).toEqual(['-U', 'CORP\\backup']);
+            expect(args).not.toContain('-N');
+            expect(opts.env.PASSWD).toBe('s3cret');
+        }
+    });
+
+    it('asks for no password without one, and sends none the environment of DBackup carries', async () => {
+        vi.stubEnv('PASSWD', 'not-for-the-share');
+        try {
+            respond({ fss_get_sup_version: 'server versions from 1 to 2', fss_is_path_sup: 'supports' });
+
+            await probeSnapshotSupport({ address: '//fileserver/data', username: 'backup' });
+
+            const [, args, opts] = execFileMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+            expect(args.slice(0, 3)).toEqual(['-U', 'backup', '-N']);
+            expect(opts.env.PASSWD).toBeUndefined();
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
     it('never leaks the password into the message', async () => {
         execFileMock.mockRejectedValue(Object.assign(new Error('fail'), { stderr: 'auth failed for backup%s3cret' }));
 
@@ -157,6 +186,18 @@ describe('createShadowCopy', () => {
             .find((c: string) => c.startsWith('fss_create_expose'));
         expect(created).toContain('file_share_backup');
         expect(created).toContain(' ro ');
+    });
+
+    it('refuses an exposed share that is no share address, and releases the snapshot again', async () => {
+        // The server names the share the backup reads, so it is held to the form of a configured one.
+        const odd = EXPOSE_OUTPUT.replace('share \\\\fileserver\\data@{9f8e7d6c} exposed', 'share -L exposed');
+        respond({ fss_create_expose: odd, fss_recovery_complete: 'ok\n', fss_delete: '' });
+
+        await expect(createShadowCopy(CONFIG)).rejects.toThrow(/no share address/);
+
+        const commands = execFileMock.mock.calls.map((c) => c[1][c[1].indexOf('-c') + 1]);
+        expect(commands.some((c: string) => c.startsWith('fss_delete'))).toBe(true);
+        expect(commands.some((c: string) => c.startsWith('fss_recovery_complete'))).toBe(false);
     });
 
     it('releases the snapshot again when it cannot be marked recovery-complete', async () => {
@@ -229,5 +270,109 @@ describe('findOrphanedShadowCopies', () => {
         execFileMock.mockRejectedValue(Object.assign(new Error('fail'), { stderr: 'timeout' }));
 
         expect(await findOrphanedShadowCopies(CONFIG)).toEqual([]);
+    });
+});
+
+/**
+ * rpcclient splits its `-c` line into commands at every semicolon and each command into words at
+ * whitespace and quotes. A server, a share or an id holding one of them would pass more arguments
+ * or run another command, so rpcclient never runs with it, whatever the form or the server said.
+ */
+describe('words rpcclient would read as part of its command', () => {
+    const BROKEN = [
+        '//fileserver/data;fss_delete \\\\fileserver\\data a b',
+        '//fileserver/da"ta',
+        "//fileserver/da'ta",
+        '//fileserver/My Share',
+        '//fileserver/da\nta',
+        '//file;server/data',
+        '//fileserver/data/sub;dir',
+    ];
+
+    it('runs no rpcclient for an address with one, and says why', async () => {
+        respond({ fss_get_sup_version: 'ok\n', fss_is_path_sup: 'supports\n', fss_has_shadow_copy: 'has an associated shadow-copy\n' });
+
+        for (const address of BROKEN) {
+            const probe = await probeSnapshotSupport({ ...CONFIG, address });
+            expect(probe.supported, JSON.stringify(address)).toBe(false);
+            expect(probe.message).toMatch(/without whitespace, semicolons, quotes or control characters/);
+            await expect(createShadowCopy({ ...CONFIG, address })).rejects.toThrow(/without whitespace/);
+            expect(await findOrphanedShadowCopies({ ...CONFIG, address })).toEqual([]);
+        }
+        expect(execFileMock).not.toHaveBeenCalled();
+    });
+
+    it('runs no rpcclient to release a handle whose share or ids hold one', async () => {
+        respond({ fss_delete: 'shadow-copy deleted\n' });
+
+        for (const id of ['set-1|copy-1|\\\\fileserver\\data;fss_delete x y z', 'set-1;x|copy-1|\\\\fileserver\\data', 'set-1|copy 1|\\\\fileserver\\data']) {
+            await expect(releaseShadowCopy(CONFIG, { id, configOverride: {}, label: 'snap' })).rejects.toThrow(/without whitespace/);
+        }
+        expect(execFileMock).not.toHaveBeenCalled();
+    });
+
+    it('runs no rpcclient for a server, a share or an id that starts with a hyphen, which it would read as an option', async () => {
+        respond({ fss_get_sup_version: 'ok\n', fss_is_path_sup: 'supports\n', fss_delete: 'shadow-copy deleted\n' });
+
+        for (const address of ['//fileserver/-data', '//fileserver/data/-sub']) {
+            const probe = await probeSnapshotSupport({ ...CONFIG, address });
+            expect(probe.supported, address).toBe(address === '//fileserver/data/-sub');
+        }
+        execFileMock.mockClear();
+        expect((await probeSnapshotSupport({ ...CONFIG, address: '//fileserver/-data' })).message).toMatch(/do not start with a hyphen/);
+        await expect(createShadowCopy({ ...CONFIG, address: '//fileserver/-data' })).rejects.toThrow(/do not start with a hyphen/);
+        await expect(releaseShadowCopy(CONFIG, { id: 'set-1|-copy|\\\\fileserver\\data', configOverride: {}, label: 'snap' })).rejects.toThrow(/do not start with a hyphen/);
+        expect(execFileMock).not.toHaveBeenCalled();
+    });
+
+    it('runs no rpcclient for an address of another form than //server/share', async () => {
+        respond({ fss_get_sup_version: 'ok\n', fss_is_path_sup: 'supports\n' });
+
+        for (const address of ['/fileserver/data', 'fileserver/data', '///fileserver/data']) {
+            const probe = await probeSnapshotSupport({ ...CONFIG, address });
+            expect(probe.supported, address).toBe(false);
+            await expect(createShadowCopy({ ...CONFIG, address })).rejects.toThrow(/of the form \/\/server\/share|without whitespace/);
+        }
+        expect(execFileMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('the server rpcclient dials', () => {
+    it('is the server of the address the local network check of a tenant saw, looked up in DNS alone', async () => {
+        respond({ fss_get_sup_version: 'versions from 1 to 2\n', fss_is_path_sup: 'UNC \\\\fileserver\\data supports shadow copy requests\n' });
+
+        await probeSnapshotSupport(CONFIG);
+
+        expect(execFileMock).toHaveBeenCalled();
+        for (const [, args] of execFileMock.mock.calls as [string, string[]][]) {
+            expect(args.at(-1)).toBe('fileserver');
+            expect(args).toContain('--option=name resolve order=host');
+        }
+    });
+
+    it('runs no rpcclient for a server it would read as a binding string or with a NetBIOS name type', async () => {
+        respond({ fss_get_sup_version: 'ok\n', fss_is_path_sup: 'supports\n' });
+
+        // rpcclient dials 10.0.0.9 on port 135 for the first and strips `#20` from the second.
+        for (const address of ['//ncacn_ip_tcp:10.0.0.9[135]/data', '//10.0.0.9#20/data', '//[fd00::9]/data']) {
+            expect((await probeSnapshotSupport({ ...CONFIG, address })).supported, address).toBe(false);
+            await expect(createShadowCopy({ ...CONFIG, address })).rejects.toThrow(/of the form \/\/server\/share/);
+        }
+        expect(execFileMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('a % in the login rpcclient takes', () => {
+    // rpcclient reads `-U domain\user%secret` as the password, which wins over PASSWD, and the
+    // domain is part of the same argument, checked against Samba 4.22.
+    it.each([
+        ['the user name', { username: 'backup%guess' }],
+        ['the domain', { domain: 'CORP%guess' }],
+    ])('runs no rpcclient for %s', async (_case, login) => {
+        respond({ fss_get_sup_version: 'ok\n', fss_is_path_sup: 'supports\n', fss_create_expose: 'ok\n' });
+
+        expect((await probeSnapshotSupport({ ...CONFIG, ...login })).supported).toBe(false);
+        await expect(createShadowCopy({ ...CONFIG, ...login })).rejects.toThrow(/cannot hold a %/);
+        expect(execFileMock).not.toHaveBeenCalled();
     });
 });

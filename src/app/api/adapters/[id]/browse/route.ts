@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import type { StorageAdapter } from "@/lib/core/interfaces";
-import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { AdapterError, wrapError } from "@/lib/logging/errors";
+import { refusedUnless, requestRefusal } from "@/lib/server/permission-refusal";
+import { getSavedConnection } from "@/services/adapters/adapter-list";
+import { browseSavedFolders, HOST_FOLDER_PICKERS, savedConnectionReachesHost } from "@/services/adapters/location-browse-service";
+import { auditedProbe } from "@/services/adapters/probe-audit";
 
 registerAdapters();
 
@@ -20,7 +21,9 @@ const log = logger.child({ route: "adapters/[id]/browse" });
  * configured root, for the directory-source folder tree picker (job form). Scoped to
  * that one adapter's own root - never the host filesystem - which is why this uses
  * DESTINATIONS.READ (the permission that already governs viewing/using saved storage
- * adapter configs) rather than SETTINGS.READ (arbitrary host-disk/SSH browsing).
+ * adapter configs) rather than SETTINGS.READ (arbitrary host-disk/SSH browsing). A connection
+ * that reaches the server DBackup runs on, like a Local Filesystem, lists folders of that server,
+ * so it also takes the right to pick them, in a job or a restore, see `HOST_FOLDER_PICKERS`.
  */
 export async function GET(
     req: NextRequest,
@@ -28,34 +31,38 @@ export async function GET(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.READ);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.READ));
+    if (refused) return refused;
 
     const params = await props.params;
     const subPath = req.nextUrl.searchParams.get("path") ?? "";
 
-    const adapterConfig = await prisma.adapterConfig.findUnique({
-        where: { id: params.id },
-    });
-
-    if (!adapterConfig || adapterConfig.type !== "storage") {
+    const source = await getSavedConnection(params.id, "storage");
+    if (!source) {
         return NextResponse.json({ success: false, error: "Storage adapter not found" }, { status: 404 });
     }
 
-    const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter | undefined;
-    if (!adapter?.browseDirectories) {
-        return NextResponse.json({ success: true, supported: false, data: { path: subPath, entries: [] } });
+    if (await savedConnectionReachesHost(source.id)) {
+        const picker = refusedUnless(() => checkAnyPermissionWithContext(ctx, HOST_FOLDER_PICKERS));
+        if (picker) return picker;
     }
 
     try {
-        const config = await resolveAdapterConfig(adapterConfig);
-        const entries = await adapter.browseDirectories(config, subPath);
+        // Written once the browse ran, whether the server answered or not, like the browse of a form.
+        const entries = await auditedProbe(ctx, "folder_browse", { adapterId: source.adapterId, record: { id: source.id, name: source.name } }, () => browseSavedFolders(source, subPath));
+        if (!entries) {
+            return NextResponse.json({ success: true, supported: false, data: { path: subPath, entries: [] } });
+        }
         return NextResponse.json({ success: true, supported: true, data: { path: subPath, entries } });
     } catch (error: unknown) {
+        const refusal = requestRefusal(error);
+        if (refusal) return refusal;
         log.error("Directory browse failed", { adapterConfigId: params.id, subPath }, wrapError(error));
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json({ success: false, error: message }, { status: 500 });
+        // What the server or the adapter said is what the picker shows, anything else stays in the log.
+        if (error instanceof AdapterError) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The folders could not be listed. The log of DBackup has the details." }, { status: 500 });
     }
 }

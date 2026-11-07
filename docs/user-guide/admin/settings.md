@@ -1,6 +1,12 @@
 # Settings
 
-The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup, how people sign in and what a password needs. Looking at it needs `settings:read`, changing anything needs `settings:write`.
+The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup, how people sign in and what a password needs. Looking at it needs `settings:read`, changing anything needs `settings:write`. With [tenants](/user-guide/admin/tenants), both count only from the group someone holds in the home tenant or from a platform group, since the settings apply to every tenant. They give no right to the keys, templates or other records of a tenant, and the parts that name one, like the destination and key of the configuration backup or the channels of the notifications, offer only those of the home tenant.
+
+With one tenant the page sits under **Administration → Settings**. With more than one it moves to **Platform → Settings**, and **Administration → Settings** holds the [settings of the open tenant](#tenant-settings) instead.
+
+::: info Recently deleted belongs to the tenant
+With more than one tenant, Recently deleted is a part of the [tenant settings](#tenant-settings), since every tenant keeps its own. With one tenant it stays a part of this page.
+:::
 
 ## The Page
 
@@ -20,7 +26,7 @@ Someone who may only read the settings sees every value and a line on top that s
 | :--- | :--- | :--- |
 | **Name** | Shown on top of the sidebar and in the browser tab as `DBackup \| Name`. Empty shows DBackup alone. | Empty |
 | **Time zone** | The clock of every schedule, of the file names and of the retention. The line below it says what 03:00 there is in UTC. | UTC |
-| **Runs at the same time** | How many backups run at once. A running restore or integrity check takes a run too. | 1 |
+| **Runs at the same time** | How many backups run at once, in every tenant together. A restore, an integrity check or a check of copies runs beside them and takes none of these runs. | 1 |
 | **Fail a run that stops reporting after** | Fails a backup or restore that reports no progress for this long, so it gives its run back. **Never** turns it off. | 6 hours |
 | **Look for new versions** | Asks GitHub for the newest release, marks a new version with a blue dot on the right of the header and reports it once a day. Off, DBackup never asks. | On |
 | **Show Quick Setup in the sidebar** | Keeps Quick Setup in the sidebar. It shows by itself while no database is set up. | Off |
@@ -40,7 +46,7 @@ What DBackup does by itself, each on its own schedule in the time zone of Genera
 | **Backups page cache** | Every hour | Yes | |
 | **Clean old data** | Every day at 00:00 | Yes | |
 | **Check for updates** | Every day at 00:00 | Yes | **Look for new versions** under General |
-| **SuperAdmin permissions** | Every day at 00:00 | Yes | |
+| **Full access permissions** | Every day at 00:00 | Yes | |
 | **Configuration backup** | Every day at 03:00 | No | **Back up the configuration** under Configuration backup |
 | **Integrity check** | Sundays at 04:00 | No | |
 | **Optimize the database** | The 1st of the month at 05:00 | Yes | |
@@ -113,6 +119,16 @@ The certificate DBackup answers with, from `/data/certs`: who it is issued to an
 
 A new certificate applies after a restart of DBackup. `DISABLE_HTTPS=true` on the container turns HTTPS off, for example behind a proxy that encrypts the way to it.
 
+## Tenant Settings
+
+With more than one tenant, **Administration → Settings** holds what belongs to the open tenant. Looking needs `tenant-settings:read`, changing `tenant-settings:write`, both from the group in that tenant. When another tab of the browser opened another tenant meanwhile, a change is refused until the page is loaded again, so it never lands in the wrong tenant.
+
+- **Name and logo**: the name of the tenant and its logo, a PNG, JPG, GIF or WebP of up to 1 MB. The logo shows in the head of the sidebar, in the tenant switcher and on the Tenants page. A preview shows both.
+- **Recently deleted**: what was deleted in the tenant, see [Recently deleted](/user-guide/admin/recently-deleted).
+- **Notifications**: which channels of the tenant hear about its own data, like a failed backup, a restore, a storage alert, a connection that went offline or a failed integrity check. It works like the notifications of the instance, with default channels, a switch and own channels per event, and **Send a test**. A channel a job tells already gets the news of that run once. The home tenant reports through the notifications of the instance instead.
+
+The tenants themselves are managed under **Platform → Tenants**, see [Tenants](/user-guide/admin/tenants#managing-tenants).
+
 ## Rate Limits
 
 How many requests one address may make in a time window. See [Rate Limits](/user-guide/features/rate-limits).
@@ -125,5 +141,5 @@ How many requests one address may make in a time window. See [Rate Limits](/user
 
 - `settings:read` shows the page, `settings:write` changes it, starts the system tasks, sends test notifications and optimizes the database.
 - **New channel** under Notifications also needs `notifications:write`.
-- Only a SuperAdmin restores a configuration backup and downloads the database, see [Groups & Permissions](/user-guide/admin/permissions).
-- Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) with the values before and after.
+- Only a platform admin sets up, starts and restores the configuration backup and downloads the database, everyone else sees the part and the row of its system task read-only, see [Groups & Permissions](/user-guide/admin/permissions#what-only-a-platform-admin-does). The tenants are managed with the rights of the platform, see [Managing Tenants](/user-guide/admin/tenants#managing-tenants).
+- Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) of the home tenant with the values before and after, whichever tenant you have open.

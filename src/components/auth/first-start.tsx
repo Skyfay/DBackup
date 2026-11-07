@@ -77,7 +77,7 @@ export function FirstStart({ allowSignUp, passwordRules }: { allowSignUp: boolea
                     icon={UserPlus}
                     tone="create"
                     title="Start fresh"
-                    text={allowSignUp ? "Create the first account. It becomes the SuperAdmin of this DBackup." : "Off, since DISABLE_EMAIL_LOGIN turns passwords off on this container."}
+                    text={allowSignUp ? "Create the first account. It becomes the platform admin of this DBackup." : "Off, since DISABLE_EMAIL_LOGIN turns passwords off on this container."}
                     onClick={() => setWay("account")}
                     disabled={!allowSignUp}
                 />

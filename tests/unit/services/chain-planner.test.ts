@@ -4,6 +4,8 @@ import type { ArchiveIndex } from "@/lib/archive/types";
 const prismaMock = {
     execution: { findFirst: vi.fn() },
     adapterConfig: { findUnique: vi.fn() },
+    // Whether the tenant of a destination shares it with customers.
+    connectionShare: { count: vi.fn().mockResolvedValue(0) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
@@ -73,7 +75,7 @@ function happyPath() {
             ? { ...previousExecution(), chainIndex: 0, startedAt: new Date("2026-07-20T03:00:00.000Z") }
             : previousExecution()
     );
-    prismaMock.adapterConfig.findUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local", config: "{}" });
+    prismaMock.adapterConfig.findUnique.mockResolvedValue({ id: "dest-1", type: "storage", adapterId: "local", config: "{}", tenantId: "tenant-1" });
     registryGet.mockReturnValue({
         read: vi.fn().mockResolvedValue(META),
         // Two archives present, matching a chain that is two deep.
@@ -106,7 +108,7 @@ describe("planChain", () => {
         /** dest-1 holds the whole chain, the air-gapped usb holds only the snapshot given. */
         function withUsb(usbList: ReturnType<typeof vi.fn>) {
             prismaMock.adapterConfig.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
-                id: where.id, name: where.id, type: "storage", storageRole: "DESTINATION", adapterId: where.id, config: "{}",
+                id: where.id, name: where.id, type: "storage", storageRole: "DESTINATION", adapterId: where.id, config: "{}", tenantId: "tenant-1",
                 metadata: where.id === "usb" ? JSON.stringify({ airGapped: true }) : null,
             }));
             registryGet.mockImplementation((adapterId: string) => ({
@@ -251,7 +253,7 @@ describe("planChain", () => {
             // The chain is tracked per job, so a gap at a single destination restarts it
             // everywhere rather than letting destinations diverge.
             prismaMock.adapterConfig.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
-                id: where.id, type: "storage", adapterId: where.id, config: "{}",
+                id: where.id, type: "storage", adapterId: where.id, config: "{}", tenantId: "tenant-1",
             }));
             registryGet.mockImplementation((adapterId: string) => ({
                 read: vi.fn().mockResolvedValue(META),

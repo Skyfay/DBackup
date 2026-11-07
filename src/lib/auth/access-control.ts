@@ -1,10 +1,15 @@
 import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
-import { PERMISSIONS, Permission, AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
+import { requestHeaders } from "@/lib/server/request-headers";
+import type { Permission } from "@/lib/auth/permissions";
+import { ALL_TENANTS_PERMISSIONS, EVERY_PERMISSION, PLATFORM_ADMIN_ROLE, allTenantsPermissionsOf, opensAllTenants, permissionsIn, reachesTenant, type OwnerMembership, type PlatformGroupGrant } from "@/lib/auth/owner-permissions";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
-import { AuthenticationError, PermissionError, wrapError } from "@/lib/logging/errors";
+import { ApiKeyError, AuthenticationError, PermissionError, wrapError } from "@/lib/logging/errors";
+import { recordKeyRefusal } from "@/lib/auth/api-key-refusal";
+import { runAsSystem } from "@/lib/tenant/context";
+import { ALL_TENANTS, HOME_TENANT_ID } from "@/lib/tenant/home";
 import { apiKeyService } from "@/services/auth/api-key-service";
+import { ensureFullAccessGroup } from "@/services/user/group-service";
 
 const log = logger.child({ module: "AccessControl" });
 
@@ -14,10 +19,23 @@ const log = logger.child({ module: "AccessControl" });
 
 export interface AuthContext {
   userId: string;
+  /** What the caller may do in its tenant, see `permissionsIn`. Every permission for a platform admin. */
   permissions: string[];
-  isSuperAdmin: boolean;
+  /** Sees every tenant and the platform. Never through an API key. */
+  isPlatformAdmin: boolean;
   authMethod: "session" | "apikey";
   apiKeyId?: string;
+  /** The tenant the request acts in, null for an account that belongs to no tenant yet and in All tenants. */
+  tenantId: string | null;
+  /**
+   * A platform admin looks at every tenant at once. The request reads every tenant and changes none
+   * of them, and its permissions are `ALL_TENANTS_PERMISSIONS`.
+   */
+  allTenants: boolean;
+  /** The platform group of a session, none for a platform admin, an API key or someone without one. */
+  platformGroup?: { id: string; name: string; allTenants: boolean } | null;
+  /** Whether the session may open All tenants: a platform admin, or a platform group that opens it. */
+  opensAllTenants?: boolean;
 }
 
 // ============================================================================
@@ -36,43 +54,128 @@ function extractBearerToken(headersObj: Headers): string | null {
   return authHeader.slice(7).trim();
 }
 
+const MEMBERSHIPS = {
+  select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } },
+  orderBy: { createdAt: "asc" },
+} as const;
+
+/** The platform group of an account as its rights read it. */
+const PLATFORM_GROUP = {
+  select: { id: true, name: true, platformPermissions: true, tenantPermissions: true, allTenants: true, tenants: { select: { tenantId: true } } },
+} as const;
+
+/** All tenants only means something once there is more than the home tenant. */
+async function severalTenants(): Promise<boolean> {
+  return (await prisma.tenant.count()) > 1;
+}
+
 /**
- * Get authentication context from either a session cookie or an API key.
- * Tries session first, then falls back to API key from Authorization header.
- *
- * @param headersObj - The request headers object
- * @returns AuthContext if authenticated, null if no auth present
- * @throws ApiKeyError if API key is found but invalid/disabled/expired
+ * The tenant a session works in: the one it picked while that still holds, else the home tenant,
+ * else the first the account belongs to, else the first its platform group reaches. A platform
+ * admin may pick any tenant that exists, or All tenants, where they start while there is more than
+ * one. A platform group opens the tenants of its scope, and All tenants when it reaches all of them.
  */
-export async function getAuthContext(headersObj: Headers): Promise<AuthContext | null> {
+async function pickTenant(picked: string | null | undefined, memberships: readonly OwnerMembership[], isPlatformAdmin: boolean, platformGroup: PlatformGroupGrant | null): Promise<string | null> {
+  const mayOpenAll = isPlatformAdmin || opensAllTenants(platformGroup);
+  if (picked === ALL_TENANTS) {
+    if (mayOpenAll && (await severalTenants())) return ALL_TENANTS;
+  } else if (picked) {
+    if (memberships.some((membership) => membership.tenantId === picked)) return picked;
+    if ((isPlatformAdmin || reachesTenant(platformGroup, picked)) && (await prisma.tenant.findUnique({ where: { id: picked }, select: { id: true } }))) return picked;
+  }
+  if (mayOpenAll && (await severalTenants())) return ALL_TENANTS;
+  if (isPlatformAdmin) return HOME_TENANT_ID;
+  if (memberships.some((membership) => membership.tenantId === HOME_TENANT_ID)) return HOME_TENANT_ID;
+  if (memberships[0]) return memberships[0].tenantId;
+  if (platformGroup?.allTenants) return HOME_TENANT_ID;
+  return platformGroup?.tenants[0]?.tenantId ?? null;
+}
+
+/**
+ * Set once an installation has had a platform admin, by the promotion of its first account or by
+ * the first session of a platform admin this process sees, see `notePlatformAdmin`.
+ */
+export const PLATFORM_ADMIN_SEEN_KEY = "platform.adminSeen";
+
+/** Whether this process wrote `PLATFORM_ADMIN_SEEN_KEY` already, so a session asks the database once. */
+let platformAdminNoted = false;
+
+/**
+ * Notes that the installation has a platform admin, once per process. The first account is
+ * promoted only while none was ever noted, so the last account left after every other one was
+ * deleted never becomes one.
+ */
+async function notePlatformAdmin(): Promise<void> {
+  if (platformAdminNoted) return;
+  try {
+    await prisma.systemSetting.upsert({ where: { key: PLATFORM_ADMIN_SEEN_KEY }, update: {}, create: { key: PLATFORM_ADMIN_SEEN_KEY, value: "true" } });
+    platformAdminNoted = true;
+  } catch (error: unknown) {
+    log.warn("Noting that the installation has a platform admin failed", {}, wrapError(error));
+  }
+}
+
+/**
+ * The first account of an installation becomes its platform admin with the full access role in the
+ * home tenant, also when the role or the membership got lost, but only while the installation never
+ * had a platform admin. Otherwise the only account left after every other one was deleted, of
+ * whoever that is, would become the platform admin of every tenant.
+ */
+async function promoteFirstUser(userId: string): Promise<boolean> {
+  if ((await prisma.user.count()) !== 1) return false;
+  if (await prisma.systemSetting.findUnique({ where: { key: PLATFORM_ADMIN_SEEN_KEY }, select: { key: true } })) return false;
+  log.info("Making the first user the platform admin");
+  await prisma.$transaction(async (tx) => {
+    const groupId = await ensureFullAccessGroup(tx);
+    await tx.systemSetting.upsert({ where: { key: PLATFORM_ADMIN_SEEN_KEY }, update: {}, create: { key: PLATFORM_ADMIN_SEEN_KEY, value: "true" } });
+    await tx.user.update({ where: { id: userId }, data: { platformRole: PLATFORM_ADMIN_ROLE } });
+    await tx.tenantMembership.upsert({
+      where: { userId_tenantId: { userId, tenantId: HOME_TENANT_ID } },
+      create: { userId, tenantId: HOME_TENANT_ID, groupId },
+      update: {},
+    });
+  });
+  return true;
+}
+
+async function sessionContext(userId: string, pickedTenantId: string | null | undefined): Promise<AuthContext | null> {
+  const load = () => prisma.user.findUnique({ where: { id: userId }, select: { id: true, platformRole: true, memberships: MEMBERSHIPS, platformGroup: PLATFORM_GROUP } });
+  let user = await load();
+  if (!user) return null;
+  if (!user.platformRole && user.memberships.length === 0 && (await promoteFirstUser(user.id))) {
+    user = await load();
+    if (!user) return null;
+  }
+
+  const isPlatformAdmin = user.platformRole === PLATFORM_ADMIN_ROLE;
+  if (isPlatformAdmin) await notePlatformAdmin();
+  const platformGroup = isPlatformAdmin ? null : user.platformGroup;
+  const picked = await pickTenant(pickedTenantId, user.memberships, isPlatformAdmin, platformGroup);
+  const allTenants = picked === ALL_TENANTS;
+  const tenantId = allTenants ? null : picked;
+  const allTenantsPermissions = () => (isPlatformAdmin ? [...ALL_TENANTS_PERMISSIONS] : allTenantsPermissionsOf(user.memberships, platformGroup));
+  return {
+    userId: user.id,
+    permissions: allTenants
+      ? allTenantsPermissions()
+      : isPlatformAdmin ? [...EVERY_PERMISSION] : permissionsIn(user.memberships, tenantId, platformGroup),
+    isPlatformAdmin,
+    authMethod: "session",
+    tenantId,
+    allTenants,
+    platformGroup: platformGroup ? { id: platformGroup.id, name: platformGroup.name, allTenants: platformGroup.allTenants } : null,
+    opensAllTenants: isPlatformAdmin || opensAllTenants(platformGroup),
+  };
+}
+
+async function resolveAuthContext(headersObj: Headers): Promise<AuthContext | null> {
   // 1. Try session-based auth first
   try {
     const session = await auth.api.getSession({ headers: headersObj });
     if (session?.user) {
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        include: { group: true },
-      });
-
-      if (user?.group) {
-        const isSuperAdmin = user.group.name === "SuperAdmin";
-        const permissions = isSuperAdmin
-          ? AVAILABLE_PERMISSIONS.map((p) => p.id)
-          : (() => {
-              try {
-                return JSON.parse(user.group.permissions) as string[];
-              } catch {
-                return [];
-              }
-            })();
-
-        return {
-          userId: user.id,
-          permissions,
-          isSuperAdmin,
-          authMethod: "session",
-        };
-      }
+      const activeTenantId = (session.session as { activeTenantId?: string | null }).activeTenantId;
+      const ctx = await sessionContext(session.user.id, activeTenantId);
+      if (ctx) return ctx;
     }
   } catch (_error) {
     log.debug("Session auth check failed, trying API key");
@@ -84,19 +187,83 @@ export async function getAuthContext(headersObj: Headers): Promise<AuthContext |
     return null;
   }
 
-  // validate() throws ApiKeyError for disabled/expired keys (re-thrown to caller)
-  const validated = await apiKeyService.validate(bearerToken);
+  // A key is found by its hash before its tenant is known. validate() throws ApiKeyError for a
+  // disabled, expired or blocked key, which is answered like no login at all: no context, and the
+  // sentence of the key kept for the 401 of the route (`unauthorized`).
+  let validated: Awaited<ReturnType<typeof apiKeyService.validate>>;
+  try {
+    validated = await runAsSystem(() => apiKeyService.validate(bearerToken));
+  } catch (error: unknown) {
+    if (!(error instanceof ApiKeyError)) throw error;
+    recordKeyRefusal(headersObj, error.message);
+    return null;
+  }
   if (!validated) {
     return null;
   }
 
+  // The permissions are capped to what the owner may in the tenant of the key at this request, a
+  // right of the platform only in a key of the home tenant or of a tenant that shares, see
+  // `ownerPermissionsIn`. What such a right reaches is the reach of the owner, read by the route.
   return {
     userId: validated.userId,
     permissions: validated.permissions,
-    isSuperAdmin: false, // API keys never get SuperAdmin bypass
+    isPlatformAdmin: false, // API keys never act as a platform admin
     authMethod: "apikey",
     apiKeyId: validated.id,
+    tenantId: validated.tenantId,
+    allTenants: false,
   };
+}
+
+/**
+ * The contexts of the requests being handled, by their headers. A request reads its context once,
+ * however many queries ask for its tenant. One map for the whole process, like the tenant scope.
+ */
+const CONTEXTS_KEY = Symbol.for("dbackup.authContexts");
+type ContextsGlobal = typeof globalThis & { [CONTEXTS_KEY]?: WeakMap<Headers, Promise<AuthContext | null>> };
+
+function contexts(): WeakMap<Headers, Promise<AuthContext | null>> {
+  const holder = globalThis as ContextsGlobal;
+  holder[CONTEXTS_KEY] ??= new WeakMap();
+  return holder[CONTEXTS_KEY];
+}
+
+/**
+ * Get authentication context from either a session cookie or an API key.
+ * Tries session first, then falls back to API key from Authorization header.
+ *
+ * @param headersObj - The request headers object
+ * @returns AuthContext if authenticated, null if no auth present or the API key is disabled,
+ *   expired or blocked, whose reason `unauthorized()` in `src/lib/server/unauthorized.ts` answers
+ */
+export function getAuthContext(headersObj: Headers): Promise<AuthContext | null> {
+  // Only an object can be a key of the map, anything else is read every time.
+  if (typeof headersObj !== "object" || headersObj === null) return resolveAuthContext(headersObj);
+  const known = contexts().get(headersObj);
+  if (known) return known;
+  const resolved = resolveAuthContext(headersObj);
+  contexts().set(headersObj, resolved);
+  return resolved;
+}
+
+/** Forgets the context of a request, for an action that switched its tenant and reads on. */
+export function forgetAuthContext(headersObj: Headers): void {
+  contexts().delete(headersObj);
+}
+
+/** What a refusal in All tenants says: it reads every tenant and changes none, wherever the caller may change it. */
+export const ALL_TENANTS_REFUSAL = "All tenants only reads. Open the tenant of the record to change it.";
+
+/**
+ * The refusal of a check. In All tenants a right the view never holds, like one that changes
+ * something, says that All tenants only reads instead of naming the right, since a platform admin
+ * holds it in every tenant and only the view is wrong.
+ */
+function refusal(ctx: Pick<AuthContext, "allTenants">, wanted: readonly Permission[]): PermissionError {
+  const required = wanted.join(" or ");
+  const viewOnly = ctx.allTenants && !wanted.some((permission) => ALL_TENANTS_PERMISSIONS.includes(permission));
+  return new PermissionError(required, viewOnly ? { message: ALL_TENANTS_REFUSAL } : undefined);
 }
 
 /**
@@ -105,7 +272,7 @@ export async function getAuthContext(headersObj: Headers): Promise<AuthContext |
  */
 export function checkPermissionWithContext(ctx: AuthContext, permission: Permission): void {
   if (!hasPermissionWithContext(ctx, permission)) {
-    throw new PermissionError(permission);
+    throw refusal(ctx, [permission]);
   }
 }
 
@@ -117,7 +284,7 @@ export function checkPermissionWithContext(ctx: AuthContext, permission: Permiss
  */
 export function checkAnyPermissionWithContext(ctx: AuthContext, permissions: readonly Permission[]): void {
   if (!permissions.some((permission) => hasPermissionWithContext(ctx, permission))) {
-    throw new PermissionError(permissions.join(" or "));
+    throw refusal(ctx, permissions);
   }
 }
 
@@ -126,113 +293,132 @@ export function checkAnyPermissionWithContext(ctx: AuthContext, permissions: rea
  * passed its own guard and needs to decide how much to do rather than whether
  * to answer at all.
  */
-export function hasPermissionWithContext(ctx: AuthContext, permission: Permission): boolean {
-  // SuperAdmin bypass (session only, API keys never have isSuperAdmin)
-  return ctx.isSuperAdmin || ctx.permissions.includes(permission);
+export function hasPermissionWithContext(ctx: Pick<AuthContext, "isPlatformAdmin" | "allTenants" | "permissions">, permission: Permission): boolean {
+  // In All tenants a platform admin holds what that view allows, it changes no tenant.
+  return (ctx.isPlatformAdmin && !ctx.allTenants) || ctx.permissions.includes(permission);
 }
 
-export async function getCurrentUserWithGroup() {
-    // Wrap to prevent crash if headers/session fails significantly
-    let session;
-    try {
-        session = await auth.api.getSession({
-            headers: await headers()
-        });
-    } catch (error) {
-        log.error("Session check failed", {}, wrapError(error));
-        return null;
-    }
+/** The tenant a caller works in, refusing an account that belongs to none and All tenants. */
+export function tenantOf(ctx: { tenantId: string | null; allTenants?: boolean }): string {
+  if (!ctx.tenantId) throw new PermissionError("a tenant", { message: tenantRefusal(ctx) ?? undefined });
+  return ctx.tenantId;
+}
 
-    if (!session?.user) {
-        return null;
-    }
+/**
+ * Why `tenantOf` refuses a caller, null in a tenant, for a Server Action that answers with an error
+ * instead of throwing.
+ */
+export function tenantRefusal(ctx: { tenantId: string | null; allTenants?: boolean }): string | null {
+  if (ctx.tenantId) return null;
+  return ctx.allTenants ? ALL_TENANTS_REFUSAL : "You work in no tenant yet.";
+}
 
-    let user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        include: { group: true }
-    });
+// ============================================================================
+// The viewer of a page or a Server Action
+// ============================================================================
 
-    // Auto-promote first user logic (Self-Healing)
-    if (user && !user.groupId) {
-        const userCount = await prisma.user.count();
-        if (userCount === 1) {
-            log.info("Auto-promoting first user to SuperAdmin");
-            const allPermissions = Object.values(PERMISSIONS).flatMap(group => Object.values(group));
+/** The signed-in person of a page or a Server Action, with what they may do in their tenant. */
+export type Viewer = NonNullable<Awaited<ReturnType<typeof loadUser>>> & {
+  isPlatformAdmin: boolean;
+  tenantId: string | null;
+  /** A platform admin in All tenants, see `AuthContext.allTenants`. */
+  allTenants: boolean;
+  permissions: string[];
+  /** Their group in the tenant, none for a platform admin who is no member there. */
+  role: { id: string; name: string } | null;
+  /** Their platform group, none for a platform admin or someone without one. */
+  platformGroup: { id: string; name: string; allTenants: boolean } | null;
+  /** May open All tenants: a platform admin, or a platform group that reaches every tenant and sees something there. */
+  opensAllTenants: boolean;
+};
 
-            const group = await prisma.group.upsert({
-                where: { name: "SuperAdmin" },
-                update: { permissions: JSON.stringify(allPermissions) },
-                create: {
-                    name: "SuperAdmin",
-                    permissions: JSON.stringify(allPermissions)
-                }
-            });
+function loadUser(id: string) {
+  return prisma.user.findUnique({ where: { id } });
+}
 
-            user = await prisma.user.update({
-                where: { id: user.id },
-                data: { groupId: group.id },
-                include: { group: true }
-            });
-        }
-    }
+async function roleOf(userId: string, tenantId: string | null) {
+  if (!tenantId) return null;
+  const membership = await prisma.tenantMembership.findUnique({
+    where: { userId_tenantId: { userId, tenantId } },
+    select: { group: { select: { id: true, name: true } } },
+  });
+  return membership?.group ?? null;
+}
 
-    return user;
+/** The context of the session of the request being handled, never one of an API key. */
+async function sessionOfRequest(): Promise<AuthContext | null> {
+  let headersObj: Headers;
+  try {
+    headersObj = await requestHeaders();
+  } catch (error) {
+    log.error("Session check failed", {}, wrapError(error));
+    return null;
+  }
+  const ctx = await getAuthContext(headersObj).catch((error: unknown) => {
+    log.error("Session check failed", {}, wrapError(error));
+    return null;
+  });
+  return ctx?.authMethod === "session" ? ctx : null;
+}
+
+export async function getViewer(): Promise<Viewer | null> {
+  const ctx = await sessionOfRequest();
+  if (!ctx) return null;
+  const [user, role] = await Promise.all([loadUser(ctx.userId), roleOf(ctx.userId, ctx.tenantId)]);
+  if (!user) return null;
+  return {
+    ...user,
+    isPlatformAdmin: ctx.isPlatformAdmin,
+    tenantId: ctx.tenantId,
+    allTenants: ctx.allTenants,
+    permissions: ctx.permissions,
+    role,
+    platformGroup: ctx.platformGroup ?? null,
+    opensAllTenants: ctx.opensAllTenants ?? ctx.isPlatformAdmin,
+  };
 }
 
 /** The id of the session the request comes with, which ending someone's sessions keeps. */
 export async function currentSessionId(): Promise<string | null> {
     try {
-        const session = await auth.api.getSession({ headers: await headers() });
+        const session = await auth.api.getSession({ headers: await requestHeaders() });
         return session?.session.id ?? null;
     } catch {
         return null;
     }
 }
 
-export async function checkPermission(permission: Permission) {
-    const user = await getCurrentUserWithGroup();
+/**
+ * Refuses anyone without the permission. A list passes with any one of them, for an action two
+ * kinds of people take, like a change of an account by the admin of its tenant or by whoever
+ * manages the accounts of the platform.
+ */
+export async function checkPermission(permission: Permission | readonly Permission[]): Promise<Viewer> {
+    const viewer = await getViewer();
 
-    if (!user) {
+    if (!viewer) {
         throw new AuthenticationError();
     }
 
-    if (!user.group) {
-        throw new PermissionError(permission, { context: { reason: "No group assigned" } });
+    const wanted: readonly Permission[] = typeof permission === "string" ? [permission] : permission;
+    if (!wanted.some((entry) => hasPermissionWithContext(viewer, entry))) {
+        throw refusal(viewer, wanted);
     }
 
-    // SuperAdmin always has all permissions
-    if (user.group.name === "SuperAdmin") {
-        return user;
-    }
+    return viewer;
+}
 
-    let permissions: string[] = [];
-    try {
-        permissions = JSON.parse(user.group.permissions);
-    } catch (error) {
-        log.error("Failed to parse group permissions", { groupId: user.group.id }, wrapError(error));
-    }
-
-    if (!permissions.includes(permission)) {
-        throw new PermissionError(permission);
-    }
-
-    return user;
+/** Refuses anyone but a signed-in platform admin, for what decides over every tenant. */
+export async function checkPlatformAdmin(): Promise<Viewer> {
+    const viewer = await getViewer();
+    if (!viewer) throw new AuthenticationError();
+    if (!viewer.isPlatformAdmin) throw new PermissionError("platform admin");
+    return viewer;
 }
 
 export async function getUserPermissions(): Promise<string[]> {
-    const user = await getCurrentUserWithGroup();
-    if (!user || !user.group) return [];
-
-    // SuperAdmin always has all permissions
-    if (user.group.name === "SuperAdmin") {
-        return AVAILABLE_PERMISSIONS.map(p => p.id);
-    }
-
-    try {
-        return JSON.parse(user.group.permissions);
-    } catch {
-        return [];
-    }
+    const viewer = await getViewer();
+    return viewer?.permissions ?? [];
 }
 
 export async function hasPermission(permission: Permission): Promise<boolean> {

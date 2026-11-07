@@ -82,7 +82,8 @@ export class CompositeHost extends BaseHost {
         // file transport's own writeHostFile is protected and belongs to a
         // different instance, so this goes through the public putFile instead.
         const localPath = join(os.tmpdir(), `dbackup_${randomUUID()}`);
-        await writeFile(localPath, content, mode !== undefined ? { mode } : undefined);
+        // Created exclusively, so a file or a link laid under the name first fails the write.
+        await writeFile(localPath, content, mode !== undefined ? { flag: "wx", mode } : { flag: "wx" });
         try {
             await this.fileHost.putFile(localPath, hostPath);
         } finally {

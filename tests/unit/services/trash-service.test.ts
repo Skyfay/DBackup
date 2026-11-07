@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { ConflictError } from "@/lib/logging/errors";
+import { ConflictError, ValidationError } from "@/lib/logging/errors";
+import { BULK_ROW_FAILED } from "@/lib/core/bulk";
 
 const mocks = vi.hoisted(() => ({ restoreSnapshot: vi.fn(), refresh: vi.fn(async () => undefined) }));
 
@@ -10,7 +11,7 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 
-const { cleanTrash, listTrash, mayHandle, restoreFromTrash } = await import("@/services/trash/trash-service");
+const { cleanTrash, listTrash, mayHandle, mayRestoreAccount, restoreFromTrash } = await import("@/services/trash/trash-service");
 
 const deletedAt = new Date("2026-09-20T10:00:00.000Z");
 
@@ -30,14 +31,27 @@ function row(overrides: Record<string, unknown> = {}) {
     };
 }
 
-const VAULT_ADMIN = { permissions: ["vault:write"], isSuperAdmin: false };
+const VAULT_ADMIN = { permissions: ["vault:write"], isPlatformAdmin: false };
 
 describe("who may handle a deleted record", () => {
     it("needs the permission the record was deleted with, and a SuperAdmin for the account of one", () => {
         expect(mayHandle(VAULT_ADMIN, { permission: "vault:write", superAdminOnly: false })).toBe(true);
         expect(mayHandle(VAULT_ADMIN, { permission: "users:write", superAdminOnly: false })).toBe(false);
-        expect(mayHandle({ permissions: ["users:write"], isSuperAdmin: false }, { permission: "users:write", superAdminOnly: true })).toBe(false);
-        expect(mayHandle({ permissions: [], isSuperAdmin: true }, { permission: "users:write", superAdminOnly: true })).toBe(true);
+        expect(mayHandle({ permissions: ["users:write"], isPlatformAdmin: false }, { permission: "users:write", superAdminOnly: true })).toBe(false);
+        expect(mayHandle({ permissions: [], isPlatformAdmin: true }, { permission: "users:write", superAdminOnly: true })).toBe(true);
+    });
+
+    it("weighs the groups of a deleted account against the viewer on Undo, in each tenant of the account", () => {
+        const admin = { tenantId: "acme", group: { permissions: "[]", fullAccess: true } };
+        const entry = { permission: "users:write", superAdminOnly: false, tenantId: "acme" };
+        const lena = { permissions: ["users:write"], isPlatformAdmin: false, tenantId: "acme" };
+
+        expect(mayRestoreAccount(lena, { ...entry, groups: [] })).toBe(true);
+        expect(mayRestoreAccount(lena, { ...entry, groups: [admin] })).toBe(false);
+        // From another tenant, what she may in Acme counts.
+        const fromGlobex = { ...lena, tenantId: "globex", permissions: ["platform-accounts:write"], reach: "all" as const };
+        expect(mayRestoreAccount({ ...fromGlobex, permissionsByTenant: { acme: ["users:write"] } }, { ...entry, groups: [admin] })).toBe(false);
+        expect(mayRestoreAccount({ ...lena, isPlatformAdmin: true }, { ...entry, groups: [admin] })).toBe(true);
     });
 });
 
@@ -129,5 +143,23 @@ describe("a restore from Recently deleted", () => {
         const result = await restoreFromTrash(["t-gone"]);
 
         expect(result.failed).toEqual([{ id: "t-gone", name: "t-gone", error: "It is gone from Recently deleted." }]);
+    });
+
+    it("answers the fixed sentence for an error of the database, whose words stay in the log", async () => {
+        prismaMock.deletedRecord.findUnique.mockResolvedValue(row() as never);
+        mocks.restoreSnapshot.mockRejectedValue(new Error("SQLITE_CONSTRAINT: FOREIGN KEY constraint failed on /data/db/dbackup.db"));
+
+        const result = await restoreFromTrash(["t-key"]);
+
+        expect(result.failed).toEqual([{ id: "t-key", name: "Offsite 2025", error: BULK_ROW_FAILED }]);
+    });
+
+    it("passes a sentence written for the user", async () => {
+        prismaMock.deletedRecord.findUnique.mockResolvedValue(row() as never);
+        mocks.restoreSnapshot.mockRejectedValue(new ValidationError("Acme adds no connections of its own."));
+
+        const result = await restoreFromTrash(["t-key"]);
+
+        expect(result.failed).toEqual([{ id: "t-key", name: "Offsite 2025", error: "Acme adds no connections of its own." }]);
     });
 });

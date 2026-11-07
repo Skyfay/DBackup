@@ -14,7 +14,10 @@ import { validateCredentialAssignments } from "@/lib/adapters/credential-validat
 
 describe("creating a connection", () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         prismaMock.adapterConfig.findFirst.mockResolvedValue(null);
+        // The tenant shares no destination with customers.
+        prismaMock.connectionShare.findMany.mockResolvedValue([]);
         prismaMock.adapterConfig.create.mockImplementation((async (args: { data: Record<string, unknown> }) => ({ id: "new", ...args.data })) as never);
     });
 
@@ -35,6 +38,14 @@ describe("creating a connection", () => {
         expect(validateCredentialAssignments).toHaveBeenCalledWith("mysql", "cred-1", null);
     });
 
+    it("checks the certificate of a new FTPS connection that leaves the switch out, like a request of the API, and keeps one it names", async () => {
+        await createAdapter({ name: "FTPS", type: "storage", adapterId: "ftp", config: { host: "ftp.example.com", port: 21, tls: true } });
+        await createAdapter({ name: "FTPS lab", type: "storage", adapterId: "ftp", config: { host: "ftp.example.com", port: 21, tls: true, trustServerCertificate: true } });
+
+        expect(JSON.parse(prismaMock.adapterConfig.create.mock.calls[0][0].data.config as string)).toMatchObject({ tls: true, trustServerCertificate: false });
+        expect(JSON.parse(prismaMock.adapterConfig.create.mock.calls[1][0].data.config as string)).toMatchObject({ trustServerCertificate: true });
+    });
+
     it("refuses a second connection of the same kind with the same name", async () => {
         prismaMock.adapterConfig.findFirst.mockResolvedValue({ id: "old" } as never);
 
@@ -49,9 +60,17 @@ describe("creating a connection", () => {
             .rejects.toBeInstanceOf(ValidationError);
     });
 
+    it("refuses an adapter of another kind than the one whose permission was checked", async () => {
+        await expect(createAdapter({ name: "Sneaky", type: "notification", adapterId: "mysql", config: { host: "db" } }))
+            .rejects.toThrow("Unknown adapter for this kind of connection");
+        await expect(createAdapter({ name: "Sneaky", type: "Storage", adapterId: "local-filesystem", config: { basePath: "/" } }))
+            .rejects.toBeInstanceOf(ValidationError);
+        expect(prismaMock.adapterConfig.create).not.toHaveBeenCalled();
+    });
+
     it("keeps the role of a storage source and ignores a role on any other kind", async () => {
         await createAdapter({ name: "Files", type: "storage", adapterId: "local-filesystem", config: { basePath: "/srv" }, storageRole: "SOURCE" });
-        await createAdapter({ name: "Mail", type: "notification", adapterId: "email", config: {}, storageRole: "SOURCE" });
+        await createAdapter({ name: "Mail", type: "notification", adapterId: "email", config: { host: "smtp.example.com", from: "dbackup@example.com", to: ["ops@example.com"] }, storageRole: "SOURCE" });
 
         expect(prismaMock.adapterConfig.create.mock.calls[0][0].data.storageRole).toBe("SOURCE");
         expect(prismaMock.adapterConfig.create.mock.calls[1][0].data).not.toHaveProperty("storageRole");

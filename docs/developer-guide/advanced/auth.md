@@ -35,25 +35,23 @@ The middleware runs before any component rendering.
 **Location**: `src/middleware.ts`
 
 ```typescript
-export async function middleware(request: NextRequest) {
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  });
-
-  // Protect dashboard routes
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    if (!session) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+// Only whether a session cookie is there, the layout of the dashboard checks the session itself.
+if (request.nextUrl.pathname.startsWith("/dashboard")) {
+  const sessionToken =
+    request.cookies.get("better-auth.session_token") ||
+    request.cookies.get("__Secure-better-auth.session_token");
+  if (!sessionToken) {
+    // The login page leads back to the page asked for once someone signed in.
+    return NextResponse.redirect(new URL(loginHref(`${request.nextUrl.pathname}${request.nextUrl.search}`), request.url));
   }
-
-  return NextResponse.next();
 }
 ```
 
 ::: warning
 Middleware does NOT check fine-grained permissions (RBAC), only authentication status.
 :::
+
+The login page is `/`. Its `next` parameter names the page a sign-in leads to, like `/?next=%2Finvite%3Ftoken%3D...` from the Sign in of an invitation. `safeNextPath` in `src/lib/auth/sign-in-target.ts` takes only a path of this site: one slash at its start, never two, no backslash and no control character. The login page itself, the bare Overview and `/api` lead nowhere, and anything it refuses falls back to `AFTER_SIGN_IN`, the Overview with its marker for the Quick Setup. The login page checks `next` on the server and hands the form the path, which every way of signing in uses as its target: the password with its second factor, a passkey and a sign-in provider as its `callbackURL`. A provider that refuses comes back with its error alone, so the form keeps the path in the storage of the tab for that (`sign-in-next.ts`) and checks it again.
 
 ### Layer 2: API Route Handlers
 
@@ -123,6 +121,10 @@ if (user.twoFactorEnabled) {
   return { requiresTwoFactor: true, tempToken: "..." };
 }
 ```
+
+**A passkey as the second factor** is `passkeyTwoFactor` on the user, which only DBackup knows. better-auth asks for a second factor while `twoFactorEnabled` is set, so each of the two keeps that flag on while the other one is the second factor: `userService.togglePasskeyTwoFactor` while the app is set up, and `keepPasskeyFactor` in `src/lib/auth/passkey-factor-guard.ts`, a database hook on the update of a user, when `/two-factor/disable` removes the app while a passkey is the second factor. The login page then asks for the passkey, since better-auth names no code to ask for.
+
+**No trusted devices.** better-auth lets `/two-factor/verify-totp`, `/two-factor/verify-otp` and `/two-factor/verify-backup-code` trust the device with `trustDevice`, which skips the second factor on later sign-ins of that browser for 30 days, and those sign-ins write no `LOGIN` entry. DBackup never offers it, so the `before` hook in `src/lib/auth/index.ts` refuses any truthy `trustDevice` on `/two-factor/verify-*` with `403 TRUSTED_DEVICE` (`asksTrustedDevice` in `src/lib/auth/profile-guard.ts`), and every sign-in asks the second factor.
 
 ### Passkeys (WebAuthn)
 
@@ -231,9 +233,9 @@ function ProfileButton() {
 
 In addition to session-based authentication, DBackup supports stateless API key authentication for programmatic access (CI/CD, cron jobs, external tools).
 
-API keys use `Authorization: Bearer dbackup_xxx` headers and are validated via SHA-256 hash lookup. They have their own permission set and **never** inherit SuperAdmin privileges.
+API keys use `Authorization: Bearer dbackup_xxx` headers and are validated by a lookup of their hash. They have their own permission set, act only in the tenant they were made in and **never** pass the checks only a platform admin passes.
 
-All API routes support both authentication methods through the unified `getAuthContext()` function.
+All API routes support both authentication methods through the unified `getAuthContext()` function, which also names the tenant of the request. See [Tenants](./tenants.md) for how a session and a key find their tenant.
 
 → See [API Keys & Webhooks](./api-keys.md) for the full architecture, key generation, validation flow, and webhook trigger system.
 

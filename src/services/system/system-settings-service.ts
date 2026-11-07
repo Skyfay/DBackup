@@ -85,6 +85,18 @@ export async function getGeneralSettings(): Promise<GeneralSettings> {
     };
 }
 
+/** The time zone the scheduler plans in, UTC until one is set. */
+export async function getTimezone(): Promise<string> {
+    const stored = await readAll([KEYS.timezone]);
+    return stored.get(KEYS.timezone) || "UTC";
+}
+
+/** The name of the instance, empty when none is set. */
+export async function getInstanceName(): Promise<string> {
+    const stored = await readAll([KEYS.instanceName]);
+    return stored.get(KEYS.instanceName)?.trim() ?? "";
+}
+
 /**
  * Saves the General part. The scheduler starts over when the time zone changes, or a setting
  * that a system task follows, like Look for new versions.
@@ -119,11 +131,12 @@ export async function getSignInSettings(): Promise<SignInSettings> {
 
 /**
  * Whether turning the passkey button off would leave nobody a way to sign in: the container
- * turned passwords off with DISABLE_EMAIL_LOGIN, and no sign-in provider is on.
+ * turned passwords off with DISABLE_EMAIL_LOGIN, and no sign-in provider of the platform is on. A
+ * provider of a tenant signs in only that tenant's people, never a platform admin.
  */
 export async function passkeyIsLastWayIn(): Promise<boolean> {
     if (!isEmailLoginDisabled()) return false;
-    return (await prisma.ssoProvider.count({ where: { enabled: true } })) === 0;
+    return (await prisma.ssoProvider.count({ where: { enabled: true, tenantId: null } })) === 0;
 }
 
 export async function saveSignInSettings(next: SignInSettings): Promise<void> {

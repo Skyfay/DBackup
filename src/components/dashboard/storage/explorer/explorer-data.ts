@@ -82,6 +82,19 @@ export function destinationsOf(job: ExplorerJob | null, destinations: Map<string
 }
 
 /**
+ * The destinations whose lists the list of backups shows, for how fresh they are: those of the
+ * Destination filter, of the jobs of the Job filter, or every destination. A shared database in the
+ * Job filter has no destination of the tenant, so it adds none.
+ */
+export function freshnessOf(at: string[], jobKeys: string[], destinations: ExplorerDestination[], destinationsById: Map<string, ExplorerDestination>, jobsByKey: Map<string, ExplorerJob>): ExplorerDestination[] {
+    if (at.length > 0) return at.map((id) => destinationsById.get(id)).filter((entry): entry is ExplorerDestination => entry !== undefined);
+    const own = jobKeys.filter((key) => jobsByKey.has(key));
+    if (own.length === 0) return destinations;
+    const ids = new Set(own.flatMap((key) => destinationsOf(jobsByKey.get(key) ?? null, destinationsById).map((entry) => entry.id)));
+    return destinations.filter((entry) => ids.has(entry.id));
+}
+
+/**
  * Loads again while destinations are listed in the background, so their backups show up as soon as
  * they are in. A listing that hangs does not keep the page asking forever.
  */

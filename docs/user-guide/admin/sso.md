@@ -16,10 +16,10 @@ The four named providers read their endpoints from the OpenID configuration of t
 
 ## The SSO Tab
 
-Open **Users & Groups → SSO**. Seeing it needs `settings:read`. Only a SuperAdmin adds, changes, switches and deletes providers.
+Open **Users & Groups → SSO**, with more than one tenant **Platform → Users & Groups → Sign-in providers**. Seeing it needs `settings:read` from the group in the home tenant or `platform-sign-in:read` from a [platform group](/user-guide/admin/tenants#platform-groups). `settings:read` of someone without a platform group shows every provider. Someone of a platform group of selected tenants, whichever of the two they hold, sees the providers of the platform and of those tenants. Beside a provider show only the people whose accounts you may see through `platform-accounts:read` or `platform-accounts:write` and your own account, and the numbers above the list count only those. Only a platform admin adds, changes, switches and deletes providers, since a provider signs in as anyone of its emails.
 
 ::: warning A provider holds the keys to every account
-A provider that names the email of a user in DBackup signs in as that user, and DBackup asks no second factor after a sign-in through a provider. That is why only a SuperAdmin adds or changes one. Add only providers you run or trust.
+A provider that names the email of a user in DBackup signs in as that user, and DBackup asks no second factor after a sign-in through a provider. That is why only a platform admin adds or changes one. Add only providers you run or trust.
 :::
 
 The strip above the list shows how many providers are on, how many people are linked through them, who has no password or passkey and signs in only through a provider, the sign-ins of the last 30 days, and whether password sign-in is on. The line under the list says whether passkeys are on, which providers the login page shows, and where `OIDC_AUTO_REDIRECT` sends it.
@@ -53,11 +53,32 @@ The callback URL starts with `BETTER_AUTH_URL`. Set it to the address people ope
 
 ## New People
 
-With **Add new people on their first sign-in**, someone the provider knows gets an account in DBackup when they first sign in, in the group picked for the provider. The audit log says so, like "Signed up through Authentik into the group Operators". With **No group** they sign in but see nothing until someone picks a group for them.
+With **Add new people on their first sign-in**, someone the provider knows gets an account in DBackup when they first sign in, in the group picked for the provider in the home tenant. The audit log says so, like "Signed up through Authentik into the group Operators". With **No group** they belong to no tenant and see nothing until someone picks a group for them or they accept an [invitation](/user-guide/admin/tenants#invitations).
+
+::: tip Customers and a shared provider
+Where the people of customers sign in through the provider too, give it **No group**. A new account then joins the home tenant only when someone puts it there, and the people of a customer join their tenant with an invitation link.
+:::
 
 Without it only people who already have an account in DBackup sign in through the provider. Their account is linked by its email on their first sign-in, when the provider marks the email as verified, and someone new is turned away.
 
-Deleting a group moves the new people of its providers where its members go, or leaves them without a group.
+Deleting a group moves the new people of its providers where its members go, also for a provider of the platform. The group they go to may do no more than whoever deletes may, like for its members. With **No group** a provider of the platform adds them without a group, and a provider of a tenant stops adding people, since it adds them into a group of its tenant only.
+
+A provider of the platform links an account that works only in customer tenants just for someone signed in to that account already, who clicks **Link** beside the provider under **Profile**. A first sign-in through it never takes over such an account by its email, and ends on the login page with **Account not linked**. A provider signs in only accounts linked to it.
+
+## Providers of a Tenant
+
+A provider belongs to the platform or to one [tenant](/user-guide/admin/tenants), set under **Belongs to**. A customer that brings its own identity provider, like Microsoft Entra ID, gets a provider of its tenant:
+
+- It never shows as a button. Someone types an email of its domain, the login page says "acme.ch signs in with Acme Entra ID" and offers **Continue with Acme Entra ID**. The page asks the server about the one domain typed, so it never lists the domains of the customers.
+- It needs an **Email domain**, and while it adds new people, a group of its tenant. Without a group it adds nobody. One domain belongs to one provider, also among the providers of the platform.
+- It signs in only emails of exactly its domain, never a subdomain, a platform admin or an account of a platform group.
+- New people land in its tenant with its group. Without that, only members of the tenant sign in through it.
+- It never links or signs in an account that works in other tenants but not in its own, also one linked before, since another tenant made that account. An account that works in no tenant counts as one of the home tenant, whose admins set its password, so a provider of a customer tenant never links or signs it in either. Such a person joins the tenant through an [invitation](/user-guide/admin/tenants#invitations).
+- A provider of the platform adds nobody whose email has its domain. The login page then says **Your organization has its own sign-in**, and the person enters their email to sign in through the provider of their tenant.
+- An account outside its tenant gets an email of its domain only from a platform admin or someone who manages the accounts of the platform, see [People in a Tenant](/user-guide/admin/tenants#people-in-a-tenant), so the admin of another tenant never makes an account it would sign in to.
+- Deleting the tenant deletes its providers and the links to them. The accounts stay.
+
+Only a platform admin adds and changes either kind, and every change goes into the audit log of the home tenant. DBackup does not check that a tenant owns its domain, so never give a tenant a domain like `gmail.com`.
 
 ## Provider Notes
 
@@ -99,7 +120,7 @@ It asks for the issuer, the authorization, token and user info endpoints, and th
 
 ## Login Page
 
-Every provider that is on shows as a button with its logo on the login page. With an **Email domain**, the login page asks for the email first, says under it which provider an email of that domain signs in with, and its button goes there. A provider takes one domain.
+Every provider of the platform that is on shows as a button with its logo on the login page. With an **Email domain**, the login page asks for the email first, says under it which provider an email of that domain signs in with, and its button goes there. A provider takes one domain. A provider of a tenant is reached by its domain only, see [Providers of a Tenant](#providers-of-a-tenant).
 
 Two environment variables change the login page. Both are set on the container rather than in the UI, because either one can lock you out and the lever has to work without signing in.
 
@@ -113,13 +134,13 @@ Create the first administrator and configure your provider **before** setting th
 
 ### Skipping the login page entirely
 
-`OIDC_AUTO_REDIRECT` takes a **provider ID** and sends visitors straight to that provider:
+`OIDC_AUTO_REDIRECT` takes the **provider ID** of a provider of the platform and sends visitors straight to that provider:
 
 ```bash
 OIDC_AUTO_REDIRECT=authentik
 ```
 
-The redirect is skipped after a failed sign-in, so the error is readable instead of looping, and on the page load right after signing out, so signing out works. An ID matching no enabled provider logs an error at startup and leaves the redirect off rather than stopping the application.
+The redirect is skipped after a failed sign-in, so the error is readable instead of looping, and on the page load right after signing out, so signing out works. An ID matching no enabled provider, or a provider of a tenant, logs an error at startup and leaves the redirect off rather than stopping the application.
 
 While it waits for the provider, the page offers **Sign in another way**, which shows the login form for that one visit.
 

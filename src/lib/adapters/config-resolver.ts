@@ -1,10 +1,19 @@
-import { decryptConfig, mergeSecrets } from "@/lib/crypto";
+import { decryptConfig } from "@/lib/crypto";
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
-import { ConfigurationError, NotFoundError, wrapError } from "@/lib/logging/errors";
+import { ConfigurationError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import { usesPrefixedSshKeys } from "@/lib/adapters/ssh-key-convention";
+import { mergeStoredSecrets, type AssignedLogins } from "@/lib/adapters/stored-secrets";
+import { explicitScope, runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { hostLocalReason } from "@/lib/adapters/host-local";
+import { assertOffOwnData } from "@/lib/adapters/own-data";
+import { requestHeaders } from "@/lib/server/request-headers";
+import { assertReachFromHere, assertTenantReach, tenantBlocksLocalNetwork } from "@/services/tenant/tenant-network";
+import { markLocalNetwork } from "@/lib/adapters/network-fact";
+import { currentTenantId } from "@/lib/tenant/current";
 import type {
     CredentialData,
     CredentialType,
@@ -31,6 +40,11 @@ export interface AdapterConfigInput {
     config: string;
     primaryCredentialId: string | null;
     sshCredentialId: string | null;
+    /**
+     * The tenant of the connection. Its saved logins are read there, so a destination or a channel
+     * another tenant shares works in the run of a customer, whose own scope never sees them.
+     */
+    tenantId: string;
 }
 
 /**
@@ -41,6 +55,8 @@ export interface AdapterConfigInput {
  * 2. Loading the referenced credential profiles
  * 3. Overlaying credential payloads onto the config according to the
  *    adapter's declared `credentials` requirements
+ * 4. Marking it with whether the tenant of the row blocks the local network,
+ *    see `network-fact.ts`
  *
  * Throws `ConfigurationError` if the adapter declares a required primary
  * credential but no profile is assigned. The structural config is still
@@ -48,6 +64,27 @@ export interface AdapterConfigInput {
  * `clientSecret`, `refreshToken` for OAuth adapters) live there.
  */
 export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise<unknown> {
+    const resolved = await resolveConfig(adapter);
+    // A connection of a customer never reaches the server DBackup runs on, also when a login it
+    // names changed since it was saved, or the row came from an import, see `host-local.ts`.
+    if (adapter.tenantId && adapter.tenantId !== HOME_TENANT_ID) {
+        const reason = hostLocalReason(adapter.adapterId, resolved as Record<string, unknown>);
+        if (reason) throw new ConfigurationError(adapter.adapterId, reason);
+        // Nor the local network while its tenant blocks it, also when a name resolves elsewhere
+        // since it was saved or the platform turned the block on later. A connection another
+        // tenant shares follows the setting of that tenant, the one of its row.
+        await assertTenantReach(adapter.tenantId, adapter.adapterId, resolved);
+    }
+    // Nor the own data of DBackup for anyone but a platform admin, also through a connection of the
+    // platform admin or a link that points there since it was saved, see `own-data.ts`.
+    await assertOffOwnData(adapter.adapterId, resolved as Record<string, unknown>, { configId: adapter.id });
+    // Whether the tools that find a server on their own, like smbclient by a NetBIOS broadcast, may
+    // do so, by the tenant of the row like the check above. Never a field of the stored config, see
+    // `network-fact.ts`.
+    return markLocalNetwork(resolved, await tenantBlocksLocalNetwork(adapter.tenantId));
+}
+
+async function resolveConfig(adapter: AdapterConfigInput): Promise<Record<string, unknown>> {
     const adapterDef = registry.get(adapter.adapterId);
     if (!adapterDef) {
         throw new NotFoundError("Adapter", adapter.adapterId);
@@ -85,28 +122,81 @@ export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise
             }
             // Optional and no profile assigned - use structural config fields as-is
         } else {
-            const profile = await loadAndValidate(
-                adapter.primaryCredentialId,
-                requirements.primary,
+            const profile = await inTenantOf(adapter, () => loadAndValidate(
+                adapter.primaryCredentialId!,
+                requirements.primary!,
                 adapter.adapterId,
                 "primary"
-            );
+            ));
             applyPrimaryOverlay(parsed, profile, requirements.primary);
         }
     }
 
     // --- SSH slot (always optional at runtime - SSH mode is opt-in per adapter) ---
     if (requirements.ssh && adapter.sshCredentialId) {
-        const profile = await loadAndValidate(
-            adapter.sshCredentialId,
-            requirements.ssh,
+        const profile = await inTenantOf(adapter, () => loadAndValidate(
+            adapter.sshCredentialId!,
+            requirements.ssh!,
             adapter.adapterId,
             "ssh"
-        );
+        ));
         applySshOverlay(parsed, profile as SshKeyData, usesPrefixedSshKeys(adapterDef.configSchema));
     }
 
     return parsed;
+}
+
+/**
+ * Whether the code that runs now may add, change, copy, test or browse a connection that reaches the
+ * server DBackup runs on, see `host-local.ts`: a platform admin signed in with a session who works in
+ * the home tenant, also in the system scope a request sets, and code outside a request, like a
+ * script or the start of the server, unless it runs for a customer. A member of the home tenant may
+ * not, nor an API key, a customer, All tenants or an account of no tenant. A run of a job never asks,
+ * the members of the home tenant pick such a connection in their jobs.
+ */
+export async function mayReachHost(): Promise<boolean> {
+    const scope = explicitScope();
+    if (scope && (scope.kind === "all" || (scope.kind === "tenant" && scope.tenantId !== HOME_TENANT_ID))) return false;
+
+    let headers: Headers;
+    try {
+        headers = await requestHeaders();
+    } catch {
+        // No request: a script or the start of the server, for the platform or outside any tenant.
+        return true;
+    }
+    // Loaded here like in `tenant/current.ts`, the access control reads the database itself.
+    const { getAuthContext } = await import("@/lib/auth/access-control");
+    const ctx = await getAuthContext(headers).catch(() => null);
+    if (!ctx || !ctx.isPlatformAdmin || ctx.authMethod !== "session") return false;
+    // A scope the request set acts for the platform, without one the tenant of the session decides.
+    return scope ? true : !ctx.allTenants && ctx.tenantId === HOME_TENANT_ID;
+}
+
+/**
+ * Refuses a config of a form that reaches the server DBackup runs on, unless a platform admin runs
+ * it, see `mayReachHost`, one that reaches the own data of DBackup, unless a platform admin runs it, see
+ * `own-data.ts`, and one whose hosts lie in the local network while the tenant that runs now
+ * blocks it, see `tenant-network.ts`. Every way to try a config before it is saved, like a test or
+ * a read of its databases, goes through `overlayCredentialsOnConfig` or calls this.
+ */
+export async function assertConfigOffHost(adapterId: string, config: Record<string, unknown>): Promise<void> {
+    const reason = hostLocalReason(adapterId, config);
+    if (reason && !(await mayReachHost())) throw new ValidationError(reason, { field: "config" });
+    await assertOffOwnData(adapterId, config);
+    await assertReachFromHere(adapterId, config);
+}
+
+/** The fields of a config that name a program on the server DBackup runs on, like `sqliteBinaryPath`. */
+const BINARY_PATH = /BinaryPath$/;
+
+/**
+ * A config of a form without the fields that pick the program it runs with. A read of tables or
+ * rows runs the program the saved connection names, or the default one, never one a
+ * request brings along.
+ */
+export function withoutBinaryPaths(config: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(config).filter(([key]) => !BINARY_PATH.test(key)));
 }
 
 /**
@@ -115,10 +205,28 @@ export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise
  * where the structural config is already plaintext and only the credential
  * IDs need to be resolved.
  *
- * Mutates and returns the supplied config. Throws `ConfigurationError` if a
- * required primary slot is missing or has the wrong type.
+ * Mutates and returns the supplied config, marked with whether the tenant that runs
+ * now blocks the local network, see `network-fact.ts`. Throws `ConfigurationError` if a
+ * required primary slot is missing or has the wrong type, and `ValidationError`
+ * from `assertConfigOffHost` for a config the tenant that runs now may not run.
  */
 export async function overlayCredentialsOnConfig(
+    adapterId: string,
+    config: Record<string, unknown>,
+    primaryCredentialId: string | null,
+    sshCredentialId: string | null
+): Promise<Record<string, unknown>> {
+    const merged = await layLoginsOver(adapterId, config, primaryCredentialId, sshCredentialId);
+    await assertConfigOffHost(adapterId, merged);
+    return markLocalNetwork(merged, await tenantBlocksLocalNetwork(await currentTenantId()));
+}
+
+/**
+ * Lays the credential profiles over a plaintext config like `overlayCredentialsOnConfig`, without
+ * its checks, for a caller that checks the result itself or only compares it, like where a saved
+ * connection keeps its files. Mutates and returns the supplied config.
+ */
+export async function layLoginsOver(
     adapterId: string,
     config: Record<string, unknown>,
     primaryCredentialId: string | null,
@@ -167,31 +275,44 @@ export async function overlayCredentialsOnConfig(
  * the submitted config is one the saved source never had, which is why a
  * connection test could fail while backups from that same source kept working.
  *
- * Caller-supplied values always win, so this only restores what is absent.
+ * Caller-supplied values always win, so this only restores what is absent, and
+ * only while the submitted config connects where the saved one does, see
+ * `mergeStoredSecrets`, which needs the saved logins the request names.
  * Permission is the caller's job: only somebody who may edit the source should
  * be handed its stored secrets.
+ *
+ * @throws ValidationError when the submitted config points at another address
+ *   and still relies on a stored secret.
  */
 export async function applyStoredSecrets(
     adapterId: string,
     configId: string,
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
+    logins: AssignedLogins = {}
 ): Promise<Record<string, unknown>> {
+    let stored: Record<string, unknown>;
     try {
-        const stored = await prisma.adapterConfig.findUnique({
+        const row = await prisma.adapterConfig.findUnique({
             where: { id: configId },
             select: { adapterId: true, config: true },
         });
 
         // A config of another type holds other keys, so merging one into the
         // other would only ever produce a config nobody asked about.
-        if (!stored || stored.adapterId !== adapterId) return config;
+        if (!row || row.adapterId !== adapterId) return config;
 
-        return mergeSecrets(config, decryptConfig(JSON.parse(stored.config)));
+        stored = decryptConfig(JSON.parse(row.config));
     } catch (e) {
         // A stored config that cannot be read is no reason to refuse the request.
         log.error("Failed to merge stored secrets into config", { adapterId, configId }, wrapError(e));
         return config;
     }
+    return mergeStoredSecrets(adapterId, config, stored, logins) as Record<string, unknown>;
+}
+
+/** Runs a read of a saved login in the tenant of its connection, when the row names it. */
+function inTenantOf<T>(adapter: AdapterConfigInput, read: () => Promise<T>): Promise<T> {
+    return adapter.tenantId ? runAsTenant(adapter.tenantId, read) : read();
 }
 
 async function loadAndValidate(

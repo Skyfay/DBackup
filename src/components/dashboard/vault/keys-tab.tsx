@@ -33,6 +33,8 @@ import { KeysStrip } from "./vault-strips";
 import { useVaultModel } from "./use-vault-model";
 import { VAULT_TABLE_IDS } from "./vault-tables";
 import { useOpenFromLink } from "@/hooks/use-open-from-link";
+import { useTenantView } from "@/components/tenant/tenant-view";
+import { keyLock, unlessLocked } from "./config-backup-lock";
 
 /** What the page around the list can start, the buttons beside the tabs. */
 export interface KeysTabHandle {
@@ -93,12 +95,15 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
         );
     }, []);
 
+    // The key of the configuration backup is revealed and put into a kit by a platform admin alone.
+    const { isPlatformAdmin } = useTenantView();
+    const locked = useCallback((key: VaultKey) => keyLock(key, isPlatformAdmin), [isPlatformAdmin]);
     const handlers = useMemo<KeyActionHandlers>(() => canManage ? {
-        onKit: (key) => setKit({ picked: [key.id] }),
-        onReveal: reveal,
+        onKit: unlessLocked(locked, (key) => setKit({ picked: [key.id] })),
+        onReveal: unlessLocked(locked, reveal),
         onEdit: setEditing,
         onDelete: setRemoving,
-    } : {}, [canManage, reveal]);
+    } : {}, [canManage, reveal, locked]);
 
     const open = useCallback((key: VaultKey) => setDetails({ id: key.id, open: true }), []);
     // A link like the search in the header opens one with `?open=`.
@@ -123,6 +128,7 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
             dialog: ({ rows: selected, onClose, onDone }) => (
                 <RecoveryKitDialog
                     keys={keys}
+                    locked={locked}
                     picked={selected.map((key) => key.id)}
                     onClose={onClose}
                     onDownloaded={(ids) => onDone({ succeeded: ids, failed: [] })}
@@ -151,7 +157,7 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
             },
             run: (selected, { permanently }) => unwrapBulkAction(bulkDeleteEncryptionProfiles(selected.map((key) => key.id), { permanently })),
         },
-    ] : [], [canManage, keys, trash]);
+    ] : [], [canManage, keys, trash, locked]);
 
     const shown = details ? keys.find((key) => key.id === details.id) ?? null : null;
 
@@ -253,6 +259,7 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
             {kit && (
                 <RecoveryKitDialog
                     keys={keys}
+                    locked={locked}
                     picked={kit.picked}
                     onClose={() => setKit(null)}
                     onDownloaded={() => {

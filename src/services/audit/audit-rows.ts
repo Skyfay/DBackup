@@ -5,11 +5,22 @@ import { changeSummary } from "@/lib/core/audit-changes";
 import { describeEntry } from "@/lib/core/audit-sentence";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { describeAgent, parseUserAgent } from "@/lib/core/user-agent";
-import { SUPER_ADMIN_GROUP } from "@/services/user/users-model";
+import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { AuditActor, AuditLine, AuditRow } from "./audit-types";
+import { viewSeesAccount, type LogView } from "./log-reach";
+
+/** What a row reads of the person who wrote an entry: the group they hold in each tenant. */
+export const AUDIT_ACTOR_SELECT = {
+    name: true,
+    image: true,
+    platformRole: true,
+    memberships: { select: { tenantId: true, group: { select: { name: true } } } },
+} satisfies Prisma.UserSelect;
 
 /** What a row of the list reads of an entry. */
 export const AUDIT_ROW_SELECT = {
+    tenantId: true,
     id: true,
     createdAt: true,
     userId: true,
@@ -22,7 +33,7 @@ export const AUDIT_ROW_SELECT = {
     details: true,
     ipAddress: true,
     userAgent: true,
-    user: { select: { name: true, image: true, group: { select: { name: true } } } },
+    user: { select: AUDIT_ACTOR_SELECT },
 } satisfies Prisma.AuditLogSelect;
 
 export type AuditRecord = Prisma.AuditLogGetPayload<{ select: typeof AUDIT_ROW_SELECT }>;
@@ -37,21 +48,42 @@ export function parseDetails(details: string | null): Record<string, unknown> {
     }
 }
 
+/**
+ * Whether the tenant of an entry sees where it came from, the address and the browser. Someone of
+ * the platform who works in a customer's tenant without being a member there, through a platform
+ * group or as a platform admin, keeps them to the platform. An entry of no person, like a failed
+ * sign-in, shows them. A deleted account keeps only its name (`actorName`), and with its
+ * memberships gone nothing tells whether it worked in the tenant, so a customer's log hides them.
+ * In the log of the home tenant they show to every reader but someone of a platform group of some
+ * tenants (`view`), who sees them of the accounts of those tenants alone, like the entries themselves.
+ */
+export function originShown(record: Pick<AuditRecord, "tenantId" | "userId" | "actorName" | "user">, view?: LogView): boolean {
+    if (record.tenantId === HOME_TENANT_ID) {
+        if (!record.userId) return !record.actorName || !view?.reach;
+        return viewSeesAccount(view, record.user, record.userId);
+    }
+    if (!record.userId && !record.actorName) return true;
+    if (!record.user) return false;
+    return record.user.memberships.some((membership) => membership.tenantId === record.tenantId);
+}
+
 /** Who wrote an entry. A key acts as its owner, so the owner is the line under its name. */
-export function actorOf(record: Pick<AuditRecord, "userId" | "actorName" | "apiKeyId" | "apiKeyName" | "action" | "details" | "user">): AuditActor {
+export function actorOf(record: Pick<AuditRecord, "tenantId" | "userId" | "actorName" | "apiKeyId" | "apiKeyName" | "action" | "details" | "user">): AuditActor {
     const person = record.user?.name ?? record.actorName;
     if (record.apiKeyId) {
         return { kind: "key", key: `key:${record.apiKeyId}`, name: record.apiKeyName ?? "API key", sub: person ? `API key of ${person}` : "API key", image: null, deleted: false, superAdmin: false };
     }
     if (record.userId) {
+        // The group they hold in the tenant of the entry.
+        const group = record.user?.memberships.find((membership) => membership.tenantId === record.tenantId)?.group;
         return {
             kind: "person",
             key: `user:${record.userId}`,
             name: person ?? "Unknown",
-            sub: record.user?.group?.name ?? (record.user ? "No group" : null),
+            sub: group?.name ?? (record.user ? "No group" : null),
             image: record.user?.image ?? null,
             deleted: false,
-            superAdmin: record.user?.group?.name === SUPER_ADMIN_GROUP,
+            superAdmin: record.user?.platformRole === PLATFORM_ADMIN_ROLE,
         };
     }
     if (record.actorName) {
@@ -90,6 +122,8 @@ const NAMES: Partial<Record<string, Lookup>> = {
     [AUDIT_RESOURCES.VAULT]: (ids) => prisma.encryptionProfile.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
     [AUDIT_RESOURCES.API_KEY]: (ids) => prisma.apiKey.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
     [AUDIT_RESOURCES.SSO_PROVIDER]: (ids) => prisma.ssoProvider.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+    [AUDIT_RESOURCES.TENANT]: (ids) => prisma.tenant.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+    [AUDIT_RESOURCES.PLATFORM_GROUP]: (ids) => prisma.platformGroup.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
 };
 
 const targetKey = (resource: string, id: string) => `${resource}:${id}`;
@@ -138,10 +172,12 @@ export async function newPlacesOf(records: Pick<AuditRecord, "id" | "action" | "
     return result;
 }
 
-export function toRow(record: AuditRecord, targets: Map<string, string>, newPlaces: Set<string>): AuditRow {
+export function toRow(record: AuditRecord, targets: Map<string, string>, newPlaces: Set<string>, view?: LogView): AuditRow {
     const description = describeEntry(record, targetOf(targets, record));
+    const shown = originShown(record, view);
     return {
         id: record.id,
+        tenantId: record.tenantId,
         at: record.createdAt.toISOString(),
         actor: actorOf(record),
         action: record.action,
@@ -152,8 +188,8 @@ export function toRow(record: AuditRecord, targets: Map<string, string>, newPlac
         summary: changeSummary(record.action, parseDetails(record.details)),
         glyph: description.glyph,
         kind: description.kind,
-        device: deviceOf(record.userAgent),
-        ipAddress: record.ipAddress,
+        device: shown ? deviceOf(record.userAgent) : null,
+        ipAddress: shown ? record.ipAddress : null,
         newPlace: newPlaces.has(record.id),
     };
 }

@@ -8,6 +8,7 @@ export const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
 export const SPONSOR_URL = "https://github.com/sponsors/Skyfay";
 export const CHANGELOG_URL = `${DOCS_URL}/changelog`;
 export const ARCHIVE_FORMAT_URL = `${DOCS_URL}/developer-guide/reference/archive-format`;
+export const TENANTS_GUIDE_URL = `${DOCS_URL}/user-guide/admin/tenants`;
 
 export interface AdapterItem {
   id: string;
@@ -85,4 +86,5 @@ export const FAQ_KEYS: { q: MessageKey; a: MessageKey }[] = [
   { q: "faq.q6", a: "faq.a6" },
   { q: "faq.q7", a: "faq.a7" },
   { q: "faq.q8", a: "faq.a8" },
+  { q: "faq.q9", a: "faq.a9" },
 ];

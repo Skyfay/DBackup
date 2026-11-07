@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { OneDriveAdapter } from "@/lib/adapters/storage/onedrive";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
 import { Readable } from "stream";
 
 // --- Hoisted mocks (available in vi.mock factories) ---
@@ -476,14 +477,37 @@ describe("OneDriveAdapter", () => {
                 }),
             });
 
-            mockFetch.mockResolvedValueOnce({
-                ok: true,
-                text: async () => '{"compression":"gzip"}',
-            });
+            mockFetch.mockResolvedValueOnce(new Response('{"compression":"gzip"}'));
 
             const result = await OneDriveAdapter.read!(validConfig, "backup.meta.json");
 
             expect(result).toBe('{"compression":"gzip"}');
+        });
+
+        it("refuses an item larger than the limit of the read without downloading it", async () => {
+            mockTokenRefresh();
+            mockClient.api.mockReturnValue({
+                get: vi.fn().mockResolvedValue({
+                    "@microsoft.graph.downloadUrl": "https://download.example.com/meta",
+                    size: SIDECAR_READ_LIMIT + 1,
+                }),
+            });
+
+            await expect(OneDriveAdapter.read!(validConfig, "backup.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(mockFetch).not.toHaveBeenCalledWith("https://download.example.com/meta");
+        });
+
+        it("stops a download that sends more than the limit, whatever the item said", async () => {
+            mockTokenRefresh();
+            mockClient.api.mockReturnValue({
+                get: vi.fn().mockResolvedValue({
+                    "@microsoft.graph.downloadUrl": "https://download.example.com/meta",
+                    size: 2,
+                }),
+            });
+            mockFetch.mockResolvedValueOnce(new Response(new Uint8Array(500)));
+
+            await expect(OneDriveAdapter.readBytes!(validConfig, "backup.index", { maxBytes: 100 })).rejects.toBeInstanceOf(FileTooLargeError);
         });
 
         it("should return null when file does not exist", async () => {
@@ -599,6 +623,70 @@ describe("OneDriveAdapter", () => {
             expect(result).toHaveLength(2);
             expect(result[0].name).toBe("file1.sql");
             expect(result[1].name).toBe("file2.sql");
+        });
+    });
+
+    // ====================================================================
+    // list() of a subfolder that is not there yet
+    // ====================================================================
+    describe("list() of a subfolder nothing was written to yet", () => {
+        /** How the Graph client rejects: a GraphError with the status and the code of the body. */
+        function graphFailure(statusCode: number, code: string, message: string) {
+            return Object.assign(new Error(message), { name: "GraphError", statusCode, code, body: "{}" });
+        }
+
+        /** Every request of the listing answers with the given pages, one per call, then the error. */
+        function graphAnswers(...answers: Array<object | Error>) {
+            const get = vi.fn();
+            for (const answer of answers) {
+                if (answer instanceof Error) get.mockRejectedValueOnce(answer);
+                else get.mockResolvedValueOnce(answer);
+            }
+            mockClient.api.mockReturnValue({
+                select: vi.fn().mockReturnThis(),
+                top: vi.fn().mockReturnThis(),
+                get,
+            });
+        }
+
+        it("lists it as empty when Graph answers 404 itemNotFound", async () => {
+            mockTokenRefresh();
+            graphAnswers(graphFailure(404, "itemNotFound", "The resource could not be found."));
+
+            await expect(OneDriveAdapter.list(validConfig, "tenants/t1")).resolves.toEqual([]);
+            expect(mockClient.api).toHaveBeenCalledWith("/me/drive/root:/backups/tenants/t1:/children");
+        });
+
+        it("encodes each name of the path, so an escape or a # in a name stays inside that name", async () => {
+            mockTokenRefresh();
+            graphAnswers({ value: [] });
+
+            await OneDriveAdapter.list(validConfig, "tenants/t1/%2e%2e/a b#c");
+            expect(mockClient.api).toHaveBeenCalledWith("/me/drive/root:/backups/tenants/t1/%252e%252e/a%20b%23c:/children");
+        });
+
+        it("still fails when access to the folder is denied", async () => {
+            mockTokenRefresh();
+            graphAnswers(graphFailure(403, "accessDenied", "Access denied"));
+
+            await expect(OneDriveAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("Access denied");
+        });
+
+        it("still fails a missing root, so the storage numbers keep their last values", async () => {
+            mockTokenRefresh();
+            graphAnswers(graphFailure(404, "itemNotFound", "The resource could not be found."));
+
+            await expect(OneDriveAdapter.list(validConfig, "")).rejects.toThrow("The resource could not be found.");
+        });
+
+        it("still fails when a folder goes away while the listing reads it", async () => {
+            mockTokenRefresh();
+            graphAnswers(
+                { value: [{ name: "Job", folder: { childCount: 1 } }] },
+                graphFailure(404, "itemNotFound", "The resource could not be found."),
+            );
+
+            await expect(OneDriveAdapter.list(validConfig, "tenants/t1")).rejects.toThrow("The resource could not be found.");
         });
     });
 

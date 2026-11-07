@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
-import { saveNotificationEventsAction } from "@/app/actions/settings/notification-settings";
 import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
 import { SwitchList, SwitchRow } from "@/components/adapter/setting-switches";
 import { Button } from "@/components/ui/button";
@@ -19,6 +18,7 @@ import { logger } from "@/lib/logging/logger";
 import type { NotifyUserMode } from "@/lib/notifications/types";
 import { cn } from "@/lib/utils";
 import type { NotificationEventRow } from "@/services/notifications/notification-settings-service";
+import { useNotificationsApi } from "./notification-api";
 import { ChannelChecklist } from "./notification-channels";
 import { AREAS, REMINDER_CHOICES, everyText } from "./notification-words";
 
@@ -76,6 +76,7 @@ interface EventFormProps {
 
 function EventForm({ event, channels, defaultChannels, saving, onSavingChange, onClose, onTest }: EventFormProps) {
     const router = useRouter();
+    const api = useNotificationsApi();
     const [initial] = useState<Values>(() => ({
         enabled: event.enabled,
         own: event.channels !== null,
@@ -103,7 +104,7 @@ function EventForm({ event, channels, defaultChannels, saving, onSavingChange, o
         if (values.own && values.channels.length === 0) return setProblem("Pick at least one channel, or send it to the default channels.");
         onSavingChange(true);
         try {
-            const result = await saveNotificationEventsAction([event.id], {
+            const result = await api.saveEvents([event.id], {
                 enabled: values.enabled,
                 channels: values.own ? values.channels : null,
                 ...(event.notifyUser !== null ? { notifyUser: values.notifyUser } : {}),

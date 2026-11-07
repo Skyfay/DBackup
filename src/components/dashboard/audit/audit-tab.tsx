@@ -4,6 +4,8 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useState, type Re
 import { CalendarRange, ListFilter } from "lucide-react";
 import type { ColumnFiltersState } from "@tanstack/react-table";
 import { PickChip } from "@/components/dashboard/storage/explorer/explorer-controls";
+import { useTenantColumns } from "@/components/tenant/tenant-column";
+import { TENANT_COLUMN_ID, withTenantColumn } from "@/components/tenant/tenant-rows";
 import { useTimelineFormat } from "@/components/dashboard/storage/explorer/timeline-cells";
 import { DataTable } from "@/components/ui/data-table";
 import { QuickFilter } from "@/components/ui/quick-filter";
@@ -18,6 +20,9 @@ import { AuditDetails } from "./audit-details";
 import { auditFilters } from "./audit-filters";
 import { AuditStrip } from "./audit-strip";
 import { AuditTimeline, type AuditPick } from "./audit-timeline";
+
+/** The tenant whose log keeps an entry, for the Tenant column of All tenants. */
+const tenantOfEntry = (row: AuditRow) => row.tenantId;
 
 /** What the page around the list can start, like Export CSV beside the tabs. */
 export interface AuditTabHandle {
@@ -43,7 +48,7 @@ interface RecordFilter {
 /** The filters of the table, the quick filter and a record as the query of a request, without the period. */
 function filterParams(columnFilters: ColumnFiltersState, quick: AuditQuick, record: RecordFilter | null): URLSearchParams {
     const params = new URLSearchParams();
-    for (const id of ["who", "area", "action"] as const) {
+    for (const id of ["who", "area", "action", TENANT_COLUMN_ID] as const) {
         for (const value of filterValues(columnFilters, id)) params.append(id, value);
     }
     const search = filterText(columnFilters, "what");
@@ -60,16 +65,17 @@ interface AuditTabProps {
     cards: boolean;
     /** May sign people out from the panel of a sign-in. */
     canSignOut: boolean;
-    /** Only a SuperAdmin signs out a SuperAdmin. */
-    viewerSuperAdmin: boolean;
+    /** Only a platform admin signs out a platform admin. */
+    viewerPlatformAdmin: boolean;
 }
 
 /**
  * The audit log: the numbers of the last 30 days, then every entry as a sentence with who did it,
  * the area and where from, a page at a time from the server. A click opens what changed and the
  * entries around it, the timeline above the list shows who did what by day and picks the entries.
+ * In All tenants the entries of every tenant, with a Tenant column and filter.
  */
-export function AuditTab({ ref, view, cards, canSignOut, viewerSuperAdmin }: AuditTabProps) {
+export function AuditTab({ ref, view, cards, canSignOut, viewerPlatformAdmin }: AuditTabProps) {
     const format = useTimelineFormat();
     const { timezone } = useDateFormatter();
     const [quick, setQuick] = useState<AuditQuick>("all");
@@ -80,6 +86,8 @@ export function AuditTab({ ref, view, cards, canSignOut, viewerSuperAdmin }: Aud
     const [details, setDetails] = useState<{ row: AuditRow; open: boolean } | null>(null);
     const [now] = useState(() => Date.now());
     const timeline = view === "timeline" && !cards;
+    // The Tenant column and filter of All tenants. The server pages the list, so the filter offers every tenant.
+    const tenantColumns = useTenantColumns(tenantOfEntry);
 
     /** The whole query of the list: the filters, and the period or what the timeline picked. */
     const queryOf = useCallback((columnFilters: ColumnFiltersState) => {
@@ -134,8 +142,8 @@ export function AuditTab({ ref, view, cards, canSignOut, viewerSuperAdmin }: Aud
     }), [queryOf, columnFilters]);
 
     const open = useCallback((row: AuditRow) => setDetails({ row, open: true }), []);
-    const columns = useMemo(() => auditColumns({ now }), [now]);
-    const filters = useMemo(() => auditFilters(page), [page]);
+    const columns = useMemo(() => withTenantColumn(auditColumns({ now }), tenantColumns.column), [now, tenantColumns.column]);
+    const filters = useMemo(() => auditFilters(page, tenantColumns.filter), [page, tenantColumns.filter]);
     const counts = page?.facets.quick;
     const timelineQuery = useMemo(() => filterParams(columnFilters, quick, record).toString(), [columnFilters, quick, record]);
 
@@ -211,7 +219,7 @@ export function AuditTab({ ref, view, cards, canSignOut, viewerSuperAdmin }: Aud
                     setDetails((current) => current && { ...current, open: false });
                 }}
                 canSignOut={canSignOut}
-                viewerSuperAdmin={viewerSuperAdmin}
+                viewerPlatformAdmin={viewerPlatformAdmin}
             />
         </div>
     );

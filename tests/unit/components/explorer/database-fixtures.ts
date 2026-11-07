@@ -1,7 +1,8 @@
 import { vi } from "vitest";
 import type {
-    DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase, ServersOverview, VersionPeriod,
+    DatabaseOverview, DatabasePage, DatabaseRun, DatabaseRuns, DatabaseRunsData, DatabaseSort, ExplorerDatabase, ServersOverview, VersionPeriod,
 } from "@/services/databases/database-explorer-types";
+import { pageOfDatabases, summarize } from "@/services/databases/database-list-model";
 import type { ExplorerBackup } from "@/services/storage/explorer-types";
 
 const HOUR = 3_600_000;
@@ -92,11 +93,47 @@ export function wire(runs: DatabaseRuns): DatabaseRunsData {
     };
 }
 
+/**
+ * A page of the Databases tab as the server answers it, from the overview with the rules of the
+ * server, so the tests of the page read what the route would send.
+ */
+export function pageOf(data: DatabaseOverview, params: URLSearchParams): DatabasePage {
+    const serverList = data.servers.map(({ version: _version, versionSince: _since, previousVersion: _previous, ...brief }) => brief);
+    const { rows, total, facets } = pageOfDatabases(data.databases, serverList, data.coverage, {
+        page: Number(params.get("page") ?? 1),
+        pageSize: Number(params.get("pageSize") ?? 25),
+        sort: (params.get("sort") ?? undefined) as DatabaseSort | undefined,
+        desc: params.get("order") !== "asc",
+        search: params.get("search") ?? undefined,
+        serverIds: params.getAll("server"),
+        engines: params.getAll("engine"),
+        jobIds: params.getAll("job"),
+        states: params.getAll("state"),
+        tenantIds: params.getAll("tenant"),
+    }, true);
+    const shown = new Set(rows.map((row) => row.serverId));
+    const enabled = data.coverage ? data.jobs.filter((job) => job.enabled) : [];
+    return {
+        rows,
+        total,
+        servers: data.servers.filter((server) => shown.has(server.id)),
+        jobs: data.coverage ? data.jobs.filter((job) => shown.has(job.serverId)) : [],
+        coverage: data.coverage,
+        serverList,
+        jobOptions: enabled.map((job) => ({ id: job.id, name: job.name })),
+        facets,
+        summary: summarize(data),
+        enabledJobs: enabled.length,
+        keyStores: [...new Set(data.databases.filter((database) => database.kind === "instance").map((database) => data.servers.find((server) => server.id === database.serverId)?.adapterId ?? ""))],
+    };
+}
+
 /** Answers the routes of the Database Explorer, the tables and rows of a server included. */
 export function serve({ data = overview, runs, tables, backup }: { data?: DatabaseOverview; runs?: DatabaseRuns; tables?: unknown; backup?: ExplorerBackup } = {}) {
     fetchMock.mockReset();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
         if (url === "/api/databases") return json({ success: true, data });
+        if (url.startsWith("/api/databases/list?")) return json({ success: true, data: pageOf(data, new URLSearchParams(url.split("?")[1])) });
         if (url === "/api/databases/read") return json({ success: true, data });
         if (url.startsWith("/api/databases/runs")) return json({ success: true, data: wire(runs ?? { runs: [], versionChanges: [], planned: [] }) });
         if (url === "/api/databases/servers") return json({ success: true, data: serversOverview });

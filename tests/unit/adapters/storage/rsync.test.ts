@@ -1,9 +1,12 @@
 import { EventEmitter } from "events";
+import { constants } from "fs";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // --- Hoisted mocks ---
 // child_process functions use callbacks, so promisify works when the mock calls its callback
-const { mockExecCb, mockExecFileCb, mockSpawn, mockRsyncExecute, mockFsWriteFile, mockFsUnlink, mockFsMkdir, mockFsReadFile } = vi.hoisted(() => ({
+const { mockExecCb, mockExecFileCb, mockSpawn, mockRsyncExecute, mockFsWriteFile, mockFsUnlink, mockFsMkdir, mockFsReadFile, mockFsOpen, mockFsMkdtemp, mockFsRm } = vi.hoisted(() => ({
+    mockFsMkdtemp: vi.fn(async (prefix: string) => `${prefix}Q7xZ2b`),
+    mockFsRm: vi.fn().mockResolvedValue(undefined),
     mockExecCb: vi.fn(),
     mockExecFileCb: vi.fn(),
     mockSpawn: vi.fn(),
@@ -14,6 +17,8 @@ const { mockExecCb, mockExecFileCb, mockSpawn, mockRsyncExecute, mockFsWriteFile
     mockFsUnlink: vi.fn().mockResolvedValue(undefined),
     mockFsMkdir: vi.fn().mockResolvedValue(undefined),
     mockFsReadFile: vi.fn().mockResolvedValue("file content"),
+    // The file a fallback rsync of read() wrote, read through a handle.
+    mockFsOpen: vi.fn(),
 }));
 
 // child_process mock - exec/execFile call their last-arg callback so promisify works
@@ -53,11 +58,16 @@ vi.mock("fs/promises", () => ({
         unlink: (...args: unknown[]) => mockFsUnlink(...args),
         mkdir: (...args: unknown[]) => mockFsMkdir(...args),
         readFile: (...args: unknown[]) => mockFsReadFile(...args),
+        open: (...args: unknown[]) => mockFsOpen(...args),
+        mkdtemp: (...args: unknown[]) => mockFsMkdtemp(...(args as [string])),
+        rm: (...args: unknown[]) => mockFsRm(...args),
     },
     writeFile: (...args: unknown[]) => mockFsWriteFile(...args),
     unlink: (...args: unknown[]) => mockFsUnlink(...args),
     mkdir: (...args: unknown[]) => mockFsMkdir(...args),
     readFile: (...args: unknown[]) => mockFsReadFile(...args),
+    mkdtemp: (...args: unknown[]) => mockFsMkdtemp(...(args as [string])),
+    rm: (...args: unknown[]) => mockFsRm(...args),
 }));
 
 vi.mock("os", () => ({
@@ -77,7 +87,9 @@ vi.mock("@/lib/logging/errors", () => ({
 
 // Import AFTER mocks so promisify captures the mock functions
 import { Minimatch } from "minimatch";
+import { dialedHosts } from "@/lib/adapters/dialed-hosts";
 import { RsyncAdapter } from "@/lib/adapters/storage/rsync";
+import { FileTooLargeError, SIDECAR_READ_LIMIT } from "@/lib/adapters/storage/common/read-limit";
 
 // --- Helpers for default behaviors ---
 function sshpassFound() {
@@ -344,6 +356,94 @@ describe("RsyncAdapter", () => {
 
             expect(onLog).toHaveBeenCalledWith(expect.stringContaining("backup.example.com"), "info", "storage");
         });
+
+        it("never recreates a link of the server here, after the options of the connection", async () => {
+            // Without --no-links, -a lays a link to /etc/shadow into the temp file, and every
+            // reader of the download follows it into a file of the DBackup server.
+            await RsyncAdapter.download({ ...agentConfig, options: "-a -z" }, "Job/backup.tar", "/tmp/out.tar");
+
+            const args = rsyncArgs();
+            for (const flag of ["--no-links", "--no-devices", "--no-specials", "--no-owner", "--no-group"]) {
+                expect(args.indexOf(flag), flag).toBeGreaterThan(args.lastIndexOf("-a"));
+                expect(args.indexOf(flag), flag).toBeLessThan(args.indexOf("--"));
+            }
+        });
+    });
+
+    describe("a remote path that names a folder", () => {
+        // A customer owns the server, and `-a` brings `-r` along. A download or a read that
+        // pointed at a folder would otherwise copy the whole folder into the temp folder.
+        it("transfers one file at most in a download, after the options of the connection", async () => {
+            await RsyncAdapter.download({ ...agentConfig, options: "-a -r" }, "Job/backup.tar", "/tmp/out.tar");
+
+            const args = rsyncArgs();
+            for (const flag of ["--no-recursive", "--no-dirs"]) {
+                expect(args.indexOf(flag), flag).toBeGreaterThan(args.lastIndexOf("-r"));
+                expect(args.indexOf(flag), flag).toBeGreaterThan(args.lastIndexOf("-a"));
+                expect(args.indexOf(flag), flag).toBeLessThan(args.indexOf("--"));
+            }
+        });
+
+        it("transfers one file at most in the fallback of a read, and reads nothing when it skipped a folder", async () => {
+            mockExecFileCb
+                .mockImplementationOnce((...args: unknown[]) => {
+                    const cb = args[args.length - 1] as (err: Error) => void;
+                    cb(new Error("head: error reading: Is a directory"));
+                })
+                .mockImplementation((...args: unknown[]) => {
+                    const cb = args[args.length - 1] as (err: null, result: { stdout: string }) => void;
+                    cb(null, { stdout: "" });
+                });
+            // rsync skipped the folder and wrote nothing.
+            mockFsOpen.mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+
+            await expect(RsyncAdapter.read!(agentConfig, "Job/backup.tar.meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
+            expect(rsyncArgs()).toEqual(expect.arrayContaining(["--no-recursive", "--no-dirs"]));
+        });
+    });
+
+    describe("a local rsync without --no-links (module isolation)", () => {
+        /** An rsync that refuses the flags of a collection, and nothing else of execFile. */
+        function rsyncRefusesFlags() {
+            mockExecFileCb.mockImplementation((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: Error | null, result?: { stdout: string }) => void;
+                if (args[0] === "rsync") cb(new Error("rsync: --no-links: unknown option"));
+                else cb(new Error("head: not found"));
+            });
+        }
+
+        it("fails a download rather than running with -a alone", async () => {
+            vi.resetModules();
+            rsyncRefusesFlags();
+            const { RsyncAdapter: freshRsync } = await import("@/lib/adapters/storage/rsync");
+
+            expect(await freshRsync.download(agentConfig, "Job/backup.tar", "/tmp/out.tar")).toBe(false);
+            expect(rsyncRuns()).toHaveLength(0);
+        });
+
+        it("fails a directory collection rather than running with -a alone", async () => {
+            vi.resetModules();
+            rsyncRefusesFlags();
+            const { RsyncAdapter: freshRsync } = await import("@/lib/adapters/storage/rsync");
+            // The listing goes over ssh, which answers here.
+            mockExecFileCb.mockImplementation((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: Error | null, result?: { stdout: string }) => void;
+                if (args[0] === "rsync") cb(new Error("rsync: --no-links: unknown option"));
+                else cb(null, { stdout: "a.txt\t5\t1700000000.0\tf\t\n" });
+            });
+
+            await expect(freshRsync.downloadDirectory!(agentConfig, "Job", "/local/job")).rejects.toThrow(/--no-links/);
+            expect(rsyncRuns()).toHaveLength(0);
+        });
+
+        it("reads nothing through the fallback rsync", async () => {
+            vi.resetModules();
+            rsyncRefusesFlags();
+            const { RsyncAdapter: freshRsync } = await import("@/lib/adapters/storage/rsync");
+
+            expect(await freshRsync.read!(agentConfig, "Job/backup.tar.meta.json")).toBeNull();
+            expect(rsyncRuns()).toHaveLength(0);
+        });
     });
 
     // ===== read() =====
@@ -370,11 +470,47 @@ describe("RsyncAdapter", () => {
                     cb(null, { stdout: "" });
                 });
 
-            mockFsReadFile.mockResolvedValue("fallback file content");
+            const content = Buffer.from("fallback file content");
+            mockFsOpen.mockResolvedValue({
+                stat: vi.fn().mockResolvedValue({ size: content.length, isFile: () => true }),
+                readFile: vi.fn().mockResolvedValue(content),
+                close: vi.fn().mockResolvedValue(undefined),
+            });
 
             const result = await RsyncAdapter.read!(agentConfig, "Job/meta.json");
 
             expect(result).toBe("fallback file content");
+            // rsync leaves a file past the limit of the read out instead of transferring it.
+            expect(rsyncOption("max-size")).toBe(String(SIDECAR_READ_LIMIT));
+            // And a link of the server too, and the file it wrote opens without following one.
+            expect(rsyncArgs()).toContain("--no-links");
+            expect(Number(mockFsOpen.mock.calls[0][1]) & constants.O_NOFOLLOW).toBe(constants.O_NOFOLLOW);
+        });
+
+        it("asks the server for one byte past the limit at most and refuses a file that has it", async () => {
+            sshSucceeds("x".repeat(11));
+
+            await expect(RsyncAdapter.read!(agentConfig, "Job/meta.json", { maxBytes: 10 })).rejects.toBeInstanceOf(FileTooLargeError);
+            const commands = mockExecFileCb.mock.calls.filter(([binary]) => binary === "ssh").map(([, args]) => (args as string[]).at(-1));
+            expect(commands).toContain("head -c 11 '/backups/Job/meta.json'");
+            // Never tried again as a transfer no limit bounds.
+            expect(rsyncRuns()).toHaveLength(0);
+        });
+
+        it("refuses a file the fallback rsync left out by its size", async () => {
+            mockExecFileCb
+                .mockImplementationOnce((...args: unknown[]) => {
+                    const cb = args[args.length - 1] as (err: Error) => void;
+                    cb(new Error("head: not found"));
+                })
+                .mockImplementation((...args: unknown[]) => {
+                    const cb = args[args.length - 1] as (err: null, result: { stdout: string }) => void;
+                    cb(null, { stdout: "" });
+                });
+            rsyncSucceeds();
+            mockFsOpen.mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+
+            await expect(RsyncAdapter.read!(agentConfig, "Job/meta.json")).rejects.toBeInstanceOf(FileTooLargeError);
         });
 
         it("returns null when both SSH and rsync fail", async () => {
@@ -409,6 +545,17 @@ describe("RsyncAdapter", () => {
             expect(result).toHaveLength(2);
             expect(result[0].name).toBe("backup.sql");
             expect(result[0].size).toBe(1024);
+        });
+
+        it.each([
+            ["./backups", "backups/tenants/t1/Job/one.tar"],
+            ["/srv//backups/", "/srv/backups/tenants/t1/Job/one.tar"],
+        ])("lists the paths below the folder setting %s as typed, which find prints normalised", async (pathPrefix, printed) => {
+            sshSucceeds(`${printed}\t1024\t1700000000.0`);
+
+            const result = await RsyncAdapter.list!({ ...agentConfig, pathPrefix }, "tenants/t1");
+
+            expect(result.map((file) => file.path)).toEqual(["tenants/t1/Job/one.tar"]);
         });
 
         it("returns empty array when SSH returns no output", async () => {
@@ -449,6 +596,46 @@ describe("RsyncAdapter", () => {
 
             expect(mockFsWriteFile).toHaveBeenCalled();
             expect(mockFsUnlink).toHaveBeenCalled();
+        });
+    });
+
+    describe("list() of a subfolder nothing was written to yet", () => {
+        /** The command the last SSH call ran on the server, the last argument of ssh. */
+        const lastRemoteCommand = () => {
+            const args = mockExecFileCb.mock.calls.at(-1)![1] as string[];
+            return args[args.length - 1];
+        };
+
+        it("ends the command before find when the folder is not there, which lists it as empty", async () => {
+            // A missing folder makes the test in front succeed, so the server prints nothing.
+            sshSucceeds("");
+
+            const result = await RsyncAdapter.list!(agentConfig, "tenants/t1");
+
+            expect(result).toEqual([]);
+            expect(lastRemoteCommand()).toMatch(/^\[ ! -e '\/backups\/tenants\/t1' \] \|\| find '\/backups\/tenants\/t1' /);
+        });
+
+        it("quotes the folder in the test like in the find", async () => {
+            sshSucceeds("");
+
+            await RsyncAdapter.list!(agentConfig, "it's");
+
+            expect(lastRemoteCommand()).toMatch(/^\[ ! -e '\/backups\/it'\\''s' \] \|\| find '\/backups\/it'\\''s' /);
+        });
+
+        it("still fails when the server cannot be reached or refuses the login", async () => {
+            sshFails("Permission denied (publickey).");
+
+            await expect(RsyncAdapter.list!(agentConfig, "tenants/t1")).rejects.toThrow("Permission denied (publickey).");
+        });
+
+        it("puts no test in front of the root, so a missing root still fails the find", async () => {
+            sshSucceeds("");
+
+            await RsyncAdapter.list!(agentConfig, "");
+
+            expect(lastRemoteCommand()).toMatch(/^find '\/backups' /);
         });
     });
 
@@ -500,6 +687,18 @@ describe("RsyncAdapter", () => {
             expect(result.success).toBe(true);
             expect(mockFsWriteFile).toHaveBeenCalled();
             expect(mockFsUnlink).toHaveBeenCalled();
+        });
+
+        it("writes the key and the test file only as new files, the test file in a folder of its own that it removes", async () => {
+            const result = await RsyncAdapter.test!(keyConfig);
+
+            expect(result.success).toBe(true);
+            for (const [, , options] of mockFsWriteFile.mock.calls) expect(options).toEqual(expect.objectContaining({ flag: "wx" }));
+            const [keyPath] = mockFsWriteFile.mock.calls[0];
+            expect(String(keyPath)).toMatch(/^\/tmp\/rsync-key-[0-9a-f-]{36}$/);
+            const folder = await mockFsMkdtemp.mock.results[0].value;
+            expect(String(mockFsWriteFile.mock.calls[1][0]).startsWith(`${folder}/connection-test-rsync-`)).toBe(true);
+            expect(mockFsRm).toHaveBeenCalledWith(folder, expect.objectContaining({ recursive: true }));
         });
 
         it("returns permission denied message when mkdir reports permission denied", async () => {
@@ -608,6 +807,9 @@ describe("RsyncAdapter", () => {
             expect(result.bytes).toBe(300);
             expect(result.entries.map((e) => e.relativePath).sort()).toEqual(["a.txt", "sub/b.txt"]);
             expect(mockFsMkdir).toHaveBeenCalledWith("/local/job", { recursive: true });
+            // A directory source transfers folders on purpose.
+            expect(rsyncArgs()).not.toContain("--no-dirs");
+            expect(rsyncArgs()).not.toContain("--no-recursive");
         });
 
         it("returns an empty result without invoking rsync when the directory has no files", async () => {
@@ -707,9 +909,22 @@ describe("RsyncAdapter", () => {
             const fromList = rsyncOption("files-from");
             expect(fromList).toMatch(/^\/tmp\/rsync-files-/);
             expect(rsyncArgs()).toContain("--from0");
-            expect(mockFsWriteFile).toHaveBeenCalledWith(fromList, "a.txt\0odd dir/[weird]*.txt\0", { mode: 0o600 });
+            expect(mockFsWriteFile).toHaveBeenCalledWith(fromList, "a.txt\0odd dir/[weird]*.txt\0", { mode: 0o600, flag: "wx" });
             // rsync's own excludes would read the patterns by other rules, so none are passed.
             expect(rsyncArgs().some((arg) => arg.startsWith("--exclude"))).toBe(false);
+        });
+
+        it("keeps devices, owners, groups and links of the server out of the collection, after the options of the connection", async () => {
+            // A link still reaches the index, from the target the listing names.
+            sshSucceeds([found("a.txt"), found("cert.pem", 0).replace(/\tf\t$/, "\tl\t../archive/cert1.pem")].join("\n"));
+
+            const result = await RsyncAdapter.downloadDirectory!({ ...agentConfig, options: "-a -z" }, "Job", "/local/job");
+
+            const args = rsyncArgs();
+            for (const flag of ["--no-devices", "--no-specials", "--no-owner", "--no-group", "--no-links"]) {
+                expect(args.indexOf(flag), flag).toBeGreaterThan(args.lastIndexOf("-a"));
+            }
+            expect(result.entries.find((e) => e.relativePath === "cert.pem")?.linkTarget).toBe("../archive/cert1.pem");
         });
 
         it("removes the list after the transfer", async () => {
@@ -741,6 +956,24 @@ describe("RsyncAdapter", () => {
             expect(summary, "expected a summary line").toBeTruthy();
             expect(summary![0]).toContain("2 file(s)");
             expect(summary![3]).toContain("node_modules/**");
+        });
+
+        it("refuses a listed name that climbs out of the collection folder, so neither rsync nor the index gets it", async () => {
+            // The server answers `find` with whatever it likes: a name with `..` parts would name
+            // a file of the server DBackup runs on once it is joined onto the collection folder.
+            sshSucceeds([
+                found("a.txt"),
+                found("../../../../app/data/dbackup.db"),
+                found("sub/../../escape.txt"),
+                found("bad\0name"),
+                found("link-out", 0).replace(/\tf\t$/, "\tl\t/etc"),
+            ].join("\n"));
+
+            const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
+
+            expect(result.entries.map((e) => e.relativePath).sort()).toEqual(["a.txt", "link-out"]);
+            expect(copiedBy([]).sort()).toEqual(["a.txt", "link-out"]);
+            expect(result.failures.map((f) => f.path)).toEqual(["../../../../app/data/dbackup.db", "sub/../../escape.txt", "bad\\u0000name"]);
         });
     });
 
@@ -1388,6 +1621,16 @@ describe("RsyncAdapter", () => {
             expect((args as string[]).slice(-3)).toEqual(["--", "/tmp/a;b|c d.sql", "admin@backup.example.com:/backups/Job;x/a b.sql"]);
         });
 
+        it("puts a Windows login with an @ in front of the configured host, which rsync and OpenSSH read after the last @", async () => {
+            await RsyncAdapter.upload({ ...agentConfig, username: "alice@corp.local" }, "/tmp/a.sql", "Job/a.sql");
+
+            const target = rsyncArgs().at(-1)!;
+            expect(target).toBe("alice@corp.local@backup.example.com:/backups/Job/a.sql");
+            const login = target.slice(0, target.indexOf(":"));
+            expect(login.slice(login.lastIndexOf("@") + 1)).toBe(agentConfig.host);
+            expect(dialedHosts("rsync", { host: agentConfig.host, username: "alice@corp.local" })).toEqual([agentConfig.host]);
+        });
+
         it("passes additional options as they were written", async () => {
             // Taken apart, a combined -avz became the option --avz, which rsync refuses.
             await RsyncAdapter.upload({ ...agentConfig, options: "-avz --bwlimit=1000" }, "/tmp/a", "Job/a");
@@ -1427,7 +1670,78 @@ describe("RsyncAdapter", () => {
         });
     });
 
+    // ===== the login name =====
 
+    describe("the username of the login", () => {
+        it("keeps a plain login name in the remote spec as before", async () => {
+            await RsyncAdapter.upload({ ...agentConfig, username: "backup-01.ops_x" }, "/tmp/a.sql", "Job/a.sql");
 
+            const [, args] = mockSpawn.mock.calls.at(-1)!;
+            expect((args as string[]).at(-1)).toBe("backup-01.ops_x@backup.example.com:/backups/Job/a.sql");
+        });
 
+        it("runs neither ssh nor rsync with a name that would change the host or read as an option", async () => {
+            for (const username of ["evil@10.0.0.5:22", "a:b", "a/b", "back up", "-oProxyCommand=x", "tab\there"]) {
+                mockSpawn.mockClear();
+                mockExecFileCb.mockClear();
+
+                const uploaded = await RsyncAdapter.upload({ ...agentConfig, username }, "/tmp/a.sql", "Job/a.sql");
+                const tested = await RsyncAdapter.test!({ ...agentConfig, username });
+
+                expect(uploaded, username).toBe(false);
+                expect(tested.success, username).toBe(false);
+                expect(mockSpawn, username).not.toHaveBeenCalled();
+                const sshCalls = mockExecFileCb.mock.calls.filter(([binary]) => binary === "ssh" || binary === "sshpass");
+                expect(sshCalls, username).toEqual([]);
+            }
+        });
+    });
+
+    // ===== a folder or a job that starts with a hyphen =====
+
+    describe("a folder or a job whose name starts with -", () => {
+        const noPrefix = { ...agentConfig, pathPrefix: "" };
+        /** Every command SSH ran on the server, the last argument of each ssh. */
+        const remoteCommands = () => mockExecFileCb.mock.calls
+            .filter(([binary]) => binary === "ssh")
+            .map(([, args]) => (args as string[]).at(-1)!);
+
+        it("never hands rsync a remote path that reads as an option", async () => {
+            await RsyncAdapter.upload(noPrefix, "/tmp/a.sql", "-nightly/a.tar");
+
+            expect(rsyncArgs().at(-1)).toBe("admin@backup.example.com:./-nightly/a.tar");
+            expect(remoteCommands()).toContain("mkdir -p './-nightly'");
+        });
+
+        it("lists, reads, browses and deletes it as a path, never as an option of find, cat or rm", async () => {
+            sshSucceeds("./-nightly/a.tar\t10\t1700000000\tf\t\n");
+            const files = await RsyncAdapter.list(noPrefix, "-nightly");
+            expect(files.map((file) => file.path)).toEqual(["-nightly/a.tar"]);
+
+            sshSucceeds("{}");
+            await RsyncAdapter.read!(noPrefix, "-nightly/a.tar.meta.json");
+            await RsyncAdapter.browseDirectories!(noPrefix, "-nightly");
+            await RsyncAdapter.delete(noPrefix, "-nightly/a.tar");
+
+            const commands = remoteCommands();
+            expect(commands).toContainEqual(expect.stringMatching(/^\[ ! -e '\.\/-nightly' \] \|\| find '\.\/-nightly' /));
+            expect(commands).toContain(`head -c ${SIDECAR_READ_LIMIT + 1} './-nightly/a.tar.meta.json'`);
+            expect(commands).toContain("find './-nightly' -mindepth 1 -maxdepth 1 -type d 2>/dev/null");
+            expect(commands).toContain("rm -f './-nightly/a.tar'");
+        });
+
+        it("keeps an absolute folder and one from the home folder as they are", async () => {
+            await RsyncAdapter.upload(agentConfig, "/tmp/a.sql", "-nightly/a.tar");
+            expect(rsyncArgs().at(-1)).toBe("admin@backup.example.com:/backups/-nightly/a.tar");
+
+            await RsyncAdapter.upload({ ...agentConfig, pathPrefix: "~/backups" }, "/tmp/a.sql", "Job/a.tar");
+            expect(rsyncArgs().at(-1)).toBe("admin@backup.example.com:~/backups/Job/a.tar");
+        });
+
+        it("lists a relative folder setting under the same paths as before", async () => {
+            sshSucceeds("./backups/Job/a.tar\t10\t1700000000\tf\t\n");
+            const files = await RsyncAdapter.list({ ...agentConfig, pathPrefix: "backups" }, "Job");
+            expect(files.map((file) => file.path)).toEqual(["Job/a.tar"]);
+        });
+    });
 });

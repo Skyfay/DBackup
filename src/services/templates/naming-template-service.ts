@@ -26,7 +26,7 @@ export async function createNamingTemplate(input: {
   pattern: string;
   isDefault?: boolean;
 }) {
-  const existing = await prisma.namingTemplate.findUnique({
+  const existing = await prisma.namingTemplate.findFirst({
     where: { name: input.name },
   });
   if (existing) {
@@ -74,7 +74,7 @@ export async function updateNamingTemplate(
   }
 
   if (input.name && input.name !== template.name) {
-    const existing = await prisma.namingTemplate.findUnique({
+    const existing = await prisma.namingTemplate.findFirst({
       where: { name: input.name },
     });
     if (existing) {

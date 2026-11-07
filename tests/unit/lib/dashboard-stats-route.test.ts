@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PermissionError, ApiKeyError } from "@/lib/logging/errors";
 import type { AuthContext } from "@/lib/auth/access-control";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 vi.mock("@/lib/logging/logger", () => ({
   logger: {
@@ -39,9 +40,11 @@ function apiKeyContext(permissions: string[]): AuthContext {
   return {
     userId: "user-1",
     permissions,
-    isSuperAdmin: false,
+    isPlatformAdmin: false,
     authMethod: "apikey",
     apiKeyId: "key-1",
+    tenantId: HOME_TENANT_ID,
+    allTenants: false,
   };
 }
 
@@ -61,7 +64,7 @@ describe("GET /api/dashboard/stats", () => {
     mockHeaders.mockReturnValue(new Headers());
     // Same rule as the real guard, so the tests prove which permission the route asks for.
     mockCheckPermissionWithContext.mockImplementation((ctx: AuthContext, permission: string) => {
-      if (!ctx.isSuperAdmin && !ctx.permissions.includes(permission)) {
+      if (!ctx.isPlatformAdmin && !ctx.permissions.includes(permission)) {
         throw new PermissionError(permission);
       }
     });

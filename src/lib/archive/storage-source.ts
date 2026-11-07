@@ -14,15 +14,16 @@
 import fs from "fs/promises";
 import crypto from "crypto";
 import path from "path";
-import prisma from "@/lib/prisma";
-import { registry } from "@/lib/core/registry";
 import { AdapterConfig as AdapterConfigType, StorageAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
+import { openDestination } from "@/services/sharing/destination-access";
 import { getTempDir } from "@/lib/temp-dir";
-import { NotFoundError, wrapError } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { localFileSource } from "./sources";
+import { byteLimit, DamagedBackupError } from "./limits";
+import { PassThrough, pipeline } from "stream";
 import { ArchiveByteSource } from "./types";
+import { reserveTempSpace } from "@/services/restore/temp-space";
 
 const log = logger.child({ module: "archive/storage-source" });
 
@@ -33,21 +34,44 @@ export interface ManagedArchiveSource {
     dispose: () => Promise<void>;
 }
 
-/** Resolves a storage adapter config row into its implementation and decrypted config. */
+/**
+ * Resolves a storage connection into its implementation and decrypted config, as the tenant that
+ * runs now sees it, see `src/services/sharing/destination-access.ts`.
+ */
 export async function resolveStorageAdapter(
-    configId: string
+    configId: string,
+    /** The tenant whose view of the destination to open, the tenant of the code that runs when left out. */
+    tenantId?: string | null
 ): Promise<{ adapter: StorageAdapter; config: AdapterConfigType }> {
-    const row = await prisma.adapterConfig.findUnique({ where: { id: configId } });
-    if (!row || row.type !== "storage") {
-        throw new NotFoundError("Storage adapter", configId);
-    }
+    const { adapter, config } = await openDestination(configId, tenantId);
+    return { adapter, config };
+}
 
-    const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
-    if (!adapter) {
-        throw new NotFoundError("Storage adapter implementation", row.adapterId);
+/**
+ * Refuses a byte range that is none: a bound that is no whole number of at least 0, like NaN from
+ * an index field that held a string, or an end before the start by more than the one byte of an
+ * empty range. NaN compares false with every number, so such a range would cap nothing.
+ */
+export function assertRange(start: number, end: number): void {
+    const whole = (value: number) => typeof value === "number" && Number.isSafeInteger(value);
+    if (!whole(start) || !whole(end) || start < 0 || end < start - 1) {
+        throw new DamagedBackupError("a read asked for a byte range that is none");
     }
+}
 
-    return { adapter, config: (await resolveAdapterConfig(row)) as AdapterConfigType };
+/**
+ * A ranged stream of the destination that fails with a `DamagedBackupError` at the first byte past
+ * the range it asked for. A server that ignores `Range` sends the whole file from its start, so
+ * without this a reader would take the wrong bytes, and as many as the server sends.
+ *
+ * @throws DamagedBackupError for a range that is none, see `assertRange`. The stream is left to
+ *   the caller, who destroys it.
+ */
+export function cappedRange(stream: NodeJS.ReadableStream, start: number, end: number): NodeJS.ReadableStream {
+    assertRange(start, end);
+    const out = new PassThrough();
+    pipeline(stream, byteLimit(Math.max(0, end - start + 1), "a range the destination sent"), out, () => { /* handled by the caller via `out` */ });
+    return out;
 }
 
 /**
@@ -64,14 +88,27 @@ export async function openStorageArchiveSource(
     remotePath: string,
     size?: number
 ): Promise<ManagedArchiveSource> {
-    const fetchWhole = async (): Promise<{ file: string; source: ArchiveByteSource }> => {
+    /**
+     * Downloads the archive into the temporary folder. Where its size is known, the copy is
+     * promised its space first like a staged entry of a restore (`reserveTempSpace`), so a restore
+     * that falls back to it is refused rather than filling the folder every tenant shares. The
+     * promise is given back once the copy is removed.
+     */
+    const fetchWhole = async (): Promise<WholeCopy> => {
+        const space = size !== undefined ? await reserveTempSpace([size], 1) : undefined;
         const tempFile = path.join(getTempDir(), `archive-fetch-${process.pid}-${crypto.randomUUID()}-${path.basename(remotePath)}`);
-        const downloaded = await adapter.download(config, remotePath, tempFile);
-        if (!downloaded) {
+        const remove = async () => {
             await fs.unlink(tempFile).catch(() => { });
-            throw new Error(`Failed to download archive '${remotePath}' from ${adapter.id}`);
+            space?.release();
+        };
+        try {
+            const downloaded = await adapter.download(config, remotePath, tempFile);
+            if (!downloaded) throw new Error(`Failed to download archive '${remotePath}' from ${adapter.id}`);
+            return { source: await localFileSource(tempFile), remove };
+        } catch (error: unknown) {
+            await remove();
+            throw error;
         }
-        return { file: tempFile, source: await localFileSource(tempFile) };
     };
 
     if (adapter.downloadRange) {
@@ -80,29 +117,41 @@ export async function openStorageArchiveSource(
         // an HTTP destination may refuse Range requests. Rather than failing the restore,
         // the first ranged read that errors falls back to fetching the archive once - the
         // behaviour of an adapter without ranges at all.
-        let fallback: { file: string; source: ArchiveByteSource } | null = null;
+        //
+        // One promise for every read. Reads run side by side, and each that fails would
+        // otherwise start a download of its own before the first one finished, each a whole
+        // copy of the archive in the temporary folder, of which dispose removed only the last.
+        let fallback: Promise<WholeCopy> | undefined;
 
         return {
             ranged: true,
             source: {
                 size,
                 read: async (start, end) => {
-                    if (fallback) return fallback.source.read(start, end);
+                    // Before the destination is asked and outside the fallback below, so a range
+                    // that is none fails the read instead of fetching the whole archive.
+                    assertRange(start, end);
+                    if (fallback) return (await fallback).source.read(start, end);
                     try {
-                        return await adapter.downloadRange!(config, remotePath, start, end);
+                        return cappedRange(await adapter.downloadRange!(config, remotePath, start, end), start, end);
                     } catch (error: unknown) {
-                        log.warn(
-                            "Ranged read failed, falling back to fetching the whole archive",
-                            { adapter: adapter.id, remotePath },
-                            wrapError(error)
-                        );
-                        fallback = await fetchWhole();
-                        return fallback.source.read(start, end);
+                        if (!fallback) {
+                            log.warn(
+                                "Ranged read failed, falling back to fetching the whole archive",
+                                { adapter: adapter.id, remotePath },
+                                wrapError(error)
+                            );
+                        }
+                        fallback ??= fetchWhole();
+                        return (await fallback).source.read(start, end);
                     }
                 },
             },
             dispose: async () => {
-                if (fallback) await fs.unlink(fallback.file).catch(() => { });
+                if (!fallback) return;
+                // A download that failed removed its copy itself.
+                const copy = await fallback.catch(() => undefined);
+                await copy?.remove();
             },
         };
     }
@@ -111,6 +160,13 @@ export async function openStorageArchiveSource(
     return {
         ranged: false,
         source: whole.source,
-        dispose: async () => { await fs.unlink(whole.file).catch(() => { }); },
+        dispose: whole.remove,
     };
+}
+
+/** A whole copy of the archive in the temporary folder, and how to remove it. */
+interface WholeCopy {
+    source: ArchiveByteSource;
+    /** Removes the copy and gives back the space promised to it. Harmless twice. */
+    remove: () => Promise<void>;
 }

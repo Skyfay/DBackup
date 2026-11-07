@@ -1,5 +1,6 @@
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
 import { STORAGE_ROLES, supportsStorageRole, type StorageRole } from "@/lib/core/storage-roles";
+import { savedSwitchValue } from "@/lib/adapters/later-switches";
 import { credentialManagedKeys } from "./connection-form-schema";
 import { seedSchemaDefaults } from "./schema-defaults";
 import type { AdapterConfig } from "./types";
@@ -44,11 +45,17 @@ export function fillRequiredText(adapter: AdapterDefinition, config: Record<stri
 /**
  * A switch a saved config lacks shows the default of its schema, which is what the adapter does
  * without it. A connection saved before a switch existed would otherwise show it off, like the
- * dump switches of MySQL that are on for every source saved earlier.
+ * dump switches of MySQL that are on for every source saved earlier. A switch whose missing value
+ * means the behaviour from before shows that instead, see `later-switches.ts`.
  */
 export function fillMissingSwitches(adapter: AdapterDefinition, config: Record<string, unknown>): Record<string, unknown> {
     for (const [key, node] of Object.entries(adapter.configSchema.shape as Record<string, SchemaNode>)) {
         if (config[key] !== undefined || baseType(node) !== "boolean") continue;
+        const saved = savedSwitchValue(adapter.id, key, config);
+        if (saved !== undefined) {
+            config[key] = saved;
+            continue;
+        }
         const parsed = node.safeParse(undefined);
         if (parsed.success && typeof parsed.data === "boolean") config[key] = parsed.data;
     }

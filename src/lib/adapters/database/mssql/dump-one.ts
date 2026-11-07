@@ -8,6 +8,7 @@ import { toPhysicalFileName } from "./identifiers";
 import { joinServerPath } from "./server-paths";
 import fs from "fs/promises";
 import path from "path";
+import { assertSharedFolderOffOwnData } from "./shared-folder";
 
 type MSSQLDumpOneConfig = MSSQLConfig & {
     detectedVersion?: string;
@@ -75,6 +76,8 @@ export async function dumpOne(
     const bakFileName = `${toPhysicalFileName(dbName)}_${timestamp}.bak`;
     const serverBakPath = joinServerPath(serverBackupPath, bakFileName);
     const sharedPath = path.join(localBackupPath, bakFileName);
+    // No run moves a backup through the own data of DBackup, also through a link that points there by now.
+    if (!useSSH) await assertSharedFolderOffOwnData(localBackupPath);
 
     try {
         log(`Backing up database: ${dbName}`, "info", "command");

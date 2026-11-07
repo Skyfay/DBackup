@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { checkPermissionWithContext, getAuthContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { getReadPermissionForAdapterType, PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { getErrorMessage, PermissionError, wrapError } from "@/lib/logging/errors";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
 import { getAdapterTypes } from "@/services/adapters/adapter-service";
 import { getConnectionDetails } from "@/services/adapters/connection-details";
+import { providedConnection } from "@/services/sharing/provided";
 
 const log = logger.child({ route: "adapters/details" });
 
@@ -17,13 +20,15 @@ const log = logger.child({ route: "adapters/details" });
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const { id } = await props.params;
     try {
-        // The permission depends on the kind of connection, so only its type is read first.
-        const [type] = await getAdapterTypes([id]);
+        // The permission depends on the kind of connection, so only its type is read first. A
+        // connection another tenant shares with this one shows with what this tenant does with it.
+        const [own] = await getAdapterTypes([id]);
+        const type = own ?? (ctx.tenantId ? (await providedConnection(id, ctx.tenantId))?.type : undefined);
         if (!type) {
             return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
         }
@@ -37,7 +42,9 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
         if (error instanceof PermissionError) {
             return NextResponse.json({ success: false, error: error.message }, { status: 403 });
         }
+        const refused = serviceRefusal(error);
+        if (refused) return refused;
         log.error("Loading connection details failed", { adapterId: id }, wrapError(error));
-        return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
+        return NextResponse.json({ success: false, error: "The details of the connection could not be loaded. The log of DBackup has the details." }, { status: 500 });
     }
 }

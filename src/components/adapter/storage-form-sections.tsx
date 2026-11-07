@@ -15,6 +15,7 @@ import { OAuthAuthorization } from "./oauth-authorization";
 import { SwitchList, SwitchRow } from "./setting-switches";
 import { SnapshotSwitch } from "./snapshot-switch";
 import { SshTestButton } from "./ssh-test-button";
+import { PLATFORM_ADMIN_ONLY, useMayReachServer } from "./host-local-access";
 import { isOAuthAdapter, storageReachKeys } from "./storage-form-layout";
 import { ParallelTransfersField, ParallelUploadFields } from "./storage-speed-fields";
 import type { ConnectionSectionProps } from "./use-connection-form";
@@ -45,6 +46,7 @@ const DESCRIPTIONS: Record<string, string> = {
 const SWITCHES: Record<string, { title: string; description: string }> = {
     forcePathStyle: { title: "Path-style URLs", description: "Needed by MinIO and some other S3 compatible servers." },
     tls: { title: "TLS (FTPS)", description: "Encrypt the connection with FTPS." },
+    trustServerCertificate: { title: "Trust the server certificate", description: "Accepts a self-signed or otherwise unverified certificate of the FTPS server." },
 };
 
 const ROLE_OPTIONS: ModeOption[] = [
@@ -62,13 +64,15 @@ function Field(props: { adapter: AdapterDefinition; fieldKey: string; descriptio
     return <ConfigField {...props} label={LABELS[props.fieldKey]} description={props.description ?? DESCRIPTIONS[props.fieldKey]} />;
 }
 
-function modeOptions(adapter: AdapterDefinition): ModeOption[] {
+function modeOptions(adapter: AdapterDefinition, mayReachServer: boolean): ModeOption[] {
     const docker = adapter.id === "docker-volume";
     return [
         {
             value: "direct",
             title: "Direct",
             description: docker ? "DBackup uses the Docker socket of the machine it runs on." : "DBackup connects to the storage itself.",
+            // The Docker of the server DBackup runs on is for a platform admin alone.
+            ...(docker && !mayReachServer ? { disabled: true, badge: PLATFORM_ADMIN_ONLY } : {}),
         },
         {
             value: "ssh",
@@ -99,11 +103,12 @@ function ConnectionPart(props: ConnectionSectionProps) {
     const hasMode = "connectionMode" in (adapter.configSchema.shape as Record<string, unknown>);
     const mode = hasMode ? watch("config.connectionMode") : "direct";
     const oauth = isOAuthAdapter(adapter);
+    const mayReachServer = useMayReachServer();
 
     return (
         <>
             <NameField placeholder="Office NAS" />
-            {hasMode && <ModeChoice fieldKey="connectionMode" label="How DBackup connects" options={modeOptions(adapter)} />}
+            {hasMode && <ModeChoice fieldKey="connectionMode" label="How DBackup connects" options={modeOptions(adapter, mayReachServer)} />}
             {mode === "direct" && (
                 <>
                     <ReachFields adapter={adapter} role={storageRole} />

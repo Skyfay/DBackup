@@ -2,7 +2,8 @@ import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
 import { isBackupFile, sidecarPathsFor, effectiveBackupTime } from '@/lib/core/backup-files';
-import { loadBackupSidecars } from './retention-sidecars';
+import { isConfigBackupPath, isInConfigBackupFolder } from '@/lib/core/config-backup-path';
+import { loadBackupSidecars, retentionGroup } from './retention-sidecars';
 import { folderKey, loadFormerBackups } from './retention-folders';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
@@ -93,13 +94,22 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     }
 
     const files: FileInfo[] = await dest.adapter.list(dest.config, remoteDir);
-    const listed = files.filter(f => isBackupFile(f.name));
+    // A file of the configuration backup is never a backup of the job, whatever the job is called
+    // and wherever it writes: anything in its folder, a file whose sidecar says so, which no job
+    // writes, and a file named like one unless its sidecar names this job, whose naming template
+    // may give its backups such a name.
+    const candidates = files.filter(f => isBackupFile(f.name) && !isInConfigBackupFolder(f.path));
 
     // Each backup's sidecar carries its lock flag, its chain membership, the job that made it
     // and the time DBackup recorded when it wrote the backup. The chain id is what lets
     // retention treat an incremental chain as one indivisible unit, and the timestamp is what
     // it buckets by.
-    const sidecars = await loadBackupSidecars(dest.adapter, dest.config, files, listed);
+    const sidecars = await loadBackupSidecars(dest.adapter, dest.config, files, candidates);
+    const listed = candidates.filter(f => !f.configBackup && !(isConfigBackupPath(f.path) && f.jobId !== ctx.job!.id));
+    const configBackups = files.filter(f => isBackupFile(f.name)).length - listed.length;
+    if (configBackups > 0) {
+        ctx.log(`${destLabel} Retention: ${configBackups} file(s) of the configuration backup in this folder are left alone.`, 'info');
+    }
 
     // A backup whose sidecar names another job is not this job's to delete. A job named like a
     // deleted one writes into the same folder, and what the deleted job left there stays until
@@ -121,7 +131,16 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     for (const { folder, count } of former.folders) {
         ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
     }
-    const backupFiles = [...current, ...former.files];
+    // The backups of some databases alone are judged with the others of the same databases, and the
+    // whole backups together, each group by the same policy, see retentionGroup.
+    const group = retentionGroup(ctx.onlyDatabases);
+    const allFiles = [...current, ...former.files];
+    const backupFiles = allFiles.filter(f => retentionGroup(f.onlyDatabases) === group);
+    if (backupFiles.length < allFiles.length) {
+        ctx.log(group
+            ? `${destLabel} Retention: Judging the ${backupFiles.length} backup(s) of ${ctx.onlyDatabases!.join(", ")} alone, ${allFiles.length - backupFiles.length} other backup(s) of the job are left as they are.`
+            : `${destLabel} Retention: ${allFiles.length - backupFiles.length} backup(s) of single databases are judged on their own and left as they are.`);
+    }
     const own = new Set(backupFiles);
     const drifted = [...sidecars.drifted, ...former.drifted];
     const formerFiles = new Set(former.files);

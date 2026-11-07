@@ -8,16 +8,25 @@ const mocks = vi.hoisted(() => ({
     updateUser: vi.fn(),
     setTaskColors: vi.fn(),
     audit: vi.fn(),
+    /** The check of an email that has an account, see tests/unit/services/new-account-email.test.ts. */
+    taken: vi.fn(async (..._args: unknown[]): Promise<string | null> => null),
 }));
 
+const REFUSED = "This email cannot be given to this account. Pick another email.";
+
 vi.mock("@/lib/auth/access-control", () => ({
-    getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
+    getViewer: vi.fn(async () => mocks.viewer),
     hasPermission: vi.fn(async (permission: string) => mocks.held.has(permission)),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
-vi.mock("@/services/user/user-service", () => ({ userService: { updateUser: mocks.updateUser } }));
+vi.mock("@/services/user/user-service", () => ({ userService: { updateUser: mocks.updateUser, ownEmailRefusal: vi.fn(async () => null) } }));
 vi.mock("@/services/user/preference-service", () => ({ setTaskColors: mocks.setTaskColors }));
+vi.mock("@/services/user/new-account-email", () => ({
+    CHANGED_EMAIL_ANSWERS: { known: "known", refused: REFUSED, spent: "spent" },
+    EMAIL_REFUSED: REFUSED,
+    takenEmailRefusal: (...args: unknown[]) => mocks.taken(...args),
+}));
 
 const { saveProfileAccountAction, saveProfileDatesAction, saveTaskColorsAction } = await import("@/app/actions/auth/profile");
 
@@ -38,7 +47,7 @@ describe("the account of the own profile", () => {
                 { field: "Name", from: "Lena Graf", to: "Lena Keller" },
                 { field: "Email", from: "lena@example.ch", to: "lena.keller@example.ch" },
             ],
-        }, "u1");
+        }, "u1", { tenantId: "default" });
     });
 
     it("keeps the name and the email to what the group allows, also when the browser skips the page", async () => {
@@ -54,10 +63,23 @@ describe("the account of the own profile", () => {
         expect(await saveProfileAccountAction({ name: "Lena Graf", email: "lena@example.ch" })).toEqual({ success: true });
     });
 
-    it("names the field when another account signs in with the email", async () => {
+    it("answers an email taken meanwhile like any email it may not give, never saying that an account holds it", async () => {
         mocks.updateUser.mockRejectedValue(new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "6" }));
 
-        expect(await saveProfileAccountAction({ name: "Lena Graf", email: "taken@example.ch" })).toEqual({ success: false, error: "Another account signs in with this email.", field: "email" });
+        expect(await saveProfileAccountAction({ name: "Lena Graf", email: "taken@example.ch" })).toEqual({ success: false, error: REFUSED, field: "email" });
+    });
+
+    it("checks a new email against the accounts the person may see, and saves nothing it refuses", async () => {
+        mocks.taken.mockResolvedValueOnce(REFUSED);
+
+        expect(await saveProfileAccountAction({ name: "Lena Graf", email: "gina@globex.example" })).toEqual({ success: false, error: REFUSED, field: "email" });
+        expect(mocks.taken).toHaveBeenCalledWith("gina@globex.example", expect.objectContaining({ userId: "u1" }), undefined, expect.anything(), { accountId: "u1" });
+        expect(mocks.updateUser).not.toHaveBeenCalled();
+
+        // The own email in other letters is no change of the email at all.
+        mocks.taken.mockClear();
+        await saveProfileAccountAction({ name: "Lena Graf", email: "LENA@example.ch" });
+        expect(mocks.taken).not.toHaveBeenCalled();
     });
 
     it("refuses someone who is not signed in", async () => {

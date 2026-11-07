@@ -166,6 +166,8 @@ describe("Task colors", () => {
         "run-checks.tsx",
         // A system task that runs now, in the Last run column of the Settings page.
         "task-columns.tsx",
+        // A Back up now of a shared database that runs now, in its row and its panel on the Connections page.
+        "shared-database-status.tsx",
     ];
 
     it("should keep the info blue to the running status", () => {

@@ -30,14 +30,14 @@ A restore always replaces the whole database, including what was added since the
 1. Go to **Settings → Configuration backup**
 2. Switch on **Back up the configuration**
 3. Pick:
-   - **Destination**: where the file goes, into its folder `config-backups`
-   - **Encryption key**: the file holds every login, so it is always encrypted
+   - **Destination**: where the file goes, into its folder `config-backups`. With [tenants](/user-guide/admin/tenants) only a destination of the home tenant
+   - **Encryption key**: the file holds every login, so it is always encrypted, with a key of the home tenant
    - **Schedule**: when it runs, every day at 03:00 by default, picked like the schedule of a job
    - **Keeps**: how many files stay at the destination, 10 by default
    - **Include the history**: runs, logs, the audit log and the storage history, on by default
 4. Click **Save changes** in the bar at the foot
 
-The system task **Configuration backup** follows this switch and this schedule, so both are set in one place. The top of the part shows when the configuration was last backed up and where to, or why it failed.
+The system task **Configuration backup** follows this switch and this schedule, so both are set in one place. The file holds every secret of the instance, so only a platform admin signed in to DBackup changes the part, the switch and schedule of the task included, and starts a backup. Everyone else sees them read-only, and an API key gets them refused. The same goes for what the backup goes through: only a platform admin edits or deletes its destination, reveals or changes the saved logins of that destination, and reveals its key or puts it into a recovery kit. Everyone else may still use them in their jobs. The top of the part shows when the configuration was last backed up and where to, or why it failed.
 
 ::: warning Keep the key apart
 Keep the [recovery kit](/user-guide/security/recovery-kit) of the key somewhere else than the backup. A lost server takes the Vault with it, and without the key the file cannot be opened.
@@ -56,13 +56,15 @@ config-backups/config_backup_2026-09-29T03-00-00-000Z.db.gz.enc.meta.json
 
 The `.meta.json` beside it names the key and holds what its decryption needs. The Backups page lists both files of every destination under **Config backups**, and **Started by** says **Schedule**, the person behind **Back up now** or the API key that started it. **Name who started a backup in its metadata** under **Settings → Privacy** leaves out the name.
 
+The file is a copy of the whole database with `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` in it, so only a platform admin signed in to DBackup downloads, opens or restores it, like the [database download](/user-guide/admin/data-retention#download-the-database). Everyone else and every API key gets it refused, whatever their rights on the backups, for a file in `config-backups/` and for one whose `.meta.json` says it is a configuration backup. A download link is never made for it.
+
 ## Restore Process
 
-Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers. The one exception is the first start of a new DBackup, see [On a New Server](#on-a-new-server).
+A restore brings back the whole instance, every [tenant](/user-guide/admin/tenants) with its users, groups and sign-in providers, so only a platform admin restores a configuration. The one exception is the first start of a new DBackup, see [On a New Server](#on-a-new-server).
 
 ### What Happens
 
-1. DBackup opens the file with the key its metadata names, or any key of the Vault that fits, and asks for one when none does
+1. DBackup opens the file with the key its metadata names, or any key of the home tenant's Vault that fits, and asks for one when none does
 2. It checks the file: a database of DBackup, not damaged, and not from a newer version
 3. It shows what the backup holds, then **Replace and restart** starts the restore
 4. DBackup ends, and its container starts it again. The restored copy replaces the database before the migrations run, which bring an older copy up to date
@@ -74,9 +76,11 @@ A backup made by a DBackup with another `ENCRYPTION_KEY` or `BETTER_AUTH_SECRET`
 
 ### From a Destination
 
-1. Open **Backups** and find the backup under **Config backups**
+1. Open **Backups** in the home tenant and find the backup under **Config backups**
 2. Open it. DBackup reads it on the server, so its size does not matter
 3. Check what it holds and click **Replace and restart**
+
+A configuration backup restores only from a destination of the home tenant, whichever tenant you have open, since whoever owns the destination of a customer could have put a file there. From a destination only an encrypted file restores, as DBackup always writes it, since a plain one could come from anyone who may restore files into that destination. An unencrypted file of an older version restores from a file instead. Restores of files never write into `config-backups/`, under the name `config_backup_*` or a `.meta.json` for anyone but a platform admin, see [Restoring](/user-guide/features/file-backups#restoring).
 
 ### From a File
 
@@ -98,7 +102,7 @@ This works only while nobody has an account yet. For a file over 10 MB, create a
 
 ### Files of Older Versions
 
-Files named `config_backup_*.json.gz.enc` come from DBackup versions before the copy of the database. They still restore, in parts from the **Backups** page or as a whole from a file. Restoring in parts exists for these files only and gets no new parts, since keeping it in step with every table cost more than it was worth. Such a restore adds and overwrites and never deletes: a record with the same ID, or the same name, is overwritten and keeps its ID here, and everything that links to it follows.
+Files named `config_backup_*.json.gz.enc` come from DBackup versions before the copy of the database. They still restore, in parts from the **Backups** page of the home tenant or as a whole from a file, and their records land in the home tenant. Restoring in parts exists for these files only and gets no new parts, since keeping it in step with every table cost more than it was worth. Such a restore adds and overwrites and never deletes: a record with the same ID, or the same name, is overwritten and keeps its ID here, and everything that links to it follows.
 
 These files hold no templates, no folders of file jobs and no second factors. A restore drops what links to them, says so afterwards, and does this:
 

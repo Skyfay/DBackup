@@ -28,3 +28,15 @@ export function refusalField(message: string): "name" | "email" | "password" | n
     if (/\bname\b/i.test(message)) return "name";
     return null;
 }
+
+/**
+ * The warning for an account that signs in through the provider of a customer's tenant, which signs
+ * in only accounts that work in its tenant alone, so joining another tenant ends that sign-in.
+ */
+export function providerEndNote(providers: string[], tenantName: string): string {
+    const names = providers.length === 1 ? providers[0] : `${providers.slice(0, -1).join(", ")} and ${providers[providers.length - 1]}`;
+    const one = providers.length === 1;
+    const rule = one ? "It signs in only accounts that work in its tenant alone." : "They sign in only accounts that work in their tenant alone.";
+    return `Once you join ${tenantName}, ${names} no longer ${one ? "signs" : "sign"} you in. ${rule} Make sure you can sign in with a password or a passkey first.`;
+}
+

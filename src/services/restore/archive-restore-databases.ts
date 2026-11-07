@@ -6,7 +6,6 @@
  * disk usage is therefore the largest single dump, not the sum of them.
  */
 
-import path from "path";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import crypto from "crypto";
@@ -21,7 +20,7 @@ import { openArchiveEntry } from "@/lib/archive/reader";
 import { hashingStream } from "@/lib/archive/hashing";
 import { EXTENSION_BY_FORMAT } from "@/lib/archive/format";
 import { entryKey } from "@/lib/archive/types";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import type { openArchiveForRestore } from "./file-restore";
 import type { ArchiveRestoreCallbacks } from "./archive-restore";
 import { sharedLogScrubber, type RunLog } from "./shared-restore-log";
@@ -205,9 +204,9 @@ export async function restoreDatabases(
 
             const targetName = targetFor(dbName);
             // The extension matters: SqlPackage refuses a BACPAC without one, and a readable
-            // name makes a leftover temp file identifiable.
-            const dumpPath = path.join(
-                getTempDir(),
+            // name makes a leftover temp file identifiable. In the private folder, since the
+            // dump is the data of the database, decrypted.
+            const dumpPath = await privateTempPath(
                 `restore-db-${process.pid}-${crypto.randomUUID()}.${EXTENSION_BY_FORMAT[dbLine.format] ?? "dump"}`
             );
 
@@ -218,7 +217,7 @@ export async function restoreDatabases(
                 await pipeline(
                     await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, dbLine.s),
                     hashingStream((d) => { digest = d; }),
-                    createWriteStream(dumpPath)
+                    createWriteStream(dumpPath, { flags: "wx", mode: PRIVATE_FILE_MODE })
                 );
                 record?.read(entry.size);
 

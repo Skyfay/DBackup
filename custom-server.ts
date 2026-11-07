@@ -200,6 +200,12 @@ function ensureCertificate(): boolean {
 
 // ── Server Start ──────────────────────────────────────────────
 
+// Whether the server serves HTTPS, decided before the app loads. Without a certificate it falls back
+// to HTTP, and DISABLE_HTTPS says so before the auth config reads it, so the session cookies go out
+// without Secure, which a browser would drop over plain HTTP. See src/lib/auth/secure-cookies.ts.
+const servesHttps = !disableHttps && ensureCertificate() && fs.existsSync(certPath) && fs.existsSync(keyPath);
+if (!disableHttps && !servesHttps) process.env.DISABLE_HTTPS = "true";
+
 app.prepare().then(() => {
   let server: Server;
   let protocol: string;
@@ -225,24 +231,20 @@ app.prepare().then(() => {
     protocol = "http";
     server = createHttpServer(requestHandler);
     console.log("[Server] HTTPS disabled via DISABLE_HTTPS=true - using HTTP");
+  } else if (servesHttps) {
+    protocol = "https";
+    const tlsOptions = {
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+    };
+    server = createHttpsServer(tlsOptions, requestHandler);
+    console.log("[Server] HTTPS enabled with certificate from configured CERTS_DIR");
   } else {
-    const certReady = ensureCertificate();
-
-    if (certReady && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-      protocol = "https";
-      const tlsOptions = {
-        cert: fs.readFileSync(certPath),
-        key: fs.readFileSync(keyPath),
-      };
-      server = createHttpsServer(tlsOptions, requestHandler);
-      console.log("[Server] HTTPS enabled with certificate from configured CERTS_DIR");
-    } else {
-      protocol = "http";
-      server = createHttpServer(requestHandler);
-      console.warn(
-        "[Server] WARNING: Falling back to HTTP - certificate generation failed"
-      );
-    }
+    protocol = "http";
+    server = createHttpServer(requestHandler);
+    console.warn(
+      "[Server] WARNING: Falling back to HTTP - certificate generation failed"
+    );
   }
 
   server.listen(port, hostname, () => {

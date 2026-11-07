@@ -1,7 +1,7 @@
 ### 🐛 Bug Fixes
 
 - **Telegram**: A message sent with the parse mode Markdown is written in Markdown, so a name with `_` or `*` no longer makes Telegram refuse it.
-- **MSSQL**: A restore under the original name moves the files of a backup whose server name cannot be read, and checks every file it places against the files of other databases.
+- **MSSQL**: A restore under the original name checks every file it places against the files of other databases, and moves the files of a backup from another server or one whose server name cannot be read.
 
 ### 🔒 Security
 

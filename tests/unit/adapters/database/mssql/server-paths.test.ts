@@ -149,6 +149,17 @@ describe("buildMoveTargets", () => {
         expect(() => buildMoveTargets([filestream], "Shop_Copy", { data: "/var/opt/mssql/data" }))
             .toThrow(/original database name/);
     });
+
+    it("names why the files move when they come from another server or one whose name could not be read", () => {
+        const filestream = dataFile({ logicalName: "Shop_fs", type: "S", physicalName: "D:\\SQLData\\Shop_fs" });
+
+        for (const [reason, words] of [["other", "comes from another server"], ["unknown", "comes from a server whose name could not be read"]] as const) {
+            expect(() => buildMoveTargets([filestream], "Shop", { data: "/var/opt/mssql/data" }, { reason })).toThrow(words);
+            expect(() => buildMoveTargets([filestream], "Shop", { data: "/var/opt/mssql/data" }, { reason })).not.toThrow(/original database name/);
+            // Without any folder to place a file in, the way out is the folders of the instance.
+            expect(() => buildMoveTargets([dataFile({ physicalName: "Shop.mdf" })], "Shop", {}, { reason })).toThrow(new RegExp(`server properties, since the backup ${words}`));
+        }
+    });
 });
 
 describe("getInstanceDefaultPaths", () => {

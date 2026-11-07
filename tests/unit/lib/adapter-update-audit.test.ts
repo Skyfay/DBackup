@@ -21,6 +21,7 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn(async () => mocks.ctx),
     checkPermissionWithContext: vi.fn(),
+    hasPermissionWithContext: () => true,
 }));
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers()) }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));

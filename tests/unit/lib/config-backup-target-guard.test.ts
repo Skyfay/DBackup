@@ -209,7 +209,7 @@ describe("the saved login of the destination of the configuration backup", () =>
         const caller = await oauthCallbackCaller("dropbox", "state");
 
         expect(started.status).toBe(403);
-        expect(caller).toEqual({ ok: false, message: CONFIG_BACKUP_LOGIN_LOCKED });
+        expect(caller).toEqual({ ok: false, code: "locked", message: CONFIG_BACKUP_LOGIN_LOCKED });
         expect(mocks.decryptCredential).not.toHaveBeenCalled();
     });
 

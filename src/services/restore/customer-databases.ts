@@ -3,8 +3,9 @@
  * of the server would overwrite. The restore page marks them and asks before such a restore starts,
  * and `RestoreService` refuses one without `RestoreInput.overwriteCustomerDatabases`. The restore
  * checks again right before it writes, with the names it writes into, and refuses a database of a
- * customer the request did not confirm. The customers read nothing of it, the audit entry of the
- * provider names them.
+ * customer the request did not confirm. On a Firebird server that gives databases away, a target
+ * that is no saved alias asks the same confirmation, see `unsavedFirebirdTargets`. The customers
+ * read nothing of it, the audit entry of the provider names them.
  */
 
 import prisma from "@/lib/prisma";
@@ -61,18 +62,47 @@ export async function customerDatabases(sourceId: string, names: readonly string
  */
 function withAliases(server: { adapterId: string; config: string }, names: readonly string[]): string[] {
     if (server.adapterId !== "firebird") return [...names];
-    let databases: { name: string; path: string }[] = [];
+    const databases = savedAliases(server.config);
+    return names.flatMap((name) => [name, ...aliasesOfTarget(databases, name)]);
+}
+
+/** The aliases a Firebird connection saves, with their paths. */
+function savedAliases(config: string): { name: string; path: string }[] {
     try {
-        const parsed: unknown = JSON.parse(server.config);
+        const parsed: unknown = JSON.parse(config);
         const listed = (parsed as { databases?: unknown } | null)?.databases;
-        if (Array.isArray(listed)) {
-            databases = listed.filter((entry): entry is { name: string; path: string } =>
-                typeof entry?.name === "string" && typeof entry?.path === "string");
-        }
+        if (!Array.isArray(listed)) return [];
+        return listed.filter((entry): entry is { name: string; path: string } =>
+            typeof entry?.name === "string" && typeof entry?.path === "string");
     } catch {
         // A config that does not parse names no alias, the names stay as they are.
+        return [];
     }
-    return names.flatMap((name) => [name, ...aliasesOfTarget(databases, name)]);
+}
+
+/**
+ * Of the targets of a restore into a Firebird server that gives databases to customers, those that
+ * are no saved alias, neither by its name nor by its path. Such a target is a path the server
+ * resolves itself, and the same file has more names than `aliasesOfTarget` can compare, like a
+ * link, a mount or another spelling Firebird accepts, so a customer's database can hide behind it.
+ * The restore asks the confirmation for them like for a database a customer holds. Empty for any
+ * other server.
+ */
+export async function unsavedFirebirdTargets(sourceId: string, targets: readonly string[]): Promise<string[]> {
+    if (targets.length === 0) return [];
+    const server = await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { adapterId: true, config: true } });
+    if (server?.adapterId !== "firebird" || !(await givesToCustomers(sourceId))) return [];
+    const databases = savedAliases(server.config);
+    return [...new Set(targets)].filter((target) => aliasesOfTarget(databases, target).length === 0);
+}
+
+/** Refuses a restore into Firebird paths that are no saved alias, see `unsavedFirebirdTargets`. */
+function unsavedTargetRefusal(targets: readonly string[], ending: string): ValidationError {
+    const shown = targets.length > 5 ? `${targets.slice(0, 5).join(", ")} and ${targets.length - 5} more` : targets.join(", ");
+    return new ValidationError(
+        `The restore writes into ${shown}, which is no saved database of this Firebird server. The server gives databases to customers, and a path that is no saved alias may still reach one of theirs. ${ending}`,
+        { field: "overwriteCustomerDatabases" }
+    );
 }
 
 /** Whether the server exists and a database or a rule of it went to a customer at any time. */
@@ -142,6 +172,10 @@ export async function assertCustomerDatabasesConfirmed(input: RestoreInput): Pro
     if (held.length > 0 && input.overwriteCustomerDatabases !== true) {
         throw overwriteRefusal(held, "Confirm overwriting them to restore.");
     }
+    if (input.overwriteCustomerDatabases !== true) {
+        const unsaved = await unsavedFirebirdTargets(input.targetSourceId, names ?? (input.targetDatabaseName ? [input.targetDatabaseName] : []));
+        if (unsaved.length > 0) throw unsavedTargetRefusal(unsaved, "Confirm overwriting to restore.");
+    }
     return held;
 }
 
@@ -186,4 +220,8 @@ export async function assertTargetsConfirmed(input: RestoreInput, targetNames: r
     const confirmed = new Set(input.confirmedCustomerDatabases ?? []);
     const unconfirmed = (await customerDatabases(input.targetSourceId, targetNames)).filter((entry) => !confirmed.has(entry.database));
     if (unconfirmed.length > 0) throw overwriteRefusal(unconfirmed, "The request did not confirm overwriting them, so nothing was restored.");
+    if (input.overwriteCustomerDatabases !== true) {
+        const unsaved = await unsavedFirebirdTargets(input.targetSourceId, targetNames);
+        if (unsaved.length > 0) throw unsavedTargetRefusal(unsaved, "The request did not confirm it, so nothing was restored.");
+    }
 }

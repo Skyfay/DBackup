@@ -11,8 +11,10 @@
 import prisma from "@/lib/prisma";
 import { ADAPTER_DEFINITIONS } from "@/lib/adapters/definitions";
 import { getOidcAutoRedirectProviderId, isEmailLoginDisabled } from "@/lib/auth/env-flags";
+import { PASSKEY_LOGIN_OFF_KEY } from "@/lib/auth/passkey-login-guard";
 import type { PasswordRules } from "@/lib/auth/password-policy";
 import { isEmailDomain, normalizeDomain } from "@/lib/auth/sso-domain";
+import { providersEndedByJoining } from "@/lib/auth/sso-tenant-guard";
 import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import { getLoginPicture } from "@/services/system/login-image-service";
 
@@ -84,7 +86,7 @@ export async function getLoginPageModel(): Promise<LoginPageModel> {
         }),
         // Whether any is there, never which.
         prisma.ssoProvider.count({ where: { enabled: true, tenantId: { not: null }, domain: { not: null } } }),
-        prisma.systemSetting.findUnique({ where: { key: "auth.disablePasskeyLogin" }, select: { value: true } }),
+        prisma.systemSetting.findUnique({ where: { key: PASSKEY_LOGIN_OFF_KEY }, select: { value: true } }),
         prisma.systemSetting.findUnique({ where: { key: "general.instanceName" }, select: { value: true } }),
         getLoginPicture(),
     ]);
@@ -125,3 +127,13 @@ export async function findDomainProvider(value: string): Promise<DomainProvider 
     const found = claimed.find((provider) => normalizeDomain(provider.domain) === domain);
     return found ? { ...found, domain } : null;
 }
+
+/**
+ * The providers of customers' tenants the signed-in account stops signing in through once it joins
+ * the tenant of an invitation, for the warning on the invitation page. A provider of a customer's
+ * tenant signs in only accounts that work in that tenant alone, see `sso-tenant-guard.ts`.
+ */
+export async function providersEndedByInvitation(userId: string, tenantId: string): Promise<string[]> {
+    return providersEndedByJoining(userId, tenantId);
+}
+

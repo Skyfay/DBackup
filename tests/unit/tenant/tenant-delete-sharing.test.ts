@@ -292,17 +292,25 @@ describe("backups on demand of a customer for a platform group of some tenants",
         await base.databaseAssignment.create({ data: { id: "two-crm", sourceId: "two-db", databaseName: "crm", tenantId: "globex", validFrom: day("2026-02-01"), onDemandPerDay: 2 } });
     });
 
-    it("shows a tenant that shares beyond the reach by no name", async () => {
+    it("shows a tenant that shares beyond the reach by no name, and its server and database neither", async () => {
+        await base.databaseAssignmentRule.create({ data: { id: "two-rule", sourceId: "two-db", pattern: "erp_*", tenantId: "globex", validFrom: day("2026-02-01"), onDemandPerDay: 1 } });
         const found = await tenantOnDemandService.find("globex", ["globex"]);
-        expect(found?.overrides).toEqual([expect.objectContaining({ id: "two-crm", serverName: "Two MySQL", providerId: null, providerName: "Another tenant" })]);
+        expect(found?.overrides).toEqual([
+            { kind: "database", id: "two-crm", serverName: "A server of another tenant", providerId: null, providerName: "Another tenant", name: "A database of another tenant", perDay: 2, beyondReach: true },
+            { kind: "rule", id: "two-rule", serverName: "A server of another tenant", providerId: null, providerName: "Another tenant", name: "A pattern of another tenant", perDay: 1, beyondReach: true },
+        ]);
+        expect(JSON.stringify(found)).not.toMatch(/Two MySQL|two-db|"crm"|erp_/);
 
         const reached = await tenantOnDemandService.find("globex", ["globex", "msp-two"]);
-        expect(reached?.overrides).toEqual([expect.objectContaining({ providerId: "msp-two", providerName: "MSP Two" })]);
+        expect(reached?.overrides).toEqual([
+            expect.objectContaining({ sourceId: "two-db", serverName: "Two MySQL", providerId: "msp-two", providerName: "MSP Two", name: "crm" }),
+            expect.objectContaining({ sourceId: "two-db", serverName: "Two MySQL", name: "erp_*" }),
+        ]);
     });
 
     it("changes nothing a tenant beyond the reach gave, and what a reached one gave", async () => {
         await expect(tenantOnDemandService.follow("globex", "database", "two-crm", ["globex"]))
-            .rejects.toThrow("Two MySQL belongs to a tenant your platform group does not reach");
+            .rejects.toThrow("A server of another tenant belongs to a tenant your platform group does not reach");
         expect(await base.databaseAssignment.findUnique({ where: { id: "two-crm" } })).toMatchObject({ onDemandPerDay: 2 });
 
         await tenantOnDemandService.follow("globex", "database", "two-crm", ["globex", "msp-two"]);

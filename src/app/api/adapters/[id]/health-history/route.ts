@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
-import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
-import { getReadPermissionForAdapterType } from "@/lib/auth/permissions";
+import { getAuthContext } from "@/lib/auth/access-control";
+import { CONNECTION_NOT_FOUND, seesConnectionType } from "@/lib/server/connection-access";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { getAdapterTypes } from "@/services/adapters/adapter-service";
@@ -31,10 +31,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     }
 
     try {
-        // The permission depends on the kind of connection, so only its type is read first.
+        // The permission depends on the kind of connection, so only its type is read first. One the
+        // caller may not read answers like a missing one, so the answer never names its kind.
         const [type] = await getAdapterTypes([id]);
-        if (!type) return NextResponse.json({ error: "Adapter not found" }, { status: 404 });
-        checkPermissionWithContext(ctx, getReadPermissionForAdapterType(type));
+        if (!seesConnectionType(ctx, type)) return NextResponse.json({ error: CONNECTION_NOT_FOUND }, { status: 404 });
 
         return NextResponse.json(await getHealthHistory(id, { limit, from }));
     } catch (e: unknown) {

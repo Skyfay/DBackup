@@ -22,6 +22,8 @@ const prismaMock = {
     jobSource: { findUnique: vi.fn() },
     systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     connectionShare: { count: vi.fn().mockResolvedValue(0) },
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    execution: { findMany: vi.fn().mockResolvedValue([]) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 const registryGet = vi.fn();

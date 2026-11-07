@@ -102,3 +102,23 @@ export async function providedConnection(configId: string, tenantId: string): Pr
 export async function providedIds(tenantId: string, ids: readonly string[]): Promise<Set<string>> {
     return new Set((await providedTo(tenantId, { ids })).map((connection) => connection.id));
 }
+
+/**
+ * The customers of each destination among `configIds` that its tenant shares, by the id of the
+ * destination: the tenants its share names, or every other tenant for a share with all of them, of
+ * the tenants that exist. A share with nobody on it, like one whose folder of the customers waits to
+ * be emptied, maps to none. Read in the system scope, like `providedTo`.
+ */
+export async function customersOfShares(configIds: readonly string[]): Promise<Map<string, string[]>> {
+    if (configIds.length === 0) return new Map();
+    return runAsSystem(async () => {
+        const [shares, tenants] = await Promise.all([
+            prisma.connectionShare.findMany({ where: { id: { in: [...configIds] } }, select: { id: true, tenantId: true, allTenants: true, tenants: { select: { tenantId: true } } } }),
+            prisma.tenant.findMany({ select: { id: true } }),
+        ]);
+        const live = new Set(tenants.map((tenant) => tenant.id));
+        return new Map(shares.map((share) => [share.id, share.allTenants
+            ? [...live].filter((id) => id !== share.tenantId)
+            : share.tenants.map((entry) => entry.tenantId).filter((id) => live.has(id) && id !== share.tenantId)]));
+    });
+}

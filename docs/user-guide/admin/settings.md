@@ -83,7 +83,7 @@ A change here saves at once, without the bar at the foot. See [Notifications](/u
 | :--- | :--- | :--- |
 | **Login page** | What the left of the login page shows beside the name of the instance: the logos of every adapter in rows that drift, or a picture of your own. A picture is a PNG, JPG or WebP up to 5 MB, best at least 1600 px wide. Everyone who opens the login page sees it, and it is part of the configuration backup. | DBackup logos |
 | **Sessions last** | How long someone stays signed in, counted from the sign-in. Using DBackup does not extend it. A new length applies from their next sign-in. | 7 days |
-| **Sign in with a passkey** | The passkey button on the login page. A passkey as second factor keeps working either way. | On |
+| **Sign in with a passkey** | Whether a passkey signs someone in on its own. Off, the login page hides its button and the server refuses a passkey as the first step, also one sent to the API directly. A passkey as second factor after the password keeps working either way, for the account whose password was entered. | On |
 
 A picture is kept the moment it is dropped and shows once **Your own image** is saved. **Remove** deletes it, and the login page shows the logos again. The logos stand still for anyone whose system asks for reduced motion.
 

@@ -4,8 +4,8 @@ import { redirect } from "next/navigation";
 import { HistoryClient } from "@/components/dashboard/history/history-client";
 import { runHref } from "@/components/dashboard/history/run-links";
 import { TenantKeyed } from "@/components/tenant/tenant-keyed";
-import { checkPermission } from "@/lib/auth/access-control";
 import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
+import { redirectWithoutRight } from "@/app/dashboard/right-redirect";
 import { cancellableRunTypes } from "@/lib/auth/run-cancel-rule";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ executionId?: string }> }) {
     await redirectWithoutTenant();
-    const viewer = await checkPermission(PERMISSIONS.HISTORY.READ);
+    const viewer = await redirectWithoutRight(PERMISSIONS.HISTORY.READ);
     // Links from before a run had a page of its own, like in older notifications, still open the run.
     const { executionId } = await searchParams;
     if (executionId) redirect(runHref(executionId));

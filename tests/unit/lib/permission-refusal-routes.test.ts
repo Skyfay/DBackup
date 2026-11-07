@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     touched: vi.fn(),
     /** The words of the refusal, like that All tenants only reads, or the permission when left out. */
     message: undefined as string | undefined,
+    /** Whether the caller holds a permission asked for with hasPermissionWithContext, none unless a test says so. */
+    has: (_permission: string): boolean => false,
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -20,7 +22,7 @@ vi.mock("@/lib/auth/access-control", () => ({
     checkPermissionWithContext: (_ctx: unknown, permission: string) => {
         throw new PermissionError(permission, mocks.message ? { message: mocks.message } : undefined);
     },
-    hasPermissionWithContext: () => false,
+    hasPermissionWithContext: (_ctx: unknown, permission: string) => mocks.has(permission),
 }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 // Whatever a route would do once the check passed.
@@ -113,9 +115,6 @@ const calls: [string, () => Promise<Response>][] = [
     ["POST /api/settings/config-backup/restore/apply", () => restoreApply.POST(json("POST", { token: "t-1" }))],
     ["GET /api/adapters", () => adapters.GET(new NextRequest(`${url}?type=database`))],
     ["POST /api/adapters", () => adapters.POST(json("POST", { name: "Shop", type: "database", adapterId: "mysql", config: {} }))],
-    ["DELETE /api/adapters/[id]", () => adapter.DELETE(new NextRequest(url, { method: "DELETE" }), params)],
-    ["PUT /api/adapters/[id]", () => adapter.PUT(json("PUT", { name: "Shop" }), params)],
-    ["POST /api/adapters/[id]/clone", () => adapterClone.POST(json("POST"), params)],
     ["GET /api/credentials", () => credentials.GET(new NextRequest(url))],
     ["POST /api/credentials", () => credentials.POST(json("POST", { name: "Login", type: "USERNAME_PASSWORD", data: {} }))],
     ["GET /api/credentials/[id]", () => credential.GET(new NextRequest(url), params)],
@@ -134,6 +133,7 @@ describe.each(calls)("%s", (_name, call) => {
     beforeEach(() => {
         mocks.touched.mockReset();
         mocks.message = undefined;
+        mocks.has = () => false;
     });
 
     it("answers 403 to a caller without the permission, and does nothing", async () => {
@@ -145,6 +145,51 @@ describe.each(calls)("%s", (_name, call) => {
     });
 
     it("answers 403 with its reason to All tenants, which only reads, and does nothing", async () => {
+        mocks.message = ALL_TENANTS_REFUSAL;
+
+        const response = await call();
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ error: ALL_TENANTS_REFUSAL });
+        expect(mocks.touched).not.toHaveBeenCalled();
+    });
+});
+
+// A connection is first checked against the read permission of its kind, and a caller without it
+// gets the answer of a missing id, so a 403 never names the kind of a connection they cannot see.
+const connectionCalls: [string, () => Promise<Response>][] = [
+    ["DELETE /api/adapters/[id]", () => adapter.DELETE(new NextRequest(url, { method: "DELETE" }), params)],
+    ["PUT /api/adapters/[id]", () => adapter.PUT(json("PUT", { name: "Shop" }), params)],
+    ["POST /api/adapters/[id]/clone", () => adapterClone.POST(json("POST"), params)],
+];
+
+describe.each(connectionCalls)("%s", (_name, call) => {
+    beforeEach(() => {
+        mocks.touched.mockReset();
+        mocks.message = undefined;
+        mocks.has = () => false;
+    });
+
+    it("answers 404 like a missing id to a caller who may not read connections of its kind, and does nothing", async () => {
+        const response = await call();
+
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ success: false, error: "Adapter not found" });
+        expect(mocks.touched).not.toHaveBeenCalled();
+    });
+
+    it("answers 403 to a caller who reads but may not change it, and does nothing", async () => {
+        mocks.has = (permission) => permission === "sources:view";
+
+        const response = await call();
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ success: false });
+        expect(mocks.touched).not.toHaveBeenCalled();
+    });
+
+    it("answers 403 with its reason to All tenants, which only reads, and does nothing", async () => {
+        mocks.has = (permission) => permission === "sources:view";
         mocks.message = ALL_TENANTS_REFUSAL;
 
         const response = await call();

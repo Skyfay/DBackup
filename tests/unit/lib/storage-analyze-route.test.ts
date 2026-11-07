@@ -60,6 +60,10 @@ vi.mock("@/services/backup/archive-index-service", () => ({
 vi.mock("@/lib/temp-dir", () => ({
     getTempDir: () => "/tmp/dbackup-test",
 }));
+// The private folder the download of a backup goes into, see `privateTempDir`, at the same made-up place.
+vi.mock("@/lib/private-temp-dir", () => ({
+    privateTempPath: async (name: string) => `/tmp/dbackup-test/${name}`,
+}));
 
 vi.mock("fs", () => ({
     default: {

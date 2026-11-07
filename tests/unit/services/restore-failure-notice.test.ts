@@ -73,6 +73,8 @@ beforeEach(async () => {
         test: vi.fn().mockResolvedValue({ success: true, version: "8.0.36" }),
     };
     prismaMock.execution.update.mockResolvedValue({} as never);
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    prismaMock.execution.findMany.mockResolvedValue([]);
     prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) =>
         where.id === "msp-nas" ? storageRow : where.id === "shared-mysql" ? serverRow : null) as never);
     vi.mocked(registry.get).mockImplementation(((id: string) => (id === "msp-fs" ? storage : database)) as never);

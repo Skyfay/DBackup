@@ -6,7 +6,7 @@ import { assertChangesReached, assertReached, assertRuleReached } from "./assign
 import { movesOf } from "./database-moves";
 import { assertNoSharedRestore } from "@/services/restore/shared-restores-active";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
-import { assertCustomer, listedDatabases, NOT_SHARING, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
+import { assertCustomer, assertTenantsLive, listedDatabases, NOT_SHARING, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
 
 export { listedDatabases, sharesWithCustomers };
 
@@ -239,6 +239,8 @@ export const databaseAssignmentService = {
         let changed = 0;
         const tenants = new Set<string>();
         await prisma.$transaction(async (tx) => {
+            // A customer deleted since `assertCustomer` would keep an assignment under its dead id.
+            await assertTenantsLive(tx, changes.map((change) => change.tenantId));
             const rules = await tx.databaseAssignmentRule.findMany({ where: { sourceId } });
             await assertChangesReached(tx, sourceId, changes, rules, reach, now);
             if (changes.length > 0) await rememberServer(tx, source);
@@ -282,6 +284,8 @@ export const databaseAssignmentService = {
         await assertRuleReached(sourceId, { pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now }, reach, now);
         const onDemandPerDay = onDemandValue(input.onDemandPerDay);
         const rule = await prisma.$transaction(async (tx) => {
+            // A customer deleted since `assertCustomer` would keep a rule under its dead id.
+            await assertTenantsLive(tx, [input.tenantId]);
             await rememberServer(tx, source);
             return tx.databaseAssignmentRule.create({
                 data: { sourceId, pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now, onDemandPerDay, createdAt: now },

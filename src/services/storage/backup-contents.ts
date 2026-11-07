@@ -4,12 +4,13 @@ import fs from "fs";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import type { BackupMetadata, DatabaseAdapter } from "@/lib/core/interfaces";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
 import type { BrowseEntry } from "@/lib/archive/browse";
 import { EncryptionKeyRequiredError, NotFoundError, ServiceError, ValidationError } from "@/lib/logging/errors";
 import { archiveIndexService, type ArchiveSummary } from "@/services/backup/archive-index-service";
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import { openStorage } from "./storage-lookup";
+import { EncryptionDowngradeError } from "@/services/restore/recorded-encryption";
 
 registerAdapters();
 
@@ -46,8 +47,9 @@ export async function analyzeBackup(
     keyOverride?: KeyOverride
 ): Promise<BackupContents> {
     const { adapter, config } = await openStorage(storageId);
-    // A name of its own per read, so two reads of the same file never share one.
-    const tempFile = path.join(getTempDir(), `${randomUUID()}-${path.basename(file)}`);
+    // A name of its own per read, so two reads of the same file never share one, in the private
+    // folder, since the download of a plain backup is the data of the databases.
+    const tempFile = await privateTempPath(`${randomUUID()}-${path.basename(file)}`);
     try {
         // For combined (manifest v2) archives the metadata sidecar points at the archive's index
         // sidecar, which describes every database and directory source without touching the
@@ -83,6 +85,8 @@ export async function analyzeBackup(
                 // refused. Swallowing it downloaded the whole archive to fail again, then
                 // reported the backup as containing nothing.
                 if (e instanceof EncryptionKeyRequiredError) throw e;
+                // A plain backup whose run encrypted it is refused, the embedded index would be just as plain.
+                if (e instanceof EncryptionDowngradeError) throw e;
                 // Anything else falls through to the download and the embedded index.
             }
         }
@@ -94,7 +98,7 @@ export async function analyzeBackup(
         // carries a copy of its index as its last member, so the listing still works - it
         // just costs the download that the sidecar exists to avoid.
         if (seekableArchiveMeta) {
-            const summary = await archiveIndexService.summarizeFromArchive(tempFile, seekableArchiveMeta, keyOverride);
+            const summary = await archiveIndexService.summarizeFromArchive(tempFile, seekableArchiveMeta, keyOverride, { configId: storageId, file });
             if (summary) return summary;
         }
 

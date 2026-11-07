@@ -36,8 +36,8 @@ export function withTenantSettings(permissions: string): string {
 }
 
 /**
- * Groups, users with their sign-ins, and API keys. A group of the same name or a user of the same
- * email here takes the one of the file and keeps its id. A file holds one group per user, from
+ * Groups, users with their sign-ins, and API keys. An ordinary group of the same id here takes the
+ * one of the file, else a group of the same name or a user of the same email does and keeps its id. A file holds one group per user, from
  * before tenants, which becomes their group in the home tenant. The SuperAdmin group of a file is
  * the group with every permission here, and its people become platform admins.
  */
@@ -52,7 +52,16 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
             continue;
         }
         const existingByName = await tx.group.findFirst({ where: { name: group.name } });
-        const existingById = await tx.group.findUnique({ where: { id: group.id }, select: { fullAccess: true, templateId: true } });
+        const existingById = await tx.group.findUnique({ where: { id: group.id }, select: { name: true, fullAccess: true, templateId: true } });
+        // An ordinary group of the same id here is the group of the file, under whatever name. The
+        // update renamed a group Admin beside SuperAdmin to Admin (before update), and the Admin of
+        // its file would find the group with every permission by its name. It keeps its name here
+        // while another group has the one of the file.
+        if (existingById && !existingById.fullAccess && !existingById.templateId && existingByName && existingByName.id !== group.id) {
+            await tx.group.update({ where: { id: group.id }, data: { permissions: group.permissions, updatedAt: group.updatedAt } });
+            notes.push(`The group ${group.name} of the file came back as ${existingById.name}, since another group is named ${group.name} here.`);
+            continue;
+        }
         // An ordinary group of the file never merges into the group with every permission, which
         // may share its name, like Admin, nor into a group the platform makes for the tenants,
         // which only its template changes. It comes in under a name of its own.

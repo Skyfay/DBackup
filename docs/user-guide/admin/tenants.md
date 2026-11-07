@@ -141,7 +141,7 @@ Add one person of the customer with a group that may manage users. They invite e
 
 **Open** switches you into the tenant.
 
-**Delete** removes the tenant with everything it holds: its connections with their health history, its jobs with their runs and logs, its encryption keys and saved logins, its templates, API keys, invitations and logs, its groups and sign-in providers, its notification settings and the storage alerts of its destinations. The databases of shared servers given to it end with it, and the backups of its time belong to nobody from then on, see [Shared Databases](/user-guide/admin/shared-databases#the-time-window). Its backups on destinations another tenant shares with it are deleted after the tenant is gone. A tenant that shares destinations or channels takes them from its customers first, whose backups stay on the storage. Nothing of it waits in Recently deleted. What stays:
+**Delete** removes the tenant with everything it holds: its connections with their health history, its jobs with their runs and logs, its encryption keys and saved logins, its templates, API keys, invitations and logs, its groups and sign-in providers, its notification settings and the storage alerts of its destinations. The databases of shared servers given to it end with it, and the backups of its time belong to nobody from then on, see [Shared Databases](/user-guide/admin/shared-databases#the-time-window). Its backups on destinations another tenant shares with it are deleted after the tenant is gone, and the hourly refresh of the storage tries again where the storage did not answer. A tenant that shares destinations or channels takes them from its customers first, whose backups stay on the storage. Nothing of it waits in Recently deleted. What stays:
 
 - **The backups at its own destinations.** DBackup does not touch them. The encryption keys are gone with the tenant, so its encrypted backups only open with a [recovery kit](/user-guide/security/recovery-kit).
 - **The accounts.** They only lose their place in the tenant. An account that worked there alone belongs to no tenant afterwards and shows in the home tenant with **No group**. One whose email has a domain the sign-in provider of another tenant claims counts as one of that tenant, so the admins of the home tenant never change it, see [Users](/user-guide/admin/users).
@@ -336,10 +336,11 @@ The update to this version moves the whole instance into the home tenant:
 
 - Everything DBackup holds becomes the tenant **Default**.
 - Every user with a group becomes a member of Default with that group. A user without a group stays without one.
-- The SuperAdmin group becomes **Admin**, the group with every permission, and its members become platform admins. When a group named Admin exists already, that group keeps its name and the SuperAdmin group becomes **Admin (was SuperAdmin)**.
+- The SuperAdmin group becomes **Admin**, the group with every permission, and its members become platform admins. A group already named Admin is renamed **Admin (before update)** and keeps its members and permissions. A configuration backup from before the update still brings its Admin back into that group.
 - Every API key belongs to Default and keeps its permissions. A key with `settings:read` or `settings:write` also gets `tenant-settings:read` or `tenant-settings:write`, like the groups, so a key that could delete for good still can.
 - Every sign-in provider becomes a provider of the platform. Only platform admins add, change, switch and delete providers, as only the SuperAdmin group did before. Seeing them still needs `settings:read`, and from a browser only, no API key reads them any more.
 - The names of saved logins and templates only need to be unique within a tenant from now on.
+- An account whose owner set its current email themselves, and no admin changed it later, counts as one with an email it picked, as the audit log tells. No [sign-in provider](/user-guide/admin/sso#new-people) links it by that email any more. Its owner links the provider with **Link** under **Profile** while signed in.
 - Sessions, passwords, passkeys, second factors and the settings of the instance stay as they are, so nobody has to sign in again.
 
 Some permissions check more than before, with the home tenant alone too. Look at these before you update:

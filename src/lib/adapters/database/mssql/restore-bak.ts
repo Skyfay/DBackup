@@ -5,10 +5,12 @@ import { MSSQLConfig } from "@/lib/adapters/definitions";
 import { executeQuery, executeQueryWithMessages, type SqlServerMessage } from "./connection";
 import { getDialect, type MSSQLDatabaseDialect } from "./dialects";
 import { assertValidDatabaseName, escapeTSqlString, toPhysicalFileName, validateDatabaseName } from "./identifiers";
-import { buildMoveTargets, getInstanceDefaultPaths, joinServerPath, serverDirname, type MoveTarget } from "./server-paths";
+import { buildMoveTargets, getInstanceDefaultPaths, joinServerPath, serverDirname, type MoveReason, type MoveTarget } from "./server-paths";
 import crypto from "crypto";
 import fs from "fs/promises";
+import { createReadStream, createWriteStream } from "fs";
 import path from "path";
+import { pipeline } from "stream/promises";
 import { assertSharedFolderOffOwnData } from "./shared-folder";
 
 type RestoreLog = (msg: string, level?: LogLevel, type?: LogType, details?: string) => void;
@@ -23,25 +25,54 @@ type MSSQLRestoreOneConfig = MSSQLConfig & {
 
 const nameOf = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
 
+/** Which server made a .bak: this one, another one, or one whose name could not be read. */
+type BackupOrigin = "same" | "other" | "unknown";
+
 /**
- * Whether the .bak was made on another server than the one it goes to, by the name of the server
- * the backup records against the names this one answers to. The file paths in such a backup are
- * those of the other server, which may not exist here or belong to another database, like a
- * database moved to another server under the same name. A name that cannot be read, of the backup
- * or of this server, counts as another server, so the files go to the data folder of this one
- * rather than to paths nobody checked.
+ * Which server the .bak was made on, by the name of the server the backup records against the
+ * names this one answers to. The file paths in a backup of another server are those of that server,
+ * which may not exist here or belong to another database, like a database moved to another server
+ * under the same name. A name that cannot be read, of the backup or of this server, is `unknown`,
+ * which `keepsItsFiles` decides.
  */
-async function madeElsewhere(config: MSSQLConfig, host: ExecutionHost, serverPath: string): Promise<boolean> {
+async function backupOrigin(config: MSSQLConfig, host: ExecutionHost, serverPath: string): Promise<BackupOrigin> {
     try {
         const header = await executeQuery(config, host, `RESTORE HEADERONLY FROM DISK = N'${serverPath.replace(/'/g, "''")}'`);
         const made = nameOf((header.recordset?.[0] as Record<string, unknown> | undefined)?.ServerName);
         const here = await executeQuery(config, host, "SELECT @@SERVERNAME AS ServerName, CAST(SERVERPROPERTY('ServerName') AS nvarchar(256)) AS PropertyName");
         const row = here.recordset?.[0] as Record<string, unknown> | undefined;
         const names = [nameOf(row?.ServerName), nameOf(row?.PropertyName)].filter((name): name is string => name !== null);
-        if (!made || names.length === 0) return true;
-        return !names.some((name) => name.toLowerCase() === made.toLowerCase());
+        if (!made || names.length === 0) return "unknown";
+        return names.some((name) => name.toLowerCase() === made.toLowerCase()) ? "same" : "other";
     } catch {
-        return true;
+        return "unknown";
+    }
+}
+
+/**
+ * Whether every physical path the backup records is a file of the target database already, by
+ * `sys.master_files` of that database. Then the restore replaces its own files where they are,
+ * whichever server made the backup, which a full-text catalog or a FILESTREAM container needs,
+ * since those take no MOVE here. A path missing, or a query that fails, answers false.
+ */
+async function keepsItsFiles(config: MSSQLConfig, host: ExecutionHost, targetDb: string, files: readonly { physicalName: string }[]): Promise<boolean> {
+    const paths = files.map((file) => file.physicalName);
+    if (paths.length === 0 || paths.some((value) => typeof value !== "string" || value.length === 0)) return false;
+    try {
+        const result = await executeQuery(
+            config,
+            host,
+            "SELECT physical_name AS OwnPath FROM sys.master_files " +
+                `WHERE database_id = DB_ID(N'${escapeTSqlString(targetDb)}') AND physical_name IN (${paths.map((value) => `N'${escapeTSqlString(value)}'`).join(", ")})`
+        );
+        // SQL Server compares the paths by the collation of the server, mostly without case, like Windows does.
+        const own = new Set((result.recordset ?? [])
+            .map((row: Record<string, unknown>) => row.OwnPath)
+            .filter((value: unknown): value is string => typeof value === "string")
+            .map((value: string) => value.toLowerCase()));
+        return paths.every((value) => own.has(value.toLowerCase()));
+    } catch {
+        return false;
     }
 }
 
@@ -76,7 +107,8 @@ async function assertMoveTargetsFree(config: MSSQLConfig, host: ExecutionHost, t
  *
  * A rename needs MOVE, and so does a backup made on another server, whose files go to the data
  * folder of this one. Restoring under the original name on the server that made the backup leaves
- * the files where the backup already says they belong.
+ * the files where the backup already says they belong, and so does a backup whose server could not
+ * be read while every file it records is a file of the target database already.
  *
  * A customer's restore of a shared database (`options.shared`) never follows the paths of the
  * backup. Its files always go to the default data and log folders of the instance under the name
@@ -111,15 +143,26 @@ export async function restoreBakFromServer(
     log(`Restoring database: ${target.original} -> ${target.target}`);
 
     let moveOptions: MoveTarget[] | undefined;
-    const elsewhere = !shared && target.original === target.target && (await madeElsewhere(config, host, serverPath));
-    if (elsewhere) log("The backup was made on another server, so its files go to the data folder of this one.");
+    const origin = !shared && target.original === target.target ? await backupOrigin(config, host, serverPath) : null;
+    // A backup of a server whose name could not be read moves like one of another server, unless
+    // every file it records is a file of the target database already.
+    let movedFrom: Extract<MoveReason, "other" | "unknown"> | null = origin === "other" ? "other" : null;
+    if (origin === "other") log("The backup was made on another server, so its files go to the data folder of this one.");
+    if (origin === "unknown") {
+        if (await keepsItsFiles(config, host, target.target, logicalFiles)) {
+            log(`The server that made the backup could not be read. Every file of the backup is a file of ${target.target} already, so its files stay where they are.`);
+        } else {
+            movedFrom = "unknown";
+            log("The server that made the backup could not be read, so its files go to the data folder of this one.");
+        }
+    }
     if (shared) log("A restore of a shared database puts its files into the data folder of the server.");
-    if (target.original !== target.target || elsewhere || shared) {
+    if (target.original !== target.target || movedFrom || shared) {
         // The target name becomes a filename here, so path separators have
         // to go - same substitution SQL Server applies to its own files.
         const fileBaseName = toPhysicalFileName(target.target);
         const defaults = await getInstanceDefaultPaths(config, host);
-        moveOptions = buildMoveTargets(logicalFiles, fileBaseName, defaults, { backupFolders: !shared });
+        moveOptions = buildMoveTargets(logicalFiles, fileBaseName, defaults, { backupFolders: !shared, reason: movedFrom ?? "rename" });
 
         const directory = moveOptions.length > 0 ? serverDirname(moveOptions[0].physicalPath) : null;
         if (directory) log(`Placing database files in: ${directory}`);
@@ -219,7 +262,10 @@ export async function restoreOne(
             await host.putFile(filePath, serverPath);
         } else {
             log(`Copying backup file to server...`);
-            await fs.copyFile(filePath, sharedPath);
+            // A stream copy, not `copyFile`, which would keep the 0600 of the private staging. The
+            // copy takes the default mode, so a SQL Server running as another user, like a container
+            // behind a bind mount, can read it. The staged original stays in the private folder.
+            await pipeline(createReadStream(filePath), createWriteStream(sharedPath, { flags: "wx" }));
             log(`Backup file staged at: ${serverPath} (local: ${sharedPath})`);
         }
 

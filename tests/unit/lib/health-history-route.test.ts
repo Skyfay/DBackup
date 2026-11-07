@@ -14,6 +14,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 // The real checks, reduced to the permission list of the context.
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
+    hasPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => ctx.permissions.includes(permission),
     checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
     },
@@ -47,10 +48,13 @@ describe("GET /api/adapters/[id]/health-history", () => {
         expect((await call("missing")).status).toBe(404);
     });
 
-    // Reading destinations used to be enough for the checks of a database source.
+    // Reading destinations used to be enough for the checks of a database source. Without the
+    // read permission of its kind the connection answers like a missing one, never naming its kind.
     it("needs the read permission of the connection's own kind", async () => {
         signedIn(PERMISSIONS.DESTINATIONS.READ);
-        expect((await call()).status).toBe(403);
+        const refused = await call();
+        expect(refused.status).toBe(404);
+        expect(await refused.json()).toEqual({ error: "Adapter not found" });
         expect(mocks.getHealthHistory).not.toHaveBeenCalled();
 
         mocks.getAdapterTypes.mockResolvedValue(["notification"]);

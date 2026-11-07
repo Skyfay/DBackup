@@ -119,6 +119,18 @@ export interface MoveTarget {
 }
 
 /**
+ * Why the files of a restore move: the database gets another name, or the backup comes from another
+ * server, or from one whose name could not be read, whose paths nobody checked here.
+ */
+export type MoveReason = "rename" | "other" | "unknown";
+
+/** How the message of a file that cannot move names the reason. */
+const MOVE_REASON_WORDS: Record<Exclude<MoveReason, "rename">, string> = {
+    other: "the backup comes from another server",
+    unknown: "the backup comes from a server whose name could not be read",
+};
+
+/**
  * Where the restored files land when the database is being renamed.
  *
  * Restoring under the original name needs none of this, because the backup
@@ -133,14 +145,17 @@ export interface MoveTarget {
  *
  * `backupFolders: false` drops that fallback, for a restore whose backup names paths that nobody
  * may follow, like a customer's shared database, whose files then go to the instance defaults alone.
+ * `reason` says why the files move, a rename unless told otherwise, so a file that cannot move says
+ * what to do about it.
  */
 export function buildMoveTargets(
     files: RestoreFileEntry[],
     baseName: string,
     defaults: InstanceDefaultPaths,
-    options: { backupFolders?: boolean } = {},
+    options: { backupFolders?: boolean; reason?: MoveReason } = {},
 ): MoveTarget[] {
     const backupFolders = options.backupFolders ?? true;
+    const reason = options.reason ?? "rename";
     let dataFiles = 0;
     let logFiles = 0;
 
@@ -150,6 +165,13 @@ export function buildMoveTargets(
             throw new Error(
                 `Cannot restore '${file.logicalName}' into the data folder of the server. The backup contains ` +
                     `a file of type '${file.type}', which SQL Server places by directory rather than by file name.`,
+            );
+        }
+        if ((type !== "D" && type !== "L") && reason !== "rename") {
+            throw new Error(
+                `Cannot restore '${file.logicalName}' into the data folder of this server, since ${MOVE_REASON_WORDS[reason]}. ` +
+                    `The backup contains a file of type '${file.type}', which SQL Server places by directory rather than by file name. ` +
+                    "Restore it on the server that made the backup, or by hand with a MOVE of that file.",
             );
         }
         if (type !== "D" && type !== "L") {
@@ -178,7 +200,10 @@ export function buildMoveTargets(
             throw new Error(
                 `Cannot determine where to place '${file.logicalName}' on the server. ` +
                     `The instance reports no default ${isLog ? "log" : "data"} directory and the backup ` +
-                    `records no directory for this file. Restore under the original database name instead.`,
+                    `records no directory for this file. ` +
+                    (reason === "rename"
+                        ? "Restore under the original database name instead."
+                        : `Set the default data and log folders of the instance in its server properties, since ${MOVE_REASON_WORDS[reason]}.`),
             );
         }
 

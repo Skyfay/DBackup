@@ -120,10 +120,17 @@ async function notePlatformAdmin(): Promise<void> {
  * home tenant, also when the role or the membership got lost, but only while the installation never
  * had a platform admin. Otherwise the only account left after every other one was deleted, of
  * whoever that is, would become the platform admin of every tenant.
+ *
+ * The first account is the one created earliest, not the only one, so a second account made at the
+ * same moment leaves the first one its promotion, and only while nobody is a platform admin.
  */
 async function promoteFirstUser(userId: string): Promise<boolean> {
-  if ((await prisma.user.count()) !== 1) return false;
   if (await prisma.systemSetting.findUnique({ where: { key: PLATFORM_ADMIN_SEEN_KEY }, select: { key: true } })) return false;
+  const [first, admin] = await Promise.all([
+    prisma.user.findFirst({ orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true } }),
+    prisma.user.findFirst({ where: { platformRole: PLATFORM_ADMIN_ROLE }, select: { id: true } }),
+  ]);
+  if (first?.id !== userId || admin) return false;
   log.info("Making the first user the platform admin");
   await prisma.$transaction(async (tx) => {
     const groupId = await ensureFullAccessGroup(tx);

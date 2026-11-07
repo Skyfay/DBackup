@@ -1,10 +1,9 @@
 import fs from "fs/promises";
-import path from "path";
 import prisma from "@/lib/prisma";
 import { generateSharedDownloadToken } from "@/lib/auth/download-tokens";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import type { DatabasePlace } from "@/lib/tenant/database-owner";
 import type { KeyOverride } from "@/services/backup/key-resolution";
@@ -277,8 +276,9 @@ export function prepareSharedDownload(tenantId: string, userId: string, ref: Sha
         const provider = { tenantId: serverTenantId, serverName: names.serverName, customerName: names.customerName };
         let failure: unknown = null;
         for (const copy of backup.copies) {
-            // A name nobody can guess, so no one lays a file there first for the download to write through.
-            const tempFile = path.join(getTempDir(), `shared_${randomUUID()}`);
+            // A name nobody can guess in the private folder, so no one lays a file there first for the
+            // download to write through and nobody else reads the dump.
+            const tempFile = await privateTempPath(`shared_${randomUUID()}`);
             const keyOverride = namedKey(copy);
             try {
                 // Read in the tenant of the server, whose backup it is: with the key the backup

@@ -24,6 +24,8 @@ const prismaMock = {
     systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     // Whether the tenant of the destination shares it with customers.
     connectionShare: { count: vi.fn().mockResolvedValue(0) },
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    execution: { findMany: vi.fn().mockResolvedValue([]) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
@@ -35,6 +37,8 @@ vi.mock("@/services/backup/encryption-service", () => ({ getProfileMasterKey: as
 const {
     streamFileRestore, restoreFilesToStorage, planFileRestore,
 } = await import("@/services/restore/file-restore");
+const { EncryptionDowngradeError } = await import("@/services/restore/recorded-encryption");
+const { openChainArchive } = await import("@/lib/archive/chain-source");
 
 let workDir: string;
 let archivePath: string;
@@ -135,6 +139,7 @@ async function readTarGz(stream: NodeJS.ReadableStream): Promise<Map<string, Buf
 
 beforeEach(async () => {
     vi.clearAllMocks();
+    prismaMock.execution.findMany.mockResolvedValue([]);
     workDir = await fs.mkdtemp(path.join(os.tmpdir(), "file-restore-test-"));
     uploads = [];
     rangeCalls = 0;
@@ -509,5 +514,85 @@ describe("what a file restore may write, by who restores", () => {
         // The folder the source read, or one inside it, goes back for anyone who may restore.
         await restoreFilesToStorage({ ...input(["docs"], { kind: "storage", configId: "storage-1", basePath: "/var/www/old" }), caller: MEMBER });
         expect(uploads.map((upload) => upload.remotePath)).toEqual(["/var/www/old/docs/readme.md"]);
+    });
+});
+
+describe("a plain archive where its run wrote an encrypted one", () => {
+    /** The run of History that wrote the archive to this destination, encrypted. */
+    const encryptedRun = () => prismaMock.execution.findMany.mockResolvedValue([{
+        id: "run-1",
+        metadata: JSON.stringify({
+            archive: { formatVersion: 2, indexFile: ".index", encrypted: true, profileId: PROFILE_ID },
+            destinations: [{ configId: "storage-1", path: "backups/job1/backup.tar", status: "success" }],
+        }),
+    }]);
+
+    it("is neither read nor restored, since someone who writes the destination laid it there", async () => {
+        await buildFixture(false);
+        encryptedRun();
+
+        await expect(planFileRestore(input(["www"], { kind: "download" }))).rejects.toBeInstanceOf(EncryptionDowngradeError);
+        await expect(restoreFilesToStorage(input(["docs"], { kind: "origin" }))).rejects.toThrow(/written encrypted, but the file at the destination is not encrypted/);
+        expect(uploads).toEqual([]);
+    });
+
+    it("is read as before while the run that wrote it did not encrypt, or no run of History knows it", async () => {
+        await buildFixture(false);
+        const plan = await planFileRestore(input(["www"], { kind: "download" }));
+        expect(plan.fileCount).toBe(3);
+
+        prismaMock.execution.findMany.mockResolvedValue([{
+            id: "run-1",
+            metadata: JSON.stringify({
+                archive: { formatVersion: 2, indexFile: ".index", encrypted: false },
+                destinations: [{ configId: "storage-1", path: "backups/job1/backup.tar", status: "success" }],
+            }),
+        }]);
+        expect((await planFileRestore(input(["www"], { kind: "download" }))).fileCount).toBe(3);
+    });
+
+    it("opens an encrypted archive whatever its run says", async () => {
+        await buildFixture(true);
+        encryptedRun();
+        expect((await planFileRestore(input(["www"], { kind: "download" }))).fileCount).toBe(3);
+    });
+
+    it("refuses a plain archive in the chain of an encrypted one", async () => {
+        await buildFixture(false);
+        const options = { adapter: makeAdapter(), config: {} as never, snapshotPath: "backups/job1/backup.tar", resolveMasterKey: async () => MASTER_KEY };
+
+        await expect(openChainArchive({ ...options, requireEncryption: true }, "backup.tar")).rejects.toThrow(/not encrypted, unlike the backup it belongs to/);
+        const opened = await openChainArchive(options, "backup.tar");
+        expect(opened.manifest.encryption).toBeUndefined();
+        await opened.dispose();
+    });
+});
+
+describe("the files a restore stages before it uploads them", () => {
+    // An upload like rsync -a carries the mode of the staged file to the destination, so the file
+    // takes the default mode (this archive records none), the 0700 folder keeps it from other users.
+    it("lie in the private folder of 0700 with the default mode, since rsync -a carries the mode over", async () => {
+        await buildFixture(true);
+        const staged: { folder: string; folderMode: number; mode: number }[] = [];
+        const adapter = makeAdapter();
+        const upload = adapter.upload;
+        adapter.upload = (async (config: unknown, localPath: string, remotePath: string) => {
+            const folder = path.dirname(localPath);
+            staged.push({ folder: path.basename(folder), folderMode: (await fs.stat(folder)).mode & 0o777, mode: (await fs.stat(localPath)).mode & 0o777 });
+            return upload(config as never, localPath, remotePath);
+        }) as StorageAdapter["upload"];
+        registryGet.mockReturnValue(adapter);
+
+        await restoreFilesToStorage(input(["docs"], { kind: "storage", configId: "storage-1", basePath: "/restores/run-1/" }));
+
+        expect(staged).toHaveLength(1);
+        expect(staged[0].folder).toMatch(/^dbackup-private-/);
+        if (process.platform !== "win32") {
+            // The mode a new file takes under the umask of this process.
+            await fs.writeFile(path.join(workDir, "plain"), "x");
+            const plainMode = (await fs.stat(path.join(workDir, "plain"))).mode & 0o777;
+            expect(staged[0]).toEqual(expect.objectContaining({ folderMode: 0o700, mode: plainMode }));
+            expect(staged[0].mode).not.toBe(0o600);
+        }
     });
 });

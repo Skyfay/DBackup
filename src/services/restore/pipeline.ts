@@ -6,7 +6,7 @@ import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { formatDuration, formatBytes } from "@/lib/utils";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import path from "path";
 import fs from "fs";
 import { pipeline } from "stream/promises";
@@ -27,6 +27,7 @@ import { registerExecution, unregisterExecution } from "@/lib/execution/abort";
 import { processQueue } from "@/lib/execution/queue-manager";
 import type { RestoreInput } from "./types";
 import { resolveDecryptionKey } from "./smart-recovery";
+import { assertEncryptionKept } from "./recorded-encryption";
 import { restoreArchiveSnapshot } from "./archive-restore";
 import { openDestination } from "@/services/sharing/destination-access";
 import { createRestoreLogs, type ProviderRun } from "./run-logs";
@@ -210,9 +211,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         //    path this is, so it never claims a download that will not happen.
         setStage(RESTORE_STAGES.DOWNLOADING);
         logs.split(`Reading backup metadata: ${shownFile}...`, `Reading backup metadata: ${file}...`);
-        const tempDir = getTempDir();
-        // A name of its own per restore, so two restores of the same file never share one.
-        tempFile = path.join(tempDir, `${randomUUID()}-${path.basename(file)}`);
+        // A name of its own per restore, so two restores of the same file never share one, in the
+        // private folder, since the download, its decrypted and its unpacked form are the data of
+        // the databases, see `privateTempDir`.
+        tempFile = await privateTempPath(`${randomUUID()}-${path.basename(file)}`);
 
         const sConf = await resolveAdapterConfig(storageConfig) as any;
 
@@ -222,6 +224,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         let compressionMeta: CompressionType | undefined = undefined;
         let expectedChecksum: string | undefined = undefined;
         let seekableArchive = false;
+        // The job the metadata names, only for the warning about a plain backup without a run.
+        let metaJobId: unknown;
 
         try {
             const metaRemotePath = file + ".meta.json";
@@ -230,6 +234,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
             if (metaContent) {
                 const metadata = JSON.parse(metaContent);
+                metaJobId = metadata?.jobId;
 
                 if (metadata.archive?.formatVersion === 2) {
                     // Seekable archive - restored by byte range below, never by full
@@ -381,6 +386,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         // below would list every database of the server in the customer's log.
         if (input.shared) throw new Error("This backup can only be restored out of an archive with an index.");
 
+        // Its metadata says whether it is encrypted, the run that wrote it whether it has to be,
+        // so a plain backup laid where an encrypted one was is refused before anything is read.
+        await assertEncryptionKept(storageConfigId, file, { encrypted: isEncrypted, jobId: metaJobId });
+
         log(`Downloading backup file: ${file}...`, 'info');
         record.opened(false);
         const downloadStartTime = Date.now();
@@ -469,7 +478,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                         createNoFollowReadStream(tempFile),
                         decryptTracker,
                         decryptStream,
-                        createWriteStream(decryptedTempFile)
+                        createWriteStream(decryptedTempFile, { flags: "wx", mode: PRIVATE_FILE_MODE })
                     );
                 } catch (e: unknown) {
                     // A failed tag or read leaves no half decrypted file behind.
@@ -529,7 +538,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                             decompTracker,
                             decompStream,
                             byteLimit(legacyInflateLimit(compFileSize), "the decompressed dump"),
-                            createWriteStream(unpackedFile)
+                            createWriteStream(unpackedFile, { flags: "wx", mode: PRIVATE_FILE_MODE })
                         );
                     } catch (e: unknown) {
                         await fs.promises.unlink(unpackedFile).catch(() => {});

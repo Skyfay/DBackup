@@ -200,4 +200,29 @@ describe("the databases of customers on a Firebird server, whose restore target 
         await expect(asHome(() => assertTargetsConfirmed({ ...api, confirmedCustomerDatabases: [] }, ["/firebird/data/acme.fdb"]))).rejects.toThrow(/customers hold now: fb_acme\. The request did not confirm/);
         await expect(asHome(() => assertTargetsConfirmed({ ...api, confirmedCustomerDatabases: ["fb_acme"] }, ["/firebird/data/acme.fdb"]))).resolves.toBeUndefined();
     });
+
+    it("asks the confirmation for a target that is no saved alias, since a path the server resolves can still reach a customer's file", async () => {
+        // A link or a mount to acme.fdb, which no comparison of paths finds.
+        const target = "/srv/firebird-link/acme.fdb";
+        const api = { storageConfigId: "nas", file: "nightly/fb.tar", targetSourceId: "shared-firebird", databaseMapping: [{ originalName: "fb_acme", targetName: target, selected: true }] };
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(api))).rejects.toThrow(/writes into \/srv\/firebird-link\/acme\.fdb, which is no saved database of this Firebird server\..*Confirm overwriting to restore\./);
+        // Confirmed, it goes through, and names no customer, since none holds the path by an alias.
+        await expect(asHome(() => assertCustomerDatabasesConfirmed({ ...api, overwriteCustomerDatabases: true }))).resolves.toEqual([]);
+
+        // At the write the request has to carry the confirmation too.
+        await expect(asHome(() => assertTargetsConfirmed({ ...api, confirmedCustomerDatabases: [] }, [target]))).rejects.toThrow(/no saved database of this Firebird server.*The request did not confirm it/);
+        await expect(asHome(() => assertTargetsConfirmed({ ...api, overwriteCustomerDatabases: true, confirmedCustomerDatabases: [] }, [target]))).resolves.toBeUndefined();
+    });
+
+    it("asks nothing for a saved alias nobody holds or for a path on a Firebird server that gives nothing away", async () => {
+        await base.adapterConfig.create({ data: { id: "plain-firebird", name: "plain-firebird", type: "database", adapterId: "firebird", config: JSON.stringify({ host: "fb", databases: aliases }) } });
+        const intoPath = (sourceId: string, targetName: string) => ({ storageConfigId: "nas", file: "nightly/fb.tar", targetSourceId: sourceId, databaseMapping: [{ originalName: "fb_acme", targetName, selected: true }] });
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(intoPath("plain-firebird", "/srv/scratch.fdb")))).resolves.toEqual([]);
+        await expect(asHome(() => assertTargetsConfirmed({ ...intoPath("plain-firebird", "/srv/scratch.fdb"), confirmedCustomerDatabases: [] }, ["/srv/scratch.fdb"]))).resolves.toBeUndefined();
+
+        // A saved alias of the sharing server that no customer holds is no path of its own.
+        await base.adapterConfig.update({ where: { id: "shared-firebird" }, data: { config: JSON.stringify({ host: "fb", databases: [...aliases, { name: "fb_free", path: "/firebird/data/free.fdb" }] }) } });
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(intoPath("shared-firebird", "fb_free")))).resolves.toEqual([]);
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(intoPath("shared-firebird", "/firebird/data/free.fdb")))).resolves.toEqual([]);
+    });
 });

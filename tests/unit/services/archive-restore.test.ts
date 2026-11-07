@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { Readable } from 'stream';
 import { createReadStream } from 'fs';
@@ -194,6 +195,8 @@ describe('restoreArchiveSnapshot', () => {
     beforeEach(() => {
         storageTargetConfig.config = '{}';
         vi.clearAllMocks();
+        // No run of History wrote these backups, see `recorded-encryption.ts`.
+        prismaMock.execution.findMany.mockResolvedValue([]);
     });
 
     it('restores selected databases and directories successfully', async () => {
@@ -327,6 +330,44 @@ describe('restoreArchiveSnapshot', () => {
             expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function),
             undefined,
         );
+    });
+
+    /** Restores `a.txt` of a backup with `dirMetadata` and returns the mode of the staged file its upload saw. */
+    async function stagedMode(dirMetadata?: { mode?: number }): Promise<{ folder: string; mode: number }> {
+        const { sourceAdapter } = await buildRemoteBackup([], { 'a.txt': 'AAAA' }, dirMetadata);
+        let seen = { folder: '', mode: 0 };
+        const storageAdapter = makeFakeStorageAdapter({
+            upload: vi.fn(async (_config: unknown, localPath: string) => {
+                seen = { folder: path.basename(path.dirname(localPath)), mode: (await fs.stat(localPath)).mode & 0o777 };
+                return true;
+            }),
+        });
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+        prismaMock.jobSource.findUnique.mockResolvedValueOnce(null as never);
+
+        await restoreArchiveSnapshot(makeInput({
+            directoryMapping: [
+                { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
+            ],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+        return seen;
+    }
+
+    // An upload like rsync -a carries the mode of the staged file to the destination, so a staged
+    // file is not 0600. The 0700 of the private folder keeps it from other users.
+    it.skipIf(process.platform === 'win32')('stages a file with the mode the archive recorded for it, which rsync -a carries over', async () => {
+        const seen = await stagedMode({ mode: 0o640 });
+        expect(seen).toEqual({ folder: expect.stringMatching(/^dbackup-private-/), mode: 0o640 });
+    });
+
+    it.skipIf(process.platform === 'win32')('stages a file without a recorded mode with the default mode, not 0600', async () => {
+        const seen = await stagedMode();
+        // The mode a new file takes under the umask of this process.
+        const plain = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'dbackup-mode-')), 'plain');
+        await fs.writeFile(plain, 'x');
+        expect(seen.mode).toBe((await fs.stat(plain)).mode & 0o777);
+        expect(seen.mode).not.toBe(0o600);
+        await fs.rm(path.dirname(plain), { recursive: true, force: true });
     });
 
     it('sets the two restore stages according to what the snapshot holds', async () => {
@@ -618,6 +659,23 @@ describe('restoreArchiveSnapshot', () => {
         expect(seenPath.endsWith('.sql')).toBe(true);
         expect(seenContent).toBe('-- dump of shop');
         await expect(fs.access(seenPath)).rejects.toThrow();
+    });
+
+    it('stages the dump where only DBackup reads it, in the private folder and with 0600', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop']);
+        let seen = { folder: '', folderMode: 0, mode: 0 };
+        const dbAdapter = makeFakeDbAdapter({
+            restoreOne: vi.fn(async (_conf: unknown, filePath: string) => {
+                const folder = path.dirname(filePath);
+                seen = { folder: path.basename(folder), folderMode: (await fs.stat(folder)).mode & 0o777, mode: (await fs.stat(filePath)).mode & 0o777 };
+            }),
+        });
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+
+        await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(seen.folder).toMatch(/^dbackup-private-/);
+        if (process.platform !== 'win32') expect(seen).toEqual(expect.objectContaining({ folderMode: 0o700, mode: 0o600 }));
     });
 
     it('refuses to restore a dump whose bytes do not match the recorded checksum', async () => {

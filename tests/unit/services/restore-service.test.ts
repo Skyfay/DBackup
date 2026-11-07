@@ -95,6 +95,8 @@ describe('RestoreService', () => {
         prismaMock.adapterConfig.findUnique.mockReset();
         // No destination of these tests is shared with other tenants.
         prismaMock.connectionShare.count.mockResolvedValue(0);
+        // No run of History wrote these backups, see `recorded-encryption.ts`.
+        prismaMock.execution.findMany.mockResolvedValue([]);
 
         // Spy on FS methods instead of full module mock to avoid import issues
         vi.spyOn(fs, 'existsSync').mockReturnValue(true);

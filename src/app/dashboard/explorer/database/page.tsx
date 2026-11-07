@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DatabasePage } from "@/components/dashboard/explorer/database-page";
 import { TenantKeyed } from "@/components/tenant/tenant-keyed";
-import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
 import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
+import { redirectWithoutRight } from "@/app/dashboard/right-redirect";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
 /** The name of the browser tab, which the root layout ends with the name of the instance. */
@@ -13,8 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ExplorerDatabasePage() {
     await redirectWithoutTenant();
-    await checkPermission(PERMISSIONS.SOURCES.VIEW);
-    const permissions = await getUserPermissions();
+    const { permissions } = await redirectWithoutRight(PERMISSIONS.SOURCES.VIEW);
 
     return (
         <>

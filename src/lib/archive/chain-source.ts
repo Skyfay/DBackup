@@ -38,6 +38,12 @@ export interface ChainReaderOptions {
     snapshotPath: string;
     /** Resolves the master key for an archive's encryption profile. */
     resolveMasterKey: (profileId: string) => Promise<Buffer>;
+    /**
+     * Refuses a sibling without encryption. Every archive of a chain is written by the same job,
+     * so a plain one beside an encrypted snapshot is a file laid at the destination, which would
+     * otherwise be read as part of the backup.
+     */
+    requireEncryption?: boolean;
 }
 
 /**
@@ -70,6 +76,9 @@ export async function openChainArchive(
 
     try {
         const manifest = await readArchiveManifest(managed.source);
+        if (options.requireEncryption && !manifest.encryption) {
+            throw new Error("The archive is not encrypted, unlike the backup it belongs to");
+        }
         const masterKey = manifest.encryption
             ? await options.resolveMasterKey(manifest.encryption.profileId)
             : undefined;

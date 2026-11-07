@@ -37,6 +37,8 @@ vi.mock("next/headers", () => ({
 const mockPrismaUser = {
   findUnique: vi.fn(),
   count: vi.fn(),
+  // The earliest account and a platform admin, which the promotion of the first account looks for.
+  findFirst: vi.fn(),
 };
 const mockPrismaTenant = { findUnique: vi.fn(), count: vi.fn() };
 const mockPrismaMembership = { findUnique: vi.fn() };
@@ -58,6 +60,7 @@ vi.mock("@/lib/prisma", () => ({
     user: {
       findUnique: (...args: any[]) => mockPrismaUser.findUnique(...args),
       count: (...args: any[]) => mockPrismaUser.count(...args),
+      findFirst: (...args: any[]) => mockPrismaUser.findFirst(...args),
     },
     tenant: {
       findUnique: (...args: any[]) => mockPrismaTenant.findUnique(...args),
@@ -117,6 +120,12 @@ function signedIn(row: ReturnType<typeof account>, activeTenantId?: string) {
   mockPrismaUser.findUnique.mockResolvedValue(row);
 }
 
+/** The accounts the promotion finds: the earliest one, and a platform admin if any. */
+function accountsAre(earliest: string, platformAdmin: string | null = null) {
+  mockPrismaUser.findFirst.mockImplementation(async (args: { where?: { platformRole?: string } }) =>
+    args?.where?.platformRole ? (platformAdmin ? { id: platformAdmin } : null) : { id: earliest });
+}
+
 const ctxOf = (overrides: Partial<AuthContext>): AuthContext => ({
   userId: "user-1",
   permissions: [],
@@ -131,6 +140,8 @@ describe("Access Control", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPrismaUser.findUnique.mockReset();
+    // No account at all, so nobody is the earliest one and nobody is promoted.
+    mockPrismaUser.findFirst.mockResolvedValue(null);
     mockPrismaTenant.findUnique.mockResolvedValue(null);
     // One tenant, as every installation starts.
     mockPrismaTenant.count.mockResolvedValue(1);
@@ -713,7 +724,7 @@ describe("Access Control", () => {
       mockPrismaUser.findUnique
         .mockResolvedValueOnce(account("user-1"))
         .mockResolvedValue(promoted);
-      mockPrismaUser.count.mockResolvedValue(1);
+      accountsAre("user-1");
       mockEnsureFullAccessGroup.mockResolvedValue("g-1");
       mockPrismaMembership.findUnique.mockResolvedValue({ group: { id: "g-1", name: "Admin" } });
 
@@ -734,7 +745,7 @@ describe("Access Control", () => {
 
     it("does not make the only account left a platform admin once the installation had one", async () => {
       signedIn(account("user-9"));
-      mockPrismaUser.count.mockResolvedValue(1);
+      accountsAre("user-9");
       mockPrismaSetting.findUnique.mockResolvedValue({ key: "platform.adminSeen" });
 
       const result = await getViewer();
@@ -753,9 +764,9 @@ describe("Access Control", () => {
       expect(mockPrismaSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { key: "platform.adminSeen" }, update: {} }));
     });
 
-    it("should not auto-promote when multiple users exist", async () => {
-      signedIn(account("user-1"));
-      mockPrismaUser.count.mockResolvedValue(3);
+    it("does not promote an account made after the first one, also one made at the same moment", async () => {
+      signedIn(account("user-2"));
+      accountsAre("user-1");
 
       const result = await getViewer();
 
@@ -765,6 +776,33 @@ describe("Access Control", () => {
       expect(result!.isPlatformAdmin).toBe(false);
       expect(result!.role).toBeNull();
       expect(result!.permissions).toEqual([]);
+    });
+
+    it("promotes the earliest account although a second one was made beside it", async () => {
+      mockGetSession.mockResolvedValue({ user: { id: "user-1" }, session: { id: "session-1" } });
+      mockPrismaUser.findUnique
+        .mockResolvedValueOnce(account("user-1"))
+        .mockResolvedValue(account("user-1", { platformRole: "ADMIN", memberships: [{ permissions: "[]", fullAccess: true }] }));
+      mockPrismaUser.count.mockResolvedValue(2);
+      accountsAre("user-1");
+      mockEnsureFullAccessGroup.mockResolvedValue("g-1");
+
+      const result = await getViewer();
+
+      expect(mockTx.user.update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { platformRole: "ADMIN" } });
+      expect(result!.isPlatformAdmin).toBe(true);
+      // The earliest by the time it was made, the id deciding between two of the same moment.
+      expect(mockPrismaUser.findFirst).toHaveBeenCalledWith(expect.objectContaining({ orderBy: [{ createdAt: "asc" }, { id: "asc" }] }));
+    });
+
+    it("promotes nobody while an account is a platform admin already", async () => {
+      signedIn(account("user-1"));
+      accountsAre("user-1", "admin-1");
+
+      const result = await getViewer();
+
+      expect(mockTx.user.update).not.toHaveBeenCalled();
+      expect(result!.isPlatformAdmin).toBe(false);
     });
   });
 

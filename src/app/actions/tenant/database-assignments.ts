@@ -15,7 +15,7 @@ import { logAssignmentChange, logDatabasesAssigned, logRuleAdded, logRuleRemoved
 import { AssignmentPerDaySchema, AssignmentRuleSchema } from "@/lib/tenant/tenant-schemas";
 import { moveDatabase, moveTargets, type MoveTarget } from "@/services/tenant/database-moves";
 import { customersOfServer } from "@/services/tenant/shared-servers";
-import { customerDatabases } from "@/services/restore/customer-databases";
+import { customerDatabases, unsavedFirebirdTargets } from "@/services/restore/customer-databases";
 import { platformGroupService } from "@/services/user/platform-group-service";
 
 /**
@@ -260,7 +260,14 @@ export async function getCustomerDatabases(sourceId: string, names: string[]): P
         const named = hasPermissionWithContext(viewer, SEE_SHARING_PERMISSION) || hasPermissionWithContext(viewer, SHARE_PERMISSION);
         // A customer beyond the reach of the viewer reads as a customer without a name.
         const reach = named ? await platformGroupService.reachOf(viewer.id) : [];
-        return { success: true, data: held.map((entry) => ({ database: entry.database, customer: named && reachCovers(reach, entry.tenantId) ? entry.customer : null })) };
+        const rows = held.map((entry) => ({ database: entry.database, customer: named && reachCovers(reach, entry.tenantId) ? entry.customer : null }));
+        // A Firebird path that is no saved alias may reach a customer's database, so the page asks the
+        // same confirmation for it, without a name, see `unsavedFirebirdTargets`.
+        const listed = new Set(rows.map((row) => row.database));
+        for (const target of await unsavedFirebirdTargets(id.data, wanted.data)) {
+            if (!listed.has(target)) rows.push({ database: target, customer: null });
+        }
+        return { success: true, data: rows };
     } catch (error: unknown) {
         log.warn("Reading the databases customers hold on a server failed", { sourceId: id.data }, wrapError(error));
         return { success: false, error: "The databases of customers could not be read." };

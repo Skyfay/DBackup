@@ -16,7 +16,7 @@ import crypto from "crypto";
 import path from "path";
 import { AdapterConfig as AdapterConfigType, StorageAdapter } from "@/lib/core/interfaces";
 import { openDestination } from "@/services/sharing/destination-access";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { localFileSource } from "./sources";
@@ -95,8 +95,10 @@ export async function openStorageArchiveSource(
      * promise is given back once the copy is removed.
      */
     const fetchWhole = async (): Promise<WholeCopy> => {
+        // In the private folder, since a plain archive is the data of the backup. The adapter
+        // creates the file with its own mode, which the folder keeps from anyone else.
+        const tempFile = await privateTempPath(`archive-fetch-${process.pid}-${crypto.randomUUID()}-${path.basename(remotePath)}`);
         const space = size !== undefined ? await reserveTempSpace([size], 1) : undefined;
-        const tempFile = path.join(getTempDir(), `archive-fetch-${process.pid}-${crypto.randomUUID()}-${path.basename(remotePath)}`);
         const remove = async () => {
             await fs.unlink(tempFile).catch(() => { });
             space?.release();

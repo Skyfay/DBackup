@@ -10,6 +10,10 @@ vi.mock('@/services/storage/storage-service', () => ({ storageService: storage }
 // Whether a tenant may still use a destination, which the sharing module reads across tenants.
 const access = vi.hoisted(() => ({ viewModeOf: vi.fn() }));
 vi.mock('@/services/sharing/destination-access', () => access);
+// Who a destination is shared with, and the folders deleted tenants left on it. Nobody gets one unless a test says so.
+const sharing = vi.hoisted(() => ({ customersOfShares: vi.fn(), sweepDeletedTenantFolders: vi.fn() }));
+vi.mock('@/services/sharing/provided', () => ({ customersOfShares: (...args: unknown[]) => sharing.customersOfShares(...args) }));
+vi.mock('@/services/sharing/share-cleanup', () => ({ sweepDeletedTenantFolders: (...args: unknown[]) => sharing.sweepDeletedTenantFolders(...args) }));
 vi.mock('@/lib/core/registry', () => ({ registry: { get: vi.fn() } }));
 vi.mock('@/services/system/update-service', () => ({ updateService: { checkForUpdates: vi.fn() } }));
 vi.mock('@/services/notifications/system-notification-service', () => ({ notify: vi.fn(), getNotificationConfig: vi.fn() }));
@@ -19,6 +23,7 @@ const ownData = vi.hoisted(() => ({ storedScanRefusal: vi.fn() }));
 vi.mock('@/lib/adapters/own-data', () => ({ storedScanRefusal: (...args: unknown[]) => ownData.storedScanRefusal(...args) }));
 
 import { warmupStorageCache } from '@/services/system/system-task-runs';
+import { explicitScope } from '@/lib/tenant/context';
 
 const usb = { id: 'usb', name: 'USB rotation', type: 'storage', storageRole: 'DESTINATION', metadata: JSON.stringify({ airGapped: true }), tenantId: 'acme' };
 const nas = { id: 'nas', name: 'NAS', type: 'storage', storageRole: 'DESTINATION', metadata: null, lastStatus: 'ONLINE', tenantId: 'acme' };
@@ -32,6 +37,8 @@ describe('the warmup of the storage lists', () => {
         storage.reconcileStorageListCache.mockResolvedValue(undefined);
         ownData.storedScanRefusal.mockResolvedValue(null);
         access.viewModeOf.mockImplementation(async (_row: unknown, tenantId: string) => ({ kind: 'customer', tenantId }));
+        sharing.customersOfShares.mockResolvedValue(new Map());
+        sharing.sweepDeletedTenantFolders.mockResolvedValue([]);
     });
 
     it('never lists a destination whose folder reaches the own data of DBackup, and drops what was cached of it', async () => {
@@ -109,6 +116,63 @@ describe('the warmup of the storage lists', () => {
             await expect(warmupStorageCache()).resolves.toEqual({ ok: false, summary: '1 of 1 destination failed' });
 
             expect(prismaMock.storageListCache.deleteMany).not.toHaveBeenCalled();
+        });
+
+        it('lists the destination for a customer it is shared with that has no listing yet, in the scope of that customer', async () => {
+            sharing.customersOfShares.mockResolvedValue(new Map([['msp-s3', ['globex', 'initech']]]));
+            const scopes: unknown[] = [];
+            storage.listFilesWithMetadata.mockImplementation(async () => {
+                scopes.push(explicitScope());
+                return [];
+            });
+
+            await expect(warmupStorageCache()).resolves.toEqual({ summary: '1 destination' });
+
+            // Globex has a listing and compares it, Initech never opened the destination.
+            expect(storage.reconcileStorageListCache).toHaveBeenCalledWith('msp-s3', 'globex');
+            expect(storage.listFilesWithMetadata).toHaveBeenCalledTimes(1);
+            expect(storage.listFilesWithMetadata).toHaveBeenCalledWith('msp-s3');
+            expect(scopes).toEqual([{ kind: 'tenant', tenantId: 'initech' }]);
+            expect(access.viewModeOf).toHaveBeenCalledWith(expect.objectContaining({ id: 'msp-s3' }), 'initech');
+        });
+
+        it('lists a customer once, whether it has a listing or not', async () => {
+            sharing.customersOfShares.mockResolvedValue(new Map([['msp-s3', ['globex']]]));
+
+            await warmupStorageCache();
+
+            expect(storage.reconcileStorageListCache.mock.calls.filter(([, tenantId]) => tenantId === 'globex')).toHaveLength(1);
+            expect(storage.listFilesWithMetadata).not.toHaveBeenCalled();
+        });
+
+        it('deletes the folders of deleted tenants on a shared destination before the listings', async () => {
+            sharing.customersOfShares.mockResolvedValue(new Map([['msp-s3', []]]));
+            const order: string[] = [];
+            sharing.sweepDeletedTenantFolders.mockImplementation(async () => {
+                order.push('sweep');
+                return ['gone'];
+            });
+            storage.reconcileStorageListCache.mockImplementation(async () => {
+                order.push('reconcile');
+            });
+
+            await expect(warmupStorageCache()).resolves.toEqual({ summary: '1 destination' });
+
+            expect(sharing.sweepDeletedTenantFolders).toHaveBeenCalledWith('msp-s3');
+            expect(order[0]).toBe('sweep');
+        });
+
+        it('sweeps no destination nobody shares, and counts a sweep the storage refuses as failed', async () => {
+            prismaMock.adapterConfig.findMany.mockResolvedValue([shared, nas] as never);
+            sharing.customersOfShares.mockResolvedValue(new Map([['msp-s3', ['globex']]]));
+            sharing.sweepDeletedTenantFolders.mockRejectedValue(new Error('EACCES'));
+
+            await expect(warmupStorageCache()).resolves.toEqual({ ok: false, summary: '1 of 2 destinations failed' });
+
+            expect(sharing.sweepDeletedTenantFolders).toHaveBeenCalledTimes(1);
+            expect(sharing.sweepDeletedTenantFolders).toHaveBeenCalledWith('msp-s3');
+            // The listings go on anyway.
+            expect(storage.reconcileStorageListCache).toHaveBeenCalledWith('msp-s3', 'globex');
         });
 
         it('keeps the listing of a customer when its access cannot be read', async () => {

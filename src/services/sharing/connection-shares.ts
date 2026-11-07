@@ -64,6 +64,17 @@ export const UNCONFIRMED_LOSS: Record<SharedKind, string> = {
     channel: "The tenants that lose this channel lose it in their notification templates, their jobs, their notification settings and their recipients. Confirm it first.",
 };
 
+/** What a save answers for a picked tenant that is the tenant of the connection or that no longer exists. */
+const GONE_PICK = "A tenant you picked is this one or no longer exists.";
+
+/** A tenant the save gives the connection to was deleted after the save read the tenants. */
+class TenantGoneError extends Error {
+    constructor() {
+        super(GONE_PICK);
+        this.name = "TenantGoneError";
+    }
+}
+
 export const NOT_SHARING_CONNECTIONS = "This tenant shares nothing with customers. The platform switches it on for a tenant of the MSP.";
 
 /** Who gets a connection and on what terms. */
@@ -292,7 +303,7 @@ export const connectionShareService = {
         // The reach first, so a picked tenant beyond it answers alike whether it exists or not. One
         // that gets the connection already stays, see `boundToReach`.
         if (!settings.allTenants && picked.some((id) => !reachCovers(reach, id) && !before.includes(id))) throw new ValidationError(OUTSIDE_REACH.share);
-        if (!settings.allTenants && picked.some((id) => !known.has(id))) throw new ValidationError("A tenant you picked is this one or no longer exists.");
+        if (!settings.allTenants && picked.some((id) => !known.has(id))) throw new ValidationError(GONE_PICK);
         const terms = {
             encryptedOnly: config.kind === "destination" && settings.encryptedOnly,
             // A chat or a webhook has its address for a recipient, so it always sends where it is set.
@@ -319,9 +330,18 @@ export const connectionShareService = {
         if (lost.length > 0 && !options.confirmed) throw new ValidationError(UNCONFIRMED_LOSS[config.kind]);
 
         // A share with nobody on it goes, unless `keep` holds it for a folder of the customers that
-        // could not be emptied yet.
-        const writeShare = (customers: string[], allTenants: boolean, keep = false, shareTerms = terms) => prisma.$transaction(async (tx) => {
-            if (!allTenants && customers.length === 0 && !keep) {
+        // could not be emptied yet. The tenants were read before, so one deleted since is looked up
+        // again in the transaction of the write, or its row would stay under a dead id. A tenant
+        // of `refused` that is gone refuses the write, like a pick that no longer exists, any other
+        // is left out, since it lost the connection with its delete. A share left with nobody that
+        // way stays, its delete empties the folder of that tenant in the background.
+        const writeShare = (wanted: string[], allTenants: boolean, keep = false, shareTerms = terms, refused: readonly string[] = []) => prisma.$transaction(async (tx) => {
+            const live = allTenants || wanted.length === 0
+                ? new Set<string>()
+                : new Set((await tx.tenant.findMany({ where: { id: { in: wanted } }, select: { id: true } })).map((tenant) => tenant.id));
+            const customers = allTenants ? wanted : wanted.filter((id) => live.has(id));
+            if (!allTenants && refused.some((id) => !live.has(id))) throw new TenantGoneError();
+            if (!allTenants && wanted.length === 0 && !keep) {
                 await tx.connectionShare.deleteMany({ where: { id: configId } });
                 return;
             }
@@ -386,7 +406,13 @@ export const connectionShareService = {
                 );
             }
         }
-        await writeShare(after, bound.allTenants);
+        try {
+            await writeShare(after, bound.allTenants, false, terms, gained);
+        } catch (error: unknown) {
+            if (!(error instanceof TenantGoneError)) throw error;
+            // The tenants that lost the connection are off the share already, the caller logs it.
+            throw new ShareChangeError(GONE_PICK, { name: config.name, kind: config.kind, gained: [], gainedTenants: [], losses: named(losses) });
+        }
         if (config.kind === "destination" && lost.length > 0) await refreshStorageStatsCache({ configIds: [configId] }).catch(() => undefined);
         const gainedTenants = gained.map((id) => ({ tenantId: id, name: known.get(id) ?? id }));
         return {

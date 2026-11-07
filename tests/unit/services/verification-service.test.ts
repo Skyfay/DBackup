@@ -31,6 +31,12 @@ vi.mock('@/lib/temp-dir', () => ({
     getTempDir: vi.fn().mockReturnValue('/tmp'),
 }));
 
+// The private folder of the temporary folder, see `privateTempDir`.
+vi.mock('@/lib/private-temp-dir', () => ({
+    privateTempPath: vi.fn(async (name: string) => `/tmp/dbackup-private-test/${name}`),
+    PRIVATE_FILE_MODE: 0o600,
+}));
+
 vi.mock('fs/promises', () => {
     const readFile = vi.fn().mockResolvedValue('{}');
     const unlink = vi.fn().mockResolvedValue(undefined);
@@ -367,6 +373,22 @@ describe('VerificationService', () => {
             'backup.sql.meta.json',
             expect.stringContaining('/tmp')
         );
+    });
+
+    // An upload like rsync -a carries the mode of the file, so the sidecar keeps the mode the backup
+    // run gave it on the destination, the private folder keeps it from other users here.
+    it('writes the sidecar it uploads with the default mode, not 0600', async () => {
+        (prisma.adapterConfig.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeAdapterConfig());
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(makeAdapter({
+            read: vi.fn().mockResolvedValue(JSON.stringify(makeMetadata())),
+            verifyChecksum: vi.fn().mockResolvedValue('passed'),
+        }));
+
+        await verificationService.verifyFile('config-1', 'backup.sql', 'manual');
+
+        const [[file, , options]] = vi.mocked(fsPromises.writeFile).mock.calls;
+        expect(String(file)).toContain('/tmp/dbackup-private-test/meta-verify-');
+        expect(options).toEqual({ flag: 'wx' });
     });
 
     it('calls adapter.upload to persist verification result after native check', async () => {

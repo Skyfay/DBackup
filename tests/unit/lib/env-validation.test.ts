@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { validateEnvironment } from '@/lib/server/env-validation';
 
+const warn = vi.hoisted(() => vi.fn());
+
 vi.mock('@/lib/logging/logger', () => ({
     logger: {
         child: () => ({
             info: vi.fn(),
-            warn: vi.fn(),
+            warn,
             error: vi.fn(),
             debug: vi.fn(),
         }),
@@ -30,6 +32,7 @@ describe('validateEnvironment', () => {
             saved[k] = process.env[k];
             delete process.env[k];
         });
+        warn.mockClear();
     });
 
     afterEach(() => {
@@ -141,5 +144,34 @@ describe('validateEnvironment', () => {
         process.env.LOG_LEVEL = 'verbose'; // not in the allowed enum
         // Non-critical failures still result in a thrown error (from the fallback re-parse)
         expect(() => validateEnvironment()).toThrow();
+    });
+
+    describe('BETTER_AUTH_URL', () => {
+        const warnings = () => warn.mock.calls.map(([message]) => String(message)).filter((message) => message.includes('BETTER_AUTH_URL'));
+
+        beforeEach(() => {
+            process.env.BETTER_AUTH_SECRET = VALID_SECRET;
+            process.env.ENCRYPTION_KEY = VALID_KEY;
+        });
+
+        it('warns when it is not set, since the redirects then go to localhost', () => {
+            validateEnvironment();
+            expect(warnings()).toEqual([expect.stringContaining('BETTER_AUTH_URL is not set')]);
+        });
+
+        it('warns about plain HTTP on another host, and says the cookie lacks Secure behind a proxy without HTTPS', () => {
+            process.env.BETTER_AUTH_URL = 'http://backup.example.com';
+            process.env.DISABLE_HTTPS = 'true';
+            validateEnvironment();
+            expect(warnings()).toEqual([expect.stringMatching(/http:\/\/backup\.example\.com.*without Secure/)]);
+        });
+
+        it('says nothing for an https address or plain HTTP on localhost', () => {
+            for (const url of ['https://backup.example.com', 'http://localhost:3000', 'http://127.0.0.1:3000']) {
+                process.env.BETTER_AUTH_URL = url;
+                validateEnvironment();
+            }
+            expect(warnings()).toEqual([]);
+        });
     });
 });

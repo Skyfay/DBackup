@@ -20,6 +20,8 @@ const prismaMock = {
     systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     // Whether the tenant of the destination shares it with customers.
     connectionShare: { count: vi.fn().mockResolvedValue(0) },
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    execution: { findMany: vi.fn().mockResolvedValue([]) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 

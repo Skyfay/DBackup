@@ -10,6 +10,7 @@ import { getTimezone } from "@/services/system/system-settings-service";
 import { backupKeyOf } from "./shared-backups";
 import { createCustomerBackupRun, dropCustomerBackupRun } from "./shared-backup-runs";
 import { holdingNow, placeKey, tenantPlaces } from "./shared-places";
+import { assertTenantsLive } from "./shared-servers";
 
 /**
  * Backups a customer starts of a database given to them, where the tenant of the server allows it
@@ -173,8 +174,12 @@ export async function requestSharedBackup(tenantId: string, user: { id: string; 
         // started. Of two at once the one that counts later always sees the other, so they never
         // both take the last backup of the day. Counting at the very same moment, both can be refused.
         const day = await dayOf(now);
-        const request = await prisma.sharedBackupRequest.create({
-            data: { tenantId, sourceId: place.sourceId, databaseName: place.databaseName, executionId: "", requestedById: user.id, createdAt: now },
+        // A customer deleted since it was read above would keep a request under its dead id.
+        const request = await prisma.$transaction(async (tx) => {
+            await assertTenantsLive(tx, [tenantId]);
+            return tx.sharedBackupRequest.create({
+                data: { tenantId, sourceId: place.sourceId, databaseName: place.databaseName, executionId: "", requestedById: user.id, createdAt: now },
+            });
         });
         const used = await prisma.sharedBackupRequest.count({
             where: { tenantId, sourceId: place.sourceId, databaseName: place.databaseName, createdAt: { gte: day.start, lt: day.end }, id: { not: request.id } },

@@ -66,7 +66,7 @@ An MSP automates its tenants with keys of its own. Two kinds of rights of the pl
 | :--- | :--- | :--- | :--- |
 | **Tenants** | `platform-tenants:read`, `platform-tenants:write` | The home tenant | Listing, creating, renaming and deleting tenants, their settings, members and invitations, see [Managing Tenants through the API](/user-guide/admin/tenants#through-the-api) |
 | **Accounts** | `platform-accounts:read`, `platform-accounts:write` | The home tenant | The accounts of the tenants the owner reaches |
-| **Sharing** | `platform-sharing:read`, `platform-sharing:write` | A tenant that [shares with customers](/user-guide/admin/shared-databases#tenants-that-share), while there is another tenant | Giving databases, destinations and channels to customers, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api) |
+| **Sharing** | `platform-sharing:read`, `platform-sharing:write` | A tenant that [shares with customers](/user-guide/admin/shared-databases#tenants-that-share), offered while there is another tenant, or while the key holds them already | Giving databases, destinations and channels to customers, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api) |
 
 - The editor offers **Tenants** and **Accounts** only in the home tenant and only to an owner who holds one of their rights, a platform admin or someone whose [platform group](/user-guide/admin/tenants#platform-groups) gives it. What the owner does not hold stays locked.
 - The list marks such a key **Platform**, in its row, on its card and in its panel.

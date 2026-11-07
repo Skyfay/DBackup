@@ -1,6 +1,5 @@
 import { getSessionCookie } from "better-auth/cookies";
 import prisma from "@/lib/prisma";
-import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { emailOfDomain } from "@/lib/auth/sso-domain";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { runAsTenant } from "@/lib/tenant/context";
@@ -26,6 +25,13 @@ import { DISABLED_PROVIDER_URL, isSsoCallback, ssoProviderIdOf, type SsoHookCont
  * of the home tenant, whose admins set its password, so only a provider of the platform or of the
  * home tenant links it.
  *
+ * A provider of a customer's tenant signs in only an account that works in its tenant alone. The
+ * customer runs the provider, so an account that also works in another tenant, or holds a platform
+ * group or role, would let the customer's provider into the data of someone else. Such an account
+ * signs in another way, and the invitation page warns before an account joins a second tenant. A
+ * provider of the home tenant belongs to the platform's own people, who often work in the tenants of
+ * customers too, so it keeps signing them in.
+ *
  * Neither links an account by its email when the email was not set by an admin either
  * (`User.emailVerified` false): someone who changed their own email or signed up through an
  * invitation may have picked the address of a person who has not signed in through the provider
@@ -38,12 +44,15 @@ export const TENANT_REFUSED_URL = "/?error=sso_tenant_refused";
 /** The login page says so when a provider of a tenant that adds nobody meets someone who is no member there. */
 export const TENANT_NOT_MEMBER_URL = "/?error=sso_tenant_not_member";
 
+/** The login page says so when a provider of a customer's tenant meets an account that works beyond its tenant. */
+export const TENANT_SHARED_ACCOUNT_URL = "/?error=sso_tenant_shared_account";
+
 /** The login page says so when a provider meets an account of its email that it is not linked to and may not link. */
 export const NOT_LINKED_URL = "/?error=sso_account_not_linked";
 
 export const JOINED_THROUGH_SSO = "Joined through single sign-on";
 
-export type TenantRefusal = "platform-admin" | "platform-group" | "other-domain" | "not-member";
+export type TenantRefusal = "platform-admin" | "platform-group" | "other-domain" | "other-tenant" | "not-member";
 
 interface RefusalProvider {
     tenantId: string | null;
@@ -62,14 +71,27 @@ interface RefusalAccount {
 }
 
 /**
+ * Whether an account works in the tenant of a customer's provider and in another tenant too, which
+ * that provider never vouches for. An account of other tenants only is no member there, which
+ * `madeElsewhere` and the membership of a provider that adds nobody answer with their own reason.
+ */
+export function worksBeyond(tenantId: string, memberships: { tenantId: string }[] | undefined): boolean {
+    if (tenantId === HOME_TENANT_ID || !memberships?.some((membership) => membership.tenantId === tenantId)) return false;
+    return memberships.some((membership) => membership.tenantId !== tenantId);
+}
+
+/**
  * Why a provider may not sign in an account, null when it may, which a provider of the platform
- * always may. A provider of a tenant that adds nobody signs in only the members of its tenant.
+ * always may. A provider of a customer's tenant signs in only an account that works in its tenant
+ * alone, and one that adds nobody only the members of its tenant.
  */
 export function tenantSignInRefusal(provider: RefusalProvider, user: RefusalAccount): TenantRefusal | null {
     if (!provider.tenantId) return null;
-    if (user.platformRole === PLATFORM_ADMIN_ROLE) return "platform-admin";
+    // Any role of the platform reaches beyond the tenant, the role of a platform admin is the one there is.
+    if (user.platformRole) return "platform-admin";
     if (user.platformGroupId) return "platform-group";
     if (!emailOfDomain(user.email, provider.domain)) return "other-domain";
+    if (worksBeyond(provider.tenantId, user.memberships)) return "other-tenant";
     if (provider.allowProvisioning === false && user.memberships && !user.memberships.some((membership) => membership.tenantId === provider.tenantId)) return "not-member";
     return null;
 }
@@ -138,6 +160,15 @@ export async function allowTenantSsoLink(account: { userId: string }, context: S
     return (await signedInUserOf(context)) === account.userId;
 }
 
+/** Where the login page says why, for each refusal of a provider of a tenant. */
+const REFUSAL_URLS: Record<TenantRefusal, string> = {
+    "platform-admin": TENANT_SHARED_ACCOUNT_URL,
+    "platform-group": TENANT_SHARED_ACCOUNT_URL,
+    "other-tenant": TENANT_SHARED_ACCOUNT_URL,
+    "other-domain": TENANT_REFUSED_URL,
+    "not-member": TENANT_NOT_MEMBER_URL,
+};
+
 /**
  * A sign-in through a provider of a tenant goes on only for an account it may sign in, also one
  * linked before the provider moved to the tenant, and never for an account another tenant made,
@@ -149,7 +180,7 @@ export async function refuseTenantSsoSession(session: { userId: string }, contex
     if (!provider) return;
     const user = await accountOf(session.userId);
     const refusal = user ? tenantSignInRefusal(provider, user) : "other-domain";
-    if (refusal) throw redirect(refusal === "not-member" ? TENANT_NOT_MEMBER_URL : TENANT_REFUSED_URL);
+    if (refusal) throw redirect(REFUSAL_URLS[refusal]);
     if (user && madeElsewhere(user, provider.tenantId)) throw redirect(TENANT_NOT_MEMBER_URL);
 }
 
@@ -196,4 +227,23 @@ export async function joinSsoTenant(account: { userId: string }, context: SsoHoo
         account.userId,
         { tenantId }
     );
+}
+
+/**
+ * The providers of customers' tenants that sign an account in today and refuse it once it joins
+ * another tenant, by name, for the warning of the invitation page. Nothing ends for a tenant the
+ * account works in already, nor for an account that works in several tenants by now.
+ */
+export async function providersEndedByJoining(userId: string, tenantId: string): Promise<string[]> {
+    const user = await accountOf(userId);
+    if (!user || user.memberships.some((membership) => membership.tenantId === tenantId)) return [];
+    const tenants = user.memberships.map((membership) => membership.tenantId).filter((id) => id !== HOME_TENANT_ID);
+    if (tenants.length === 0) return [];
+    const providers = await prisma.ssoProvider.findMany({
+        where: { enabled: true, tenantId: { in: tenants } },
+        orderBy: { name: "asc" },
+        select: { name: true, tenantId: true, domain: true, allowProvisioning: true },
+    });
+    const joined = { ...user, memberships: [...user.memberships, { tenantId }] };
+    return providers.filter((provider) => tenantSignInRefusal(provider, user) === null && tenantSignInRefusal(provider, joined) !== null).map((provider) => provider.name);
 }

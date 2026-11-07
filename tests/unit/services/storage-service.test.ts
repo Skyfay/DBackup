@@ -318,6 +318,23 @@ describe('StorageService', () => {
             expect(adapter.upload).toHaveBeenCalled();
         });
 
+        // An upload like rsync -a carries the mode of the file, so the sidecar keeps the mode the
+        // backup run gave it on the destination, the private folder keeps it from other users here.
+        it('writes the sidecar it uploads with the default mode, not 0600', async () => {
+            const adapter = makeAdapter({
+                read: vi.fn().mockResolvedValue(JSON.stringify({ locked: false })),
+                upload: vi.fn().mockResolvedValue(undefined),
+            });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            await service.toggleLock('conf-123', 'backup.sql');
+
+            const [[file, , options]] = fsMocks.writeFile.mock.calls;
+            expect(String(file)).toMatch(/dbackup-private-.*meta-/);
+            expect(options).toEqual({ flag: 'wx' });
+        });
+
         it('should toggle lock from true to false', async () => {
             const metadata = { locked: true };
             const adapter = makeAdapter({

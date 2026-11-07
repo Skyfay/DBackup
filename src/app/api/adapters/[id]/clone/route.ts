@@ -7,6 +7,7 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { connectionNotFound, seesConnectionType } from "@/lib/server/connection-access";
 import { storedSecretsRefusal } from "@/lib/server/config-backup-target-guard";
 import { wrapError, ValidationError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
@@ -29,11 +30,9 @@ export async function POST(
 
     const params = await props.params;
     try {
+        // A missing connection and one the caller may not read answer alike, only then the write permission counts.
         const type = await getAdapterType(params.id);
-        if (!type) {
-            return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
-        }
-
+        if (!seesConnectionType(ctx, type)) return connectionNotFound();
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
         // A copy of the destination of the configuration backup keeps its logins in a connection
         // its guard does not know, which its owner then points at another host.

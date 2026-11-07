@@ -34,6 +34,16 @@ vi.mock("@/lib/execution/abort", () => ({
 }));
 vi.mock("@/lib/execution/queue-manager", () => ({ processQueue: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
+// The vault of the provider: the key a backup names is gone, another one opens it, see `resolveBackupKey`.
+const VAULT_KEY = Buffer.alloc(32, 0x42);
+vi.mock("@/services/backup/encryption-service", () => ({
+    getProfileMasterKey: vi.fn(async (id: string) => {
+        if (id === "key-msp-vault") return VAULT_KEY;
+        throw new Error(`Encryption profile not found: ${id}`);
+    }),
+    getEncryptionProfiles: vi.fn(async () => [{ id: "key-msp-vault", name: "MSP Vault Key" }]),
+}));
+vi.mock("@/services/vault/key-aliases", () => ({ rememberKeyFor: vi.fn().mockResolvedValue(undefined) }));
 // The customer still holds the database here. Losing it on the way is restore-customer-databases.test.ts.
 vi.mock("@/services/restore/customer-databases", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/restore/customer-databases")>()),
@@ -75,6 +85,26 @@ async function writeBackup() {
     await fs.writeFile(`${tarPath}.meta.json`, JSON.stringify({ version: 1, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } }));
 }
 
+/**
+ * The same archive encrypted with the key of the vault, while its manifest and metadata name a key
+ * that was deleted since, so the restore finds the key by Smart Recovery.
+ */
+async function writeEncryptedBackup() {
+    const entries: ArchiveSourceEntry[] = [];
+    for (const dbName of ["shop_acme", "shop_globex"]) {
+        const dump = path.join(workDir, `${dbName}.sql`);
+        await fs.writeFile(dump, `-- dump of ${dbName}`);
+        entries.push({ kind: "database", dbName, path: dump, format: "sql" });
+    }
+    const tarPath = path.join(workDir, ARCHIVE);
+    const { manifest, indexBytes } = await createArchive(entries, tarPath, { sourceType: "mysql", encryption: { masterKey: VAULT_KEY, profileId: "key-deleted" } });
+    await fs.writeFile(`${tarPath}.index`, indexBytes);
+    await fs.writeFile(`${tarPath}.meta.json`, JSON.stringify({
+        version: 1,
+        archive: { formatVersion: 2, indexFile: ".index", encrypted: true, profileId: "key-deleted", kdfSalt: manifest.encryption!.kdfSalt, noncePrefix: manifest.encryption!.noncePrefix },
+    }));
+}
+
 /** The destination of the MSP, which serves the archive by range unless told it does not answer. */
 function wire(restoreOne: (...args: unknown[]) => Promise<void>, options: { archiveAnswers?: boolean } = {}) {
     const storage = {
@@ -91,6 +121,8 @@ function wire(restoreOne: (...args: unknown[]) => Promise<void>, options: { arch
     };
     const database = { id: "mysql", type: "database", restoreOne: vi.fn(restoreOne), test: vi.fn().mockResolvedValue({ success: true, version: "8.0.36" }) };
     prismaMock.execution.update.mockResolvedValue({} as never);
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    prismaMock.execution.findMany.mockResolvedValue([]);
     prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) =>
         where.id === "msp-nas" ? storageRow : where.id === "shared-mysql" ? serverRow : null) as never);
     vi.mocked(registry.get).mockImplementation(((id: string) => (id === "msp-fs" ? storage : database)) as never);
@@ -210,6 +242,26 @@ describe("the run of a restore a customer starts on a shared server", () => {
         expect(event.data).toEqual(expect.objectContaining({ backupFile: "shop_acme", error: "The restore of shop_acme stopped with an error." }));
         expect(event.data).not.toHaveProperty("storageName");
         expectNothingOfTheServer(JSON.stringify(event.data));
+    });
+
+    it("names no key of the provider when Smart Recovery finds the one that opens the backup", async () => {
+        await writeEncryptedBackup();
+        const { database } = wire(mysqlLike);
+        await runRestorePipeline("run-1", SHARED, PROVIDER_RUN);
+
+        // Smart Recovery ran: the key the backup names is gone, the one of the vault opened it.
+        const { getProfileMasterKey, getEncryptionProfiles } = await import("@/services/backup/encryption-service");
+        expect(vi.mocked(getProfileMasterKey).mock.calls.map(([id]) => id)).toEqual(["key-deleted", "key-msp-vault"]);
+        expect(getEncryptionProfiles).toHaveBeenCalled();
+        expect(database.restoreOne).toHaveBeenCalledTimes(1);
+        expect(lastOf("run-1", "status")).toBe("Success");
+
+        // Neither the run nor the notification of the customer names a key, by its name or its id.
+        const customerSees = JSON.stringify([runLog(), runMetadata(), vi.mocked(notify).mock.calls]);
+        for (const secret of ["key-deleted", "key-msp-vault", "MSP Vault Key", "Smart Recovery", "profile"]) {
+            expect(customerSees, `the customer's run names ${secret}`).not.toContain(secret);
+        }
+        expectNothingOfTheServer(JSON.stringify(runLog()));
     });
 
     it("says only that the metadata could not be read when it is broken", async () => {

@@ -10,7 +10,7 @@ The first account becomes the administrator:
 3. Create your account
 4. This account is a platform admin, in the group with every permission, **Admin**
 
-Only the first account of an installation becomes a platform admin this way. Once there has been a platform admin, the only account left after every other one was deleted stays what it was.
+Only the first account of an installation becomes a platform admin this way, the one created first. Two first accounts sent at the same moment make one account, and the other sign-up is refused. Once there has been a platform admin, the only account left after every other one was deleted stays what it was.
 
 ::: warning First User Only
 Self-registration is only available for the first user. Once it exists, DBackup refuses every other sign-up, also one sent to its API directly. Additional users are created by an admin, join through an [invitation](/user-guide/admin/tenants#invitations), or are added by a sign-in provider.
@@ -135,6 +135,8 @@ A passkey can also serve as the second factor after the password.
 ### SSO/OIDC
 
 See [SSO/OIDC](/user-guide/admin/sso) for enterprise authentication.
+
+The sign-in provider of a customer tenant signs in only accounts that work in that tenant alone. Give an account a second tenant, through an invitation or under **Platform → Users & Groups**, and that provider refuses it from then on, so it needs a password, a passkey or a provider of the platform. The same holds for a platform admin and an account of a [platform group](/user-guide/admin/tenants#platform-groups). See [Providers of a Tenant](/user-guide/admin/sso#providers-of-a-tenant).
 
 ::: tip Keep access tight
 Give each person their own account, put them in the smallest group that covers their work and check the **No second factor** filter from time to time.

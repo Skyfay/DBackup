@@ -21,8 +21,8 @@ vi.mock("@/lib/logging/logger", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn().mockResolvedValue({ userId: "user-1" }),
     checkPermissionWithContext: vi.fn(),
-    // The caller may not see what the tenant shares, so no row carries a share.
-    hasPermissionWithContext: vi.fn().mockReturnValue(false),
+    // The caller reads the connections, but may not see what the tenant shares, so no row carries a share.
+    hasPermissionWithContext: vi.fn((_ctx: unknown, permission: string) => !permission.startsWith("platform-sharing:")),
 }));
 
 // The roles are about the own connections, nothing another tenant shares is listed beside them.

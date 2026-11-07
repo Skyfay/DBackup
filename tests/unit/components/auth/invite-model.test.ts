@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inviteSignInHref, inviteStep, refusalField } from "@/components/auth/invite-model";
+import { inviteSignInHref, inviteStep, providerEndNote, refusalField } from "@/components/auth/invite-model";
 
 const INVITATION = { tenantId: "t1", tenantName: "Acme", groupName: "Operators", expiresAt: "2026-10-22T00:00:00.000Z" };
 
@@ -43,3 +43,11 @@ describe("a refusal of a new account from an invitation", () => {
         expect(refusalField("The account could not be created.")).toBeNull();
     });
 });
+
+describe("the warning before joining another tenant", () => {
+    it("names the providers that stop signing the account in", () => {
+        expect(providerEndNote(["Acme Entra ID"], "Globex")).toMatch(/^Once you join Globex, Acme Entra ID no longer signs you in\. It signs in only accounts that work in its tenant alone\./);
+        expect(providerEndNote(["Acme Entra ID", "Acme Okta", "Initech"], "Globex")).toMatch(/^Once you join Globex, Acme Entra ID, Acme Okta and Initech no longer sign you in\. They sign/);
+    });
+});
+

@@ -6,9 +6,14 @@ import { EncryptionKeyRequiredError } from "@/lib/logging/errors";
 import type { BackupMetadata } from "@/lib/core/interfaces";
 import type { IndexLine } from "@/lib/archive/types";
 
-vi.mock("@/lib/prisma", () => ({
-    default: { adapterConfig: { findUnique: vi.fn() }, jobSource: { findUnique: vi.fn() } },
+const prismaMock = vi.hoisted(() => ({
+    adapterConfig: { findUnique: vi.fn() },
+    jobSource: { findUnique: vi.fn() },
+    // No run of History wrote these backups unless a test says so, see `recorded-encryption.ts`.
+    execution: { findMany: vi.fn() },
+    job: { findUnique: vi.fn() },
 }));
+vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 vi.mock("@/lib/core/registry", () => ({ registry: { get: vi.fn() } }));
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: async (c: unknown) => c }));
 vi.mock("@/services/backup/encryption-service", () => ({
@@ -65,6 +70,11 @@ function makeService(sidecar: (file: string) => Promise<Buffer | null>, maxCache
     vi.spyOn(service, "fetchSidecar").mockImplementation(fetchSidecar);
     return { service, fetchSidecar };
 }
+
+beforeEach(() => {
+    prismaMock.execution.findMany.mockResolvedValue([]);
+    prismaMock.job.findUnique.mockResolvedValue(null);
+});
 
 describe("ArchiveIndexService.load", () => {
     beforeEach(() => vi.clearAllMocks());
@@ -283,5 +293,28 @@ describe("ArchiveIndexService.fetchSidecar", () => {
 
         const local = String((download.mock.calls[0] as unknown[])[2]);
         expect(local).toMatch(/archive-index-\d+-[0-9a-f-]{36}\.index$/);
+    });
+});
+
+describe("the plain index of a backup whose run encrypted it", () => {
+    const PLAIN_META: BackupMetadata = { ...META, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } };
+
+    beforeEach(() => {
+        prismaMock.execution.findMany.mockResolvedValue([{
+            id: "run-1",
+            metadata: JSON.stringify({
+                archive: { formatVersion: 2, indexFile: ".index", encrypted: true, profileId: PROFILE_ID },
+                destinations: [{ configId: "dest-1", path: "FileBackup/inc-001.tar", status: "success" }],
+            }),
+        }]);
+    });
+
+    it("is refused instead of listed, since the sidecars beside it were swapped at the destination", async () => {
+        const plain = await serializeIndex([{ k: "h", v: 2, createdAt: "2026-07-25T20:10:37.652Z", archive: "inc-001.tar" }]);
+        const { service } = makeService(async () => plain);
+
+        await expect(service.load("dest-1", "FileBackup/inc-001.tar", PLAIN_META)).rejects.toThrow(/written encrypted, but the file at the destination is not encrypted/);
+        // A plain index of another destination, which no run encrypted, is read as before.
+        await expect(service.load("dest-2", "FileBackup/inc-001.tar", PLAIN_META)).resolves.not.toBeNull();
     });
 });

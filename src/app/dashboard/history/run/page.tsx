@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { RunPage } from "@/components/dashboard/history/run-page";
-import { checkPermission } from "@/lib/auth/access-control";
 import { redirectWithoutTenant } from "@/app/dashboard/no-tenant-redirect";
+import { redirectWithoutRight } from "@/app/dashboard/right-redirect";
 import { cancellableRunTypes } from "@/lib/auth/run-cancel-rule";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function HistoryRunPage() {
     await redirectWithoutTenant();
-    const viewer = await checkPermission(PERMISSIONS.HISTORY.READ);
+    const viewer = await redirectWithoutRight(PERMISSIONS.HISTORY.READ);
     const permissions = viewer.permissions;
     const can = (permission: string) => permissions.includes(permission);
 

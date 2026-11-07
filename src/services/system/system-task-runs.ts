@@ -288,25 +288,48 @@ export async function warmupStorageCache(): Promise<TaskOutcome> {
     }
     // An air-gapped destination that is not connected is compared the next hour it is.
     const adapters = rows.filter((row) => !isNotConnected(row) && !refused.includes(row.id));
-    // A shared destination has a listing for each customer that has one, besides the one of its tenant.
+    const { storageService } = await import("@/services/storage/storage-service");
+    const { viewModeOf } = await import("@/services/sharing/destination-access");
+    const { customersOfShares } = await import("@/services/sharing/provided");
+    const { sweepDeletedTenantFolders } = await import("@/services/sharing/share-cleanup");
+    // A destination counts once, however many listings of it failed.
+    const failed = new Set<string>();
+    // A shared destination has a listing for each customer, besides the one of its tenant: of every
+    // customer it is shared with, so a customer that never opened it finds its backups in the Vault
+    // and in the retention of a renamed job, and of every customer that has one, so a listing of a
+    // customer the destination is no longer shared with goes below.
+    const customers = await customersOfShares(adapters.map((adapter) => adapter.id));
     const listings = await prisma.storageListCache.findMany({
         where: { adapterConfigId: { in: adapters.map((adapter) => adapter.id) } },
         select: { adapterConfigId: true, tenantId: true },
     });
     const cachedFor = new Set(listings.map((listing) => `${listing.adapterConfigId}\n${listing.tenantId}`));
-    const places = [
-        ...adapters.map((adapter) => ({ adapter, tenantId: adapter.tenantId })),
-        ...listings.flatMap((listing) => {
-            const adapter = adapters.find((entry) => entry.id === listing.adapterConfigId);
-            return adapter && listing.tenantId !== adapter.tenantId ? [{ adapter, tenantId: listing.tenantId }] : [];
-        }),
-    ];
-    log.info("Pre-warming storage cache", { count: adapters.length, listings: places.length });
-    const { storageService } = await import("@/services/storage/storage-service");
-    const { viewModeOf } = await import("@/services/sharing/destination-access");
-    // A destination counts once, however many listings of it failed.
-    const failed = new Set<string>();
-    for (const { adapter, tenantId } of places) {
+    const places = new Map<string, { adapter: (typeof adapters)[number]; tenantId: string }>();
+    const addPlace = (adapter: (typeof adapters)[number], tenantId: string) => places.set(`${adapter.id}\n${tenantId}`, { adapter, tenantId });
+    for (const adapter of adapters) {
+        addPlace(adapter, adapter.tenantId);
+        for (const tenantId of customers.get(adapter.id) ?? []) addPlace(adapter, tenantId);
+    }
+    for (const listing of listings) {
+        const adapter = adapters.find((entry) => entry.id === listing.adapterConfigId);
+        if (adapter) addPlace(adapter, listing.tenantId);
+    }
+    log.info("Pre-warming storage cache", { count: adapters.length, listings: places.size });
+
+    // What a deleted tenant left on a shared destination, which its delete did not wait for. Before
+    // the listings, so they no longer count it.
+    for (const adapter of adapters) {
+        if (!customers.has(adapter.id)) continue;
+        try {
+            await sweepDeletedTenantFolders(adapter.id);
+        } catch (e: unknown) {
+            if (isAirGapped(adapter)) continue;
+            failed.add(adapter.id);
+            log.warn("Failed to delete the folders of deleted tenants on a shared destination", { adapterId: adapter.id, name: adapter.name }, wrapError(e));
+        }
+    }
+
+    for (const { adapter, tenantId } of places.values()) {
         try {
             // A customer the destination is no longer shared with keeps nothing of it. Asked before
             // the listing, since a listing that fails says nothing about who may use the destination.
@@ -316,13 +339,14 @@ export async function warmupStorageCache(): Promise<TaskOutcome> {
                 continue;
             }
             // If a cache row already exists: reconcile against remote to detect external changes.
-            // If no cache row: do a full fetch to populate it.
+            // If no cache row: do a full fetch to populate it, in the scope of the tenant whose
+            // listing it is, since the system scope sees a destination as its own tenant does.
             if (cachedFor.has(`${adapter.id}\n${tenantId}`)) {
                 await storageService.reconcileStorageListCache(adapter.id, tenantId);
                 log.debug("Reconciled storage cache", { adapterId: adapter.id, name: adapter.name, tenantId });
             } else {
-                await storageService.listFilesWithMetadata(adapter.id);
-                log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name });
+                await runAsTenant(tenantId, () => storageService.listFilesWithMetadata(adapter.id));
+                log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name, tenantId });
             }
         } catch (e: unknown) {
             // Unplugged between its last check and now, which is no failure for an air-gapped one.

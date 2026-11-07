@@ -37,7 +37,8 @@ vi.mock("@/lib/server/request-headers", () => ({ requestHeaders: vi.fn(async () 
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn(async () => request.ctx),
     checkPermissionWithContext: vi.fn(),
-    hasPermissionWithContext: vi.fn(() => false),
+    // Reads connections of every kind, and holds no right beyond what the routes check themselves.
+    hasPermissionWithContext: vi.fn((_ctx: unknown, permission: string) => ["sources:view", "destinations:read", "notifications:read"].includes(permission)),
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: vi.fn() } }));
 vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: vi.fn(async () => undefined) } }));

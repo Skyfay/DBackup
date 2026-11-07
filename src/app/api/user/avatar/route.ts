@@ -6,7 +6,7 @@ import { ValidationError } from "@/lib/logging/errors";
 import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
 import { AVATAR_MAX_BYTES, removeAvatar, saveAvatar } from "@/services/user/avatar-service";
-import { bodyTooLarge } from "@/lib/server/upload-size";
+import { formLimitFor, readFormWithin } from "@/lib/server/upload-size";
 import { unauthorized } from "@/lib/server/unauthorized";
 
 const FIELD = "Picture";
@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
     const user = await getViewer();
     if (!user) return unauthorized();
 
-    if (bodyTooLarge(req.headers, AVATAR_MAX_BYTES)) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
-    const form = await req.formData().catch(() => null);
+    const { form, tooLarge } = await readFormWithin(req, formLimitFor(AVATAR_MAX_BYTES));
+    if (tooLarge) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
     const file = form?.get("file");
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "Pick a picture to upload." }, { status: 400 });
     if (file.size > AVATAR_MAX_BYTES) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 400 });

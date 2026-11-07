@@ -6,7 +6,7 @@ import type { Client, ClientChannel, SFTPWrapper } from "ssh2";
 import { logger } from "@/lib/logging/logger";
 import { BaseHost } from "./base-host";
 import { openSshClient } from "./ssh-connection";
-import { buildRemoteCommand } from "./ssh-escape";
+import { buildRemoteCommand, renderEnvFile } from "./ssh-escape";
 import { createPortForward } from "./port-forward";
 import type {
     HostKind,
@@ -44,6 +44,9 @@ export class SshHost extends BaseHost {
     private clientPromise: Promise<Client> | null = null;
     private sftpPromise: Promise<SFTPWrapper> | null = null;
     private sftpUnavailable = false;
+    /** The SFTP write of an environment file failed once, so the shell writes the next ones. */
+    private envFileByShell = false;
+    private inlineEnvWarned = false;
     private readonly whichCache = new Map<string, Promise<string>>();
     private readonly forwards = new Set<PortForward>();
     private disposed = false;
@@ -121,8 +124,23 @@ export class SshHost extends BaseHost {
         // It sees config data reaching an exec sink and cannot model shellEscape
         // as a sanitizer. Anything that builds a command by concatenation instead
         // of going through here would be a real finding.
-        const command = buildRemoteCommand(argv, options);
+        //
+        // The environment goes into a 0600 file the command sources and removes, not
+        // into the command string, which is an argument of the remote shell and so
+        // visible in `ps` there. The file is written before a channel is taken.
+        const envContent = renderEnvFile(options.env);
         const client = await this.client();
+        const envFile = envContent === null ? undefined : ((await this.writeEnvFile(envContent)) ?? undefined);
+        // No file could be written anywhere on the target, so the values go into the command
+        // as before, where `ps` there shows them while it runs. A command that still runs beats
+        // a backup that fails, and `writeEnvFile` has logged a warning.
+        const inlineEnv = envContent !== null && envFile === undefined ? options.env : undefined;
+        const command = buildRemoteCommand(argv, { cwd: options.cwd, stdinFile: options.stdinFile, envFile, inlineEnv });
+        // The command removes the file itself once it has sourced it, so an exit code of 0
+        // proves it is gone. Any other end may mean the shell never got that far.
+        const cleanup = envFile === undefined
+            ? undefined
+            : (code: number | null) => (code === 0 ? Promise.resolve() : this.removeFile(envFile).catch(() => {}));
         const release = await this.acquireChannel();
 
         // The channel is wrapped inside the callback, synchronously.
@@ -138,11 +156,81 @@ export class SshHost extends BaseHost {
             client.exec(command, (err, ch) => {
                 if (err) {
                     release();
-                    reject(err);
+                    void (cleanup?.(null) ?? Promise.resolve()).finally(() => reject(err));
                     return;
                 }
-                resolve(wrapChannel(ch, options.stdin === true, release));
+                resolve(wrapChannel(ch, options.stdin === true, release, cleanup));
             });
+        });
+    }
+
+    /**
+     * Write the environment of one command to a new 0600 temp file on the target.
+     *
+     * The mode is set when SFTP creates the file, before a byte of it is written, so it is
+     * never readable by another account even for a moment. Without SFTP, or when the SFTP
+     * write fails, like on a read-only /tmp or a chrooted SFTP whose /tmp is not the one of
+     * the shell, the file is made by a shell, see `writeEnvFileByShell`. When that fails too,
+     * this returns null and the caller passes the values inline.
+     */
+    private async writeEnvFile(content: string): Promise<string | null> {
+        if (!this.sftpUnavailable && !this.envFileByShell) {
+            try {
+                await this.sftp();
+            } catch {
+                this.sftpUnavailable = true;
+            }
+        }
+        if (!this.sftpUnavailable && !this.envFileByShell) {
+            const hostPath = this.hostTempPath(".env");
+            try {
+                await this.writeHostFile(hostPath, content, 0o600);
+                return hostPath;
+            } catch (error) {
+                // The next commands of this host go to the shell straight away.
+                this.envFileByShell = true;
+                await this.removeFile(hostPath).catch(() => {});
+                log.debug("Writing the environment file over SFTP failed, the shell writes it", {
+                    host: this.label,
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+        return this.writeEnvFileByShell(content);
+    }
+
+    /**
+     * Write the environment file with a shell under `umask 077`, the bytes on stdin so they stay
+     * out of the command. `mktemp` makes the file in the temp folder of the shell itself, new and
+     * 0600 under a random name. Without `mktemp` the shell makes the file under a name of
+     * `hostTempPath`, where `set -C` refuses a file or a link already lying under it, like `wx`
+     * does. Returns the path, or null when the shell could not write it.
+     */
+    private async writeEnvFileByShell(content: string): Promise<string | null> {
+        const script = [
+            "umask 077",
+            'if f=$(mktemp "${TMPDIR:-/tmp}/dbackup_XXXXXXXXXX" 2>/dev/null); then :; else f=$1; (set -C; : > "$f") || exit 1; fi',
+            'cat >> "$f" || { rm -f "$f"; exit 1; }',
+            "printf '%s\\n' \"$f\"",
+        ].join("\n");
+        try {
+            const result = await this.exec(["sh", "-c", script, "sh", this.hostTempPath(".env")], { stdin: content });
+            const hostPath = result.stdout.trim();
+            if (result.code === 0 && hostPath.startsWith("/") && !hostPath.includes("\n")) return hostPath;
+            this.warnInlineEnv(`the shell ended with code ${result.code}: ${result.stderr.trim()}`);
+        } catch (error) {
+            this.warnInlineEnv(error instanceof Error ? error.message : String(error));
+        }
+        return null;
+    }
+
+    /** Warns once per host that its commands get their environment inline, see `spawn`. */
+    private warnInlineEnv(reason: string): void {
+        if (this.inlineEnvWarned) return;
+        this.inlineEnvWarned = true;
+        log.warn("No environment file could be written on the target, the values go into the command, where `ps` there shows them", {
+            host: this.label,
+            reason,
         });
     }
 
@@ -362,7 +450,12 @@ export class SshHost extends BaseHost {
  * Exit resolves on `close` rather than `exit` so buffered output is flushed
  * before callers read it, but the code is captured from `exit`.
  */
-function wrapChannel(channel: ClientChannel, exposeStdin: boolean, release: () => void): HostProcess {
+function wrapChannel(
+    channel: ClientChannel,
+    exposeStdin: boolean,
+    release: () => void,
+    cleanup?: (code: number | null) => Promise<void>,
+): HostProcess {
     let exitInfo: { code: number | null; signal?: string } = { code: null };
     let failure: Error | null = null;
     let finished = false;
@@ -375,17 +468,26 @@ function wrapChannel(channel: ClientChannel, exposeStdin: boolean, release: () =
         exitInfo = { code: code ?? null, signal: signal ?? undefined };
     });
 
+    // Runs once, before exit() settles, so a caller that disposes the host right after
+    // the command does not cut the removal of the environment file short.
+    let cleaned: Promise<void> | null = null;
+    const settle = (code: number | null) => (cleaned ??= cleanup ? cleanup(code) : Promise.resolve());
+
     channel.on("close", () => {
-        finished = true;
         release();
-        waiters.splice(0).forEach((w) => w.resolve(exitInfo));
+        void settle(exitInfo.code).then(() => {
+            finished = true;
+            waiters.splice(0).forEach((w) => w.resolve(exitInfo));
+        });
     });
 
     channel.on("error", (err: Error) => {
-        failure = err;
-        finished = true;
         release();
-        waiters.splice(0).forEach((w) => w.reject(err));
+        void settle(null).then(() => {
+            failure = err;
+            finished = true;
+            waiters.splice(0).forEach((w) => w.reject(err));
+        });
     });
 
     return {

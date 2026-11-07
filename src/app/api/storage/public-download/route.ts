@@ -18,7 +18,9 @@ import { wrapError } from "@/lib/logging/errors";
 import { runAsTenant } from "@/lib/tenant/context";
 import { makerMayDownload } from "@/lib/auth/download-maker";
 import { configBackupLinkRefusal } from "@/lib/server/config-backup-guard";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
+import { EncryptionDowngradeError } from "@/services/restore/recorded-encryption";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "storage/public-download" });
 registerAdapters();
@@ -127,9 +129,9 @@ export async function GET(req: NextRequest) {
                 });
             }
 
-            // A name nobody can guess, in the temporary folder DBackup is set to. The stream removes it
-            // once it closed, the catch below when anything failed before.
-            tempFile = path.join(getTempDir(), `download_${randomUUID()}`);
+            // A name nobody can guess, in the private folder of the temporary folder DBackup is set to.
+            // The stream removes it once it closed, the catch below when anything failed before.
+            tempFile = await privateTempPath(`download_${randomUUID()}`);
             const result = await storageService.downloadFile(storageId, file, tempFile, decrypt, { database });
             if (!result.success) {
                 await fsPromises.unlink(tempFile).catch(() => {});
@@ -161,6 +163,8 @@ export async function GET(req: NextRequest) {
         if (tempFile) await fsPromises.unlink(tempFile).catch(() => {});
         if (claimed) releaseLinkToken(claimed);
 
+        // A plain file where its run wrote an encrypted backup, which the sentence says without naming anything of it.
+        if (error instanceof EncryptionDowngradeError) return serviceRefusal(error)!;
         log.error("Public download error", {}, wrapError(error));
         return NextResponse.json({ error: "Download failed" }, { status: 500 });
     }

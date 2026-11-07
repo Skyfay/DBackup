@@ -93,7 +93,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | :--- | :---: | :--- |
 | `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars, only 0-9 and a-f) for encrypting credentials at rest. DBackup does not start with another value. |
 | `BETTER_AUTH_SECRET` | ✅ | Base64 secret for authentication sessions. |
-| `BETTER_AUTH_URL` | ✅ | **Primary** URL where users access DBackup (for auth redirects). |
+| `BETTER_AUTH_URL` | ✅ | **Primary** URL where users access DBackup, exactly as the browser opens it, `https://` included behind a proxy that serves HTTPS. Used for the sign-in redirects and the session cookie, see [The Address and the Session Cookie](#the-address-and-the-session-cookie). |
 | `TRUSTED_ORIGINS` | ❌ | Additional access URLs, comma-separated (see below). |
 | `PORT` | ❌ | Internal server port. Default: `3000` |
 | `DATABASE_URL` | ❌ | SQLite path. Default: `file:/data/db/dbackup.db` |
@@ -311,6 +311,25 @@ configured to talk HTTPS upstream and to accept a self-signed certificate (`prox
 https://...` plus `proxy_ssl_verify off` in nginx, `serversTransport.insecureSkipVerify` in
 Traefik).
 :::
+
+### The Address and the Session Cookie
+
+`BETTER_AUTH_URL` is the address people open in the browser. Behind a proxy that serves HTTPS, it starts with `https://`, like `https://backup.example.com`, even though the proxy talks plain HTTP to the container with `DISABLE_HTTPS=true`.
+
+The session cookie is marked `Secure` (and named `__Secure-better-auth.session_token`), so the browser sends it over HTTPS only, when either of these holds:
+
+- `BETTER_AUTH_URL` starts with `https://`.
+- `BETTER_AUTH_URL` is not set and DBackup serves HTTPS itself, which it does unless `DISABLE_HTTPS=true`.
+
+With an `http://` address, the cookie goes out without `Secure`, whatever DBackup serves itself, since a proxy may speak plain HTTP to the browser and HTTPS to DBackup. That is right for plain HTTP, where a browser would drop a `Secure` cookie, but behind a proxy that serves HTTPS it leaves the session cookie open to an unencrypted request. DBackup warns at the start when `BETTER_AUTH_URL` is not set, which makes it assume `http://localhost:3000`, and when it is `http://` with a host other than `localhost` or `127.0.0.1`.
+
+| Setup | `BETTER_AUTH_URL` | `DISABLE_HTTPS` |
+| :--- | :--- | :--- |
+| Behind a proxy that serves HTTPS | `https://backup.example.com` | `true` |
+| Browser straight at the container, the self-signed certificate of DBackup | `https://<host>:3000` | unset |
+| Plain HTTP in a trusted network, no TLS anywhere | `http://<host>:3000` | `true` |
+
+A change of the cookie name signs everyone out once, for example after `BETTER_AUTH_URL` moved from `http://` to `https://`.
 
 ### The Address of a Client
 

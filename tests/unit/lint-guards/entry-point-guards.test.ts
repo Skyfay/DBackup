@@ -13,7 +13,7 @@ const API = path.join(SRC, "app/api");
 const ACTIONS = path.join(SRC, "app/actions");
 
 /** The calls that decide whether a caller may go on. */
-const GUARD = /\b(checkPermissionWithContext|checkAnyPermissionWithContext|checkPermission|checkPlatformAdmin|hasPermissionWithContext|getUserPermissions|hasPermission|tenantRouteAccess|requireConfigRestorer|assertMayReadFormConfig)\s*\(/;
+const GUARD = /\b(checkPermissionWithContext|checkAnyPermissionWithContext|checkPermission|checkPlatformAdmin|hasPermissionWithContext|getUserPermissions|hasPermission|tenantRouteAccess|requireConfigRestorer|assertMayReadFormConfig|seesConnectionType)\s*\(/;
 
 /**
  * The route handlers that check no permission, each with why. A new one is added here only with a

@@ -3,7 +3,8 @@ import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
-import { OAUTH_CALLBACK_FAILED, OAUTH_DENIED, oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
+import { oauthReturnUrl, type OAuthErrorCode } from "@/lib/core/oauth-result";
+import { oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
 
 const log = logger.child({ route: "adapters/dropbox/callback" });
 
@@ -12,12 +13,12 @@ const log = logger.child({ route: "adapters/dropbox/callback" });
  * Handles the OAuth callback from Dropbox.
  * `state` is the one the auth route made, bound to the person, the tenant and the OAUTH credential
  * profile, see `oauthCallbackCaller`. The refresh token is written back into that profile.
- * Redirects back to the destinations page with status.
+ * Redirects back to the destinations page with a fixed code of how it went, see `oauthReturnUrl`.
  */
 export async function GET(req: NextRequest) {
     const origin = process.env.BETTER_AUTH_URL || req.nextUrl.origin;
-    const fail = (message: string) =>
-        NextResponse.redirect(`${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(message)}`);
+    // The page shows a fixed sentence for the code, never one from the address.
+    const fail = (code: OAuthErrorCode) => NextResponse.redirect(oauthReturnUrl(origin, "dropbox", code));
 
     const code = req.nextUrl.searchParams.get("code");
     const state = req.nextUrl.searchParams.get("state");
@@ -28,19 +29,19 @@ export async function GET(req: NextRequest) {
     if (error) {
         log.warn("Dropbox OAuth denied by user", { error, errorDescription });
         // The description comes in the query, which anyone can write into a link, so it goes to the log only.
-        return fail(OAUTH_DENIED);
+        return fail("denied");
     }
 
     if (!code || !state) {
         log.warn("Missing code or state in Dropbox OAuth callback");
-        return fail("Missing authorization code or state.");
+        return fail("missing_code");
     }
 
     // Who brings the code back, and the login the authorization was started for.
     const caller = await oauthCallbackCaller("dropbox", state);
     if (!caller.ok) {
         log.warn("Refused a Dropbox OAuth callback", { reason: caller.message });
-        return fail(caller.message);
+        return fail(caller.code);
     }
     const { ctx, credentialId } = caller;
 
@@ -68,25 +69,23 @@ export async function GET(req: NextRequest) {
         if (!tokenRes.ok) {
             const errorBody = await tokenRes.text();
             log.error("Dropbox token exchange failed", { status: tokenRes.status, body: errorBody });
-            return fail(`Token exchange failed: ${tokenRes.status}`);
+            return fail("token_exchange");
         }
 
         const tokenData = await tokenRes.json();
 
         if (!tokenData.refresh_token) {
             log.warn("No refresh token received from Dropbox", { credentialId });
-            return fail("No refresh token received. Ensure the app has 'offline' access configured.");
+            return fail("no_refresh_token");
         }
 
         await saveRefreshToken(ctx, credentialId, profile, tokenData.refresh_token);
 
         log.info("Dropbox OAuth completed successfully", { credentialId });
 
-        return NextResponse.redirect(
-            `${origin}/dashboard/connections?tab=destinations&oauth=success&message=${encodeURIComponent("Dropbox authorized successfully!")}`
-        );
+        return NextResponse.redirect(oauthReturnUrl(origin, "dropbox", null));
     } catch (err) {
         log.error("Dropbox OAuth callback failed", { credentialId }, wrapError(err));
-        return fail(OAUTH_CALLBACK_FAILED);
+        return fail("failed");
     }
 }

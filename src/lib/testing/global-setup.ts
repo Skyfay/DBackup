@@ -9,19 +9,23 @@ import path from "path";
  * has in it, and passes in CI, where no .env exists. Prisma leaves variables that are set alone
  * when it loads .env, so these win over it.
  */
-export const UNIT_TEST_DB = path.join(process.cwd(), "node_modules", ".cache", "dbackup-unit-tests", "unit.db");
+// One folder per run, named after the process that runs vitest, so two runs at the same time, like
+// validate and a test started from the editor, never build or remove each other's database.
+export const UNIT_TEST_DB = path.join(process.cwd(), "node_modules", ".cache", "dbackup-unit-tests", `run-${process.pid}`, "unit.db");
 export const UNIT_TEST_ENV = {
     DATABASE_URL: `file:${UNIT_TEST_DB}`,
     // 64 hex characters like a real key, a test value used nowhere else.
     ENCRYPTION_KEY: "7e57000000000000000000000000000000000000000000000000000000007e57",
 };
 
-/** Builds the empty database of the unit tests from the migrations, once per run. */
-export default function setup(): void {
-    rmSync(path.dirname(UNIT_TEST_DB), { recursive: true, force: true });
-    mkdirSync(path.dirname(UNIT_TEST_DB), { recursive: true });
+/** Builds the empty database of the unit tests from the migrations, once per run, and removes it after. */
+export default function setup(): () => void {
+    const folder = path.dirname(UNIT_TEST_DB);
+    rmSync(folder, { recursive: true, force: true });
+    mkdirSync(folder, { recursive: true });
     execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
         env: { ...process.env, ...UNIT_TEST_ENV },
         stdio: "pipe",
     });
+    return () => rmSync(folder, { recursive: true, force: true });
 }

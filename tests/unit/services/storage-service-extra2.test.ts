@@ -149,6 +149,8 @@ describe('StorageService.downloadFile - encryption and .enc paths', () => {
     beforeEach(() => {
         service = new StorageService();
         vi.clearAllMocks();
+        // No run of History wrote these backups, see `recorded-encryption.ts`.
+        prismaMock.execution.findMany.mockResolvedValue([]);
         mockResolveAdapterConfig.mockImplementation((adapterConfig: any) =>
             Promise.resolve(JSON.parse(adapterConfig.config))
         );

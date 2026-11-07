@@ -141,7 +141,7 @@ function OverrideRow({ entry, tenantName, busy, onFollow }: { entry: TenantOnDem
                 <Icon className="size-4 text-muted-foreground" />
             </span>
             <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{entry.kind === "rule" ? <>Rule <span className="font-mono">{entry.name}</span></> : entry.name}</p>
+                <p className="truncate text-sm font-medium">{entry.kind === "rule" && !entry.beyondReach ? <>Rule <span className="font-mono">{entry.name}</span></> : entry.name}</p>
                 <p className="truncate text-xs text-muted-foreground">on {entry.serverName} · {entry.providerName}</p>
             </div>
             <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium">

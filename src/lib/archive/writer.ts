@@ -28,7 +28,7 @@ import { pack, Pack } from "tar-stream";
 import { compressBuffer, getCompressionStream, getCompressionExtension } from "@/lib/crypto/compression";
 import { deriveArchiveKeys, generateKdfSalt } from "@/lib/crypto/kdf";
 import { generateNoncePrefix, sealEntry, sealedSize } from "@/lib/crypto/entry-cipher";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import { isIncompressible } from "@/lib/incompressible-formats";
 import {
     BUNDLE_FILE_MAX_SIZE,
@@ -312,13 +312,14 @@ async function materialize(
     // Ordinals restart at 1 for every archive, so pid + ordinal is not unique: two jobs
     // running concurrently in the same process (maxConcurrentJobs > 1) would compress
     // different entries into the same file and each would end up with the other's bytes.
-    const tempFile = path.join(
-        getTempDir(),
+    // In the private folder, since the entry is compressed but not sealed yet, plain data of an
+    // encrypted job as well.
+    const tempFile = await privateTempPath(
         `archive-entry-${process.pid}-${crypto.randomUUID()}${getCompressionExtension(entry.comp)}`
     );
     const compressStream = getCompressionStream(entry.comp);
     if (!compressStream) throw new Error(`Unsupported compression type: ${entry.comp}`);
-    await pipeline(read(), compressStream, createWriteStream(tempFile));
+    await pipeline(read(), compressStream, createWriteStream(tempFile, { flags: "wx", mode: PRIVATE_FILE_MODE }));
 
     const stats = await fs.stat(tempFile);
     return { storedSize: withTag(stats.size), open: () => seal(createReadStream(tempFile)), tempFile, plainDigest, plainSize };

@@ -164,6 +164,7 @@ export class AuditService {
     const dateThreshold = new Date();
     dateThreshold.setDate(dateThreshold.getDate() - retentionDays);
 
+    // Retention is one setting of the instance, so the entries of every tenant age out together.
     return runAsSystem(() => prisma.auditLog.deleteMany({
       where: {
         createdAt: {

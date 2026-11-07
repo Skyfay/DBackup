@@ -10,7 +10,7 @@ import { SETTINGS_AREAS } from "@/services/system/settings-audit";
 import { platformLogFor } from "@/services/system/settings-save";
 import { getLoginImageInfo, LOGIN_IMAGE_MAX_BYTES, readLoginImage, removeLoginImage, saveLoginImage } from "@/services/system/login-image-service";
 import { getSignInSettings } from "@/services/system/system-settings-service";
-import { bodyTooLarge } from "@/lib/server/upload-size";
+import { formLimitFor, readFormWithin } from "@/lib/server/upload-size";
 import { refusedUnless } from "@/lib/server/permission-refusal";
 import { IMAGE_SECURITY_HEADERS, servedImageType } from "@/lib/server/image-response";
 
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
     const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE));
     if (refused) return refused;
 
-    if (bodyTooLarge(req.headers, LOGIN_IMAGE_MAX_BYTES)) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
-    const form = await req.formData().catch(() => null);
+    const { form, tooLarge } = await readFormWithin(req, formLimitFor(LOGIN_IMAGE_MAX_BYTES));
+    if (tooLarge) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 413 });
     const file = form?.get("file");
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "Pick a picture to upload." }, { status: 400 });
     if (file.size > LOGIN_IMAGE_MAX_BYTES) return NextResponse.json({ success: false, error: "The picture is larger than 5 MB." }, { status: 400 });

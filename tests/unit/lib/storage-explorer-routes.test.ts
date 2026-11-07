@@ -127,6 +127,23 @@ describe("Backups page API", () => {
         expect(await response.json()).toMatchObject({ success: true, data: { id: "exec-1", status: "Partial" } });
     });
 
+    it("names the tenant of the run only in All tenants, and only by an id", async () => {
+        const inTenant = (query: string) => getExecution(new NextRequest(`http://localhost/api/storage/explorer/execution?path=a.tar&${query}`));
+
+        signedIn(PERMISSIONS.STORAGE.READ);
+        expect((await inTenant("tenant=globex")).status).toBe(200);
+        // Inside a tenant every run is of that tenant anyway.
+        expect(mocks.getExecution).toHaveBeenLastCalledWith("a.tar", null);
+
+        mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions: [PERMISSIONS.STORAGE.READ], isPlatformAdmin: true, tenantId: null, allTenants: true });
+        expect((await inTenant("tenant=globex")).status).toBe(200);
+        expect(mocks.getExecution).toHaveBeenLastCalledWith("a.tar", "globex");
+        mocks.getExecution.mockClear();
+        expect((await inTenant(`tenant=${encodeURIComponent("globex' OR 1")}`)).status).toBe(400);
+        expect((await inTenant(`tenant=${"a".repeat(201)}`)).status).toBe(400);
+        expect(mocks.getExecution).not.toHaveBeenCalled();
+    });
+
     it("finds one backup by its path for the Database Explorer, behind the permission to read storage", async () => {
         mocks.getBackup.mockResolvedValue({ run: null, job: null, chain: null, destinations: [] });
 

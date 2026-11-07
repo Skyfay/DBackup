@@ -11,15 +11,13 @@ import { auditService } from "@/services/audit-service";
 import { TENANT_SETTINGS_AREA } from "@/services/tenant/tenant-settings-audit";
 import { tenantService } from "@/services/tenant/tenant-service";
 import { IMAGE_SECURITY_HEADERS, servedImageType } from "@/lib/server/image-response";
+import { formLimitFor, readFormWithin } from "@/lib/server/upload-size";
 import { findTenantLogo, mayViewTenantLogo, removeTenantLogo, saveTenantLogo, TENANT_LOGO_MAX_BYTES } from "@/services/tenant/tenant-logo-service";
 
 const log = logger.child({ route: "tenants/[id]/logo" });
 
 const FIELD = "Logo";
 const TOO_LARGE = "The logo is larger than 1 MB.";
-
-/** The room a form takes beside the file, its boundaries and headers, so a body above it holds a file too large. */
-const FORM_OVERHEAD_BYTES = 64 * 1024;
 
 /**
  * The logo of a tenant, for its people and for platform admins, who see every tenant. Anyone else
@@ -70,12 +68,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const refused = guardChange(ctx, id);
     if (refused) return refused;
-    // Refused before the form is read, which would hold the whole body in memory.
-    if (Number(req.headers.get("content-length") ?? 0) > TENANT_LOGO_MAX_BYTES + FORM_OVERHEAD_BYTES) {
-        return NextResponse.json({ success: false, error: TOO_LARGE }, { status: 413 });
-    }
-
-    const form = await req.formData().catch(() => null);
+    // Refused before the whole body is read, which would hold it in memory.
+    const { form, tooLarge } = await readFormWithin(req, formLimitFor(TENANT_LOGO_MAX_BYTES));
+    if (tooLarge) return NextResponse.json({ success: false, error: TOO_LARGE }, { status: 413 });
     const file = form?.get("file");
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "Pick a picture to upload." }, { status: 400 });
     if (file.size > TENANT_LOGO_MAX_BYTES) return NextResponse.json({ success: false, error: TOO_LARGE }, { status: 400 });

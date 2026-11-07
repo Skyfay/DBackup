@@ -2,8 +2,9 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { PROFILE_CHANGE_REFUSED, SERVER_ONLY_ENDPOINT_REFUSED, TRUSTED_DEVICE_REFUSED, asksTrustedDevice, profileChangeRefused, refusedFromBrowser } from "@/lib/auth/profile-guard";
 import { refuseWeakPassword } from "@/lib/auth/password-guard";
-import { refuseLateSignUp } from "@/lib/auth/sign-up-guard";
+import { claimFirstSignUp, refuseLateSignUp } from "@/lib/auth/sign-up-guard";
 import { keepPasskeyFactor } from "@/lib/auth/passkey-factor-guard";
+import { refusePasskeyFirstFactor } from "@/lib/auth/passkey-login-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "@/lib/prisma";
 import { twoFactor } from "better-auth/plugins";
@@ -20,6 +21,7 @@ import { DEFAULT_SESSION_DURATION, SESSION_OPTIONS, sessionDurationOf, sessionEn
 import { CLIENT_ADDRESS_HEADER } from "@/lib/core/client-address";
 import { foreignSsoTarget, trustedOriginsFor } from "@/lib/auth/trusted-origins";
 import { accountLinkingOptions } from "@/lib/auth/account-linking";
+import { secureCookiesFor } from "@/lib/auth/secure-cookies";
 
 const log = logger.child({ module: "Auth" });
 
@@ -131,6 +133,8 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
     if (isSsoManagementRequest(ctx.path, Boolean(ctx.request))) throw new APIError("NOT_FOUND");
     // A provider that is off signs nobody in, not only on the login page.
     await refuseDisabledProvider(ctx, (url) => ctx.redirect(url));
+    // A passkey that is off as a way in still works as the second factor, see passkey-login-guard.ts.
+    await refusePasskeyFirstFactor(ctx);
     // What DBackup changes through its own actions, with their checks and audit entries, never
     // straight from the browser.
     if (refusedFromBrowser(ctx.path, Boolean(ctx.request))) {
@@ -189,6 +193,9 @@ export const auth = betterAuth({
     // a single X-Forwarded-For value from anyone.
     advanced: {
         ipAddress: { ipAddressHeaders: [CLIENT_ADDRESS_HEADER] },
+        // Secure cookies whenever the browser reaches DBackup over HTTPS, also where BETTER_AUTH_URL
+        // is unset or http:// behind a proxy, see secure-cookies.ts.
+        useSecureCookies: secureCookiesFor(process.env),
     },
     trustedOrigins: async (request) => {
         // Refresh trusted providers on every auth request
@@ -251,6 +258,8 @@ export const auth = betterAuth({
         user: {
             create: {
                 before: async (user, context) => {
+                    // Only one sign-up from the browser makes the first account, also two at once.
+                    await claimFirstSignUp(context);
                     // The browser asks better-auth to add someone new, the provider decides.
                     await beforeSsoUser(user, context);
                     // DBackup sends no verification emails. The flag says whether an admin or a

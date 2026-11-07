@@ -227,6 +227,46 @@ describe("sharing a connection with other tenants", () => {
     });
 });
 
+/**
+ * Runs `act` while `tenantId` is deleted right before the first transaction starts, like by a
+ * delete that commits after the save read the tenants and before it writes.
+ */
+async function deletedBeforeWrite<T>(tenantId: string, act: () => Promise<T>): Promise<T> {
+    const real = app.client;
+    app.client = new Proxy(real, {
+        get: (target, key) => {
+            if (key !== "$transaction") return Reflect.get(target, key);
+            return async (...args: unknown[]) => {
+                app.client = real;
+                await base.tenant.delete({ where: { id: tenantId } });
+                return (Reflect.get(target, key) as (...rest: unknown[]) => Promise<unknown>).apply(target, args);
+            };
+        },
+    });
+    try {
+        return await act();
+    } finally {
+        app.client = real;
+    }
+}
+
+describe("a tenant deleted while a save runs", () => {
+    it("refuses the save that gives the connection to it, and writes no row under its dead id", async () => {
+        await expect(deletedBeforeWrite("initech", () => share("acme-nas", ["globex", "initech"]))).rejects.toThrow("A tenant you picked is this one or no longer exists.");
+
+        expect(await base.connectionShareTenant.count({ where: { tenantId: "initech" } })).toBe(0);
+        expect(await base.connectionShare.count()).toBe(0);
+    });
+
+    it("leaves out a tenant that had the connection already, and gives it to the others", async () => {
+        await share("acme-mail", ["globex"]);
+
+        await deletedBeforeWrite("globex", () => share("acme-mail", ["globex", "initech"]));
+
+        expect((await base.connectionShareTenant.findMany({ where: { shareId: "acme-mail" } })).map((row) => row.tenantId)).toEqual(["initech"]);
+    });
+});
+
 describe("taking a destination back", () => {
     beforeEach(async () => {
         await share("acme-nas", ["globex", "initech"]);

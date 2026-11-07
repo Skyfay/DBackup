@@ -11,9 +11,11 @@ import prisma from "@/lib/prisma";
 import { ValidationError } from "@/lib/logging/errors";
 import { resolveStorageAdapter } from "@/lib/archive/storage-source";
 import { ownerAt } from "@/lib/tenant/database-owner";
+import { runAsSystem } from "@/lib/tenant/context";
 import { factsOf } from "@/services/tenant/owner-facts";
 import { listedDatabases } from "@/services/tenant/shared-servers";
 import { readBackupMetadata } from "./file-restore";
+import { aliasesOfTarget } from "@/lib/adapters/database/firebird/connection";
 import type { RestoreInput } from "./types";
 
 /** A database of the server a customer holds now. */
@@ -29,11 +31,11 @@ export interface CustomerDatabase {
  * restore of every database of a backup, whose names the request does not say.
  */
 export async function customerDatabases(sourceId: string, names: readonly string[] | null, now = new Date()): Promise<CustomerDatabase[]> {
-    const server = await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { tenantId: true } });
+    const server = await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { tenantId: true, adapterId: true, config: true } });
     if (!server) return [];
     const facts = await factsOf(sourceId);
     if (facts.assignments.length === 0 && facts.rules.length === 0) return [];
-    const candidates = names ?? [
+    const candidates = names ? withAliases(server, names) : [
         ...(await listedDatabases(sourceId)).map((entry) => entry.name),
         ...facts.assignments.filter((assignment) => assignment.validUntil === null && assignment.tenantId).map((assignment) => assignment.databaseName),
     ];
@@ -49,6 +51,28 @@ export async function customerDatabases(sourceId: string, names: readonly string
         .filter((entry) => nameOf.has(entry.tenantId))
         .map((entry) => ({ ...entry, customer: nameOf.get(entry.tenantId) as string }))
         .sort((a, b) => a.database.localeCompare(b.database));
+}
+
+/**
+ * The names with the Firebird aliases they reach. A Firebird restore writes into a path, which the
+ * restore page fills in from the alias a customer holds, so a path counts as every alias whose file
+ * it is, see `aliasesOfTarget`. The aliases and their paths hold no secret, so the stored config is
+ * read as it is.
+ */
+function withAliases(server: { adapterId: string; config: string }, names: readonly string[]): string[] {
+    if (server.adapterId !== "firebird") return [...names];
+    let databases: { name: string; path: string }[] = [];
+    try {
+        const parsed: unknown = JSON.parse(server.config);
+        const listed = (parsed as { databases?: unknown } | null)?.databases;
+        if (Array.isArray(listed)) {
+            databases = listed.filter((entry): entry is { name: string; path: string } =>
+                typeof entry?.name === "string" && typeof entry?.path === "string");
+        }
+    } catch {
+        // A config that does not parse names no alias, the names stay as they are.
+    }
+    return names.flatMap((name) => [name, ...aliasesOfTarget(databases, name)]);
 }
 
 /** Whether the server exists and a database or a rule of it went to a customer at any time. */
@@ -126,14 +150,39 @@ function uniqueByName(held: readonly CustomerDatabase[]): CustomerDatabase[] {
 }
 
 /**
+ * Refuses a customer's restore of a shared database the customer no longer holds: given to another
+ * tenant, taken back, moved or its server deleted, or the customer tenant deleted since the restore
+ * started. Read in the system scope, since the facts of the server belong to its tenant.
+ */
+async function assertStillHeld(input: RestoreInput, targetNames: readonly string[], now: Date): Promise<void> {
+    const customer = input.shared?.tenantId;
+    const sourceId = input.targetSourceId;
+    const refused = (name: string) => new ValidationError(`${name} is no longer yours, so nothing was restored.`);
+    if (!customer || !sourceId) throw refused(input.shared?.databaseName ?? "The database");
+    await runAsSystem(async () => {
+        const [tenant, server] = await Promise.all([
+            prisma.tenant.findUnique({ where: { id: customer }, select: { id: true } }),
+            prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { id: true } }),
+        ]);
+        if (!tenant || !server) throw refused(targetNames[0] ?? input.shared?.databaseName ?? "The database");
+        const facts = await factsOf(sourceId);
+        const lost = targetNames.find((name) => ownerAt(facts.assignments, facts.rules, name, now) !== customer);
+        if (lost !== undefined) throw refused(lost);
+    });
+}
+
+/**
  * The check right before a restore writes, with the names it really writes into: every database a
  * customer holds among them has to be one the request confirmed, `confirmedCustomerDatabases` of
  * the input, which `RestoreService` fills from `assertCustomerDatabasesConfirmed`. So a restore
  * never overwrites a customer's database the guard did not name, and the audit entry names every
- * customer it touches.
+ * customer it touches. A customer's own restore has to hold every database it writes into still,
+ * and its tenant has to exist, see `assertStillHeld`. Called before the dumps are staged and again
+ * before each database is written, since the tenant of the server may change who holds it meanwhile.
  */
-export async function assertTargetsConfirmed(input: RestoreInput, targetNames: readonly string[]): Promise<void> {
-    if (input.shared || !input.targetSourceId || targetNames.length === 0) return;
+export async function assertTargetsConfirmed(input: RestoreInput, targetNames: readonly string[], now = new Date()): Promise<void> {
+    if (input.shared) return assertStillHeld(input, targetNames, now);
+    if (!input.targetSourceId || targetNames.length === 0) return;
     const confirmed = new Set(input.confirmedCustomerDatabases ?? []);
     const unconfirmed = (await customerDatabases(input.targetSourceId, targetNames)).filter((entry) => !confirmed.has(entry.database));
     if (unconfirmed.length > 0) throw overwriteRefusal(unconfirmed, "The request did not confirm overwriting them, so nothing was restored.");

@@ -101,6 +101,33 @@ describe("sign-ins through the provider of a tenant", () => {
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
     });
 
+    it("links no account by an email the person picked themselves, only from the own profile while signed in", async () => {
+        const signedIn = { ...CALLBACK, headers: new Headers({ cookie: "better-auth.session_token=tok-lena.sig" }) };
+        mocks.session.mockResolvedValue({ userId: "lena", expiresAt: new Date(Date.now() + 60_000) });
+
+        // A provider of the tenant, for an account of its own people.
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: false, memberships: [{ tenantId: "acme" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(true);
+
+        // A provider of the platform, for an account of the home tenant, also for a platform admin.
+        mocks.provider.mockResolvedValue(AUTHENTIK);
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: false, memberships: [{ tenantId: "default" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(true);
+        mocks.user.mockResolvedValue({ ...MANU, emailVerified: false });
+        expect(await allowTenantSsoLink({ userId: "manu" }, CALLBACK)).toBe(false);
+
+        // Someone else signed in links nobody else's account.
+        mocks.session.mockResolvedValue({ userId: "mallory", expiresAt: new Date(Date.now() + 60_000) });
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: false, memberships: [{ tenantId: "default" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(false);
+
+        // An email an admin set links as before.
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: true, memberships: [{ tenantId: "default" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
+    });
+
     it("leaves links outside a sign-in through a provider of a tenant alone", async () => {
         expect(await allowTenantSsoLink({ userId: "lena" }, { path: "/sign-up/email" })).toBe(true);
         expect(await allowTenantSsoLink({ userId: "lena" }, null)).toBe(true);

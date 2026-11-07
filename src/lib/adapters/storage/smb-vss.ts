@@ -28,6 +28,7 @@ import type { SnapshotHandle } from "@/lib/core/interfaces";
 import { stripTrailingSlashes } from "@/lib/paths";
 import { isSmbAddress, parseSmbAddress, SMB_LOGIN_HINT, smbLoginHasPercent, smbResolveOptions } from "@/lib/adapters/smb-address";
 import { sambaEnv } from "./smb-run";
+import { smbAddressOptions } from "./smb-pin";
 
 const log = logger.child({ adapter: "smb", feature: "vss" });
 
@@ -158,7 +159,8 @@ async function runRpc(config: SmbVssConfig, verb: string, words: string[] = []):
     }
     const host = parsed.server;
     const command = [verb, ...words].join(" ");
-    const args = [...credentialArgs(config), ...smbResolveOptions(config), "-c", command, host];
+    // rpcclient takes the checked address as `-I` too, see `smbAddressOptions`.
+    const args = [...credentialArgs(config), ...smbResolveOptions(config), ...await smbAddressOptions(config), "-c", command, host];
 
     try {
         const { stdout, stderr } = await execFileAsync("rpcclient", args, { timeout: RPC_TIMEOUT_MS, env: sambaEnv(config.password) });

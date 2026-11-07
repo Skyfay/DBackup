@@ -77,14 +77,14 @@ async function actorOf(viewer: Viewer): Promise<PlatformGroupActor & { groupId: 
 }
 
 /**
- * Why someone of a platform group of some tenants may not change or delete a platform group: one of
- * its members has an account they may not change, see `accountRefusal`, like `setUserPlatformGroup`
- * asks for one account. Null for a platform admin and a reach of all tenants.
+ * Why someone of a platform group may not change or delete a platform group: one of its members has
+ * an account they may not change, see `accountRefusal`, like `setUserPlatformGroup` asks for one
+ * account. Also with a reach of all tenants, since the groups of a member may still do more than they
+ * may there. Null for a platform admin.
  */
 async function membersRefusal(viewer: Viewer, groupId: string, verb: "changes" | "deletes"): Promise<string | null> {
     if (viewer.isPlatformAdmin) return null;
     const reach = await platformGroupService.reachOf(viewer.id);
-    if (reach === "all") return null;
     for (const memberId of await platformGroupService.memberIds(groupId)) {
         if (await userService.accountRefusalFor({ ...viewer, reach }, memberId)) {
             return `Someone in this platform group has an account you may not change, so only someone who may change all of them ${verb} it.`;
@@ -255,13 +255,12 @@ export async function setUserPlatformGroup(userId: string, choice: PlatformGroup
         if (current && platformGroupRefusal(actor, current.shape)) {
             return { success: false as const, error: "Their platform group may do more than you may, so only someone who may do all of it changes it." };
         }
-        // Someone of a platform group of some tenants gives a platform group only to an account they
-        // may change, one whose tenants their platform group all reaches, see `accountRefusal`.
+        // Someone of a platform group gives a platform group only to an account they may change, one
+        // whose tenants their platform group all reaches and whose groups do no more than they may
+        // there, also with a reach of all tenants, see `accountRefusal`.
         const reach = await platformGroupService.reachOf(viewer.id);
-        if (reach !== "all") {
-            const refused = await userService.accountRefusalFor({ ...viewer, reach }, user.data);
-            if (refused) return { success: false as const, error: refused };
-        }
+        const refused = await userService.accountRefusalFor({ ...viewer, reach }, user.data);
+        if (refused) return { success: false as const, error: refused };
         if (picked.data.kind === "none" && target.groupId && (await claimedBeyond(viewer, [user.data]))) return { success: false as const, error: CLAIMED_ACCOUNT };
     }
     if (picked.data.kind === "group") {

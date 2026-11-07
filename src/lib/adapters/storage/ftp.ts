@@ -13,6 +13,9 @@ import { trustsFtpCertificate } from "@/lib/adapters/later-switches";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { isAddressLiteral } from "@/lib/network/local-network";
+import { reachableAddress } from "@/lib/network/checked-socket";
+import { reachOf } from "@/lib/network/reach-policy";
 
 const log = logger.child({ adapter: "ftp" });
 
@@ -67,14 +70,21 @@ async function connectFTP(config: FTPConfig): Promise<Client> {
     const client = new Client(undefined, { allowSeparateTransferHost: false, maxListingBytes: FTP_MAX_LISTING_BYTES });
     client.ftp.verbose = false;
 
+    // For a tenant that blocks the local network the control connection dials the address checked
+    // right before, see `reach-check.ts`, and the data connections follow it, since basic-ftp keeps
+    // them on the address of the control connection. TLS keeps the name for the certificate.
+    const reach = reachOf(config);
+    const address = reach ? await reachableAddress(config.host, config.port || 21, reach.allowed) : config.host;
+    const named = address !== config.host && !isAddressLiteral(config.host) ? { host: config.host, servername: config.host } : {};
+
     await client.access({
-        host: config.host,
+        host: address,
         port: config.port,
         user: config.username,
         password: config.password || "",
         secure: config.tls,
         // The certificate is checked unless the connection trusts its server, see `trustsFtpCertificate`.
-        secureOptions: config.tls ? { rejectUnauthorized: !trustsFtpCertificate(config) } : undefined,
+        secureOptions: config.tls ? { rejectUnauthorized: !trustsFtpCertificate(config), ...named } : undefined,
     });
 
     return client;

@@ -39,6 +39,10 @@ vi.mock("@/services/config/database-copy", async (importOriginal) => ({
     createConfigCopy: (...args: unknown[]) => mocks.copy(...args),
 }));
 vi.mock("@/lib/temp-dir", () => ({ getTempDir: () => "/tmp" }));
+vi.mock("@/lib/private-temp-dir", () => ({
+    privateTempPath: async (name: string) => `/tmp/dbackup-private-abc/${name}`,
+    PRIVATE_FILE_MODE: 0o600,
+}));
 vi.mock("zlib", () => ({ createGzip: () => new PassThrough() }));
 vi.mock("@/lib/crypto/stream", () => ({
     createEncryptionStream: () => ({ stream: new PassThrough(), getAuthTag: () => Buffer.alloc(16, 2), iv: Buffer.alloc(16, 1) }),
@@ -137,8 +141,9 @@ describe("the configuration backup, a copy of the whole database", () => {
         expect(mocks.copy).toHaveBeenCalledWith({ includeHistory: true });
         const [, localFile, remoteFile] = mocks.upload.mock.calls[0];
         expect(remoteFile).toMatch(/^config-backups\/config_backup_.+\.db\.gz\.enc$/);
-        // A temp name nobody can guess, never one that only the time tells.
-        expect(localFile).toMatch(/^\/tmp\/[0-9a-f-]{36}-config_backup_.+\.db\.gz\.enc$/);
+        // A temp name nobody can guess, never one that only the time tells, in the private folder.
+        expect(localFile).toMatch(/^\/tmp\/dbackup-private-abc\/[0-9a-f-]{36}-config_backup_.+\.db\.gz\.enc$/);
+        expect(mocks.writeFile).toHaveBeenCalledWith(`${localFile}.meta.json`, expect.any(String), { mode: 0o600 });
         expect(mocks.upload.mock.calls[1][2]).toBe(`${remoteFile}.meta.json`);
 
         const meta = JSON.parse(mocks.writeFile.mock.calls[0][1] as string);

@@ -2,6 +2,8 @@ import sql from "mssql";
 
 import type { ExecutionHost } from "@/lib/transport";
 import type { AzureSQLConfig } from "@/lib/adapters/definitions";
+import { reachOf, type ReachPolicy } from "@/lib/network/reach-policy";
+import { tdsConnector } from "../mssql/connector";
 
 /**
  * Opening a TDS connection to Azure SQL Database.
@@ -29,7 +31,11 @@ function buildConnectionConfig(
     server: string,
     port: number,
     options: PoolOptions,
+    reach: ReachPolicy | null,
 ): sql.config {
+    // For a tenant that blocks the local network every socket, a routing redirect of the gateway
+    // included, goes to an address checked at connect time, see `mssql/connector.ts`.
+    const connector = tdsConnector(server, false, reach);
     return {
         server,
         port,
@@ -41,6 +47,7 @@ function buildConnectionConfig(
             trustServerCertificate: false,
             connectTimeout: 15000,
             requestTimeout: options.requestTimeout ?? config.requestTimeout ?? 300000,
+            ...(connector ? { connector: connector as NonNullable<sql.config["options"]>["connector"] } : {}),
         },
     };
 }
@@ -65,7 +72,7 @@ export async function withPool<T>(
     let pool: sql.ConnectionPool | null = null;
 
     try {
-        pool = new sql.ConnectionPool(buildConnectionConfig(config, forward.host, forward.port, options));
+        pool = new sql.ConnectionPool(buildConnectionConfig(config, forward.host, forward.port, options, reachOf(config)));
         await pool.connect();
         return await fn(pool);
     } finally {

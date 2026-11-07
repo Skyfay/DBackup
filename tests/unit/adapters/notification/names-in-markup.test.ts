@@ -1,0 +1,120 @@
+/**
+ * The names in a notification, of a job, a database or a tenant, are chosen by people, also by the
+ * customers of a provider whose channel they share. Every chat shows them as text: never a link, a
+ * mention or markup of its own.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { escapeMarkdown, escapeSlack, escapeTelegramMarkdown, escapeMarkdownLinks } from "@/lib/adapters/notification/escape";
+import { SlackAdapter } from "@/lib/adapters/notification/slack";
+import { DiscordAdapter } from "@/lib/adapters/notification/discord";
+import { TelegramAdapter } from "@/lib/adapters/notification/telegram";
+import { GotifyAdapter } from "@/lib/adapters/notification/gotify";
+import { NtfyAdapter } from "@/lib/adapters/notification/ntfy";
+
+const mockFetch = vi.fn();
+
+beforeEach(() => {
+    vi.clearAllMocks();
+    global.fetch = mockFetch;
+    mockFetch.mockResolvedValue({ ok: true, status: 200 });
+});
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
+
+const JOB = "Shop <!channel> [click](https://evil.example) <@U123> & *bold*";
+const context = (extra: Record<string, unknown> = {}) => ({ title: `Backup of ${JOB}`, success: true, fields: [{ name: "Job", value: JOB }], ...extra });
+const body = () => JSON.parse(mockFetch.mock.calls[0][1].body as string);
+
+describe("the escapes of each format", () => {
+    it("turns the control characters of Slack into entities", () => {
+        expect(escapeSlack("a & <!here> <http://x|y>")).toBe("a &amp; &lt;!here&gt; &lt;http://x|y&gt;");
+    });
+
+    it("escapes the characters of a link, a mention, emphasis and a heading in Markdown", () => {
+        expect(escapeMarkdown("[x](http://e) <@1> *b* _i_ `c` ~s~ ||sp||")).toBe("\\[x\\](http://e) \\<@1\\> \\*b\\* \\_i\\_ \\`c\\` \\~s\\~ \\|\\|sp\\|\\|");
+        expect(escapeMarkdown("# Heading\n- item")).toBe("\\# Heading\n\\- item");
+    });
+
+    it("escapes the characters of Telegram's legacy Markdown", () => {
+        expect(escapeTelegramMarkdown("my_job *x* [y](z) `c`")).toBe("my\\_job \\*x\\* \\[y](z) \\`c\\`");
+    });
+});
+
+describe("a notification with a name that looks like markup", () => {
+    it("reaches Slack as text, in the message and in the fields", async () => {
+        await SlackAdapter.send({ webhookUrl: "https://hooks.slack.com/services/T00/B00/xxx" }, `Finished ${JOB}`, context());
+
+        const blocks = body().attachments[0].blocks;
+        const sent = JSON.stringify(blocks.slice(1));
+        expect(sent).not.toContain("<!channel>");
+        expect(sent).not.toContain("<@U123>");
+        expect(sent).not.toContain("<https://");
+        expect(blocks[1].text.text).toBe(`Finished ${escapeSlack(JOB)}`);
+        expect(blocks[2].fields[0].text).toBe(`*Job:*\n${escapeSlack(JOB)}`);
+    });
+
+    it("reaches Slack as text without a context too", async () => {
+        await SlackAdapter.send({ webhookUrl: "https://hooks.slack.com/services/T00/B00/xxx" }, `Finished ${JOB}`);
+
+        expect(body().text).toBe(`Finished ${escapeSlack(JOB)}`);
+    });
+
+    it("pings nobody on Discord and shows no masked link", async () => {
+        await DiscordAdapter.send({ webhookUrl: "https://discord.com/api/webhooks/1/abc" }, `@everyone ${JOB}`, context());
+
+        const sent = body();
+        expect(sent.allowed_mentions).toEqual({ parse: [] });
+        expect(sent.embeds[0].description).toBe(escapeMarkdown(`@everyone ${JOB}`));
+        expect(sent.embeds[0].fields[0].value).toBe(escapeMarkdown(JOB));
+        expect(sent.embeds[0].description).not.toContain("[click](");
+    });
+
+    it("pings nobody on Discord without a context either", async () => {
+        await DiscordAdapter.send({ webhookUrl: "https://discord.com/api/webhooks/1/abc" }, "@everyone <@&42>");
+
+        expect(body()).toMatchObject({ content: "@everyone \\<@&42\\>", allowed_mentions: { parse: [] } });
+    });
+
+    it("is escaped for HTML on Telegram, where tags of a name never count", async () => {
+        await TelegramAdapter.send({ botToken: "1:abc", chatId: "1", parseMode: "HTML", disableNotification: false }, `<a href="https://evil">x</a>`, context());
+
+        const sent = body();
+        expect(sent.parse_mode).toBe("HTML");
+        expect(sent.text).toContain("&lt;a href=\"https://evil\"&gt;x&lt;/a&gt;");
+        expect(sent.text).not.toContain("<a ");
+    });
+
+    it("is escaped for Markdown on Telegram when the channel sends Markdown, with no HTML tag in it", async () => {
+        await TelegramAdapter.send({ botToken: "1:abc", chatId: "1", parseMode: "Markdown", disableNotification: false }, "Done my_job [x](https://evil)", context());
+
+        const sent = body();
+        expect(sent.parse_mode).toBe("Markdown");
+        expect(sent.text).not.toContain("<b>");
+        expect(sent.text).toContain("Done my\\_job \\[x](https://evil)");
+        // A fixed label is bold, a title with a character to escape is plain text.
+        expect(sent.text).toContain("*Job:*");
+        expect(sent.text).toContain(escapeTelegramMarkdown(`Backup of ${JOB}`));
+    });
+
+    // Their phone apps show the text as sent, so only what makes a link is escaped there.
+    it("never makes a link on Gotify, title and fields included, and keeps other characters as written", async () => {
+        await GotifyAdapter.send({ serverUrl: "https://gotify.example.com", appToken: "t", priority: 5 }, `Finished ${JOB}`, context());
+
+        const { message } = body();
+        expect(message).toContain(`## ${escapeMarkdownLinks(`Backup of ${JOB}`)}`);
+        expect(message).toContain(`**Job:** ${escapeMarkdownLinks(JOB)}`);
+        expect(message).not.toMatch(/(^|[^\\])\[click\]/);
+        expect(message).toContain("& *bold*");
+    });
+
+    it("never makes a link on ntfy, which renders the body as Markdown in its web app only", async () => {
+        await NtfyAdapter.send({ serverUrl: "https://ntfy.sh", topic: "backups", priority: 3 }, `Finished ${JOB}`, context());
+
+        const [, init] = mockFetch.mock.calls[0];
+        expect(init.headers.Markdown).toBe("yes");
+        expect(init.body).toBe(`${escapeMarkdownLinks(`Finished ${JOB}`)}\n\nJob: ${escapeMarkdownLinks(JOB)}`);
+        expect(init.body).not.toMatch(/(^|[^\\])\[click\]/);
+    });
+});

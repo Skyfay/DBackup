@@ -208,23 +208,28 @@ This covers what DBackup does on the server itself, not what it reaches over the
 | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7` | Private networks |
 | `169.254.0.0/16`, `fe80::/10` | Link-local, the metadata services of the clouds among them |
 | `100.64.0.0/10` | Shared address space, which VPN overlays like NetBird and Tailscale use |
+| `198.18.0.0/15` | Benchmarking, which networks also use inside |
+| `64:ff9b:1::/48` | Local-use NAT64 |
 | `0.0.0.0/8`, `::`, `224.0.0.0/4`, `ff00::/8`, `240.0.0.0/4`, `fec0::/10` | This network, multicast, reserved and broadcast |
 
-An IPv4 address written as IPv6, like `::ffff:10.0.0.5`, counts as its IPv4. DBackup checks every address a host of the connection resolves to: the server of a database or a destination, the S3 endpoint and the host of the bucket on it, the URL of a webhook, of Gotify or of ntfy, the SMTP host of an email channel. Amazon S3, the cloud drives, Telegram and Twilio have public endpoints of their own and need no check.
+An IPv4 address written as IPv6, like `::ffff:10.0.0.5`, `::10.0.0.5` or `64:ff9b::a00:5`, counts as its IPv4. DBackup checks every address a host of the connection resolves to: the server of a database or a destination, the S3 endpoint and the host of the bucket on it, the URL of a webhook, of Gotify or of ntfy, the SMTP host of an email channel. Amazon S3, the cloud drives, Telegram and Twilio have public endpoints of their own and need no check.
 
 - **Over SSH** only the SSH server counts. The database behind it, `127.0.0.1` of that server too, is reached from there and never from the server DBackup runs on.
 - **Allowed ranges** let the tenant reach parts of the local network anyway, like `10.10.10.0/24` for the servers of the customer behind a VPN of the MSP, or `fd00:1::/64`. A single address is `10.0.0.5/32`, or just `10.0.0.5`. The field checks a range as you type, **Add** puts it into the list, and the button at the end of a row takes it out. They count while the block is on. A tenant has at most 50 of them, a wider range covers more.
 - Saving, **Test connection**, a browse of folders and every run check it. A connection saved before the block that reaches a blocked address stops working at its next run, with a message like `Acme reaches no address of the local network, db.internal is 10.0.0.5. The platform allows ranges for it under Platform, Tenants.`
 - A destination or a channel another tenant shares follows the setting of that tenant, not the one of its customer.
-- A host that does not resolve passes the check, its connection fails on its own.
+- A host that does not resolve, or not within 5 seconds, is refused, since nothing says where it leads.
+- The connection dials the address the check found, checked once more when it connects, so a name whose DNS answer changes in between reaches no blocked address either. MySQL and MariaDB with TLS on are the exception, their client checks the certificate against the name and takes no address beside it, so they dial the name the check resolved just before.
 - A host counts the way the client of the connection reads it: an empty host of MySQL, MariaDB, PostgreSQL, MongoDB or Firebird as `127.0.0.1`, every host of a PostgreSQL or MongoDB list, `host\INSTANCE` of SQL Server and `host/port` of Firebird by the host, and `user@host` of rsync by the part after the last `@`. An SMB address must read `//server/share` or `\\server\share` with a plain server name or address, and its login names no Kerberos realm with `@`.
+- **MongoDB** connects to one server only, its host and port. A seed list, an SRV name like the one of Atlas, or a connection URI is refused, since the tools connect to the members the server announces, which no check sees beforehand. Connect over SSH for a replica set.
+- **SQL Server** follows a routing redirect only to a host the check lets through, and never out of the SSH tunnel.
 - **SMB servers** are looked up in DNS only, never by a NetBIOS broadcast, which the check cannot see. Enter a DNS name or an IP address for a server that only answers to its NetBIOS name. The home tenant and a tenant without the block keep the lookup of Samba, NetBIOS names included.
 - **Test** of an SSH login checks the SSH server before it logs in. A webhook, Gotify, ntfy or WebDAV server that answers with a redirect to another host fails instead of being followed, so enter the final address. The share a file server names for a shadow copy is checked like the configured one.
 
 A new tenant starts with the block on. A tenant made before the setting existed keeps reaching the local network until the platform switches it on. The home tenant is the platform and reaches what its server reaches, so it has no Network part. Every change goes into the audit log of the home tenant and of the tenant itself.
 
 ::: info A guard, not a firewall
-The check reads the answer of the DNS server when it runs, and the connection asks again right after. A name whose answer changes in between on purpose gets past it. So do the servers a database or a file server sends the client on to by itself: SQL Server routing a connection to another server, the hosts of a MongoDB SRV record and DFS referrals of an SMB share. What must never be reached belongs behind the firewall of the server.
+The check holds the clients of DBackup to the addresses it checked, and stops what it knows the servers send a client on to. A DFS referral of an SMB share still sends smbclient to another server, since smbclient has no switch to turn them off, and the lookup of a named SQL Server instance without a port goes out to the name once more. What must never be reached belongs behind the firewall of the server.
 :::
 
 ## Groups in Tenants
@@ -295,12 +300,12 @@ An invitation is a link that lets one person join the tenant with a group, with 
 The link works once, for whoever opens it first:
 
 - **Signed in**, they see the tenant and the group and click **Join** with the name of the tenant, which opens it. Someone who is a member already keeps their group, and the link is used up.
-- **Not signed in**, they click **Sign in**, and once they signed in the link opens again for **Join**. Or they create an account right there while password sign-in is on. The password follows [Settings → Passwords](/user-guide/admin/settings#passwords), and they sign in on the login page afterwards.
+- **Not signed in**, they click **Sign in**, and once they signed in the link opens again for **Join**. Or they create an account right there while password sign-in is on. The password follows [Settings → Passwords](/user-guide/admin/settings#passwords), and they sign in on the login page afterwards. They picked the email themselves, so a [sign-in provider](/user-guide/admin/sso#new-people) never links that account by its email, only from **Profile** while signed in.
 - With `DISABLE_EMAIL_LOGIN=true` a new person signs in through a [sign-in provider](/user-guide/admin/sso) from **Sign in** and comes back to the link the same way.
 
 An email that has an account already, or one whose domain another tenant claims, gets the same answer: the email cannot get a new account through this invitation, sign in with it instead or pick another email. The password is checked first, so a weak one reads the same for every email. After five failed attempts to create an account with one link the link stops working and you make a new one. An email that has an account also counts toward the five answers of **New user** of whoever made the link, across all of their links. Once those are spent, their links make no new account for an hour, whatever the email, while someone with an account still joins. DBackup counts the attempts in memory, so a restart starts the count again. The link is used up before the account is made, so two requests at once make one account.
 
-A link works only while whoever made it may still give its group in the tenant. When they lose that right or leave the tenant, their open links stop working. Whoever made a link, also through an API key of theirs, cannot join with it, since nobody gives themselves a group. A tenant has at most 100 open links at once, and one person makes at most 20 links within an hour, used and revoked ones included.
+A link works only while whoever made it still manages the people of the tenant, with `users:write` there or `platform-tenants:write` of a platform group that reaches it, and may still give its group. When they lose either or leave the tenant, their open links stop working. Whoever made a link, also through an API key of theirs, cannot join with it, since nobody gives themselves a group. A tenant has at most 100 open links at once, and one person makes at most 20 links within an hour, used and revoked ones included.
 
 The links nobody used yet show in a banner above the list of users, with their group, note, who made them and when they run out. **Revoke** takes one back, only for someone who may give its group, like making it. A link that was used, ran out or was revoked tells whoever opens it to ask for a new one.
 

@@ -228,6 +228,9 @@ export async function restoreDatabases(
                     throw new Error(`Checksum mismatch: expected ${dbLine.h}, got ${digest}`);
                 }
 
+                // Checked again right before the write, since staging the dump takes a while and the
+                // tenant of the server may give the database away, take it back or move it meanwhile.
+                await assertTargetsConfirmed(input, [targetName]);
                 log(`Restoring database: ${dbName} → ${targetName}`, 'info');
                 await sourceAdapter.restoreOne(
                     dbConf,

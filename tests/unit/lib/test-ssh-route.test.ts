@@ -21,6 +21,7 @@ vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: u
 
 vi.mock("@/services/tenant/tenant-network", () => ({
     assertHostsReachable: (...args: unknown[]) => mocks.reach(...args),
+    tenantReach: async () => ({ blocks: false, policy: null }),
 }));
 
 vi.mock("next/headers", () => ({ headers: () => mocks.headers() }));

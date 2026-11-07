@@ -2,7 +2,7 @@
 
 import fs from "fs";
 import path from "path";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import { pipeline } from "stream/promises";
 import { createGzip } from "zlib";
 import { createEncryptionStream } from "@/lib/crypto/stream";
@@ -105,14 +105,15 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
     // 3. The copy, compressed and encrypted
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const baseName = `config_backup_${timestamp}.db`;
-    // The name at the destination stays `baseName`, the copy on disk gets one nobody can guess.
-    const tempFilePath = path.join(getTempDir(), `${randomUUID()}-${baseName}.gz.enc`);
+    // The name at the destination stays `baseName`, the copy on disk gets one nobody can guess, in
+    // the private temporary folder beside the plain copy of the database.
+    const tempFilePath = await privateTempPath(`${randomUUID()}-${baseName}.gz.enc`);
     const metaTempPath = `${tempFilePath}.meta.json`;
     const copy = await createConfigCopy({ includeHistory });
     try {
         const { stream: encryptStream, getAuthTag, iv } = createEncryptionStream(encryptionKey);
         log.debug("Streaming the database copy to a temp file", { tempFilePath });
-        await pipeline(fs.createReadStream(copy.file), createGzip(), encryptStream, fs.createWriteStream(tempFilePath));
+        await pipeline(fs.createReadStream(copy.file), createGzip(), encryptStream, fs.createWriteStream(tempFilePath, { mode: PRIVATE_FILE_MODE }));
         const fileStats = await fs.promises.stat(tempFilePath);
 
         // 4. Upload, with its metadata beside it
@@ -148,7 +149,7 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
             timestamp: createdAt,
             trigger: { type: trigger.type, ...(includeActor && trigger.label ? { actor: trigger.label } : {}) },
         };
-        await fs.promises.writeFile(metaTempPath, JSON.stringify(metadata, null, 2));
+        await fs.promises.writeFile(metaTempPath, JSON.stringify(metadata, null, 2), { mode: PRIVATE_FILE_MODE });
         if (!(await storageAdapter.upload(decryptedConfig, metaTempPath, `${remoteFilename}.meta.json`))) {
             // Without its metadata the file is neither listed as a backup nor ever removed by the
             // retention, so it goes again, as far as the destination lets it.

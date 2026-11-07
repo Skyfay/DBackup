@@ -7,6 +7,7 @@ import path from "path";
 import fs from "fs/promises";
 import { withPrivateTempDir, writeNewFile } from "@/lib/private-temp-dir";
 import { runSmbclient } from "./smb-run";
+import { smbAddressOptions } from "./smb-pin";
 import { assertReadSize, FileTooLargeError, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
 import { createListingGuard, ListingTooLargeError } from "@/lib/adapters/storage/common/listing-limits";
 import { LogLevel, LogType } from "@/lib/core/logs";
@@ -103,12 +104,14 @@ class ResolvingSambaClient extends SambaClient {
     private readonly secret: string | undefined;
     private readonly signal: AbortSignal | undefined;
     private readonly resolveOptions: readonly string[];
+    private readonly addressOptions: () => Promise<string[]>;
 
-    constructor(options: ConstructorParameters<typeof SambaClient>[0], resolveOptions: readonly string[], signal?: AbortSignal) {
+    constructor(options: ConstructorParameters<typeof SambaClient>[0], resolveOptions: readonly string[], signal?: AbortSignal, addressOptions: () => Promise<string[]> = async () => []) {
         super(options);
         this.secret = options.password;
         this.signal = signal;
         this.resolveOptions = resolveOptions;
+        this.addressOptions = addressOptions;
     }
 
     getSmbClientArgs(smbCommand: string, smbCommandArgs: string | string[]): string[] {
@@ -117,8 +120,9 @@ class ResolvingSambaClient extends SambaClient {
     }
 
     // An instance member, since samba-client declares it as one. Every command of samba-client runs through it.
+    // The checked address of the server goes along on every call, see `smbAddressOptions`.
     execute = async (smbCommand: string, smbCommandArgs: string | string[], workingDir?: string): Promise<string> =>
-        runSmbclient(this.getSmbClientArgs(smbCommand, smbCommandArgs), { cwd: workingDir, password: this.secret, signal: this.signal });
+        runSmbclient([...this.getSmbClientArgs(smbCommand, smbCommandArgs), ...await this.addressOptions()], { cwd: workingDir, password: this.secret, signal: this.signal });
 }
 
 /**
@@ -140,7 +144,7 @@ function createClient(config: SMBConfig, signal?: AbortSignal): SmbClient {
         password: config.password,
         domain: config.domain,
         maxProtocol: config.maxProtocol || "SMB3",
-    }, smbResolveOptions(config), signal);
+    }, smbResolveOptions(config), signal, () => smbAddressOptions(config));
     return {
         async sendFile(localPath, remotePath) {
             // samba-client runs `put` from the folder of the file with its name alone.

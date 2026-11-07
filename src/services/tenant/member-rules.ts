@@ -33,6 +33,17 @@ export class MemberGoneError extends NotFoundError {
 /** Who changes the group of someone in their own tenant: the admin of the tenant, with what they may do there. */
 export interface TenantCaller extends AccountActor {
     id: string;
+    /** An API key acts with its own rights, `permissions`, never with all of its owner's. */
+    authMethod?: "session" | "apikey";
+}
+
+/** Who gives someone a membership, see `placementRefusal`. */
+export interface PlacingActor {
+    id: string;
+    isPlatformAdmin: boolean;
+    authMethod?: "session" | "apikey";
+    /** What the session or the key may do, which counts for an API key instead of the rights of its owner. */
+    permissions?: readonly string[];
 }
 
 /**
@@ -41,11 +52,12 @@ export interface TenantCaller extends AccountActor {
  * email, see `userService.accountOf` and `placelessTenantOf`. A membership in another tenant makes it
  * an account of that tenant, whose admins then change it and set its password, so it goes there only
  * from a platform admin or someone whose rights of the platform reach its place: `platform-tenants:write`
- * or `platform-accounts:write` with a platform group that reaches that tenant. An account with a
+ * or `platform-accounts:write` with a platform group that reaches that tenant, for an API key held by
+ * the key itself. An account with a
  * membership already, and one that is gone, pass, the other rules and the change decide. Every path
  * that gives someone else a membership asks this, joining through an invitation oneself does not.
  */
-export async function placementRefusal(actor: { id: string; isPlatformAdmin: boolean }, userId: string, tenantId: string): Promise<string | null> {
+export async function placementRefusal(actor: PlacingActor, userId: string, tenantId: string): Promise<string | null> {
     if (actor.isPlatformAdmin) return null;
     const target = await userService.accountOf(userId);
     if (!target || (target.groups?.length ?? 0) > 0) return null;
@@ -53,7 +65,8 @@ export async function placementRefusal(actor: { id: string; isPlatformAdmin: boo
     const place = target.tenantIds[0] ?? HOME_TENANT_ID;
     if (place === tenantId) return null;
     // The rights of the platform count from the home tenant, see `permissionsIn`, wherever the actor works.
-    const platform = await userService.permissionsIn(actor.id, HOME_TENANT_ID);
+    // An API key counts with the rights it holds, which never reach beyond its owner's, see `getAuthContext`.
+    const platform = actor.authMethod === "apikey" ? actor.permissions ?? [] : await userService.permissionsIn(actor.id, HOME_TENANT_ID);
     if (!platform.includes(PERMISSIONS.PLATFORM.TENANTS_WRITE) && !platform.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE)) return OUTSIDER;
     return reachCovers(await platformGroupService.reachOf(actor.id), place) ? null : OUTSIDER;
 }

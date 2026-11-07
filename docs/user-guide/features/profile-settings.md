@@ -21,11 +21,11 @@ Your group decides what you may change of your own profile, like your name, your
 
 ## Account
 
-**Upload a picture** and **Remove** apply at once. A picture is a PNG, JPG, GIF or WebP up to 5 MB and part of the configuration backup. The name shows in the audit log, in Recently deleted and as who started a run, and you sign in with the email. **Your access** says in a few sentences what your group lets you do.
+**Upload a picture** and **Remove** apply at once. A picture is a PNG, JPG, GIF or WebP up to 5 MB and part of the configuration backup. The name shows in the audit log, in Recently deleted and as who started a run, and you sign in with the email. A sign-in provider no longer links your account by an email you set here yourself, so link it with **Link** under Security, see [SSO / OIDC](/user-guide/admin/sso#new-people). **Your access** says in a few sentences what your group lets you do.
 
 ## Security
 
-- **Password**: **Change password** asks for the one you have now and the new one twice. The rules of [Settings → Passwords](/user-guide/admin/settings#passwords) tick off under the new one, and the button waits until each holds. A new password signs you out of every other browser.
+- **Password**: **Change password** asks for the one you have now and the new one twice. The rules of [Settings → Passwords](/user-guide/admin/settings#passwords) tick off under the new one, and the button waits until each holds. A new password signs you out of every other browser. After five wrong current passwords within 15 minutes, the change waits 15 minutes before it checks one again.
 - **Authenticator app**: **Turn on** asks for your password, shows a code to scan or a key to enter by hand, checks the first code from the app and ends with backup codes. Each backup code signs you in once when the phone is gone. **New backup codes** replaces them, **Turn off** asks for your password.
 - **A passkey counts as the second factor**: after the password the login page opens the prompt of your passkey right away, without a field for a code. It needs a passkey, and the authenticator app off, which the part then shows as off. Switching it on starts the second factor and switching it off ends it, so both need the right to manage the second factor as well as the passkeys.
 - **Passkeys**: **Add a passkey** names it, then your browser asks for it. Each passkey can be renamed and deleted. Deleting the last one turns off the passkey as second factor, so while it counts as one only a group that may manage the second factor deletes it.

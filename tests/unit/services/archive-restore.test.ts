@@ -571,6 +571,22 @@ describe('restoreArchiveSnapshot', () => {
         expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
     });
 
+    it('checks each database again right before it writes it, and skips one that changed hands meanwhile', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop', 'blog']);
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        // The check before staging passes, the one before writing shop refuses.
+        confirmTargets.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('shop is no longer yours, so nothing was restored.'));
+        const input = makeInput({ targetSourceId: 'target-db-1' });
+
+        const result = await restoreArchiveSnapshot(input, { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(confirmTargets.mock.calls.map((call) => call[1])).toEqual([['shop', 'blog'], ['shop'], ['blog']]);
+        expect(dbAdapter.restoreOne.mock.calls.map((c: unknown[]) => c[2])).toEqual(['blog']);
+        expect(result.restoredDatabases).toEqual(['blog']);
+        expect(result.errors[0]).toMatchObject({ entry: 'database:shop', error: expect.stringContaining('no longer yours') });
+    });
+
     it('lets the mapping win over a plain target name', async () => {
         const { sourceAdapter } = await buildRemoteBackup(['shop']);
         const dbAdapter = makeFakeDbAdapter();

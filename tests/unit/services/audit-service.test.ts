@@ -73,6 +73,21 @@ describe("writing an entry of the audit log", () => {
 
         await expect(service.log("lena", "DELETE", "JOB")).resolves.toBeUndefined();
     });
+
+    it("throws from the strict variant, so a secret is never handed out unrecorded", async () => {
+        prismaMock.auditLog.create.mockRejectedValue(new Error("database is locked"));
+
+        await expect(service.logStrict("lena", "EXPORT", "VAULT")).rejects.toThrow("database is locked");
+        await expect(service.logForStrict({ userId: "lena", authMethod: "apikey", apiKeyId: "key-1" }, "EXPORT", "CREDENTIAL")).rejects.toThrow("database is locked");
+    });
+
+    it("writes the same entry from the strict variant", async () => {
+        await service.logForStrict({ userId: "lena", authMethod: "apikey", apiKeyId: "key-1" }, "EXPORT", "CREDENTIAL", { action: "reveal" }, "c-1", { tenantId: "acme" });
+
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ tenantId: "acme", userId: "lena", apiKeyId: "key-1", apiKeyName: "CI pipeline", resourceId: "c-1" }),
+        });
+    });
 });
 
 describe("cleaning the audit log", () => {

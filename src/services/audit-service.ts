@@ -36,13 +36,24 @@ async function requestOrigin(): Promise<{ ipAddress: string | null; userAgent: s
   }
 }
 
+/** The origin of an entry a route writes: the API key of the request and the tenant it names. */
+function routeOrigin(
+  ctx: Pick<AuthContext, "authMethod" | "apiKeyId">,
+  place: Pick<AuditOrigin, "tenantId">
+): AuditOrigin {
+  return {
+    apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
+    ...(place.tenantId ? { tenantId: place.tenantId } : {}),
+  };
+}
+
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
 
 export class AuditService {
   /**
    * Writes an entry. It keeps the name of the user and of the API key as they are now, so the
    * entry still names them after they are deleted or renamed. Never throws: a failed write is
-   * logged, the action it records goes on.
+   * logged, the action it records goes on. What hands out a secret writes through `logStrict`.
    */
   async log(
     userId: string | null,
@@ -53,39 +64,71 @@ export class AuditService {
     origin: AuditOrigin = {}
   ) {
     try {
-      const fromRequest = origin.ipAddress === undefined || origin.userAgent === undefined ? await requestOrigin() : null;
-      const ipAddress = origin.ipAddress ?? text(details?.ipAddress) ?? fromRequest?.ipAddress ?? null;
-      const userAgent = origin.userAgent ?? text(details?.userAgent) ?? fromRequest?.userAgent ?? null;
-      const apiKeyId = origin.apiKeyId ?? null;
-      const tenantId = origin.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
-
-      // Written for the tenant named above, also where no request names one, like at a sign-in.
-      await runAsSystem(async () => {
-        const [user, apiKey] = await Promise.all([
-          userId ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } }) : null,
-          apiKeyId ? prisma.apiKey.findUnique({ where: { id: apiKeyId }, select: { name: true } }) : null,
-        ]);
-
-        await prisma.auditLog.create({
-          data: {
-            tenantId,
-            userId,
-            actorName: user?.name ?? null,
-            apiKeyId,
-            apiKeyName: apiKey?.name ?? null,
-            action,
-            resource,
-            resourceId,
-            details: details ? JSON.stringify(details) : undefined,
-            ipAddress,
-            userAgent,
-          },
-        });
-      });
+      await this.write(userId, action, resource, details, resourceId, origin);
     } catch (error) {
       // We don't want audit logging to crash the application, but we should log the error
       log.error("Failed to create audit log", { action, resource, userId }, wrapError(error));
     }
+  }
+
+  /**
+   * Writes an entry like `log`, but throws when it could not be written. For a read that hands
+   * out a secret, like a revealed login or a recovery kit, which must never happen unrecorded.
+   */
+  async logStrict(
+    userId: string | null,
+    action: string,
+    resource: string,
+    details?: Record<string, unknown>,
+    resourceId?: string,
+    origin: AuditOrigin = {}
+  ) {
+    try {
+      await this.write(userId, action, resource, details, resourceId, origin);
+    } catch (error) {
+      log.error("Failed to create audit log, the action stops", { action, resource, userId }, wrapError(error));
+      throw error;
+    }
+  }
+
+  /** Writes the entry, throws when it could not be written. */
+  private async write(
+    userId: string | null,
+    action: string,
+    resource: string,
+    details: Record<string, unknown> | undefined,
+    resourceId: string | undefined,
+    origin: AuditOrigin
+  ) {
+    const fromRequest = origin.ipAddress === undefined || origin.userAgent === undefined ? await requestOrigin() : null;
+    const ipAddress = origin.ipAddress ?? text(details?.ipAddress) ?? fromRequest?.ipAddress ?? null;
+    const userAgent = origin.userAgent ?? text(details?.userAgent) ?? fromRequest?.userAgent ?? null;
+    const apiKeyId = origin.apiKeyId ?? null;
+    const tenantId = origin.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
+
+    // Written for the tenant named above, also where no request names one, like at a sign-in.
+    await runAsSystem(async () => {
+      const [user, apiKey] = await Promise.all([
+        userId ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } }) : null,
+        apiKeyId ? prisma.apiKey.findUnique({ where: { id: apiKeyId }, select: { name: true } }) : null,
+      ]);
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId,
+          userId,
+          actorName: user?.name ?? null,
+          apiKeyId,
+          apiKeyName: apiKey?.name ?? null,
+          action,
+          resource,
+          resourceId,
+          details: details ? JSON.stringify(details) : undefined,
+          ipAddress,
+          userAgent,
+        },
+      });
+    });
   }
 
   /**
@@ -101,10 +144,19 @@ export class AuditService {
     resourceId?: string,
     place: Pick<AuditOrigin, "tenantId"> = {}
   ) {
-    return this.log(ctx.userId, action, resource, details, resourceId, {
-      apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
-      ...(place.tenantId ? { tenantId: place.tenantId } : {}),
-    });
+    return this.log(ctx.userId, action, resource, details, resourceId, routeOrigin(ctx, place));
+  }
+
+  /** `logFor` that throws when the entry could not be written, see `logStrict`. */
+  async logForStrict(
+    ctx: Pick<AuthContext, "userId" | "authMethod" | "apiKeyId">,
+    action: string,
+    resource: string,
+    details?: Record<string, unknown>,
+    resourceId?: string,
+    place: Pick<AuditOrigin, "tenantId"> = {}
+  ) {
+    return this.logStrict(ctx.userId, action, resource, details, resourceId, routeOrigin(ctx, place));
   }
 
   /** Clean up old audit logs, of every tenant. */

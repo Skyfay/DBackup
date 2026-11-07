@@ -105,6 +105,14 @@ describe("connections that reach the server DBackup runs on", () => {
         expect(reaches("postgres", { host: "db.customer", connectionMode: "direct", sshAuthType: "agent" })).toBe(false);
     });
 
+    it("counts the agent of SQL Server's older SSH file transfer in direct mode, which logs in over SSH too", () => {
+        const transfer = { host: "sql.customer", connectionMode: "direct", fileTransferMode: "ssh", sshUsername: "backup", sshAuthType: "agent" };
+        expect(hostLocalReason("mssql", transfer)).toContain("An SSH agent login uses the keys of the server DBackup runs on");
+        // Without a login for it the transfer is no SSH login, and SQL Server moves its files through a shared folder.
+        expect(hostLocalReason("mssql", { ...transfer, sshUsername: "" })).toContain("shared folder");
+        expect(reaches("mssql", { ...transfer, sshAuthType: "password" })).toBe(false);
+    });
+
     it("leaves every network storage and notification channel alone", () => {
         expect(reaches("s3-aws", { region: "eu-central-1", bucket: "backups" })).toBe(false);
         expect(reaches("sftp", { host: "nas.customer", username: "backup", authType: "password" })).toBe(false);

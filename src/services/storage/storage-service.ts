@@ -17,7 +17,7 @@ import { ConflictError, EncryptionKeyRequiredError, NotFoundError, getErrorMessa
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
 import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
-import { assertBackupPath, assertFilePath } from "@/lib/tenant/storage-view";
+import { SHARED_STORAGE_FAILURE, assertBackupPath, assertFilePath } from "@/lib/tenant/storage-view";
 import { isBackupFile, sidecarPathsFor, chainFolderOf, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 import { dependentsOf, fileNameOf } from "./bulk-delete-order";
 
@@ -508,8 +508,8 @@ export class StorageService {
             .then(() => {
                 listingState.failures.delete(key);
             })
-            .catch((error: unknown) => {
-                listingState.failures.set(key, { at: Date.now(), error: getErrorMessage(error) });
+            .catch(async (error: unknown) => {
+                listingState.failures.set(key, { at: Date.now(), error: await this.failureText(adapterConfigId, tenant, error) });
                 throw error;
             })
             .finally(() => listingState.reconciliations.delete(key));
@@ -658,6 +658,16 @@ export class StorageService {
             || listingState.starting.has(key);
     }
 
+    /**
+     * The words a failed listing is remembered with. A customer of a shared destination gets the
+     * neutral sentence, since the message of the storage names its host, bucket or folders, which
+     * stay with the tenant that shares it, see `SHARED_STORAGE_FAILURE`.
+     */
+    private async failureText(adapterConfigId: string, tenantId: string, error: unknown): Promise<string> {
+        const owner = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: adapterConfigId }, select: { tenantId: true } })).catch(() => null);
+        return owner?.tenantId === tenantId ? getErrorMessage(error) : SHARED_STORAGE_FAILURE;
+    }
+
     /** Why the last listing of a destination for a tenant failed, until one succeeds again. */
     listingFailure(adapterConfigId: string, tenantId: string): { at: Date; error: string } | null {
         const failure = listingState.failures.get(keyOf(adapterConfigId, tenantId));
@@ -723,8 +733,8 @@ export class StorageService {
                 listingState.failures.delete(key);
                 return result;
             })
-            .catch((error: unknown) => {
-                listingState.failures.set(key, { at: Date.now(), error: getErrorMessage(error) });
+            .catch(async (error: unknown) => {
+                listingState.failures.set(key, { at: Date.now(), error: await this.failureText(adapterConfigId, tenantId, error) });
                 throw error;
             })
             .finally(() => listingState.listings.delete(key));

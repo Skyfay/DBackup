@@ -69,10 +69,12 @@ INSERT INTO "TenantMembership" ("userId", "tenantId", "groupId", "createdAt")
     SELECT "id", 'default', "groupId", CURRENT_TIMESTAMP FROM "User" WHERE "groupId" IS NOT NULL;
 
 -- The SuperAdmin group becomes the role Admin with every permission of a tenant. Its members become
--- platform admins below. A group already named Admin keeps its name.
+-- platform admins below. A group already named Admin keeps its name, and so does one named
+-- Admin (was SuperAdmin), since group names are unique and a clash would stop the upgrade half way.
 UPDATE "Group" SET "fullAccess" = true WHERE "name" = 'SuperAdmin';
 UPDATE "Group" SET "name" = 'Admin' WHERE "name" = 'SuperAdmin' AND NOT EXISTS (SELECT 1 FROM "Group" WHERE "name" = 'Admin');
-UPDATE "Group" SET "name" = 'Admin (was SuperAdmin)' WHERE "name" = 'SuperAdmin';
+UPDATE "Group" SET "name" = 'Admin (was SuperAdmin)' WHERE "name" = 'SuperAdmin' AND NOT EXISTS (SELECT 1 FROM "Group" WHERE "name" = 'Admin (was SuperAdmin)');
+UPDATE "Group" SET "name" = 'Admin (was SuperAdmin ' || substr("id", 1, 8) || ')' WHERE "name" = 'SuperAdmin';
 
 -- RedefineTables
 PRAGMA defer_foreign_keys=ON;

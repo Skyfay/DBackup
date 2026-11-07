@@ -238,7 +238,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (k
             await ensureDatabase({ ...baseConfig, user: "app'x" } as never, "shop`x", "admin", "pw", true, [], host);
 
             expect(queryOf(host.calls.exec[0])).toBe("CREATE DATABASE IF NOT EXISTS `shop``x`");
-            expect(queryOf(host.calls.exec[1])).toContain("ON `shop``x`.* TO 'app\\'x'@'%'");
+            expect(queryOf(host.calls.exec[1])).toContain("ON `shop``x`.* TO 'app''x'@'%'");
         });
 
         it("connects as the privileged user when one is given", async () => {

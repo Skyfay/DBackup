@@ -4,6 +4,8 @@ import { StorageService, CACHE_SCHEMA_VERSION, clearListingState } from '@/servi
 import { registry } from '@/lib/core/registry';
 import type { FileInfo, StorageAdapter } from '@/lib/core/interfaces';
 import { explicitScope, runAsTenant } from '@/lib/tenant/context';
+import { providedConnection } from '@/services/sharing/provided';
+import { SHARED_STORAGE_FAILURE } from '@/lib/tenant/storage-view';
 
 vi.mock('@/lib/crypto', () => ({ decryptConfig: (input: unknown) => input }));
 vi.mock('@/lib/core/registry', () => ({ registry: { get: vi.fn() } }));
@@ -106,6 +108,21 @@ describe('listings of a destination that does not always answer', () => {
         // Check now does.
         await expect(service.checkNow('nas')).resolves.toBe(true);
         await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    });
+
+    it('remembers a failed listing of a customer of a shared destination with the neutral sentence, never the message', async () => {
+        vi.mocked(providedConnection).mockResolvedValue({ id: 'nas', providerName: 'Acme' } as never);
+        vi.mocked(registry.get).mockReturnValue(adapterWith(vi.fn().mockResolvedValue([])));
+        prismaMock.storageListCache.findUnique.mockResolvedValue(null);
+        // A failure outside the storage view, which says nothing for a customer by itself.
+        prismaMock.job.findMany.mockRejectedValue(new Error('SQLITE_BUSY while listing sftp://nas.acme.internal/backups'));
+
+        try {
+            await expect(runAsTenant('globex', () => service.listDestinationFiles('nas', true))).rejects.toThrow('SQLITE_BUSY');
+            expect(service.listingFailure('nas', 'globex')?.error).toBe(SHARED_STORAGE_FAILURE);
+        } finally {
+            vi.mocked(providedConnection).mockResolvedValue(null);
+        }
     });
 
     it('clears the failure once the destination answers again', async () => {

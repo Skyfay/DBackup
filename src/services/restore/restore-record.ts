@@ -164,9 +164,10 @@ export function createRestoreTracker(): RestoreTracker {
         },
         view(customer) {
             const copy: RestoreRecord = structuredClone(record);
-            // The customer reads the versions by their number, without the build and system of the server.
+            // The customer reads the versions by their number, without the build and system of the server,
+            // and nothing of how the archive of the server was read.
             return customer
-                ? { ...copy, from: null, archive: null, backupVersion: versionShown(copy.backupVersion), targetVersion: versionShown(copy.targetVersion) }
+                ? { ...copy, from: null, archive: null, ranged: null, backupVersion: versionShown(copy.backupVersion), targetVersion: versionShown(copy.targetVersion) }
                 : copy;
         },
     };

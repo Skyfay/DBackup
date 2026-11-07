@@ -32,7 +32,9 @@ export const MAX_RANGE_LENGTH = 64;
  * What counts as the local network: the addresses that lead into the network of the server
  * DBackup runs on, or to the server itself, rather than out to the internet. The shared address
  * space holds the overlays of VPNs like NetBird and Tailscale, link-local holds the metadata
- * services of the clouds. An IPv4 address inside IPv6, mapped or through NAT64, counts as its IPv4.
+ * services of the clouds. An IPv4 address inside IPv6, mapped, IPv4-compatible or through the
+ * well-known NAT64 prefix, counts as its IPv4. The local-use NAT64 prefix counts as a whole, since
+ * the operator of the network picks where in it the IPv4 address sits.
  */
 export const LOCAL_NETWORK: readonly { range: string; name: string }[] = [
     { range: "0.0.0.0/8", name: "This network" },
@@ -42,10 +44,12 @@ export const LOCAL_NETWORK: readonly { range: string; name: string }[] = [
     { range: "169.254.0.0/16", name: "Link-local, cloud metadata" },
     { range: "172.16.0.0/12", name: "Private" },
     { range: "192.168.0.0/16", name: "Private" },
+    { range: "198.18.0.0/15", name: "Benchmarking, used inside networks" },
     { range: "224.0.0.0/4", name: "Multicast" },
     { range: "240.0.0.0/4", name: "Reserved and broadcast" },
     { range: "::/128", name: "Unspecified" },
     { range: "::1/128", name: "Loopback" },
+    { range: "64:ff9b:1::/48", name: "Local-use NAT64" },
     { range: "fc00::/7", name: "Unique local" },
     { range: "fe80::/10", name: "Link-local" },
     { range: "fec0::/10", name: "Site-local, deprecated" },
@@ -134,13 +138,20 @@ export function formatAddress(address: IpAddress): string {
 
 const MAPPED_PREFIX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff];
 const NAT64_PREFIX = [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0];
+const COMPATIBLE_PREFIX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 const startsWith = (bytes: number[], prefix: number[]) => prefix.every((byte, index) => bytes[index] === byte);
 
-/** The IPv4 address an IPv6 address carries, mapped (`::ffff:10.0.0.1`) or through NAT64 (`64:ff9b::a00:1`), else null. */
+/**
+ * The IPv4 address an IPv6 address carries, mapped (`::ffff:10.0.0.1`), IPv4-compatible
+ * (`::10.0.0.1`, deprecated, which some stacks still send out as IPv4) or through the well-known
+ * NAT64 prefix (`64:ff9b::a00:1`), else null. `::` and `::1` read as `0.0.0.0` and `0.0.0.1`,
+ * local either way.
+ */
 export function embeddedIPv4(address: IpAddress): IpAddress | null {
     if (address.version !== 6) return null;
-    if (!startsWith(address.bytes, MAPPED_PREFIX) && !startsWith(address.bytes, NAT64_PREFIX)) return null;
+    const prefixes = [MAPPED_PREFIX, NAT64_PREFIX, COMPATIBLE_PREFIX];
+    if (!prefixes.some((prefix) => startsWith(address.bytes, prefix))) return null;
     return { version: 4, bytes: address.bytes.slice(12) };
 }
 

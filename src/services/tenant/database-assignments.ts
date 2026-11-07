@@ -4,6 +4,7 @@ import { holderAt, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
 import { OUTSIDE_REACH, reachCovers, TENANT_BEYOND_REACH, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { assertChangesReached, assertReached, assertRuleReached } from "./assignment-reach";
 import { movesOf } from "./database-moves";
+import { assertNoSharedRestore } from "@/services/restore/shared-restores-active";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
 import { assertCustomer, listedDatabases, NOT_SHARING, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
 
@@ -231,6 +232,8 @@ export const databaseAssignmentService = {
             if (change.tenantId) assertReached(reach, change.tenantId, OUTSIDE_REACH.give);
             if (change.tenantId) await assertCustomer(change.tenantId, source);
             if (change.validFrom && change.validFrom.getTime() > now.getTime()) throw new ValidationError("An assignment starts today or earlier.");
+            // A customer's restore would write an old dump into a database that is no longer theirs.
+            assertNoSharedRestore(sourceId, { databaseName: change.databaseName }, (tenantId) => tenantId === change.tenantId);
         }
 
         let changed = 0;
@@ -275,6 +278,7 @@ export const databaseAssignmentService = {
         assertReached(reach, input.tenantId, OUTSIDE_REACH.give);
         await assertCustomer(input.tenantId, source);
         if (input.validFrom && input.validFrom.getTime() > now.getTime()) throw new ValidationError("A rule starts today or earlier.");
+        assertNoSharedRestore(sourceId, { pattern }, (tenantId) => tenantId === input.tenantId);
         await assertRuleReached(sourceId, { pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now }, reach, now);
         const onDemandPerDay = onDemandValue(input.onDemandPerDay);
         const rule = await prisma.$transaction(async (tx) => {
@@ -297,6 +301,7 @@ export const databaseAssignmentService = {
         const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId, validUntil: null } });
         if (!rule) throw new NotFoundError("Rule", ruleId);
         assertReached(reach, rule.tenantId, OUTSIDE_REACH.rule(rule.pattern));
+        assertNoSharedRestore(sourceId, { pattern: rule.pattern }, (tenantId) => tenantId !== rule.tenantId);
         await prisma.databaseAssignmentRule.update({ where: { id: ruleId }, data: { validUntil: now } });
         sharingChanged();
         return { pattern: rule.pattern, tenantId: rule.tenantId, tenantName: (await tenantNames([rule.tenantId]))(rule.tenantId) };

@@ -184,6 +184,16 @@ describe("the rows of the provided servers", () => {
         expect(prismaMock.adapterConfig.findMany.mock.calls[0][0]?.select).toEqual({ id: true, metadata: true });
     });
 
+    it("hand out the version of the server as its number, without the build of a distribution", async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { id: "srv-mysql", metadata: JSON.stringify({ engineVersion: "8.0.36-0ubuntu0.22.04.1" }) },
+            { id: "srv-pg", metadata: JSON.stringify({ engineVersion: "PostgreSQL 16.4 (Debian 16.4-1.pgdg120+2) on x86_64-pc-linux-gnu" }) },
+        ] as never);
+        const rows = await sharedServerItems("acme", { backups: true });
+        expect(rows.map((row) => JSON.parse(row.metadata ?? "{}").engineVersion)).toEqual(["8.0.36", "16.4"]);
+        expect(JSON.stringify(rows)).not.toMatch(/ubuntu|Debian|x86_64/);
+    });
+
     it("are left out when the shared servers cannot be read, so the own connections still list", async () => {
         mocks.overview.mockRejectedValue(new Error("listing unreadable"));
         expect(await sharedServerItems("acme", { backups: true })).toEqual([]);

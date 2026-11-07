@@ -18,6 +18,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { DEFAULT_SESSION_DURATION, SESSION_OPTIONS, sessionDurationOf, sessionEndsAt } from "@/lib/auth/session-lifetime";
 import { CLIENT_ADDRESS_HEADER } from "@/lib/core/client-address";
+import { foreignSsoTarget, trustedOriginsFor } from "@/lib/auth/trusted-origins";
+import { accountLinkingOptions } from "@/lib/auth/account-linking";
 
 const log = logger.child({ module: "Auth" });
 
@@ -55,25 +57,6 @@ global.fetch = async (input, init) => {
 
     return originalFetch(input, init);
 };
-
-/**
- * Dynamically fetch trusted origins from SSO providers in the database.
- * This allows users to configure SSO providers via UI without hardcoding origins.
- */
-async function getTrustedOriginsFromDb(): Promise<string[]> {
-    try {
-        const providers = await prisma.ssoProvider.findMany({
-            where: { enabled: true },
-            select: { issuer: true }
-        });
-        return providers
-            .map(p => p.issuer)
-            .filter((issuer): issuer is string => !!issuer);
-    } catch {
-        // During initial setup, DB might not be ready
-        return [];
-    }
-}
 
 /**
  * Cache for trusted SSO provider IDs.
@@ -140,6 +123,10 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
     }
     // The browser signs up the first account only. Later ones come from an admin or a provider.
     await refuseLateSignUp(ctx.path, Boolean(ctx.request));
+    // The issuers are trusted on this path for the endpoints of a provider, never as DBackup itself.
+    if (ctx.request && (await foreignSsoTarget(ctx.path, ctx.body, ctx.request.headers))) {
+        throw new APIError("FORBIDDEN", { code: "INVALID_ORIGIN", message: "Invalid origin" });
+    }
     // Providers are managed on the pages of DBackup, never through the endpoints of the SSO plugin.
     if (isSsoManagementRequest(ctx.path, Boolean(ctx.request))) throw new APIError("NOT_FOUND");
     // A provider that is off signs nobody in, not only on the login page.
@@ -203,43 +190,21 @@ export const auth = betterAuth({
     advanced: {
         ipAddress: { ipAddressHeaders: [CLIENT_ADDRESS_HEADER] },
     },
-    trustedOrigins: async (_request) => {
+    trustedOrigins: async (request) => {
         // Refresh trusted providers on every auth request
         // This ensures newly added SSO providers work immediately without server restart
         // We mutate the same array reference, so better-auth sees the changes
         await loadTrustedProviders();
-
-        // Base trusted origins from BETTER_AUTH_URL
-        const primaryUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
-
-        // Additional trusted origins (comma-separated) for multiple access URLs
-        // Example: TRUSTED_ORIGINS="https://192.168.1.1:3000,https://backup.example.com"
-        const additionalOrigins = process.env.TRUSTED_ORIGINS
-            ? process.env.TRUSTED_ORIGINS.split(",").map(url => url.trim()).filter(Boolean)
-            : [];
-
-        const baseOrigins = [primaryUrl, ...additionalOrigins];
-
-        // During SSO callback, we need to trust the IdP origins
-        // Fetch them dynamically from the database
-        const ssoOrigins = await getTrustedOriginsFromDb();
-
-        return [...baseOrigins, ...ssoOrigins];
+        // The address of DBackup, and the issuers of the providers only where the SSO plugin reads
+        // their endpoints, see trusted-origins.ts.
+        return trustedOriginsFor(request);
     },
     database: prismaAdapter(prisma, {
         provider: "sqlite",
     }),
     account: {
-        // Enable automatic account linking for SSO providers
-        // All enabled SSO providers are marked as trusted for seamless linking
-        accountLinking: {
-            enabled: true,
-            // Allow linking accounts even if email domains don't match
-            allowDifferentEmails: true,
-            // Trust all enabled SSO providers - loaded from DB at startup
-            // This allows linking even if local user has emailVerified=false
-            trustedProviders: getTrustedProviders(),
-        }
+        // Linking a provider to an existing account, see account-linking.ts.
+        accountLinking: accountLinkingOptions(getTrustedProviders()),
     },
     user: {
         additionalFields: {
@@ -288,11 +253,11 @@ export const auth = betterAuth({
                 before: async (user, context) => {
                     // The browser asks better-auth to add someone new, the provider decides.
                     await beforeSsoUser(user, context);
-                    // Email verification is not used as a feature anywhere in DBackup
-                    // (no verification emails are sent, no login gating on this flag).
-                    // Its only remaining effect is better-auth's SSO account-linking check
-                    // (requireLocalEmailVerified, defaults to true), which otherwise blocks
-                    // linking a dashboard-created user to a matching SSO identity.
+                    // DBackup sends no verification emails. The flag says whether an admin or a
+                    // provider set the email, which every new account starts with, so a sign-in
+                    // provider may link the account by its email (`allowTenantSsoLink`). An email
+                    // someone picked themselves, through the own profile or an invitation, sets it
+                    // false afterwards, and such an account links only from its own profile.
                     return {
                         data: {
                             ...user,

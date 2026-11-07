@@ -61,6 +61,7 @@ const { handleOAuthUserInfo } = await import("better-auth/oauth2");
 const { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser } = await import("@/lib/auth/sso-hooks");
 const { TENANT_DOMAIN_SIGN_UP_REFUSED } = await import("@/lib/auth/sso-guard");
 const { NOT_LINKED_URL, TENANT_NOT_MEMBER_URL } = await import("@/lib/auth/sso-tenant-guard");
+const { accountLinkingOptions } = await import("@/lib/auth/account-linking");
 
 const ACME = { providerId: "entra-acme", name: "Acme Entra ID", tenantId: "acme", domain: "acme.ch", enabled: true, allowProvisioning: true, defaultGroupId: "g-acme" };
 const AUTHENTIK = { providerId: "authentik", name: "Authentik", tenantId: null, domain: null, enabled: true, allowProvisioning: true, defaultGroupId: "g-ops" };
@@ -93,7 +94,8 @@ const auth = betterAuth({
     secret: "a-secret-of-the-test-that-is-long-enough",
     logger: { disabled: true },
     database: memoryAdapter(state.db),
-    account: { accountLinking: { enabled: true, allowDifferentEmails: true } },
+    // The linking options of src/lib/auth/index.ts itself.
+    account: { accountLinking: accountLinkingOptions([]) },
     // The same hooks as src/lib/auth/index.ts, which also marks every new user's email as verified.
     databaseHooks: {
         user: {
@@ -180,6 +182,27 @@ describe("a callback of a provider, through the hooks of DBackup", () => {
         expect(sessionsOf("lena")).toHaveLength(2);
         // The link of the own account goes into the audit log, whichever page started it.
         expect(state.log).toHaveBeenCalledWith("lena", "UPDATE", "AUTH", { change: "SSO account connected", name: "Authentik", providerId: "authentik" }, "lena", expect.objectContaining({ tenantId: expect.any(String) }));
+    });
+
+    it("never links an account whose email its owner set themselves on a sign-in without its session", async () => {
+        // Eve changed her own email to Anna's before Anna ever signed in through the provider.
+        seedUser("eve", "anna@acme.ch", ["acme"], { emailVerified: false });
+
+        const response = await callback("entra-acme", "anna@acme.ch", "idp-anna");
+
+        expect(response.status).toBe(302);
+        expect(state.db.account).toHaveLength(0);
+        expect(sessionsOf("eve")).toHaveLength(0);
+    });
+
+    it("links such an account from its own session, the Link button of the profile", async () => {
+        seedUser("eve", "eve@acme.ch", ["acme"], { emailVerified: false });
+        state.db.session.push({ id: "s-eve", userId: "eve", token: "tok-eve", expiresAt: new Date(Date.now() + 60_000), createdAt: new Date(), updatedAt: new Date() });
+
+        const response = await callback("entra-acme", "eve@acme.ch", "idp-eve", { cookie: "better-auth.session_token=tok-eve.signature" });
+
+        expect(response.status).toBe(200);
+        expect(state.db.account).toEqual([expect.objectContaining({ userId: "eve", providerId: "entra-acme" })]);
     });
 
     it("signs in a member of the tenant through its provider, and links them on the first sign-in", async () => {

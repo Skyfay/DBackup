@@ -81,6 +81,8 @@ describe("who sees the logo of a tenant", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toBe("image/png");
         expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        // Opened on its own address it runs no script and loads nothing.
+        expect(response.headers.get("Content-Security-Policy")).toBe("sandbox; default-src 'none'");
 
         mocks.ctx = null;
         expect((await get("t-acme")).status).toBe(401);

@@ -21,6 +21,8 @@ import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } fr
 import { createListingGuard, createPageGuard } from "@/lib/adapters/storage/common/listing-limits";
 import { sendListPage } from "@/lib/adapters/storage/s3-listing";
 import { limitResponseBodies } from "@/lib/adapters/storage/s3-response-limit";
+import { guardedAgents } from "@/lib/network/pinned-http";
+import { reachOf, type ReachPolicy } from "@/lib/network/reach-policy";
 
 const log = logger.child({ adapter: "s3" });
 
@@ -29,6 +31,8 @@ interface S3InternalConfig {
     region: string;
     bucket: string;
     credentials: { accessKeyId: string; secretAccessKey: string };
+    /** The policy of a tenant that blocks the local network, whose client dials checked addresses only, see `pinned-http.ts`. */
+    reach?: ReachPolicy | null;
     forcePathStyle?: boolean;
     pathPrefix?: string;
     storageClass?: string;
@@ -59,6 +63,8 @@ class S3ClientFactory {
             endpoint: config.endpoint,
             credentials: config.credentials,
             forcePathStyle: config.forcePathStyle,
+            // The SDK takes the options of its Node.js handler here, the agents among them.
+            ...(config.reach ? { requestHandler: guardedAgents(config.reach, { keepAlive: true }) } : {}),
         }));
     }
 
@@ -636,7 +642,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix,
         uploadConcurrency: config.uploadConcurrency,
@@ -646,7 +652,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -654,7 +660,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -662,7 +668,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -670,7 +676,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -678,7 +684,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -686,7 +692,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -694,14 +700,14 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
     }, 's3-generic'),
     ping: (config) => s3Ping({
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
     }),
     readConcurrency: STATELESS_READ_CONCURRENCY,
@@ -709,7 +715,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -717,7 +723,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
@@ -725,7 +731,7 @@ export const S3GenericAdapter: StorageAdapter = {
         endpoint: config.endpoint,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, remotePath, checksums),
@@ -742,7 +748,7 @@ export const S3AWSAdapter: StorageAdapter = {
         adapterId: "s3-aws",
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix,
         storageClass: config.storageClass,
         uploadConcurrency: config.uploadConcurrency,
@@ -751,66 +757,66 @@ export const S3AWSAdapter: StorageAdapter = {
     list: (config, ...args) => s3List({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     listTree: (config, ...args) => s3ListTree({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     download: (config, ...args) => s3Download({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     downloadRange: (config, ...args) => s3DownloadRange({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     browseDirectories: (config, ...args) => s3BrowseDirectories({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     delete: (config, ...args) => s3Delete({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     test: (config) => s3Test({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
     }, 's3-aws'),
     ping: (config) => s3Ping({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
     }),
     readConcurrency: STATELESS_READ_CONCURRENCY,
     read: (config, ...args) => s3Read({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     readBytes: (config, ...args) => s3ReadBytes({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     verifyChecksum: (config, remotePath, checksums) => s3VerifyChecksum({
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, remotePath, checksums),
 };
@@ -833,7 +839,7 @@ export const S3R2Adapter: StorageAdapter = {
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix,
         uploadConcurrency: config.uploadConcurrency,
         uploadPartSizeMb: config.uploadPartSizeMb
@@ -842,76 +848,76 @@ export const S3R2Adapter: StorageAdapter = {
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     listTree: (config, ...args) => s3ListTree({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     download: (config, ...args) => s3Download({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     downloadRange: (config, ...args) => s3DownloadRange({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     browseDirectories: (config, ...args) => s3BrowseDirectories({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     test: (config) => s3Test({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
     }, 's3-r2'),
     ping: (config) => s3Ping({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
     }),
     readConcurrency: STATELESS_READ_CONCURRENCY,
     read: (config, ...args) => s3Read({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     readBytes: (config, ...args) => s3ReadBytes({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     verifyChecksum: (config, remotePath, checksums) => s3VerifyChecksum({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, remotePath, checksums),
 };
@@ -928,7 +934,7 @@ export const S3HetznerAdapter: StorageAdapter = {
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix,
         uploadConcurrency: config.uploadConcurrency,
         uploadPartSizeMb: config.uploadPartSizeMb
@@ -937,76 +943,76 @@ export const S3HetznerAdapter: StorageAdapter = {
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     listTree: (config, ...args) => s3ListTree({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     download: (config, ...args) => s3Download({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     downloadRange: (config, ...args) => s3DownloadRange({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     browseDirectories: (config, ...args) => s3BrowseDirectories({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     test: (config) => s3Test({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
     }, 's3-hetzner'),
     ping: (config) => s3Ping({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
     }),
     readConcurrency: STATELESS_READ_CONCURRENCY,
     read: (config, ...args) => s3Read({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     readBytes: (config, ...args) => s3ReadBytes({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, ...args),
     verifyChecksum: (config, remotePath, checksums) => s3VerifyChecksum({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,
-        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, reach: reachOf(config),
         pathPrefix: config.pathPrefix
     }, remotePath, checksums),
 };

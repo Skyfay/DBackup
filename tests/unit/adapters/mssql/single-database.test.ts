@@ -139,6 +139,7 @@ describe("MSSQL single-database restore", () => {
     }
 
     it("restores under the original name without moving files", async () => {
+        servers("SQL01", "sql01");
         await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
 
         const restore = queries().find(q => q.startsWith("RESTORE DATABASE"))!;
@@ -200,6 +201,56 @@ describe("MSSQL single-database restore", () => {
         await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
 
         expect(queries().find(q => q.startsWith("RESTORE DATABASE"))).not.toContain("MOVE");
+    });
+
+    it.each<[string, string, string]>([
+        ["the backup records no server", "", "sql01"],
+        ["the backup records only blanks", "   ", "sql01"],
+        ["this server answers to no name", "SQL01", ""],
+    ])("moves the files to the data folder when %s", async (_name, made, here) => {
+        servers(made, here);
+
+        await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
+
+        const restore = queries().find(q => q.startsWith("RESTORE DATABASE"))!;
+        expect(restore).toContain("MOVE N'shop' TO N'/var/opt/mssql/data/shop.mdf'");
+        expect(restore).not.toContain("D:\\SQLData");
+    });
+
+    it("moves the files to the data folder when the header of the backup cannot be read", async () => {
+        servers("SQL01", "sql01");
+        const answer = mockExecuteQuery.getMockImplementation()!;
+        mockExecuteQuery.mockImplementation(async (cfg, host, query: string) => {
+            if (query.includes("HEADERONLY")) throw new Error("The media family on device is incorrectly formed");
+            return answer(cfg, host, query);
+        });
+
+        await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
+
+        expect(queries().find(q => q.startsWith("RESTORE DATABASE"))).toContain("MOVE N'shop' TO N'/var/opt/mssql/data/shop.mdf'");
+    });
+
+    it("checks the paths of the backup against the files of other databases when nothing moves", async () => {
+        servers("SQL01", "sql01");
+
+        await restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop");
+
+        const check = mockExecuteQuery.mock.calls.map(c => c[2] as string).find(q => q.includes("sys.master_files"));
+        expect(check).toContain("physical_name IN (N'D:\\SQLData\\shop.mdf', N'D:\\SQLData\\shop_log.ldf')");
+        expect(check).toContain("DB_ID(N'shop')");
+    });
+
+    it("refuses a restore without MOVE whose backup names a file of another database", async () => {
+        servers("SQL01", "sql01");
+        const answer = mockExecuteQuery.getMockImplementation()!;
+        mockExecuteQuery.mockImplementation(async (cfg, host, query: string) => {
+            if (query.includes("sys.master_files")) return { recordset: [{ TakenPath: "D:\\SQLData\\shop.mdf" }] };
+            return answer(cfg, host, query);
+        });
+
+        await expect(restoreOne(config() as never, await dumpFile(), "shop", createFakeHost({ kind: "direct" }), undefined, undefined, "shop"))
+            .rejects.toThrow(/is a file of another database/);
+        expect(queries().some(q => q.startsWith("RESTORE DATABASE"))).toBe(false);
     });
 
     it("uploads the dump over SSH under a unique name and removes it afterwards", async () => {

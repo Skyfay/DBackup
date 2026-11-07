@@ -5,7 +5,7 @@ import { pipeline } from "stream/promises";
 import type { Readable, Transform } from "stream";
 import { createGunzip } from "zlib";
 import { createDecryptionStream } from "@/lib/crypto/stream";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError } from "@/lib/logging/errors";
 import type { KeyOverride } from "@/services/backup/key-resolution";
@@ -68,9 +68,10 @@ export async function openBackupFile(file: string, meta: Record<string, unknown>
     }
     if (how.compressed) streams.push(createGunzip());
 
-    const plain = path.join(getTempDir(), `config_restore_${randomUUID()}`);
+    // Decrypted, it holds every secret of the instance, so only DBackup reads it.
+    const plain = await privateTempPath(`config_restore_${randomUUID()}`);
     try {
-        await pipeline([...streams, createWriteStream(plain)]);
+        await pipeline([...streams, createWriteStream(plain, { flags: "wx", mode: PRIVATE_FILE_MODE })]);
     } catch (error: unknown) {
         await fs.unlink(plain).catch(() => undefined);
         throw new ValidationError(`The file could not be opened: ${error instanceof Error ? error.message : String(error)}`);

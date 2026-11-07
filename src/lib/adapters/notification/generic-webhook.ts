@@ -3,6 +3,7 @@ import { GenericWebhookSchema, GenericWebhookConfig } from "@/lib/adapters/defin
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
 import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "generic-webhook" });
@@ -64,7 +65,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await webhookFetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts, reachOf(config));
 
             const redirect = redirectRefusal("The webhook", response);
             if (redirect) return { success: false, message: redirect };
@@ -123,7 +124,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await webhookFetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts, reachOf(config));
 
             if (!response.ok) {
                 const responseBody = await response.text().catch(() => "");

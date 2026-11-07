@@ -12,7 +12,7 @@ import prisma from "@/lib/prisma";
 import { registerAdapters } from "@/lib/adapters";
 import { registry } from "@/lib/core/registry";
 import { isShared, openRow } from "@/services/sharing/destination-access";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, restrictFile, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import { ValidationError } from "@/lib/logging/errors";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
@@ -53,10 +53,13 @@ export function keyOverride(keyHex?: string | null, profileId?: string | null): 
     return profileId ? { profileId } : undefined;
 }
 
-/** Writes an upload to the temp folder. Only its base name is kept, which tells how it is stored. */
+/**
+ * Writes an upload to the private temp folder, since a plain backup holds every secret. Only its
+ * base name is kept, which tells how it is stored.
+ */
 async function toTempFile(file: File): Promise<string> {
-    const target = path.join(getTempDir(), `upload_restore_${randomUUID()}_${path.basename(file.name)}`);
-    await fs.writeFile(target, Buffer.from(await file.arrayBuffer()));
+    const target = await privateTempPath(`upload_restore_${randomUUID()}_${path.basename(file.name)}`);
+    await fs.writeFile(target, Buffer.from(await file.arrayBuffer()), { flag: "wx", mode: PRIVATE_FILE_MODE });
     return target;
 }
 
@@ -137,9 +140,10 @@ async function checkStored(destinationId: string, file: string, override: KeyOve
     // Shared with customers, the destination holds their folder too, which their jobs filled. No file of it is taken.
     const { adapter, config: resolved } = await openRow(config, (await isShared(config.id)) ? { kind: "provider" } : { kind: "own" });
 
-    const local = path.join(getTempDir(), `config_restore_${randomUUID()}_${path.basename(file)}`);
+    const local = await privateTempPath(`config_restore_${randomUUID()}_${path.basename(file)}`);
     try {
         await adapter.download(resolved, file, local);
+        await restrictFile(local);
         let meta: Record<string, unknown> | null = null;
         try {
             const text = adapter.read ? await adapter.read(resolved, `${file}.meta.json`) : null;

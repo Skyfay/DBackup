@@ -56,7 +56,8 @@ export async function saveProfileAccountAction(input: { name: string; email: str
     // its people, so a customer never reads the old and new email of someone of the platform.
     const origin = await accountLogOrigin(user, user.id);
     try {
-        await userService.updateUser(user.id, { name, email });
+        // A new email the person picked themselves links no sign-in provider by it, see `updateUser`.
+        await userService.updateUser(user.id, { name, email }, email !== user.email ? "self" : undefined);
     } catch (error: unknown) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
             return { success: false, error: EMAIL_REFUSED, field: "email" };

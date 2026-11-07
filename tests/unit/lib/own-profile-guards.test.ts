@@ -86,6 +86,7 @@ describe("what a group lets someone change of the own profile", () => {
 
         mocks.held = new Set(["profile:update_name"]);
         expect(await updateUser("u1", { name: "Someone Else" })).toEqual({ success: true });
+        expect(mocks.service.updateUser).toHaveBeenLastCalledWith("u1", { name: "Someone Else" }, undefined);
     });
 
     it("refuses a name, an email or a format that is no valid one before it saves anything", async () => {
@@ -102,7 +103,7 @@ describe("what a group lets someone change of the own profile", () => {
         mocks.held = new Set(["profile:update_name"]);
 
         expect(await updateUser("u1", { name: "  Lena Meier ", role: "ADMIN" } as never)).toEqual({ success: true });
-        expect(mocks.service.updateUser).toHaveBeenCalledWith("u1", { name: "Lena Meier" });
+        expect(mocks.service.updateUser).toHaveBeenCalledWith("u1", { name: "Lena Meier" }, undefined);
     });
 
     it("keeps the linked sign-in providers to a group that may change them", async () => {

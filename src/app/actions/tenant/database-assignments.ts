@@ -56,6 +56,9 @@ const onDemandChanges = (before: number | null, after: number | null) =>
 /** The databases of a shared server with who holds each, the rules and their history, for whoever may see the shared databases. */
 export async function getSourceAssignments(sourceId: string): Promise<{ success: true; data: SourceAssignments } | { success: false; error: string }> {
     const viewer = await checkPermission([SEE_SHARING_PERMISSION, SHARE_PERMISSION]);
+    // The server belongs to one tenant, which the viewer opens to read who holds its databases.
+    const view = tenantRefusal(viewer);
+    if (view) return { success: false, error: view };
     const id = IdSchema.safeParse(sourceId);
     if (!id.success) return { success: false, error: "Invalid request" };
     try {

@@ -17,7 +17,8 @@ const openArchiveEntry = vi.fn(async () => Readable.from([Buffer.from("x")]));
 const groupFilesByEntry = vi.fn((files: { p: string }[]) => new Map(files.map((f) => [`k-${f.p}`, [f]])));
 const readArchiveManifest = vi.fn(async () => ({ encryption: undefined }));
 // The check of the references runs for real in archive/duplicate-references.test.ts.
-vi.mock("@/lib/archive/reader", () => ({ openArchiveEntry, groupFilesByEntry, readArchiveManifest, assertSingleReferences: vi.fn() }));
+// A bundled file is the whole payload here, the slice itself is covered in bundle-slices.test.ts.
+vi.mock("@/lib/archive/reader", () => ({ openArchiveEntry, groupFilesByEntry, readArchiveManifest, assertSingleReferences: vi.fn(), bundleSlices: (payload: Buffer, files: unknown[]) => files.map(() => payload) }));
 
 // openChainArchive (via this) is what opens a sibling. Track how many are live at once.
 let openArchives = 0;

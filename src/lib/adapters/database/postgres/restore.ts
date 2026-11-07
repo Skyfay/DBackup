@@ -48,10 +48,9 @@ export async function prepareRestore(
     const env = pgEnv(pass);
 
     for (const dbName of databases) {
-        // Dollar-free literal quoting: the name is a value here, not an identifier.
-        const safeLiteral = dbName.replace(/'/g, "''");
+        // The name is a value here, not an identifier, see `sqlLiteral`.
         const exists = await host.exec(
-            [psql, ...args, "-t", "-A", "-c", `SELECT 1 FROM pg_database WHERE datname = '${safeLiteral}'`],
+            [psql, ...args, "-t", "-A", "-c", `SELECT 1 FROM pg_database WHERE datname = ${sqlLiteral(dbName)}`],
             { env },
         );
         if (exists.code === 0 && exists.stdout.trim() === "1") continue;

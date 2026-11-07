@@ -4,7 +4,9 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
 import { stripTrailingSlashes } from "@/lib/paths";
+import { reachOf } from "@/lib/network/reach-policy";
 import { redirectRefusal, webhookFetch } from "./http";
+import { escapeMarkdownLinks } from "./escape";
 
 const log = logger.child({ adapter: "gotify" });
 
@@ -28,21 +30,25 @@ function resolvePriority(defaultPriority: number, context?: { success?: boolean;
     return defaultPriority;
 }
 
+/**
+ * The message as the Markdown Gotify shows it. Every text is escaped, so the name of a job or a
+ * tenant never becomes a link.
+ */
 function buildMarkdownMessage(message: string, context?: any): string {
-    if (!context) return message;
+    if (!context) return escapeMarkdownLinks(message);
 
     const parts: string[] = [];
 
     if (context.title) {
-        parts.push(`## ${context.title}`);
+        parts.push(`## ${escapeMarkdownLinks(context.title)}`);
     }
 
-    parts.push(message);
+    parts.push(escapeMarkdownLinks(message));
 
     if (context.fields?.length) {
         parts.push("");
         for (const field of context.fields) {
-            parts.push(`**${field.name}:** ${field.value || "-"}`);
+            parts.push(`**${escapeMarkdownLinks(field.name)}:** ${escapeMarkdownLinks(field.value || "-")}`);
         }
     }
 
@@ -76,7 +82,7 @@ export const GotifyAdapter: NotificationAdapter = {
                         "client::display": { contentType: "text/markdown" },
                     },
                 }),
-            });
+            }, reachOf(config));
 
             const redirect = redirectRefusal("Gotify", response);
             if (redirect) return { success: false, message: redirect };
@@ -114,7 +120,7 @@ export const GotifyAdapter: NotificationAdapter = {
                         "client::display": { contentType: "text/markdown" },
                     },
                 }),
-            });
+            }, reachOf(config));
 
             if (!response.ok) {
                 const body = await response.text().catch(() => "");

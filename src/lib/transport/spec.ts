@@ -1,4 +1,5 @@
 import { ConfigurationError } from "@/lib/logging/errors";
+import { reachOf, type ReachPolicy } from "@/lib/network/reach-policy";
 import type { SshConnectionConfig, TransportResolver, TransportSpec } from "./types";
 
 /**
@@ -112,6 +113,23 @@ export const standardTransport: TransportResolver = (config) => {
 };
 
 /**
+ * A spec whose hosts dial checked addresses for a tenant that blocks the local network: the SSH
+ * server, and what a direct host connects to. The policy comes from the resolved config, never
+ * from a field of it, so every resolver gets it without reading it, see `reach-policy.ts`.
+ */
+function withReach(spec: TransportSpec, reach: ReachPolicy | null): TransportSpec {
+    if (!reach) return spec;
+    switch (spec.kind) {
+        case "direct":
+            return { ...spec, reach };
+        case "ssh":
+            return { ...spec, ssh: { ...spec.ssh, reach } };
+        case "composite":
+            return { ...spec, exec: withReach(spec.exec, reach), files: withReach(spec.files, reach) };
+    }
+}
+
+/**
  * Apply an adapter's own resolver, or the standard convention when it has none.
  *
  * Resolution failures are rewrapped so the message names the adapter, which is
@@ -123,7 +141,7 @@ export function resolveTransport(
 ): TransportSpec {
     const resolver = adapter.transport ?? standardTransport;
     try {
-        return resolver((config ?? {}) as Record<string, unknown>);
+        return withReach(resolver((config ?? {}) as Record<string, unknown>), reachOf(config));
     } catch (error) {
         throw new ConfigurationError(adapter.id, error instanceof Error ? error.message : String(error), {
             cause: error instanceof Error ? error : undefined,

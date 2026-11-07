@@ -37,6 +37,10 @@ Someone of a platform group of selected tenants shares with those tenants only. 
 
 A chat or a webhook channel always sends where it is set, its address is the recipient.
 
+::: tip Backups private from the provider
+The logins of a shared destination stay with you, so your tenant can read every file a customer writes there. A customer that needs its backups private from you encrypts them with a key of its own [Vault](/user-guide/security/encryption), which stays in its tenant. **Only encrypted backups** makes that the rule for every customer of the destination.
+:::
+
 ### Where the Backups Go
 
 A customer writes under `tenants/` and its tenant id on the destination and sees only that folder. Its Backups page, downloads, restores, retention and integrity checks never reach outside it. Your own backups stay where they are, and your tenant no longer sees `tenants/` on that destination.

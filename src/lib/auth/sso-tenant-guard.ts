@@ -25,6 +25,11 @@ import { DISABLED_PROVIDER_URL, isSsoCallback, ssoProviderIdOf, type SsoHookCont
  * account already and links the provider from their profile. An account of no tenant counts as one
  * of the home tenant, whose admins set its password, so only a provider of the platform or of the
  * home tenant links it.
+ *
+ * Neither links an account by its email when the email was not set by an admin either
+ * (`User.emailVerified` false): someone who changed their own email or signed up through an
+ * invitation may have picked the address of a person who has not signed in through the provider
+ * yet. Such an account links only from its own profile, while signed in to it.
  */
 
 /** The login page says why when a provider of a tenant may not sign someone in. */
@@ -86,7 +91,7 @@ async function tenantProviderOf(context: SsoHookContext | null | undefined) {
 }
 
 const accountOf = (userId: string) =>
-    prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
+    prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, emailVerified: true, platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
 
 /**
  * Whether another tenant made the account: none of the tenants it works in is this one. An account
@@ -125,6 +130,8 @@ export async function allowTenantSsoLink(account: { userId: string }, context: S
     if (!provider) return true;
     const user = await accountOf(account.userId);
     if (!user) return true;
+    // An email the account chose itself vouches for nobody, only its owner links it, see above.
+    if (user.emailVerified === false && (await signedInUserOf(context)) !== account.userId) return false;
     if (provider.tenantId) return tenantSignInRefusal(provider, user) === null && !madeElsewhere(user, provider.tenantId);
     // The people of the platform and of the home tenant are the platform's own.
     if (user.platformRole || user.platformGroupId || !madeElsewhere(user, HOME_TENANT_ID)) return true;

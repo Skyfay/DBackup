@@ -12,6 +12,7 @@ import { getLoginImageInfo, LOGIN_IMAGE_MAX_BYTES, readLoginImage, removeLoginIm
 import { getSignInSettings } from "@/services/system/system-settings-service";
 import { bodyTooLarge } from "@/lib/server/upload-size";
 import { refusedUnless } from "@/lib/server/permission-refusal";
+import { IMAGE_SECURITY_HEADERS, servedImageType } from "@/lib/server/image-response";
 
 const FIELD = "Login image";
 
@@ -23,9 +24,11 @@ export async function GET() {
     if (refused) return refused;
 
     const image = await readLoginImage();
-    if (!image) return NextResponse.json({ success: false, error: "No picture" }, { status: 404 });
+    // A stored row of another type than an upload is stored with is never served.
+    const type = servedImageType(image?.mimeType);
+    if (!image || !type) return NextResponse.json({ success: false, error: "No picture" }, { status: 404 });
     return new NextResponse(Buffer.from(image.data), {
-        headers: { "Content-Type": image.mimeType, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" },
+        headers: { ...IMAGE_SECURITY_HEADERS, "Content-Type": type, "Cache-Control": "private, no-store" },
     });
 }
 

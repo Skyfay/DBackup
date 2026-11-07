@@ -15,7 +15,7 @@ import path from "path";
 import { Readable } from "stream";
 import { AdapterConfig, StorageAdapter } from "@/lib/core/interfaces";
 import { openStorageArchiveSource, ManagedArchiveSource } from "./storage-source";
-import { assertSingleReferences, openArchiveEntry, groupFilesByEntry, readArchiveManifest } from "./reader";
+import { assertSingleReferences, bundleSlices, openArchiveEntry, groupFilesByEntry, readArchiveManifest } from "./reader";
 import { readAll } from "./sources";
 import { BUNDLE_READ_LIMIT } from "./limits";
 import { assertPlainFileName } from "./dump-names";
@@ -178,9 +178,10 @@ export async function forEachSnapshotFile(
                         await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey),
                         BUNDLE_READ_LIMIT
                     );
-                    for (const file of entryFiles) {
-                        const start = file.o ?? 0;
-                        await visit(file, Readable.from([payload.subarray(start, start + (file.l ?? payload.length))]));
+                    // Every slice is checked before the first file of the bundle is visited.
+                    const slices = bundleSlices(payload, entryFiles);
+                    for (const [i, file] of entryFiles.entries()) {
+                        await visit(file, Readable.from([slices[i]]));
                     }
                 }
                 continue;
@@ -212,9 +213,9 @@ export async function forEachSnapshotFile(
                     BUNDLE_READ_LIMIT
                 ));
 
-                await Promise.all(entryFiles.map((file) => run(async () => {
-                    const start = file.o ?? 0;
-                    await visit(file, Readable.from([payload.subarray(start, start + (file.l ?? payload.length))]));
+                const slices = bundleSlices(payload, entryFiles);
+                await Promise.all(entryFiles.map((file, i) => run(async () => {
+                    await visit(file, Readable.from([slices[i]]));
                 })));
             }));
         } finally {

@@ -59,6 +59,17 @@ describe("the local network of the server DBackup runs on", () => {
         expect(local("64:ff9b::808:808")).toBe(false);
     });
 
+    it("counts the benchmarking range, IPv4-compatible IPv6 by its IPv4 and the local-use NAT64 prefix as a whole", () => {
+        for (const address of ["198.18.0.1", "198.19.255.254", "::10.0.0.1", "::a00:1", "::127.0.0.1", "::192.168.1.1", "64:ff9b:1::a00:1", "64:ff9b:1:ffff::808:808"]) {
+            expect(local(address), address).toBe(true);
+        }
+        for (const address of ["198.17.255.255", "198.20.0.1", "::8.8.8.8", "64:ff9b:2::1"]) {
+            expect(local(address), address).toBe(false);
+        }
+        // An allowed range covers an IPv4-compatible address by its IPv4, like a mapped one.
+        expect(isBlockedAddress("::10.10.10.5", toRanges(["10.10.10.0/24"]))).toBe(false);
+    });
+
     it("lists only ranges that read, every one of them local", () => {
         for (const { range } of LOCAL_NETWORK) {
             const parsed = parseCidr(range);

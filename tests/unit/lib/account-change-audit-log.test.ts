@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
         namesOf: vi.fn(async () => []),
         emailOf: vi.fn(async (id: string) => `${id}@example.ch`),
         emailTenantsOf: vi.fn(async () => ["default"]),
+        ownEmailRefusal: vi.fn(async () => null),
     },
     audit: vi.fn(),
 }));
@@ -129,6 +130,22 @@ describe("the log of a change of an account", () => {
         await updateUser("bob", { name: "Bob Meier", email: "bob@globex.ch" });
 
         expect(mocks.audit).toHaveBeenCalledWith("nina", "UPDATE", "USER", { name: "Bob Meier", email: "bob@globex.ch" }, "bob", PLATFORM_LOG);
+    });
+
+    it("marks who set a new email, which decides whether a sign-in provider links the account by it", async () => {
+        // An admin set Bob's email, so a provider links him by it.
+        await updateUser("bob", { name: "Bob Meier", email: "bob@globex.ch" });
+        expect(mocks.service.updateUser).toHaveBeenLastCalledWith("bob", { name: "Bob Meier", email: "bob@globex.ch" }, "admin");
+
+        // The own email Nina picked herself vouches for nobody.
+        mocks.viewer = { ...NINA, permissions: [...NINA.permissions, PERMISSIONS.PROFILE.UPDATE_EMAIL] };
+        await updateUser("nina", { email: "nina.keller@msp.ch" });
+        expect(mocks.service.updateUser).toHaveBeenLastCalledWith("nina", { email: "nina.keller@msp.ch" }, "self");
+
+        // A name alone leaves the flag as it is.
+        mocks.viewer = NINA;
+        await updateUser("bob", { name: "Bob Keller" });
+        expect(mocks.service.updateUser).toHaveBeenLastCalledWith("bob", { name: "Bob Keller" }, undefined);
     });
 
     it("writes a delete into the log of the tenant the account worked in, read before the delete", async () => {

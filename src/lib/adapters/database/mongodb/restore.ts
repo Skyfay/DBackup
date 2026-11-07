@@ -60,6 +60,20 @@ export async function prepareRestore(
 }
 
 /**
+ * The pattern of every collection of one database, for `--nsInclude`, `--nsFrom` and `--nsTo`.
+ * mongorestore reads `*` there as a wildcard, `$name$` as a variable and `\` as an escape, and a
+ * `.` ends the database part, so a name like `a*` matched other databases too. MongoDB itself
+ * refuses `/\. "$` in a database name, so a name holding one is refused here, and a `*`, which a
+ * server on Linux allows, is escaped.
+ */
+export function namespacePattern(database: string): string {
+    if (/[/\\. "$\0]/.test(database)) {
+        throw new Error(`The database name ${database} holds a character MongoDB does not allow in a database name.`);
+    }
+    return `${database.replace(/\*/g, "\\*")}.*`;
+}
+
+/**
  * Restore a single MongoDB database from an archive file
  */
 async function restoreSingleDatabase(
@@ -82,15 +96,15 @@ async function restoreSingleDatabase(
             "--drop", // Drop collections before restoring, mirroring MySQL's --clean
         ];
 
-        // Names, never options, see `database-name.ts`.
+        // Names, never options, see `database-name.ts`, and patterns that match only this database.
         if (sourceDb) assertDatabaseArgument(sourceDb);
         if (targetDb) assertDatabaseArgument(targetDb);
         if (sourceDb && targetDb && sourceDb !== targetDb) {
-            args.push("--nsFrom", `${sourceDb}.*`);
-            args.push("--nsTo", `${targetDb}.*`);
+            args.push("--nsFrom", namespacePattern(sourceDb));
+            args.push("--nsTo", namespacePattern(targetDb));
             log(`Remapping database: ${sourceDb} -> ${targetDb}`, "info");
         } else if (targetDb) {
-            args.push("--nsInclude", `${targetDb}.*`);
+            args.push("--nsInclude", namespacePattern(targetDb));
         }
 
         log("Restoring database", "info", "command", `${mongorestore} ${maskSecrets(args, config.password)}`);

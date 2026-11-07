@@ -130,6 +130,8 @@ A Microsoft SQL Server database restored on another server than the one its back
 
 ## Who a Customer's Restore Runs As
 
+While a customer restores a database, it stays where it is: giving it to another tenant, ending its rule, adding a rule that would take it or moving it to another server is refused until the restore ended. Right before it writes each database, the restore checks again that the customer still holds it.
+
 A restore a customer starts writes their own content, their functions, triggers, views and defaults, with the login of the server's connection. That login is the provider's, so a database that belongs to it would run the customer's code with the provider's rights. Set the server up so that it cannot:
 
 - Give each customer database an owner role of its own, the one the customer signs in with, and let the login of the connection act as it (`GRANT shop_acme_owner TO dbackup` on PostgreSQL).

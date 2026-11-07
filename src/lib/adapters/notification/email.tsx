@@ -3,6 +3,8 @@ import { EmailSchema } from "@/lib/adapters/definitions";
 import nodemailer from "nodemailer";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { checkedSocket } from "@/lib/network/checked-socket";
+import { reachOf } from "@/lib/network/reach-policy";
 import { loadNotificationBrand, senderWithName, type NotificationBrand } from "@/lib/notifications/brand";
 import { smtpTestTemplate } from "@/lib/notifications/templates";
 import type { NotificationPayload } from "@/lib/notifications/types";
@@ -11,7 +13,13 @@ const log = logger.child({ adapter: "email" });
 
 const SECURITY_LABELS: Record<string, string> = { ssl: "SSL/TLS", starttls: "STARTTLS", none: "None" };
 
-const createTransporter = (config: any) => {
+/**
+ * The transport of a send. For a channel of a tenant that blocks the local network nodemailer gets
+ * a socket connected to a checked address, the next one where the first does not answer, see
+ * `checked-socket.ts`. Its host stays the name, so SSL/TLS and STARTTLS check the certificate
+ * against it.
+ */
+const createTransporter = async (config: any) => {
     const secure = config.secure === "ssl";
     const options: any = {
         host: config.host,
@@ -25,6 +33,14 @@ const createTransporter = (config: any) => {
 
     if (config.secure === "none") {
         options.ignoreTLS = true;
+    }
+
+    const reach = reachOf(config);
+    if (reach) {
+        const port = Number(config.port) || (secure ? 465 : 587);
+        options.getSocket = (_options: unknown, callback: (error: Error | null, socket?: { connection: unknown }) => void) => {
+            checkedSocket(String(config.host), port, reach.allowed).then((connection) => callback(null, { connection }), (error: Error) => callback(error));
+        };
     }
 
     return nodemailer.createTransport(options);
@@ -55,7 +71,7 @@ export const EmailAdapter: NotificationAdapter = {
 
     async test(config: any): Promise<{ success: boolean; message: string }> {
         try {
-            const transporter = createTransporter(config);
+            const transporter = await createTransporter(config);
             await transporter.verify();
 
             const to = recipients(config);
@@ -82,7 +98,7 @@ export const EmailAdapter: NotificationAdapter = {
 
     async send(config: any, message: string, context?: any): Promise<boolean> {
         try {
-            const transporter = createTransporter(config);
+            const transporter = await createTransporter(config);
 
             // Verify connection configuration
             await transporter.verify();

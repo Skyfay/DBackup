@@ -6,6 +6,9 @@ import os from "node:os";
 import { PassThrough, Readable, type Duplex, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { checkedSocket } from "@/lib/network/checked-socket";
+import type { ReachPolicy } from "@/lib/network/reach-policy";
+
 import { BaseHost } from "./base-host";
 import type {
     HostKind,
@@ -30,6 +33,11 @@ export class DirectHost extends BaseHost {
     readonly tmpDir = os.tmpdir();
 
     private readonly whichCache = new Map<string, Promise<string>>();
+
+    /** `reach` holds `connect` to checked addresses for a tenant that blocks the local network, see `reach-check.ts`. */
+    constructor(private readonly reach?: ReachPolicy) {
+        super();
+    }
 
     async spawn(argv: string[], options: SpawnOptions = {}): Promise<HostProcess> {
         if (argv.length === 0) {
@@ -168,6 +176,8 @@ export class DirectHost extends BaseHost {
     }
 
     async connect(remoteHost: string, remotePort: number): Promise<Duplex> {
+        // To checked addresses only, the next one where the first does not answer.
+        if (this.reach) return checkedSocket(remoteHost, remotePort, this.reach.allowed);
         return new Promise((resolve, reject) => {
             const socket = net.createConnection({ host: remoteHost, port: remotePort });
             socket.once("connect", () => {

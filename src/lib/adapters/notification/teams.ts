@@ -3,6 +3,7 @@ import { TeamsSchema, TeamsConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
 import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "teams" });
@@ -34,7 +35,7 @@ export const TeamsAdapter: NotificationAdapter = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(card),
-            });
+            }, reachOf(config));
 
             const redirect = redirectRefusal("Teams", response);
             if (redirect) return { success: false, message: redirect };
@@ -63,7 +64,7 @@ export const TeamsAdapter: NotificationAdapter = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(card),
-            });
+            }, reachOf(config));
 
             if (!response.ok) {
                 const body = await response.text().catch(() => "");

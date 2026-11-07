@@ -10,6 +10,7 @@ import { effectiveOnDemand } from "@/lib/tenant/sharing";
 import { cached } from "@/services/dashboard/cache";
 import { sharedOverview, type SharedBackup, type SharedDatabase, type SharedOverview } from "@/services/tenant/shared-databases";
 import { sharingVersion, tenantOnDemand } from "@/services/tenant/shared-servers";
+import { versionShown } from "@/services/restore/shared-restore-log";
 
 /**
  * The servers of other tenants that hold databases a tenant has now, as rows of its list of
@@ -155,7 +156,8 @@ function serverFacts(tenantId: string, sourceIds: string[], now: Date): Promise<
         ]);
         // A rule without a number of its own allows what the customer may of every database.
         const allowed = rules.map((rule) => ({ ...rule, onDemandPerDay: effectiveOnDemand(rule.onDemandPerDay, perDay.get(tenantId) ?? null) }));
-        return { versions: new Map(servers.map((server) => [server.id, connectionVersion(server.metadata ?? undefined)])), jobs, rules: allowed };
+        // The number alone, as the customer's restore log reads it, never the build of a distribution.
+        return { versions: new Map(servers.map((server) => [server.id, versionShown(connectionVersion(server.metadata ?? undefined))])), jobs, rules: allowed };
     });
 }
 

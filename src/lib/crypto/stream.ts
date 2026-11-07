@@ -1,5 +1,6 @@
 import { Transform } from 'stream';
 import crypto from 'crypto';
+import { GCM_TAG_LENGTH, assertAuthTagLength } from './gcm-tag';
 
 const ALGORITHM = 'aes-256-gcm';
 
@@ -47,7 +48,9 @@ export function createDecryptionStream(key: Buffer, iv: Buffer, authTag: Buffer)
     throw new Error(`Invalid key length: ${key.length}. Key must be 32 bytes for AES-256-GCM.`);
   }
 
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  assertAuthTagLength(authTag);
+
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: GCM_TAG_LENGTH });
   decipher.setAuthTag(authTag);
 
   return decipher;

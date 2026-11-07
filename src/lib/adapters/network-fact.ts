@@ -14,16 +14,19 @@
  * the tenant that runs now. No Node.js module here, `smb-address.ts` reads it.
  */
 
+import { markReach, type ReachPolicy } from "@/lib/network/reach-policy";
+
 const LOCAL_NETWORK_OPEN = Symbol("dbackup.localNetworkOpen");
 
 /**
  * Marks a resolved config with whether its tenant blocks the local network, see the top of this
- * module. Mutates and returns the config.
+ * module, and with the policy the clients that check their addresses at connect time follow, see
+ * `reach-policy.ts`, null for none. Mutates and returns the config.
  */
-export function markLocalNetwork<T>(config: T, blocks: boolean): T {
+export function markLocalNetwork<T>(config: T, blocks: boolean, policy: ReachPolicy | null = null): T {
     // A config that is no object carries no mark and counts as one of a tenant that blocks.
     if (typeof config === "object" && config !== null) (config as Record<symbol, unknown>)[LOCAL_NETWORK_OPEN] = !blocks;
-    return config;
+    return markReach(config, policy);
 }
 
 /** Whether a config counts as one of a tenant that blocks the local network: unless the resolver marked it otherwise. */

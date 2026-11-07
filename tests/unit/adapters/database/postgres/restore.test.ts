@@ -102,6 +102,14 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL restore over a %s host", 
             expect(host.calls.exec.map(queryOf)).toContain('CREATE DATABASE "we""ird"');
         });
 
+        it("looks the name up as an E'' literal, so a backslash cannot end it", async () => {
+            const host = restoreHost(kind, () => ({ stdout: "" }));
+
+            await prepareRestore(baseConfig as never, ["a\\' OR true --"], host);
+
+            expect(host.calls.exec.map(queryOf)).toContain("SELECT 1 FROM pg_database WHERE datname = E'a\\\\'' OR true --'");
+        });
+
         it("reports a permission problem in terms the user can act on", async () => {
             const host = restoreHost(kind, (argv) =>
                 queryOf(argv)?.startsWith("CREATE DATABASE")

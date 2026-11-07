@@ -34,6 +34,11 @@ vi.mock("@/lib/execution/abort", () => ({
 }));
 vi.mock("@/lib/execution/queue-manager", () => ({ processQueue: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
+// The customer still holds the database here. Losing it on the way is restore-customer-databases.test.ts.
+vi.mock("@/services/restore/customer-databases", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/services/restore/customer-databases")>()),
+    assertTargetsConfirmed: vi.fn().mockResolvedValue(undefined),
+}));
 
 const ARCHIVE = "nightly/2026-10-15_0214_nightly.tar";
 const storageRow = { id: "msp-nas", type: "storage", adapterId: "msp-fs", name: "MSP NAS", config: "{}" };

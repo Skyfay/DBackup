@@ -8,6 +8,7 @@ import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { DATE_FORMAT_VALUES, TIME_FORMAT_VALUES, isKnownTimezone } from "@/lib/core/profile-formats";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { authService } from "@/services/auth/auth-service";
+import { checkCurrentPassword, PASSWORD_LOCKED } from "@/services/auth/password-tries";
 import { userService } from "@/services/user/user-service";
 import { groupService } from "@/services/user/group-service";
 import { membershipService } from "@/services/tenant/membership-service";
@@ -315,10 +316,10 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
     }
 
     try {
-        // Checked against the stored hash, without signing in.
-        if (!(await authService.verifyPassword(currentUser.id, parsed.data.currentPassword))) {
-            return { success: false, error: "Incorrect current password" };
-        }
+        // Checked against the stored hash, without signing in, and locked for a while after a few wrong ones.
+        const check = await checkCurrentPassword(currentUser.id, parsed.data.currentPassword);
+        if (check === "locked") return { success: false, error: PASSWORD_LOCKED };
+        if (check === "wrong") return { success: false, error: "Incorrect current password" };
         const origin = await accountLogOrigin(currentUser, currentUser.id);
         await authService.setPassword(currentUser.id, parsed.data.newPassword);
         const signedOut = await userService.revokeSessions(currentUser.id, await currentSessionId());
@@ -363,6 +364,8 @@ export async function updateUser(userId: string, input: { name?: string; email?:
     const data = parsed.data.data;
     // The entry always names the account, also when the name stays.
     let accountName = currentUser.name || currentUser.email;
+    // Who set a new email, which decides whether a sign-in provider links the account by it, see `userService.updateUser`.
+    let emailSetBy: "self" | "admin" | undefined;
 
     // Allow user to edit their own profile, otherwise require permission
     if (currentUser.id !== userId) {
@@ -381,6 +384,7 @@ export async function updateUser(userId: string, input: { name?: string; email?:
             // Whoever does not see the account that holds the email never learns that it exists, see `takenEmailRefusal`.
             const taken = await takenEmailRefusal(data.email!, { ...currentUser, userId: currentUser.id }, currentUser.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: userId });
             if (taken) return { success: false, error: taken };
+            emailSetBy = "admin";
         }
     } else {
         // The own name and email change only as far as the profile permissions allow, whatever else the group gives.
@@ -395,11 +399,12 @@ export async function updateUser(userId: string, input: { name?: string; email?:
         if (claimed) return { success: false, error: claimed };
         const taken = emailChanges ? await takenEmailRefusal(data.email!, { ...currentUser, userId: currentUser.id }, currentUser.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: currentUser.id }) : null;
         if (taken) return { success: false, error: taken };
+        if (emailChanges) emailSetBy = "self";
     }
 
     try {
         const origin = await accountLogOrigin(currentUser, userId);
-        await userService.updateUser(userId, data);
+        await userService.updateUser(userId, data, emailSetBy);
         revalidatePath("/dashboard/users");
         revalidatePath("/dashboard/settings");
 

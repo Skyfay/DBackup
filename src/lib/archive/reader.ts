@@ -158,11 +158,15 @@ export async function readArchiveIndex(
 }
 
 /** Emits only [offset, offset + length) of the stream flowing through it. */
-function sliceStream(offset: number, length: number): Transform {
+function sliceStream(offset: number, length: number, name: string): Transform {
     let seen = 0;
     let emitted = 0;
 
     return new Transform({
+        // A slice past the end of the payload is a damaged index, never a shorter file.
+        flush(callback: TransformCallback) {
+            callback(emitted < length ? new DamagedBackupError(`'${name}' reaches past the end of its bundle`) : null);
+        },
         transform(chunk: Buffer, _encoding, callback: TransformCallback) {
             if (emitted >= length) {
                 seen += chunk.length;
@@ -283,11 +287,58 @@ export async function openArchiveFile(
         throw new Error(`Archive index is inconsistent: file '${file.p}' references missing entry ${file.n}`);
     }
 
+    // Checked before the entry is fetched, the end of the payload by the slice itself.
+    const slice = entry.bundle || file.o !== undefined || file.l !== undefined ? bundleSliceOf(file) : undefined;
     const stream = await openArchiveEntry(source, manifest, entry, masterKey, file.s);
-    if (file.o === undefined || file.l === undefined) return stream;
+    if (!slice) return stream;
     // Same reasoning as chainStreams: a `.pipe()` here would strand an error from the
     // entry stream, so the slice is attached with pipeline instead.
-    return chainStreams(stream, [sliceStream(file.o, file.l)]);
+    return chainStreams(stream, [sliceStream(slice.start, slice.end - slice.start, file.p)]);
+}
+
+/**
+ * Where a bundled file lies in the payload of its bundle. Every bundled file has an offset and a
+ * length, so a line without them, or reaching past `payloadLength` when that is known, is a damaged
+ * index rather than a file to restore with the bytes of its neighbours or of the whole bundle. The
+ * length may exceed the size the line names: earlier versions wrote the size from collecting the
+ * file and the length from packing it, so a file that grew in between has the longer length.
+ *
+ * @throws DamagedBackupError for such a line
+ */
+export function bundleSliceOf(file: IndexFileLine, payloadLength?: number): { start: number; end: number } {
+    const { o, l } = file;
+    if (![o, l].every((value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) {
+        throw new DamagedBackupError(`'${file.p}' has no valid place in its bundle`);
+    }
+    const end = o! + l!;
+    if (end > (payloadLength ?? BUNDLE_READ_LIMIT)) {
+        throw new DamagedBackupError(`'${file.p}' reaches past the end of its bundle`);
+    }
+    return { start: o!, end };
+}
+
+/** The bytes of a bundled file out of the payload of its bundle, see `bundleSliceOf`. */
+export function bundleSlice(payload: Buffer, file: IndexFileLine): Buffer {
+    const { start, end } = bundleSliceOf(file, payload.length);
+    return payload.subarray(start, end);
+}
+
+/**
+ * The bytes of every file of one bundle, see `bundleSlice`. Every writer lays the files of a bundle
+ * one after the other, so files that share bytes are a damaged index: an index of thousands of lines
+ * that all point at the whole payload would write the bundle thousands of times over.
+ *
+ * @throws DamagedBackupError for overlapping files, or one `bundleSliceOf` refuses
+ */
+export function bundleSlices(payload: Buffer, files: readonly IndexFileLine[]): Buffer[] {
+    const places = files.map((file) => ({ file, ...bundleSliceOf(file, payload.length) }));
+    const ordered = [...places].sort((a, b) => a.start - b.start || a.end - b.end);
+    for (let i = 1; i < ordered.length; i++) {
+        if (ordered[i].start < ordered[i - 1].end) {
+            throw new DamagedBackupError(`'${ordered[i].file.p}' shares bytes of its bundle with '${ordered[i - 1].file.p}'`);
+        }
+    }
+    return places.map(({ start, end }) => payload.subarray(start, end));
 }
 
 /** Convenience wrapper returning a file's full contents. */

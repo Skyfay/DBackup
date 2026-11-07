@@ -260,7 +260,8 @@ describe("what the tenant of a shared server changes", () => {
         expect(await setDatabaseOnDemand("old", "shop", 2)).toEqual(refused);
         expect(await setRuleOnDemand("old", "rule-1", 2)).toEqual(refused);
         expect(await getMoveTargets("old")).toEqual(refused);
-        for (const call of [mocks.assign, mocks.addRule, mocks.removeRule, mocks.move, mocks.targets, mocks.setOnDemand, mocks.setRuleOnDemand, mocks.audit]) {
+        expect(await getSourceAssignments("old")).toEqual(refused);
+        for (const call of [mocks.assign, mocks.addRule, mocks.removeRule, mocks.move, mocks.targets, mocks.forSource, mocks.setOnDemand, mocks.setRuleOnDemand, mocks.audit]) {
             expect(call).not.toHaveBeenCalled();
         }
     });

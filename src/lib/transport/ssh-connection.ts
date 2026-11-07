@@ -1,5 +1,7 @@
 import { Client, type ConnectConfig } from "ssh2";
 
+import { checkedSocket } from "@/lib/network/checked-socket";
+
 import { normalizeSshPrivateKey } from "./pkcs8-compat";
 import type { SshConnectionConfig } from "./types";
 
@@ -45,17 +47,16 @@ export function buildConnectConfig(config: SshConnectionConfig): ConnectConfig {
     return connectConfig;
 }
 
-/** Open an authenticated ssh2 client, or reject with the handshake error. */
-export function openSshClient(config: SshConnectionConfig): Promise<Client> {
-    return new Promise((resolve, reject) => {
-        let connectConfig: ConnectConfig;
-        try {
-            connectConfig = buildConnectConfig(config);
-        } catch (error) {
-            reject(error instanceof Error ? error : new Error(String(error)));
-            return;
-        }
+/**
+ * Open an authenticated ssh2 client, or reject with the handshake error. For a tenant that blocks
+ * the local network ssh2 gets a socket connected to a checked address, the next one where the first
+ * does not answer, see `checked-socket.ts`, so the name cannot lead elsewhere the second time.
+ */
+export async function openSshClient(config: SshConnectionConfig): Promise<Client> {
+    const connectConfig = buildConnectConfig(config);
+    if (config.reach) connectConfig.sock = await checkedSocket(config.host, config.port ?? 22, config.reach.allowed);
 
+    return new Promise((resolve, reject) => {
         const client = new Client();
         const onError = (err: Error) => {
             client.removeListener("ready", onReady);

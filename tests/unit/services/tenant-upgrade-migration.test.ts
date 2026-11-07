@@ -4,7 +4,7 @@
  * everything lands in the home tenant, the API keys keep what they could do like the groups, and the
  * rows the migrations write carry their times like the rows the app writes. What hangs off a user
  * survives the rebuild of the user table, and SuperAdmin becomes Admin without taking the name of a
- * group that already has it.
+ * group that already has it, whichever names are taken.
  */
 import { execFileSync } from "child_process";
 import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
@@ -20,6 +20,8 @@ let root = "";
 let upgraded = "";
 /** A database of v4.0.2 that already has a group named Admin beside SuperAdmin. */
 let clash = "";
+/** A database of v4.0.2 whose groups take both names SuperAdmin becomes beside it. */
+let crowded = "";
 
 function migrate(file: string, schema: string): void {
     execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy", "--schema", schema], {
@@ -89,8 +91,10 @@ beforeAll(async () => {
     migrate(empty, path.join(old, "schema.prisma"));
     upgraded = path.join(root, "upgraded.db");
     clash = path.join(root, "clash.db");
+    crowded = path.join(root, "crowded.db");
     copyFileSync(empty, upgraded);
     copyFileSync(empty, clash);
+    copyFileSync(empty, crowded);
 
     await seed(
         upgraded,
@@ -121,8 +125,19 @@ beforeAll(async () => {
         { "u-1": "g-admin", "u-2": "g-named-admin" }
     );
 
+    await seed(
+        crowded,
+        [
+            { id: "g-super-1234", name: "SuperAdmin", permissions: [] },
+            { id: "g-named-admin", name: "Admin", permissions: ["jobs:read"] },
+            { id: "g-was-super", name: "Admin (was SuperAdmin)", permissions: ["jobs:read"] },
+        ],
+        { "u-1": "g-super-1234", "u-2": "g-named-admin", "u-3": "g-was-super" }
+    );
+
     migrate(upgraded, path.join(process.cwd(), "prisma", "schema.prisma"));
     migrate(clash, path.join(process.cwd(), "prisma", "schema.prisma"));
+    migrate(crowded, path.join(process.cwd(), "prisma", "schema.prisma"));
 }, 240_000);
 
 afterAll(() => {
@@ -216,6 +231,24 @@ describe("the upgrade of a database from before the tenants", () => {
         expect(users).toEqual([
             { id: "u-1", platformRole: "ADMIN" },
             { id: "u-2", platformRole: null },
+        ]);
+    });
+
+    it("names SuperAdmin after its id when groups take both of its names, instead of stopping the upgrade half way", async () => {
+        const db = openCopy(crowded);
+        const groups = await db.group.findMany({ select: { id: true, name: true, fullAccess: true }, orderBy: { id: "asc" } });
+        const users = await db.user.findMany({ select: { id: true, platformRole: true }, orderBy: { id: "asc" } });
+        await db.$disconnect();
+
+        expect(groups).toEqual([
+            { id: "g-named-admin", name: "Admin", fullAccess: false },
+            { id: "g-super-1234", name: "Admin (was SuperAdmin g-super-)", fullAccess: true },
+            { id: "g-was-super", name: "Admin (was SuperAdmin)", fullAccess: false },
+        ]);
+        expect(users).toEqual([
+            { id: "u-1", platformRole: "ADMIN" },
+            { id: "u-2", platformRole: null },
+            { id: "u-3", platformRole: null },
         ]);
     });
 });

@@ -60,4 +60,19 @@ describe("the database rename of a MySQL restore", () => {
         const body = "INSERT INTO `notes` VALUES ('USE `shop`; is a statement');";
         expect((await rename(dump(body), 16)).toString("utf8")).toContain(body);
     });
+
+    it("matches a name with a backtick in the doubled form mysqldump writes", async () => {
+        const input = "CREATE DATABASE /*!32312 IF NOT EXISTS*/ `we``ird` /*!40100 DEFAULT CHARACTER SET utf8mb4 */;\nUSE `we``ird`;\n";
+        const out = (await rename(Buffer.from(input), 5, "we`ird", "copy")).toString("utf8");
+
+        expect(out).toBe("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `copy` /*!40100 DEFAULT CHARACTER SET utf8mb4 */;\nUSE `copy`;\n");
+    });
+
+    it("writes a target name with a backtick doubled, so it stays one identifier", async () => {
+        const out = (await rename(dump("SELECT 1;"), 9, "shop", "x`; DROP DATABASE `shop")).toString("utf8");
+
+        expect(out).toContain("USE `x``; DROP DATABASE ``shop`;\n");
+        expect(out).toContain("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `x``; DROP DATABASE ``shop` /*!40100");
+        expect(out).not.toContain("USE `x`;");
+    });
 });

@@ -27,8 +27,9 @@ const nameOf = (value: unknown): string | null => (typeof value === "string" && 
  * Whether the .bak was made on another server than the one it goes to, by the name of the server
  * the backup records against the names this one answers to. The file paths in such a backup are
  * those of the other server, which may not exist here or belong to another database, like a
- * database moved to another server under the same name. A name that cannot be read counts as the
- * same server, so a restore that worked before works as it did.
+ * database moved to another server under the same name. A name that cannot be read, of the backup
+ * or of this server, counts as another server, so the files go to the data folder of this one
+ * rather than to paths nobody checked.
  */
 async function madeElsewhere(config: MSSQLConfig, host: ExecutionHost, serverPath: string): Promise<boolean> {
     try {
@@ -37,10 +38,10 @@ async function madeElsewhere(config: MSSQLConfig, host: ExecutionHost, serverPat
         const here = await executeQuery(config, host, "SELECT @@SERVERNAME AS ServerName, CAST(SERVERPROPERTY('ServerName') AS nvarchar(256)) AS PropertyName");
         const row = here.recordset?.[0] as Record<string, unknown> | undefined;
         const names = [nameOf(row?.ServerName), nameOf(row?.PropertyName)].filter((name): name is string => name !== null);
-        if (!made || names.length === 0) return false;
+        if (!made || names.length === 0) return true;
         return !names.some((name) => name.toLowerCase() === made.toLowerCase());
     } catch {
-        return false;
+        return true;
     }
 }
 
@@ -122,8 +123,17 @@ export async function restoreBakFromServer(
 
         const directory = moveOptions.length > 0 ? serverDirname(moveOptions[0].physicalPath) : null;
         if (directory) log(`Placing database files in: ${directory}`);
-        await assertMoveTargetsFree(config, host, target.target, moveOptions);
     }
+    // The files land at the MOVE targets, or without MOVE at the paths the backup records, and
+    // REPLACE overwrites either where it is a file of another database, so both are checked.
+    await assertMoveTargetsFree(
+        config,
+        host,
+        target.target,
+        moveOptions ?? logicalFiles
+            .filter((file) => typeof file.physicalName === "string" && file.physicalName.length > 0)
+            .map((file) => ({ logicalName: file.logicalName, physicalPath: file.physicalName }))
+    );
 
     const restoreQuery = dialect.getRestoreQuery(target.target, serverPath, {
         replace: true,

@@ -103,11 +103,21 @@ export function loginHostReason(type: string, data: unknown): string | null {
     return (data as { authType?: unknown }).authType === "agent" ? AGENT_LOGIN : null;
 }
 
+/**
+ * Whether the connection opens an SSH login with its `ssh*` fields, as its transport decides at run
+ * time: in SSH mode, and for SQL Server also with the older SSH file transfer and a login for it in
+ * direct mode, which `mssqlTransport` in `mssql/transport.ts` dials over SSH as well.
+ */
+function usesSshLogin(adapterId: string, config: Record<string, unknown>): boolean {
+    if (config.connectionMode === "ssh") return true;
+    return adapterId === "mssql" && config.fileTransferMode === "ssh" && Boolean(config.sshUsername);
+}
+
 /** Whether an SSH login of the connection goes through the SSH agent of the server DBackup runs on. */
 function usesHostAgent(adapterId: string, config: Record<string, unknown>): boolean {
     // SQLite keeps its SSH fields without the prefix, see `sqlite/transport.ts`.
     if (adapterId === "sqlite") return config.mode === "ssh" && config.authType === "agent";
-    return config.connectionMode === "ssh" && config.sshAuthType === "agent";
+    return usesSshLogin(adapterId, config) && config.sshAuthType === "agent";
 }
 
 /**
@@ -121,7 +131,7 @@ function usesHostAgent(adapterId: string, config: Record<string, unknown>): bool
  *   `namesSocket`), or with additional options for its tools,
  *   or MongoDB with a connection URI, whose options name files of it.
  * - Rsync with an option that names a file or a command, or without a login of its own.
- * - An SSH login through the agent of that server.
+ * - An SSH login through the agent of that server, whichever SSH login of the connection uses it.
  * - SQL Server that moves its backup files through a folder of that server, see `mssqlUsesLocalFolder`.
  */
 export function hostLocalReason(adapterId: string, config: Record<string, unknown>): string | null {

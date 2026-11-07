@@ -43,6 +43,11 @@ vi.mock("@/lib/temp-dir", () => ({
     getTempDir: () => "/tmp",
     getTempPath: (name: string) => `/tmp/${name}`,
 }));
+const restrictFile = vi.fn();
+vi.mock("@/lib/private-temp-dir", () => ({
+    privateTempPath: async (name: string) => `/tmp/dbackup-private-abc/${name}`,
+    restrictFile: (...a: unknown[]) => restrictFile(...a),
+}));
 
 const processQueue = vi.fn();
 vi.mock("@/lib/execution/queue-manager", () => ({ processQueue: (...a: unknown[]) => processQueue(...a) }));
@@ -183,14 +188,16 @@ describe("Database service", () => {
     });
 
     describe("snapshot for download", () => {
-        it("writes a consistent copy to a temp file with VACUUM INTO", async () => {
+        it("writes a consistent copy to a private temp file with VACUUM INTO", async () => {
             executeRaw.mockResolvedValue(0);
 
             const snapshot = await createDatabaseSnapshot();
 
             const [, target] = executeRaw.mock.calls[0];
-            expect(target).toMatch(/^\/tmp\/dbackup-database-\d+-[0-9a-f-]+\.db$/);
+            expect(target).toMatch(/^\/tmp\/dbackup-private-abc\/dbackup-database-\d+-[0-9a-f-]+\.db$/);
             expect(snapshot.tempFile).toBe(target);
+            // The copy holds every secret of the instance, so only DBackup reads it.
+            expect(restrictFile).toHaveBeenCalledWith(target);
             expect(snapshot.sizeBytes).toBe(600 * PAGE_SIZE);
             expect(snapshot.fileName).toMatch(/^dbackup-database_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.db$/);
             expect(isDatabaseMaintenanceActive()).toBe(false);

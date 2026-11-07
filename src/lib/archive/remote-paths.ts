@@ -3,8 +3,12 @@ import { stripTrailingSlashes } from "@/lib/paths";
 import { cleanPath } from "@/lib/tenant/storage-view";
 import { ValidationError } from "@/lib/logging/errors";
 
-/** A part of a path that some storage reads as `..`: dots and spaces alone, also once its `%` escapes are read. */
-function leavesFolder(part: string): boolean {
+/**
+ * A part of a path that some storage reads as `..`: dots and spaces alone, also once its `%` escapes
+ * are read. A plain `.` and `..` are left to the caller, which knows what they do there. The link
+ * targets of a restore follow the same rule, see `link-target.ts`.
+ */
+export function leavesFolder(part: string): boolean {
     if (/^[. ]+$/.test(part) && part !== "." && part !== "..") return true;
     try {
         const decoded = decodeURIComponent(part);

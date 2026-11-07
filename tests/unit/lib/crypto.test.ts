@@ -92,6 +92,16 @@ describe("encrypt / decrypt (AES-256-GCM)", () => {
             expect(() => decrypt(tampered)).toThrow();
         });
 
+        it("refuses a tag shorter than 16 bytes, also the leading bytes of the real one", async () => {
+            const { encrypt, decrypt } = await getCrypto();
+            const parts = encrypt("sensitive").split(":");
+            // Node would check a 4-byte tag on 4 bytes only, which makes a forged value easy to pass.
+            for (const bytes of [4, 8, 12]) {
+                const short = `${parts[0]}:${parts[1].slice(0, bytes * 2)}:${parts[2]}`;
+                expect(() => decrypt(short)).toThrow(/auth tag length/);
+            }
+        });
+
         it("throws when the IV is replaced", async () => {
             const { encrypt, decrypt } = await getCrypto();
             const cipher = encrypt("sensitive");

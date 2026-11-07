@@ -6,7 +6,8 @@ import { registry } from '@/lib/core/registry';
 import { compareVersions } from '@/lib/utils';
 
 /** A platform admin with a session, who may restore into any target. */
-const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+// Works in the tenant of the connections the restores name.
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session", tenantId: "tenant-1" } as const;
 
 // Mocks
 vi.mock('@/lib/prisma', () => ({

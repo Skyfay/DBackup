@@ -61,8 +61,9 @@ export async function POST(request: NextRequest) {
             found.push({ id: profile.id, name: profile.name });
         }
 
-        // Logged before a key is decrypted, so a kit is never silent.
-        await auditService.logFor(
+        // Logged before a key is decrypted, so a kit is never silent. An entry that could not be
+        // written throws, and no key leaves.
+        await auditService.logForStrict(
             ctx,
             AUDIT_ACTIONS.EXPORT,
             AUDIT_RESOURCES.VAULT,

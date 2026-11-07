@@ -92,7 +92,7 @@ vi.mock("@/services/backup/key-recovery", () => ({ recoverEncryptionKey: mocks.r
 vi.mock("@/services/backup/archive-index-service", () => ({ archiveIndexService: { clear: vi.fn() } }));
 vi.mock("@/services/storage/config-backup-access", () => ({ isConfigBackupFile: mocks.isConfigBackupFile }));
 vi.mock("@/lib/auth/oauth-state", () => ({ consumeOAuthState: mocks.consumeState, createOAuthState: () => "state" }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: mocks.logFor, log: mocks.log } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: mocks.logFor, logForStrict: mocks.logFor, log: mocks.log } }));
 
 const { configBackupTargetRefusal } = await import("@/lib/server/config-backup-target-guard");
 const adapterRoute = await import("@/app/api/adapters/[id]/route");

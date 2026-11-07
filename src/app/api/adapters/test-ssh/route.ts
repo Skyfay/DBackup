@@ -15,7 +15,7 @@ import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
 import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
 import { hasSshMode } from "@/lib/adapters/ssh-mode";
 import { hostOf } from "@/lib/adapters/dialed-hosts";
-import { assertHostsReachable } from "@/services/tenant/tenant-network";
+import { assertHostsReachable, tenantReach } from "@/services/tenant/tenant-network";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
@@ -149,6 +149,9 @@ export async function POST(req: NextRequest) {
             if (refusal instanceof ValidationError) return NextResponse.json({ success: false, message: refusal.message }, { status: 400 });
             throw refusal;
         }
+        // And dialed at the address checked at connect time, see `reach-check.ts`.
+        const { policy } = await tenantReach(ctx.tenantId);
+        if (policy) spec = { ...spec, ssh: { ...spec.ssh, reach: policy } };
 
         // Only SQL Server has a backup directory that both the server and the
         // SSH account have to reach. Testing that here used to key off

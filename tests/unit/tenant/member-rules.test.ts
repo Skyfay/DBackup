@@ -115,6 +115,20 @@ describe("who places an account of no tenant in another tenant", () => {
         expect(await placementRefusal(TOM, "sara", "tenant-a")).toBe(OUTSIDER);
     });
 
+    it("counts the rights an API key holds, not those of its owner", async () => {
+        mocks.reach = { tom: [HOME_TENANT_ID, "tenant-a", "tenant-b"] };
+        // The owner may manage the accounts, the key was made with the right to manage users alone.
+        const key = { ...TOM, authMethod: "apikey" as const, permissions: ["users:read", "users:write"] };
+        expect(await placementRefusal(TOM, "lena", "tenant-a")).toBeNull();
+        expect(await placementRefusal(key, "lena", "tenant-a")).toBe(OUTSIDER);
+        expect(await placementRefusal({ ...key, permissions: undefined }, "lena", "tenant-a")).toBe(OUTSIDER);
+        expect(await placementRefusal({ ...key, permissions: ["platform-accounts:write"] }, "lena", "tenant-a")).toBeNull();
+        // A key with the right still reaches only what its owner reaches.
+        mocks.reach = { tom: [HOME_TENANT_ID, "tenant-a"] };
+        expect(await placementRefusal({ ...key, permissions: ["platform-accounts:write"] }, "lena", "tenant-a")).toBe(OUTSIDER);
+        expect(await tenantGroupRefusal({ ...HANK, id: "tom", authMethod: "apikey" }, "lena", "g-view")).toBe(OUTSIDER);
+    });
+
     it("leaves an account with a membership and one that is gone to the other rules", async () => {
         mocks.reach = {};
         expect(await placementRefusal(TOM, "gina", "tenant-a")).toBeNull();

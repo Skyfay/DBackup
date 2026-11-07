@@ -4,7 +4,9 @@ import { FOLLOWS_KEY, activeFollowersOf, providerHint, type RunFollower } from "
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
+import { ownerAt } from "@/lib/tenant/database-owner";
 import { formatBytes, formatDuration } from "@/lib/utils";
+import { factsOf } from "./owner-facts";
 
 /**
  * The run a customer sees of a backup they started of a database on a shared server. The backup
@@ -111,6 +113,27 @@ function dumpSize(dumps: unknown, database: string): number | null {
 }
 
 /**
+ * Whether the customer still holds the database at the end of the run, on the server of the job of
+ * the real run. One given to another tenant, taken back or moved meanwhile is no longer theirs, so
+ * the size of its dump says nothing to them. Unknown counts as not.
+ */
+async function heldAtEnd(tenantId: string | null, leaderId: string, database: string): Promise<boolean> {
+    if (!tenantId) return false;
+    try {
+        return await runAsSystem(async () => {
+            const leader = await prisma.execution.findUnique({ where: { id: leaderId }, select: { job: { select: { sourceId: true } } } });
+            const sourceId = leader?.job?.sourceId;
+            if (!sourceId) return false;
+            const facts = await factsOf(sourceId);
+            return ownerAt(facts.assignments, facts.rules, database, new Date()) === tenantId;
+        });
+    } catch (error: unknown) {
+        log.warn("Who holds the database at the end of a customer's backup could not be read", { leaderId }, wrapError(error));
+        return false;
+    }
+}
+
+/**
  * The customer's run that follows a real run of a backup, null when the run has none. The runner
  * tells it when the run starts, moves on and ends, and it writes its own lines for each.
  */
@@ -168,7 +191,8 @@ export async function customerBackupFollower(leaderId: string): Promise<RunFollo
             void write({});
         },
         async end({ status, dumps }) {
-            const size = dumpSize(dumps, facts.database);
+            const measured = dumpSize(dumps, facts.database);
+            const size = measured !== null && (await heldAtEnd(row.tenantId, leaderId, facts.database)) ? measured : null;
             // Some copies of the provider that failed are the provider's to fix, the backup is there.
             if (status === "Success" || status === "Partial") {
                 moveTo("Completed");

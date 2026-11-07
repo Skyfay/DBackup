@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -83,6 +83,24 @@ describe("a configuration restore in two steps", () => {
         expect(path.basename(file as string)).toMatch(/_config_backup\.db\.gz\.enc$/);
         expect(meta).toEqual({ compression: "GZIP" });
         expect(override).toEqual({ rawKeyHex: "ab12" });
+    });
+
+    it("writes an upload into the private temporary folder, readable by DBackup alone", async () => {
+        let seen: { dir: string; dirMode: number; fileMode: number } | null = null;
+        mocks.open.mockImplementation(async (file: string) => {
+            seen = { dir: path.dirname(file), dirMode: statSync(path.dirname(file)).mode & 0o777, fileMode: statSync(file).mode & 0o777 };
+            return opened(sqlite());
+        });
+
+        await checkUploadedBackup(upload(), MANU);
+
+        expect(seen).not.toBeNull();
+        expect(path.dirname(seen!.dir)).toBe(root);
+        expect(path.basename(seen!.dir)).toMatch(/^dbackup-private-/);
+        if (process.platform !== "win32") {
+            expect(seen!.dirMode).toBe(0o700);
+            expect(seen!.fileMode).toBe(0o600);
+        }
     });
 
     it("replaces the database with a checked copy, noting who restored it", async () => {

@@ -47,6 +47,9 @@ beforeAll(async () => {
     await base.group.create({ data: { id: "g-view", name: "Viewers", permissions: "[]" } });
     await base.user.create({ data: { id: "u-admin", name: "Admin", email: "admin@example.ch", emailVerified: true, createdAt: now, updatedAt: now } });
     await base.user.create({ data: { id: "u-lena", name: "Lena", email: "lena@example.ch", emailVerified: true, createdAt: now, updatedAt: now } });
+    // Whoever makes a link manages the people of its tenant.
+    await base.group.create({ data: { id: "g-managers", name: "Managers", permissions: JSON.stringify(["users:read", "users:write"]), tenantId: "acme" } });
+    await base.tenantMembership.create({ data: { userId: "u-admin", tenantId: "acme", groupId: "g-managers" } });
 }, 120_000);
 
 afterAll(async () => {
@@ -95,7 +98,7 @@ describe("an invitation link", () => {
         const { token } = await invite("g-view");
 
         await expect(invitationService.accept(token, "u-admin")).rejects.toThrow(OWN_INVITATION);
-        expect(await base.tenantMembership.findUnique({ where: { userId_tenantId: { userId: "u-admin", tenantId: "acme" } } })).toBeNull();
+        expect((await base.tenantMembership.findUniqueOrThrow({ where: { userId_tenantId: { userId: "u-admin", tenantId: "acme" } } })).groupId).toBe("g-managers");
         expect(await invitationService.preview(token)).toEqual(expect.objectContaining({ groupName: "Viewers" }));
     });
 
@@ -121,6 +124,8 @@ describe("an invitation link", () => {
         const accepted = await invitationService.acceptWithNewAccount(token, { name: "Nora", email: "Nora@Example.ch", password: "Harbor-Lamp-42" });
         expect(accepted).toEqual(expect.objectContaining({ tenantId: "acme", email: "nora@example.ch" }));
         expect(await base.tenantMembership.count({ where: { userId: accepted.userId, tenantId: "acme" } })).toBe(1);
+        // Whoever opened the link picked the email, so no sign-in provider links the account by it.
+        expect((await base.user.findUniqueOrThrow({ where: { id: accepted.userId } })).emailVerified).toBe(false);
         // Better Auth signs a new account in on the server, where no browser gets the session.
         expect(await base.session.count({ where: { userId: accepted.userId } })).toBe(0);
     });
@@ -199,11 +204,43 @@ describe("an invitation link", () => {
     it("stops working once whoever made it may no longer give its group", async () => {
         await base.group.create({ data: { id: "g-jobs", name: "Job runners", permissions: JSON.stringify(["jobs:read", "jobs:execute"]), tenantId: "acme" } });
         const { token } = await invite("g-jobs");
-        // The admin holds no group in Acme, so the link of a group with rights gives nothing.
+        // The group of the admin in Acme runs no jobs, so the link of a group that does gives nothing.
         expect(await invitationService.preview(token)).toBeNull();
 
         await base.group.create({ data: { id: "g-admins", name: "Admins", permissions: "[]", fullAccess: true, tenantId: "acme" } });
-        await base.tenantMembership.create({ data: { userId: "u-admin", tenantId: "acme", groupId: "g-admins" } });
+        await base.tenantMembership.update({ where: { userId_tenantId: { userId: "u-admin", tenantId: "acme" } }, data: { groupId: "g-admins" } });
+        try {
+            expect(await invitationService.preview(token)).not.toBeNull();
+        } finally {
+            await base.tenantMembership.update({ where: { userId_tenantId: { userId: "u-admin", tenantId: "acme" } }, data: { groupId: "g-managers" } });
+        }
+    });
+
+    it("stops working once whoever made it no longer manages the people of the tenant", async () => {
+        const { token } = await invite("g-view");
         expect(await invitationService.preview(token)).not.toBeNull();
+
+        // A group without users:write, which still may give the empty group of the link.
+        await base.tenantMembership.update({ where: { userId_tenantId: { userId: "u-admin", tenantId: "acme" } }, data: { groupId: "g-view" } });
+        try {
+            expect(await invitationService.preview(token)).toBeNull();
+            await expect(invitationService.accept(token, "u-lena")).rejects.toBeInstanceOf(NotFoundError);
+            await expect(invitationService.acceptWithNewAccount(token, { name: "Nora", email: "nora2@example.ch", password: STRONG })).rejects.toBeInstanceOf(NotFoundError);
+        } finally {
+            await base.tenantMembership.update({ where: { userId_tenantId: { userId: "u-admin", tenantId: "acme" } }, data: { groupId: "g-managers" } });
+        }
+        expect(await invitationService.preview(token)).not.toBeNull();
+    });
+
+    it("keeps working for someone of a platform group that manages the tenants and reaches this one", async () => {
+        await base.user.create({ data: { id: "u-msp", name: "MSP", email: "msp@example.ch", emailVerified: true, createdAt: now, updatedAt: now } });
+        await base.platformGroup.create({ data: { id: "pg-acme", name: "Acme support", platformPermissions: JSON.stringify(["platform-tenants:read", "platform-tenants:write"]), allTenants: false, tenants: { create: [{ tenantId: "acme" }] } } });
+        await base.user.update({ where: { id: "u-msp" }, data: { platformGroupId: "pg-acme" } });
+        const { token } = await invitationService.create({ tenantId: "acme", groupId: "g-view", createdById: "u-msp", createdByName: "MSP" });
+        expect(await invitationService.preview(token)).not.toBeNull();
+
+        // Once the platform group no longer reaches Acme, the link stops working.
+        await base.platformGroupTenant.deleteMany({ where: { groupId: "pg-acme" } });
+        expect(await invitationService.preview(token)).toBeNull();
     });
 });

@@ -8,6 +8,8 @@
  * as it is, the archive is extracted elsewhere.
  */
 
+import { leavesFolder } from "./remote-paths";
+
 /** Why a link is skipped, for the log of the restore. */
 export const LINK_LEAVES_TARGET = "its target is absolute or leads out of the folder the restore writes into, so it was skipped";
 
@@ -28,6 +30,10 @@ function isAbsoluteTarget(target: string): boolean {
  * target whose folders pass through a link of the backup is refused, `isLinkFolder` tells them,
  * like `throughLinkOf` of the same lines does for an entry.
  *
+ * A part of dots and spaces alone other than `.`, like `...`, `.. ` or `%2e%2e`, climbs on a system
+ * that drops trailing dots and spaces or reads `%` escapes, so it is refused wherever it stands, by
+ * the rule `leavesFolder` applies to every other path of a restore.
+ *
  * @param isLinkFolder Whether a path below the folder the restore writes into has a link of the same backup and source as one of its folders.
  */
 export function linkLeavesTarget(linkPath: string, target: string, isLinkFolder: (resolvedPath: string) => boolean): boolean {
@@ -38,6 +44,7 @@ export function linkLeavesTarget(linkPath: string, target: string, isLinkFolder:
     let afterFolder = false;
     for (const part of target.replace(/\\/g, "/").split("/")) {
         if (part === "" || part === ".") continue;
+        if (leavesFolder(part)) return true;
         if (part === "..") {
             if (afterFolder || at.length === 0) return true;
             at.pop();

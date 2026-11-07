@@ -2,39 +2,44 @@ import { NotificationAdapter } from "@/lib/core/interfaces";
 import { TelegramSchema, TelegramConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { escapeHtml, escapeTelegramMarkdown } from "./escape";
 
 const log = logger.child({ adapter: "telegram" });
 
 const TELEGRAM_API = "https://api.telegram.org";
 
-/**
- * Escapes special characters for Telegram HTML parse mode.
- */
-function escapeHtml(text: string): string {
-    return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
+type ParseMode = TelegramConfig["parseMode"];
+
+/** How a parse mode marks a word bold and escapes a text, see `escape.ts`. */
+const FORMATS: Record<ParseMode, { bold: (text: string) => string; escape: (text: string) => string }> = {
+    HTML: { bold: (text) => `<b>${escapeHtml(text)}</b>`, escape: escapeHtml },
+    // Legacy Markdown allows no escape inside an entity, so a bold text holds no character it escapes.
+    Markdown: {
+        bold: (text) => (/[_*`[]/.test(text) ? escapeTelegramMarkdown(text) : `*${text}*`),
+        escape: escapeTelegramMarkdown,
+    },
+};
 
 /**
- * Builds an HTML-formatted message from context for Telegram.
+ * Builds the message for the parse mode it is sent with. Every text is escaped for that mode, so
+ * the name of a job or a tenant never becomes a link or markup.
  */
-function buildHtmlMessage(message: string, context?: any): string {
-    if (!context) return escapeHtml(message);
+function buildTelegramMessage(message: string, context: any, parseMode: ParseMode = "HTML"): string {
+    const format = FORMATS[parseMode] ?? FORMATS.HTML;
+    if (!context) return format.escape(message);
 
     const parts: string[] = [];
 
     if (context.title) {
-        parts.push(`<b>${escapeHtml(context.title)}</b>`);
+        parts.push(format.bold(context.title));
     }
 
-    parts.push(escapeHtml(message));
+    parts.push(format.escape(message));
 
     if (context.fields?.length) {
         parts.push("");
         for (const field of context.fields) {
-            parts.push(`<b>${escapeHtml(field.name)}:</b> ${escapeHtml(field.value || "-")}`);
+            parts.push(`${format.bold(`${field.name}:`)} ${format.escape(field.value || "-")}`);
         }
     }
 
@@ -87,7 +92,8 @@ export const TelegramAdapter: NotificationAdapter = {
     async send(config: TelegramConfig, message: string, context?: any): Promise<boolean> {
         try {
             const url = `${TELEGRAM_API}/bot${config.botToken}/sendMessage`;
-            const formattedMessage = buildHtmlMessage(message, context);
+            const parseMode = config.parseMode || "HTML";
+            const formattedMessage = buildTelegramMessage(message, context, parseMode);
 
             const response = await fetch(url, {
                 method: "POST",
@@ -96,7 +102,7 @@ export const TelegramAdapter: NotificationAdapter = {
                     chat_id: config.chatId,
                     ...(config.messageThreadId ? { message_thread_id: config.messageThreadId } : {}),
                     text: formattedMessage,
-                    parse_mode: config.parseMode || "HTML",
+                    parse_mode: parseMode,
                     disable_notification: config.disableNotification ?? false,
                 }),
             });

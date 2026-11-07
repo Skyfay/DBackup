@@ -11,7 +11,7 @@ import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { hostLocalReason } from "@/lib/adapters/host-local";
 import { assertOffOwnData } from "@/lib/adapters/own-data";
 import { requestHeaders } from "@/lib/server/request-headers";
-import { assertReachFromHere, assertTenantReach, tenantBlocksLocalNetwork } from "@/services/tenant/tenant-network";
+import { assertReachFromHere, assertTenantReach, tenantReach } from "@/services/tenant/tenant-network";
 import { markLocalNetwork } from "@/lib/adapters/network-fact";
 import { currentTenantId } from "@/lib/tenant/current";
 import type {
@@ -81,7 +81,10 @@ export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise
     // Whether the tools that find a server on their own, like smbclient by a NetBIOS broadcast, may
     // do so, by the tenant of the row like the check above. Never a field of the stored config, see
     // `network-fact.ts`.
-    return markLocalNetwork(resolved, await tenantBlocksLocalNetwork(adapter.tenantId));
+    // The ranges it reaches anyway go along, for the clients that check their addresses again at
+    // connect time, see `reach-policy.ts`.
+    const reach = await tenantReach(adapter.tenantId);
+    return markLocalNetwork(resolved, reach.blocks, reach.policy);
 }
 
 async function resolveConfig(adapter: AdapterConfigInput): Promise<Record<string, unknown>> {
@@ -218,7 +221,8 @@ export async function overlayCredentialsOnConfig(
 ): Promise<Record<string, unknown>> {
     const merged = await layLoginsOver(adapterId, config, primaryCredentialId, sshCredentialId);
     await assertConfigOffHost(adapterId, merged);
-    return markLocalNetwork(merged, await tenantBlocksLocalNetwork(await currentTenantId()));
+    const reach = await tenantReach(await currentTenantId());
+    return markLocalNetwork(merged, reach.blocks, reach.policy);
 }
 
 /**

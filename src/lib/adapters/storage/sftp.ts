@@ -22,6 +22,8 @@ import path from "path";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { checkedSocket } from "@/lib/network/checked-socket";
+import { reachOf } from "@/lib/network/reach-policy";
 
 const log = logger.child({ adapter: "sftp" });
 
@@ -91,7 +93,11 @@ export const connectSFTP = async (config: SFTPConfig, onDisconnect?: (reason: st
         end: () => onDisconnect?.('the connection ended'),
         close: () => onDisconnect?.('the connection closed'),
     });
+    // For a tenant that blocks the local network ssh2 gets a socket to a checked address, see `checked-socket.ts`.
+    const reach = reachOf(config);
+    const sock = reach ? await checkedSocket(config.host, config.port || 22, reach.allowed) : undefined;
     await sftp.connect({
+        ...(sock ? { sock } : {}),
         host: config.host,
         port: config.port,
         username: config.username,

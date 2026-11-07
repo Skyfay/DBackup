@@ -71,9 +71,9 @@ pnpm lab:check --run      # Test every lab connection and run every lab job once
 pnpm run database:reset   # Reset dev DB from scratch via all migrations (lab:reset also seeds it)
 pnpm toolbox              # Menu of the release and maintenance commands below, see scripts/toolbox/README.md
 pnpm changelog:preview    # Show the changelog block the next release writes from the fragments
-pnpm version:bump         # Next version, changelog block and version everywhere, after a CodeQL check of dev
+pnpm version:bump         # Next version, changelog block and version everywhere, after a CodeQL check of dev (a beta sets the version only)
 pnpm codeql:check         # CodeQL alerts open on dev that main does not have
-pnpm release:tag          # Tag the release on main and push it (release:untag deletes a tag)
+pnpm release:tag          # Tag the release on main and push it (release:tag dev tags a beta, release:untag deletes a tag)
 ```
 
 Docs site and marketing site are separate workspaces: `pnpm docs:dev` (VitePress) and `pnpm website:dev`.
@@ -86,6 +86,8 @@ Docs site and marketing site are separate workspaces: `pnpm docs:dev` (VitePress
 1. Stop the dev server (Ctrl+C in the node terminal).
 2. `npx prisma migrate dev --name <migration-name>`
 3. Restart `pnpm dev`.
+
+A migration that shipped in a beta release never changes again, a fix goes into a new one.
 
 Running `migrate dev` against a live dev server can trigger an interactive DB reset, which fights the SQLite file lock and crashes the Node process - often taking VS Code with it. `prisma db push` applies schema changes without a migration file, which desyncs `_prisma_migrations` from the real schema and breaks `database:deploy` in production and for other developers.
 

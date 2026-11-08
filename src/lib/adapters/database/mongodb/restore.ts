@@ -70,7 +70,8 @@ export function namespacePattern(database: string): string {
     if (/[/\\. "$\0]/.test(database)) {
         throw new Error(`The database name ${database} holds a character MongoDB does not allow in a database name.`);
     }
-    return `${database.replace(/\*/g, "\\*")}.*`;
+    // A backslash is refused above, and escaped here as well, so the pattern never depends on that check.
+    return `${database.replace(/[\\*]/g, "\\$&")}.*`;
 }
 
 /**

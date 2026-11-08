@@ -8,6 +8,7 @@
  * change nothing any more.
  */
 
+import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { STORAGE } from "../../../lab/src/catalog";
@@ -37,7 +38,7 @@ const kept = `${tag}_kept`;
  * grant on its table, which is no membership.
  */
 const ownerRole = `${tag}_owner`;
-const providerLogin = { username: `${tag}_login`, password: `Ledger-Maple-${tag}` };
+const providerLogin = { username: `${tag}_login`, password: randomBytes(18).toString("base64url") };
 const customer = { name: "Ada Acme", email: `${tag}@acme.e2e.dbackup.test`, password: "Harbor-Violet-3816" };
 
 const postgres: Target = FAMILIES.find((family) => family.name === "postgres")!.targets.find((target) => target.key === "postgres-18")!;

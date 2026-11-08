@@ -15,7 +15,10 @@ export function escapeHtml(text: string): string {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Telegram's legacy `Markdown` parse mode, where `_`, `*`, `` ` `` and `[` are escaped with a backslash. */
+/**
+ * Telegram's legacy `Markdown` parse mode, where `_`, `*`, `` ` `` and `[` are escaped with a backslash.
+ * A backslash itself stays as it is: that mode escapes nothing else, so `\\` would show as two.
+ */
 export function escapeTelegramMarkdown(text: string): string {
     return text.replace(/([_*`[])/g, "\\$1");
 }
@@ -37,7 +40,7 @@ export function escapeMarkdown(text: string): string {
  * them, so a name never becomes a link while `prod_mysql` still reads as written everywhere.
  */
 export function escapeMarkdownLinks(text: string): string {
-    return text.replace(/\\(?=[[\]<>])/g, "\\\\").replace(/([[\]<>])/g, "\\$1");
+    return text.replace(/\\(?=[[\]<>])|[[\]<>]/g, "\\$&");
 }
 
 /**

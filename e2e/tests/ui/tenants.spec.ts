@@ -38,7 +38,7 @@ const kept = `${tag}_kept`;
  * grant on its table, which is no membership.
  */
 const ownerRole = `${tag}_owner`;
-const providerLogin = { username: `${tag}_login`, password: randomBytes(18).toString("base64url") };
+const providerLogin = { username: `e2e_login_${randomBytes(6).toString("hex")}`, password: randomBytes(18).toString("base64url") };
 const customer = { name: "Ada Acme", email: `${tag}@acme.e2e.dbackup.test`, password: "Harbor-Violet-3816" };
 
 const postgres: Target = FAMILIES.find((family) => family.name === "postgres")!.targets.find((target) => target.key === "postgres-18")!;

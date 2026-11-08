@@ -2,7 +2,7 @@ import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
 import { isBackupFile, sidecarPathsFor, effectiveBackupTime } from '@/lib/core/backup-files';
-import { loadBackupSidecars } from './retention-sidecars';
+import { assertIncrementalRetentionSafe, loadBackupSidecars } from './retention-sidecars';
 import { folderKey, loadFormerBackups } from './retention-folders';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
@@ -121,6 +121,11 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
     }
     const backupFiles = [...current, ...former.files];
+    if (ctx.job!.backupMode === "INCREMENTAL") {
+        // A listing missing even one chain identifier or full base cannot safely
+        // be pruned. A successful upload does not make older archives complete.
+        assertIncrementalRetentionSafe(backupFiles);
+    }
     const own = new Set(backupFiles);
     const drifted = [...sidecars.drifted, ...former.drifted];
     const formerFiles = new Set(former.files);

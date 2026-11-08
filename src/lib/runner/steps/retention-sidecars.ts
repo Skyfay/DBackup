@@ -17,6 +17,37 @@ import { METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 /** How far mtime and the recorded creation time may drift before it is worth reporting. */
 export const TIMESTAMP_DRIFT_WARNING_MS = 60 * 60 * 1000;
 
+/**
+ * Incremental retention is destructive: each chain must have trustworthy
+ * per-archive metadata AND a present full base before any archive may be deleted.
+ * A missing sidecar otherwise makes its FULL appear chainless while incremental
+ * children retain their chain ID, causing irreversible partial chain deletion.
+ */
+export function assertIncrementalRetentionSafe(backups: FileInfo[]): void {
+    if (!backups.length) return;
+    const incompleteMetadata = backups.filter(
+        file => !file.chainId || !file.backupTimestamp
+    );
+    if (incompleteMetadata.length) {
+        throw new Error(
+            "Incremental retention blocked: missing or invalid metadata for " +
+            incompleteMetadata.length + " archive(s); refusing all deletions."
+        );
+    }
+    const fullChainIds = new Set(
+        backups.filter(file => /_full-[0-9]+[.]/.test(file.name)).map(file => file.chainId!)
+    );
+    const orphaned = new Set(
+        backups.filter(file => !fullChainIds.has(file.chainId!)).map(file => file.chainId!)
+    );
+    if (orphaned.size) {
+        throw new Error(
+            "Incremental retention blocked: " + orphaned.size +
+            " chain(s) lack a FULL base archive; refusing all deletions."
+        );
+    }
+}
+
 export interface SidecarLoadResult {
     /** Backups whose sidecar supplied a usable creation time. */
     withTimestamp: number;

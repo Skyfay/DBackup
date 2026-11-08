@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "fs/promises";
 import { ServiceError } from "@/lib/logging/errors";
-import { promisedTempSpace, reserveTempSpace, stagedAtOnce, TEMP_SPACE_RESERVE, type TempSpaceReservation } from "@/services/restore/temp-space";
+import { promisedTempSpace, reserveTempSpace, reserveTempSpaceUpTo, stagedAtOnce, TEMP_SPACE_RESERVE, type TempSpaceReservation } from "@/services/restore/temp-space";
 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
@@ -96,5 +96,41 @@ describe("restores that run at once", () => {
 
         expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
         expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    });
+});
+
+describe("an output known only by a bound, like a whole-file dump that inflates", () => {
+    it("is promised the whole bound where the folder has room for it", async () => {
+        freeSpace(10 * GB);
+        const space = await reserveTempSpaceUpTo(GB, "/tmp");
+        held.push(space);
+
+        expect(space).toMatchObject({ bytes: GB, short: false });
+        expect(promisedTempSpace()).toBe(GB);
+    });
+
+    it("is promised only the free space beside the other restores, and told so, where the bound is larger", async () => {
+        // 1100 times a dump of 1 GB, which no temporary folder holds.
+        freeSpace(10 * GB);
+        held.push(await reserveTempSpace([3 * GB], 1, "/tmp"));
+        const space = await reserveTempSpaceUpTo(1100 * GB, "/tmp");
+        held.push(space);
+
+        expect(space).toMatchObject({ bytes: 7 * GB - TEMP_SPACE_RESERVE, short: true });
+        expect(promisedTempSpace()).toBe(10 * GB - TEMP_SPACE_RESERVE);
+    });
+
+    it("is refused where nothing is left beside the reserve", async () => {
+        freeSpace(TEMP_SPACE_RESERVE);
+        await expect(reserveTempSpaceUpTo(GB, "/tmp")).rejects.toThrow(/more than the server has free/);
+        expect(promisedTempSpace()).toBe(0);
+    });
+
+    it("keeps the bound and promises nothing where the free space cannot be read", async () => {
+        vi.spyOn(fs, "statfs").mockRejectedValue(new Error("ENOSYS"));
+        const space = await reserveTempSpaceUpTo(GB, "/tmp");
+
+        expect(space).toMatchObject({ bytes: GB, short: false });
+        expect(promisedTempSpace()).toBe(0);
     });
 });

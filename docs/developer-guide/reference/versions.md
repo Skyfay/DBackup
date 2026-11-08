@@ -27,7 +27,7 @@ DBackup's Docker image is built on `node:24-slim` (Debian 12 bookworm) and inclu
 | `sqlite3` | Debian 12 package | SQLite 3.x |
 | `redis-tools` | Debian 12 package | Redis, Valkey |
 | Firebird `gbak` and `isql` | 5.0.3 | Firebird 3-5 |
-| `sqlpackage` | Current release at build time, on the .NET 10 runtime | Azure SQL Database |
+| `sqlpackage` | 170.5.96, on the .NET 10 runtime | Azure SQL Database |
 
 The image has no MySQL client of its own. DBackup calls `mariadb-dump`, `mariadb` and `mariadb-admin` first, so MySQL servers are backed up with the MariaDB tools too.
 

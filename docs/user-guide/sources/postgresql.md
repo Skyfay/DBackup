@@ -159,7 +159,7 @@ A restore is started from **Backups**, see [Restore](/user-guide/features/restor
 
 - A target database that does not exist yet is created with `CREATE DATABASE` first, and a database can be restored under another name.
 - Each database is restored with `pg_restore --clean --if-exists --no-owner --no-acl`, plus `--no-comments --no-tablespaces --no-security-labels`. Objects in the dump are dropped and created again, objects that exist only in the target stay.
-- Owners and grants are not restored. Restored objects belong to the login that ran the restore, and roles and their grants have to be set up on a new server by hand. A customer's restore of a [shared database](/user-guide/admin/shared-databases#who-a-customer-s-restore-runs-as) runs as the owner of the database instead.
+- Owners and grants are not restored. Restored objects belong to the login that ran the restore, and roles and their grants have to be set up on a new server by hand. A customer's restore of a [shared database](/user-guide/admin/shared-databases#who-a-customer-s-restore-runs-as) runs as the owner of the database instead, and it is refused when the login could do more than that owner.
 - When a start fails with access or permission denied, the page offers an admin login for that one run. For PostgreSQL it creates the databases and runs `pg_restore` as well.
 - A backup of a newer PostgreSQL version than the target server is refused, see [Version Guard](/user-guide/features/restore#version-guard).
 

@@ -13,6 +13,8 @@ const PROFILE_ENDPOINTS: Readonly<Record<string, Permission>> = {
     "/two-factor/enable": PERMISSIONS.PROFILE.MANAGE_2FA,
     "/two-factor/disable": PERMISSIONS.PROFILE.MANAGE_2FA,
     "/two-factor/generate-backup-codes": PERMISSIONS.PROFILE.MANAGE_2FA,
+    // Shows the secret of the authenticator app, from which anyone makes its codes.
+    "/two-factor/get-totp-uri": PERMISSIONS.PROFILE.MANAGE_2FA,
     // With a session these finish turning the second factor on. The sign-in has no session yet, so
     // `beforeAuth` lets the code of someone signing in through.
     "/two-factor/verify-totp": PERMISSIONS.PROFILE.MANAGE_2FA,
@@ -33,10 +35,12 @@ const PROFILE_ENDPOINTS: Readonly<Record<string, Permission>> = {
  * log. `/update-user` also sets the passkey as second factor, `/unlink-account` removes an SSO login
  * or the password (`unlinkMySsoAccount`), `/link-social` adds a login, `/change-password` sets the
  * own password (`updateOwnPassword`, which also ends the other sessions) and `/delete-user` deletes
- * the account. From the server, like in those actions, they pass.
+ * the account. `/verify-password` changes nothing, but it would check the password of a session
+ * without the lockout of `checkCurrentPassword`. From the server, like in those actions, they pass.
  */
 const SERVER_ONLY_ENDPOINTS: ReadonlySet<string> = new Set([
     "/update-user",
+    "/verify-password",
     "/change-password",
     "/unlink-account",
     "/link-social",
@@ -91,7 +95,7 @@ export async function profileChangeRefused(
 }
 
 /** Whether a passkey is the second factor of the account and it has one passkey left. */
-async function lastPasskeyIsFactor(userId: string): Promise<boolean> {
+export async function lastPasskeyIsFactor(userId: string): Promise<boolean> {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { passkeyTwoFactor: true } });
     return !!user?.passkeyTwoFactor && (await prisma.passkey.count({ where: { userId } })) <= 1;
 }

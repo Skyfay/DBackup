@@ -42,6 +42,11 @@ export type RichFileInfo = FileInfo & {
     jobName?: string;
     /** When the backup was made, from its sidecar. The same at every destination. */
     createdAt?: string;
+    /**
+     * When the run started to dump its databases, from its sidecar, which `createdAt` comes after.
+     * Backups made before it was kept lack it.
+     */
+    dumpsStartedAt?: string;
     /** The databases the backup holds, when its sidecar names them. */
     databases?: string[];
     /**

@@ -2,19 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Smartphone } from "lucide-react";
+import { KeyRound, ShieldOff, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { togglePasskeyTwoFactor } from "@/app/actions/auth/user";
 import { SwitchRow } from "@/components/adapter/setting-switches";
 import { PartFrame } from "@/components/dashboard/settings/settings-frame";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { authClient } from "@/lib/auth/client";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { ProfileModel } from "@/services/user/profile-model";
 import { PasskeysSection, usePasskeys } from "./passkeys-section";
-import { BackupCodesDialog, PasswordDialog, TwoFactorOffDialog, TwoFactorOnDialog } from "./security-dialogs";
+import { BackupCodesDialog, PasswordDialog, SecretField, TwoFactorOffDialog, TwoFactorOnDialog } from "./security-dialogs";
 import { SignInProviders } from "./sign-in-providers";
 
 const log = logger.child({ component: "security-part" });
@@ -59,23 +60,28 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
     const passkeyFactor = session ? !!(session.user as { passkeyTwoFactor?: boolean | null }).passkeyTwoFactor : model.user.passkeyTwoFactor;
     // A passkey as the second factor sets the flag of better-auth too, without a code of an app behind it.
     const app = twoFactor && !passkeyFactor;
-    const [dialog, setDialog] = useState<"password" | "on" | "off" | "codes" | null>(null);
+    const [dialog, setDialog] = useState<"password" | "on" | "off" | "codes" | "passkey-off" | null>(null);
     const [switching, setSwitching] = useState(false);
+    const [password, setPassword] = useState("");
 
     const changed = () => {
         void refetch();
         router.refresh();
     };
 
+    // Turning it off asks for the password first, like the authenticator app.
     const switchPasskeyFactor = async (checked: boolean) => {
+        if (!checked && dialog !== "passkey-off") return setDialog("passkey-off");
         setSwitching(true);
         try {
-            const result = await togglePasskeyTwoFactor(model.user.id, checked);
+            const result = await togglePasskeyTwoFactor(model.user.id, checked, checked ? undefined : password);
             if (!result.success) {
                 toast.error(result.error || "That did not work.");
                 return;
             }
             toast.success(checked ? "A passkey counts as the second factor" : "A passkey no longer counts as the second factor");
+            setDialog(null);
+            setPassword("");
             changed();
         } catch (error) {
             log.warn("Switching the passkey factor failed", {}, wrapError(error));
@@ -148,6 +154,23 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
             <TwoFactorOnDialog open={dialog === "on"} onOpenChange={(open) => setDialog(open ? "on" : null)} onDone={changed} />
             <TwoFactorOffDialog open={dialog === "off"} onOpenChange={(open) => setDialog(open ? "off" : null)} onDone={changed} />
             <BackupCodesDialog open={dialog === "codes"} onOpenChange={(open) => setDialog(open ? "codes" : null)} />
+            <ConfirmDialog
+                open={dialog === "passkey-off"}
+                onOpenChange={(open) => {
+                    if (!open) setPassword("");
+                    setDialog(open ? "passkey-off" : null);
+                }}
+                icon={ShieldOff}
+                destructive
+                title="Stop counting a passkey as the second factor?"
+                note="Only your password protects the account then"
+                confirmLabel="Turn off"
+                isPending={switching}
+                disabled={!password}
+                onConfirm={() => void switchPasskeyFactor(false)}
+            >
+                <SecretField label="Your password" value={password} onChange={setPassword} autoFocus />
+            </ConfirmDialog>
         </PartFrame>
     );
 }

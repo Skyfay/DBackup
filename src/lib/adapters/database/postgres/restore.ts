@@ -189,17 +189,24 @@ export async function restoreOne(
 /**
  * The role a customer's restore of a shared database runs as: the owner of the database.
  *
- * The dump holds the customer's own functions, triggers, defaults and expression indexes, and
- * pg_restore runs them while it restores. With `--no-owner` every object it creates belongs to the
- * login that restores, so a `SECURITY DEFINER` function of the customer would run with the rights
- * of the provider's login ever after. `--role` makes pg_restore `SET ROLE` to the owner right after
- * it connects, so the objects belong to the customer's role and their code runs with its rights.
+ * With `--no-owner` every object pg_restore creates belongs to the login that restores, so a
+ * `SECURITY DEFINER` function of the customer would run with the rights of the provider's login ever
+ * after. `--role` makes pg_restore `SET ROLE` to the owner right after it connects, so the objects
+ * belong to the customer's role. It does not contain the customer's code: the dump holds their
+ * functions, and pg_restore runs those of check constraints, domains and generated columns while it
+ * loads the data, in the session of the login, where a function can `RESET ROLE` and act as the login.
+ * So a customer restores only when the login can do no more than the owner: the owner is another role
+ * than the login and no superuser, the login is no superuser, may not create roles or bypass row
+ * security, owns no database, and is a member of no role but the owner. The built-in `pg_` roles
+ * count as well, since `pg_read_server_files` or `pg_execute_server_program` reach the server and
+ * `pg_read_all_stats` shows the queries of other customers. Owning a database counts, since any
+ * role may change its own password, so the code could hand the login and its databases to the
+ * customer. Anything else refuses the restore, which the provider then runs from its own History.
  * `--role` rather than `PGOPTIONS=-c role=...`, whose value libpq splits at spaces: only pg_restore
  * restores here, since the adapter writes custom format dumps alone and has no psql path for plain SQL.
  *
- * When the owner is the login itself nothing changes, and the log says that the restore runs with
- * the rights of the provider's login. An owner that cannot be read stops the restore, which never
- * falls back to the provider's login on its own.
+ * An owner or rights that cannot be read stop the restore, which never falls back to the provider's
+ * login on its own.
  */
 async function sharedRestoreRole(
     config: PostgresRestoreConfig,
@@ -207,33 +214,43 @@ async function sharedRestoreRole(
     host: ExecutionHost,
     password: string | undefined,
     log: RestoreLog,
-): Promise<string | undefined> {
+): Promise<string> {
     const psql = await host.which(...PSQL);
-    // The two flags first and the name last, since only a name can hold a `|`.
+    // The flags and the count first and the name last, since only a name can hold a `|`. Against
+    // `session_user`, the login itself, which a `SET ROLE` of the code goes back to.
     const query =
-        "SELECT r.rolname = current_user, r.rolsuper, r.rolname FROM pg_database d " +
+        "SELECT r.rolname = session_user, r.rolsuper, " +
+        "(SELECT l.rolsuper OR l.rolcreaterole OR l.rolbypassrls OR EXISTS (SELECT 1 FROM pg_database o WHERE o.datdba = l.oid) " +
+        "FROM pg_roles l WHERE l.rolname = session_user), " +
+        "(SELECT count(*) FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid " +
+        "WHERE m.member = (SELECT l.oid FROM pg_roles l WHERE l.rolname = session_user) " +
+        "AND g.oid <> r.oid), " +
+        "r.rolname FROM pg_database d " +
         `JOIN pg_roles r ON r.oid = d.datdba WHERE d.datname = ${sqlLiteral(targetDb)}`;
     const result = await host.exec(
         [psql, ...buildConnectionArgs(config), "-d", dbArg(targetDb), "-w", "-X", "-t", "-A", "-c", query],
         { env: pgEnv(password) },
     );
     const line = result.code === 0 ? result.stdout.replace(/\r?\n$/, "") : "";
-    const [same, superuser, ...name] = line.split("|");
+    const [same, ownerSuper, loginPrivileged, otherRoles, ...name] = line.split("|");
     const owner = name.join("|");
-    if (!owner || (same !== "t" && same !== "f")) {
+    const flag = (value: string | undefined) => value === "t" || value === "f";
+    if (!owner || !flag(same) || !flag(ownerSuper) || !flag(loginPrivileged) || !/^\d+$/.test(otherRoles ?? "")) {
         const detail = result.code !== 0 && result.stderr.trim() ? `: ${result.stderr.trim()}` : "";
-        throw new Error(`Could not read the owner of database '${targetDb}', so nothing was restored${detail}`);
+        throw new Error(`Could not read the owner of database '${targetDb}' and the rights of the login, so nothing was restored${detail}`);
     }
 
-    if (same === "t") {
-        log(
-            `Database '${targetDb}' belongs to the login of the connection, so the restore runs with its rights. Give each customer database an owner role of its own.`,
-            'warning',
+    const beyond =
+        same === "t" ? "it belongs to the login of the connection"
+        : ownerSuper === "t" ? "it belongs to a superuser role"
+        : loginPrivileged === "t" ? "the login of the connection is a superuser, may create roles or bypass row security, or owns a database"
+        : Number(otherRoles) > 0 ? "the login of the connection is a member of other roles than its owner"
+        : null;
+    if (beyond) {
+        throw new Error(
+            `A customer cannot restore database '${targetDb}', since ${beyond}, so the code of the database would run with more rights than its owner. ` +
+            `The provider can restore it from its own History.`
         );
-        return undefined;
-    }
-    if (superuser === "t") {
-        log(`Database '${targetDb}' belongs to a superuser role, so the restore and the functions of the database run with superuser rights.`, 'warning');
     }
     log(`Restoring as the owner of database '${targetDb}': ${owner}`, 'info');
     return owner;

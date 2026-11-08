@@ -24,6 +24,7 @@ const openDestination = vi.hoisted(() => vi.fn());
 vi.mock("@/services/sharing/destination-access", () => ({ openDestination: (...args: unknown[]) => openDestination(...args) }));
 
 const { ArchiveIndexService } = await import("@/services/backup/archive-index-service");
+const { createParseBudget } = await import("@/services/backup/index-parse-budget");
 const encryptionService = await import("@/services/backup/encryption-service");
 
 const getProfileMasterKey = encryptionService.getProfileMasterKey as ReturnType<typeof vi.fn>;
@@ -64,8 +65,8 @@ async function sealedIndex(masterKey: Buffer): Promise<Buffer> {
     );
 }
 
-function makeService(sidecar: (file: string) => Promise<Buffer | null>, maxCachedTextBytes?: number) {
-    const service = new ArchiveIndexService(maxCachedTextBytes);
+function makeService(sidecar: (file: string) => Promise<Buffer | null>, maxCachedTextBytes?: number, parsing?: ConstructorParameters<typeof ArchiveIndexService>[1]) {
+    const service = new ArchiveIndexService(maxCachedTextBytes, parsing);
     const fetchSidecar = vi.fn((_configId: string, file: string) => sidecar(file));
     vi.spyOn(service, "fetchSidecar").mockImplementation(fetchSidecar);
     return { service, fetchSidecar };
@@ -316,5 +317,41 @@ describe("the plain index of a backup whose run encrypted it", () => {
         await expect(service.load("dest-1", "FileBackup/inc-001.tar", PLAIN_META)).rejects.toThrow(/written encrypted, but the file at the destination is not encrypted/);
         // A plain index of another destination, which no run encrypted, is read as before.
         await expect(service.load("dest-2", "FileBackup/inc-001.tar", PLAIN_META)).resolves.not.toBeNull();
+    });
+});
+
+describe("ArchiveIndexService parses in flight", () => {
+    const PLAIN_META: BackupMetadata = { ...META, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } };
+
+    it("never parses more indexes at once than the budget holds, also for loads with a key override", async () => {
+        const bytes = await serializeIndex([
+            { k: "h", v: 2, createdAt: "2026-07-25T20:10:37.652Z", archive: "x.tar" },
+            { k: "f", src: "s", p: "dir/a.txt", s: 1, m: "", n: 1 },
+        ]);
+        // Room for one index of this stored size at a time.
+        const budget = createParseBudget(1);
+        let running = 0;
+        let most = 0;
+        const counted: NonNullable<ConstructorParameters<typeof ArchiveIndexService>[1]> = (stored, parse) => budget(stored, async () => {
+            running++;
+            most = Math.max(most, running);
+            try {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                return await parse();
+            } finally {
+                running--;
+            }
+        });
+        const { service, fetchSidecar } = makeService(async () => bytes, undefined, counted);
+
+        // An override skips the cache, so each of these starts a parse of its own.
+        const loaded = await Promise.all([
+            ...Array.from({ length: 4 }, () => service.load("dest-1", "a.tar", PLAIN_META, { profileId: "x" })),
+            service.load("dest-1", "b.tar", PLAIN_META),
+        ]);
+
+        expect(loaded.map((index) => index?.files.length)).toEqual([1, 1, 1, 1, 1]);
+        expect(fetchSidecar).toHaveBeenCalledTimes(5);
+        expect(most).toBe(1);
     });
 });

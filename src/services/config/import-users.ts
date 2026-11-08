@@ -39,7 +39,8 @@ export function withTenantSettings(permissions: string): string {
  * Groups, users with their sign-ins, and API keys. An ordinary group of the same id here takes the
  * one of the file, else a group of the same name or a user of the same email does and keeps its id. A file holds one group per user, from
  * before tenants, which becomes their group in the home tenant. The SuperAdmin group of a file is
- * the group with every permission here, and its people become platform admins.
+ * the group with every permission here, and its people become platform admins. A user whose email
+ * or id an account here holds that also works in another tenant is left out with a note.
  */
 export async function importUsers({ tx, data, ids, known, notes }: ImportContext): Promise<void> {
     const fullAccessIds = new Set<string>();
@@ -82,17 +83,29 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
     }
 
     const withoutSecondFactor: string[] = [];
+    const leftOut = new Set<string>();
     for (const user of data.users) {
         const { accounts, groupId: fileGroupId, ...userFields } = user as typeof user & { groupId?: string | null };
         const groupId = fileGroupId ? idHere(ids.groups, fileGroupId) : null;
 
         const existingUser = await tx.user.findUnique({ where: { email: user.email } });
+        // The file holds the home tenant alone. An account here that also works in a customer's
+        // tenant is that tenant's too, maybe made there under the email of the file, so the user of
+        // the file never merges into it and gives it rights in the home tenant or the platform.
+        const sameId = existingUser?.id === user.id ? null : await tx.user.findUnique({ where: { id: user.id }, select: { id: true } });
+        const matched = [existingUser?.id, sameId?.id].filter((id): id is string => !!id);
+        if (matched.length > 0 && (await tx.tenantMembership.count({ where: { userId: { in: matched }, tenantId: { not: HOME_TENANT_ID } } })) > 0) {
+            leftOut.add(user.id);
+            continue;
+        }
+        // An account that was here keeps whether its email is verified, a sign-in provider links by it.
+        const { emailVerified: _verified, ...keptFields } = userFields;
         if (existingUser && existingUser.id !== user.id) {
-            const { id: _id, email: _email, ...updateFields } = userFields;
+            const { id: _id, email: _email, ...updateFields } = keptFields;
             await tx.user.update({ where: { id: existingUser.id }, data: updateFields });
             ids.users.set(user.id, existingUser.id);
         } else {
-            await tx.user.upsert({ where: { id: user.id }, create: userFields, update: userFields });
+            await tx.user.upsert({ where: { id: user.id }, create: userFields, update: keptFields });
         }
 
         const userId = idHere(ids.users, user.id);
@@ -133,7 +146,7 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
         // A file without the logins holds the key without its hash.
         if (!key.hashedKey) continue;
         const remappedKey = { ...key, userId: idHere(ids.users, key.userId) };
-        if (!(await exists(known.users, remappedKey.userId, () => tx.user.findUnique({ where: { id: remappedKey.userId }, select: { id: true } })))) {
+        if (leftOut.has(key.userId) || !(await exists(known.users, remappedKey.userId, () => tx.user.findUnique({ where: { id: remappedKey.userId }, select: { id: true } })))) {
             keysLeftOut++;
             continue;
         }
@@ -142,6 +155,10 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
 
     if (withoutSecondFactor.length > 0) {
         notes.push(`${counted(withoutSecondFactor.length, "user signs", "users sign")} in without a second factor until they set it up again, since the file holds none: ${listed(withoutSecondFactor)}.`);
+    }
+    if (leftOut.size > 0) {
+        const emails = data.users.filter((user) => leftOut.has(user.id)).map((user) => user.email);
+        notes.push(`${counted(emails.length, "user was", "users were")} left out, since an account of the same email or id here also works in another tenant: ${listed(emails)}.`);
     }
     if (keysLeftOut > 0) notes.push(`${counted(keysLeftOut, "API key was", "API keys were")} left out, since the user it belongs to is not here.`);
 }

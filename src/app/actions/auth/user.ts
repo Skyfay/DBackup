@@ -5,6 +5,7 @@ import { checkPermission, currentSessionId, getViewer, hasPermission, hasPermiss
 import { ACCOUNT_CHANGE, emailClaimScope, roleRefusal } from "@/lib/auth/account-access";
 import { reachCovers } from "@/lib/auth/platform-group-caps";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
+import { passkeyFactorOffRefusal } from "@/lib/auth/reauth-guard";
 import { DATE_FORMAT_VALUES, TIME_FORMAT_VALUES, isKnownTimezone } from "@/lib/core/profile-formats";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { authService } from "@/services/auth/auth-service";
@@ -247,17 +248,18 @@ export async function deleteUser(id: string, mode?: DeleteMode) {
     }
 }
 
-const PasskeyTwoFactorSchema = z.object({ userId: z.string().min(1).max(200), enabled: z.boolean() });
+const PasskeyTwoFactorSchema = z.object({ userId: z.string().min(1).max(200), enabled: z.boolean(), currentPassword: z.string().max(MAX_PASSWORD_LENGTH).optional() });
 
 /**
- * Switches whether a passkey counts as the second factor of an account.
+ * Switches whether a passkey counts as the second factor of an account. Turning off the own one
+ * asks for the current password, like turning off the authenticator app.
  * @no-permission-required - Self-service for the own account, as far as `profile:manage_passkeys`
  * checked below allows. Another account needs `ACCOUNT_CHANGE` and `accountRefusal`, checked below too.
  */
-export async function togglePasskeyTwoFactor(id: string, on: boolean) {
+export async function togglePasskeyTwoFactor(id: string, on: boolean, currentPassword?: string) {
     const currentUser = await getViewer();
     if (!currentUser) throw new Error("Unauthorized");
-    const input = PasskeyTwoFactorSchema.safeParse({ userId: id, enabled: on });
+    const input = PasskeyTwoFactorSchema.safeParse({ userId: id, enabled: on, currentPassword });
     if (!input.success) return { success: false, error: "Invalid request" };
     const { userId, enabled } = input.data;
 
@@ -274,6 +276,11 @@ export async function togglePasskeyTwoFactor(id: string, on: boolean) {
     } else if (enabled && !(await hasPermission(PERMISSIONS.PROFILE.MANAGE_2FA)) && !(await userService.hasAuthenticatorApp(userId))) {
         // Without an authenticator app the switch turns the second factor on, like setting up one.
         return { success: false, error: "Your group may not turn on your second factor." };
+    }
+    if (currentUser.id === userId && !enabled) {
+        // A session alone never ends the second factor, also through the lockout of the password.
+        const refusal = await passkeyFactorOffRefusal(userId, input.data.currentPassword);
+        if (refusal) return { success: false, error: refusal };
     }
 
     try {

@@ -69,6 +69,29 @@ describe("encrypt / decrypt (AES-256-GCM)", () => {
         });
     });
 
+    describe("a value that must have come from encrypt", () => {
+        it("opens what encrypt wrote", async () => {
+            const { encrypt, decryptSealed } = await getCrypto();
+            expect(decryptSealed(encrypt('{"userId":"anna"}'))).toBe('{"userId":"anna"}');
+        });
+
+        it("refuses plain text, empty text and text of three parts that is no ciphertext", async () => {
+            const { decryptSealed } = await getCrypto();
+            const { EncryptionError } = await import("@/lib/logging/errors");
+            for (const text of ["", "plain-text", '{"userId":"bob","pad":"a:b"}', "a:b:c"]) {
+                expect(() => decryptSealed(text)).toThrow(EncryptionError);
+            }
+        });
+
+        it("refuses ciphertext of another key", async () => {
+            const { encrypt } = await getCrypto();
+            const foreign = encrypt("x");
+            vi.stubEnv("ENCRYPTION_KEY", "b".repeat(64));
+            const { decryptSealed } = await getCrypto();
+            expect(() => decryptSealed(foreign)).toThrow();
+        });
+    });
+
     describe("tamper detection", () => {
         it("throws when the auth-tag is corrupted", async () => {
             const { encrypt, decrypt } = await getCrypto();

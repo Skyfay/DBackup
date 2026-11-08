@@ -26,7 +26,10 @@ function isAbsoluteTarget(target: string): boolean {
  * The target is read as text, while the system that follows it reads each part on disk. A `..`
  * after a folder climbs from wherever that folder leads, so `up/../secret` leaves the restore once
  * `up` is a link that leads elsewhere. Only the `..` parts at the start climb from a real folder,
- * the one the link lies in, which `throughLinkOf` keeps free of links. For the same reason a
+ * the one the link lies in, which `throughLinkOf` keeps free of links of the same backup. A link an
+ * earlier restore laid is no link of this backup, so the destination refuses a write or a link
+ * below one that leads out of the folder of the restore, see `UploadOptions.restoreRelativePath`,
+ * which every write of a restore passes. For the same reason a
  * target whose folders pass through a link of the backup is refused, `isLinkFolder` tells them,
  * like `throughLinkOf` of the same lines does for an entry.
  *

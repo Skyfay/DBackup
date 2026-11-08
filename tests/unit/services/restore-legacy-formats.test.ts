@@ -17,6 +17,7 @@ import { runRestorePipeline } from '@/services/restore/pipeline';
 import { restoreArchiveSnapshot } from '@/services/restore/archive-restore';
 import { createMultiDbTar } from '@/lib/adapters/database/common/tar-utils';
 import { createArchive } from '@/lib/archive/writer';
+import { promisedTempSpace, TEMP_SPACE_RESERVE } from '@/services/restore/temp-space';
 
 let workDir: string;
 let tempDir: string;
@@ -222,5 +223,30 @@ describe('a plain dump laid where its run wrote an encrypted archive', () => {
         expect(loggedMessages().some((m) => m.includes('written encrypted, but the file at the destination is not encrypted'))).toBe(true);
         expect(received.calls).toBe(0);
         expect(traffic.archiveDownloads).toBe(0);
+    });
+});
+
+describe('a whole-file compressed dump and the temporary folder', () => {
+    it('inflates no further than the space it was promised, and gives it back once the restore ends', async () => {
+        // 8 MB of zeros gzip to a few KB, and the bound of a dump that small is 1 GiB.
+        await fs.writeFile(path.join(workDir, 'big.sql.gz'), zlib.gzipSync(Buffer.alloc(8 * 1024 * 1024)));
+        await writeMeta('big.sql.gz', { compression: 'GZIP' });
+        const received: Received = { calls: 0, firstBytes: null };
+        wire(received, { archiveDownloads: 0 });
+        // 1 MB free beside the reserve.
+        const statfs = vi.spyOn(fs, 'statfs').mockResolvedValue({ bavail: (TEMP_SPACE_RESERVE + 1024 * 1024) / 4096, bsize: 4096 } as Awaited<ReturnType<typeof fs.statfs>>);
+
+        try {
+            await runRestorePipeline('exec-inflate', { storageConfigId: 'storage-1', file: 'big.sql.gz', targetSourceId: 'source-1' });
+        } finally {
+            statfs.mockRestore();
+        }
+
+        expect(finalStatus()).toBe('Failed');
+        expect(loggedMessages().some((m) => m.includes('of temporary space at once, more than the server has free'))).toBe(true);
+        expect(received.calls).toBe(0);
+        expect(promisedTempSpace()).toBe(0);
+        // Nothing of the download or the inflated dump is left behind.
+        expect(await fs.readdir(tempDir, { recursive: true }).then((names) => names.filter((n) => n.endsWith('.sql') || n.endsWith('.gz')))).toEqual([]);
     });
 });

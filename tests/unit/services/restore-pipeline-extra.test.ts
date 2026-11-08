@@ -30,6 +30,8 @@ vi.mock('fs', async (importOriginal) => {
         readFile: fsMocks.readFile,
         unlink: fsMocks.unlink,
         stat: fsMocks.stat,
+        // The size of the download, which the decryption is promised temporary space for.
+        lstat: fsMocks.stat,
     };
     return {
         ...actual,

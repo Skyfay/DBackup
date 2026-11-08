@@ -135,6 +135,14 @@ describe("the templates", () => {
         }
     });
 
+    it("are not made from a naming pattern that leads out of the folder of the run", async () => {
+        for (const pattern of ["../../backups/other", "a\\b", ".hidden"]) {
+            const result = await templates.createNamingTemplate({ name: "Evil", pattern });
+            expect(result).toEqual({ success: false, error: "A naming pattern names one file, so it cannot hold a slash, a backslash or a control character, or start with a dot." });
+        }
+        expect(mocks.createNaming).not.toHaveBeenCalled();
+    });
+
     it("are made and changed from what the dialogs send", async () => {
         expect((await templates.createRetentionPolicy({ name: "Keep 7", description: "", config: { mode: "SIMPLE", simple: { keepCount: 7 } } })).success).toBe(true);
         expect((await templates.createNotificationTemplate({ name: "Ops", channels: [{ configId: "c1", events: "SUCCESS|PARTIAL|FAILED" }] })).success).toBe(true);

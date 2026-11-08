@@ -65,7 +65,7 @@ Deleting a group moves the new people of its providers where its members go, als
 
 A provider of the platform links an account that works only in customer tenants just for someone signed in to that account already, who clicks **Link** beside the provider under **Profile**. A first sign-in through it never takes over such an account by its email, and ends on the login page with **Account not linked**. A provider signs in only accounts linked to it.
 
-A provider links an account by its email only when an admin set that email: under **New user**, under **Edit**, or a provider that added the account. An email someone picked themselves, on their own profile or for the account an [invitation](/user-guide/admin/tenants#invitations) made, could be the address of another person, so no provider links the account by it, also none of a tenant. Its owner links the provider with **Link** under **Profile** while signed in, until an admin gives the account another email.
+A provider links an account by its email only when an admin set that email: under **New user**, under **Edit**, or a provider that added the account. An email someone picked themselves, on their own profile or for the account an [invitation](/user-guide/admin/tenants#invitations) made, could be the address of another person, so no provider links the account by it, also none of a tenant. Its owner links the provider with **Link** under **Profile** while signed in, until an admin gives the account another email. A refused link changes nothing, so a second try ends the same way. An account that a customer's admin takes out of its last customer tenant counts as such an account too.
 
 ## Providers of a Tenant
 

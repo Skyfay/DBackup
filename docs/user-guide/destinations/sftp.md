@@ -49,6 +49,7 @@ Paste the entire PEM key content including the `-----BEGIN` and `-----END` lines
 
 - Files are uploaded via SFTP (SSH subsystem) - all transfers are encrypted in transit
 - DBackup creates subdirectories per job within the folder automatically
+- A file is never written through an entry already at its name. A new file is created at its name with an exclusive create, which fails on anything that turned up there. Onto a name that holds an entry already, and on a server with the `posix-rename@openssh.com` extension, which OpenSSH and most servers offer, it is written to a hidden `.dbackup-<id>.part` beside its name and then renamed into place, which replaces a symbolic link there instead of writing to wherever it points. A file it replaces hands on its mode and, where the login may set it, its owner. On any other server a symbolic link at the name is removed first. A `.part` file only stays behind when the connection drops during such an upload
 - All credentials (passwords, private keys) are stored AES-256-GCM encrypted in the database
 
 ## Troubleshooting

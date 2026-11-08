@@ -21,7 +21,7 @@ import { READ_NO_FOLLOW } from "@/lib/server/no-follow";
 import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { indexTextBytes, parseIndex } from "@/lib/archive/index-file";
 import { browseLevel, BrowseEntry } from "@/lib/archive/browse";
-import { parseArchiveIndex, readArchiveIndex, readArchiveManifest, readEmbeddedIndexBytes } from "@/lib/archive/reader";
+import { parseArchiveIndex, readArchiveManifest, readEmbeddedIndexBytes } from "@/lib/archive/reader";
 import { localFileSource } from "@/lib/archive/sources";
 import { ArchiveIndex, DumpFormat } from "@/lib/archive/types";
 import { archiveIndexVerifier, KeyOverride, resolveBackupKey } from "./key-resolution";
@@ -33,6 +33,7 @@ import { INDEX_SIDECAR_SUFFIX } from "@/lib/archive/format";
 import { INDEX_MAX_STORED_BYTES } from "@/lib/archive/limits";
 import { assertEncryptionKept, EncryptionDowngradeError } from "@/services/restore/recorded-encryption";
 import { isFileTooLarge } from "@/lib/adapters/storage/common/read-limit";
+import { parseWithinBudget, type ParseBudget } from "./index-parse-budget";
 
 const log = logger.child({ service: "ArchiveIndexService" });
 
@@ -89,8 +90,14 @@ export class ArchiveIndexService {
      */
     private cache = new Map<string, { index: Promise<ArchiveIndex | null>; expiresAt: number; bytes?: number }>();
 
-    /** @param maxCachedTextBytes - The cap on what the cached indexes hold, `CACHE_MAX_TEXT_BYTES` unless a test sets one */
-    constructor(private readonly maxCachedTextBytes: number = CACHE_MAX_TEXT_BYTES) { }
+    /**
+     * @param maxCachedTextBytes - The cap on what the cached indexes hold, `CACHE_MAX_TEXT_BYTES` unless a test sets one
+     * @param parsing - The bound on the parses that run at once, that of the whole process unless a test sets one, see `index-parse-budget.ts`
+     */
+    constructor(
+        private readonly maxCachedTextBytes: number = CACHE_MAX_TEXT_BYTES,
+        private readonly parsing: ParseBudget = parseWithinBudget
+    ) { }
 
     /**
      * Loads and parses the index sidecar for one backup file.
@@ -142,7 +149,8 @@ export class ArchiveIndexService {
         if (!archive.encrypted) await assertEncryptionKept(configId, file, { encrypted: false, jobId });
 
         try {
-            if (!archive.encrypted) return await parseIndex(bytes);
+            // Every parse waits for its share of the heap, a load with a key override too, see `index-parse-budget.ts`.
+            if (!archive.encrypted) return await this.parsing(bytes.length, () => parseIndex(bytes));
 
             if (!archive.profileId || !archive.kdfSalt || !archive.noncePrefix) {
                 throw new Error("Backup metadata is missing the crypto parameters needed to open the index");
@@ -158,10 +166,8 @@ export class ArchiveIndexService {
             });
 
             const { indexKey } = deriveArchiveKeys(masterKey, Buffer.from(archive.kdfSalt, "hex"));
-            return await parseIndex(bytes, {
-                indexKey,
-                noncePrefix: Buffer.from(archive.noncePrefix, "hex"),
-            });
+            const noncePrefix = Buffer.from(archive.noncePrefix, "hex");
+            return await this.parsing(bytes.length, () => parseIndex(bytes, { indexKey, noncePrefix }));
         } catch (e: unknown) {
             // A missing key is answerable - the caller turns it into a prompt for one. Every
             // other failure means this sidecar is unusable, and the caller may still fall
@@ -277,7 +283,8 @@ export class ArchiveIndexService {
 
             if (!manifest.encryption) {
                 if (origin) await assertEncryptionKept(origin.configId, origin.file, { encrypted: false, jobId: meta.jobId });
-                return this.toSummary(await readArchiveIndex(source, manifest), meta);
+                const plainBytes = await readEmbeddedIndexBytes(source);
+                return this.toSummary(await this.parsing(plainBytes.length, () => parseArchiveIndex(plainBytes, manifest)), meta);
             }
 
             // Read the index bytes before resolving the key: they are what proves a
@@ -292,7 +299,7 @@ export class ArchiveIndexService {
                     : log.info(msg, { archivePath }),
             });
 
-            return this.toSummary(await parseArchiveIndex(indexBytes, manifest, masterKey), meta);
+            return this.toSummary(await this.parsing(indexBytes.length, () => parseArchiveIndex(indexBytes, manifest, masterKey)), meta);
         } catch (e: unknown) {
             if (e instanceof EncryptionKeyRequiredError || e instanceof EncryptionDowngradeError) throw e;
             log.warn("Failed to read the embedded archive index", { archivePath }, wrapError(e));

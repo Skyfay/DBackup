@@ -39,7 +39,7 @@ vi.mock("@/services/user/user-service", async () => {
     };
 });
 
-const { MEMBERSHIP_END_HANDS_OVER, membershipEndRefusal } = await import("@/services/tenant/membership-end");
+const { MEMBERSHIP_END_HANDS_OVER, MEMBERSHIP_END_MOVES_ACCOUNT, membershipEndRefusal } = await import("@/services/tenant/membership-end");
 
 const USERS_WRITE = [PERMISSIONS.USERS.READ, PERMISSIONS.USERS.WRITE];
 
@@ -94,12 +94,27 @@ describe("ending a membership of an account that works in tenants T and Z", () =
         expect(await membershipEndRefusal({ id: "tom", isPlatformAdmin: false, tenantId: "t", permissions: USERS_WRITE }, "yara", "t")).toBeNull();
     });
 
-    it("lets whoever may change the account already end any of its memberships", async () => {
-        // The admin of T, whose account Tess works in T alone.
+    it("refuses the admin of T who takes Tess out of her only tenant, which would make her an account of the home tenant", async () => {
+        // The admin of T changes Tess, who works in T alone, but chose her password too.
+        const tom = { id: "tom", isPlatformAdmin: false, tenantId: "t", permissions: USERS_WRITE };
+        expect(await membershipEndRefusal(tom, "tess", "t")).toBe(MEMBERSHIP_END_MOVES_ACCOUNT);
+        // Someone who manages the accounts of T alone cannot move her to the home tenant either.
+        expect(await membershipEndRefusal({ id: "zack", isPlatformAdmin: false, tenantId: "t", permissions: [] }, "tess", "t")).toBe(MEMBERSHIP_END_MOVES_ACCOUNT);
+    });
+
+    it("lets the admin of T end the last membership when Tess stays an account of T, whose provider claims her email", async () => {
+        mocks.claims = { tess: "t" };
         expect(await membershipEndRefusal({ id: "tom", isPlatformAdmin: false, tenantId: "t", permissions: USERS_WRITE }, "tess", "t")).toBeNull();
+    });
+
+    it("lets whoever may change the account already end any of its memberships", async () => {
         // Someone who manages the accounts of every tenant of the account, wherever they work.
         expect(await membershipEndRefusal({ id: "nina", isPlatformAdmin: false, tenantId: "t", permissions: [] }, "yara", "t")).toBeNull();
         expect(await membershipEndRefusal({ id: "root", isPlatformAdmin: true, tenantId: HOME_TENANT_ID }, "yara", "t")).toBeNull();
+        expect(await membershipEndRefusal({ id: "root", isPlatformAdmin: true, tenantId: HOME_TENANT_ID }, "tess", "t")).toBeNull();
+        // Someone who manages the accounts of T and of the home tenant, where Tess would go.
+        mocks.reach.nina = ["t", "z", HOME_TENANT_ID];
+        expect(await membershipEndRefusal({ id: "nina", isPlatformAdmin: false, tenantId: "t", permissions: [] }, "tess", "t")).toBeNull();
     });
 
     it("passes an account that is gone or no member of the tenant", async () => {

@@ -76,21 +76,68 @@ export async function reserveTempSpace(sizes: readonly number[], atOnce: number,
     // No await from here to the promise below, so no other restore checks in between.
     if (needed + promisedBytes + TEMP_SPACE_RESERVE > free) {
         log.warn("Refusing a restore larger than the free space of the temporary folder", { needed, free, promised: promisedBytes, reserve: TEMP_SPACE_RESERVE });
-        throw new ServiceError(
-            "RestoreService",
-            "tempSpace",
-            `This restore needs up to ${formatBytes(needed)} of temporary space at once, more than the server has free. ` +
-            "Restore fewer or smaller items at a time, or ask the administrator of DBackup to free up space."
-        );
+        throw tempSpaceRefusal(needed);
     }
+    return promise(needed);
+}
 
-    promisedBytes += needed;
+/** The refusal of a restore that needs more temporary space than the server has free. */
+export function tempSpaceRefusal(needed: number): ServiceError {
+    return new ServiceError(
+        "RestoreService",
+        "tempSpace",
+        `This restore needs up to ${formatBytes(needed)} of temporary space at once, more than the server has free. ` +
+        "Restore fewer or smaller items at a time, or ask the administrator of DBackup to free up space."
+    );
+}
+
+/** Adds `bytes` to the promised space until the reservation is released. */
+function promise(bytes: number): TempSpaceReservation {
+    promisedBytes += bytes;
     let released = false;
     return {
         release: () => {
             if (released) return;
             released = true;
-            promisedBytes -= needed;
+            promisedBytes -= bytes;
         },
     };
+}
+
+/** Space promised to an output whose size is known only by a bound, see `reserveTempSpaceUpTo`. */
+export interface BoundedTempSpace extends TempSpaceReservation {
+    /** The most bytes the output may write: the bound, or the free space promised when that is less. */
+    bytes: number;
+    /** Whether `bytes` is the free space rather than the bound, so an output that reaches it ran out of room. */
+    short: boolean;
+}
+
+/**
+ * Promises an output known only by a bound, like a whole-file dump inflating to at most
+ * `legacyInflateLimit` of its compressed size, as much of that bound as the temporary folder has
+ * free beside the other restores and `TEMP_SPACE_RESERVE`. Promising the whole bound would refuse
+ * every compressed dump of more than a few hundred MB, since the bound is 1100 times its size. The
+ * caller stops the output at `bytes`, so it never writes more than it was promised.
+ *
+ * @param bound - The most bytes the output may ever write
+ * @param folder - Where it is written, the temporary folder when left out
+ * @throws ServiceError when no space is left at all
+ */
+export async function reserveTempSpaceUpTo(bound: number, folder: string = getTempDir()): Promise<BoundedTempSpace> {
+    let free: number;
+    try {
+        const stats = await fs.statfs(folder);
+        free = Number(stats.bavail) * Number(stats.bsize);
+    } catch {
+        return { bytes: bound, short: false, release: () => { } };
+    }
+
+    // No await from here to the promise below, so no other restore checks in between.
+    const available = free - promisedBytes - TEMP_SPACE_RESERVE;
+    if (available <= 0) {
+        log.warn("Refusing a restore with no free space left in the temporary folder", { bound, free, promised: promisedBytes, reserve: TEMP_SPACE_RESERVE });
+        throw tempSpaceRefusal(bound);
+    }
+    const bytes = Math.min(bound, available);
+    return { ...promise(bytes), bytes, short: bytes < bound };
 }

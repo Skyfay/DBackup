@@ -21,7 +21,9 @@ import { pack } from "tar-stream";
 import type { UploadOptions } from "@/lib/core/interfaces";
 import { startAll, stopRunning, type StoppedContainer } from "./containers";
 import type { DockerEngine } from "./engine/types";
+import { ownContainerStopRefusal } from "./own-container-stop";
 import { mountPathFor } from "./temp-container";
+import { volumeNameProblem } from "./volume-name";
 
 type Log = (message: string, level?: "info" | "warning" | "error") => void;
 
@@ -46,7 +48,11 @@ export function splitVolumePath(remotePath: string): VolumePath {
             + `and the archive's own path is appended to it.`
         );
     }
-    return { volume: normalized.slice(0, slash), inner: normalized.slice(slash + 1) };
+    const volume = normalized.slice(0, slash);
+    // The same rule as a backup, so a restore never mounts a folder of the Docker host either.
+    const problem = volumeNameProblem(volume);
+    if (problem) throw new Error(problem);
+    return { volume, inner: normalized.slice(slash + 1) };
 }
 
 /**
@@ -64,6 +70,7 @@ export interface PreparedVolume {
 
 export async function prepareVolumeForRestore(
     engine: DockerEngine,
+    config: Record<string, unknown>,
     volume: string,
     helperImage: string,
     log: Log,
@@ -74,6 +81,9 @@ export async function prepareVolumeForRestore(
 
     const existing = await engine.inspectVolume(volume);
     const holders = await engine.containersUsingVolume(volume);
+    // Never DBackup's own container, whose stop would end the restore and leave it down.
+    const refusal = await ownContainerStopRefusal(engine, config, holders, "restore");
+    if (refusal) throw new Error(`${volume}: ${refusal}`);
     // Not optional the way it is for a backup: writing into a volume a container is reading
     // is how a half-restored database happens.
     const stoppedContainers = await stopRunning(engine, holders, log);

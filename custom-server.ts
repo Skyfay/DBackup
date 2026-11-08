@@ -11,6 +11,7 @@
  *   HOSTNAME       - Bind address (default: "0.0.0.0")
  *   CERTS_DIR      - Directory for tls.crt/tls.key (default: "/data/certs")
  *   TRUSTED_PROXIES - The reverse proxies whose X-Forwarded-For counts, see server/client-address.ts
+ *   TRUSTED_PROXY_HEADER - The header they write the client into, x-forwarded-for (default) or x-real-ip
  */
 
 import { createServer as createHttpsServer } from "node:https";
@@ -23,10 +24,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import next from "next";
 
-import { CLIENT_ADDRESS_HEADER, clientAddressOf, trustedProxiesFrom } from "./server/client-address";
+import { CLIENT_ADDRESS_HEADER, CUSTOM_SERVER_MARK, clientAddressOf, proxyHeaderFrom, trustedProxiesFrom, type ProxyHeader } from "./server/client-address";
 
 // ── Configuration ──────────────────────────────────────────────
 (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+// Tells the app that this server replaces the header of the address on every request. Set before
+// the app is created, since the Edge sandbox of the middleware copies the environment when it starts.
+process.env[CUSTOM_SERVER_MARK] = "1";
 process.chdir(__dirname);
 
 const port = parseInt(process.env.PORT || "3000", 10);
@@ -37,9 +41,11 @@ const certPath = path.join(certsDir, "tls.crt");
 const keyPath = path.join(certsDir, "tls.key");
 // Checked before anything starts, so an entry with a typo stops the server instead of trusting the wrong proxies.
 let trustedProxies: BlockList;
+let proxyHeader: ProxyHeader;
 try {
   trustedProxies = trustedProxiesFrom(process.env.TRUSTED_PROXIES);
-  console.log(`[Server] X-Forwarded-For counts from: ${process.env.TRUSTED_PROXIES?.trim() || "private (the default)"}`);
+  proxyHeader = proxyHeaderFrom(process.env.TRUSTED_PROXY_HEADER);
+  console.log(`[Server] ${proxyHeader === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For"} counts from: ${process.env.TRUSTED_PROXIES?.trim() || "private (the default)"}`);
 } catch (err: unknown) {
   console.error(`[Server] ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
@@ -217,7 +223,8 @@ app.prepare().then(() => {
         req.socket.remoteAddress,
         req.headers["x-forwarded-for"],
         req.headers["x-real-ip"],
-        trustedProxies
+        trustedProxies,
+        proxyHeader
       );
       await handler(req, res);
     } catch (err) {

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 
+// The custom server sets the header of the address, which the app trusts only then.
+vi.stubEnv("DBACKUP_CUSTOM_SERVER", "1");
+
 const request = vi.hoisted(() => ({ headers: null as Headers | null }));
 vi.mock("next/headers", () => ({
     headers: async () => {

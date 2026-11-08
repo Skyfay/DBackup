@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { holderAt, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
 import { OUTSIDE_REACH, reachCovers, TENANT_BEYOND_REACH, type PlatformReach } from "@/lib/tenant/sharing-reach";
-import { assertChangesReached, assertReached, assertRuleReached } from "./assignment-reach";
+import { assertChangesReached, assertReached, assertRuleEndReached, assertRuleReached } from "./assignment-reach";
 import { movesOf } from "./database-moves";
 import { assertNoSharedRestore } from "@/services/restore/shared-restores-active";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
@@ -297,8 +297,9 @@ export const databaseAssignmentService = {
 
     /**
      * Ends a rule. The databases it gave belong to nobody else from now on, unless another rule
-     * takes them. The rule stays for the backups of its time, which stay with the customer it gave
-     * them to, like those of an ended assignment.
+     * takes them, which is refused when that rule's tenant is beyond the reach. The rule stays for
+     * the backups of its time, which stay with the customer it gave them to, like those of an ended
+     * assignment.
      */
     async removeRule(sourceId: string, ruleId: string, now = new Date(), reach: PlatformReach = "all"): Promise<{ pattern: string; tenantId: string; tenantName: string }> {
         await ownSource(sourceId);
@@ -306,6 +307,8 @@ export const databaseAssignmentService = {
         if (!rule) throw new NotFoundError("Rule", ruleId);
         assertReached(reach, rule.tenantId, OUTSIDE_REACH.rule(rule.pattern));
         assertNoSharedRestore(sourceId, { pattern: rule.pattern }, (tenantId) => tenantId !== rule.tenantId);
+        // The databases it gave may fall to a rule of a lower priority, of a tenant beyond the reach.
+        await assertRuleEndReached(sourceId, rule, reach, now);
         await prisma.databaseAssignmentRule.update({ where: { id: ruleId }, data: { validUntil: now } });
         sharingChanged();
         return { pattern: rule.pattern, tenantId: rule.tenantId, tenantName: (await tenantNames([rule.tenantId]))(rule.tenantId) };

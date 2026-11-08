@@ -12,7 +12,7 @@ Only the servers of a [tenant that shares with customers](#tenants-that-share), 
 
 ## Engines That Can Be Shared
 
-A database goes to a customer alone only where a backup holds each database as a dump of its own and a restore writes that one database back. That is the case for **MySQL**, **MariaDB**, **PostgreSQL**, **MongoDB**, **Microsoft SQL Server**, **Azure SQL Database**, **SQLite** and **Firebird**.
+A database goes to a customer alone only where a backup holds each database as a dump of its own and a restore writes that one database back. That is the case for **MySQL**, **MariaDB**, **PostgreSQL**, **MongoDB**, **Microsoft SQL Server**, **Azure SQL Database**, **SQLite** and **Firebird**. A customer restores a database of **Firebird** and **Azure SQL Database** only through the provider, see [Who a Customer's Restore Runs As](#who-a-customer-s-restore-runs-as).
 
 **Redis** and **Valkey** cannot be shared. Their backup is one snapshot of every logical database of the server, and a restore writes that snapshot back whole, so a customer given one database would download and restore all of them. Their servers show no **Databases and tenants**, and a database given there before hands its customer nothing, no backup to list, download or restore. Giving one of their databases away, a rule, a move or a database given through the API is refused with:
 
@@ -34,7 +34,7 @@ A tenant of the MSP shares with customers, a customer does not. The home tenant 
 
 The [page of a database server](/user-guide/features/database-explorer#the-page-of-a-server) in the **Database Explorer**, and the page of the database connection, show **Databases and tenants**: the databases DBackup last read from the server, the tenant each belongs to now, how it got there and how many backups it has. Quick filters show all, the given ones or the ones only you see. It shows in a tenant that shares with customers while there is another tenant, to whoever holds **See what is shared** (`platform-sharing:read`), and changing it needs **Share with customers** (`platform-sharing:write`). Both are rights of the platform in the area **Sharing**, which a [platform group](/user-guide/admin/tenants#platform-groups) gives and a platform admin holds, never the group of a tenant. Every other tenant can get one, also one that shares with customers itself.
 
-Someone of a platform group of selected tenants gives databases to those tenants only and takes them only from them. A database another tenant holds, by name or by a rule, shows **Another tenant** with a lock, never the name of that tenant, and stays as it is: it is neither taken back, given to another tenant, moved nor changed in its backups on demand. The rules of such a tenant stay as they are too, and a new rule that would rank above one of them for a database of the server is refused. The pickers and the filters offer only the tenants they reach, a refusal names no other tenant, and so does their [API key](#through-the-api). The warning before a server is deleted counts every customer but names only those. A platform group of all tenants and a platform admin reach every tenant.
+Someone of a platform group of selected tenants gives databases to those tenants only and takes them only from them. A database another tenant holds, by name or by a rule, shows **Another tenant** with a lock, never the name of that tenant, and stays as it is: it is neither taken back, given to another tenant, moved nor changed in its backups on demand. The rules of such a tenant stay as they are too, a new rule that would rank above one of them for a database of the server is refused, and so is ending a rule whose database would fall to one of them. The pickers and the filters offer only the tenants they reach, a refusal names no other tenant, and so does their [API key](#through-the-api). The warning before a server is deleted counts every customer but names only those. A platform group of all tenants and a platform admin reach every tenant.
 
 ### By Hand
 
@@ -103,7 +103,7 @@ curl -s -X POST "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments/rule
   -d '{ "pattern": "acme_*", "tenantId": "cm2x8k1q40000acme", "priority": 10 }'
 ```
 
-A new rule takes `pattern`, `tenantId`, and optionally `priority`, `validFrom` and `onDemandPerDay`, with the limits of [By Rules](#by-rules). It answers `400` for the same reasons as the `PUT` above, and for a rule that would rank above a rule of a tenant the owner of the key does not reach. Ending a rule that is gone or ended already answers `404`.
+A new rule takes `pattern`, `tenantId`, and optionally `priority`, `validFrom` and `onDemandPerDay`, with the limits of [By Rules](#by-rules). It answers `400` for the same reasons as the `PUT` above, and for a rule that would rank above a rule of a tenant the owner of the key does not reach. Ending a rule answers `400` when a database it gives would fall to a rule of such a tenant, and `404` for a rule that is gone or ended already.
 
 Every change writes an entry to the [audit log](/user-guide/admin/audit-log) of the server's tenant.
 
@@ -114,6 +114,7 @@ A backup belongs to whoever had its database when the backup was made, never to 
 - **A backdated start** shows older backups too, but only of times nobody else held the database. It never reaches back before the end of the previous assignment of the name, DBackup moves it up to there, and the backups a rule gave another customer stay with that customer. No backup belongs to two customers.
 - **A new rule** with a start in the past, or with a higher priority, never takes the backups of another customer's time either.
 - **An ended assignment** keeps the backups made until then with its customer.
+- **A backup made while the database changed hands**, whose run started to dump while one customer held it and stored the backup once another one did, belongs to nobody. A database given away and back again during the run counts as well. Backups made before DBackup recorded when the dumps started are judged by the time they were stored.
 - **A name used again**, after another customer had it, stays with whoever had it at the time of each backup.
 - **A renamed database** has a new name, which belongs to nobody until it is given away again or a rule matches it.
 - **A deleted tenant** keeps its assignments and rules as ended ones. The backups of its time belong to nobody from then on and never fall to another tenant's rule. A database it held by name goes back to the tenant of the server, like with **Nobody else**, so no rule gives it away until it is given by name again.
@@ -138,18 +139,26 @@ A restore a customer starts writes their own content, their functions, triggers,
 - Never run the connection of a shared server as a superuser or `sysadmin`. A login that may create and restore databases is enough.
 
 ::: warning The owner role is no wall on PostgreSQL
-`pg_restore --role` only switches the role of the session, and code of the customer that runs during the restore, like a function in a check constraint, can switch it back to the login. Whatever the login may do, a customer with the right to create functions in their database may do during their own restore. Use a login that is no superuser, may not create roles and is a member of no other customer's owner role, or leave restores of such a server to the provider.
+`pg_restore --role` only switches the role of the session, and code of the customer that runs during the restore, like a function in a check constraint, can switch it back to the login. So a customer restores a PostgreSQL database only while the login can do no more than its owner role, and the restore is refused otherwise. On a server with several customers, give each customer a connection of its own whose login is a member of that customer's owner role alone, or leave their restores to the provider. The code can still change the password of the login, as any role may change its own, which stops the backups of that connection until the provider sets it again.
 :::
 
 What DBackup does in a customer's restore:
 
 | Engine | Restore |
 | :--- | :--- |
-| **PostgreSQL** | `pg_restore --role` with the owner of the database, so every object belongs to that role, see the warning above for what that does not stop. A database that belongs to the login itself restores as the login, with a warning in the run. A login that may not act as the owner stops the restore before it writes anything |
+| **PostgreSQL** | `pg_restore --role` with the owner of the database, so every object belongs to that role. Refused before anything is written when the database belongs to the login or to a superuser, or when the login is a superuser, may create roles or bypass row security, owns a database, or is a member of any other role than the owner, built-in roles like `pg_monitor` included. The code of the customer could act with those rights, see the warning above. A login that may not act as the owner stops the restore before it writes anything as well |
 | **Microsoft SQL Server** | The files always go to the default data and log folders of the instance, never to the paths in the backup. A backup with FILESTREAM or full-text folders is refused. Afterwards TRUSTWORTHY and cross database ownership chaining are switched off, or a warning says that the login may not |
 | **MySQL** and **MariaDB** | The dump keeps the `DEFINER` of every view, trigger, routine and event, the account that made it on the server, so they run as that account and not as the login. Give each customer an account of their own |
+| **Firebird** | Refused before anything is read or written. gbak restores with the login of the connection, `SYSDBA` or a login like it, and nothing keeps the code of the database, like a function of an expression index, to the rights of the customer |
+| **Azure SQL Database** | Refused before anything is read or written. SqlPackage imports the BACPAC with the login of the connection, a member of `dbmanager` or the server admin, and creates the database again as that login |
 
-A restore the provider starts from its own History runs as the login, as for every other connection.
+A customer who starts the restore of such a database gets this answer, and still downloads its dump:
+
+```
+A customer cannot restore a Firebird database of a shared server, since its restore runs with the login of the provider. The provider can restore it from its own History.
+```
+
+A restore the provider starts from its own History runs as the login, as for every other connection, also of a database whose restore a customer may not start.
 
 ## Restoring the Server Over Customers' Databases
 
@@ -206,7 +215,7 @@ A right click on a shared backup offers only what the customer may do with it: *
 | :--- | :--- | :--- |
 | See the databases and backups | | `storage:read` |
 | **Download** | The dump of that one database, decrypted and unpacked. The key stays with the tenant of the server | `storage:download` |
-| **Restore** | Puts the dump back into the same database on its server, while the database is theirs. No other server or database can be picked | `storage:restore` |
+| **Restore** | Puts the dump back into the same database on its server, while the database is theirs. No other server or database can be picked, and some engines leave it to the provider, see [Who a Customer's Restore Runs As](#who-a-customer-s-restore-runs-as) | `storage:restore` |
 | **Back up now** | A backup of that database alone, while the tenant of the server allows it | `jobs:execute` |
 
 **Back up now** for a database in the menu of its server under **Connections → Databases**, in the panel of the server, and in the menu of one of its backups starts a backup of that database when the tenant of the server allows backups on demand for it. The customer needs no job of its own for it. It needs `jobs:execute` in the customer's tenant. The panel says how many are left today and that a backup runs, and the new backup shows when it is done. It is refused over the limit, while the job runs anyway, and for a database that is theirs no longer or whose server is gone.

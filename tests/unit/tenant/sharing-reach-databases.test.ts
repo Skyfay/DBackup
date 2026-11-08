@@ -213,6 +213,21 @@ describe("Share with customers in a platform group of some tenants", () => {
         expect(await base.databaseAssignmentRule.findUnique({ where: { id: "r-blog" } })).toMatchObject({ validUntil: null, onDemandPerDay: null });
     });
 
+    it("ends no rule of a tenant it reaches whose databases would fall to a lower rule of a tenant it does not reach", async () => {
+        // Set up by someone who reaches both: Globex's rule ranks below the one of Acme.
+        await base.databaseAssignmentRule.create({ data: { id: "r-crm-globex", sourceId: "shared-mysql", pattern: "crm_*", tenantId: "globex", priority: -5, validFrom: day("2026-01-01"), createdAt: day("2026-01-01") } });
+        const reach = await reachOf("u-desk");
+
+        await expect(asHome(() => databaseAssignmentService.removeRule("shared-mysql", "r-crm", NOW, reach)))
+            .rejects.toThrow("Ending the rule crm_* would give crm_acme to a tenant your platform group does not reach, so you cannot end it.");
+        expect(await base.databaseAssignmentRule.findUnique({ where: { id: "r-crm" } })).toMatchObject({ validUntil: null });
+        expect(await holders()).toEqual(BEFORE);
+
+        // Someone who reaches every tenant ends it, and Globex's rule takes over.
+        await asHome(async () => databaseAssignmentService.removeRule("shared-mysql", "r-crm", NOW, await reachOf("u-msp")));
+        expect(await holders()).toEqual({ ...BEFORE, crm_acme: "globex" });
+    });
+
     it("changes neither the backups on demand nor the server of a database a tenant it does not reach holds", async () => {
         const reach = await reachOf("u-desk");
         const words = "shop_globex belongs to a tenant your platform group does not reach, so you cannot change it.";

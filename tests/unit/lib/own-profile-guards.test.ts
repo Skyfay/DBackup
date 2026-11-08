@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
     held: new Set<string>(),
     service: { updateUser: vi.fn(), togglePasskeyTwoFactor: vi.fn(), ownEmailRefusal: vi.fn(async () => null), passkeyOffEndsTwoFactor: vi.fn(async () => true), hasAuthenticatorApp: vi.fn(async () => true) },
     audit: vi.fn(),
+    /** The password of the account and its passkeys, which turning the passkey factor off reads. */
+    credential: null as { id: string } | null,
+    passkeys: 1,
+    passwordCheck: vi.fn(async (): Promise<"ok" | "wrong" | "locked"> => "ok"),
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
@@ -19,7 +23,14 @@ vi.mock("@/lib/auth/access-control", () => ({
 vi.mock("@/lib/auth", () => ({ auth: { api: { unlinkAccount: vi.fn(), signInEmail: vi.fn(), setPassword: vi.fn() } } }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/prisma", () => ({ default: { account: { count: vi.fn(async () => 2), findFirst: vi.fn() }, ssoProvider: { findUnique: vi.fn() } } }));
+vi.mock("@/lib/prisma", () => ({
+    default: {
+        account: { count: vi.fn(async () => 2), findFirst: vi.fn(async () => mocks.credential) },
+        passkey: { count: vi.fn(async () => mocks.passkeys) },
+        ssoProvider: { findUnique: vi.fn() },
+    },
+}));
+vi.mock("@/services/auth/password-tries", () => ({ checkCurrentPassword: mocks.passwordCheck, PASSWORD_LOCKED: "Locked for a while." }));
 vi.mock("@/services/user/user-service", () => ({ userService: mocks.service }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
@@ -74,6 +85,30 @@ describe("what a group lets someone change of the own profile", () => {
         mocks.held = new Set(["profile:manage_passkeys", "profile:manage_2fa"]);
         expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: true });
         expect(mocks.service.togglePasskeyTwoFactor).toHaveBeenCalledTimes(2);
+    });
+
+    it("asks for the current password before the own passkey stops being the second factor", async () => {
+        mocks.held = new Set(["profile:manage_passkeys", "profile:manage_2fa"]);
+        mocks.credential = { id: "cred-u1" };
+        try {
+            expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: false, error: "Enter your password." });
+            mocks.passwordCheck.mockResolvedValueOnce("wrong");
+            expect(await togglePasskeyTwoFactor("u1", false, "guess")).toEqual({ success: false, error: "Invalid password" });
+            mocks.passwordCheck.mockResolvedValueOnce("locked");
+            expect(await togglePasskeyTwoFactor("u1", false, "guess")).toEqual({ success: false, error: "Locked for a while." });
+            expect(mocks.service.togglePasskeyTwoFactor).not.toHaveBeenCalled();
+
+            expect(await togglePasskeyTwoFactor("u1", false, "right")).toEqual({ success: true });
+            expect(mocks.passwordCheck).toHaveBeenLastCalledWith("u1", "right");
+            // With the last passkey gone, whose delete asked for the password, nothing is left to end.
+            mocks.passkeys = 0;
+            expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: true });
+            // Turning it on asks for nothing.
+            expect(await togglePasskeyTwoFactor("u1", true)).toEqual({ success: true });
+        } finally {
+            mocks.credential = null;
+            mocks.passkeys = 1;
+        }
     });
 
     it("changes the own name and email only as far as the group allows, also for someone who may change users", async () => {

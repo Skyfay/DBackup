@@ -445,6 +445,13 @@ export interface UploadOptions {
     mode?: number;
     uid?: number;
     gid?: number;
+    /**
+     * The part of `remotePath` below the folder a restore writes into, set on every write of a
+     * restore. An adapter whose storage follows symbolic links keeps the write inside that folder,
+     * not only inside its connection: a link an earlier restore laid there must not lead this one
+     * into the files of another job, see `restoreFolderOf`.
+     */
+    restoreRelativePath?: string;
 }
 
 /**
@@ -840,9 +847,10 @@ export interface StorageAdapter extends BaseAdapter {
      * than reporting a complete restore that quietly is not one.
      *
      * `target` is stored verbatim, exactly as it was collected. Resolving it would turn a
-     * relative link into one that is wrong from any other directory.
+     * relative link into one that is wrong from any other directory. `restoreRelativePath` keeps
+     * the link and its target inside the folder of the restore, as for an upload.
      */
-    createSymlink?(config: AdapterConfig, remotePath: string, target: string): Promise<void>;
+    createSymlink?(config: AdapterConfig, remotePath: string, target: string, options?: Pick<UploadOptions, "restoreRelativePath">): Promise<void>;
 
     /**
      * Optional: lists the immediate child directories of subPath (non-recursive), scoped to this

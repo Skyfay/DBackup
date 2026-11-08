@@ -41,7 +41,7 @@ vi.mock("@/lib/auth/access-control", () => ({
     currentSessionId: vi.fn(async () => "s-here"),
 }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { unlinkAccount: mocks.unlinkAccount, getSession: mocks.getSession, signOut: vi.fn(async () => undefined) } } }));
-vi.mock("@/lib/crypto", () => ({ decrypt: (token: string) => token }));
+vi.mock("@/lib/crypto", () => ({ decrypt: (token: string) => token, decryptSealed: (token: string) => token }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 // The session of a link and the provider it names, which the hook of the link reads.

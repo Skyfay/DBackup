@@ -162,6 +162,8 @@ Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 - `SQLITE_WAL_MODE` - `true` (default) | `false`. WAL is on by default for the Prisma SQLite DB. See `src/lib/prisma.ts`.
 - `DISABLE_EMAIL_LOGIN` - `true` | `false` (default). Rejects browser email sign-in and sign-up. Server-side `auth.api.*` calls stay open so admin user creation and password resets keep working. See `src/lib/auth/env-flags.ts`.
 - `TRUSTED_PROXIES` - the reverse proxies whose `X-Forwarded-For` counts, comma-separated addresses, CIDR ranges and the keywords `private` and `cloudflare`, `none`, or unset for `private`, the loopback and private networks. The custom server resolves the client address in `server/client-address.ts` and passes it in a header of its own, so the app reads `clientAddress()` from `@/lib/core/client-address` and never `X-Forwarded-For` itself. A lint guard checks that.
+- `TRUSTED_PROXY_HEADER` - `x-forwarded-for` (default) or `x-real-ip`, the one header of a trusted proxy that counts. The other one is ignored.
+- `DBACKUP_CUSTOM_SERVER` - set by `custom-server.ts` itself, never by hand. Without it `clientAddress()` answers null, since nobody replaced the header a client sent.
 - `OIDC_AUTO_REDIRECT` - `SsoProvider.providerId` to redirect to instead of rendering the login page. Format checked in `env-validation.ts`, existence in `startup-checks.ts`.
 
 <!-- BEGIN:nextjs-agent-rules -->

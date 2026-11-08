@@ -236,7 +236,8 @@ export const userService = {
   },
 
   /**
-   * Reset a user's two-factor authentication.
+   * Reset a user's two-factor authentication. Their passkeys go too, since a passkey signs in on its
+   * own and whoever held a session of the account may have added one.
    */
   async resetTwoFactor(userId: string) {
     return await prisma.$transaction([
@@ -249,6 +250,9 @@ export const userService = {
       }),
       // Use deleteMany in case no record exists - safer than delete
       prisma.twoFactor.deleteMany({
+        where: { userId },
+      }),
+      prisma.passkey.deleteMany({
         where: { userId },
       }),
     ]);

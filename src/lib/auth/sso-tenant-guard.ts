@@ -143,9 +143,9 @@ async function signedInUserOf(context: SsoHookContext | null | undefined): Promi
 
 /**
  * Runs before better-auth links an account to a provider. False keeps a provider from linking an
- * account it may not sign in, and the session hook then sends the person back to the login page
- * with the reason, see `refuseSsoSession`. A new account joined the tenant of its provider when it
- * was added, see `placeSsoUser`, so it passes here and was checked then.
+ * account it may not sign in, and on a callback `beforeSsoLink` then ends the sign-in with the
+ * reason. A new account joined the tenant of its provider when it was added, see `placeSsoUser`,
+ * so it passes here and was checked then.
  */
 export async function allowTenantSsoLink(account: { userId: string }, context: SsoHookContext | null | undefined): Promise<boolean> {
     const provider = await providerOf(context);
@@ -176,28 +176,34 @@ const REFUSAL_URLS: Record<TenantRefusal, string> = {
  * tenant there, see `madeElsewhere`.
  */
 export async function refuseTenantSsoSession(session: { userId: string }, context: SsoHookContext | null | undefined, redirect: (url: string) => unknown): Promise<void> {
+    const url = await tenantRefusalUrl(session.userId, context);
+    if (url) throw redirect(url);
+}
+
+/** Where the login page says why a provider of a tenant may not sign in an account, null when it may, see `refuseTenantSsoSession`. */
+export async function tenantRefusalUrl(userId: string, context: SsoHookContext | null | undefined): Promise<string | null> {
     const provider = await tenantProviderOf(context);
-    if (!provider) return;
-    const user = await accountOf(session.userId);
+    if (!provider) return null;
+    const user = await accountOf(userId);
     const refusal = user ? tenantSignInRefusal(provider, user) : "other-domain";
-    if (refusal) throw redirect(REFUSAL_URLS[refusal]);
-    if (user && madeElsewhere(user, provider.tenantId)) throw redirect(TENANT_NOT_MEMBER_URL);
+    if (refusal) return REFUSAL_URLS[refusal];
+    return user && madeElsewhere(user, provider.tenantId) ? TENANT_NOT_MEMBER_URL : null;
 }
 
 /**
  * Runs before every session better-auth starts. A callback of a provider starts one only for an
- * account linked to that provider. better-auth finds the account by the email and signs it in even
- * when the link hook refused the link, see `allowTenantSsoLink`, so a refused link ends here. Someone
- * new is linked before their session starts, like an account linked before.
+ * account linked to that provider, and to the identity of the callback where the link hook saw it
+ * (`accountId`). A refused link ends the callback before, see `beforeSsoLink`, so this is the second
+ * line. Someone new is linked before their session starts, like an account linked before.
  */
-export async function refuseSsoSession(session: { userId: string }, context: SsoHookContext | null | undefined, redirect: (url: string) => unknown): Promise<void> {
+export async function refuseSsoSession(session: { userId: string }, context: SsoHookContext | null | undefined, redirect: (url: string) => unknown, accountId?: string): Promise<void> {
     if (!isSsoCallback(context?.path)) return;
     const providerId = ssoProviderIdOf(context);
     // A callback that names no provider is refused before it runs, see refuseDisabledProvider.
     if (!providerId) throw redirect(DISABLED_PROVIDER_URL);
     // The reason of a provider of a tenant first, so the login page says why.
     await refuseTenantSsoSession(session, context, redirect);
-    const linked = await prisma.account.findFirst({ where: { userId: session.userId, providerId }, select: { id: true } });
+    const linked = await prisma.account.findFirst({ where: { userId: session.userId, providerId, ...(accountId ? { accountId } : {}) }, select: { id: true } });
     if (!linked) throw redirect(NOT_LINKED_URL);
 }
 

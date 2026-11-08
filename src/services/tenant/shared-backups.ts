@@ -123,15 +123,52 @@ function verificationOf(copies: readonly ServerBackupFile[]): SharedBackupRecord
 }
 
 /**
+ * Whether the customer held the database for the whole time a backup was being made: from when its
+ * run started to dump until its sidecar was stamped. Who holds a database changes only where a fact
+ * starts, ends or was made, so both ends and every such time between them tell, a change and a
+ * change back included. A backup whose sidecar names no dump start is judged by its stamp alone.
+ */
+function heldWhileMade(facts: OwnerFacts, boundaries: readonly number[], tenantId: string, databaseName: string, file: ServerBackupFile["file"]): boolean {
+    const madeAt = new Date(file.createdAt).getTime();
+    const started = file.dumpsStartedAt ? new Date(file.dumpsStartedAt).getTime() : NaN;
+    const from = Number.isNaN(started) ? madeAt : Math.min(started, madeAt);
+    const times = [from, madeAt];
+    for (let i = firstAfter(boundaries, from); i < boundaries.length && boundaries[i] < madeAt; i++) times.push(boundaries[i]);
+    return times.every((time) => ownerAt(facts.assignments, facts.rules, databaseName, new Date(time)) === tenantId);
+}
+
+/** Every time a fact of the server starts, ends or was made, sorted. */
+function boundariesOf(facts: OwnerFacts): number[] {
+    return [...new Set([...facts.assignments, ...facts.rules]
+        .flatMap((fact) => [fact.validFrom, fact.validUntil ?? null, fact.createdAt])
+        .flatMap((time) => (time ? [time.getTime()] : [])))]
+        .sort((a, b) => a - b);
+}
+
+/** The index of the first time after `time` in a sorted list. */
+function firstAfter(times: readonly number[], time: number): number {
+    let low = 0;
+    let high = times.length;
+    while (low < high) {
+        const middle = (low + high) >> 1;
+        if (times[middle] <= time) low = middle + 1;
+        else high = middle;
+    }
+    return low;
+}
+
+/**
  * The backups of a database a customer may see: those made while it was theirs, one per backup
  * however many destinations hold it, newest first.
  */
 export function sharedBackupsOf(tenantId: string, sourceId: string, databaseName: string, files: readonly ServerBackupFile[], facts: OwnerFacts): SharedBackupRecord[] {
     if (!everOwned(facts, tenantId, databaseName)) return [];
     const byBackup = new Map<string, ServerBackupFile[]>();
+    const boundaries = boundariesOf(facts);
     for (const entry of files) {
         if (!entry.file.databases?.includes(databaseName)) continue;
-        if (ownerAt(facts.assignments, facts.rules, databaseName, new Date(entry.file.createdAt)) !== tenantId) continue;
+        // A dump of another customer's time that was stored after the database changed hands goes to nobody.
+        if (!heldWhileMade(facts, boundaries, tenantId, databaseName, entry.file)) continue;
         const key = backupKeyOf(entry.file.path);
         const list = byBackup.get(key);
         if (list) list.push(entry);

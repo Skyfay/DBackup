@@ -28,6 +28,7 @@ import { assertTargetsConfirmed } from "./customer-databases";
 import type { RestoreInput } from "./types";
 import { findDestination } from "@/services/sharing/destination-access";
 import { listedDatabases } from "@/services/tenant/shared-servers";
+import { customerRestoreRefusal } from "@/services/tenant/customer-restores";
 import { runAsSystem } from "@/lib/tenant/context";
 import { reserveTempSpace } from "./temp-space";
 
@@ -115,12 +116,17 @@ export async function restoreDatabases(
     if (!sourceAdapter.restoreOne) {
         throw new Error(`Database adapter '${sourceConfig.adapterId}' cannot restore from this backup format`);
     }
+    // Checked again here, before anything is staged or dropped, for every way a customer's restore
+    // reaches this point. The service refused it already when it named the target.
+    const refusal = input.shared ? customerRestoreRefusal(sourceConfig.adapterId) : null;
+    if (refusal) throw new Error(refusal);
 
     const dbConf = await resolveAdapterConfig(sourceConfig) as Record<string, unknown>;
     dbConf.type = sourceConfig.adapterId;
     if (input.privilegedAuth) dbConf.privilegedAuth = input.privilegedAuth;
     // A customer's restore of a shared database writes content the customer controls with the
-    // provider's login, so the adapter restores it as the owner of the database where it can.
+    // provider's login, so the adapter restores it as the owner of the database where it can, or
+    // refuses it where the login could do more than that owner.
     if (input.shared) dbConf.sharedRestore = true;
 
     const targetFor = (dbName: string) =>

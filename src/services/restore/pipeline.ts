@@ -19,7 +19,7 @@ import { LogEntry, LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
 import { isMultiDbTar, readTarManifest } from "@/lib/adapters/database/common/tar-utils";
 import { resolveSqliteTargetPath } from "@/lib/adapters/database/sqlite/restore";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, ServiceError } from "@/lib/logging/errors";
 import { verifyFileChecksum } from "@/lib/crypto/checksum";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
@@ -27,6 +27,7 @@ import { registerExecution, unregisterExecution } from "@/lib/execution/abort";
 import { processQueue } from "@/lib/execution/queue-manager";
 import type { RestoreInput } from "./types";
 import { resolveDecryptionKey } from "./smart-recovery";
+import { reserveTempSpace, reserveTempSpaceUpTo, tempSpaceRefusal, type TempSpaceReservation } from "./temp-space";
 import { assertEncryptionKept } from "./recorded-encryption";
 import { restoreArchiveSnapshot } from "./archive-restore";
 import { openDestination } from "@/services/sharing/destination-access";
@@ -64,6 +65,8 @@ const sharedFailure = (databaseName: string) => `The restore of ${databaseName} 
 export async function runRestorePipeline(executionId: string, input: RestoreInput, providerRun: ProviderRun | null = null): Promise<void> {
     const { storageConfigId, file, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
     let tempFile: string | null = null;
+    // The temporary space the whole-file passes below were promised, given back in the `finally`.
+    const tempSpaces: TempSpaceReservation[] = [];
     const restoreStartTime = Date.now();
     const abortController = registerExecution(executionId);
     // Cancel in the provider's History stops the same restore.
@@ -443,6 +446,9 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 (msg, level) => log(msg, (level ?? 'info') as LogLevel),
             );
 
+            // The decrypted copy is the size of the download and lies beside it, see `reserveTempSpace`.
+            tempSpaces.push(await reserveTempSpace([(await fs.promises.lstat(tempFile)).size], 1));
+
             try {
                 log(`Starting decryption process...`, 'info');
 
@@ -517,6 +523,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     }
 
                     const compFileSize = (await fs.promises.lstat(tempFile)).size;
+                    // Promised before a byte is inflated, as much of the bound as the folder has
+                    // free, and the inflation stops there, see `reserveTempSpaceUpTo`.
+                    const inflateSpace = await reserveTempSpaceUpTo(legacyInflateLimit(compFileSize));
+                    tempSpaces.push(inflateSpace);
                     const decompStart = Date.now();
                     let decompProcessed = 0;
                     const decompTracker = new Transform({
@@ -537,11 +547,13 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                             createNoFollowReadStream(tempFile),
                             decompTracker,
                             decompStream,
-                            byteLimit(legacyInflateLimit(compFileSize), "the decompressed dump"),
+                            byteLimit(inflateSpace.bytes, "the decompressed dump"),
                             createWriteStream(unpackedFile, { flags: "wx", mode: PRIVATE_FILE_MODE })
                         );
                     } catch (e: unknown) {
                         await fs.promises.unlink(unpackedFile).catch(() => {});
+                        // Stopped at the free space rather than at the bound, so the folder is what ran out.
+                        if (inflateSpace.short && e instanceof DamagedBackupError) throw tempSpaceRefusal(legacyInflateLimit(compFileSize));
                         throw e;
                     }
 
@@ -551,7 +563,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     tempFile = unpackedFile;
                 }
             } catch (e: unknown) {
-                if (e instanceof DamagedBackupError) throw e;
+                if (e instanceof DamagedBackupError || e instanceof ServiceError) throw e;
                 const message = e instanceof Error ? e.message : String(e);
                 throw new Error(`Decompression failed: ${message}`);
             }
@@ -733,6 +745,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         if (tempFile) {
             await fs.promises.unlink(tempFile).catch(() => {});
         }
+        for (const space of tempSpaces) space.release();
         await logs.flush(true);
         logs.dispose();
         unregisterExecution(executionId);

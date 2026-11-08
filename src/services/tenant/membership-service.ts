@@ -121,7 +121,8 @@ export const membershipService = {
     /**
      * Gives an account a role in a tenant, or ends its membership there with null. Refused when the
      * tenant would be left without anyone who manages its members, since then nobody but a platform
-     * admin could add one again, unless a platform admin makes the change.
+     * admin could add one again, unless a platform admin makes the change. Every caller that ends a
+     * membership asks `membershipEndRefusal` first.
      */
     async setRole(userId: string, tenantId: string, groupId: string | null, by: MembershipActor): Promise<void> {
         // In the tenant of the membership, so only a group of that tenant is found.

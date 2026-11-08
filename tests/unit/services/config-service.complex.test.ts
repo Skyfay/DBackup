@@ -127,6 +127,8 @@ vi.mock('@/lib/prisma', () => {
             schedulePreset: { findUnique: vi.fn(async () => null) },
             twoFactor: { findUnique: vi.fn(async () => null) },
             passkey: { count: vi.fn(async () => 0) },
+            // The seeded accounts work in the home tenant alone.
+            tenantMembership: { count: vi.fn(async () => 0) },
             $transaction: vi.fn(async (callback) => callback(prismaMock)),
         },
     };

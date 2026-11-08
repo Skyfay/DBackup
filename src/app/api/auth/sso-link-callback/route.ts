@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { decrypt } from "@/lib/crypto";
+import { decryptSealed } from "@/lib/crypto";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -19,6 +19,8 @@ const log = logger.child({ route: "sso-link-callback" });
  * account than the one signed in now, signs that session back out instead of
  * letting it stand. Without a token it can read, like a link someone else sent,
  * it signs nobody out, so the address cannot end the session of whoever opens it.
+ * The token is opened with `decryptSealed`, so plain JSON in its place counts as
+ * no token at all rather than as one DBackup minted.
  */
 export async function GET(request: NextRequest) {
     const token = request.nextUrl.searchParams.get("t");
@@ -27,7 +29,7 @@ export async function GET(request: NextRequest) {
     let expected: { userId: string; expiresAt: number } | null = null;
     if (token) {
         try {
-            const parsed = JSON.parse(decrypt(decodeURIComponent(token)));
+            const parsed = JSON.parse(decryptSealed(decodeURIComponent(token)));
             if (typeof parsed?.userId === "string" && typeof parsed?.expiresAt === "number") {
                 expected = parsed;
             }

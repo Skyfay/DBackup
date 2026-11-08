@@ -40,3 +40,12 @@ export async function getConfigBackupTargets(): Promise<ConfigBackupTargets> {
     const credentialIds = [destination?.primaryCredentialId, destination?.sshCredentialId].filter((id): id is string => !!id);
     return { storageId, profileId, credentialIds };
 }
+
+/**
+ * The key the configuration backup is encrypted with now, null while none is picked. Only a
+ * platform admin picks, reveals or changes it, so a file it opens came from DBackup.
+ */
+export async function getConfigBackupKeyId(): Promise<string | null> {
+    const row = await prisma.systemSetting.findUnique({ where: { key: PROFILE_SETTING }, select: { value: true } });
+    return row?.value || null;
+}

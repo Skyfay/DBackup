@@ -73,14 +73,24 @@ async function readJson(file: string): Promise<AppConfigurationBackup> {
     throw new ValidationError("The file is no configuration backup of DBackup.");
 }
 
+/**
+ * A restore that brings back no account. A copy replaces every account, so it would leave DBackup
+ * without one and open the first sign-up again, in a database whoever made the copy wrote. On the
+ * sign-up page a file of an older version does the same. In Settings such a file only adds to the
+ * accounts there, so an older file without users still restores.
+ */
+const NO_ACCOUNT = "The backup holds no account, so DBackup would be left without one to sign in with. Restore a backup that holds the accounts.";
+
 /** Checks an opened backup and holds it for its restore, which then owns the file. */
 async function check(plain: string, fileName: string, owner: RestoreOwner): Promise<CheckedRestore> {
     try {
         if (await isDatabaseCopy(plain)) {
             const { preview, keys } = await inspectDatabaseCopy(plain);
+            if (preview.counts.users === 0) throw new ValidationError(NO_ACCOUNT);
             return { token: await holdRestore({ file: plain, fileName, preview, keys, owner }), fileName, preview };
         }
         const preview = previewOfJson(await readJson(plain));
+        if (owner === "setup" && preview.counts.users === 0) throw new ValidationError(NO_ACCOUNT);
         return { token: await holdRestore({ file: plain, fileName, preview, keys: null, owner }), fileName, preview };
     } catch (error: unknown) {
         await fs.unlink(plain).catch(() => undefined);
@@ -151,9 +161,11 @@ async function checkStored(destinationId: string, file: string, override: KeyOve
         } catch {
             meta = null;
         }
-        // A plain file there could come from anyone who may restore files into the destination.
+        // A plain file there could come from anyone who may restore files into the destination, and
+        // an encrypted one from anyone who may add a key to the Vault, so it opens only with the key
+        // of the configuration backup or one the admin gave.
         if (!isStoredEncrypted(path.basename(file), meta)) throw new ValidationError(UNENCRYPTED_AT_DESTINATION);
-        const plain = await openBackupFile(local, meta, override);
+        const plain = await openBackupFile(local, meta, override, "destination");
         return await check(plain, path.basename(file), owner);
     } finally {
         await fs.unlink(local).catch(() => undefined);

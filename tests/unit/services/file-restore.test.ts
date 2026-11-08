@@ -42,7 +42,7 @@ const { openChainArchive } = await import("@/lib/archive/chain-source");
 
 let workDir: string;
 let archivePath: string;
-let uploads: { remotePath: string; content: Buffer }[];
+let uploads: { remotePath: string; content: Buffer; restoreRelativePath?: string }[];
 let rangeCalls: number;
 
 const FIXTURE: Record<string, Buffer> = {
@@ -69,8 +69,8 @@ function makeAdapter(): StorageAdapter {
             if (end < start) return Readable.from([]);
             return createReadStream(archivePath, { start, end });
         },
-        upload: async (_c: unknown, localPath: string, remotePath: string) => {
-            uploads.push({ remotePath, content: await fs.readFile(localPath) });
+        upload: async (_c: unknown, localPath: string, remotePath: string, _p?: unknown, _l?: unknown, options?: { restoreRelativePath?: string }) => {
+            uploads.push({ remotePath, content: await fs.readFile(localPath), restoreRelativePath: options?.restoreRelativePath });
             return true;
         },
     } as unknown as StorageAdapter;
@@ -306,12 +306,13 @@ describe("restoreFilesToStorage", () => {
         }], archivePath, { sourceType: "directory-only" });
         await fs.writeFile(archivePath + ".index", indexBytes);
         await fs.writeFile(archivePath + ".meta.json", JSON.stringify({ version: 1, archive: { formatVersion: 2, indexFile: ".index", encrypted: false } }));
-        const links: { remotePath: string; target: string }[] = [];
-        registryGet.mockReturnValue({ ...makeAdapter(), createSymlink: async (_c: unknown, remotePath: string, target: string) => { links.push({ remotePath, target }); } });
+        const links: { remotePath: string; target: string; options?: unknown }[] = [];
+        registryGet.mockReturnValue({ ...makeAdapter(), createSymlink: async (_c: unknown, remotePath: string, target: string, options?: unknown) => { links.push({ remotePath, target, options }); } });
 
         const result = await restoreFilesToStorage(input(["conf"], { kind: "storage", configId: "storage-1", basePath: "/restores/run-1/" }));
 
-        expect(links).toEqual([{ remotePath: "/restores/run-1/conf/same", target: "./app.ini" }]);
+        // With the part below the folder of the restore, which the destination keeps it inside.
+        expect(links).toEqual([{ remotePath: "/restores/run-1/conf/same", target: "./app.ini", options: { restoreRelativePath: "conf/same" } }]);
         expect(result.failed.map((entry) => entry.path)).toEqual(["conf/db", "conf/up"]);
         expect(result.failed[0].error).toContain("its target is absolute or leads out of the folder the restore writes into");
         expect(result.restored).toBe(2);
@@ -373,6 +374,8 @@ describe("restoreFilesToStorage", () => {
 
         expect(result.restored).toBe(1);
         expect(uploads[0].remotePath).toBe("/restores/run-1/docs/readme.md");
+        // The part below the folder of the restore, which the destination keeps the write inside.
+        expect(uploads[0].restoreRelativePath).toBe("docs/readme.md");
         expect(uploads[0].content.equals(FIXTURE["docs/readme.md"])).toBe(true);
     });
 

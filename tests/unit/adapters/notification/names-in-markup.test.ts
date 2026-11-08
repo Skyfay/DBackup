@@ -4,12 +4,14 @@
  * mention or markup of its own.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { escapeMarkdown, escapeSlack, escapeTelegramMarkdown, escapeMarkdownLinks } from "@/lib/adapters/notification/escape";
+import { escapeAdaptiveCard, escapeMarkdown, escapeSlack, escapeTelegramMarkdown, escapeMarkdownLinks } from "@/lib/adapters/notification/escape";
 import { SlackAdapter } from "@/lib/adapters/notification/slack";
 import { DiscordAdapter } from "@/lib/adapters/notification/discord";
 import { TelegramAdapter } from "@/lib/adapters/notification/telegram";
 import { GotifyAdapter } from "@/lib/adapters/notification/gotify";
 import { NtfyAdapter } from "@/lib/adapters/notification/ntfy";
+import { TeamsAdapter } from "@/lib/adapters/notification/teams";
+import { GenericWebhookAdapter } from "@/lib/adapters/notification/generic-webhook";
 
 const mockFetch = vi.fn();
 
@@ -35,6 +37,10 @@ describe("the escapes of each format", () => {
     it("escapes the characters of a link, a mention, emphasis and a heading in Markdown", () => {
         expect(escapeMarkdown("[x](http://e) <@1> *b* _i_ `c` ~s~ ||sp||")).toBe("\\[x\\](http://e) \\<@1\\> \\*b\\* \\_i\\_ \\`c\\` \\~s\\~ \\|\\|sp\\|\\|");
         expect(escapeMarkdown("# Heading\n- item")).toBe("\\# Heading\n\\- item");
+    });
+
+    it("keeps a closing bracket of an Adaptive Card away from the parenthesis of a link", () => {
+        expect(escapeAdaptiveCard("[x](http://e) <y>")).toBe("\\[x\\]\u200B(http://e) \\<y\\>");
     });
 
     it("escapes the characters of Telegram's legacy Markdown", () => {
@@ -116,5 +122,44 @@ describe("a notification with a name that looks like markup", () => {
         expect(init.headers.Markdown).toBe("yes");
         expect(init.body).toBe(`${escapeMarkdownLinks(`Finished ${JOB}`)}\n\nJob: ${escapeMarkdownLinks(JOB)}`);
         expect(init.body).not.toMatch(/(^|[^\\])\[click\]/);
+    });
+
+    it("never makes a link in a Teams card, in its texts and in its facts", async () => {
+        await TeamsAdapter.send({ webhookUrl: "https://example.webhook.office.com/x" }, `Finished ${JOB}`, context());
+
+        const card = body().attachments[0].content.body;
+        const texts = [card[0].text, card[1].text, card[2].facts[0].title, card[2].facts[0].value];
+        expect(card[0].text).toBe(escapeAdaptiveCard(`Backup of ${JOB}`));
+        expect(card[1].text).toBe(escapeAdaptiveCard(`Finished ${JOB}`));
+        expect(card[2].facts[0].value).toBe(escapeAdaptiveCard(JOB));
+        for (const text of texts) expect(text).not.toMatch(/\]\(/);
+        expect(card[1].text).not.toMatch(/(^|[^\\])\[click/);
+    });
+
+    it("changes only the text of a JSON string in the template of a Generic Webhook", async () => {
+        const name = `Eve", "event_action": "resolve", "x": {"y": "\\`;
+        const payloadTemplate = '{"event_action": "trigger", "payload": {"summary": "{{title}}: {{message}}", "fields": {{fields}}}}';
+        await GenericWebhookAdapter.send({ webhookUrl: "https://hooks.example.com/in", method: "POST", contentType: "application/json", payloadTemplate }, `${name} signed in\nagain`, context({ title: `${name} signed in`, fields: [{ name: "User", value: name }] }));
+
+        const sent = body();
+        expect(Object.keys(sent)).toEqual(["event_action", "payload"]);
+        expect(sent.event_action).toBe("trigger");
+        expect(sent.payload.summary).toBe(`${name} signed in: ${name} signed in\nagain`);
+        expect(sent.payload.fields).toEqual([{ name: "User", value: name }]);
+    });
+
+    it("encodes the text for a form, and leaves it as it is for any other Content-Type of the template", async () => {
+        const name = "Eve&event_action=resolve";
+        const sentAs = async (contentType: string, payloadTemplate: string) => {
+            mockFetch.mockClear();
+            await GenericWebhookAdapter.send({ webhookUrl: "https://hooks.example.com/in", method: "POST", contentType, payloadTemplate }, `${name}\nagain`, context({ title: name }));
+            return mockFetch.mock.calls[0][1].body as string;
+        };
+
+        const form = new URLSearchParams(await sentAs("application/x-www-form-urlencoded; charset=utf-8", "event_action=trigger&summary={{message}}"));
+        expect([...form.keys()]).toEqual(["event_action", "summary"]);
+        expect(form.get("summary")).toBe(`${name}\nagain`);
+
+        expect(await sentAs("text/plain", "{{title}}: {{message}}")).toBe(`${name}: ${name}\nagain`);
     });
 });

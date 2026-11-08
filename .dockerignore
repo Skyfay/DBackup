@@ -4,6 +4,8 @@ node_modules
 
 # Next.js build output
 .next
+# The incremental build state of tsc, which would make the image skip compiling the custom server
+*.tsbuildinfo
 out
 
 # Production folders (should be volume mounted, not baked into image)
@@ -25,9 +27,9 @@ playwright-report
 test-results
 .claude
 
-# Environment variables
-.env*.local
-.env
+# Environment variables, which may hold secrets. Only the example without values is kept.
+.env*
+!.env.example
 
 # Version control
 .git
@@ -65,6 +67,7 @@ scripts
 !scripts/apply-pending-restore.js
 !scripts/backup-before-migrate.js
 !scripts/check-encryption-key.sh
+!scripts/copy-prisma-cli.js
 coverage
 wiki
 api-docs

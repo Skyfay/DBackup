@@ -62,6 +62,10 @@ A volume cannot be read from outside a container, so DBackup mounts the ones it 
 
 **Stopping is per source and optional.** With it off, the volume is read while it is being written to, which makes the backup exactly as consistent as one taken during a power cut - fine for uploads or static files, not for a database.
 
+**DBackup's own container is never stopped.** Its stop would end the run and leave DBackup down. Without SSH, a volume the container of DBackup holds, like `socket-bridge` in the [setup below](#the-socket-is-not-readable), is refused while **Stop containers while reading** is on, so turn it off for that source. When DBackup runs in a container the Docker host does not list, a source without SSH that would stop containers is refused as well.
+
+**A source names one volume.** A path that is no Docker volume name, like `/etc`, is refused when the job is saved and again before a run, since Docker would read it as a folder of its host.
+
 **If a run is killed** while containers are down - the process is force-terminated, the machine reboots - the next run finds what it left behind and starts them again, and says which containers those were. That state is written onto the Docker host itself rather than kept in memory, which is what makes the recovery possible at all.
 
 **The run history shows all of it**: which containers were stopped and started again, which helper container the volume was read through and from which image, and - when a source is set not to stop its containers - that the resulting backup is crash-consistent rather than clean.
@@ -75,7 +79,7 @@ Restore a volume from **Storage** → the backup file → **Restore**, choosing 
 - **Same name**: the volume is **emptied completely** before the backup is written into it, so the result is the backup's state and not a mixture of two. The restore screen marks an existing volume as `Exists` and says so.
 - **New name**: the volume is created.
 
-Containers using the target are always stopped for a restore, whatever the job's own setting says, and started again afterwards.
+Containers using the target are always stopped for a restore, whatever the job's own setting says, and started again afterwards. Without SSH, a volume DBackup's own container holds is refused, since the restore would have to stop DBackup itself.
 
 Since a restore empties the volume it writes into, who may pick the target is limited:
 

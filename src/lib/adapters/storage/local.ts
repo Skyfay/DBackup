@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry, ListTreeOptions, ListTreeResult, PrunedDirectory, StorageReadOptions } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, ListTreeOptions, ListTreeResult, PrunedDirectory, StorageReadOptions, UploadOptions } from "@/lib/core/interfaces";
 import { canPruneDirectory } from "@/lib/exclude-patterns";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { LogLevel, LogType } from "@/lib/core/logs";
@@ -17,6 +17,7 @@ import { wrapError, AdapterError } from "@/lib/logging/errors";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
 import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
 import { TooManyLinksError, inside, pathParts, realExisting as realPathOf, walkParts } from "@/lib/server/real-path";
+import { restoreFolderOf } from "@/lib/adapters/storage/common/restore-folder";
 
 const log = logger.child({ adapter: "local-filesystem" });
 
@@ -120,6 +121,33 @@ async function assertLinkStaysInside(basePath: string, linkPath: string, target:
         throw error;
     }
     if (!inside(lands, realBase)) throw linkLeaves(realBase, target, `leads out of the base folder to ${lands}`);
+}
+
+/**
+ * The folder a write of a restore stays inside, besides the base folder, see
+ * `UploadOptions.restoreRelativePath`. A link an earlier restore laid inside the base, like `x -> ..`,
+ * stays inside the base too, yet leads a later write or link below it out of the folder of that
+ * restore, into the files of another job. So the real paths of a restore are compared with the real
+ * folder of the restore as well, like `resolveSafePath` does with the base.
+ *
+ * @returns The folder of the restore, undefined for a write of no restore
+ */
+async function checkedRestoreBase(
+    basePath: string,
+    remotePath: string,
+    relativePath: string | undefined,
+    follow: "target" | "parent"
+): Promise<string | undefined> {
+    if (relativePath === undefined) return undefined;
+    let restoreBase: string;
+    try {
+        restoreBase = resolveLexicalPath(basePath, restoreFolderOf(remotePath, relativePath));
+    } catch (error) {
+        if (error instanceof AdapterError) throw error;
+        throw new AdapterError("local-filesystem", "path-validation", `Access denied: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await resolveSafePath(restoreBase, relativePath, follow);
+    return restoreBase;
 }
 
 /**
@@ -266,10 +294,11 @@ export const LocalFileSystemAdapter: StorageAdapter = {
     name: "Local Filesystem",
     configSchema: LocalStorageSchema,
 
-    async upload(config: { basePath: string }, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+    async upload(config: { basePath: string }, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, options?: UploadOptions): Promise<boolean> {
         let destPath: string;
         try {
             destPath = await resolveSafePath(config.basePath, remotePath);
+            await checkedRestoreBase(config.basePath, remotePath, options?.restoreRelativePath, "target");
         } catch (error: unknown) {
             log.error("Local upload security check failed", { basePath: config.basePath, remotePath }, wrapError(error));
             if (onLog && error instanceof Error) onLog(error.message, 'error', 'security');
@@ -430,9 +459,11 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         return walkLocalTree(path.resolve(config.basePath), dirPath, options);
     },
 
-    async createSymlink(config: { basePath: string }, remotePath: string, target: string): Promise<void> {
+    async createSymlink(config: { basePath: string }, remotePath: string, target: string, options?: Pick<UploadOptions, "restoreRelativePath">): Promise<void> {
         const linkPath = await resolveSafePath(config.basePath, remotePath, "parent");
         await assertLinkStaysInside(config.basePath, linkPath, target);
+        const restoreBase = await checkedRestoreBase(config.basePath, remotePath, options?.restoreRelativePath, "parent");
+        if (restoreBase) await assertLinkStaysInside(restoreBase, linkPath, target);
         await fs.mkdir(path.dirname(linkPath), { recursive: true });
         // Replaced rather than merged. `symlink` fails on an existing path, and a restore that
         // stops at the first link the target already has is not a restore. `unlink` is used

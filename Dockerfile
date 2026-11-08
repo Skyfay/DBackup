@@ -5,8 +5,10 @@
 # architecture automatically: buildx runs this stage once per target platform.
 # Verified on linux/arm64 as well as linux/amd64 - Microsoft's standalone zip is
 # x64-only, which is why the dotnet tool is used instead of the download.
+# Pinned, so a release build installs the version that was tested. Bump it by hand.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS sqlpackage-build
-RUN dotnet tool install --tool-path /tmp/sqlpkg microsoft.sqlpackage && \
+ARG SQLPACKAGE_VERSION=170.5.96
+RUN dotnet tool install --tool-path /tmp/sqlpkg microsoft.sqlpackage --version "${SQLPACKAGE_VERSION}" && \
     PAYLOAD="$(find /tmp/sqlpkg/.store -type d -path '*/tools/net10.0/any' | head -1)" && \
     test -n "$PAYLOAD" && \
     mkdir -p /opt/sqlpackage && \
@@ -153,6 +155,12 @@ COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
+# The Prisma CLI for the migrations at start, copied with the packages it needs out of the
+# frozen install above, so every one of them stays on the version and hash of pnpm-lock.yaml.
+FROM deps AS prisma-cli
+COPY scripts/copy-prisma-cli.js /app/scripts/copy-prisma-cli.js
+RUN node /app/scripts/copy-prisma-cli.js /app/node_modules /opt/prisma-cli
+
 # 2. Builder Phase
 FROM base AS builder
 WORKDIR /app
@@ -185,12 +193,11 @@ COPY --from=builder --link --chown=1001:1001 /app/scripts/apply-pending-restore.
 # Keeps a copy of the database before the migrations change it, called by docker-entrypoint.sh.
 COPY --from=builder --link --chown=1001:1001 /app/scripts/backup-before-migrate.js ./scripts/backup-before-migrate.js
 # Refuses a missing or bad ENCRYPTION_KEY before the migrations run, called by docker-entrypoint.sh.
-COPY --from=builder --link --chown=1001:1001 /app/scripts/check-encryption-key.sh ./scripts/check-encryption-key.sh
+# The entrypoint runs it as root, so it is owned by root and lives outside /app, which the runtime user owns.
+COPY --from=builder --link /app/scripts/check-encryption-key.sh /usr/local/lib/dbackup/check-encryption-key.sh
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
 
 # Default environment variables (can be overridden at runtime)
 ENV DATABASE_URL="file:/data/db/dbackup.db"
@@ -208,26 +215,21 @@ COPY --from=builder --link --chown=1001:1001 /app/.next/standalone ./
 COPY --from=builder --link --chown=1001:1001 /app/.next/static ./.next/static
 COPY --from=builder --link --chown=1001:1001 /app/prisma ./prisma
 
-# Create runtime data directory + install Prisma CLI for migrations
-# Prisma version is read from package.json to stay in sync automatically
+# Create runtime data directory + install the Prisma CLI for migrations
+# The CLI comes from the prisma-cli stage and stays owned by root, the runtime user only runs it.
 #
-# pnpm 10 skips the install scripts of dependencies, so the postinstall of @prisma/engines
-# never downloads the schema engine. Left like that, `prisma migrate deploy` fetches it from
-# binaries.prisma.sh on the first start of every new container, and a host without internet
-# or without working DNS at that moment never starts. `prisma version` downloads the engines
-# here instead, and the build fails when the schema engine is still missing.
-#
-# pnpm add -g runs as root, so /pnpm is handed to the runtime user afterwards
-COPY --from=builder --link /app/package.json /tmp/package.json
+# When the install did not leave the schema engine beside @prisma/engines, `prisma migrate deploy`
+# fetches it from binaries.prisma.sh on the first start of every new container, and a host without
+# internet or without working DNS at that moment never starts. `prisma version` downloads the
+# engines here instead, and the build fails when the schema engine is still missing.
+COPY --from=prisma-cli --link /opt/prisma-cli /opt/prisma-cli
 RUN mkdir -p /data/db /data/certs && \
     chown -R 1001:1001 /data && \
-    PRISMA_VERSION=$(node -e "console.log(require('/tmp/package.json').devDependencies.prisma.replace(/[\^~>=<]/g,''))") && \
-    pnpm add -g prisma@${PRISMA_VERSION} && \
-    prisma version && \
-    rm /tmp/package.json && \
-    chown -R 1001:1001 /pnpm
+    printf '#!/bin/sh\nexec /usr/local/bin/node /opt/prisma-cli/node_modules/prisma/build/index.js "$@"\n' > /usr/local/bin/prisma && \
+    chmod 755 /usr/local/bin/prisma && \
+    prisma version
 
-RUN test -n "$(find /pnpm -type f -name 'schema-engine-*' | head -1)" || \
+RUN test -n "$(find /opt/prisma-cli -type f -name 'schema-engine-*' | head -1)" || \
     (echo "ERROR: the Prisma schema engine is missing from the image, migrations would download it at startup" && exit 1)
 
 # Copy compiled custom HTTPS server (replaces default Next.js server entry point)
@@ -241,8 +243,9 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Health check: verify app + database are reachable
 # Uses --insecure for self-signed certs; falls back to http if DISABLE_HTTPS=true
 # PORT env var is respected - defaults to 3000 if not set
+# It runs as root, so curl is called by its full path and never looked up on PATH
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -fk https://localhost:${PORT:-3000}/api/health 2>/dev/null || curl -f http://localhost:${PORT:-3000}/api/health || exit 1
+    CMD /usr/bin/curl -fk https://localhost:${PORT:-3000}/api/health 2>/dev/null || /usr/bin/curl -f http://localhost:${PORT:-3000}/api/health || exit 1
 
 EXPOSE 3000
 

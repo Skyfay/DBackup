@@ -20,17 +20,21 @@ export async function startServer(): Promise<void> {
     const { importAvatarFiles } = await import('@/services/user/avatar-import');
     await importAvatarFiles();
 
-    // 5. Initialize scheduler (cron jobs)
+    // 5. Encrypt the secrets that earlier versions stored as plain text, like extra webhook headers
+    const { sealPlainSecrets } = await import('@/lib/server/seal-plain-secrets');
+    await sealPlainSecrets();
+
+    // 6. Initialize scheduler (cron jobs)
     const { scheduler } = await import('@/lib/server/scheduler');
     await scheduler.init();
 
-    // 6. Validate credential profile assignments (flags adapters OFFLINE if missing)
+    // 7. Validate credential profile assignments (flags adapters OFFLINE if missing)
     //    and the OIDC auto-redirect target (logs an error if it resolves to nothing)
     const { validateAdapterCredentials, validateOidcAutoRedirect } = await import('@/lib/server/startup-checks');
     await validateAdapterCredentials();
     await validateOidcAutoRedirect();
 
-    // 7. Register graceful shutdown handlers
+    // 8. Register graceful shutdown handlers
     const { registerShutdownHandlers } = await import('@/lib/server/shutdown');
     registerShutdownHandlers();
 }

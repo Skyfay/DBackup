@@ -105,3 +105,13 @@ export function safeRemoteJoin(basePath: string, relativePath: string): string {
     const safeRelative = probe.slice(SENTINEL.length + 1);
     return base === "" ? safeRelative : `${base}/${safeRelative}`;
 }
+
+/**
+ * Where a restore writes an entry of the archive: the remote path, and the part of it below the
+ * folder of the restore. Every write and link of a restore hands its adapter both, so a destination
+ * that follows links keeps it inside that folder, not only inside its connection, see
+ * `UploadOptions.restoreRelativePath`.
+ */
+export function restoreDestination(basePath: string, relativePath: string): { remotePath: string; restoreRelativePath: string } {
+    return { remotePath: safeRemoteJoin(basePath, relativePath), restoreRelativePath: safeRemoteJoin("", relativePath) };
+}

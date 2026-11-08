@@ -79,7 +79,7 @@ A user who signs in only through SSO gets a password as a second way in. Your ow
 
 ### Reset 2FA
 
-**Reset 2FA** removes the authenticator app and the passkey as second factor after asking. The user signs in with the password alone until they set up a second factor again under **Profile → Security**.
+**Reset 2FA** removes the authenticator app, the passkey as second factor and every passkey of the account after asking, since a passkey signs in on its own. The user signs in with the password alone until they set up a second factor and add passkeys again under **Profile → Security**.
 
 ### Sign Out
 

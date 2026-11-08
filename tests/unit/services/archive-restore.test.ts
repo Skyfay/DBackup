@@ -221,7 +221,7 @@ describe('restoreArchiveSnapshot', () => {
         expect(result.restoredDirectories).toEqual(['src-1']);
         expect(dbAdapter.prepareRestore).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining(['db1_restored', 'db2']), expect.anything());
         expect(dbAdapter.restoreOne).toHaveBeenCalledTimes(2);
-        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), undefined);
+        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), { restoreRelativePath: 'a.txt' });
     });
 
     it('lays no link whose target is absolute or climbs out of the folder it restores into, and says so in the log', async () => {
@@ -242,7 +242,7 @@ describe('restoreArchiveSnapshot', () => {
         }), { log, updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(createSymlink).toHaveBeenCalledTimes(1);
-        expect(createSymlink).toHaveBeenCalledWith(expect.anything(), '/restore/dir/conf/same', './app.ini');
+        expect(createSymlink).toHaveBeenCalledWith(expect.anything(), '/restore/dir/conf/same', './app.ini', { restoreRelativePath: 'conf/same' });
         expect(result.status).toBe('Partial');
         const lines = log.mock.calls.map((call) => String(call[0]));
         expect(lines).toContain("Symbolic link 'conf/db' -> '/app/data/db' was not restored: its target is absolute or leads out of the folder the restore writes into, so it was skipped.");
@@ -290,7 +290,7 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(storageAdapter.upload).toHaveBeenCalledWith(
             expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function),
-            { mode: 0o600, uid: 1234, gid: 5678 },
+            { mode: 0o600, uid: 1234, gid: 5678, restoreRelativePath: 'a.txt' },
         );
     });
 
@@ -309,13 +309,13 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(storageAdapter.upload).toHaveBeenCalledWith(
             expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function),
-            { mode: 0o755 },
+            { mode: 0o755, restoreRelativePath: 'a.txt' },
         );
     });
 
-    it('passes no options at all when the archive recorded no permissions', async () => {
-        // Every archive written before these fields existed is in this case. Passing an
-        // empty object instead would be a silent change in what every storage adapter sees.
+    it('passes no permissions when the archive recorded none, only the path below the folder of the restore', async () => {
+        // Every archive written before these fields existed is in this case. A mode, owner or
+        // group the archive never recorded would be a silent change in what every storage adapter sees.
         const { sourceAdapter } = await buildRemoteBackup([], { 'a.txt': 'AAAA' });
         const storageAdapter = makeFakeStorageAdapter();
         wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
@@ -328,7 +328,7 @@ describe('restoreArchiveSnapshot', () => {
 
         expect(storageAdapter.upload).toHaveBeenCalledWith(
             expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function),
-            undefined,
+            { restoreRelativePath: 'a.txt' },
         );
     });
 
@@ -772,7 +772,7 @@ describe('restoreArchiveSnapshot', () => {
         expect(result.restoredDirectories).toEqual(['src-1']);
         expect(result.restoredDatabases).toEqual([]);
         expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
-        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), undefined);
+        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), { restoreRelativePath: 'a.txt' });
     });
 
     it('records an error (Partial) for a directory entry with no restore target specified', async () => {

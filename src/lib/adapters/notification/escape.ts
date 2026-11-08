@@ -39,3 +39,12 @@ export function escapeMarkdown(text: string): string {
 export function escapeMarkdownLinks(text: string): string {
     return text.replace(/\\(?=[[\]<>])/g, "\\\\").replace(/([[\]<>])/g, "\\$1");
 }
+
+/**
+ * Markdown of an Adaptive Card in Teams, in a TextBlock and a fact. What makes a link is escaped as
+ * for Gotify, and every `]` is followed by a zero-width space, so `](` and `][` never meet and a
+ * renderer that ignores the backslash makes no link either.
+ */
+export function escapeAdaptiveCard(text: string): string {
+    return escapeMarkdownLinks(text).replace(/\]/g, "]\u200B");
+}

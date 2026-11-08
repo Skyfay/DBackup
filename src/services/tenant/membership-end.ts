@@ -13,10 +13,18 @@ import { userService } from "@/services/user/user-service";
  * work alone in tenants where the caller manages the users (`users:write` there, or the reach of
  * their right to manage the accounts of the platform), unless the caller may change the account
  * already, which a platform admin or someone who manages the accounts of its tenants may.
+ *
+ * The last membership moves the account to its place of no tenant (`placelessTenantOf`), mostly the
+ * home tenant, whose providers then link it by its email. The admin of a customer would plant an
+ * account whose password they chose among the platform's own people, so the last membership ends
+ * only where that place is the tenant it leaves, or the caller manages the users of that place.
  */
 
 export const MEMBERSHIP_END_HANDS_OVER =
     "Afterwards this account would work only in tenants where you manage the users, which would let you change it. Someone who manages the accounts of the platform, or a platform admin, ends this membership.";
+
+export const MEMBERSHIP_END_MOVES_ACCOUNT =
+    "This is the last tenant of this account, without it the account would belong to another tenant. Delete the account instead, or ask someone who manages the accounts of the platform.";
 
 /** Who ends a membership: the account that acts, the owner of an API key, with what they may do in the tenant they work in. */
 export interface MembershipEnder {
@@ -49,6 +57,13 @@ export async function membershipEndRefusal(caller: MembershipEnder, userId: stri
 
     // The right to manage the accounts of the platform counts from the home tenant, see `permissionsIn`, wherever the caller works.
     const platformPermissions = await userService.permissionsIn(caller.id, HOME_TENANT_ID);
+    const accountsReach = await userService.accountsReachOf({ id: caller.id, isPlatformAdmin: false, permissions: platformPermissions });
+    const left = memberships.filter((id) => id !== tenantId);
+    // An account of no tenant counts as one of the home tenant, or of the tenant whose provider claims its email, see `accountOf`.
+    const place = left.length > 0 ? null : await userService.placelessTenantOf(userId);
+    // The last membership moves the account to its place, see above, also for whoever may change it now.
+    if (place && place !== tenantId && !(await managesUsersIn(caller.id, place, accountsReach))) return MEMBERSHIP_END_MOVES_ACCOUNT;
+
     const managesAccounts = platformPermissions.includes(PERMISSIONS.PLATFORM.ACCOUNTS_WRITE);
     const permissions = caller.permissions ?? (await userService.permissionsIn(caller.id, caller.tenantId ?? HOME_TENANT_ID));
     const actor: AccountActor & { id: string } = {
@@ -60,10 +75,7 @@ export async function membershipEndRefusal(caller: MembershipEnder, userId: stri
     // Whoever may change the account already gains nothing by ending one of its memberships.
     if ((await userService.accountRefusalFor(actor, userId)) === null) return null;
 
-    const accountsReach = await userService.accountsReachOf({ id: caller.id, isPlatformAdmin: false, permissions: platformPermissions });
-    const left = memberships.filter((id) => id !== tenantId);
-    // An account of no tenant counts as one of the home tenant, or of the tenant whose provider claims its email, see `accountOf`.
-    const tenantsLeft = left.length > 0 ? left : [await userService.placelessTenantOf(userId)];
+    const tenantsLeft = place ? [place] : left;
     for (const id of tenantsLeft) {
         if (!(await managesUsersIn(caller.id, id, accountsReach))) return null;
     }

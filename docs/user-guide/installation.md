@@ -103,6 +103,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | `LOG_LEVEL` | ❌ | Logging verbosity: `debug`, `info`, `warn`, `error`. Default: `info` |
 | `DISABLE_HTTPS` | ❌ | Set to `true` to use plain HTTP. Default: `false` (HTTPS). **Set this when running behind a reverse proxy** - see [Reverse Proxy Setup](#reverse-proxy-setup) |
 | `TRUSTED_PROXIES` | ❌ | The reverse proxies whose `X-Forwarded-For` counts: addresses, CIDR ranges and the keywords `private` and `cloudflare`, comma-separated, or `none`. Default: `private`, the loopback and private networks, see [The Address of a Client](#the-address-of-a-client) |
+| `TRUSTED_PROXY_HEADER` | ❌ | The header these proxies write the client into: `x-forwarded-for` or `x-real-ip`. Default: `x-forwarded-for` |
 | `PUID` | ❌ | User ID the container runs as. Default: `1001` |
 | `PGID` | ❌ | Group ID the container runs as. Set it to the host's `docker` group to reach the [Docker socket](/user-guide/sources/docker-volumes). Default: `1001` |
 | `DISABLE_EMAIL_LOGIN` | ❌ | Set to `true` to switch off password sign-in, leaving SSO and passkeys. Default: `false` |
@@ -354,6 +355,8 @@ environment:
 ```
 
 An entry that is no address, range or keyword stops DBackup at the start, with a message that names it. DBackup logs the value it uses when it starts.
+
+DBackup reads one header of the proxy, `X-Forwarded-For` by default, and ignores the other one. A proxy passes on whatever a client sent in a header it does not write itself, so reading both would let a client name its own address. The Nginx example below, Traefik and Caddy all write `X-Forwarded-For`. For a proxy that sets only `X-Real-IP`, set `TRUSTED_PROXY_HEADER=x-real-ip`, which then ignores `X-Forwarded-For`. Without that setting, such a proxy shows its own address for every request. Any other value stops DBackup at the start.
 
 ::: tip Devices in the same network
 With the default, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out.

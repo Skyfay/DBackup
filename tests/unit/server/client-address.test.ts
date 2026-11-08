@@ -1,6 +1,8 @@
 // @vitest-environment node
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CLIENT_ADDRESS_HEADER as SERVER_HEADER, CLOUDFLARE_RANGES, clientAddressOf, normalizeAddress, trustedProxiesFrom } from "../../../server/client-address";
+import { CLIENT_ADDRESS_HEADER as SERVER_HEADER, CLOUDFLARE_RANGES, CUSTOM_SERVER_MARK, clientAddressOf, normalizeAddress, proxyHeaderFrom, trustedProxiesFrom } from "../../../server/client-address";
 import { CLIENT_ADDRESS_HEADER as APP_HEADER } from "@/lib/core/client-address";
 
 const defaults = trustedProxiesFrom(undefined);
@@ -31,9 +33,30 @@ describe("the address of a client", () => {
         expect(clientAddressOf("172.18.0.2", "192.168.1.50", undefined, defaults)).toBe("192.168.1.50");
     });
 
-    it("takes X-Real-IP from a trusted proxy that sets only that one", () => {
-        expect(clientAddressOf("127.0.0.1", undefined, "203.0.113.7", defaults)).toBe("203.0.113.7");
-        expect(clientAddressOf("127.0.0.1", undefined, "203.0.113.7, 198.51.100.1", defaults)).toBe("127.0.0.1");
+    it("takes X-Real-IP from a trusted proxy that sets only that one, with TRUSTED_PROXY_HEADER=x-real-ip", () => {
+        const realIp = proxyHeaderFrom("x-real-ip");
+        expect(clientAddressOf("127.0.0.1", undefined, "203.0.113.7", defaults, realIp)).toBe("203.0.113.7");
+        expect(clientAddressOf("127.0.0.1", undefined, "203.0.113.7, 198.51.100.1", defaults, realIp)).toBe("127.0.0.1");
+        expect(clientAddressOf("127.0.0.1", undefined, undefined, defaults, realIp)).toBe("127.0.0.1");
+    });
+
+    it("ignores an X-Forwarded-For a client sent through a proxy that sets only X-Real-IP", () => {
+        // The attack: the proxy passes the client's own X-Forwarded-For on, which names another address on every request.
+        expect(clientAddressOf("172.18.0.2", "198.51.100.1", "203.0.113.7", defaults, "x-real-ip")).toBe("203.0.113.7");
+        expect(clientAddressOf("172.18.0.2", "198.51.100.2", undefined, defaults, "x-real-ip")).toBe("172.18.0.2");
+    });
+
+    it("ignores an X-Real-IP a client sent through a proxy that appends to X-Forwarded-For", () => {
+        expect(clientAddressOf("172.18.0.2", "198.51.100.1, 203.0.113.7", "198.51.100.9", defaults)).toBe("203.0.113.7");
+        // Without the header of the setting the address is the proxy's, never the other header.
+        expect(clientAddressOf("172.18.0.2", undefined, "198.51.100.9", defaults)).toBe("172.18.0.2");
+    });
+
+    it("reads X-Forwarded-For unless TRUSTED_PROXY_HEADER names X-Real-IP, and refuses any other value", () => {
+        expect(proxyHeaderFrom(undefined)).toBe("x-forwarded-for");
+        expect(proxyHeaderFrom(" ")).toBe("x-forwarded-for");
+        expect(proxyHeaderFrom("X-Real-IP")).toBe("x-real-ip");
+        expect(() => proxyHeaderFrom("forwarded")).toThrow(/"forwarded" is none of x-forwarded-for, x-real-ip/);
     });
 
     it("stops at an entry that is no address, which no proxy wrote", () => {
@@ -94,5 +117,10 @@ describe("the address of a client", () => {
 
     it("travels in the header the app reads", () => {
         expect(SERVER_HEADER).toBe(APP_HEADER);
+    });
+
+    it("is marked by the variable the app checks before it trusts the header", () => {
+        expect(CUSTOM_SERVER_MARK).toBe("DBACKUP_CUSTOM_SERVER");
+        expect(fs.readFileSync(path.resolve(__dirname, "../../../src/lib/core/client-address.ts"), "utf8")).toContain(`process.env.${CUSTOM_SERVER_MARK} === "1"`);
     });
 });

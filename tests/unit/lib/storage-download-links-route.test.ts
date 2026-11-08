@@ -6,6 +6,9 @@ import os from "os";
 import path from "path";
 import { PermissionError } from "@/lib/logging/errors";
 
+// The custom server sets the header of the address, which the app trusts only then.
+vi.stubEnv("DBACKUP_CUSTOM_SERVER", "1");
+
 const mocks = vi.hoisted(() => ({
     permissions: [] as string[],
     userId: "u1",

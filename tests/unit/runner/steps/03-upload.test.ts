@@ -354,6 +354,23 @@ describe('stepUpload', () => {
         );
     });
 
+    it('records when the dumps started in the sidecar and the cached row, apart from when the backup was stored', async () => {
+        // A shared database goes to a customer's backup only when they held it from the dump on.
+        const fsPromises = await import('fs/promises');
+        const { storageService } = await import('@/services/storage/storage-service');
+        const ctx = makeCtx();
+        ctx.metadata = { ...ctx.metadata, dumpsStartedAt: '2026-11-02T01:00:00.000Z' };
+
+        await stepUpload(ctx);
+
+        const written = (fsPromises.default.writeFile as ReturnType<typeof vi.fn>).mock.calls.find(([file]) => file === '/tmp/test_backup.sql.meta.json');
+        const sidecar = JSON.parse(written![1] as string);
+        expect(sidecar.dumpsStartedAt).toBe('2026-11-02T01:00:00.000Z');
+        expect(sidecar.timestamp).not.toBe(sidecar.dumpsStartedAt);
+        const appended = (storageService.appendStorageListCacheEntry as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(appended).toMatchObject({ dumpsStartedAt: '2026-11-02T01:00:00.000Z' });
+    });
+
     it('calls upload for metadata sidecar and main file on each destination', async () => {
         const dest = makeDestination({ adapterId: 's3' });
         const ctx = makeCtx({ destinations: [dest] });

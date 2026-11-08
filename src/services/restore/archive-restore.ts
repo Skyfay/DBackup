@@ -13,7 +13,7 @@
  * (peak disk = largest file).
  */
 
-import { assertRestoreFolder, safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { assertRestoreFolder, restoreDestination, safeRemoteJoin } from "@/lib/archive/remote-paths";
 import { isOrigin, mappingFolder, NO_RESTORE_FOLDER, restoredFileRefusal } from "./restore-targets";
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
@@ -399,14 +399,14 @@ export async function restoreArchiveSnapshot(
                             throw new Error(`Checksum mismatch: expected ${file.h}, got ${digest}`);
                         }
 
-                        const remotePath = safeRemoteJoin(target.basePath, file.p);
+                        const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
                         // Forward the adapter's own warnings and errors (a rate-limit retry, a real
                         // rejection) into the restore log; the per-file "started/finished" info is
                         // dropped so a large restore does not bury the history.
                         const uploadOk = await sessions.upload(
                             target, stagePath, remotePath,
                             (msg, level, type, details) => { if (level && level !== 'info') log(`${file.p}: ${msg}`, level, type ?? 'storage', details); },
-                            metadata
+                            { ...metadata, restoreRelativePath }
                         );
                         if (!uploadOk) {
                             throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
@@ -470,11 +470,8 @@ export async function restoreArchiveSnapshot(
                     }
 
                     try {
-                        await target.adapter.createSymlink(
-                            target.config,
-                            safeRemoteJoin(target.basePath, file.p),
-                            file.lnk
-                        );
+                        const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
+                        await target.adapter.createSymlink(target.config, remotePath, file.lnk, { restoreRelativePath });
                         perSourceDone.set(src, (perSourceDone.get(src) ?? 0) + 1);
                         callbacks.record?.folderEntry(src, "restored", 0);
                     } catch (e: unknown) {

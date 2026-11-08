@@ -13,7 +13,7 @@
  */
 
 import path from "path";
-import { safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { restoreDestination, safeRemoteJoin } from "@/lib/archive/remote-paths";
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { pipeline } from "stream/promises";
@@ -49,6 +49,7 @@ import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf
 import { assertRestoreFolder } from "@/lib/archive/remote-paths";
 import { assertWriteTargets, isOrigin, restoredFileRefusal, type RestoreCaller } from "./restore-targets";
 import { reserveTempSpace, type TempSpaceReservation } from "./temp-space";
+import { parseWithinBudget } from "@/services/backup/index-parse-budget";
 import { assertEncryptionKept } from "./recorded-encryption";
 
 const log = logger.child({ service: "FileRestoreService" });
@@ -208,7 +209,8 @@ export async function openArchiveForRestore(
             })
             : undefined;
 
-        const index = await parseArchiveIndex(indexBytes, manifest, masterKey);
+        // Within the bound on the parses of the process, see `index-parse-budget.ts`.
+        const index = await parseWithinBudget(indexBytes.length, () => parseArchiveIndex(indexBytes, manifest, masterKey));
         await assertChainComplete(adapter, config, file, index);
 
         const chain: ChainReaderOptions = {
@@ -595,8 +597,8 @@ export async function restoreFilesToStorage(
                     throw new Error(`Checksum mismatch: expected ${file.h}, got ${digest}`);
                 }
 
-                const remotePath = safeRemoteJoin(target.basePath, file.p);
-                if (!(await sessions.upload(target, stagePath, remotePath, undefined, metadata))) {
+                const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
+                if (!(await sessions.upload(target, stagePath, remotePath, undefined, { ...metadata, restoreRelativePath }))) {
                     throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
                 }
 
@@ -629,7 +631,7 @@ export async function restoreFilesToStorage(
                 continue;
             }
 
-            const remotePath = safeRemoteJoin(target.basePath, file.p);
+            const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
             if (!target.adapter.createSymlink) {
                 // Named individually and counted as a failure, which downgrades the restore.
                 // Object storage has no symbolic links, and reporting a complete restore that
@@ -646,7 +648,7 @@ export async function restoreFilesToStorage(
             }
 
             try {
-                await target.adapter.createSymlink(target.config, remotePath, file.lnk);
+                await target.adapter.createSymlink(target.config, remotePath, file.lnk, { restoreRelativePath });
                 restored++;
                 onProgress?.(restored, files.length, file.p);
             } catch (e: unknown) {

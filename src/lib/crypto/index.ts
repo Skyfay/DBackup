@@ -47,6 +47,25 @@ export function decrypt(text: string): string {
   return decryptWithKey(text, getEncryptionKey());
 }
 
+/** The one form `encrypt` writes: a 16-byte IV, a 16-byte tag and the data, in hex. */
+const SEALED = /^[0-9a-f]{32}:[0-9a-f]{32}:[0-9a-f]*$/;
+
+/** Whether a value has the form `encrypt` writes, unlike plain text with three `:` parts. */
+export function isSealed(text: string): boolean {
+  return SEALED.test(text);
+}
+
+/**
+ * `decrypt` for a value that must have come from `encrypt`, like a token in a URL. Anything else
+ * throws, also plain text, which `decrypt` hands back as it is for values stored before encryption.
+ */
+export function decryptSealed(text: string): string {
+  if (typeof text !== 'string' || !isSealed(text)) {
+    throw new EncryptionError('decrypt', 'The value is not encrypted');
+  }
+  return decryptWithKey(text, getEncryptionKey());
+}
+
 /**
  * `encrypt` with a key other than ENCRYPTION_KEY, like the key of the DBackup a configuration
  * backup came from while its values are encrypted again for this one.

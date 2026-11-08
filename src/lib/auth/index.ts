@@ -5,6 +5,7 @@ import { refuseWeakPassword } from "@/lib/auth/password-guard";
 import { claimFirstSignUp, refuseLateSignUp } from "@/lib/auth/sign-up-guard";
 import { keepPasskeyFactor } from "@/lib/auth/passkey-factor-guard";
 import { refusePasskeyFirstFactor } from "@/lib/auth/passkey-login-guard";
+import { refuseWithoutReauth } from "@/lib/auth/reauth-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "@/lib/prisma";
 import { twoFactor } from "better-auth/plugins";
@@ -14,7 +15,7 @@ import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
 import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
 import { noteSecurityChange, recordSecurityChange } from "@/lib/auth/security-audit";
 import { isSsoManagementRequest, refuseDisabledProvider } from "@/lib/auth/sso-guard";
-import { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser } from "@/lib/auth/sso-hooks";
+import { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser, refusedSsoLinkRedirect } from "@/lib/auth/sso-hooks";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { DEFAULT_SESSION_DURATION, SESSION_OPTIONS, sessionDurationOf, sessionEndsAt } from "@/lib/auth/session-lifetime";
@@ -148,6 +149,8 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
     if (await profileChangeRefused(ctx.path, Boolean(ctx.request), () => getSessionFromCtx(ctx))) {
         throw new APIError("FORBIDDEN", { code: "PROFILE_PERMISSION", message: PROFILE_CHANGE_REFUSED });
     }
+    // The password of the second factor goes through the lockout, and a passkey needs a recent sign-in.
+    await refuseWithoutReauth(ctx, () => getSessionFromCtx(ctx));
     // What a change of the second factor or a passkey replaces, for its audit entry after it.
     try {
         await noteSecurityChange(ctx, () => getSessionFromCtx(ctx));
@@ -181,6 +184,8 @@ const afterAuth = createAuthMiddleware(async (ctx) => {
     } catch (error) {
         log.warn("Writing a change of the second factor or a passkey to the audit log failed", {}, wrapError(error));
     }
+    // A callback whose link a provider may not make ends on the login page with the reason.
+    refusedSsoLinkRedirect(ctx);
 });
 
 export const auth = betterAuth({

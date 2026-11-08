@@ -17,6 +17,7 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { userMessage } from "@/lib/logging/user-message";
 import { RetentionConfigurationSchema, type RetentionConfiguration } from "@/lib/core/retention";
+import { NAMING_PATTERN_RULE, namingPatternProblem } from "@/lib/templates/naming-pattern";
 
 /**
  * Who reads the lists of templates: the Templates page, and the job form and the pickers that use
@@ -45,7 +46,9 @@ const RetentionPolicyFields = { name: NameSchema, description: DescriptionSchema
 const CreateRetentionPolicySchema = z.object(RetentionPolicyFields);
 const UpdateRetentionPolicySchema = z.object(RetentionPolicyFields).partial();
 
-const NamingTemplateFields = { name: NameSchema, description: DescriptionSchema, pattern: z.string().trim().min(1).max(500), isDefault: z.boolean().optional() };
+// A pattern names one file of the run, never a folder, see `naming-pattern.ts`.
+const NamingPatternSchema = z.string().trim().min(1).max(500).refine((pattern) => !namingPatternProblem(pattern), NAMING_PATTERN_RULE);
+const NamingTemplateFields = { name: NameSchema, description: DescriptionSchema, pattern: NamingPatternSchema, isDefault: z.boolean().optional() };
 const CreateNamingTemplateSchema = z.object(NamingTemplateFields);
 const UpdateNamingTemplateSchema = z.object(NamingTemplateFields).partial();
 

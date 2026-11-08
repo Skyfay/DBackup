@@ -1,9 +1,9 @@
 import { APIError } from "better-auth/api";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { placeSsoUser, refuseClaimedSsoSignUp, refuseSsoSignUp, type SsoHookContext } from "./sso-guard";
+import { isSsoCallback, placeSsoUser, refuseClaimedSsoSignUp, refuseSsoSignUp, type SsoHookContext } from "./sso-guard";
 import { recordSsoLink } from "./sso-link-audit";
-import { allowTenantSsoLink, joinSsoTenant, refuseSsoSession } from "./sso-tenant-guard";
+import { allowTenantSsoLink, joinSsoTenant, NOT_LINKED_URL, refuseSsoSession, tenantRefusalUrl } from "./sso-tenant-guard";
 
 const log = logger.child({ module: "Auth" });
 
@@ -15,7 +15,13 @@ const log = logger.child({ module: "Auth" });
  */
 
 /** The context better-auth hands a database hook, the one of the endpoint that runs. */
-export type SsoDatabaseHookContext = (SsoHookContext & { redirect?: (url: string) => unknown }) | null | undefined;
+export type SsoDatabaseHookContext = (SsoHookContext & { request?: Request; redirect?: (url: string) => unknown }) | null | undefined;
+
+/**
+ * What the link hook met on a callback, by its request: the identity it let link, which the session
+ * hook then asks for, or where the login page says why it refused the link.
+ */
+const callbackLinks = new WeakMap<Request, { accountId?: string; refusedUrl?: string }>();
 
 /** Before a user is added: the provider decides whether it adds them, never the browser. */
 export async function beforeSsoUser(user: { email?: string | null }, context: SsoDatabaseHookContext): Promise<void> {
@@ -32,9 +38,26 @@ export async function afterSsoUser(user: { id: string; name: string; email: stri
     }
 }
 
-/** Before an account is linked to a provider: false keeps a provider from linking an account it may not sign in. */
-export async function beforeSsoLink(account: { userId: string }, context: SsoDatabaseHookContext): Promise<false | undefined> {
-    return (await allowTenantSsoLink(account, context)) ? undefined : false;
+/**
+ * Before an account is linked to a provider: a provider links no account it may not sign in. On a
+ * callback the refusal throws, since better-auth goes on after a link that returned nothing, marks
+ * the email as verified, which `allowTenantSsoLink` reads, and starts a session. better-auth answers
+ * a failed link with an error of its own, which `refusedSsoLinkRedirect` replaces with the reason.
+ */
+export async function beforeSsoLink(account: { userId: string; accountId?: string }, context: SsoDatabaseHookContext): Promise<false | undefined> {
+    const callback = isSsoCallback(context?.path);
+    const allowed = await allowTenantSsoLink(account, context);
+    if (!callback) return allowed ? undefined : false;
+    const refusedUrl = allowed ? undefined : ((await tenantRefusalUrl(account.userId, context)) ?? NOT_LINKED_URL);
+    if (context?.request) callbackLinks.set(context.request, { accountId: account.accountId, refusedUrl });
+    if (refusedUrl) throw new APIError("FORBIDDEN", { message: "account not linked" });
+    return undefined;
+}
+
+/** After a callback whose link was refused: the login page says why, see `beforeSsoLink`. */
+export function refusedSsoLinkRedirect(ctx: { request?: Request; redirect: (url: string) => unknown }): void {
+    const refusedUrl = ctx.request ? callbackLinks.get(ctx.request)?.refusedUrl : undefined;
+    if (refusedUrl) throw ctx.redirect(refusedUrl);
 }
 
 /**
@@ -56,5 +79,6 @@ export async function afterSsoLink(account: { userId: string }, context: SsoData
 
 /** Before a session starts: a callback of a provider signs in only an account linked to it, which it may sign in. */
 export async function beforeSsoSession(session: { userId: string }, context: SsoDatabaseHookContext): Promise<void> {
-    await refuseSsoSession(session, context, (url) => context?.redirect?.(url) ?? new APIError("FORBIDDEN"));
+    const accountId = context?.request ? callbackLinks.get(context.request)?.accountId : undefined;
+    await refuseSsoSession(session, context, (url) => context?.redirect?.(url) ?? new APIError("FORBIDDEN"), accountId);
 }

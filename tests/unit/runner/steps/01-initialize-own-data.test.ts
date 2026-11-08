@@ -181,3 +181,37 @@ describe("a run of a job whose directory source leaves the folder of its connect
         }
     });
 });
+
+describe("a run of a Docker Volumes job whose path is no volume", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.ownData.mockResolvedValue(null);
+        mocks.ownVolume.mockResolvedValue(null);
+    });
+
+    const volume = (path: string, connectionMode = "direct") => job({
+        source: null,
+        sources: [{ id: "s-1", path, priority: 0, excludePatterns: "[]", excludePatternPresets: [], stopContainers: true, config: connection("docker", "docker-volume", { connectionMode }, "Docker") }],
+    });
+
+    it("stops before Docker mounts a folder of its host, for a job saved before a save refused it", async () => {
+        for (const path of ["/etc", "/var/lib/docker/volumes/dbackup-data/_data", "/"]) {
+            for (const mode of ["direct", "ssh"]) {
+                mocks.job.mockResolvedValue(volume(path, mode));
+                const run = ctx();
+                await expect(stepInitialize(run)).rejects.toThrow("Job Nightly, source Docker: ");
+                expect(run.sources ?? []).toEqual([]);
+            }
+        }
+        expect(mocks.ownVolume).not.toHaveBeenCalled();
+    });
+
+    it("reads a volume by its name", async () => {
+        mocks.job.mockResolvedValue(volume("immich_upload"));
+        const run = ctx();
+
+        await stepInitialize(run);
+
+        expect(run.sources.map((source) => source.remotePath)).toEqual(["immich_upload"]);
+    });
+});

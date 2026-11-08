@@ -16,7 +16,7 @@ import { auditService } from "@/services/audit-service";
 import { fromPlatform, groupService, type ProviderMove } from "@/services/user/group-service";
 import { providerPlacementChanges } from "@/services/sso/oidc-audit";
 import { PLATFORM_LOG } from "@/services/system/settings-save";
-import { MEMBERSHIP_END_HANDS_OVER, membershipEndRefusal } from "@/services/tenant/membership-end";
+import { MEMBERSHIP_END_HANDS_OVER, MEMBERSHIP_END_MOVES_ACCOUNT, membershipEndRefusal } from "@/services/tenant/membership-end";
 import { membershipService } from "@/services/tenant/membership-service";
 import { placementRefusal, PLATFORM_ADMIN_MEMBERSHIP } from "@/services/tenant/member-rules";
 import { userService } from "@/services/user/user-service";
@@ -44,6 +44,7 @@ export type GroupFormValues = z.input<typeof GroupSchema>;
 const IdSchema = z.string().min(1).max(200);
 
 /** Why a group without a group for its members stays, see `membershipEndRefusal`. */
+const MEMBER_MOVES_ACCOUNT = "One of its members is in no other tenant, so the account would belong to another tenant afterwards. Pick a group for its members, delete that account, or let someone who manages the accounts of the platform delete the group.";
 const MEMBER_HANDED_OVER = "One of its members would afterwards work only in tenants where you manage the users. Pick a group for its members, or let someone who manages the accounts of the platform delete it.";
 
 const OPEN_A_TENANT = "Open a tenant to change its groups.";
@@ -159,6 +160,7 @@ export async function deleteGroup(id: string, moveTo: string | null = null) {
     if (!moveToGroup) {
         for (const memberId of memberIds) {
             const handsOver = await membershipEndRefusal(viewer, memberId, scope.tenantId);
+            if (handsOver === MEMBERSHIP_END_MOVES_ACCOUNT) return { success: false, error: MEMBER_MOVES_ACCOUNT };
             if (handsOver) return { success: false, error: MEMBER_HANDED_OVER };
         }
     }

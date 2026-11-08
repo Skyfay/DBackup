@@ -29,6 +29,13 @@ export type AdapterDefinition = {
      */
     sharesSingleDatabases?: boolean;
     /**
+     * Database only: false where a customer may not restore a shared database of this engine
+     * themselves, only the provider from its own History. Such an engine restores with the login of
+     * the provider's connection and has no way to keep the code of the customer's dump to the rights
+     * of the customer, see Shared Databases. Omitted, a customer restores.
+     */
+    customerRestores?: false;
+    /**
      * Storage only: how many files this adapter can usefully transfer at once as a directory
      * source - a suggested starting point and a ceiling the connection may not exceed.
      *

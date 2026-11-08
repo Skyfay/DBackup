@@ -22,6 +22,7 @@ export const SENSITIVE_KEYS = [
   'clientSecret', // OAuth Client Secret (Google Drive, etc.)
   'refreshToken', // OAuth Refresh Token
   'authHeader', // Generic Webhook Authorization header
+  'customHeaders', // Generic Webhook extra headers, which carry API keys
   'accountSid', // Twilio Account SID
   'authToken', // Twilio Auth Token
   'appToken', // Gotify application token

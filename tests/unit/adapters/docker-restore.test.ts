@@ -19,6 +19,12 @@ vi.mock("@/lib/adapters/storage/docker/engine/connect", () => ({
     DEFAULT_SOCKET_PATH: "/var/run/docker.sock",
 }));
 
+// Outside of any container, whatever runs the tests, so no stop meets DBackup's own container.
+vi.mock("@/lib/adapters/storage/docker/own-container", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/lib/adapters/storage/docker/own-container")>()),
+    ownContainerHints: async () => ({ inContainer: false, ids: [], hostname: "test" }),
+}));
+
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));

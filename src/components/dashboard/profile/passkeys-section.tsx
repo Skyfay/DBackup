@@ -105,6 +105,8 @@ function NameDialog({ open, onOpenChange, title, note, tone, confirm, initial, o
 interface PasskeysSectionProps {
     userId: string;
     canManage: boolean;
+    /** The group may turn off the second factor, which deleting the last passkey does while it is one. */
+    canEndFactor: boolean;
     /** A passkey counts as the second factor, which ends with the last passkey. */
     passkeyFactor: boolean;
     passkeys: PasskeyRow[] | null;
@@ -113,11 +115,13 @@ interface PasskeysSectionProps {
 }
 
 /** The passkeys of the viewer with Add a passkey, and Rename and Delete on each. */
-export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, reload, onFactorChanged }: PasskeysSectionProps) {
+export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor, passkeys, reload, onFactorChanged }: PasskeysSectionProps) {
     const [adding, setAdding] = useState(false);
     const [renaming, setRenaming] = useState<PasskeyRow | null>(null);
     const [removing, setRemoving] = useState<PasskeyRow | null>(null);
     const [busy, setBusy] = useState(false);
+    // The last passkey is the whole second factor while it counts as one, which the group may keep.
+    const keepsLast = passkeyFactor && passkeys?.length === 1 && !canEndFactor;
 
     const add = async (name: string) => {
         try {
@@ -218,7 +222,7 @@ export function PasskeysSection({ userId, canManage, passkeyFactor, passkeys, re
                                     name={passkey.name || "Unnamed passkey"}
                                     groups={[
                                         { actions: [{ id: "rename", label: "Rename", icon: Pencil, onSelect: () => setRenaming(passkey), tone: "edit" }] },
-                                        { actions: [{ id: "delete", label: "Delete", icon: Trash2, onSelect: () => setRemoving(passkey), tone: "destructive" }] },
+                                        { actions: [{ id: "delete", label: "Delete", icon: Trash2, onSelect: () => setRemoving(passkey), tone: "destructive", ...(keepsLast ? { disabled: true, note: "Your group may not turn off your second factor." } : {}) }] },
                                     ]}
                                 />
                             )}

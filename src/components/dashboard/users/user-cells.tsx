@@ -1,12 +1,13 @@
 "use client";
 
-import { Fingerprint, KeyRound, Shield, ShieldCheck, ShieldOff } from "lucide-react";
+import { Crown, Fingerprint, KeyRound, Shield, ShieldCheck, ShieldOff } from "lucide-react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { getOidcProviderIcon } from "@/components/oidc/provider-icon";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { describeAgent, formatIpAddress } from "@/lib/core/user-agent";
 import { cn } from "@/lib/utils";
 import type { SecondFactor, SignInMethod, UserGroupRef, UserRow } from "@/services/user/users-types";
+import { PlatformOnlyTag } from "./user-tenants";
 
 /** "LG" for Lena Graf, "M" for Manu. */
 export function initialsOf(name: string): string {
@@ -32,6 +33,19 @@ export function YouTag() {
     return <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">You</span>;
 }
 
+/** A small mark after the name of a platform admin, who manages the whole instance and its sign-in. */
+export function PlatformAdminTag() {
+    return (
+        <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground"
+            title="Manages the whole instance, its sign-in providers and its settings"
+        >
+            <Crown className="size-3" aria-hidden="true" />
+            Platform admin
+        </span>
+    );
+}
+
 /** Avatar, name and email. The name is a button, the way in for keyboards. */
 export function UserCell({ user, compact, onOpen }: { user: UserRow; compact: boolean; onOpen: (user: UserRow) => void }) {
     return (
@@ -47,6 +61,7 @@ export function UserCell({ user, compact, onOpen }: { user: UserRow; compact: bo
                     >
                         {user.name}
                     </button>
+                    {user.superAdmin && <PlatformAdminTag />}
                     {user.isYou && <YouTag />}
                 </div>
                 <div className="min-w-0 truncate text-xs text-muted-foreground">{user.email}</div>
@@ -55,8 +70,12 @@ export function UserCell({ user, compact, onOpen }: { user: UserRow; compact: bo
     );
 }
 
-/** The group as a tag, or a dashed amber "No group", since such a user sees nothing. */
-export function GroupTag({ group, className }: { group: UserGroupRef | null; className?: string }) {
+/**
+ * The group as a tag, or a dashed amber "No group", since such a user sees nothing. An account
+ * that runs the platform needs no group, so it gets a quiet "Platform only" instead.
+ */
+export function GroupTag({ group, platform = false, className }: { group: UserGroupRef | null; platform?: boolean; className?: string }) {
+    if (!group && platform) return <PlatformOnlyTag className={className} />;
     return (
         <span
             className={cn(

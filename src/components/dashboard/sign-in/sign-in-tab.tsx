@@ -18,7 +18,7 @@ import { signInActions, type SignInActionHandlers } from "./sign-in-actions";
 import { NAMED_ADAPTERS } from "./sign-in-adapters";
 import { SignInCard } from "./sign-in-card";
 import { onlyWayIn, placeLine } from "./sign-in-cells";
-import { signInColumns } from "./sign-in-columns";
+import { belongsToFilter, signInColumns } from "./sign-in-columns";
 import { SignInDeleteDialog, SignInDisableDialog, toggleProvider } from "./sign-in-confirm-dialogs";
 import { SignInDetails } from "./sign-in-details";
 import { SignInFormDialog } from "./sign-in-form-dialog";
@@ -34,7 +34,7 @@ export interface SignInTabHandle {
 interface SignInTabProps {
     ref?: Ref<SignInTabHandle>;
     view: "table" | "cards";
-    /** May add, change, switch and delete providers, which only a SuperAdmin does. */
+    /** May add, change, switch and delete providers, which only a platform admin does. */
     canManage: boolean;
     initialLayout: TablePreferences | null;
 }
@@ -42,7 +42,8 @@ interface SignInTabProps {
 /**
  * The ways to sign in besides a password: the numbers, the providers as a table or as cards, a
  * panel with what a provider needs and who is linked through it, and the dialogs to add, change
- * and delete one. The client secret never reaches the browser. A phone gets cards.
+ * and delete one. The client secret never reaches the browser. A phone gets cards. With more than
+ * one tenant a provider belongs to the platform or to a tenant, which the list says and filters by.
  */
 export function SignInTab({ ref, view, canManage, initialLayout }: SignInTabProps) {
     const router = useRouter();
@@ -76,12 +77,14 @@ export function SignInTab({ ref, view, canManage, initialLayout }: SignInTabProp
     } : {}, [canManage, toggle]);
 
     const open = useCallback((provider: SsoProviderRow) => setDetails({ id: provider.id, open: true }), []);
+    const multiTenant = (model?.tenants.length ?? 0) > 1;
     const columns = useMemo(
-        () => signInColumns({ onOpen: open, renderActions: (provider) => <BackupRowMenu name={provider.name} groups={signInActions(provider, handlers)} /> }),
-        [open, handlers]
+        () => signInColumns({ onOpen: open, multiTenant, renderActions: (provider) => <BackupRowMenu name={provider.name} groups={signInActions(provider, handlers)} /> }),
+        [open, handlers, multiTenant]
     );
 
     const providers = useMemo(() => model?.providers ?? [], [model]);
+    const filters = useMemo(() => (model && multiTenant ? [belongsToFilter(model.providers, model.tenants)] : []), [model, multiTenant]);
     const shown = details ? providers.find((provider) => provider.id === details.id) ?? null : null;
 
     return (
@@ -116,7 +119,8 @@ export function SignInTab({ ref, view, canManage, initialLayout }: SignInTabProp
                     columns={columns}
                     data={providers}
                     searchKey="name"
-                    searchPlaceholder="Search by name, ID or host"
+                    searchPlaceholder={multiTenant ? "Search by name, ID, domain or tenant" : "Search by name, ID or host"}
+                    filterableColumns={filters}
                     onRefresh={refresh}
                     isLoading={isLoading}
                     getRowId={(provider) => provider.id}
@@ -125,7 +129,7 @@ export function SignInTab({ ref, view, canManage, initialLayout }: SignInTabProp
                     activeRowId={details?.open ? details.id : null}
                     view={view}
                     renderCard={(row) => (
-                        <SignInCard provider={row.original} onOpen={open} actions={<BackupRowMenu name={row.original.name} groups={signInActions(row.original, handlers)} />} />
+                        <SignInCard provider={row.original} multiTenant={multiTenant} onOpen={open} actions={<BackupRowMenu name={row.original.name} groups={signInActions(row.original, handlers)} />} />
                     )}
                     renderRowMenu={(provider, bulk) => (
                         <BackupContextMenu

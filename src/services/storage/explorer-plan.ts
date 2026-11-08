@@ -99,6 +99,7 @@ export function toFileInfo(file: ExplorerFile): FileInfo {
         backupTimestamp: file.createdAt ? new Date(file.createdAt) : undefined,
         locked: file.locked,
         chainId: file.chain?.id,
+        ...(file.onlyDatabases?.length ? { onlyDatabases: file.onlyDatabases } : {}),
     };
 }
 
@@ -117,6 +118,14 @@ export function retentionConfigOf(destination: PolicyDestination, fallback: stri
     if (destination.retentionPolicyId) return destination.retentionPolicy?.config ?? null;
     if (readPolicy(destination.retention)) return destination.retention;
     return fallback;
+}
+
+/**
+ * The default template of the tenant of a job, from the default of every tenant the request reads.
+ * The runner reads the default of the tenant it runs in, so in All tenants each job keeps its own.
+ */
+export function defaultRetentionOf(defaults: { tenantId?: string | null; config: string }[], tenantId: string | undefined): string | null {
+    return defaults.find((entry) => (entry.tenantId ?? undefined) === tenantId)?.config ?? null;
 }
 
 /** A policy stored as JSON, NONE when it cannot be read, like the runner does. */
@@ -144,7 +153,8 @@ export function simulateRetention(
     chains: boolean
 ): ({ count: number; oldest: number } | null)[] {
     if (policy.mode === "NONE") return runs.map(() => null);
-    let current = [...files];
+    // The planned runs are whole ones, which a backup of single databases never counts with.
+    let current = files.filter((file) => !file.onlyDatabases?.length);
     // The chain the next incremental adds to is the one of the newest backup there.
     const newest = [...files].sort((a, b) => effectiveBackupTime(b).getTime() - effectiveBackupTime(a).getTime())[0];
     let chain = newest?.chainId;

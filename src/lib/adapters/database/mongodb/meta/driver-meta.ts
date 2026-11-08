@@ -1,7 +1,7 @@
 import { MongoClient } from "mongodb";
 
 import type { MongoDBConfig } from "@/lib/adapters/definitions";
-import { SYSTEM_DATABASES, buildConnectionUri } from "../args";
+import { SYSTEM_DATABASES, buildConnectionUri, connectsDirectly } from "../args";
 import type {
     MongoCollectionInfo,
     MongoDatabaseStats,
@@ -23,6 +23,10 @@ export class DriverMongoMeta implements MongoMeta {
             this.client = new MongoClient(buildConnectionUri(this.config), {
                 connectTimeoutMS: CONNECT_TIMEOUT_MS,
                 serverSelectionTimeoutMS: CONNECT_TIMEOUT_MS,
+                // One host without an SRV record: talk to that host alone, never to the members
+                // it announces, which the local network check never read. The tools do the same
+                // for a single --host. A seed list or an SRV name still discovers its replica set.
+                ...(connectsDirectly(this.config) ? { directConnection: true } : {}),
             });
             await this.client.connect();
         }

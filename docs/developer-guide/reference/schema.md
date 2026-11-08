@@ -11,14 +11,17 @@ prisma/schema.prisma
 ## Entity Relationship Overview
 
 ```
-┌───────────────────┐     ┌───────────────────┐
-│       User        │────▶│       Group       │
-│                   │     │   (permissions)   │
-└────────┬──────────┘     └───────────────────┘
-         │ has many
-         ├──── Session, Account, Passkey, TwoFactor
-         ├──── AuditLog
+┌───────────────────┐     ┌───────────────────┐     ┌───────────────────┐
+│       User        │────▶│ TenantMembership  │────▶│       Group       │
+│  (platformRole)   │     │  (one per tenant) │     │   (permissions)   │
+└────────┬──────────┘     └─────────┬─────────┘     └───────────────────┘
+         │ has many                 ▼
+         ├──── Session, Account,  ┌───────────────────┐
+         │     Passkey, TwoFactor │      Tenant       │──▶ TenantInvitation
+         ├──── AuditLog           └───────────────────┘
          └──── ApiKey
+
+Every model below that holds data of a customer carries tenantId, see Tenant Models.
 
 ┌──────────────────────────────────────────────────┐
 │                   AdapterConfig                  │
@@ -28,7 +31,9 @@ prisma/schema.prisma
 │  ──▶ CredentialProfile (primary, ssh)            │
 │  ──▶ RetentionPolicy (default for destination)   │
 │  ──▶ HealthCheckLog, DbVersionHistory            │
-│  ──▶ StorageListCache                            │
+│  ──▶ StorageListCache (per tenant)               │
+│  ──▶ ConnectionShare ──▶ ConnectionShareTenant   │
+│  ──▶ ChannelRecipients                           │
 │  ──▶ DatabaseListCache                           │
 └────────────┬─────────────────────────────────────┘
              │
@@ -315,8 +320,8 @@ model User {
   createdAt              DateTime
   updatedAt              DateTime
 
-  groupId                String?
-  group                  Group?     @relation(...)
+  platformRole           String?    // "ADMIN" for a platform admin, null for everyone else
+  memberships            TenantMembership[]  // The group of the user in each tenant
 
   twoFactor              TwoFactor?
   accounts               Account[]
@@ -329,17 +334,61 @@ model User {
 
 ### Group
 
-RBAC group. `permissions` is a JSON array of permission strings (same format as `ApiKey.permissions`).
+RBAC group of one tenant, whose admins make and change it. `permissions` is a JSON array of permission strings (same format as `ApiKey.permissions`). Who holds it in its tenant is a `TenantMembership`.
 
 ```prisma
 model Group {
   id          String   @id @default(uuid())
-  name        String   @unique
+  name        String              // Unique within its tenant
   permissions String              // JSON array of permission strings
+  fullAccess  Boolean  @default(false)  // Every permission of a tenant, cannot be edited or deleted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenantId    String   @default("default")  // The tenant it belongs to
+  templateId  String?             // The group for tenants it is in its tenant, changed by the platform alone
+
+  memberships TenantMembership[]
+  invitations TenantInvitation[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, templateId])
+}
+```
+
+### TenantGroupTemplate
+
+A group the platform makes once for tenants. Each tenant it reaches has a `Group` linked to it, see [Tenants](/developer-guide/advanced/tenants#groups-for-tenants).
+
+```prisma
+model TenantGroupTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  permissions String   @default("[]")    // JSON array, the permissions of a group of a tenant
+  allTenants  Boolean  @default(false)   // Every tenant, the ones made later too
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  users       User[]
+  tenants     TenantGroupTemplateTenant[] // The tenants it reaches while not every tenant
+  groups      Group[]
+}
+```
+
+### PlatformGroup
+
+A group of the platform for the people of the MSP: rights on the instance and rights in the tenants of its scope, on top of the group someone holds in a tenant. A user holds at most one through `User.platformGroupId`. A platform admin is no row, it is `User.platformRole`. See [Tenants](/developer-guide/advanced/tenants#platform-groups).
+
+```prisma
+model PlatformGroup {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  platformPermissions String   @default("[]")  // JSON array, the rights on the platform
+  tenantPermissions   String   @default("[]")  // JSON array, the rights in every tenant of its scope
+  allTenants          Boolean  @default(true)  // Every tenant, the ones made later too. Else PlatformGroupTenant
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  members             User[]
+  tenants             PlatformGroupTenant[]    // The tenants of its scope while not every tenant
 }
 ```
 
@@ -353,6 +402,7 @@ model ApiKey {
   hashedKey   String    @unique   // scrypt hash of the full key
   permissions String              // JSON array of permission strings
   userId      String
+  tenantId    String    @default("default")  // The tenant it was made in and acts in
   expiresAt   DateTime?
   lastUsedAt  DateTime?
   enabled     Boolean   @default(true)
@@ -379,6 +429,7 @@ model Session {
   ipAddress String?
   userAgent String?
   userId    String
+  activeTenantId String?  // The tenant this session picked, checked against the memberships
 
   user      User     @relation(...)
 }
@@ -456,6 +507,182 @@ model Verification {
   expiresAt  DateTime
   createdAt  DateTime?
   updatedAt  DateTime?
+}
+```
+
+---
+
+## Tenant Models
+
+Every connection, job, run, key, saved login, template, API key and log belongs to one tenant. The models in `TENANT_MODELS` of `src/lib/tenant/prisma-scope.ts` carry a column for it, which the Prisma client fills and filters by itself, see [Tenants](/developer-guide/advanced/tenants):
+
+```prisma
+  tenantId  String  @default("default")  // Only fills the rows of the migration
+```
+
+`CredentialProfile`, `RetentionPolicy`, `NamingTemplate`, `SchedulePreset`, `ExcludePatternPreset` and `NotificationTemplate` keep their names unique per tenant with `@@unique([tenantId, name])`.
+
+### Tenant
+
+```prisma
+model Tenant {
+  id                   String   @id @default(cuid())  // "default" for the home tenant
+  name                 String   @unique
+  sharesWithCustomers  Boolean  @default(false)       // Shares databases, destinations and channels with other tenants, true for the home tenant
+  addsDatabases        Boolean  @default(true)        // What it adds itself, set by the platform. Off stops new ones
+  addsDirectorySources Boolean  @default(true)
+  addsDestinations     Boolean  @default(true)
+  addsChannels         Boolean  @default(true)
+  addsApiKeys          Boolean  @default(true)
+  onDemandPerDay       Int?                           // Backups on demand a day of each database given to it, null for none
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  memberships          TenantMembership[]
+  invitations          TenantInvitation[]
+  logo                 TenantLogo?
+  platformGroups       PlatformGroupTenant[]
+}
+```
+
+### TenantMembership
+
+```prisma
+model TenantMembership {
+  userId    String
+  tenantId  String
+  groupId   String
+  createdAt DateTime @default(now())
+
+  @@id([userId, tenantId])
+}
+```
+
+### TenantInvitation
+
+```prisma
+model TenantInvitation {
+  id            String    @id @default(cuid())
+  tenantId      String
+  groupId       String
+  tokenHash     String    @unique  // SHA-256 of the token, which is shown once
+  note          String?            // Who it is for, only shown
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  acceptedById  String?
+}
+```
+
+### DatabaseAssignment
+
+One database of a shared server given to a customer. `tenantId` names the customer without a relation, so the id of a deleted tenant stays, and the row belongs to the tenant of the server through its `SharedServer`.
+
+```prisma
+model DatabaseAssignment {
+  id              String    @id @default(cuid())
+  sourceId        String              // The SharedServer, which outlives the connection of the server
+  databaseName    String
+  tenantId        String?             // The customer, null when the server's tenant took the database back
+  validFrom       DateTime
+  validUntil      DateTime?           // Null while it holds, an assignment ends rather than being deleted
+  movedToSourceId String?             // Where a move took the database, on the assignment it ended
+  movedToDatabase String?
+  onDemandPerDay  Int?                // Backups on demand a day: null as Tenant.onDemandPerDay, 0 none, else its own
+  createdAt       DateTime  @default(now())  // When it was given, which decides whether a start in the past reaches over another holder
+  createdById     String?
+}
+```
+
+### DatabaseAssignmentRule
+
+```prisma
+model DatabaseAssignmentRule {
+  id             String    @id @default(cuid())
+  sourceId       String
+  pattern        String              // A glob like "shop_*"
+  tenantId       String              // The customer, without a relation like DatabaseAssignment.tenantId
+  priority       Int       @default(0)
+  validFrom      DateTime
+  validUntil     DateTime?           // When it was removed or its tenant deleted, it still decides the backups of its time
+  onDemandPerDay Int?                 // Like DatabaseAssignment.onDemandPerDay, for each database it gives
+  createdAt      DateTime  @default(now())
+}
+```
+
+### SharedBackupRequest
+
+A backup a customer started of a database given to it. It counts towards the backups a day its assignment allows and lets the customer follow the run, which belongs to the tenant of the server and which the customer never opens itself.
+
+```prisma
+model SharedBackupRequest {
+  id            String   @id @default(cuid())
+  sourceId      String              // The SharedServer of the database
+  databaseName  String
+  executionId   String              // The run of the server's tenant that makes the backup
+  requestedById String?
+  createdAt     DateTime @default(now())
+  tenantId      String              // The customer that asked, in TENANT_MODELS
+
+  @@index([tenantId, sourceId, databaseName, createdAt])
+}
+```
+
+### ConnectionShare
+
+A destination or a notification channel its tenant shares with other tenants, see [Tenants](/developer-guide/advanced/tenants#shared-destinations-and-channels). Its `id` is the id of the connection, and it goes with the connection.
+
+```prisma
+model ConnectionShare {
+  id            String                  @id     // The AdapterConfig it shares
+  allTenants    Boolean                 @default(false) // Every other tenant, a new one too. Else only ConnectionShareTenant
+  encryptedOnly Boolean                 @default(false) // A destination: a customer's job writes to it only with a key
+  ownRecipients Boolean                 @default(true)  // An email channel: each customer names its own recipients
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  tenantId      String                  // The tenant that shares it
+
+  config        AdapterConfig           @relation(fields: [id], references: [id], onDelete: Cascade)
+  tenants       ConnectionShareTenant[]
+
+  @@index([tenantId])
+}
+```
+
+### ConnectionShareTenant
+
+A tenant a connection is shared with while it is not shared with every tenant. `tenantId` names the customer without a relation, and the row belongs to the tenant that shares through `share`.
+
+```prisma
+model ConnectionShareTenant {
+  shareId   String
+  tenantId  String          // The customer
+  createdAt DateTime        @default(now())
+
+  share     ConnectionShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@id([shareId, tenantId])
+  @@index([tenantId])
+}
+```
+
+### ChannelRecipients
+
+The recipients a customer names for an email channel another tenant shares with it. The server, the login and the sender stay with the tenant that shares it.
+
+```prisma
+model ChannelRecipients {
+  id         String        @id @default(cuid())
+  configId   String
+  recipients String        // JSON array of email addresses, at most 20
+  updatedAt  DateTime      @updatedAt
+  tenantId   String        // The customer that names them, not the tenant of the channel
+
+  config     AdapterConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, configId])
 }
 ```
 
@@ -598,7 +825,7 @@ model AuditLog {
 
 ### StorageSnapshot
 
-Point-in-time snapshot of storage usage per adapter. Created by the `REFRESH_STORAGE_STATS` system task. Used by the storage alert system to detect usage spikes.
+Point-in-time snapshot of storage usage per adapter and tenant. Created by the `REFRESH_STORAGE_STATS` system task. Used by the storage alert system to detect usage spikes. A destination shared with customers gets a snapshot for its own tenant and one for each customer, whose backups sit under `tenants/<id>/`.
 
 ```prisma
 model StorageSnapshot {
@@ -608,25 +835,31 @@ model StorageSnapshot {
   adapterId       String              // e.g. "local" | "s3" | "dropbox"
   size            BigInt   @default(0) // Total bytes used
   count           Int      @default(0) // Number of files
+  tenantId        String   @default("default") // The tenant whose backups it counts
 
   createdAt       DateTime @default(now())
 
-  @@index([adapterConfigId])
+  @@index([adapterConfigId, createdAt])
   @@index([createdAt])
+  @@index([tenantId])
 }
 ```
 
 ### StorageListCache
 
-Caches the file listing of a storage destination for fast UI display. One row per adapter (keyed by `adapterConfigId`). Invalidated on upload, delete, or explicit refresh.
+Caches the file listing of a storage destination for fast UI display. One row per destination and tenant (keyed by `adapterConfigId` and `tenantId`): a destination shared with customers keeps a listing for its own tenant and one for each customer, each with the backups that tenant sees. Invalidated on upload, delete, or explicit refresh.
 
 ```prisma
 model StorageListCache {
-  adapterConfigId String        @id
+  adapterConfigId String
+  tenantId        String        // The tenant whose backups the listing holds
   filesJson       String        // JSON: cached file listing
   cachedAt        DateTime      @default(now())
 
   adapterConfig   AdapterConfig @relation(...)
+
+  @@id([adapterConfigId, tenantId])
+  @@index([tenantId])
 }
 ```
 
@@ -719,12 +952,12 @@ const jobs = await prisma.job.findMany({
   },
 });
 
-// Get user with permissions
+// Get what a user may do in a tenant
 const user = await prisma.user.findUnique({
   where: { id: userId },
-  include: { group: true },
+  include: { memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } } },
 });
-const permissions = JSON.parse(user.group?.permissions || "[]");
+const permissions = permissionsIn(user.memberships, tenantId);
 
 // Get recent executions
 const executions = await prisma.execution.findMany({

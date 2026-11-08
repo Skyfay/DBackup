@@ -3,7 +3,7 @@ import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import fs from "fs/promises";
 import { RedisConfig } from "@/lib/adapters/definitions";
-import { REDIS_CLI, buildConnectionArgs, maskSecrets } from "./args";
+import { REDIS_CLI, buildConnectionArgs, redisCliOptions, maskSecrets } from "./args";
 import { REDIS_SNAPSHOT_ENTRY } from "./constants";
 import { AdapterError } from "@/lib/logging/errors";
 
@@ -47,7 +47,7 @@ export async function dump(
             const argv = [redisCli, ...args, "--rdb", hostPath];
             log("Executing redis-cli", "info", "command", maskSecrets(argv, config.password));
 
-            const result = await host.exec(argv);
+            const result = await host.exec(argv, redisCliOptions(config));
             if (result.code !== 0) {
                 const detail = result.stderr.trim() || result.stdout.trim();
                 throw new Error(`redis-cli exited with code ${result.code}: ${detail}`);

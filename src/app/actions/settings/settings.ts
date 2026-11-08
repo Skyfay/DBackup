@@ -1,5 +1,6 @@
 "use server"
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -8,7 +9,8 @@ import { MAX_CONCURRENT_JOBS, saveGeneralSettings, saveSignInSettings } from "@/
 import { savePasswordPolicy } from "@/services/auth/password-policy-service";
 import { generalSettings, passwordSettings, signInSettings, SETTINGS_AREAS } from "@/services/system/settings-audit";
 import { MAX_PASSWORD_LENGTH, MAX_SPECIAL_CHARACTERS, MIN_PASSWORD_LENGTH, PASSWORD_LEVELS } from "@/lib/auth/password-policy";
-import { invalid, savePart, type SaveResult } from "@/lib/settings/save-part";
+import { SESSION_DURATION_LIMITS } from "@/lib/auth/session-lifetime";
+import { invalid, savePart, type SaveResult } from "@/services/system/settings-save";
 
 const generalSchema = z.object({
     instanceName: z.string().trim().max(50),
@@ -22,7 +24,7 @@ const generalSchema = z.object({
 });
 
 const signInSchema = z.object({
-    sessionDuration: z.coerce.number().int().min(3600).max(7776000), // 1h to 90d in seconds
+    sessionDuration: z.coerce.number().int().min(SESSION_DURATION_LIMITS.min).max(SESSION_DURATION_LIMITS.max),
     passkeyLogin: z.boolean(),
     loginLook: z.enum(["logos", "image"]),
 });
@@ -42,7 +44,9 @@ export async function saveGeneralSettingsAction(input: z.infer<typeof generalSch
 
     const parsed = generalSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    return savePart(user.id, SETTINGS_AREAS.GENERAL, generalSettings, () => saveGeneralSettings(parsed.data));
+    const result = await savePart(user.id, SETTINGS_AREAS.GENERAL, generalSettings, () => saveGeneralSettings(parsed.data));
+    if (result.success) revalidatePath("/dashboard/settings");
+    return result;
 }
 
 export async function saveSignInSettingsAction(input: z.infer<typeof signInSchema>): Promise<SaveResult> {
@@ -50,7 +54,9 @@ export async function saveSignInSettingsAction(input: z.infer<typeof signInSchem
 
     const parsed = signInSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    return savePart(user.id, SETTINGS_AREAS.SIGN_IN, signInSettings, () => saveSignInSettings(parsed.data));
+    const result = await savePart(user.id, SETTINGS_AREAS.SIGN_IN, signInSettings, () => saveSignInSettings(parsed.data));
+    if (result.success) revalidatePath("/dashboard/settings");
+    return result;
 }
 
 export async function savePasswordSettingsAction(input: z.infer<typeof passwordSchema>): Promise<SaveResult> {
@@ -58,5 +64,7 @@ export async function savePasswordSettingsAction(input: z.infer<typeof passwordS
 
     const parsed = passwordSchema.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    return savePart(user.id, SETTINGS_AREAS.PASSWORDS, passwordSettings, () => savePasswordPolicy(parsed.data));
+    const result = await savePart(user.id, SETTINGS_AREAS.PASSWORDS, passwordSettings, () => savePasswordPolicy(parsed.data));
+    if (result.success) revalidatePath("/dashboard/settings");
+    return result;
 }

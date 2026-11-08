@@ -33,6 +33,19 @@ describe("the form of a sign-in provider", () => {
         expect(problem({ config: { baseUrl: "https://id.example.ch" }, clientId: "c", clientSecret: "s", allowProvisioning: false })).toBeUndefined();
     });
 
+    it("asks a provider of a tenant for its domain and a group, and gives every domain to one provider", () => {
+        const values = { ...initialValues({ kind: "create" }, "pocket-id", INPUTS, MODEL), config: { baseUrl: "https://id.example.ch" }, clientId: "c", clientSecret: "s", groupId: "g-1" };
+        const problem = (changes: object, others: { name: string; domain: string | null }[] = []) => problemOf({ ...values, ...changes }, { kind: "create" }, INPUTS, [], others)?.message;
+
+        expect(values.tenantId).toBeNull();
+        expect(problem({})).toBeUndefined();
+        expect(problem({ domain: "lena@acme.ch" })).toBe("Type a domain like example.com, without the @.");
+        expect(problem({ tenantId: "acme" })).toBe("A provider of a tenant is reached by its email domain only, so it needs one.");
+        expect(problem({ tenantId: "acme", domain: "acme.ch", groupId: "none" })).toBe("A provider of a tenant adds people to the tenant, so it needs a group there for them.");
+        expect(problem({ tenantId: "acme", domain: "acme.ch", groupId: "none", allowProvisioning: false })).toBeUndefined();
+        expect(problem({ domain: "Acme.ch" }, [{ name: "Acme Entra ID", domain: "acme.ch" }])).toBe("Acme Entra ID signs in acme.ch already. A domain belongs to one provider.");
+    });
+
     it("keeps the saved secret of an edit until Replace holds a new one", () => {
         const provider = { name: "Pocket ID", providerId: "pocket-id", config: { baseUrl: "https://id.example.ch" }, clientId: "c", domain: null, allowProvisioning: false, group: null } as never;
         const initial = initialValues({ kind: "edit", provider }, "pocket-id", INPUTS, MODEL);

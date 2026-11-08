@@ -129,12 +129,17 @@ export class DirectHost extends BaseHost {
         return { size: result.size, isDirectory: result.isDirectory() };
     }
 
+    /**
+     * Writes a new temp file, refusing one that is there already, a link included, so nobody who
+     * lays a file or a link under the name first gets the content, like the password of an option file.
+     */
     protected async writeHostFile(hostPath: string, content: string | Buffer, mode?: number): Promise<void> {
-        await writeFile(hostPath, content, mode !== undefined ? { mode } : undefined);
+        await writeFile(hostPath, content, mode !== undefined ? { flag: "wx", mode } : { flag: "wx" });
     }
 
+    /** A new temp file like `writeHostFile`, so a file or a link laid under the name first never receives the bytes. */
     protected async openHostWriteStream(hostPath: string): Promise<Writable> {
-        return createWriteStream(hostPath);
+        return createWriteStream(hostPath, { flags: "wx" });
     }
 
     /**

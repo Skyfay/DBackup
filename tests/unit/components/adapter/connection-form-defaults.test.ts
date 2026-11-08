@@ -38,6 +38,16 @@ describe("connection form start values", () => {
         expect(fillMissingSwitches(adapter("mysql"), {})).not.toHaveProperty("port");
     });
 
+    it("checks the certificate of a new FTP connection, and shows one saved before the switch as it still behaves", () => {
+        expect(defaultConfig(adapter("ftp"))).toMatchObject({ tls: false, trustServerCertificate: false });
+        // Saved with FTPS before the switch, every certificate was accepted and still is, so a save
+        // of another change keeps it that way.
+        expect(fillMissingSwitches(adapter("ftp"), { host: "ftp", tls: true })).toMatchObject({ trustServerCertificate: true });
+        // Without TLS there was nothing to trust, so turning TLS on later checks the certificate.
+        expect(fillMissingSwitches(adapter("ftp"), { host: "ftp", tls: false })).toMatchObject({ trustServerCertificate: false });
+        expect(fillMissingSwitches(adapter("ftp"), { host: "ftp", tls: true, trustServerCertificate: false })).toMatchObject({ trustServerCertificate: false });
+    });
+
     it("keeps an adapter that only works one way round in the role it supports", () => {
         expect(initialRole(adapter("docker-volume"), undefined, STORAGE_ROLES.DESTINATION)).toBe(STORAGE_ROLES.SOURCE);
         expect(initialRole(adapter("sftp"), undefined, STORAGE_ROLES.SOURCE)).toBe(STORAGE_ROLES.SOURCE);

@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 export interface QuickFilterOption<T extends string> {
     value: T;
     label: string;
-    /** How many entries the filter keeps. */
-    count: number;
+    /** How many entries the filter keeps. Left out while the counts load, so no filter reads as empty. */
+    count?: number;
     /** A status color as a small dot before the label, like `bg-success`. */
     dot?: string;
 }
@@ -42,7 +42,7 @@ export function QuickFilter<T extends string>({ value, onChange, options, "aria-
                     >
                         {option.dot && <span className={cn("size-1.5 rounded-full", option.dot)} aria-hidden="true" />}
                         {option.label}
-                        <span className="font-normal text-muted-foreground tabular-nums">{option.count}</span>
+                        {option.count !== undefined && <span className="font-normal text-muted-foreground tabular-nums">{option.count}</span>}
                     </button>
                 );
             })}

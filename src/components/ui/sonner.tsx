@@ -85,8 +85,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
         // Sonner's own look is left out, so every part takes the tokens of the app.
         unstyled: true,
         classNames: {
+          // Clickable while a dialog or a side panel is open, which blocks every click outside of it.
           toast:
-            "group/toast grid w-(--width) grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 rounded-xl border bg-raised py-3 pr-2 pl-3.5 font-sans text-popover-foreground shadow-lg",
+            "group/toast pointer-events-auto grid w-(--width) grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 rounded-xl border bg-raised py-3 pr-2 pl-3.5 font-sans text-popover-foreground shadow-lg",
           // Not positioned, so Copy inside it can sit in the corner of the toast.
           icon: "mt-0.5 flex size-4 shrink-0 items-center justify-center [&>svg]:size-4",
           // The spinner of a toast that is still working sits in the icon's place.

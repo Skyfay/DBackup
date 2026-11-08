@@ -11,6 +11,7 @@ import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { getOidcProviderIcon } from "@/components/oidc/provider-icon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DateDisplay } from "@/components/utils/date-display";
 import { accessSentences, summarizeAccess } from "@/lib/auth/access-summary";
 import { AUDIT_ACTIONS } from "@/lib/core/audit-types";
@@ -19,6 +20,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { UserActivity, UserApiKey, UserDetails, UserRow, UsersGroup } from "@/services/user/users-types";
+import { onPlatform } from "./user-tenants";
 
 const log = logger.child({ component: "user-details" });
 
@@ -44,6 +46,25 @@ function Quiet({ children }: { children: React.ReactNode }) {
     return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
+/**
+ * An action the viewer may not take on this account, off with the reason on hover. A disabled
+ * button gets no pointer events, so the tooltip sits on a span around it that takes the focus.
+ */
+function LockedButton({ reason, children, ...props }: React.ComponentProps<typeof Button> & { reason: string }) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <span tabIndex={0} aria-label={reason} className="inline-flex rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                    <Button {...props} disabled>
+                        {children}
+                    </Button>
+                </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-64">{reason}</TooltipContent>
+        </Tooltip>
+    );
+}
+
 export function LinesSkeleton({ rows = 2 }: { rows?: number }) {
     return (
         <div className="space-y-2" aria-hidden="true">
@@ -60,6 +81,17 @@ export function AccessSection({ user, groups, onChangeGroup }: { user: UserRow; 
             Change group
         </button>
     );
+
+    // An account that runs the platform needs no group here to see something.
+    if (!user.group && onPlatform(user)) {
+        return (
+            <Section title="Access" aside={aside}>
+                <p className="text-sm text-muted-foreground">
+                    No group here. {user.superAdmin ? "As a platform admin it sees and changes every tenant." : "Its platform group decides what it may do in the tenants it reaches."}
+                </p>
+            </Section>
+        );
+    }
 
     if (!user.group || !group) {
         return (
@@ -92,10 +124,12 @@ interface SignInProps {
     details: UserDetails | null;
     onPassword?: () => void;
     onResetTwoFactor?: () => void;
+    /** Why a viewer who may change users may not change this account, which turns its buttons off. */
+    lock?: string | null;
 }
 
 /** Each way the user signs in, with what an admin can do about it. */
-export function SignInSection({ user, details, onPassword, onResetTwoFactor }: SignInProps) {
+export function SignInSection({ user, details, onPassword, onResetTwoFactor, lock }: SignInProps) {
     if (!details) {
         return (
             <Section title="Signs in with">
@@ -105,6 +139,9 @@ export function SignInSection({ user, details, onPassword, onResetTwoFactor }: S
     }
     const passkeyFactor = user.secondFactor === "passkey";
     const passkeyNames = details.passkeys.map((passkey) => passkey.name || "Unnamed").join(", ");
+    const resetTwoFactor = onResetTwoFactor
+        ? <Button variant="ghost-destructive" size="sm" onClick={onResetTwoFactor}>Reset 2FA</Button>
+        : lock && <LockedButton reason={lock} variant="ghost-destructive" size="sm">Reset 2FA</LockedButton>;
     return (
         <Section title="Signs in with">
             <Lines>
@@ -112,10 +149,14 @@ export function SignInSection({ user, details, onPassword, onResetTwoFactor }: S
                     tile={<KeyRound className="size-4" />}
                     title="Password"
                     fact={details.password ? <>set <DateDisplay date={details.password.changedAt} format="P" /></> : "not set"}
-                    action={onPassword && (
+                    action={onPassword ? (
                         <Button variant="outline" size="sm" onClick={onPassword}>
                             {details.password ? "Set a new one" : "Set one"}
                         </Button>
+                    ) : lock && (
+                        <LockedButton reason={lock} variant="outline" size="sm">
+                            {details.password ? "Set a new one" : "Set one"}
+                        </LockedButton>
                     )}
                 />
                 {details.app && (
@@ -123,7 +164,7 @@ export function SignInSection({ user, details, onPassword, onResetTwoFactor }: S
                         tile={<Smartphone className="size-4" />}
                         title="Authenticator app"
                         fact="asks for a code after the password"
-                        action={onResetTwoFactor && <Button variant="ghost-destructive" size="sm" onClick={onResetTwoFactor}>Reset 2FA</Button>}
+                        action={resetTwoFactor}
                     />
                 )}
                 {details.passkeys.length > 0 && (
@@ -131,7 +172,7 @@ export function SignInSection({ user, details, onPassword, onResetTwoFactor }: S
                         tile={<Fingerprint className="size-4" />}
                         title={details.passkeys.length === 1 ? "Passkey" : `${details.passkeys.length} passkeys`}
                         fact={passkeyFactor ? `${passkeyNames}, also the second factor` : passkeyNames}
-                        action={passkeyFactor && onResetTwoFactor && <Button variant="ghost-destructive" size="sm" onClick={onResetTwoFactor}>Reset 2FA</Button>}
+                        action={passkeyFactor && resetTwoFactor}
                     />
                 )}
                 {details.sso.map((link) => {

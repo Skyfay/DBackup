@@ -74,6 +74,28 @@ describe('updateService.checkForUpdates() - beta channel (package.json mocked to
         expect(result.latestVersion).toBe('v3.0.0-beta.2');
     });
 
+    it('counts the number of a beta as a number, so beta.10 is newer than beta.9', async () => {
+        globalFetch.mockResolvedValue({
+            ok: true,
+            json: async () => makeTags('v3.0.0-beta.9', 'v3.0.0-beta.10', 'v3.0.0-beta.2'),
+        });
+
+        const result = await updateService.checkForUpdates();
+
+        expect(result.latestVersion).toBe('v3.0.0-beta.10');
+    });
+
+    it('offers the release a beta previews over every beta of it', async () => {
+        globalFetch.mockResolvedValue({
+            ok: true,
+            json: async () => makeTags('v3.0.0-beta.10', 'v3.0.0', 'v3.0.0-beta.2'),
+        });
+
+        const result = await updateService.checkForUpdates();
+
+        expect(result.latestVersion).toBe('v3.0.0');
+    });
+
     it('compareSemver beta vs dev with same patch - hits s1 !== s2 return path (line 182)', async () => {
         // 3.0.0-beta and 3.0.0-dev have the same M.M.P
         // s1 = getStability('beta') = 2, s2 = getStability('dev') = 1 → s1 !== s2 → return s1-s2

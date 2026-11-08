@@ -3,6 +3,7 @@ import { createHash, scryptSync } from "crypto";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { ApiKeyService, CreateApiKeyInput } from "@/services/auth/api-key-service";
 import { ApiKeyError, NotFoundError } from "@/lib/logging/errors";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 // Mock logger
 vi.mock("@/lib/logging/logger", () => ({
@@ -20,8 +21,15 @@ describe("ApiKeyService", () => {
   let service: ApiKeyService;
 
   const mockUser = { name: "Test User", email: "test@test.com" };
+  /** The roles of an owner, per tenant, as the key service reads them. */
+  const ownerWith = (...memberships: { tenantId?: string; permissions: string; fullAccess?: boolean }[]) => ({
+    memberships: memberships.map((membership) => ({
+      tenantId: membership.tenantId ?? HOME_TENANT_ID,
+      group: { permissions: membership.permissions, fullAccess: membership.fullAccess ?? false },
+    })),
+  });
   /** An owner whose group allows everything the keys below hold. */
-  const owner = { group: { name: "Operators", permissions: '["jobs:read","jobs:execute","history:read"]' } };
+  const owner = ownerWith({ permissions: '["jobs:read","jobs:execute","history:read"]' });
 
   beforeEach(() => {
     service = new ApiKeyService();
@@ -387,11 +395,29 @@ describe("ApiKeyService", () => {
   // ownerOf() and nameTaken()
   // ========================================================================
   describe("ownerOf", () => {
-    it("should return the owner with the group and what the key holds", async () => {
-      const group = { name: "Operators", permissions: '["jobs:read"]' };
-      prismaMock.apiKey.findUnique.mockResolvedValue({ userId: "user-1", name: "Key", permissions: '["jobs:read","users:write"]', user: { group } } as any);
+    it("should return the owner with what they may do in the tenant of the key and what the key holds", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        userId: "user-1",
+        name: "Key",
+        permissions: '["jobs:read","users:write"]',
+        tenantId: "tenant-a",
+        user: ownerWith({ tenantId: HOME_TENANT_ID, permissions: '["users:write"]' }, { tenantId: "tenant-a", permissions: '["jobs:read"]' }),
+      } as any);
 
-      await expect(service.ownerOf("key-1")).resolves.toEqual({ ownerId: "user-1", name: "Key", permissions: ["jobs:read", "users:write"], group });
+      await expect(service.ownerOf("key-1")).resolves.toEqual({
+        ownerId: "user-1",
+        name: "Key",
+        permissions: ["jobs:read", "users:write"],
+        ownerPermissions: ["jobs:read"],
+      });
+    });
+
+    it("reads broken stored permissions of a key as none, so its owner can still change or delete it", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        userId: "user-1", name: "Key", permissions: "{broken", tenantId: "tenant-a", user: ownerWith({ tenantId: "tenant-a", permissions: '["jobs:read"]' }),
+      } as any);
+
+      await expect(service.ownerOf("key-1")).resolves.toMatchObject({ permissions: [], ownerPermissions: ["jobs:read"] });
     });
 
     it("should throw NotFoundError if key does not exist", async () => {
@@ -422,6 +448,23 @@ describe("ApiKeyService", () => {
   // validate()
   // ========================================================================
   describe("validate", () => {
+    // The tenant of the key exists and lets its keys work, unless a test says otherwise.
+    beforeEach(() => {
+      prismaMock.tenant.findUnique.mockResolvedValue({ addsApiKeys: true, sharesWithCustomers: false } as any);
+    });
+
+    it("refuses a key whose tenant no longer exists, as a key the request cannot use", async () => {
+      prismaMock.tenant.findUnique.mockResolvedValue(null);
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-orphan", userId: "user-1", permissions: '["jobs:read"]', enabled: true, tenantId: "t-gone", user: owner, expiresAt: null,
+      } as any);
+
+      const refused = await service.validate("dbackup_" + "g".repeat(40)).catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(ApiKeyError);
+      expect((refused as ApiKeyError).reason).toBe("tenant_gone");
+      expect(prismaMock.apiKey.update).not.toHaveBeenCalled();
+    });
+
     it("should return null for key without dbackup_ prefix", async () => {
       const result = await service.validate("invalid_key_without_prefix");
 
@@ -445,6 +488,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:execute","history:read"]',
         enabled: true,
+        tenantId: HOME_TENANT_ID,
         user: owner,
         expiresAt: futureDate,
       } as any);
@@ -458,6 +502,7 @@ describe("ApiKeyService", () => {
         id: "key-1",
         userId: "user-1",
         permissions: ["jobs:execute", "history:read"],
+        tenantId: HOME_TENANT_ID,
       });
     });
 
@@ -467,6 +512,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:read"]',
         enabled: true,
+        tenantId: HOME_TENANT_ID,
         user: owner,
         expiresAt: null,
       } as any);
@@ -479,7 +525,19 @@ describe("ApiKeyService", () => {
         id: "key-2",
         userId: "user-1",
         permissions: ["jobs:read"],
+        tenantId: HOME_TENANT_ID,
       });
+    });
+
+    it("lets a key whose stored permissions are broken do nothing, instead of failing its request", async () => {
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+      for (const permissions of ["not json", '{"jobs:read":true}', "null"]) {
+        prismaMock.apiKey.findUnique.mockResolvedValue({
+          id: "key-3", userId: "user-1", permissions, enabled: true, tenantId: HOME_TENANT_ID, user: owner, expiresAt: null,
+        } as any);
+
+        await expect(service.validate("dbackup_" + "d".repeat(40))).resolves.toMatchObject({ id: "key-3", permissions: [] });
+      }
     });
 
     it("should throw ApiKeyError for disabled key", async () => {
@@ -567,6 +625,7 @@ describe("ApiKeyService", () => {
           userId: "user-1",
           permissions: '["jobs:read"]',
           enabled: true,
+          tenantId: HOME_TENANT_ID,
           user: owner,
         expiresAt: null,
         } as any);
@@ -595,6 +654,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:read"]',
         enabled: true,
+        tenantId: HOME_TENANT_ID,
         user: owner,
         expiresAt: null,
       } as any);
@@ -618,6 +678,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:read"]',
         enabled: true,
+        tenantId: HOME_TENANT_ID,
         user: owner,
         expiresAt: null,
       } as any);
@@ -641,7 +702,8 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:execute","users:write","groups:write"]',
         enabled: true,
-        user: { group: { name: "Operators", permissions: '["jobs:execute","jobs:read"]' } },
+        tenantId: HOME_TENANT_ID,
+        user: ownerWith({ permissions: '["jobs:execute","jobs:read"]' }),
         expiresAt: null,
       } as any);
       prismaMock.apiKey.update.mockResolvedValue({} as any);
@@ -651,13 +713,14 @@ describe("ApiKeyService", () => {
       expect(result!.permissions).toEqual(["jobs:execute"]);
     });
 
-    it("should let a key of a SuperAdmin keep what it holds", async () => {
+    it("should let a key of an owner with the full access group keep what it holds", async () => {
       prismaMock.apiKey.findUnique.mockResolvedValue({
         id: "key-1",
         userId: "user-1",
         permissions: '["users:write","settings:write"]',
         enabled: true,
-        user: { group: { name: "SuperAdmin", permissions: "[]" } },
+        tenantId: HOME_TENANT_ID,
+        user: ownerWith({ permissions: "[]", fullAccess: true }),
         expiresAt: null,
       } as any);
       prismaMock.apiKey.update.mockResolvedValue({} as any);
@@ -673,7 +736,8 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:read"]',
         enabled: true,
-        user: { group: null },
+        tenantId: HOME_TENANT_ID,
+        user: ownerWith(),
         expiresAt: null,
       } as any);
       prismaMock.apiKey.update.mockResolvedValue({} as any);
@@ -681,6 +745,99 @@ describe("ApiKeyService", () => {
       const result = await service.validate("dbackup_" + "a".repeat(60));
 
       expect(result!.permissions).toEqual([]);
+    });
+
+    it("should count the group of the owner in the tenant of the key, never in another", async () => {
+      // The owner may do more in another tenant, which the key of this tenant never borrows.
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "user-1",
+        permissions: '["jobs:read","jobs:execute","storage:delete"]',
+        enabled: true,
+        tenantId: "tenant-a",
+        user: ownerWith(
+          { tenantId: "tenant-a", permissions: '["jobs:read"]' },
+          { tenantId: "tenant-b", permissions: '["jobs:read","jobs:execute","storage:delete"]' },
+        ),
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result).toEqual({ id: "key-1", userId: "user-1", permissions: ["jobs:read"], tenantId: "tenant-a" });
+    });
+
+    it("should never give a key the settings of the instance through full access in a customer tenant", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "user-1",
+        permissions: '["jobs:write","settings:write","groups:write"]',
+        enabled: true,
+        tenantId: "tenant-a",
+        user: ownerWith({ tenantId: "tenant-a", permissions: "[]", fullAccess: true }),
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result!.permissions).toEqual(["jobs:write", "groups:write"]);
+    });
+
+    it("should let a key of a platform admin keep the rights of its customer tenant, never the settings of the instance", async () => {
+      // A platform admin may do everything everywhere, but only a key of the home tenant carries rights
+      // on the platform. The key still never passes the checks only a platform admin passes, see `getAuthContext`.
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "root",
+        permissions: '["jobs:read","settings:write"]',
+        enabled: true,
+        tenantId: "tenant-a",
+        user: { platformRole: "ADMIN", ...ownerWith() },
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result!.permissions).toEqual(["jobs:read"]);
+      expect(result!.tenantId).toBe("tenant-a");
+    });
+
+    it("should let a key of a platform admin in the home tenant keep the settings of the instance", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "root",
+        permissions: '["jobs:read","settings:write"]',
+        enabled: true,
+        tenantId: HOME_TENANT_ID,
+        user: { platformRole: "ADMIN", ...ownerWith() },
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result!.permissions).toEqual(["jobs:read", "settings:write"]);
+    });
+
+    it("should never carry the settings of the instance into a customer tenant from the owner's group in the home tenant", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "user-1",
+        permissions: '["jobs:read","settings:read","settings:write","tenant-settings:write"]',
+        enabled: true,
+        tenantId: "tenant-a",
+        user: ownerWith({ tenantId: HOME_TENANT_ID, permissions: "[]", fullAccess: true }, { tenantId: "tenant-a", permissions: "[]", fullAccess: true }),
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      // The tenant's own settings stay, those of the instance go.
+      expect(result!.permissions).toEqual(["jobs:read", "tenant-settings:write"]);
     });
   });
 });

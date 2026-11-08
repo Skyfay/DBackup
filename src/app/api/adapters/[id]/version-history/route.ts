@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
-import { getAuthContext } from "@/lib/auth/access-control";
+import { getAuthContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { listVersionHistory } from "@/services/system/db-version-service";
 import { logger } from "@/lib/logging/logger";
@@ -13,9 +14,9 @@ export async function GET(
     context: { params: Promise<{ id: string }> }
 ) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
-    if (!ctx.isSuperAdmin && !ctx.permissions.includes(PERMISSIONS.SOURCES.VIEW)) {
+    if (!hasPermissionWithContext(ctx, PERMISSIONS.SOURCES.VIEW)) {
         return NextResponse.json({ error: "Permission denied: sources:view required" }, { status: 403 });
     }
 

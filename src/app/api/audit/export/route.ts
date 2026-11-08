@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -8,6 +9,7 @@ import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { auditCsv } from "@/services/audit/audit-export";
 import { parseAuditFilter } from "@/services/audit/audit-params";
+import { logViewOf } from "@/services/audit/log-reach";
 
 const log = logger.child({ route: "audit/export" });
 
@@ -17,7 +19,7 @@ const log = logger.child({ route: "audit/export" });
  */
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.AUDIT.READ);
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
     if (!filter) return NextResponse.json({ success: false, error: "Invalid query parameters" }, { status: 400 });
 
     try {
-        const { csv, count } = await auditCsv(filter);
+        const { csv, count } = await auditCsv(filter, new Date(), await logViewOf(ctx));
         await auditService.logFor(ctx, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.SYSTEM, { action: "audit_export", count, filter: params.toString() });
         const day = new Date().toISOString().slice(0, 10);
         return new NextResponse(csv, {

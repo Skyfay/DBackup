@@ -130,17 +130,28 @@ export interface MoveTarget {
  * the file came from is the fallback, which is right whenever the restore
  * targets the server that wrote the backup, and that is the normal case for a
  * rename.
+ *
+ * `backupFolders: false` drops that fallback, for a restore whose backup names paths that nobody
+ * may follow, like a customer's shared database, whose files then go to the instance defaults alone.
  */
 export function buildMoveTargets(
     files: RestoreFileEntry[],
     baseName: string,
     defaults: InstanceDefaultPaths,
+    options: { backupFolders?: boolean } = {},
 ): MoveTarget[] {
+    const backupFolders = options.backupFolders ?? true;
     let dataFiles = 0;
     let logFiles = 0;
 
     return files.map((file) => {
         const type = file.type?.trim().toUpperCase();
+        if ((type !== "D" && type !== "L") && !backupFolders) {
+            throw new Error(
+                `Cannot restore '${file.logicalName}' into the data folder of the server. The backup contains ` +
+                    `a file of type '${file.type}', which SQL Server places by directory rather than by file name.`,
+            );
+        }
         if (type !== "D" && type !== "L") {
             // Full-text catalogs and FILESTREAM containers are directories, not
             // files, so there is no name to derive here. Restoring under the
@@ -153,7 +164,16 @@ export function buildMoveTargets(
         }
 
         const isLog = type === "L";
-        const directory = (isLog ? defaults.log : defaults.data) ?? serverDirname(file.physicalName);
+        const instanceDefault = isLog ? defaults.log : defaults.data;
+        // Without the folders of the backup, a log file falls back to the data folder of the instance.
+        const directory = backupFolders ? instanceDefault ?? serverDirname(file.physicalName) : instanceDefault ?? defaults.data ?? null;
+        if (!directory && !backupFolders) {
+            throw new Error(
+                `Cannot determine where to place '${file.logicalName}' on the server. ` +
+                    `The instance reports no default ${isLog ? "log" : "data"} directory. Set the default ` +
+                    `data and log folders of the instance in its server properties.`,
+            );
+        }
         if (!directory) {
             throw new Error(
                 `Cannot determine where to place '${file.logicalName}' on the server. ` +
@@ -163,11 +183,14 @@ export function buildMoveTargets(
         }
 
         // A database can hold several data files, and every one of them would
-        // otherwise be moved onto the same .mdf.
+        // otherwise be moved onto the same .mdf. A second log file is no `_2.ldf`,
+        // which is the log of a database called `<name>_2`. A database name can hold
+        // any character, so no name rules out every clash, and `assertMoveTargetsFree`
+        // in restore-bak.ts refuses a MOVE onto a file of another database.
         let suffix: string;
         if (isLog) {
             logFiles++;
-            suffix = logFiles === 1 ? ".ldf" : `_${logFiles}.ldf`;
+            suffix = logFiles === 1 ? ".ldf" : `_log${logFiles}.ldf`;
         } else {
             dataFiles++;
             suffix = dataFiles === 1 ? ".mdf" : `_${dataFiles}.ndf`;

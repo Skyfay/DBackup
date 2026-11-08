@@ -1,0 +1,8 @@
+{
+    "admin": {
+        "name": "Lab Admin",
+        "email": "admin@dbackup.lab",
+        "password": "Harbor-Lamp-2026"
+    },
+    "profile": "core"
+}

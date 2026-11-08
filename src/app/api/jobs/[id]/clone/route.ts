@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { jobService } from "@/services/jobs/job-service";
 import { jobAuditName } from "@/services/jobs/job-audit";
@@ -7,7 +8,8 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError } from "@/lib/logging/errors";
+import { refusedUnless, serviceRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "jobs/[id]/clone" });
 
@@ -17,10 +19,11 @@ export async function POST(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     let body: { name?: string } = {};
@@ -38,9 +41,10 @@ export async function POST(
         );
         return NextResponse.json(clonedJob, { status: 201 });
     } catch (error: unknown) {
+        // A job that is gone, a link it holds to another tenant or a name in use is the caller's to fix.
+        const refusal = serviceRefusal(error);
+        if (refusal) return refusal;
         log.error("Clone job error", { jobId: params.id }, wrapError(error));
-        const message = getErrorMessage(error) || "Failed to clone job";
-        const status = message.includes("not found") ? 404 : 500;
-        return NextResponse.json({ error: message }, { status });
+        return NextResponse.json({ error: "The job could not be copied. The log of DBackup has the details." }, { status: 500 });
     }
 }

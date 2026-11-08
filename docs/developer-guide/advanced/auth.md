@@ -35,25 +35,23 @@ The middleware runs before any component rendering.
 **Location**: `src/middleware.ts`
 
 ```typescript
-export async function middleware(request: NextRequest) {
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  });
-
-  // Protect dashboard routes
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    if (!session) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+// Only whether a session cookie is there, the layout of the dashboard checks the session itself.
+if (request.nextUrl.pathname.startsWith("/dashboard")) {
+  const sessionToken =
+    request.cookies.get("better-auth.session_token") ||
+    request.cookies.get("__Secure-better-auth.session_token");
+  if (!sessionToken) {
+    // The login page leads back to the page asked for once someone signed in.
+    return NextResponse.redirect(new URL(loginHref(`${request.nextUrl.pathname}${request.nextUrl.search}`), request.url));
   }
-
-  return NextResponse.next();
 }
 ```
 
 ::: warning
 Middleware does NOT check fine-grained permissions (RBAC), only authentication status.
 :::
+
+The login page is `/`. Its `next` parameter names the page a sign-in leads to, like `/?next=%2Finvite%3Ftoken%3D...` from the Sign in of an invitation. `safeNextPath` in `src/lib/auth/sign-in-target.ts` takes only a path of this site: one slash at its start, never two, no backslash and no control character. The login page itself, the bare Overview and `/api` lead nowhere, and anything it refuses falls back to `AFTER_SIGN_IN`, the Overview with its marker for the Quick Setup. The login page checks `next` on the server and hands the form the path, which every way of signing in uses as its target: the password with its second factor, a passkey and a sign-in provider as its `callbackURL`. A provider that refuses comes back with its error alone, so the form keeps the path in the storage of the tab for that (`sign-in-next.ts`) and checks it again.
 
 ### Layer 2: API Route Handlers
 
@@ -124,6 +122,10 @@ if (user.twoFactorEnabled) {
 }
 ```
 
+**A passkey as the second factor** is `passkeyTwoFactor` on the user, which only DBackup knows. better-auth asks for a second factor while `twoFactorEnabled` is set, so each of the two keeps that flag on while the other one is the second factor: `userService.togglePasskeyTwoFactor` while the app is set up, and `keepPasskeyFactor` in `src/lib/auth/passkey-factor-guard.ts`, a database hook on the update of a user, when `/two-factor/disable` removes the app while a passkey is the second factor. The login page then asks for the passkey, since better-auth names no code to ask for.
+
+**No trusted devices.** better-auth lets `/two-factor/verify-totp`, `/two-factor/verify-otp` and `/two-factor/verify-backup-code` trust the device with `trustDevice`, which skips the second factor on later sign-ins of that browser for 30 days, and those sign-ins write no `LOGIN` entry. DBackup never offers it, so the `before` hook in `src/lib/auth/index.ts` refuses any truthy `trustDevice` on `/two-factor/verify-*` with `403 TRUSTED_DEVICE` (`asksTrustedDevice` in `src/lib/auth/profile-guard.ts`), and every sign-in asks the second factor.
+
 ### Passkeys (WebAuthn)
 
 Allows passwordless login using biometric sensors (TouchID, FaceID, Windows Hello).
@@ -146,16 +148,16 @@ See [SSO Integration](./sso.md) for detailed OIDC implementation.
 
 ### Configurable Session Duration
 
-Session lifetime is configurable by administrators as **Sessions last** under Settings → Sign-in. The value is stored in the `SystemSetting` table under the key `auth.sessionDuration` (in seconds).
+Session lifetime is configurable by administrators as **Sessions last** under Settings → Sign-in. The value is stored in the `SystemSetting` table under the key `auth.sessionDuration` (in seconds). A session ends that long after its sign-in, however often it is used.
 
 ```typescript
-// src/lib/auth.ts - Dynamic session expiry via database hook
+// src/lib/auth/index.ts - the end of a session, set once when it is created
+session: SESSION_OPTIONS, // from src/lib/auth/session-lifetime.ts
 databaseHooks: {
   session: {
     create: {
       before: async (session) => {
-        const duration = await getSessionDuration(); // reads SystemSetting
-        const expiresAt = new Date(Date.now() + duration * 1000);
+        const expiresAt = sessionEndsAt(await getSessionDuration()); // reads SystemSetting
         return { data: { ...session, expiresAt } };
       },
     },
@@ -165,7 +167,12 @@ databaseHooks: {
 
 **Default:** 7 days (604800 seconds). Available options: 1h, 8h, 1d, 3d, 7d, 14d, 30d, 90d.
 
-The `session.expiresIn` config serves as fallback when no database setting exists. The `databaseHooks.session.create.before` hook dynamically overrides `expiresAt` for every new session based on the admin-configured value.
+`SESSION_OPTIONS` sets two things better-auth would otherwise get wrong:
+
+- `disableSessionRefresh: true`. Left on, better-auth extends a session once `updateAge` passed, to its own `expiresIn` from that moment, so every length turned into seven days from the last visit and an active user was never signed out.
+- `expiresIn` of 90 days, the longest length. better-auth gives the session cookie that `Max-Age`, so the cookie never ends before the session in the database does, which decides.
+
+`tests/unit/lib/session-lifetime.test.ts` checks both against better-auth itself, with its memory adapter.
 
 ### Session Listing & Revocation
 
@@ -226,9 +233,9 @@ function ProfileButton() {
 
 In addition to session-based authentication, DBackup supports stateless API key authentication for programmatic access (CI/CD, cron jobs, external tools).
 
-API keys use `Authorization: Bearer dbackup_xxx` headers and are validated via SHA-256 hash lookup. They have their own permission set and **never** inherit SuperAdmin privileges.
+API keys use `Authorization: Bearer dbackup_xxx` headers and are validated by a lookup of their hash. They have their own permission set, act only in the tenant they were made in and **never** pass the checks only a platform admin passes.
 
-All API routes support both authentication methods through the unified `getAuthContext()` function.
+All API routes support both authentication methods through the unified `getAuthContext()` function, which also names the tenant of the request. See [Tenants](./tenants.md) for how a session and a key find their tenant.
 
 → See [API Keys & Webhooks](./api-keys.md) for the full architecture, key generation, validation flow, and webhook trigger system.
 

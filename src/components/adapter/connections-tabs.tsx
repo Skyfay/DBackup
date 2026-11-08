@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, Database, FolderTree, HardDrive, Plus, type LucideIcon } from "lucide-react";
+import { Bell, Database, FolderTree, HardDrive, Lock, Plus, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { AdapterManager, type AdapterManagerHandle } from "@/components/adapter/adapter-manager";
@@ -15,6 +15,10 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { listView, type ListViewMode, type TablePreferences, type ViewMode } from "@/lib/core/table-preferences";
 import { useIsMobileState } from "@/hooks/use-mobile";
+import { useNewFromLink } from "@/hooks/use-new-from-link";
+import { useNewInTenant } from "@/components/tenant/tenant-actions";
+import { useMayAdd, useTenantView } from "@/components/tenant/tenant-view";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionAttention } from "./connection-tables";
 
 /**
@@ -39,6 +43,14 @@ const TAB_NAMES: Record<ConnectionTab, string> = {
     [CONNECTION_TABS.DIRECTORY_SOURCES]: "Directory sources",
     [CONNECTION_TABS.DESTINATIONS]: "Destinations",
     [CONNECTION_TABS.NOTIFICATIONS]: "Channels",
+};
+
+/** What the pick of a tenant says before a new connection in All tenants. */
+const NEW_PICK_NOTES: Record<ConnectionTab, string> = {
+    [CONNECTION_TABS.DATABASES]: "A database belongs to one tenant, pick the one it is added to.",
+    [CONNECTION_TABS.DIRECTORY_SOURCES]: "A directory source belongs to one tenant, pick the one it is added to.",
+    [CONNECTION_TABS.DESTINATIONS]: "A destination belongs to one tenant, pick the one it is added to.",
+    [CONNECTION_TABS.NOTIFICATIONS]: "A channel belongs to one tenant, pick the one it is added to.",
 };
 
 /** The New button of each list, which names what it adds like on every other page. */
@@ -109,6 +121,16 @@ export function ConnectionsTabs({ permissions, attention, layouts, initialView }
         [CONNECTION_TABS.NOTIFICATIONS]: permissions.includes(PERMISSIONS.NOTIFICATIONS.WRITE),
     };
 
+    // The platform may not let the tenant add a kind of connection itself. What it has, it still manages.
+    const mayAdd: Record<ConnectionTab, boolean> = {
+        [CONNECTION_TABS.DATABASES]: useMayAdd("databases"),
+        [CONNECTION_TABS.DIRECTORY_SOURCES]: useMayAdd("directorySources"),
+        [CONNECTION_TABS.DESTINATIONS]: useMayAdd("destinations"),
+        [CONNECTION_TABS.NOTIFICATIONS]: useMayAdd("channels"),
+    };
+    const canAdd = (tab: ConnectionTab) => canManage[tab] && mayAdd[tab];
+    const { allTenants, platformName } = useTenantView();
+
     const visible: ConnectionTab[] = [
         ...(canViewDatabases ? [CONNECTION_TABS.DATABASES] : []),
         ...(canViewStorage ? [CONNECTION_TABS.DIRECTORY_SOURCES, CONNECTION_TABS.DESTINATIONS] : []),
@@ -127,6 +149,20 @@ export function ConnectionsTabs({ permissions, attention, layouts, initialView }
         router.replace(`?${next.toString()}`, { scroll: false });
     }, [router, searchParams]);
 
+    // A connection belongs to one tenant, so in All tenants New asks for it and opens the form there.
+    const openCreate = useCallback(() => {
+        if (active) managers.current[active]?.openCreate();
+    }, [active]);
+    const newConnection = useNewInTenant({
+        canCreate: active ? canAdd(active) : false,
+        title: active ? NEW_LABELS[active] : "New connection",
+        description: active ? NEW_PICK_NOTES[active] : "",
+        href: `/dashboard/connections?tab=${active}&new=1`,
+        onCreate: openCreate,
+    });
+    // The pick of a tenant comes back here with `?new=1` and opens the form of the list.
+    useNewFromLink(active !== undefined && canAdd(active), openCreate);
+
     if (visible.length === 0) return null;
 
     const managerProps = (tab: ConnectionTab) => ({
@@ -134,10 +170,12 @@ export function ConnectionsTabs({ permissions, attention, layouts, initialView }
             managers.current[tab] = handle;
         },
         canManage: canManage[tab],
+        canAdd: canAdd(tab),
         permissions,
         view: shownView,
         tableId: CONNECTION_TABLE_IDS[tab],
         initialLayout: layouts[CONNECTION_TABLE_IDS[tab]] ?? null,
+        onCreate: newConnection.available ? newConnection.start : undefined,
     });
 
     return (
@@ -154,11 +192,27 @@ export function ConnectionsTabs({ permissions, attention, layouts, initialView }
                     <div className="hidden md:block">
                         <ViewSwitch value={view} onChange={changeView} />
                     </div>
-                    {canManage[active] && (
-                        <Button tone="create" onClick={() => managers.current[active]?.openCreate()} aria-label={NEW_LABELS[active]}>
+                    {newConnection.available && (
+                        <Button tone="create" onClick={newConnection.start} aria-label={NEW_LABELS[active]}>
                             <Plus />
                             <span className="hidden sm:inline">{NEW_LABELS[active]}</span>
                         </Button>
+                    )}
+                    {!allTenants && active && canManage[active] && !mayAdd[active] && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span tabIndex={0} className="inline-flex h-9 items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground">
+                                    <Lock className="size-4" aria-hidden="true" />
+                                    <span className="hidden sm:inline">{TAB_NAMES[active]} come from {platformName ?? "the platform"}</span>
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-72">
+                                <p className="font-medium">Set by {platformName ?? "the platform"}</p>
+                                <p className="text-muted-foreground">
+                                    This tenant adds no {TAB_NAMES[active].toLowerCase()} of its own. Its jobs pick from the ones other tenants share with it.
+                                </p>
+                            </TooltipContent>
+                        </Tooltip>
                     )}
                 </div>
             </PageHead>
@@ -196,6 +250,7 @@ export function ConnectionsTabs({ permissions, attention, layouts, initialView }
                     <AdapterManager type="notification" {...managerProps(CONNECTION_TABS.NOTIFICATIONS)} />
                 </TabsContent>
             )}
+            {newConnection.dialog}
         </Tabs>
     );
 }

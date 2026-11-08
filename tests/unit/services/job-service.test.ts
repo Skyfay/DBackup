@@ -3,6 +3,7 @@ import { prismaMock } from '@/lib/testing/prisma-mock';
 import { JobService, CreateJobInput } from '@/services/jobs/job-service';
 import { scheduler } from '@/lib/server/scheduler';
 import { invalidateDashboardCache } from '@/services/dashboard/cache';
+import { ConflictError, NotFoundError, ValidationError } from '@/lib/logging/errors';
 
 // Mock the global scheduler singleton to avoid side effects (like starting cron timers)
 vi.mock('@/lib/server/scheduler', () => ({
@@ -28,12 +29,21 @@ function includeValues(include: unknown): unknown[] {
     return Object.entries(include).flatMap(([key, value]) => [[key, value], ...includeValues(value)]);
 }
 
+
+/** Every record a job links to is one of the tenant, see assertOwnRecords. A test of a foreign one overrides a count. */
+function linksAreOwn() {
+    for (const model of ["adapterConfig", "job", "encryptionProfile", "namingTemplate", "schedulePreset", "notificationTemplate", "retentionPolicy", "excludePatternPreset"] as const) {
+        (prismaMock[model].count as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (args?: { where?: { id?: { in?: string[] } } }) => args?.where?.id?.in?.length ?? 0);
+    }
+}
+
 describe('JobService', () => {
     let service: JobService;
 
     beforeEach(() => {
         service = new JobService();
         vi.clearAllMocks();
+        linksAreOwn();
         // Every create/update validates its destinations against the adapter table. Tests
         // that care about the role override this; the rest just need a valid destination.
         prismaMock.adapterConfig.findMany.mockResolvedValue([
@@ -43,6 +53,19 @@ describe('JobService', () => {
     });
 
     describe('createJob', () => {
+
+        it('refuses a source of another tenant, which the filtered count leaves out', async () => {
+            prismaMock.adapterConfig.count.mockResolvedValue(1);
+
+            await expect(service.createJob({
+                name: 'Sneaky',
+                schedule: '0 0 * * *',
+                sourceId: 'source-of-another-tenant',
+                destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }],
+                notificationIds: ['notif-1'],
+            })).rejects.toThrow('A linked connection does not exist.');
+            expect(prismaMock.job.create).not.toHaveBeenCalled();
+        });
         it('should create a job and refresh the scheduler', async () => {
             // Arrange
             const input: CreateJobInput = {
@@ -218,6 +241,10 @@ describe('JobService', () => {
                     destinations: [],
                 })
             ).rejects.toThrow('A job with the name "Duplicate" already exists.');
+            // A name in use is the caller's to fix, so the routes answer 409 with this sentence.
+            await expect(
+                service.createJob({ name: 'Duplicate', schedule: '0 0 * * *', sourceId: 's-1', destinations: [] })
+            ).rejects.toBeInstanceOf(ConflictError);
 
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
@@ -238,6 +265,10 @@ describe('JobService', () => {
                     destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }],
                 })
             ).rejects.toThrow('Job must have at least one source');
+            // Written for the user, so the routes answer 400 with this sentence.
+            await expect(
+                service.createJob({ name: 'No Source Job', schedule: '0 0 * * *', destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }] })
+            ).rejects.toBeInstanceOf(ValidationError);
 
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
@@ -433,6 +464,51 @@ describe('JobService', () => {
         });
     });
 
+    describe('updateJob - the links of another tenant', () => {
+        beforeEach(() => {
+            prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+        });
+
+        it('refuses a destination of another tenant in an update that names only its destinations', async () => {
+            // The filtered client does not find a connection of another tenant.
+            prismaMock.adapterConfig.findMany.mockResolvedValue([] as any);
+
+            await expect(service.updateJob('job-1', {
+                destinations: [{ configId: 'nas-of-another-tenant', priority: 0, retention: '{}' }],
+            })).rejects.toThrow('Destination references unknown adapter');
+            expect(prismaMock.jobDestination.createMany).not.toHaveBeenCalled();
+            expect(prismaMock.job.update).not.toHaveBeenCalled();
+        });
+
+        it('counts the destinations among the links it checks', async () => {
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'dest-2', name: 'Offsite', type: 'storage', storageRole: 'DESTINATION' },
+            ] as any);
+            prismaMock.adapterConfig.count.mockResolvedValue(0);
+
+            await expect(service.updateJob('job-1', {
+                destinations: [{ configId: 'dest-2', priority: 0, retention: '{}' }],
+            })).rejects.toThrow('A linked connection does not exist.');
+            expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({ where: { id: { in: ['dest-2'] } } });
+            expect(prismaMock.jobDestination.createMany).not.toHaveBeenCalled();
+        });
+
+        it('counts the directory sources among the links it checks', async () => {
+            prismaMock.job.findUnique.mockResolvedValue({ id: 'job-1', sourceId: null, sources: [] } as any);
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'files-2', name: 'Files', type: 'storage', storageRole: 'SOURCE' },
+            ] as any);
+            prismaMock.adapterConfig.count.mockResolvedValue(0);
+
+            await expect(service.updateJob('job-1', {
+                sources: [{ configId: 'files-2', priority: 0, path: '/srv', excludePatterns: [] }],
+            })).rejects.toThrow('A linked connection does not exist.');
+            expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({ where: { id: { in: ['files-2'] } } });
+            expect(prismaMock.jobSource.create).not.toHaveBeenCalled();
+        });
+    });
+
     describe('createJob - destination validation', () => {
         it('throws when a destination points at a directory source adapter', async () => {
             // The mirror of the source-role check: writing backups into a tree that is
@@ -489,6 +565,9 @@ describe('JobService', () => {
 
         it('should replace destinations when provided', async () => {
             prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'dest-2', name: 'Offsite', type: 'storage', storageRole: 'DESTINATION' },
+            ] as any);
             prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
             prismaMock.jobDestination.deleteMany.mockResolvedValue({ count: 2 } as any);
             prismaMock.jobDestination.createMany.mockResolvedValue({ count: 1 } as any);
@@ -532,6 +611,28 @@ describe('JobService', () => {
                     }),
                 })
             );
+        });
+
+        it('keeps the notification channels when an update leaves them out', async () => {
+            prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+            prismaMock.job.update.mockResolvedValue({ id: 'job-1' } as any);
+
+            await service.updateJob('job-1', { name: 'Renamed' });
+
+            const { data } = prismaMock.job.update.mock.calls[0][0] as { data: Record<string, unknown> };
+            expect(data.notifications).toBeUndefined();
+        });
+
+        it('clears the notification channels when an update names none', async () => {
+            prismaMock.job.findFirst.mockResolvedValue(null);
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+            prismaMock.job.update.mockResolvedValue({ id: 'job-1' } as any);
+
+            await service.updateJob('job-1', { notificationIds: [] });
+
+            const { data } = prismaMock.job.update.mock.calls[0][0] as { data: Record<string, unknown> };
+            expect(data.notifications).toEqual({ set: [], connect: [] });
         });
 
         it('should clear encryptionProfileId when empty string is passed', async () => {
@@ -632,6 +733,7 @@ describe('JobService', () => {
             fullEveryDays: 3,
             verifyByHash: true,
             notifications: [{ id: 'notif-1' }],
+            notificationTemplates: [],
             destinations: [
                 { configId: 'dest-1', priority: 0, retention: '{}', retentionPolicyId: 'policy-1' },
                 { configId: 'dest-2', priority: 1, retention: '{"keep":5}', retentionPolicyId: null },
@@ -644,7 +746,16 @@ describe('JobService', () => {
         it('throws when the source job is not found', async () => {
             prismaMock.job.findUnique.mockResolvedValue(null);
 
-            await expect(service.cloneJob('missing')).rejects.toThrow('Job with id "missing" not found.');
+            await expect(service.cloneJob('missing')).rejects.toBeInstanceOf(NotFoundError);
+            expect(prismaMock.job.create).not.toHaveBeenCalled();
+        });
+
+        it('refuses to copy a link to a record of another tenant', async () => {
+            prismaMock.job.findUnique.mockResolvedValue(originalJob as any);
+            // The filtered count leaves out one of the destinations of the original.
+            prismaMock.adapterConfig.count.mockResolvedValue(4);
+
+            await expect(service.cloneJob('job-1', 'Copy')).rejects.toThrow('A linked connection does not exist.');
             expect(prismaMock.job.create).not.toHaveBeenCalled();
         });
 

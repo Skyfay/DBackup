@@ -41,24 +41,19 @@ describe("the numbers above a list", () => {
     });
 });
 
-const job = (name: string, runs: string[], extra: Record<string, unknown> = {}) => ({
-    name,
-    enabled: true,
-    overview: { runs: runs.map((status) => ({ status })), live: null, nextRunAt: null, ...extra },
-    ...("enabled" in extra ? { enabled: extra.enabled } : {}),
-});
-
 describe("the numbers of the Jobs page", () => {
     it("count the jobs, how their latest runs went, which need attention, the next run and what runs", () => {
         const soon = new Date(Date.now() + 12 * 60_000).toISOString();
-        const later = new Date(Date.now() + 5 * 3_600_000).toISOString();
-        render(<JobsStrip jobs={[
-            job("Nightly MySQL", ["Success", "Failed"], { nextRunAt: later }),
-            job("Files to NAS", ["Success", "Partial"]),
-            job("Cache snapshot", ["Success", "Success"], { nextRunAt: soon }),
-            job("Nightly Postgres", ["Success", "Running"], { live: { status: "Running", progress: 64 } }),
-            job("Legacy ERP", ["Success"], { enabled: false }),
-        ] as never} />);
+        render(<JobsStrip stats={{
+            total: 5,
+            paused: 1,
+            runs: { succeeded: 6, partial: 1, failed: 1 },
+            failed: { count: 1, names: ["Nightly MySQL"] },
+            partial: { count: 1, names: ["Files to NAS"] },
+            next: { at: soon, name: "Cache snapshot" },
+            running: { count: 1, jobs: [{ name: "Nightly Postgres", progress: 64 }] },
+            waiting: 0,
+        }} />);
 
         expect(tileOf("Jobs")).toHaveTextContent("5");
         expect(screen.getByText("4 on their schedule, 1 paused")).toBeInTheDocument();
@@ -70,6 +65,24 @@ describe("the numbers of the Jobs page", () => {
         expect(tileOf("Next run")).toHaveTextContent("in 12 minutes");
         expect(screen.getByText("Cache snapshot")).toBeInTheDocument();
         expect(screen.getByText("Nightly Postgres 64 %")).toBeInTheDocument();
+    });
+
+    it("name the first jobs of many and count the rest, as the server sends only the first names", () => {
+        render(<JobsStrip stats={{
+            total: 25_022,
+            paused: 0,
+            runs: { succeeded: 0, partial: 0, failed: 0 },
+            failed: { count: 1_200, names: ["Shop", "ERP", "CRM"] },
+            partial: { count: 0, names: [] },
+            next: null,
+            running: { count: 14, jobs: [{ name: "Shop", progress: null }, { name: "ERP", progress: 10 }] },
+            waiting: 3,
+        }} />);
+
+        expect(tileOf("Jobs")).toHaveTextContent("25,022");
+        expect(screen.getByText("Shop and 1199 more failed")).toBeInTheDocument();
+        expect(screen.getByText("Shop, ERP 10 %, 12 more")).toBeInTheDocument();
+        expect(screen.getByText("no run yet")).toBeInTheDocument();
     });
 });
 

@@ -4,6 +4,7 @@ import { RUNS_PER_JOB, getRecentRunsByJob, getSchedulerTimezone, toRunSummary } 
 import { cached } from "@/services/dashboard/cache";
 import { extractLastError, latestFinishedRun, mergeRuns } from "@/services/dashboard/health";
 import type { RunSummary } from "@/services/dashboard/types";
+import { newestBackupIds, readInChunks } from "@/services/history/newest-runs";
 
 /** A run that is still going, with how far it got. */
 export interface LiveRun {
@@ -83,20 +84,48 @@ function errorOf(executionId: string): Promise<string | null> {
 }
 
 /**
- * How each job is doing: its latest runs, the one going on right now, what went wrong last and
- * when it runs next. The history comes from the cache the dashboard shares, the live runs are
- * read on every call, so a started run shows up right away.
+ * The latest runs of these jobs as a whole, newest first, read for them alone, like
+ * `getRecentRunsByJob` reads them for every job. For a page of the jobs, which would otherwise read
+ * the runs of every job of every tenant in All tenants.
  */
-export async function getJobOverviews(jobs: ScheduledJob[], now = new Date()): Promise<Map<string, JobOverview>> {
+export async function recentRunsOf(jobIds: string[]): Promise<Record<string, RunSummary[]>> {
+    const ids = await newestBackupIds(jobIds, { take: RUNS_PER_JOB, wholeJob: true });
+    const runs = await readInChunks(ids, (chunk) => prisma.execution.findMany({
+        where: { id: { in: chunk } },
+        select: { id: true, jobId: true, status: true, startedAt: true, endedAt: true },
+    }));
+    runs.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    const byJob: Record<string, RunSummary[]> = Object.fromEntries(jobIds.map((id) => [id, []]));
+    for (const run of runs) if (run.jobId) byJob[run.jobId]?.push(toRunSummary(run));
+    return byJob;
+}
+
+/**
+ * The backups of these jobs that run or wait now, newest first. Asked by the status and the jobs
+ * alone, which the index of status and start finds among the few that run or wait. Asked for the
+ * type and an order too, SQLite walked the backups of every job by the index of type, half a second
+ * for a page of 25 jobs among 25,000.
+ */
+async function liveRunsOf(jobIds: string[]) {
+    const rows = await prisma.execution.findMany({
+        where: { status: { in: ["Running", "Pending"] }, jobId: { in: jobIds } },
+        select: { id: true, jobId: true, type: true, status: true, startedAt: true, endedAt: true, metadata: true },
+    });
+    return rows.filter((row) => row.type === "Backup").sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+}
+
+/**
+ * How each job is doing: its latest runs, the one going on right now, what went wrong last and
+ * when it runs next. The history comes from the cache the dashboard shares unless the caller read
+ * it, like `recentRunsOf` for a page of the jobs. The live runs are read on every call, so a
+ * started run shows up right away.
+ */
+export async function getJobOverviews(jobs: ScheduledJob[], now = new Date(), recent?: Record<string, RunSummary[]>): Promise<Map<string, JobOverview>> {
     if (jobs.length === 0) return new Map();
 
     const [history, liveExecutions, timezone] = await Promise.all([
-        getRecentRunsByJob(),
-        prisma.execution.findMany({
-            where: { type: "Backup", status: { in: ["Running", "Pending"] }, jobId: { in: jobs.map((job) => job.id) } },
-            orderBy: { startedAt: "desc" },
-            select: { id: true, jobId: true, status: true, startedAt: true, endedAt: true, metadata: true },
-        }),
+        recent ?? getRecentRunsByJob(),
+        liveRunsOf(jobs.map((job) => job.id)),
         getSchedulerTimezone(),
     ]);
 

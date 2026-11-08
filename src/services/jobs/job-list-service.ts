@@ -1,9 +1,12 @@
 import type { Prisma } from "@prisma/client";
+import { WHOLE_JOB_RUNS } from "@/services/history/whole-runs";
 import { subDays } from "date-fns";
 import prisma from "@/lib/prisma";
-import { getJobOverviews, type JobOverview } from "./job-overview";
+import { getJobOverviews, recentRunsOf, type JobOverview } from "./job-overview";
 import { isAirGapped } from "@/lib/core/air-gap";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { currentTenantId } from "@/lib/tenant/current";
+import { providedTo } from "@/services/sharing/provided";
 
 /** What a list shows of a connection a job uses. Never its config, which holds hosts and secrets. */
 const connectionFields = { id: true, name: true, adapterId: true, lastStatus: true } satisfies Prisma.AdapterConfigSelect;
@@ -11,6 +14,8 @@ const connectionFields = { id: true, name: true, adapterId: true, lastStatus: tr
 const jobListSelect = {
     id: true,
     name: true,
+    // The tenant of the job, which the list shows and opens it in while it holds every tenant.
+    tenantId: true,
     schedule: true,
     enabled: true,
     sourceId: true,
@@ -79,13 +84,20 @@ function parsePatterns(value: string): string[] {
     }
 }
 
-/** The ids of the air-gapped destinations, see `lib/core/air-gap.ts`. */
+/**
+ * The ids of the air-gapped destinations, see `lib/core/air-gap.ts`: the own ones and those another
+ * tenant shares with the tenant that runs now, which its jobs write to as well.
+ */
 async function airGappedDestinations(): Promise<Set<string>> {
-    const rows = await prisma.adapterConfig.findMany({
-        where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-        select: { id: true, type: true, storageRole: true, metadata: true },
-    });
-    return new Set(rows.filter((row) => isAirGapped(row)).map((row) => row.id));
+    const tenantId = await currentTenantId();
+    const [rows, provided] = await Promise.all([
+        prisma.adapterConfig.findMany({
+            where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
+            select: { id: true, type: true, storageRole: true, metadata: true },
+        }),
+        tenantId ? providedTo(tenantId, { kind: "destination" }) : Promise.resolve([]),
+    ]);
+    return new Set([...rows, ...provided].filter((row) => isAirGapped(row)).map((row) => row.id));
 }
 
 /**
@@ -98,8 +110,27 @@ export async function getJobList(): Promise<JobListItem[]> {
         prisma.job.findMany({ select: jobListSelect, orderBy: { createdAt: "desc" } }),
         airGappedDestinations(),
     ]);
-    const overviews = await getJobOverviews(jobs);
+    return toItems(jobs, await getJobOverviews(jobs), airGapped);
+}
 
+/**
+ * These jobs as `getJobList` lists them, in the order of the ids, for a page of the Jobs page. Their
+ * latest runs are read for them alone, not from the cache of every job. An id of a job that is gone
+ * or of another tenant is left out.
+ */
+export async function getJobItems(ids: string[], now = new Date()): Promise<JobListItem[]> {
+    if (ids.length === 0) return [];
+    const [jobs, airGapped, recent] = await Promise.all([
+        prisma.job.findMany({ where: { id: { in: ids } }, select: jobListSelect }),
+        airGappedDestinations(),
+        recentRunsOf(ids),
+    ]);
+    const order = new Map(ids.map((id, index) => [id, index]));
+    jobs.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    return toItems(jobs, await getJobOverviews(jobs, now, recent), airGapped);
+}
+
+function toItems(jobs: JobRow[], overviews: Map<string, JobOverview>, airGapped: Set<string>): JobListItem[] {
     return jobs.map((job) => ({
         ...job,
         // An air-gapped destination that is not connected is away on purpose, never offline.
@@ -142,19 +173,20 @@ export interface JobRunHistory {
 export async function getJobRunHistory(jobId: string, now = new Date()): Promise<JobRunHistory> {
     const since = subDays(now, SUCCESS_RATE_DAYS);
     const [runs, outcomes, lastSuccess] = await Promise.all([
+        // The runs of the whole job, a run of single databases is in History.
         prisma.execution.findMany({
-            where: { jobId, type: "Backup" },
+            where: { jobId, type: "Backup", AND: [WHOLE_JOB_RUNS] },
             orderBy: { startedAt: "desc" },
             take: RUN_HISTORY_SIZE,
             select: { id: true, status: true, startedAt: true, endedAt: true, size: true },
         }),
         prisma.execution.groupBy({
             by: ["status"],
-            where: { jobId, type: "Backup", startedAt: { gte: since }, status: { in: ["Success", "Partial", "Failed"] } },
+            where: { jobId, type: "Backup", startedAt: { gte: since }, status: { in: ["Success", "Partial", "Failed"] }, AND: [WHOLE_JOB_RUNS] },
             _count: { _all: true },
         }),
         prisma.execution.findFirst({
-            where: { jobId, type: "Backup", status: "Success" },
+            where: { jobId, type: "Backup", status: "Success", AND: [WHOLE_JOB_RUNS] },
             orderBy: { startedAt: "desc" },
             select: { startedAt: true, size: true },
         }),

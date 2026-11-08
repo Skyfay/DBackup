@@ -26,13 +26,15 @@ vi.mock("@/lib/adapters/database/mysql/connection", () => ({
     ensureDatabase: (...args: unknown[]) => mockEnsureDatabase(...args),
 }));
 
-vi.mock("@/lib/adapters/database/common/tar-utils", () => ({
+vi.mock("@/lib/adapters/database/common/tar-utils", async (importOriginal) => ({
     isMultiDbTar: (...args: unknown[]) => mockIsMultiDbTar(...args),
     extractSelectedDatabases: (...args: unknown[]) => mockExtractSelected(...args),
     createTempDir: (...args: unknown[]) => mockCreateTempDir(...args),
     cleanupTempDir: (...args: unknown[]) => mockCleanupTempDir(...args),
     shouldRestoreDatabase: (...args: unknown[]) => mockShouldRestore(...args),
     getTargetDatabaseName: (...args: unknown[]) => mockGetTargetName(...args),
+    // The real lookup, so a dump is found among the files the extraction wrote, never joined from the manifest.
+    extractedFileOf: (await importOriginal<typeof import("@/lib/adapters/database/common/tar-utils")>()).extractedFileOf,
 }));
 
 vi.mock("fs/promises", () => ({
@@ -52,9 +54,19 @@ const baseConfig = {
     database: "shop",
 };
 
+type ExecAnswer = { stdout?: string; stderr?: string; code?: number };
+
+/** The help of a client that can be locked down, see `lockedDownClientArgs`. */
+const LOCKABLE_HELP = "Usage: mariadb [OPTIONS] [database]\n  --binary-mode       Some words\n  --sandbox           Some words\n";
+
+/** Answers the help of the client like one that can be locked down, and every other command with `rest`. */
+function lockable(rest: (argv: string[]) => ExecAnswer = () => ({})): (argv: string[]) => ExecAnswer {
+    return (argv) => (argv[1] === "--help" ? { stdout: LOCKABLE_HELP, code: 0 } : rest(argv));
+}
+
 /** A host whose mysql client exits with `code` and writes `stderr`. */
 function restoreHost(kind: HostKind, opts: { stderr?: string; code?: number } = {}): FakeHost {
-    return createFakeHost({ kind, onSpawn: () => opts });
+    return createFakeHost({ kind, onSpawn: () => opts, onExec: lockable() });
 }
 
 /** Collect log lines with their level. */
@@ -118,7 +130,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
             await restore(baseConfig as never, "/tmp/dump.sql", host);
 
             expect(host.calls.spawn[0][0]).toBe("mariadb");
-            expect(host.calls.spawn[0]).toContain("shop");
+            expect(host.calls.spawn[0]).toContain("--database=shop");
         });
 
         it("fails when no target database can be determined", async () => {
@@ -147,7 +159,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
                 host,
             );
 
-            expect(host.calls.spawn[0]).toContain("new");
+            expect(host.calls.spawn[0]).toContain("--database=new");
         });
 
         it("falls back to the original name when the mapping has no target", async () => {
@@ -158,7 +170,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
                 host,
             );
 
-            expect(host.calls.spawn[0]).toContain("old");
+            expect(host.calls.spawn[0]).toContain("--database=old");
         });
 
         it("fails when the client exits non-zero", async () => {
@@ -216,7 +228,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
             const host = restoreHost(kind);
             await restoreOne(baseConfig as never, "/tmp/a.sql", "target", host);
 
-            expect(host.calls.spawn[0]).toContain("target");
+            expect(host.calls.spawn[0]).toContain("--database=target");
         });
 
         it("works without callbacks", async () => {
@@ -288,7 +300,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
             const log = collector();
             const host = createFakeHost({
                 kind,
-                onExec: () => ({ stdout: "max_allowed_packet=67108864 log_bin=OFF" }),
+                onExec: lockable(() => ({ stdout: "max_allowed_packet=67108864 log_bin=OFF" })),
             });
 
             await restore(baseConfig as never, "/tmp/dump.sql", host, log.onLog as never);
@@ -297,7 +309,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
         });
 
         it("continues when the diagnostics query fails", async () => {
-            const host = createFakeHost({ kind, onExec: () => ({ code: 1, stderr: "denied" }) });
+            const host = createFakeHost({ kind, onExec: lockable(() => ({ code: 1, stderr: "denied" })) });
             const result = await restore(baseConfig as never, "/tmp/dump.sql", host);
 
             expect(result.success).toBe(true);
@@ -307,7 +319,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
             const log = collector();
             const host = createFakeHost({
                 kind,
-                onExec: (argv) => argv.includes("SELECT 'alive'") ? { stdout: "alive\n" } : { stdout: "" },
+                onExec: lockable((argv) => argv.includes("SELECT 'alive'") ? { stdout: "alive\n" } : { stdout: "" }),
                 onSpawn: () => ({ code: 1 }),
             });
 
@@ -320,7 +332,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL restore over a %s host", (kind
             const log = collector();
             const host = createFakeHost({
                 kind,
-                onExec: () => ({ code: 1, stderr: "connection refused" }),
+                onExec: lockable(() => ({ code: 1, stderr: "connection refused" })),
                 onSpawn: () => ({ code: 1 }),
             });
 
@@ -341,6 +353,26 @@ describe("MySQL restore transport differences", () => {
 
         expect(direct.calls.spawn[0]).toContain("--protocol=tcp");
         expect(ssh.calls.spawn[0]).not.toContain("--protocol=tcp");
+    });
+
+    it("locks the client down right after its login file on both transports", async () => {
+        for (const kind of ["direct", "ssh"] as HostKind[]) {
+            const host = restoreHost(kind);
+            await restore(baseConfig as never, "/tmp/dump.sql", host);
+
+            const argv = host.calls.spawn[0];
+            const login = argv.findIndex((arg) => arg.startsWith("--defaults-file="));
+            expect(argv.slice(login + 1, login + 4)).toEqual(["--local-infile=0", "--binary-mode", "--sandbox"]);
+        }
+    });
+
+    it("starts no restore beside DBackup with a client that cannot be locked down", async () => {
+        const host = createFakeHost({ kind: "direct", onExec: (argv) => (argv[1] === "--version" ? { stdout: "mysql  Ver 8.0.36\n" } : { stdout: "" }) });
+        const result = await restore(baseConfig as never, "/tmp/dump.sql", host);
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("cannot turn off the shell and file commands");
+        expect(host.calls.spawn).toHaveLength(0);
     });
 
     it("keeps the password out of argv on both transports", async () => {

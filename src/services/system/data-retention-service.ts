@@ -15,6 +15,7 @@ import {
 } from "@/lib/core/data-retention";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { runAsSystem } from "@/lib/tenant/context";
 import { auditService } from "@/services/audit-service";
 import { healthCheckService } from "@/services/system/healthcheck-service";
 import { cleanOldNotificationLogs } from "@/services/notifications/notification-log-service";
@@ -47,9 +48,13 @@ export async function getDataRetentionValues(): Promise<DataRetentionValues> {
     return values;
 }
 
+/**
+ * The retention periods with the records each one covers now. The periods hold for the whole
+ * instance, so the records are counted across every tenant, whichever tenant the admin has open.
+ */
 export async function getDataRetentionOverview(): Promise<DataRetentionOverview> {
     const values = await getDataRetentionValues();
-    const [executionLogs, executionHistory, auditLog, notificationHistory, storageUsage, healthChecks, deletedItems] = await Promise.all([
+    const [executionLogs, executionHistory, auditLog, notificationHistory, storageUsage, healthChecks, deletedItems] = await runAsSystem(() => Promise.all([
         prisma.execution.count({ where: { logsPurgedAt: null } }),
         prisma.execution.count(),
         prisma.auditLog.count(),
@@ -57,7 +62,7 @@ export async function getDataRetentionOverview(): Promise<DataRetentionOverview>
         prisma.storageSnapshot.count(),
         prisma.healthCheckLog.count(),
         prisma.deletedRecord.count(),
-    ]);
+    ]));
     return {
         values,
         counts: { executionLogs, executionHistory, auditLog, notificationHistory, storageUsage, healthChecks, deletedItems },

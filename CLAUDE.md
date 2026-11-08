@@ -16,7 +16,8 @@ Claude Code loads the nearest `CLAUDE.md` when you touch files in a directory. R
 | Database, storage, or notification adapters | [src/lib/adapters/CLAUDE.md](src/lib/adapters/CLAUDE.md) |
 | Wiki pages and the changelog | [docs/CLAUDE.md](docs/CLAUDE.md) |
 | Marketing website (dbackup.app) | [website/CLAUDE.md](website/CLAUDE.md) |
-| Unit and integration tests | [tests/CLAUDE.md](tests/CLAUDE.md) |
+| Unit and audit tests | [tests/CLAUDE.md](tests/CLAUDE.md) |
+| End-to-end tests (Playwright) | [e2e/CLAUDE.md](e2e/CLAUDE.md) |
 
 ## Non-negotiable rules
 
@@ -41,24 +42,38 @@ src/lib/runner/   Step-based backup execution pipeline
 
 Data flows one direction: `page.tsx` (Server Component) fetches through a Service, then passes props to a Client Component. Server Actions are thin wrappers: auth check, Zod validation, service call, revalidate.
 
-A Server Action or API route that contains business logic is a bug. Move it into `src/services/`.
+A Server Action or API route that contains business logic is a bug. Move it into `src/services/`. Nothing under `src/app` imports `@/lib/prisma`, and nothing under `src/lib` or `src/services` imports Next.js except `src/lib/server/request-headers.ts`. Two lint guards check both.
+
+## Tenants
+
+Every connection, job, run, key, template, API key and log belongs to one tenant, and a Prisma extension narrows every query to the tenant of the code that runs now (`src/lib/tenant/`). Read [docs/developer-guide/advanced/tenants.md](docs/developer-guide/advanced/tenants.md) before touching data access. The rules that bite:
+
+- A request finds its tenant by itself, through the session or the API key. Code outside a request (scheduler, queue, system tasks, startup, scripts) runs in `runAsTenant(id, fn)` or `runAsSystem(fn)`, or its query throws `TenantScopeError`. In the system scope a create of a tenant model names its `tenantId` itself.
+- A new model that holds data of a customer gets `tenantId`, goes into `TENANT_MODELS` (or `CHILD_MODELS` when it hangs off a parent), and the isolation test in `tests/unit/tenant/tenant-isolation.test.ts` covers it. A model of the whole instance (settings, users, sign-in providers) stays global. Groups belong to a tenant like its data.
+- The filter narrows queries, it does not check the ids a write links to. A write that links records checks them with `assertOwnRecords`. Raw SQL skips the filter: select ids only and read the rows through the client.
+- A cache in memory or in a global setting that holds data of tenants is keyed by tenant or filtered on the way out, see `src/services/dashboard/cache.ts` and `getStorageVolume`.
+- A platform admin (`User.platformRole`) passes every check in every tenant. A platform group (`User.platformGroupId`) adds rights on the platform (`PLATFORM_ONLY_PERMISSIONS`, never held by a group of a tenant) and rights in the tenants of its scope, both in `ctx.permissions`. Every tenant has its own groups, and a user holds one of them per tenant through `TenantMembership`. A lookup of a group for another tenant runs in `runAsTenant` of that tenant. Nothing checks a group by its name, the group with every permission of a tenant is `Group.fullAccess`.
+- Someone in All tenants (`ctx.allTenants`, no `tenantId`), a platform admin or someone of a platform group of all tenants, reads every tenant and writes none, the scope `all` refuses it. A page offers no change there, it opens the record in its tenant first with `useOpenInTenant`, and a new record asks for its tenant with `TenantPickDialog`, which lists only the tenants where the viewer may add it.
 
 ## Commands
 
 ```bash
 pnpm dev                  # Dev server - auto-applies pending migrations on startup
 pnpm run build            # Production build - run before committing
-pnpm validate             # Lint + typecheck + build (scripts/validate.sh)
+pnpm validate             # Lint + typecheck + unit tests (scripts/validate.sh), no build
 pnpm type                 # tsc --noEmit only
 pnpm test                 # Unit tests (vitest)
-pnpm test:integration     # Integration tests against real DB containers
-pnpm test:ui              # Spin up test DBs + seed local DB for manual testing
-pnpm run database:reset   # Reset dev DB from scratch via all migrations
+pnpm test:e2e             # End-to-end tests: the image of this checkout beside the dev lab (Playwright)
+pnpm lab                  # Menu of the dev lab commands, lab:status shows what runs and what is missing
+pnpm lab:up               # Start the dev lab: test DBs, storage servers, notification receivers
+pnpm lab:seed             # Fill the dev DB with the first user and every lab connection and job
+pnpm lab:check --run      # Test every lab connection and run every lab job once
+pnpm run database:reset   # Reset dev DB from scratch via all migrations (lab:reset also seeds it)
 pnpm toolbox              # Menu of the release and maintenance commands below, see scripts/toolbox/README.md
 pnpm changelog:preview    # Show the changelog block the next release writes from the fragments
-pnpm version:bump         # Next version, changelog block and version everywhere, after a CodeQL check of dev
+pnpm version:bump         # Next version, changelog block and version everywhere, after a CodeQL check of dev (a beta sets the version only)
 pnpm codeql:check         # CodeQL alerts open on dev that main does not have
-pnpm release:tag          # Tag the release on main and push it (release:untag deletes a tag)
+pnpm release:tag          # Tag the release on main and push it (release:tag dev tags a beta, release:untag deletes a tag)
 ```
 
 Docs site and marketing site are separate workspaces: `pnpm docs:dev` (VitePress) and `pnpm website:dev`.
@@ -71,6 +86,8 @@ Docs site and marketing site are separate workspaces: `pnpm docs:dev` (VitePress
 1. Stop the dev server (Ctrl+C in the node terminal).
 2. `npx prisma migrate dev --name <migration-name>`
 3. Restart `pnpm dev`.
+
+A migration that shipped in a beta release never changes again, a fix goes into a new one.
 
 Running `migrate dev` against a live dev server can trigger an interactive DB reset, which fights the SQLite file lock and crashes the Node process - often taking VS Code with it. `prisma db push` applies schema changes without a migration file, which desyncs `_prisma_migrations` from the real schema and breaks `database:deploy` in production and for other developers.
 
@@ -136,7 +153,7 @@ Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 | Error classes | [src/lib/logging/errors.ts](src/lib/logging/errors.ts) |
 | Shadcn primitives | [src/components/ui/](src/components/ui/) |
 | Task colors (tones) | [src/components/ui/tone.ts](src/components/ui/tone.ts), rules under Color in [src/app/dashboard/CLAUDE.md](src/app/dashboard/CLAUDE.md) |
-| Test containers | [docker-compose.test.yml](docker-compose.test.yml) |
+| Dev lab (test DBs, storage, seed) | [lab/](lab/), guide in [docs/developer-guide/reference/dev-lab.md](docs/developer-guide/reference/dev-lab.md) |
 
 ## Environment variables
 
@@ -144,4 +161,15 @@ Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 - `LOG_LEVEL` - `debug` | `info` (default) | `warn` | `error`.
 - `SQLITE_WAL_MODE` - `true` (default) | `false`. WAL is on by default for the Prisma SQLite DB. See `src/lib/prisma.ts`.
 - `DISABLE_EMAIL_LOGIN` - `true` | `false` (default). Rejects browser email sign-in and sign-up. Server-side `auth.api.*` calls stay open so admin user creation and password resets keep working. See `src/lib/auth/env-flags.ts`.
+- `TRUSTED_PROXIES` - the reverse proxies whose `X-Forwarded-For` counts, comma-separated addresses, CIDR ranges and the keywords `private` and `cloudflare`, `none`, or unset for `private`, the loopback and private networks. The custom server resolves the client address in `server/client-address.ts` and passes it in a header of its own, so the app reads `clientAddress()` from `@/lib/core/client-address` and never `X-Forwarded-For` itself. A lint guard checks that.
 - `OIDC_AUTO_REDIRECT` - `SsoProvider.providerId` to redirect to instead of rendering the login page. Format checked in `env-validation.ts`, existence in `startup-checks.ts`.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

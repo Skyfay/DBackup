@@ -8,7 +8,7 @@ import { NextRequest } from "next/server";
 vi.stubEnv("ENCRYPTION_KEY", "c".repeat(64));
 
 const mocks = vi.hoisted(() => ({
-    ctx: { userId: "u1", permissions: [], isSuperAdmin: true, authMethod: "session" },
+    ctx: { userId: "u1", permissions: [], isPlatformAdmin: true, authMethod: "session" },
     findUnique: vi.fn(),
     update: vi.fn(),
     profiles: vi.fn(),

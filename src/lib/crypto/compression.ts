@@ -1,5 +1,9 @@
-import { createGzip, createGunzip, createBrotliCompress, createBrotliDecompress, gzipSync, brotliCompressSync, constants } from 'zlib';
+import { createGzip, createGunzip, createBrotliCompress, createBrotliDecompress, gzip, brotliCompress, constants, type BrotliOptions, type ZlibOptions } from 'zlib';
 import { Transform } from 'stream';
+import { promisify } from 'util';
+
+const gzipAsync = promisify(gzip) as (input: Buffer, options?: ZlibOptions) => Promise<Buffer>;
+const brotliCompressAsync = promisify(brotliCompress) as (input: Buffer, options?: BrotliOptions) => Promise<Buffer>;
 
 export type CompressionType = 'NONE' | 'GZIP' | 'BROTLI';
 
@@ -44,13 +48,17 @@ export function getCompressionStream(type: string): Transform | null {
  * Exists so the Brotli quality above is applied in exactly one place. Calling zlib directly
  * silently picks up Node's default of 11 instead, which is how a buffered path ends up
  * running an order of magnitude slower than the streaming one next to it.
+ *
+ * Runs in the thread pool of zlib, never on the event loop: a bundle of 4 MB at quality 10
+ * takes about two seconds, which a synchronous call would take from every request and every
+ * other run of the one process all tenants share. The output is the same bytes either way.
  */
-export function compressBufferSync(input: Buffer, type: CompressionType): Buffer {
+export async function compressBuffer(input: Buffer, type: CompressionType): Promise<Buffer> {
     switch (type) {
         case 'GZIP':
-            return gzipSync(input);
+            return gzipAsync(input);
         case 'BROTLI':
-            return brotliCompressSync(input, BROTLI_OPTIONS);
+            return brotliCompressAsync(input, BROTLI_OPTIONS);
         case 'NONE':
         default:
             return input;

@@ -20,9 +20,9 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
-| **Host** | Hostname or IP of the remote server | - | ✅ |
-| **Port** | SSH port | `22` | ❌ |
-| **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Host** | Hostname or IP of the remote server, without spaces, `@`, `:`, `/` or a leading `-`. An IPv6 address goes in brackets, like `[2001:db8::1]` | - | ✅ |
+| **Port** | SSH port, a whole number from 1 to 65535 | `22` | ❌ |
+| **Login** | `SSH_KEY` credential profile (username + key or password). The username is a login name without `:`, `/`, spaces or a leading `-`. A Windows or AD login like `alice@corp.local` works, the server is always the one in **Host** | - | ✅ |
 | **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ✅ |
 | **Options** | Additional rsync flags (e.g. `--bwlimit=1000`) | - | ❌ |
 
@@ -55,6 +55,9 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 - DBackup invokes `rsync -az` over SSH to transfer backup files
 - All transfers are encrypted in transit via SSH
 - Custom options are appended to the rsync command
+- Every transfer from the server, a directory source as well as the download or read of a backup, runs with `--no-devices --no-specials --no-owner --no-group --no-links` after the custom options, so links, devices, pipes and the owners of the server never reach DBackup, even with `-a` among them. Symbolic links of a directory source are still backed up as links, from the targets the listing names. A backup file that is a link on the server is not downloaded, and the download fails.
+- The download or read of one backup file also runs with `--no-recursive --no-dirs`, so a path that is a folder on the server transfers nothing and the download fails, even with `-a` or `-r` among the custom options. A directory source transfers its folders as before.
+- The rsync of the DBackup server has to take these flags. GNU rsync 3, which the Docker image ships, does. One that refuses them fails the transfer with a message naming `--no-links`, rather than running with `-a` alone.
 - All credentials (passwords, private keys) are stored AES-256-GCM encrypted in the database
 
 ## Troubleshooting

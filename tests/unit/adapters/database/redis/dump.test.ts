@@ -61,12 +61,12 @@ describe.each<HostKind>(["direct", "ssh"])("Redis dump over a %s host", (kind) =
         expect(result.error).toContain("empty");
     });
 
-    it("masks the password in the logged command", async () => {
+    it("keeps the password out of the logged command", async () => {
         const details: Array<string | undefined> = [];
         await dump(baseConfig as never, "/tmp/out.rdb", dumpHost(kind), (_m, _l, _t, d) => details.push(d));
 
         const logged = details.filter(Boolean).join(" ");
-        expect(logged).toContain("******");
+        expect(logged).toContain("--rdb");
         expect(logged).not.toContain("secret");
     });
 
@@ -84,12 +84,16 @@ describe("Redis dump transport handling", () => {
         mockFsStat.mockResolvedValue({ size: 2048 });
     });
 
-    it("suppresses the insecure-password warning", async () => {
+    it("hands redis-cli the password in REDISCLI_AUTH, never in the command a process list or an SSH server shows", async () => {
         for (const kind of ["direct", "ssh"] as HostKind[]) {
-            const host = dumpHost(kind);
-            await dump(baseConfig as never, "/tmp/out.rdb", host);
+            const envs: Array<Record<string, string | undefined> | undefined> = [];
+            const host = createFakeHost({ kind, onExec: (_argv, options) => { envs.push(options?.env); return {}; } });
+            await dump({ ...baseConfig, username: "backup" } as never, "/tmp/out.rdb", host);
 
-            expect(host.calls.exec[0]).toContain("--no-auth-warning");
+            expect(host.calls.exec[0]).not.toContain("-a");
+            expect(host.calls.exec[0].join(" ")).not.toContain("secret");
+            expect(host.calls.exec[0]).toEqual(expect.arrayContaining(["--user", "backup"]));
+            expect(envs[0]).toEqual({ REDISCLI_AUTH: "secret" });
         }
     });
 });

@@ -4,6 +4,8 @@
  */
 
 import prisma from "@/lib/prisma";
+import { runAsTenant } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { isValidCron } from "@/lib/core/cron";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
@@ -55,7 +57,12 @@ export async function getConfigBackupSettings(): Promise<ConfigBackupSettings> {
 }
 
 /** Why the settings cannot be saved as they are, or null when they can. */
-async function problemOf(next: ConfigBackupSettings): Promise<{ field: keyof ConfigBackupSettings; message: string } | null> {
+/** The destination and the key belong to the home tenant, whichever tenant the admin looks at. */
+function problemOf(next: ConfigBackupSettings): Promise<{ field: keyof ConfigBackupSettings; message: string } | null> {
+    return runAsTenant(HOME_TENANT_ID, () => problemInHome(next));
+}
+
+async function problemInHome(next: ConfigBackupSettings): Promise<{ field: keyof ConfigBackupSettings; message: string } | null> {
     if (next.enabled && !next.storageId) return { field: "storageId", message: "Pick a destination to back up the configuration." };
     if (next.enabled && !next.profileId) return { field: "profileId", message: "Pick an encryption key. The file holds every login, so it is always encrypted." };
     if (!isValidCron(next.schedule)) return { field: "schedule", message: "The scheduler cannot read this schedule." };

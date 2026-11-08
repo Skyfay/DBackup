@@ -4,8 +4,8 @@ import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 
 /**
  * The endpoints of better-auth that set a password, with the field of the new one. The browser
- * calls sign-up and change-password itself, so the rules of Settings > Passwords are checked here
- * and not only in the actions of DBackup.
+ * calls sign-up itself, and the others answer the server too, so the rules of Settings > Passwords
+ * are checked here and not only in the actions of DBackup.
  */
 const PASSWORD_FIELDS: Readonly<Record<string, "password" | "newPassword">> = {
     "/sign-up/email": "password",

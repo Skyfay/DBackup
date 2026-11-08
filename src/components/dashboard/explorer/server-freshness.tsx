@@ -10,11 +10,12 @@ import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { ExplorerServer } from "@/services/databases/database-explorer-types";
+import type { ServerBrief } from "@/services/databases/database-explorer-types";
 import { freshnessOf } from "./database-model";
 
 interface ServerFreshnessProps {
-    servers: ExplorerServer[];
+    /** Every server, also those the list does not show now. */
+    servers: ServerBrief[];
     /** Reads the databases of every server from the servers now. */
     onReadNow: () => Promise<void>;
 }

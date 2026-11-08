@@ -20,6 +20,8 @@ interface DataTableToolbarProps<TData> {
     searchPlaceholder?: string;
     /** Extra controls after the filters. */
     toolbarExtra?: React.ReactNode;
+    /** A control before the search, like the switch between two lists of one card. */
+    toolbarStart?: React.ReactNode;
     /** Replaces the View menu with the Columns menu of a table that keeps its layout. */
     columnSettings?: React.ReactNode;
 }
@@ -33,6 +35,7 @@ export function DataTableToolbar<TData>({
     isLoading = false,
     searchPlaceholder,
     toolbarExtra,
+    toolbarStart,
     columnSettings,
 }: DataTableToolbarProps<TData>) {
     const isFiltered = table.getState().columnFilters.length > 0;
@@ -55,6 +58,7 @@ export function DataTableToolbar<TData>({
 
     return (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+            {toolbarStart}
             <div className="relative w-full sm:w-auto">
                 <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                 <Input

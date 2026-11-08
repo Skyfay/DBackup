@@ -31,10 +31,12 @@ export function formerNames(audit: AuditEntry[]): { name: string; until: Date }[
  * rotated, as far as the audit log still knows. Null when the key is gone.
  *
  * A run names the key it came from by the name the key had then, so the runs are found by every
- * name the key had, each up to its rename, and never from before the key was made.
+ * name the key had, each up to its rename, and never from before the key was made. Only the runs
+ * of the tenant of the key count, also in All tenants, where a key of another tenant may have had
+ * the same name.
  */
 export async function getApiKeyDetails(id: string): Promise<ApiKeyDetails | null> {
-    const key = await prisma.apiKey.findUnique({ where: { id }, select: { id: true, name: true, createdAt: true } });
+    const key = await prisma.apiKey.findUnique({ where: { id }, select: { id: true, name: true, createdAt: true, tenantId: true } });
     if (!key) return null;
 
     const [audit, retention] = await Promise.all([
@@ -48,6 +50,7 @@ export async function getApiKeyDetails(id: string): Promise<ApiKeyDetails | null
     ]);
     const runs = await prisma.execution.findMany({
         where: {
+            tenantId: key.tenantId,
             triggerType: API_TRIGGER,
             startedAt: { gte: key.createdAt },
             OR: [{ triggerLabel: key.name }, ...formerNames(audit).map((former) => ({ triggerLabel: former.name, startedAt: { lt: former.until } }))],

@@ -83,7 +83,7 @@ Results are written back to the sidecars as they complete, so the Backups page b
 
 A destination whose **Integrity checks** are off in the **Behavior** part of its form is left out, and an [air-gapped destination](/user-guide/destinations/#air-gapped-destinations) is checked whenever it is connected. Several destinations are switched at once: tick them on the **Destinations** tab of **Connections** and pick **Turn off integrity checks** or **Turn on integrity checks** under **More**.
 
-It is off by default and its default schedule is every Sunday at 4 AM. Its switch and schedule are under **Settings > System tasks**.
+It is off by default and its default schedule is every Sunday at 4 AM. Its switch and schedule are under **Settings > System tasks**. With [tenants](/user-guide/admin/tenants), every tenant with something to check gets a run of its own in its History, with its own copies, the home tenant first.
 
 ::: info What counts as "scheduled"
 The `trigger` field in `.meta.json` records how each check was triggered: `manual`, `post-upload`, or `scheduled`. This lets you distinguish between a fresh post-upload check and an older scheduled check in the metadata.

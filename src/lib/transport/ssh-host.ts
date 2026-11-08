@@ -251,10 +251,15 @@ export class SshHost extends BaseHost {
         });
     }
 
+    /**
+     * A new temp file, created exclusively (`wx`), like `writeHostFile` of `DirectHost`. The temp
+     * folder of the target is shared with every account there, so a file or a link someone laid
+     * under the name first fails the write instead of receiving a login like a `.my.cnf`.
+     */
     protected async writeHostFile(hostPath: string, content: string | Buffer, mode?: number): Promise<void> {
         const sftp = await this.sftp();
         await new Promise<void>((resolve, reject) => {
-            const stream = sftp.createWriteStream(hostPath, mode !== undefined ? { mode } : undefined);
+            const stream = sftp.createWriteStream(hostPath, mode !== undefined ? { flags: "wx", mode } : { flags: "wx" });
             stream.once("error", reject);
             stream.once("close", () => resolve());
             stream.end(content);
@@ -269,9 +274,10 @@ export class SshHost extends BaseHost {
         }
     }
 
+    /** A new temp file like `writeHostFile`, so a file or a link laid under the name first never receives the bytes. */
     protected async openHostWriteStream(hostPath: string): Promise<Writable> {
         const sftp = await this.sftp();
-        return sftp.createWriteStream(hostPath);
+        return sftp.createWriteStream(hostPath, { flags: "wx" });
     }
 
     async connect(remoteHost: string, remotePort: number): Promise<Duplex> {

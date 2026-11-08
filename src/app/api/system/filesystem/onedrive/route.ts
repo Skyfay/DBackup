@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { cloudFolderPath } from "@/lib/adapters/definitions/shared";
 import { logger } from "@/lib/logging/logger";
+import { logProbe, type ProbeActor } from "@/services/adapters/probe-audit";
 import { AuthenticationError, PermissionError, wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ route: "system/filesystem/onedrive" });
@@ -35,15 +38,22 @@ const TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
  * { success, data: { currentPath, currentName, parentPath, entries: [{ name, type, path }] } }
  */
 export async function POST(req: NextRequest) {
+    // Who browses, once the drive is asked, so the audit log keeps the browse whether it answered or not.
+    let browsing: ProbeActor | null = null;
     try {
         // Only the connection form browses a drive by its OAuth profile, so it takes the right to change destinations.
-        await checkPermission(PERMISSIONS.DESTINATIONS.WRITE);
+        const viewer = await checkPermission(PERMISSIONS.DESTINATIONS.WRITE);
 
         const parsed = BodySchema.safeParse(await req.json().catch(() => null));
         if (!parsed.success) {
             return NextResponse.json({ success: false, error: "Invalid request" }, { status: 400 });
         }
         const { credentialId, folderPath } = parsed.data;
+
+        // Never with a saved login of the destination of the configuration backup, which would show
+        // its folders to someone who may not change it.
+        const locked = await savedLoginRefusal({ isPlatformAdmin: viewer.isPlatformAdmin, authMethod: "session" }, credentialId);
+        if (locked) return locked;
 
         const config = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 
@@ -53,6 +63,8 @@ export async function POST(req: NextRequest) {
                 { status: 400 }
             );
         }
+
+        browsing = { userId: viewer.id, authMethod: "session" };
 
         // Get access token using refresh token
         const tokenRes = await fetch(TOKEN_URL, {
@@ -68,6 +80,7 @@ export async function POST(req: NextRequest) {
         });
 
         if (!tokenRes.ok) {
+            await logProbe(browsing, "folder_browse", { adapterId: "onedrive" }, false);
             return NextResponse.json(
                 { success: false, error: `Failed to refresh token: ${tokenRes.status}` },
                 { status: 401 }
@@ -134,6 +147,7 @@ export async function POST(req: NextRequest) {
             ? currentPath.split("/").filter(Boolean).pop() || "Root"
             : "OneDrive (Root)";
 
+        await logProbe(browsing, "folder_browse", { adapterId: "onedrive" }, true);
         return NextResponse.json({
             success: true,
             data: {
@@ -144,12 +158,12 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (err) {
-        if (err instanceof AuthenticationError) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        if (err instanceof AuthenticationError) return unauthorized();
         if (err instanceof PermissionError) return NextResponse.json({ success: false, error: "Access denied" }, { status: 403 });
+        if (browsing) await logProbe(browsing, "folder_browse", { adapterId: "onedrive" }, false);
         log.error("OneDrive folder browse failed", {}, wrapError(err));
-        const message = err instanceof Error ? err.message : "Failed to browse OneDrive folders";
         return NextResponse.json(
-            { success: false, error: message },
+            { success: false, error: "The OneDrive folders could not be listed. The log of DBackup has the details." },
             { status: 500 }
         );
     }

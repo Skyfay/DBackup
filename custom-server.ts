@@ -10,16 +10,20 @@
  *   PORT           - Listen port (default: 3000)
  *   HOSTNAME       - Bind address (default: "0.0.0.0")
  *   CERTS_DIR      - Directory for tls.crt/tls.key (default: "/data/certs")
+ *   TRUSTED_PROXIES - The reverse proxies whose X-Forwarded-For counts, see server/client-address.ts
  */
 
 import { createServer as createHttpsServer } from "node:https";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { execSync } from "node:child_process";
+import type { BlockList } from "node:net";
 import path from "node:path";
 import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import next from "next";
+
+import { CLIENT_ADDRESS_HEADER, clientAddressOf, trustedProxiesFrom } from "./server/client-address";
 
 // ── Configuration ──────────────────────────────────────────────
 (process.env as Record<string, string | undefined>).NODE_ENV = "production";
@@ -31,6 +35,15 @@ const disableHttps = process.env.DISABLE_HTTPS === "true";
 const certsDir = process.env.CERTS_DIR || "/data/certs";
 const certPath = path.join(certsDir, "tls.crt");
 const keyPath = path.join(certsDir, "tls.key");
+// Checked before anything starts, so an entry with a typo stops the server instead of trusting the wrong proxies.
+let trustedProxies: BlockList;
+try {
+  trustedProxies = trustedProxiesFrom(process.env.TRUSTED_PROXIES);
+  console.log(`[Server] X-Forwarded-For counts from: ${process.env.TRUSTED_PROXIES?.trim() || "private (the default)"}`);
+} catch (err: unknown) {
+  console.error(`[Server] ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
 
 // ── Next.js Setup ────────────────────────────────────────────
 // Set standalone config env BEFORE importing next (matches generated server.js)
@@ -193,6 +206,13 @@ app.prepare().then(() => {
 
   const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     try {
+      // The app reads the address of the client from here only. A value the client sent is replaced.
+      req.headers[CLIENT_ADDRESS_HEADER] = clientAddressOf(
+        req.socket.remoteAddress,
+        req.headers["x-forwarded-for"],
+        req.headers["x-real-ip"],
+        trustedProxies
+      );
       await handler(req, res);
     } catch (err) {
       console.error("[Server] Request error:", err);

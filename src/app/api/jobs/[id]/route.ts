@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { jobService } from "@/services/jobs/job-service";
 import { jobAuditSnapshot, jobChangeDetails } from "@/services/jobs/job-audit";
@@ -7,6 +8,11 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
+import { refusedUnless, serviceRefusal } from "@/lib/server/permission-refusal";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+
+const log = logger.child({ route: "jobs/[id]" });
 
 export async function DELETE(
     req: NextRequest,
@@ -14,10 +20,11 @@ export async function DELETE(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     try {
@@ -30,8 +37,12 @@ export async function DELETE(
         const deleted = await jobService.deleteJob(params.id, { permanently, by: ctx.userId });
         await auditService.logFor(ctx, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.JOB, { name: deleted.name, ...(permanently ? { permanently: true } : {}) }, params.id);
         return NextResponse.json({ success: true });
-    } catch (_error) {
-        return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
+    } catch (error: unknown) {
+        // A refusal written for the caller keeps its own status, anything else broke and goes to the log.
+        const refusal = serviceRefusal(error);
+        if (refusal) return refusal;
+        log.error("Delete job error", { jobId: params.id }, wrapError(error));
+        return NextResponse.json({ error: "The job could not be deleted. The log of DBackup has the details." }, { status: 500 });
     }
 }
 
@@ -41,10 +52,11 @@ export async function PUT(
 ) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
-    checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
+    const refused = refusedUnless(() => checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE));
+    if (refused) return refused;
 
     const params = await props.params;
     try {
@@ -99,8 +111,10 @@ export async function PUT(
 
         return NextResponse.json(updatedJob);
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Failed to update job";
-        const status = message.includes("already exists") ? 409 : 500;
-        return NextResponse.json({ error: message }, { status });
+        // A linked record of another tenant, a value the job refuses or a name in use is the caller's to fix.
+        const refusal = serviceRefusal(error);
+        if (refusal) return refusal;
+        log.error("Update job error", { jobId: params.id }, wrapError(error));
+        return NextResponse.json({ error: "The job could not be saved. The log of DBackup has the details." }, { status: 500 });
     }
 }

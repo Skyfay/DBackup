@@ -9,6 +9,6 @@
     "sourceMap": false,
     "paths": {}
   },
-  "include": ["custom-server.ts"],
+  "include": ["custom-server.ts", "server/client-address.ts"],
   "exclude": ["node_modules"]
 }

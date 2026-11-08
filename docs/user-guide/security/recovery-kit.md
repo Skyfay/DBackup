@@ -72,6 +72,8 @@ damaged archive never leaves something that looks like a recovered file.
 
 **Recovery kit** in the menu of a key, in its side panel and in the bar of several selected keys opens the same dialog with only those keys ticked. Right after **New key** the dialog of the new key offers its kit as well.
 
+The key of the [configuration backup](/user-guide/features/system-backup) goes into a kit, and shows with **Reveal key**, only for a platform admin, since it opens a file with every secret of the instance. Everyone else sees it in the dialog without a checkbox and with the reason.
+
 The Vault notes on every key when it was last in a downloaded kit, so the list can mark the keys that never were. The **Never in a kit** filter shows them.
 
 One kit can hold several keys. That is usually what you want: a backup records which
@@ -178,6 +180,8 @@ node dbackup-recover.js --extract backup.tar ./restored docs
 ```
 
 Every extracted file and database dump is verified against the checksum recorded when the backup was made. A mismatch is reported, the file is not written, and the command exits non-zero. Dump checksums exist in backups written since every job became a seekable archive, and only a recently downloaded kit checks them, so download the kit again after updating DBackup.
+
+Symbolic links are laid last. A link whose target is absolute or leads out of the folder of its source, and a link inside another link of the backup, is skipped and named with `SKIPPED`, like DBackup's own restore does, so a tampered backup cannot write or point outside the output folder.
 
 `--decrypt` handles a database backup written by an earlier version, encrypted as a single file. It decompresses in the same pass, and a backup holding several databases is unpacked into one dump per database, never a `.gz` or a `.tar` to take apart first.
 

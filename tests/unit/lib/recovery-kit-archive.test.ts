@@ -120,6 +120,42 @@ describe("recovery kit: dbackup-recover.js", () => {
             .toContain("CREATE TABLE t");
     });
 
+    it("lays no link that leads out of the output folder, and nothing through one", async () => {
+        const sourceDir = path.join(workDir, "src");
+        await fs.mkdir(path.join(sourceDir, "docs"), { recursive: true });
+        await fs.writeFile(path.join(sourceDir, "docs/notes.txt"), "notes\n");
+        const victimDir = path.join(workDir, "victim");
+        await fs.mkdir(victimDir);
+        const link = (p: string, linkTarget: string) => ({ path: p, size: 0, mtime: "2026-07-22T10:00:00.000Z", linkTarget });
+        const archivePath = path.join(workDir, "links.tar");
+        await createArchive([{
+            kind: "directory", jobSourceId: "src-1", label: "SFTP: /srv", localPath: sourceDir, excludePatterns: [],
+            files: [
+                { path: "docs/notes.txt", size: 6, mtime: "2026-07-22T10:00:00.000Z" },
+                // `a -> <victim>` laid first and `a/planted` through it would land in the victim folder.
+                link("a", victimDir),
+                link("a/planted", "../../x"),
+                link("up", "../../.."),
+                link("sub/back", ".."),
+                link("sub/esc", "back/../../../.."),
+                link("docs/latest", "notes.txt"),
+            ],
+        }], archivePath, { sourceType: "directory-only" });
+        const outDir = path.join(workDir, "out");
+
+        const { stderr } = await runScript(["--extract", archivePath, outDir]);
+
+        expect(await fs.readdir(victimDir)).toEqual([]);
+        const root = path.join(outDir, "src-1");
+        for (const skipped of ["a", "a/planted", "up", "sub/esc"]) {
+            await expect(fs.lstat(path.join(root, skipped)), skipped).rejects.toThrow();
+        }
+        expect(stderr).toContain("SKIPPED (inside another link of the backup): a/planted");
+        expect(stderr).toContain("SKIPPED (link leads out of the output folder): a ->");
+        expect(await fs.readlink(path.join(root, "docs/latest"))).toBe("notes.txt");
+        expect(await fs.readlink(path.join(root, "sub/back"))).toBe("..");
+    });
+
     it("extracts only what a pattern selects", async () => {
         const archivePath = await buildArchive(true);
         const outDir = path.join(workDir, "out");

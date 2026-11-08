@@ -26,7 +26,7 @@ vi.mock("@/services/adapters/connection-details", () => ({ getConnectionDetails:
 import { GET } from "@/app/api/adapters/[id]/details/route";
 
 const call = (id = "pg") => GET(new NextRequest(`http://localhost/api/adapters/${id}/details`), { params: Promise.resolve({ id }) });
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 
 describe("GET /api/adapters/[id]/details", () => {
     beforeEach(() => {

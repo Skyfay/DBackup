@@ -35,6 +35,12 @@ const nextConfig: NextConfig = {
       { source: "/dashboard/sources", destination: "/dashboard/connections?tab=databases", permanent: true },
       { source: "/dashboard/destinations", destination: "/dashboard/connections?tab=destinations", permanent: true },
       { source: "/dashboard/notifications", destination: "/dashboard/connections?tab=notifications", permanent: true },
+      // The page of the shared databases became the tab Shared with you of the Backups page. Not
+      // permanent, since the address was never part of a release.
+      { source: "/dashboard/shared", destination: "/dashboard/backups?tab=shared", permanent: false },
+      // Recently deleted was a page of its own for a while and is a part of Settings again, of the
+      // tenant settings with more than one tenant. Not permanent, since the page was never released.
+      { source: "/dashboard/recently-deleted", destination: "/dashboard/settings?part=recently-deleted", permanent: false },
     ];
   },
 };

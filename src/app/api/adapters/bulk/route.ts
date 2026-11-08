@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { deleteAdapters, getAdapterTypes, updateAdapterFlags, type AdapterFlagChange } from "@/services/adapters/adapter-service";
 import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
+import { configBackupTargetResponse } from "@/lib/server/config-backup-target-guard";
 import { auditService } from "@/services/audit-service";
+import { changedNames, connectionNames } from "@/services/audit/record-names";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { summarizeBulkResult, BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, PermissionError } from "@/lib/logging/errors";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
 
 const log = logger.child({ route: "adapters/bulk" });
 
@@ -44,7 +48,7 @@ const BulkAdaptersSchema = z.object({
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -66,8 +70,13 @@ export async function POST(req: NextRequest) {
         for (const type of types) {
             checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
         }
+        // A selection with the destination of the configuration backup goes only with a platform admin.
+        const locked = await configBackupTargetResponse(ctx, { connectionIds: ids });
+        if (locked) return locked;
 
         const deleting = action === "delete";
+        // Read first, a deleted connection is gone afterwards.
+        const names = await connectionNames(ids);
         const result = deleting ? await deleteAdapters(ids, { permanently, by: ctx.userId }) : await updateAdapterFlags(ids, FLAG_ACTIONS[action]);
 
         await auditService.logFor(
@@ -80,6 +89,7 @@ export async function POST(req: NextRequest) {
                 requested: ids.length,
                 succeeded: result.succeeded.length,
                 failed: result.failed.length,
+                names: changedNames(result.succeeded, names),
             }
         );
 
@@ -91,9 +101,11 @@ export async function POST(req: NextRequest) {
         if (error instanceof PermissionError) {
             return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
         }
+        const refused = serviceRefusal(error);
+        if (refused) return refused;
         log.error("Bulk adapter action failed", {}, wrapError(error));
         return NextResponse.json(
-            { success: false, error: getErrorMessage(error) || "Bulk action failed" },
+            { success: false, error: "The bulk action failed. The log of DBackup has the details." },
             { status: 500 }
         );
     }

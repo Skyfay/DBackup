@@ -6,13 +6,16 @@ import { StorageAdapter, DatabaseAdapter, BackupMetadata } from "@/lib/core/inte
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { compareVersions } from "@/lib/utils";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, NotFoundError } from "@/lib/logging/errors";
 import type { RestoreInput } from "./types";
+import { findDestinationPath, openRow } from "@/services/sharing/destination-access";
+import { findRestoreTarget } from "./restore-target";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
 /**
  * Pre-flight checks before kicking off a restore:
+ *  - the archive lies in the caller's view of its destination, checked before anything else
  *  - prepareRestore() permission probe (CREATE DATABASE / overwrite rights)
  *  - cross-vendor type guard (e.g. MySQL → MariaDB rejected)
  *  - engine version compatibility (newer dump on older server is blocked)
@@ -20,6 +23,19 @@ const svcLog = logger.child({ service: "RestoreService" });
  *
  * Throws on incompatibility so the caller fails fast before logging an Execution.
  */
+/**
+ * The settings of the target server. A customer's restore of a shared database reads nothing of
+ * them: why they are refused, like a host in a local network its tenant blocks, stays with the
+ * tenant of the server, and the customer reads that the restore could not be started.
+ */
+function targetSettings(input: RestoreInput, target: Parameters<typeof resolveAdapterConfig>[0]): Promise<unknown> {
+    return resolveAdapterConfig(target).catch((error: unknown) => {
+        if (!input.shared) throw error;
+        svcLog.warn("The settings of the server of a shared database could not be used for a restore", { targetSourceId: input.targetSourceId }, wrapError(error));
+        throw new Error("The settings of the server of a shared database could not be used");
+    });
+}
+
 export async function preflightRestore(input: RestoreInput): Promise<void> {
     const { file, storageConfigId, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, privilegedAuth } = input;
 
@@ -29,6 +45,11 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
         ? await prisma.adapterConfig.findUnique({ where: { id: targetSourceId } })
         : null;
     if (targetSourceId && !targetConfig) throw new Error("Target source not found");
+
+    // The archive first, the way the download reads it: a destination the caller may not use, or a
+    // path outside its view of it, refuses the restore before anything touches a target, so a
+    // refused restore never creates a database or writes a probe file.
+    const destination = await findDestinationPath(storageConfigId, file, input.shared?.copyTenantId);
 
     if (targetConfig && targetConfig.type === 'database') {
         const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
@@ -48,7 +69,7 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
             }
 
             if (dbsToCheck.length > 0) {
-                const dbConf = await resolveAdapterConfig(targetConfig) as any;
+                const dbConf = await targetSettings(input, targetConfig) as any;
                 if (privilegedAuth) dbConf.privilegedAuth = privilegedAuth;
 
                 const prepare = targetAdapter.prepareRestore;
@@ -68,15 +89,22 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
         )];
 
         for (const targetConfigId of selectedTargetConfigIds) {
-            const dirTargetConfig = await prisma.adapterConfig.findUnique({ where: { id: targetConfigId } });
-            if (!dirTargetConfig || dirTargetConfig.type !== 'storage') {
-                throw new Error(`Invalid restore target for a directory entry: adapter '${targetConfigId}' not found`);
-            }
+            // Found the way the restore opens it, see `openDirectoryTarget`: a storage of another
+            // tenant only when that tenant shares it with this one.
+            const found = await findRestoreTarget(targetConfigId).catch((error: unknown) => {
+                if (error instanceof NotFoundError) {
+                    throw new Error(`Invalid restore target for a directory entry: adapter '${targetConfigId}' not found`);
+                }
+                throw error;
+            });
+            const dirTargetConfig = found.row;
             const dirTargetAdapter = registry.get(dirTargetConfig.adapterId) as StorageAdapter;
             if (!dirTargetAdapter) {
                 throw new Error(`Restore target adapter implementation missing: '${dirTargetConfig.adapterId}'`);
             }
-            if (dirTargetAdapter.test) {
+            // The probe writes a file at the top of the storage, which belongs to the tenant that
+            // shares it and not to a customer, so a customer's restore finds out while it writes.
+            if (dirTargetAdapter.test && found.mode.kind !== "customer") {
                 const conf = await resolveAdapterConfig(dirTargetConfig) as any;
                 const testResult = (await runAdapterTest(dirTargetAdapter, conf))!;
                 if (!testResult.success) {
@@ -87,14 +115,18 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
     }
 
     // Version Compatibility Check
-    const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
-    if (storageConfig && targetConfig && targetConfig.type === 'database') {
-        const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
+    // A destination whose settings cannot be used skips the check, the restore itself reports why.
+    const storage = await openRow(destination.row, destination.mode).catch((error: unknown) => {
+        svcLog.warn("Version check skipped, the destination could not be opened", { storageConfigId }, wrapError(error));
+        return null;
+    });
+    if (storage && targetConfig && targetConfig.type === 'database') {
+        const storageAdapter = storage.adapter;
         const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
 
-        if (storageAdapter && storageAdapter.read && targetAdapter && targetAdapter.test) {
+        if (storageAdapter.read && targetAdapter && targetAdapter.test) {
             try {
-                const storageConf = await resolveAdapterConfig(storageConfig) as any;
+                const storageConf = storage.config as any;
                 const metaPath = file + ".meta.json";
                 const metadataContent = await storageAdapter.read(storageConf, metaPath);
 
@@ -107,7 +139,7 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
                     }
 
                     if (metadata.engineVersion) {
-                        const dbConf = await resolveAdapterConfig(targetConfig) as any;
+                        const dbConf = await targetSettings(input, targetConfig) as any;
                         if (privilegedAuth) dbConf.privilegedAuth = privilegedAuth;
 
                         const testResult = (await runAdapterTest(targetAdapter, dbConf)) as { success: boolean; version?: string; edition?: string };

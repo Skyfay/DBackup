@@ -28,7 +28,7 @@ Three files are written per backup, to every destination:
 
 ```
 <name>              The archive: a TAR, never compressed or encrypted as a whole
-<name>.index        Index sidecar, byte-identical to the archive's own "index" member
+<name>.index        Index sidecar, byte-identical to the archive's own "index" member. `archive.indexFile` of the `.meta.json` names it `.index`, and a reader takes no other name from there
 <name>.meta.json    DBackup's backup metadata (cleartext)
 ```
 
@@ -239,6 +239,17 @@ to reference, and every snapshot restates its links in full.
 `counts.symlinks` in the manifest reports how many the archive holds, so a reader that cannot
 recreate them can still say how many it is dropping.
 
+The path `p` of every `f` line, link or file, is a plain relative path. DBackup and the Recovery Kit
+refuse the whole index as damaged when one has an empty, `.` or `..` part, or starts with `/` or `\`,
+and a `.` or `..` part between backslashes counts too (`entryPathProblem` in `index-file.ts`). The
+link checks below count the parts of a path as written, while a join resolves a `..` inside it, so
+`a/../b` would otherwise be checked at one place and written at another.
+
+DBackup and the Recovery Kit also skip and name a link whose target is absolute or climbs out of
+the folder of its source, also through another link of the same archive, and a link that lies
+below another link of the archive, which a real folder never holds (`link-target.ts`). Laid one
+after the other, `a -> /etc` and `a/cron.d/x` would otherwise write outside the output directory.
+
 Because ordinals repeat between archives, an entry is addressed by the pair `(a, n)`, not
 by `n` alone. The ordinal has to stay as it was in its own archive, since that is what
 derives its nonce.
@@ -271,7 +282,9 @@ Jobs in full-backup mode keep the flat `<job name>/<file>.tar` layout.
 
 1. Read the snapshot's index and its `deps` line.
 2. Look for each named archive **in the same folder**. If one is missing, stop and report
-   it by name - a partial restore is worse than a clear failure.
+   it by name - a partial restore is worse than a clear failure. A name that is no plain
+   file name (a separator, `..`, NUL or empty) is refused, since the index comes from the
+   destination and a path there would read any file the connection reaches.
 3. For each `f` line, take `a` to find the archive and `(a, n)` to find the entry.
 4. Open the foreign archive and read **its own** manifest for the `kdfSalt` and
    `noncePrefix`. Each archive derives its own keys from the same profile key, so no extra
@@ -297,7 +310,12 @@ the key. It is safe here only because the index is encrypted whenever the archiv
 ## Small-file bundling
 
 Files at or below **64 KB** are packed into shared bundles of about **4 MB**, and the
-bundle is compressed and sealed once. Without it, every small file costs a 512-byte TAR
+bundle is compressed and sealed once. The size that decides it is the size of the collected
+file as its hash read it, never the size the listing of the source reported, and it is the `s`
+the index records, so a file that grew between the listing and the transfer restores whole. A
+file larger than 64 KB is never read into a bundle: one that grew past it after the plan was made
+is left out of the archive and named in the run log. A bundle is compressed off the event loop,
+in the thread pool of zlib. Without it, every small file costs a 512-byte TAR
 header, a compression header whose dictionary restarts from nothing, and a 16-byte auth
 tag - on a million 2 KB files that is hundreds of MB of pure overhead plus a ruined
 compression ratio.
@@ -345,6 +363,55 @@ To restore one file:
 6. Unseal with `K_data` and the entry's ordinal, then decompress per `comp`.
 7. If `o` and `l` are set, slice that range out of the result.
 8. Verify against `h`.
+
+### Limits of a reader
+
+Everything in an archive comes from whoever writes the destination, flags and sizes included, so
+DBackup never inflates more than the writer can have produced. A standalone entry is read only with
+the `s` of the line it holds (`openArchiveEntry` refuses it without one), and a range that is no
+whole number of bytes is refused before the destination is asked (`assertRange` in `storage-source.ts`). Past a limit the read fails with
+"The backup is damaged: ..." and the restore removes what it wrote of that entry. The limits live
+in `src/lib/archive/limits.ts`:
+
+| What | Limit |
+| :--- | :--- |
+| An entry with `bundle` | `BUNDLE_TARGET_SIZE` plus one small file plus 1 MB, about 5.1 MB |
+| Any other entry | The `s` of the `db` or `f` line it holds. The inflation stops at the first byte past it |
+| A ranged read | The bytes of the range it asked for. A server that ignores `Range` and sends more fails at the first byte past it (`cappedRange` in `storage-source.ts`) |
+| `manifest.json` | 1 MB, refused by the size in its header before it is fetched |
+| The stored index, sidecar or member | 256 MB, the widest window the reader scans for an embedded index. The sidecar is read with `readBytes()`, which stops the transfer there, so it never reaches the temp folder |
+| The inflated index | 256 times its stored size, at least 16 MB, and never past 2 GB of NDJSON (`indexInflateLimit`). At most 10 million lines, each at most 1 MB. A line keeps only the fields of its kind, anything else on it is dropped as it is read |
+| The fields of a line | Each field of its kind has the type the writer gives it, a string, a number or a flag, and `excludePatterns` of a `d` line and `archives` of a `deps` line are lists of at most 100,000 strings (`INDEX_MAX_LIST_ITEMS`), which a `d` and a `deps` line always carry. Anything else, an object, a list where none belongs or a `null` included, makes the index damaged (`knownLineFields` in `index-file.ts`), so the parsed index holds no more than its text says and the cache below can weigh it by the text |
+| The parsed indexes the server keeps | At most 8, for 5 minutes, and at most 256 MB of NDJSON together (`CACHE_MAX_TEXT_BYTES` in `archive-index-service.ts`). The oldest go first, and an index larger than that alone is handed to the requests that wait for it and kept for none |
+| `.meta.json` | 8 MB (`SIDECAR_READ_LIMIT`), read through `read()`, which stops the transfer there. A listing of a destination leaves a larger one out with a log line, a restore fails on it |
+| The `.meta.json` files of one listing | Only those beside a backup the listing holds, 256 MB of them in all (`LISTING_SIDECAR_BYTES` in `listed-sidecars.ts`), of each only the fields a row shows. Past it the other backups are listed without theirs, with one log line |
+| Lines that point at one entry | One, unless the entry is a bundle. Several `f` lines on one standalone entry are a damaged index, refused before anything of the selection is read |
+| The numbers of a line | `n`, `off` and `size` of an `e` line, `n` and `s` of a `db` line and `s` of an `f` line are whole numbers from 0 up to `2^53 - 1`, and so are `n`, `o` and `l` of an `f` line where present. A missing, string, negative, fractional or infinite value makes the index damaged (`lineNumbersProblem` in `index-file.ts`), since every limit above rests on them |
+
+The ratio of the index is measured on indexes the writer produced. Gzip reaches 8 to 1 for distinct
+small files with checksums, 21 for 100,000 empty files that share one checksum, 35 for 200,000 links
+to one target, and with those links under one long folder 54 at 350 characters, 84 at 1,000 and 127
+at 3,400, close to the longest path Linux allows. The ratio grows with how much of a line repeats the
+lines before it, so 256 is twice what the longest paths reach.
+
+A backup of the older whole-file format records no size, so its decompression stops at 1100 times
+its compressed size, at least 1 GB. Gzip cannot pass about 1032 to 1, so this only bounds Brotli.
+The `manifest.json` of a multi-database TAR of that format is refused past 16 MB by the size in its
+header, before it is read into memory.
+
+A restore that stages what it reads in the temporary folder, every database dump and every file
+it writes into a storage, first adds up the `s` of the largest of them that run at once and refuses
+when that, the space promised to the restores that run already and a reserve of 512 MB do not fit
+the free space of the folder (`reserveTempSpace` in `src/services/restore/temp-space.ts`). What a
+restore was promised stays promised until it ends, also when it fails, so two restores that start
+at the same moment never count the same free space twice. A few bytes of Brotli may declare a terabyte, and the
+reader would honour the declaration, so it is checked against the disk before the first byte.
+
+A destination that declares ranged reads and then fails one is read from a whole copy of the archive
+in the temporary folder instead (`openStorageArchiveSource` in `storage-source.ts`). Reads that fail
+at the same moment share that one copy, which is removed when the restore ends. Where the caller
+knows the size of the archive, the copy is promised its space by `reserveTempSpace` before the
+download starts, like a staged entry.
 
 ### Finding the index without a sidecar
 

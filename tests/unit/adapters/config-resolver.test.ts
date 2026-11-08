@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resolveAdapterConfig, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { registry } from "@/lib/core/registry";
 import { ConfigurationError, NotFoundError } from "@/lib/logging/errors";
+import { markLocalNetwork } from "@/lib/adapters/network-fact";
 
 vi.mock("@/services/auth/credential-service", () => ({
     getDecryptedCredentialData: vi.fn(),
@@ -28,6 +29,8 @@ function buildRow(overrides: Partial<{
         config: JSON.stringify(overrides.config ?? { host: "db.local", port: 3306 }),
         primaryCredentialId: overrides.primaryCredentialId ?? null,
         sshCredentialId: overrides.sshCredentialId ?? null,
+        // The home tenant, whose connections reach the server DBackup runs on and the local network.
+        tenantId: "default",
     };
 }
 
@@ -47,7 +50,8 @@ describe("resolveAdapterConfig", () => {
             buildRow({ adapterId: "local-filesystem", config: { path: "/tmp" } })
         )) as Record<string, unknown>;
 
-        expect(result).toEqual({ path: "/tmp" });
+        // Marked as a connection of the home tenant, which reaches the local network.
+        expect(result).toEqual(markLocalNetwork({ path: "/tmp" }, false));
         expect(getDecryptedCredentialData).not.toHaveBeenCalled();
     });
 
@@ -298,6 +302,7 @@ describe("resolveAdapterConfig", () => {
                 config: "{ invalid json }",
                 primaryCredentialId: "cred-1",
                 sshCredentialId: null,
+                tenantId: "default",
             })
         ).rejects.toBeInstanceOf(ConfigurationError);
     });
@@ -366,7 +371,8 @@ describe("overlayCredentialsOnConfig", () => {
     it("returns config unchanged when adapter has no credential requirements", async () => {
         const config = { path: "/tmp" };
         const result = await overlayCredentialsOnConfig("local-filesystem", config, null, null);
-        expect(result).toEqual({ path: "/tmp" });
+        // Outside a request no tenant runs, which counts as one that blocks the local network.
+        expect(result).toEqual(markLocalNetwork({ path: "/tmp" }, true));
         expect(getDecryptedCredentialData).not.toHaveBeenCalled();
     });
 

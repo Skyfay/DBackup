@@ -7,10 +7,11 @@ const controllers = new Map<string, AbortController>();
 
 /**
  * Register a new execution with an AbortController.
- * Returns the AbortController's signal for the caller to use.
+ * Returns the AbortController's signal for the caller to use. A second run of the same work, like
+ * the provider's run of a customer's restore of a shared database, passes the controller of the
+ * first, so cancelling either stops both.
  */
-export function registerExecution(executionId: string): AbortController {
-    const controller = new AbortController();
+export function registerExecution(executionId: string, controller = new AbortController()): AbortController {
     controllers.set(executionId, controller);
     return controller;
 }

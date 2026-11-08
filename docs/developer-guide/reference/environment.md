@@ -8,7 +8,7 @@ Complete reference for all environment variables in DBackup.
 
 | Variable | Description | Example |
 | :--- | :--- | :--- |
-| `ENCRYPTION_KEY` | 32-byte hex key for encrypting sensitive data (passwords, API keys) | `openssl rand -hex 32` |
+| `ENCRYPTION_KEY` | 32-byte hex key for encrypting sensitive data (passwords, API keys), 64 characters of 0-9 and a-f, checked at start | `openssl rand -hex 32` |
 | `BETTER_AUTH_SECRET` | Session encryption secret for authentication | `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | **Primary** URL where users access DBackup (for auth redirects) | `https://backup.example.com` |
 
@@ -24,6 +24,7 @@ Complete reference for all environment variables in DBackup.
 | `TMPDIR` | Temporary directory for backup processing | `/tmp` |
 | `LOG_LEVEL` | Logging verbosity level | `info` |
 | `DISABLE_HTTPS` | Set to `true` to use plain HTTP instead of HTTPS | `false` |
+| `TRUSTED_PROXIES` | Reverse proxies whose `X-Forwarded-For` counts, addresses, CIDR ranges and the keywords `private` and `cloudflare`, comma-separated, or `none`. See [The Address of a Client](/user-guide/installation#the-address-of-a-client) | loopback and private networks |
 | `CERTS_DIR` | Directory for TLS certificate and key files | `/data/certs` |
 | `DATA_DIR` | Base directory for all persistent data | `/data` |
 | `PUID` | User ID the container runs as (for volume permissions) | `1001` |
@@ -80,7 +81,7 @@ The redirect is skipped in two situations, both deliberate:
 - **After sign-in fails at the provider.** The error is shown instead, otherwise the failure would loop and hide its own message.
 - **Right after signing out.** Without this, the still-valid session at the identity provider signs you straight back in and signing out becomes impossible.
 
-If the ID matches no provider, or the provider is disabled, DBackup logs an error at startup and runs with the redirect switched off - it does not refuse to start, because that would take the instance down exactly when you need to reach the login page.
+If the ID matches no provider, the provider is disabled or it belongs to a tenant, DBackup logs an error at startup and runs with the redirect switched off - it does not refuse to start, because that would take the instance down exactly when you need to reach the login page.
 
 ::: warning No way past it from the browser
 While this is set there is no query parameter or key combination that reaches the login form. If the identity provider is unreachable or misconfigured, remove the variable and restart.

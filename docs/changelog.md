@@ -2,6 +2,54 @@
 
 All notable changes to DBackup are documented here.
 
+## v4.0.2 - Rate Limit and Session Security, MySQL Restore Fixes, and a Faster Dashboard
+*Released: Oct 12, 2026*
+
+### 🐛 Bug Fixes
+
+- **auth**: A session ends after the length set under Settings > Sign-in, counted from the sign-in. Every session was extended by seven days on each visit, so the setting never took effect and nobody who came back once a week was ever signed out.
+- **MySQL**: A MySQL or MariaDB restore into a database of another name keeps binary data and text byte for byte. It replaced bytes that were no valid UTF-8 and could split a long row in two.
+- **MySQL**: Turning TLS off works with every client tool. Backups and restores of MySQL 5.7 failed with the MariaDB client of the Docker image, and the client of MySQL 8.0 or later failed over SSH.
+- **WebDAV**: A destination whose folder holds no backup yet no longer logs an error after every run.
+- **website**: The home page and the roadmap no longer scroll sideways on phones, and the cards of the roadmap fit the screen.
+
+### 🔒 Security
+
+- **auth**: A client can no longer get around the rate limits, among them the one on sign-in attempts, or put another address into the audit log by naming it in `X-Forwarded-For`. DBackup reads the header only from a reverse proxy in a private network or one named in `TRUSTED_PROXIES`, which also takes `cloudflare` for the edge servers of Cloudflare.
+- **auth**: The rate limits count an IPv6 address by its /64 network, so a client cannot take a new address for every request.
+
+### 🎨 Improvements
+
+- **dashboard**: The Overview loads several times faster on instances with many jobs, destinations and a long history.
+- **history**: The History page counts its filters without reading the log of every run, and shows its rows and numbers loading instead of an empty list.
+- **storage**: A finished backup scans only the destinations of its job again instead of every destination.
+
+### 📝 Documentation
+
+- **website**: The answers on supported versions name the versions the test lab runs.
+- **wiki**: The testing guide describes the tests that exist and how to write one.
+- **wiki**: A new Dev Lab page explains how to run DBackup against every database engine and destination for development.
+- **wiki**: The installation guide explains how DBackup finds the address of a client behind a reverse proxy or Cloudflare and when to set `TRUSTED_PROXIES`.
+
+### 🧪 Tests
+
+- **e2e**: End-to-end tests with Playwright replace the integration tests against single containers and run the Docker image beside the servers of the dev lab. They back up and restore every database engine, a folder and to every destination with the content compared, and go through the first start and a backup in the browser.
+- **tests**: The tests of the configuration backup, Recently deleted and the restore at startup now run with the unit tests in CI.
+
+### 🔧 CI/CD
+
+- **ci**: Validate also runs the end-to-end tests after an approval, on pull requests into main and on those into dev that touch the app or its end-to-end tests. A last job of Validate passes once every other check passed.
+- **docker**: An image built from a checkout no longer contains the development database of that checkout.
+- **lab**: A dev lab starts every database engine, storage server and notification receiver in Docker and fills the dev database with the first user, all connections and sample jobs. `pnpm lab` shows its commands in a menu, with a status that says what runs, what is missing and what to run next.
+- **scripts**: The Multipass test VM, the old test containers with their seed scripts and four unused one-off scripts are removed.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v4.0.2`
+- **Also tagged as**: `latest`, `v4`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
 ## v4.0.1 - Offline First Start, Docker Socket and Rsync Fixes, and Updated Guides
 *Released: Oct 10, 2026*
 

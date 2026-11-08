@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
-import { checkPermissionWithContext, getAuthContext } from "@/lib/auth/access-control";
+import { checkPermissionWithContext, getAuthContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -12,10 +13,12 @@ const log = logger.child({ route: "api-keys/[id]" });
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id } = await props.params;
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.API_KEYS.READ);
+        // A key belongs to the tenant it was made in, so All tenants opens none, like the list.
+        tenantOf(ctx);
         const details = await getApiKeyDetails(id);
         if (!details) return NextResponse.json({ success: false, error: "The key no longer exists" }, { status: 404 });
         return NextResponse.json({ success: true, data: details });

@@ -3,7 +3,7 @@ import type { RetentionConfiguration } from "@/lib/core/retention";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { storageExplorerService } from "./explorer-service";
-import { MISSED_DAYS, PLAN_DAYS, markFulls, missedDays, readPolicy, retentionConfigOf, runsBetween, simulateRetention, toFileInfo, type PolicyDestination } from "./explorer-plan";
+import { MISSED_DAYS, PLAN_DAYS, defaultRetentionOf, markFulls, missedDays, readPolicy, retentionConfigOf, runsBetween, simulateRetention, toFileInfo, type PolicyDestination } from "./explorer-plan";
 import type { AgedOut, BackupRun, ExplorerPlan, JobPlan } from "./explorer-types";
 
 const log = logger.child({ service: "StorageExplorerPlanService" });
@@ -23,11 +23,12 @@ interface PlanDestination extends PolicyDestination {
  */
 export class StorageExplorerPlanService {
     async getPlan(now = new Date()): Promise<ExplorerPlan> {
-        const [timezone, jobs, fallback, backups] = await Promise.all([
+        const [timezone, jobs, defaults, backups] = await Promise.all([
             this.timezone(),
             prisma.job.findMany({
                 select: {
                     id: true,
+                    tenantId: true,
                     enabled: true,
                     schedule: true,
                     createdAt: true,
@@ -42,7 +43,8 @@ export class StorageExplorerPlanService {
                     },
                 },
             }),
-            prisma.retentionPolicy.findFirst({ where: { isDefault: true }, select: { config: true } }),
+            // One default per tenant, every tenant's in All tenants.
+            prisma.retentionPolicy.findMany({ where: { isDefault: true }, select: { tenantId: true, config: true } }),
             storageExplorerService.getBackups(),
         ]);
 
@@ -63,12 +65,13 @@ export class StorageExplorerPlanService {
         const plans: JobPlan[] = jobs.map((job) => {
             const schedule = scheduleOf(job);
             const first = job.destinations[0];
+            const fallback = defaultRetentionOf(defaults, job.tenantId);
             const base: JobPlan = {
                 jobKey: job.id,
                 schedule,
                 enabled: job.enabled,
                 createdAt: job.createdAt.toISOString(),
-                retention: first ? retentionConfigOf(first, fallback?.config ?? null) : null,
+                retention: first ? retentionConfigOf(first, fallback) : null,
                 planned: [],
                 missed: [],
                 truncated: false,
@@ -83,7 +86,7 @@ export class StorageExplorerPlanService {
                 const files = (runsByJob.get(job.id) ?? []).flatMap((run) => run.copies
                     .filter((copy) => copy.destinationId === destination.configId && copy.state === "stored" && copy.file)
                     .map((copy) => toFileInfo(copy.file!)));
-                return simulateRetention(files, runs, policyOf(destination, fallback?.config ?? null), timezone, chains);
+                return simulateRetention(files, runs, policyOf(destination, fallback), timezone, chains);
             });
 
             const since = Math.max(job.createdAt.getTime(), job.updatedAt.getTime(), nowMs - MISSED_DAYS * DAY_MS);

@@ -1,10 +1,13 @@
-import type { BackupRun, ExplorerJob, JobPlan, MissedDay, PlannedRun } from "@/services/storage/explorer-types";
+import type { ExplorerJob, JobPlan, MissedDay, PlannedRun } from "@/services/storage/explorer-types";
+import type { SharedDatabase } from "@/services/tenant/shared-databases";
 import { failedCheck, hasMissing, isLocked } from "./backup-filters";
+import type { ListRun } from "./shared-runs";
 
 /**
  * The grid of the timeline of the Backups tab: a row per job and a column per day, with what each
- * day of a job holds, what its schedule plans for the days to come and what it missed. Plain
- * functions without React, so the rules can be tested.
+ * day of a job holds, what its schedule plans for the days to come and what it missed. A database
+ * another tenant's server gives to this one is a row of its own after the jobs, see
+ * `timeline-shared.ts`. Plain functions without React, so the rules can be tested.
  */
 
 /** A day as `yyyy-MM-dd` in the viewer's time zone. */
@@ -33,21 +36,27 @@ export interface TimelineCell {
     day: DayKey;
     kind: CellKind;
     /** The backups of the day. */
-    runs: BackupRun[];
+    runs: ListRun[];
     /** What the schedule plans for a day to come. */
     planned: PlannedRun[];
     missed?: MissedDay;
 }
 
-/** Days a row has nothing to show for: before its oldest backup, or after the last one of a deleted job. */
+/**
+ * Days a row has nothing to show for: before its oldest backup, or after the last one of a deleted
+ * job. A shared database has days before it was the tenant's and after it stopped being.
+ */
 export interface TimelineSpan {
-    kind: "aged" | "gone";
+    kind: "aged" | "gone" | "before" | "after";
     start: number;
     end: number;
 }
 
 export interface TimelineRow {
+    /** The job, or for a shared database a job that stands for it, by `sharedJobKey`. */
     job: ExplorerJob;
+    /** Set on the row of a database another tenant's server gives to this one. */
+    shared?: SharedDatabase;
     plan?: JobPlan;
     /** A cell per day, null where a span covers the day. */
     cells: (TimelineCell | null)[];
@@ -55,7 +64,7 @@ export interface TimelineRow {
 }
 
 /** What the backups of a day show: a failed check first, then a missing copy, a lock, and the kind of backup. */
-export function kindOf(runs: BackupRun[], at: string[]): CellKind {
+export function kindOf(runs: ListRun[], at: string[]): CellKind {
     if (runs.some((run) => failedCheck(run, at))) return "failed";
     if (runs.some((run) => hasMissing(run, at))) return "missing";
     if (runs.some((run) => isLocked(run, at))) return "locked";
@@ -68,7 +77,7 @@ interface RowInput {
     job: ExplorerJob;
     plan?: JobPlan;
     /** The backups of the job the filters leave. */
-    runs: BackupRun[];
+    runs: ListRun[];
     days: DayKey[];
     today: DayKey;
     at: string[];
@@ -76,7 +85,7 @@ interface RowInput {
 }
 
 export function buildRow({ job, plan, runs, days, today, at, dayOf }: RowInput): TimelineRow {
-    const byDay = new Map<DayKey, BackupRun[]>();
+    const byDay = new Map<DayKey, ListRun[]>();
     for (const run of runs) {
         const day = dayOf(run.createdAt);
         const list = byDay.get(day);
@@ -161,7 +170,7 @@ export function isPicked(pick: TimelinePick | null, jobKey: string | undefined, 
     return pick !== null && pick.jobKey === jobKey && pick.from === from && pick.to === to;
 }
 
-export function pickedRuns(runs: BackupRun[], pick: TimelinePick, dayOf: (iso: string) => DayKey): BackupRun[] {
+export function pickedRuns(runs: ListRun[], pick: TimelinePick, dayOf: (iso: string) => DayKey): ListRun[] {
     return runs.filter((run) => {
         if (pick.jobKey && run.jobKey !== pick.jobKey) return false;
         const day = dayOf(run.createdAt);

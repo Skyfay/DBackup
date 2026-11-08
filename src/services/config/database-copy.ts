@@ -39,9 +39,13 @@ export function openCopy(file: string): PrismaClient {
     return new PrismaClient({ datasources: { db: { url: `file:${file}` } } });
 }
 
-/** The keys a copy carries, or null for a copy without them, like a download of the database. */
+/**
+ * The keys a copy carries, or null for a copy without them, like a download of the database. Read
+ * raw, since the client of this version names every column it knows, and a copy of an older
+ * version may lack one.
+ */
 export async function readCopyKeys(copy: PrismaClient): Promise<CopyKeys | null> {
-    const row = await copy.systemSetting.findUnique({ where: { key: COPY_KEYS_SETTING } }).catch(() => null);
+    const [row] = await copy.$queryRawUnsafe<{ value: string }[]>(`SELECT "value" FROM "SystemSetting" WHERE "key" = ?`, COPY_KEYS_SETTING).catch(() => []);
     if (!row) return null;
     try {
         const keys = JSON.parse(row.value) as Partial<CopyKeys>;

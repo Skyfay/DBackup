@@ -65,7 +65,8 @@ export class DatabaseListService {
     }
 
     /** Reads the databases of the given connections, or of every database connection, a few at a time. */
-    async readSources(ids?: string[]): Promise<void> {
+    /** Reads the databases of the given sources, or of all of them, and gives the names of the sources it read. */
+    async readSources(ids?: string[]): Promise<string[]> {
         const sources = await prisma.adapterConfig.findMany({
             where: { type: "database", ...(ids ? { id: { in: ids } } : {}) },
         });
@@ -77,6 +78,7 @@ export class DatabaseListService {
             }
         };
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, sources.length) }, worker));
+        return sources.map((source) => source.name);
     }
 }
 

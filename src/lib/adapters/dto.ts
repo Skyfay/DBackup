@@ -4,6 +4,7 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import type { StorageAdapter } from "@/lib/core/interfaces";
 import prisma from "@/lib/prisma";
+import { hostLocalReason } from "@/lib/adapters/host-local";
 
 registerAdapters();
 
@@ -29,6 +30,12 @@ export interface AdapterListItemDTO {
     config: string;
     /** Map of sensitive key -> whether a non-empty value is stored. */
     secretStatus: Record<string, boolean>;
+    /**
+     * Why the connection reaches the server DBackup runs on, from its stored config without its
+     * saved logins, see `hostLocalReason`, or null. Only a platform admin changes such a connection,
+     * so the form opens it read-only for anyone else. The server decides again on every change.
+     */
+    hostLocal: string | null;
     metadata: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -43,6 +50,39 @@ export interface AdapterListItemDTO {
     storageRole: StorageRole;
     /** Storage adapters only: whether the folder tree picker (directory sources) can browse this adapter. */
     supportsBrowse: boolean;
+    /** The tenant the connection belongs to, which a list in All tenants shows and opens it in. */
+    tenantId?: string;
+    /**
+     * Set when another tenant shares the connection with the tenant that lists it, see
+     * src/services/sharing/. Its address, login and settings stay with that tenant, so `config`
+     * holds nothing of them and the tenant that lists it never changes it.
+     */
+    provided?: ProvidedTerms;
+    /** Set on a connection the listing tenant shares with others, for whoever may see what is shared. */
+    share?: SharedTerms;
+}
+
+/** Who shares a provided connection and on what terms. */
+export interface ProvidedTerms {
+    providerId: string;
+    providerName: string;
+    /** A destination: a job writes to it only with a key of its Vault. */
+    encryptedOnly: boolean;
+    /** An email channel: the tenant names the recipients itself. */
+    ownRecipients: boolean;
+    /** The recipients the tenant named, for an email channel that lets it. */
+    recipients?: string[];
+}
+
+/** Who gets a connection the listing tenant shares. */
+export interface SharedTerms {
+    allTenants: boolean;
+    /** The tenants that get it and that the viewer reaches. */
+    tenants: { id: string; name: string }[];
+    /** Whether tenants beyond the reach of the viewer get it too, never which or how many. */
+    beyond?: boolean;
+    encryptedOnly: boolean;
+    ownRecipients: boolean;
 }
 
 /**
@@ -66,6 +106,7 @@ export interface AdapterRowInput {
     lastError: string | null;
     consecutiveFailures: number;
     storageRole: string;
+    tenantId?: string;
 }
 
 /**
@@ -76,18 +117,22 @@ export interface AdapterRowInput {
 export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
     let config = "{}";
     let secretStatus: Record<string, boolean> = {};
+    // Local Filesystem reaches the server whatever its config holds.
+    let hostLocal = hostLocalReason(row.adapterId, {});
 
     try {
         const parsed = JSON.parse(row.config);
         try {
             const decrypted = decryptConfig(parsed);
             secretStatus = getSecretStatus(decrypted);
+            hostLocal = hostLocalReason(row.adapterId, decrypted as Record<string, unknown>);
             config = JSON.stringify(redactSecrets(decrypted));
         } catch {
             // Decryption failed (corrupt data / rotated key). Still redact secret
             // keys from the raw parsed config so structural fields survive without
             // leaking the (encrypted) secret values.
             secretStatus = getSecretStatus(parsed);
+            hostLocal = hostLocalReason(row.adapterId, parsed as Record<string, unknown>);
             config = JSON.stringify(redactSecrets(parsed));
         }
     } catch {
@@ -103,6 +148,7 @@ export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
         adapterId: row.adapterId,
         config,
         secretStatus,
+        hostLocal,
         metadata: row.metadata,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -115,6 +161,7 @@ export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
         consecutiveFailures: row.consecutiveFailures,
         storageRole: isStorageRole(row.storageRole) ? row.storageRole : STORAGE_ROLES.DESTINATION,
         supportsBrowse: row.type === "storage" && typeof (registry.get(row.adapterId) as StorageAdapter | undefined)?.browseDirectories === "function",
+        tenantId: row.tenantId,
     };
 }
 

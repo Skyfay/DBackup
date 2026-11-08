@@ -52,6 +52,7 @@ vi.mock("@/lib/logging/logger", () => ({
 }));
 
 const { getDatabaseInfo, vacuumDatabase, createDatabaseSnapshot } = await import("@/services/system/database-service");
+const { explicitScope } = await import("@/lib/tenant/context");
 const { beginDatabaseMaintenance, endDatabaseMaintenance, isDatabaseMaintenanceActive, DATABASE_BUSY } = await import(
     "@/lib/server/database-maintenance"
 );
@@ -209,6 +210,16 @@ describe("Database service", () => {
 
             await expect(createDatabaseSnapshot()).rejects.toMatchObject({ code: DATABASE_BUSY, message: expect.stringMatching(/1 run is in progress/) });
             expect(executeRaw).not.toHaveBeenCalled();
+        });
+
+        it("sees the running backup of a customer while the admin works in another tenant", async () => {
+            // A request only counts the runs of its own tenant, the system scope those of every tenant.
+            executionCount.mockImplementation(async () => (explicitScope()?.kind === "system" ? 1 : 0));
+
+            await expect(createDatabaseSnapshot()).rejects.toMatchObject({ code: DATABASE_BUSY });
+            await expect(vacuumDatabase()).rejects.toMatchObject({ code: DATABASE_BUSY });
+            expect(executeRaw).not.toHaveBeenCalled();
+            expect(executeRawUnsafe).not.toHaveBeenCalled();
         });
     });
 });

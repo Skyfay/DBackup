@@ -24,6 +24,8 @@ DBackup supports multiple notification channels to keep you informed about backu
 4. Click **Send test** to send a test notification
 5. Click **Create channel**
 
+A token, password or authorization header saved in the channel itself is kept while the channel still sends to the same server. Once its webhook, server URL or mail server points elsewhere, it is not sent there and a saved login has to sign in instead, see [Editing a Connection](/user-guide/sources/#editing-a-connection).
+
 ## Two Notification Layers
 
 DBackup has two independent notification systems that share the same configured channels:

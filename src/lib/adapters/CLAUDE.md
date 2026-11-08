@@ -21,13 +21,13 @@ A complete adapter touches 8 to 11 files. Missing one produces a "half-registere
 
 1. **`{database|storage|notification}/<name>.ts`** - implement the interface. Use `<name>/index.ts` if the adapter needs sub-modules. Database adapters take `host: ExecutionHost` and run everything through it - see [Transport](#transport-execution-host).
 2. **`definitions/{database|storage|notification}.ts`** - the Zod config schema (`NewAdapterSchema`).
-3. **`definitions/index.ts`** - an entry in `ADAPTER_DEFINITIONS` with `id`, `type`, `name`, `configSchema`, and a `group`. The picker lists every type under its group heading, and `adapter-groups.test.ts` fails without one.
+3. **`definitions/index.ts`** - an entry in `ADAPTER_DEFINITIONS` with `id`, `type`, `name`, `configSchema`, and a `group`, plus `sharesSingleDatabases` for a database engine. The picker lists every type under its group heading, and `adapter-groups.test.ts` fails without one.
 4. **`index.ts`** - import the class and call `registry.register(...)` inside `registerAdapters()`.
 5. **`src/lib/core/credential-requirements.ts`** - an entry in `ADAPTER_CREDENTIAL_REQUIREMENTS[id]` if the adapter supports credential profiles.
 6. **`src/components/adapter/utils.ts`** - add to `ADAPTER_ICON_MAP` (and `ADAPTER_COLOR_MAP` where applicable). Skipping this leaves a generic fallback icon in the UI.
 7. **`src/components/adapter/form-constants.ts`** - field keys in the relevant `*_CONNECTION_KEYS` / `*_CONFIG_KEYS` (and `STORAGE_LOCATION_KEYS` for a storage folder), plus `PLACEHOLDERS`. A key no list names still shows, in the form's Options part, so the lists decide where a field goes rather than whether it appears.
 8. **`src/lib/runner/steps/dump-databases.ts`** - database adapters only: an entry in `DB_FORMAT_BY_ADAPTER`, and `hasNativeCompression` if the dump is already compressed. The adapter itself implements `dumpOne()` and `restoreOne()`, plus `listDumpEntries()` when its snapshot cannot be split per database. `archive-capabilities.test.ts` fails without them.
-9. **Tests**, if the adapter is testable in CI: a service in `docker-compose.test.yml` and entries in `tests/integration/test-configs.ts` (`testDatabases`, `CLI_REQUIREMENTS`).
+9. **Dev lab**, if the adapter can be self-hosted: a service in `lab/compose/`, and for a database engine a dataset and an engine file in `lab/src/engines/`, for a destination an entry in `lab/src/catalog.ts` and `lab/src/seed/destinations.ts`. Steps in `docs/developer-guide/reference/dev-lab.md`, proof with `pnpm lab:check --run`.
 10. **Docs**: a page under `docs/user-guide/{sources|destinations|notifications}/<name>.md` following the template in [docs/CLAUDE.md](../../../docs/CLAUDE.md), plus a row in the matching `docs/developer-guide/adapters/*.md` table.
 11. **Changelog**: one `### ✨ Features` entry in the fragment of the branch under `changelog/unreleased/`, component prefix is the adapter name.
 
@@ -89,8 +89,13 @@ Code that exists only for these formats carries a `LEGACY-FORMAT(write|read|shar
 Adapters handle decrypted credentials and build shell commands for external CLI tools (`mysqldump`, `pg_dump`, `mongodump`).
 
 - Never interpolate user-controlled values into a shell string. Pass arguments as an array to `spawn`, not a concatenated command to `exec`.
+- A config value that goes into a string another program splits or parses itself, like the `-e` command of rsync, `user@host:path`, Firebird's `host/port:path`, a connection string or the option file of the MySQL tools, is checked in the adapter right before the string is built: `validPort` and `plainHost` from `command-values.ts`, or a check of its own like `firebirdHostProblem` or `assertOptionFileValue`. The adapter checks it even though the schema does too, since a stored config of an earlier version never went through today's schema. Put the same rule into the schema of the adapter, so the form says it on save.
+- A stored config fits the schema of its adapter. `createAdapter` and `updateAdapter` check it with `assertConfigFitsSchema` from `config-check.ts`, a copy and a restore from Recently deleted with `assertCommandFields`, which checks only ports, hosts and users. A new path that stores a config asks one of them. The config is stored as it was sent, never as the parse returns it.
+- Every call of the `mysql` or `mariadb` client puts `NO_LOCAL_INFILE` right after the login prefix of `withAuthArgs`, so the server of a connection never reads a file of the machine the client runs on.
 - Never log a config object - it holds decrypted secrets. Log specific non-secret fields only.
 - Sanitize file paths from user input in storage adapters. Backup and restore paths are a path-traversal surface.
+- A name a directory source lists comes from a server a customer may own. A `downloadDirectory` refuses every name `collectedPathProblem` (`src/lib/archive/collected-paths.ts`) refuses before it writes or reports anything under it, through `refuseListedNames` or `resolveCollectedPath`, and nothing reads a collected file except through `openCollectedFile` (`src/lib/archive/collected-file.ts`), which never follows a link. See "Names a source lists" in `docs/developer-guide/adapters/storage.md`.
+- Nothing a server sends is buffered without a bound. `read()` and `readBytes()` of a storage adapter stop at `options.maxBytes` (`SIDECAR_READ_LIMIT` when left out) and throw `FileTooLargeError` from `storage/common/read-limit.ts` past it, during the transfer, and a walker of a directory source counts its entries with `createListingGuard` from `storage/common/listing-limits.ts`. A new adapter or walker does the same, see "The `read()` Method" and "Names a source lists" in `docs/developer-guide/adapters/storage.md`.
 - Adapter errors throw `AdapterError` from `@/lib/logging/errors` so the runner can attribute the failure.
 
 ## Config decryption

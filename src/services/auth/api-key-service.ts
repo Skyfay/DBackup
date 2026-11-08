@@ -1,9 +1,10 @@
 import { randomBytes, createHash, scryptSync } from "crypto";
+import { assertMayAddKind } from "@/services/tenant/tenant-allowances";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { ApiKeyError, NotFoundError, wrapError } from "@/lib/logging/errors";
 import { Permission } from "@/lib/auth/permissions";
-import { capToOwner } from "@/lib/auth/owner-permissions";
+import { capToOwner, ownerPermissionsIn, storedPermissionList } from "@/lib/auth/owner-permissions";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 
 const log = logger.child({ service: "ApiKeyService" });
@@ -63,6 +64,16 @@ export interface ValidatedApiKey {
   id: string;
   userId: string;
   permissions: string[];
+  /** The tenant the key acts in, the one it was made in. */
+  tenantId: string;
+}
+
+/** The roles of the owner of a key, which decide the most the key may do in its tenant. */
+const OWNER_ROLES = { select: { platformRole: true, memberships: { select: { tenantId: true, group: { select: { permissions: true, fullAccess: true } } } }, platformGroup: { select: { platformPermissions: true, tenantPermissions: true, allTenants: true, tenants: { select: { tenantId: true } } } } } } as const;
+
+/** Whether a tenant shares databases, so its keys may carry their sharing, see `keyPlatformPermissions`. */
+async function tenantShares(tenantId: string): Promise<boolean> {
+  return (await prisma.tenant.findUnique({ where: { id: tenantId }, select: { sharesWithCustomers: true } }))?.sharesWithCustomers ?? false;
 }
 
 export class ApiKeyService {
@@ -70,6 +81,8 @@ export class ApiKeyService {
    * Create a new API key. Returns the raw key ONCE - it cannot be retrieved again.
    */
   async create(input: CreateApiKeyInput): Promise<{ apiKey: ApiKeyListItem; rawKey: string }> {
+    // The platform decides whether the tenant makes API keys itself.
+    await assertMayAddKind("apiKeys");
     const rawKey = generateRawKey();
     const hashed = hashKey(rawKey);
     const prefix = rawKey.substring(0, PREFIX_LENGTH);
@@ -94,7 +107,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions),
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -125,7 +138,7 @@ export class ApiKeyService {
       id: r.id,
       name: r.name,
       prefix: r.prefix,
-      permissions: JSON.parse(r.permissions) as string[],
+      permissions: storedPermissionList(r.permissions),
       userId: r.userId,
       userName: r.user.name,
       userEmail: r.user.email,
@@ -155,7 +168,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -179,20 +192,29 @@ export class ApiKeyService {
     log.info("API key deleted", { apiKeyId: id });
   }
 
-  /** Deletes several API keys, reporting per-key outcomes. */
-  async deleteMany(ids: string[]): Promise<BulkResult> {
+  /**
+   * Deletes several API keys, reporting per-key outcomes. `guard` runs before each and refuses a
+   * key by throwing, which lands in the failures with its sentence.
+   */
+  async deleteMany(ids: string[], guard?: (id: string) => Promise<void>): Promise<BulkResult> {
     const names = await this.namesById(ids);
-    return runBulk(ids, (id) => this.delete(id), (id) => names.get(id));
+    return runBulk(ids, async (id) => {
+      await guard?.(id);
+      await this.delete(id);
+    }, (id) => names.get(id));
   }
 
   /**
-   * Enables or disables several API keys.
+   * Enables or disables several API keys, with `guard` like `deleteMany`.
    *
    * Absolute rather than a toggle, so a mixed selection converges on one state.
    */
-  async toggleMany(ids: string[], enabled: boolean): Promise<BulkResult> {
+  async toggleMany(ids: string[], enabled: boolean, guard?: (id: string) => Promise<void>): Promise<BulkResult> {
     const names = await this.namesById(ids);
-    return runBulk(ids, (id) => this.toggle(id, enabled).then(() => undefined), (id) => names.get(id));
+    return runBulk(ids, async (id) => {
+      await guard?.(id);
+      await this.toggle(id, enabled);
+    }, (id) => names.get(id));
   }
 
   /** Names for the failure list, read before a delete makes them unreadable. */
@@ -227,7 +249,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -266,7 +288,7 @@ export class ApiKeyService {
       id: record.id,
       name: record.name,
       prefix: record.prefix,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: storedPermissionList(record.permissions),
       userId: record.userId,
       userName: record.user.name,
       userEmail: record.user.email,
@@ -289,16 +311,27 @@ export class ApiKeyService {
     return keys.some((key) => key.name.trim().toLowerCase() === wanted);
   }
 
-  /** The owner of a key with their group, which decides the most the key may get, and what the key holds. */
+  /** What a key this account makes in a tenant may do at most, see `ownerPermissionsIn`. */
+  async ceilingFor(userId: string, tenantId: string): Promise<string[]> {
+    const [user, shares] = await Promise.all([prisma.user.findUnique({ where: { id: userId }, select: OWNER_ROLES.select }), tenantShares(tenantId)]);
+    return user ? ownerPermissionsIn(user, tenantId, shares) : [];
+  }
+
+  /** The owner of a key with what they may do in its tenant, which is the most the key may get, and what the key holds. */
   async ownerOf(id: string) {
     const record = await prisma.apiKey.findUnique({
       where: { id },
-      select: { userId: true, name: true, permissions: true, user: { select: { group: { select: { name: true, permissions: true } } } } },
+      select: { userId: true, name: true, permissions: true, tenantId: true, user: OWNER_ROLES },
     });
     if (!record) {
       throw new NotFoundError("ApiKey", id);
     }
-    return { ownerId: record.userId, name: record.name, permissions: JSON.parse(record.permissions) as string[], group: record.user.group };
+    return {
+      ownerId: record.userId,
+      name: record.name,
+      permissions: storedPermissionList(record.permissions),
+      ownerPermissions: ownerPermissionsIn(record.user, record.tenantId, await tenantShares(record.tenantId)),
+    };
   }
 
   /**
@@ -318,7 +351,7 @@ export class ApiKeyService {
     log.info("API key updated", { apiKeyId: id });
 
     return {
-      before: { name: existing.name, permissions: JSON.parse(existing.permissions) as string[], expiresAt: existing.expiresAt },
+      before: { name: existing.name, permissions: storedPermissionList(existing.permissions), expiresAt: existing.expiresAt },
       after: input,
     };
   }
@@ -335,8 +368,8 @@ export class ApiKeyService {
 
     const hashed = hashKey(rawKey);
 
-    // The group of the owner decides the most the key may do, at every request.
-    const withOwner = { user: { select: { group: { select: { name: true, permissions: true } } } } } as const;
+    // The roles of the owner decide the most the key may do, at every request.
+    const withOwner = { user: OWNER_ROLES } as const;
     let record = await prisma.apiKey.findUnique({
       where: { hashedKey: hashed },
       include: withOwner,
@@ -374,6 +407,18 @@ export class ApiKeyService {
       throw new ApiKeyError("expired", "API key has expired");
     }
 
+    // The platform may switch the API keys of the tenant off, which stops the keys it has too.
+    const tenant = await prisma.tenant.findUnique({ where: { id: record.tenantId }, select: { addsApiKeys: true, sharesWithCustomers: true } });
+    // A key outlives no tenant: without its row nothing says what the key may still do there.
+    if (!tenant) {
+      log.warn("API key validation failed: its tenant no longer exists", { apiKeyId: record.id });
+      throw new ApiKeyError("tenant_gone", "The tenant of this API key no longer exists");
+    }
+    if (!tenant.addsApiKeys) {
+      log.warn("API key validation failed: API keys are off for its tenant", { apiKeyId: record.id });
+      throw new ApiKeyError("blocked", "API keys are switched off for this tenant");
+    }
+
     // Update lastUsedAt (fire-and-forget for performance)
     prisma.apiKey
       .update({
@@ -384,11 +429,12 @@ export class ApiKeyService {
         log.error("Failed to update lastUsedAt for API key", { apiKeyId: record.id }, wrapError(err));
       });
 
-    // A permission the group of the owner no longer has stays stored but does nothing.
+    // A permission the owner no longer has in the tenant of the key stays stored but does nothing.
     return {
       id: record.id,
       userId: record.userId,
-      permissions: capToOwner(JSON.parse(record.permissions) as string[], record.user?.group),
+      permissions: capToOwner(storedPermissionList(record.permissions), ownerPermissionsIn(record.user, record.tenantId, tenant.sharesWithCustomers)),
+      tenantId: record.tenantId,
     };
   }
 }

@@ -295,14 +295,30 @@ export function metadataToIndex(meta: FileMetadata): Pick<IndexFileLine, "mo" | 
  * Undefined rather than an empty object when the line carries none, so a restore from an
  * archive without metadata - which is every archive written so far - calls `upload()` with
  * exactly the arguments it always did.
+ *
+ * The index comes from the destination, so what it says is never laid on a target as it is. The
+ * mode keeps its permission bits alone, `mode & 0o777`, never setuid, setgid or sticky, which
+ * would turn a restored file into a program that runs as its owner. The owner and group go back
+ * only into the place the backup read, `keepOwners`, since anywhere else a number of the archive
+ * could hand a file to any account of the target, root included.
+ *
+ * @param keepOwners - Whether the target is the origin of the backup, see `isOrigin`
  */
-export function metadataFromIndex(file: IndexFileLine): FileMetadata | undefined {
-    if (file.mo === undefined && file.u === undefined && file.g === undefined) return undefined;
+export function metadataFromIndex(file: IndexFileLine, keepOwners: boolean): FileMetadata | undefined {
+    const mode = typeof file.mo === "number" && Number.isInteger(file.mo) && file.mo >= 0 ? file.mo & 0o777 : undefined;
+    const uid = keepOwners ? ownerId(file.u) : undefined;
+    const gid = keepOwners ? ownerId(file.g) : undefined;
+    if (mode === undefined && uid === undefined && gid === undefined) return undefined;
     return {
-        ...(file.mo !== undefined ? { mode: file.mo } : {}),
-        ...(file.u !== undefined ? { uid: file.u } : {}),
-        ...(file.g !== undefined ? { gid: file.g } : {}),
+        ...(mode !== undefined ? { mode } : {}),
+        ...(uid !== undefined ? { uid } : {}),
+        ...(gid !== undefined ? { gid } : {}),
     };
+}
+
+/** A user or group id of an index line, undefined for anything that is no plain id. */
+function ownerId(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffffff ? value : undefined;
 }
 
 /**
@@ -424,6 +440,12 @@ export interface CreateArchiveOptions {
      * not hold every raw dump and the finished archive on disk at the same time.
      */
     onDatabaseDumpWritten?: (localPath: string) => Promise<void>;
+    /**
+     * Called for a file of a directory source that is left out of the archive, with the reason. Only
+     * a small file that grew past what a bundle takes after it was collected and planned, since the
+     * plan of the archive holds by the time its bytes are read.
+     */
+    onFileSkipped?: (src: string, path: string, reason: string) => void;
 }
 
 export interface CreateArchiveResult {

@@ -38,7 +38,7 @@ const CHANGES: Phrase[] = [
 ];
 
 export interface AccessSummary {
-    /** Everything, which only the SuperAdmin group has. */
+    /** Everything, which only the group with every permission has, and a platform admin. */
     all: boolean;
     /** Like "the jobs", in the order of the sidebar. */
     sees: string[];
@@ -110,7 +110,7 @@ function seesText(sees: string[]): string {
 
 /** The whole of it in up to three sentences, for the details of a user. */
 export function accessSentences(summary: AccessSummary): string[] {
-    if (summary.all) return ["Everything, always. A SuperAdmin passes every check."];
+    if (summary.all) return ["Everything, always. Every permission there is, also the ones a new version adds."];
     if (isEmpty(summary)) return [summary.count === 0 ? "Nothing. Signs in, but sees and does nothing." : "Nothing beyond the own profile."];
     return [
         ...(summary.sees.length > 0 ? [`Sees ${summary.sees.length === SEES.length ? "everything" : listWords(summary.sees)}.`] : []),

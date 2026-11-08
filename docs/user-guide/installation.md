@@ -91,7 +91,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 
 | Variable | Required | Description |
 | :--- | :---: | :--- |
-| `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars) for encrypting credentials at rest. |
+| `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars, only 0-9 and a-f) for encrypting credentials at rest. DBackup does not start with another value. |
 | `BETTER_AUTH_SECRET` | ✅ | Base64 secret for authentication sessions. |
 | `BETTER_AUTH_URL` | ✅ | **Primary** URL where users access DBackup (for auth redirects). |
 | `TRUSTED_ORIGINS` | ❌ | Additional access URLs, comma-separated (see below). |
@@ -102,6 +102,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | `TMPDIR` | ❌ | Temp directory for large backups, see [Volume Mounts](#volume-mounts). Default: `/tmp` |
 | `LOG_LEVEL` | ❌ | Logging verbosity: `debug`, `info`, `warn`, `error`. Default: `info` |
 | `DISABLE_HTTPS` | ❌ | Set to `true` to use plain HTTP. Default: `false` (HTTPS). **Set this when running behind a reverse proxy** - see [Reverse Proxy Setup](#reverse-proxy-setup) |
+| `TRUSTED_PROXIES` | ❌ | The reverse proxies whose `X-Forwarded-For` counts: addresses, CIDR ranges and the keywords `private` and `cloudflare`, comma-separated, or `none`. Default: `private`, the loopback and private networks, see [The Address of a Client](#the-address-of-a-client) |
 | `PUID` | ❌ | User ID the container runs as. Default: `1001` |
 | `PGID` | ❌ | Group ID the container runs as. Set it to the host's `docker` group to reach the [Docker socket](/user-guide/sources/docker-volumes). Default: `1001` |
 | `DISABLE_EMAIL_LOGIN` | ❌ | Set to `true` to switch off password sign-in, leaving SSO and passkeys. Default: `false` |
@@ -311,6 +312,34 @@ https://...` plus `proxy_ssl_verify off` in nginx, `serversTransport.insecureSki
 Traefik).
 :::
 
+### The Address of a Client
+
+DBackup counts its [rate limits](/user-guide/features/rate-limits) per client address and writes it into the audit log and the sessions. It reads `X-Forwarded-For` only on a connection from a trusted proxy, and walks it from the right, the end each proxy appends to, up to the first address that is no trusted proxy. A client can put any address at the left end, so that one never counts on its own.
+
+By default every proxy in a loopback, private or link-local network is trusted: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7` and `fe80::/10`. That covers a proxy in the same Docker network or on the same host, and Cloudflare Tunnel, whose `cloudflared` runs in your network. `TRUSTED_PROXIES` replaces the list. Besides addresses and ranges it takes two keywords: `private` for the networks above and `cloudflare` for the ranges the edge servers of [Cloudflare](https://www.cloudflare.com/ips/) connect from.
+
+| Setup | `TRUSTED_PROXIES` |
+| :--- | :--- |
+| A proxy in a Docker network or on the same host, also Cloudflare Tunnel | Leave it unset |
+| Cloudflare in front of a proxy on your host, without Tunnel | `private,cloudflare` |
+| Cloudflare in front of DBackup itself, without a proxy | `cloudflare` |
+| DBackup reached directly, without a proxy | `none` |
+| A proxy at a known address | That address, like `10.0.0.5` |
+| Another CDN in front of the proxy | `private` and the ranges of the CDN |
+
+Without `cloudflare`, DBackup behind Cloudflare sees the address of an edge server of Cloudflare for every request, so many people share one rate limit and the audit log shows no real client. The ranges are those Cloudflare listed when the version of DBackup came out. Should Cloudflare add one, list it beside the keyword until an update brings it.
+
+```yaml
+environment:
+  - TRUSTED_PROXIES=private,cloudflare
+```
+
+An entry that is no address, range or keyword stops DBackup at the start, with a message that names it. DBackup logs the value it uses when it starts.
+
+::: tip Devices in the same network
+With the default, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out.
+:::
+
 ### Nginx
 
 ```nginx
@@ -392,6 +421,16 @@ docker compose up -d
 ```
 
 The first start of a new version runs its database migrations, which can take a while on an instance with a long history. Leave the container running until its log (`docker compose logs -f dbackup`) shows `All migrations have been successfully applied`. A container stopped halfway leaves a migration marked as failed, and the next start stops with an error.
+
+A start that is about to apply a migration first keeps a copy of the database beside it in `/data/db`, the three newest stay. To go back to the version you ran before, put that copy in place before you start the older image, see [Going Back](/user-guide/admin/tenants#going-back).
+
+### Beta Versions
+
+Before a larger release, a beta like `skyfay/dbackup:v4.1.0-beta.1` lets you try it early. The tag `skyfay/dbackup:beta` always points to the newest beta, and the [release notes on GitHub](https://github.com/Skyfay/DBackup/releases) list what it brings. `latest` never points to a beta.
+
+- Try a beta on a copy of your instance, or back up the `db` folder first as above. An older version cannot run on a database a beta migrated, so going back means starting it on that backup or on the copy the first start of the beta kept.
+- An instance on a beta tells you about the newer betas and about the release once it is out. An instance on a release never offers a beta.
+- When the release is out, switch the image from `beta` back to `latest`. The release takes over the database of the beta as it is.
 
 ## Troubleshooting
 

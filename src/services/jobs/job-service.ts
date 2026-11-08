@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { scheduler } from "@/lib/server/scheduler";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { registry } from "@/lib/core/registry";
 import { isCombinableWithDirectories } from "@/lib/adapters/combinable";
 import { registerAdapters } from "@/lib/adapters";
@@ -11,6 +11,25 @@ import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
+import { assertOwnRecords } from "@/lib/tenant/references";
+import { currentTenantId } from "@/lib/tenant/current";
+import { providedTo } from "@/services/sharing/provided";
+import { assertJobFolderName } from "./job-folder-rules";
+import { databaseNameProblem } from "@/lib/adapters/database/common/database-name";
+import { assertSourceFolder } from "@/lib/archive/remote-paths";
+
+/**
+ * Refuses a database of a job that no tool reads as a database name, like one that starts with
+ * `-`, see `database-name.ts`. The adapters check it again before they pass it.
+ *
+ * @throws ValidationError naming the database.
+ */
+function assertDatabaseNames(databases: readonly unknown[] | undefined): void {
+    for (const name of databases ?? []) {
+        const problem = databaseNameProblem(name);
+        if (problem) throw new ValidationError(problem, { field: "databases" });
+    }
+}
 
 registerAdapters();
 
@@ -168,7 +187,7 @@ export class JobService {
                 select: { sourceId: true, sources: { select: { id: true } } }
             });
             if (!current) {
-                throw new Error(`Job with id "${jobId}" not found.`);
+                throw new NotFoundError("Job", jobId);
             }
             if (effectiveSourceId === undefined) effectiveSourceId = current.sourceId;
             if (effectiveSourceCount === undefined) effectiveSourceCount = current.sources.length;
@@ -181,6 +200,7 @@ export class JobService {
      * Enforces the "a job needs at least one source" invariant and validates that:
      * - every directory source points at a storage adapter whose role is SOURCE
      * - a database source combined with directory sources is on the combinable list
+     * - the folder of every directory source stays inside its connection, see `assertSourceFolder`
      * This mirrors the destinations.length===0 guard already enforced at runner init time
      * (defense in depth), plus the source-role/combinability checks this feature introduces.
      */
@@ -188,19 +208,20 @@ export class JobService {
         const { effectiveSourceId, effectiveSourceCount } = await this.resolveEffectiveSourceState(jobId, sourceId, sources);
 
         if (!effectiveSourceId && effectiveSourceCount === 0) {
-            throw new Error("Job must have at least one source: a database source or one or more directory sources.");
+            throw new ValidationError("Job must have at least one source: a database source or one or more directory sources.");
         }
 
         if (sources && sources.length > 0) {
+            for (const source of sources) assertSourceFolder(source.path);
             const configIds = [...new Set(sources.map((s) => s.configId))];
             const configs = await prisma.adapterConfig.findMany({ where: { id: { in: configIds } } });
             for (const configId of configIds) {
                 const config = configs.find((c) => c.id === configId);
                 if (!config) {
-                    throw new Error(`Directory source references unknown adapter "${configId}".`);
+                    throw new ValidationError(`Directory source references unknown adapter "${configId}".`);
                 }
                 if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.SOURCE) {
-                    throw new Error(`Adapter "${config.name}" is not a directory source.`);
+                    throw new ValidationError(`Adapter "${config.name}" is not a directory source.`);
                 }
             }
         }
@@ -208,13 +229,40 @@ export class JobService {
         if (effectiveSourceId && effectiveSourceCount > 0) {
             const sourceConfig = await prisma.adapterConfig.findUnique({ where: { id: effectiveSourceId } });
             if (!sourceConfig) {
-                throw new Error(`Source adapter "${effectiveSourceId}" not found.`);
+                throw new ValidationError(`Source adapter "${effectiveSourceId}" not found.`);
             }
             const adapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter | undefined;
             if (!adapter?.dumpOne || !isCombinableWithDirectories(sourceConfig.adapterId)) {
-                throw new Error(`Database adapter "${sourceConfig.adapterId}" does not support combined backups with directory sources.`);
+                throw new ValidationError(`Database adapter "${sourceConfig.adapterId}" does not support combined backups with directory sources.`);
             }
         }
+    }
+
+    /**
+     * Refuses a link to a record of another tenant. Every connection is named here, the sources and
+     * destinations too, so the check does not hang on which fields an update carries.
+     */
+    private async assertOwnReferences(input: CreateJobInput | UpdateJobInput, jobId?: string) {
+        // A destination or a channel another tenant shares with this one is no record of its own, and fine to name.
+        const [shared, sharedChannels] = await Promise.all([
+            this.providedDestinations((input.destinations ?? []).map((destination) => destination.configId)),
+            this.providedChannels(input.notificationIds ?? []),
+        ]);
+        await assertOwnRecords(prisma, {
+            job: jobId ? [jobId] : [],
+            adapterConfig: [
+                input.sourceId,
+                ...(input.notificationIds ?? []).filter((id) => !sharedChannels.has(id)),
+                ...(input.destinations ?? []).map((destination) => destination.configId).filter((id) => !shared.has(id)),
+                ...(input.sources ?? []).map((source) => source.configId),
+            ],
+            encryptionProfile: [input.encryptionProfileId],
+            namingTemplate: [input.namingTemplateId],
+            schedulePreset: [input.schedulePresetId],
+            notificationTemplate: input.notificationTemplateIds ?? [],
+            retentionPolicy: (input.destinations ?? []).map((destination) => destination.retentionPolicyId),
+            excludePatternPreset: (input.sources ?? []).flatMap((source) => source.excludePatternPresetIds ?? []),
+        });
     }
 
     /**
@@ -228,16 +276,64 @@ export class JobService {
         if (!destinations || destinations.length === 0) return;
 
         const configIds = [...new Set(destinations.map((d) => d.configId))];
-        const configs = await prisma.adapterConfig.findMany({ where: { id: { in: configIds } } });
+        const [configs, shared] = await Promise.all([
+            prisma.adapterConfig.findMany({ where: { id: { in: configIds } } }),
+            this.providedDestinations(configIds),
+        ]);
         for (const configId of configIds) {
             const config = configs.find((c) => c.id === configId);
             if (!config) {
-                throw new Error(`Destination references unknown adapter "${configId}".`);
+                if (shared.has(configId)) continue;
+                throw new ValidationError(`Destination references unknown adapter "${configId}".`);
             }
             if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.DESTINATION) {
-                throw new Error(`Adapter "${config.name}" is not a backup destination.`);
+                throw new ValidationError(`Adapter "${config.name}" is not a backup destination.`);
             }
         }
+    }
+
+    /** The destinations among `configIds` that other tenants share with the tenant that runs now, with their terms. */
+    private async providedDestinations(configIds: string[]): Promise<Map<string, { name: string; encryptedOnly: boolean }>> {
+        const tenantId = await currentTenantId();
+        if (!tenantId || configIds.length === 0) return new Map();
+        const provided = await providedTo(tenantId, { kind: "destination", ids: configIds });
+        return new Map(provided.map((connection) => [connection.id, { name: connection.name, encryptedOnly: connection.encryptedOnly }]));
+    }
+
+    /** The channels of `ids` another tenant shares with the tenant of the request. */
+    private async providedChannels(ids: string[]): Promise<Set<string>> {
+        const tenantId = await currentTenantId();
+        if (!tenantId || ids.length === 0) return new Set();
+        return new Set((await providedTo(tenantId, { kind: "channel", ids })).map((channel) => channel.id));
+    }
+
+    /**
+     * Refuses a name the job may not have with its destinations, see `assertJobFolderName`. An
+     * update counts the name and the destinations it keeps too.
+     */
+    private async assertNotTenantsFolder(jobId: string | null, name: string | undefined, destinations: DestinationInput[] | undefined) {
+        const kept = jobId && (name === undefined || destinations === undefined)
+            ? await prisma.job.findUnique({ where: { id: jobId }, select: { name: true, destinations: { select: { configId: true } } } })
+            : null;
+        const finalName = name ?? kept?.name;
+        if (finalName === undefined) return;
+        const configIds = (destinations ?? kept?.destinations ?? []).map((destination) => destination.configId);
+        await assertJobFolderName(prisma, finalName, configIds);
+    }
+
+    /**
+     * Refuses a job without a key that writes to a destination whose tenant takes only encrypted
+     * backups from its customers. An update counts the destinations and the key it keeps too.
+     */
+    private async assertEncryptionAsked(jobId: string | null, destinations: DestinationInput[] | undefined, encryptionProfileId: string | undefined) {
+        const kept = jobId && (destinations === undefined || encryptionProfileId === undefined)
+            ? await prisma.job.findUnique({ where: { id: jobId }, select: { encryptionProfileId: true, destinations: { select: { configId: true } } } })
+            : null;
+        const configIds = (destinations ?? kept?.destinations ?? []).map((destination) => destination.configId);
+        const key = encryptionProfileId === undefined ? kept?.encryptionProfileId ?? null : encryptionProfileId || null;
+        if (key || configIds.length === 0) return;
+        const asking = [...(await this.providedDestinations(configIds)).values()].find((destination) => destination.encryptedOnly);
+        if (asking) throw new ValidationError(`${asking.name} takes only encrypted backups. Pick a key under Encryption.`);
     }
 
     async createJob(input: CreateJobInput) {
@@ -246,11 +342,15 @@ export class JobService {
         // Check name uniqueness
         const existingByName = await prisma.job.findFirst({ where: { name } });
         if (existingByName) {
-            throw new Error(`A job with the name "${name}" already exists.`);
+            throw new ConflictError(`A job with the name "${name}" already exists.`);
         }
 
+        assertDatabaseNames(databases);
         await this.validateJobSources(null, sourceId || null, sources);
         await this.validateJobDestinations(destinations);
+        await this.assertOwnReferences(input);
+        await this.assertEncryptionAsked(null, destinations, encryptionProfileId);
+        await this.assertNotTenantsFolder(null, name, destinations);
 
         const newJob = await prisma.job.create({
             data: {
@@ -318,14 +418,20 @@ export class JobService {
         if (name) {
             const existingByName = await prisma.job.findFirst({ where: { name, id: { not: id } } });
             if (existingByName) {
-                throw new Error(`A job with the name "${name}" already exists.`);
+                throw new ConflictError(`A job with the name "${name}" already exists.`);
             }
         }
 
+        assertDatabaseNames(databases);
+
         if (sourceId !== undefined || sources !== undefined) {
             await this.validateJobSources(id, sourceId !== undefined ? (sourceId || null) : undefined, sources);
-            await this.validateJobDestinations(destinations);
         }
+        // Checked whenever they are given, an update may name its destinations alone.
+        await this.validateJobDestinations(destinations);
+        await this.assertOwnReferences(input, id);
+        await this.assertEncryptionAsked(id, destinations, encryptionProfileId);
+        await this.assertNotTenantsFolder(id, name, destinations);
 
         const updatedJob = await prisma.$transaction(async (tx) => {
             // Update destinations if provided
@@ -426,10 +532,10 @@ export class JobService {
                     backupMode: backupMode !== undefined ? backupMode : undefined,
                     fullEveryDays: fullEveryDays !== undefined ? fullEveryDays : undefined,
                     verifyByHash: verifyByHash !== undefined ? verifyByHash : undefined,
-                    notifications: {
-                        set: [],
-                        connect: notificationIds?.map((id) => ({ id })) || []
-                    }
+                    // Replaced only when the update names them, so a partial update keeps the channels.
+                    notifications: notificationIds !== undefined
+                        ? { set: [], connect: notificationIds.map((channelId) => ({ id: channelId })) }
+                        : undefined,
                 },
                 include: jobInclude
             });
@@ -523,8 +629,36 @@ export class JobService {
         });
 
         if (!original) {
-            throw new Error(`Job with id "${id}" not found.`);
+            throw new NotFoundError("Job", id);
         }
+
+        // The copy links what the original links, read through relations the tenant filter leaves
+        // alone. A link to a record of another tenant is refused rather than copied.
+        const [shared, sharedChannels] = await Promise.all([
+            this.providedDestinations(original.destinations.map((destination) => destination.configId)),
+            this.providedChannels(original.notifications.map((channel) => channel.id)),
+        ]);
+        await assertOwnRecords(prisma, {
+            adapterConfig: [
+                original.sourceId,
+                ...original.notifications.map((channel) => channel.id).filter((id) => !sharedChannels.has(id)),
+                ...original.destinations.map((destination) => destination.configId).filter((id) => !shared.has(id)),
+                ...original.sources.map((source) => source.configId),
+            ],
+            encryptionProfile: [original.encryptionProfileId],
+            namingTemplate: [original.namingTemplateId],
+            schedulePreset: [original.schedulePresetId],
+            notificationTemplate: original.notificationTemplates.map((template) => template.templateId),
+            retentionPolicy: original.destinations.map((destination) => destination.retentionPolicyId),
+            excludePatternPreset: original.sources.flatMap((source) => source.excludePatternPresets.map((preset) => preset.id)),
+        });
+
+        // A folder saved before the rule existed is not copied into a new job, see `assertSourceFolder`.
+        for (const source of original.sources) assertSourceFolder(source.path);
+
+        // The terms of a shared destination may have changed since the original was saved, so the
+        // copy passes the checks of a new job: a key where only encrypted backups are taken.
+        await this.assertEncryptionAsked(null, original.destinations, original.encryptionProfileId ?? "");
 
         // Use provided name or generate a unique one: "X (Copy)", then "X (Copy 2)", etc.
         let uniqueName: string;
@@ -539,6 +673,7 @@ export class JobService {
                 counter++;
             }
         }
+        await this.assertNotTenantsFolder(null, uniqueName, original.destinations);
 
         // The copy has every setting of the original and only starts paused, so it does not run
         // beside it before it is checked. Its incremental chain starts over, since chains are kept

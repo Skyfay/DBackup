@@ -22,10 +22,10 @@ import path from "path";
 import crypto from "crypto";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
-import { PassThrough, Readable, pipeline as pipelineCb } from "stream";
+import { PassThrough, Readable, Transform, pipeline as pipelineCb } from "stream";
 import { pipeline } from "stream/promises";
 import { pack, Pack } from "tar-stream";
-import { compressBufferSync, getCompressionStream, getCompressionExtension } from "@/lib/crypto/compression";
+import { compressBuffer, getCompressionStream, getCompressionExtension } from "@/lib/crypto/compression";
 import { deriveArchiveKeys, generateKdfSalt } from "@/lib/crypto/kdf";
 import { generateNoncePrefix, sealEntry, sealedSize } from "@/lib/crypto/entry-cipher";
 import { getTempDir } from "@/lib/temp-dir";
@@ -44,6 +44,7 @@ import { buildUstarHeader, tarPadding, walkTarHeaders, TAR_TRAILER } from "./tar
 import { serializeIndex } from "./index-file";
 import { hashingStream } from "./hashing";
 import { databaseDumpFileName } from "./dump-names";
+import { collectedFileSize, readSmallCollectedFile, streamCollectedFile } from "./collected-file";
 import {
     ArchiveIndex,
     ArchiveManifest,
@@ -65,7 +66,8 @@ import {
 
 /** A single small file packed into a shared bundle. */
 interface BundlePart {
-    localPath: string;
+    /** The collection folder of its source, which the file is read below, see `collected-file.ts`. */
+    root: string;
     file: SourceFileEntry;
     src: string;
 }
@@ -80,7 +82,7 @@ interface PlannedEntry {
     comp?: CompressionKind;
     origin:
     | { kind: "database"; dbName: string; format: DumpFormat; localPath: string }
-    | { kind: "file"; src: string; file: SourceFileEntry; localPath: string }
+    | { kind: "file"; src: string; file: SourceFileEntry; root: string }
     | { kind: "bundle"; parts: BundlePart[] };
 }
 
@@ -92,8 +94,16 @@ interface MaterializedEntry {
     open: () => NodeJS.ReadableStream;
     /** Temp file to remove once written, if one was needed. */
     tempFile?: string;
-    /** Byte ranges within the decompressed payload, in bundle-part order. */
-    parts?: { offset: number; length: number }[];
+    /**
+     * Byte ranges within the decompressed payload, in bundle-part order. Null for a part left out,
+     * a file that grew past what a bundle takes since it was planned.
+     */
+    parts?: ({ offset: number; length: number } | null)[];
+    /**
+     * The plaintext bytes of a standalone file entry as they were read into it, the `s` of its
+     * index line. Only known once the member has been written when the entry is compressed.
+     */
+    plainSize?: () => number | undefined;
     /**
      * SHA-256 of the plaintext, for database dumps. Only known once the bytes have been read,
      * which for an uncompressed dump is not until the member has been written.
@@ -154,10 +164,8 @@ function planEntries(entries: ArchiveSourceEntry[], encrypted: boolean, compress
             // that was never collected.
             if (file.linkTarget !== undefined) continue;
 
-            const localPath = path.join(entry.localPath, file.path);
-
             if (encrypted && file.size <= BUNDLE_FILE_MAX_SIZE) {
-                bundle.push({ localPath, file, src: entry.jobSourceId });
+                bundle.push({ root: entry.localPath, file, src: entry.jobSourceId });
                 bundleSize += file.size;
                 if (bundleSize >= BUNDLE_TARGET_SIZE) flushBundle();
                 continue;
@@ -175,7 +183,7 @@ function planEntries(entries: ArchiveSourceEntry[], encrypted: boolean, compress
                 ordinal,
                 member: memberName(`${SOURCE_MEMBER_PREFIX}${entry.jobSourceId}/${file.path}`, comp),
                 comp,
-                origin: { kind: "file", src: entry.jobSourceId, file, localPath },
+                origin: { kind: "file", src: entry.jobSourceId, file, root: entry.localPath },
             });
             ordinal++;
         }
@@ -218,7 +226,12 @@ function planSymlinks(entries: ArchiveSourceEntry[]): PlannedSymlink[] {
  * that: sealing adds exactly TAG_LENGTH bytes with no padding, so the stored size is known
  * up front and the source file streams straight through.
  */
-async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePrefix: Buffer | null): Promise<MaterializedEntry> {
+async function materialize(
+    entry: PlannedEntry,
+    sealKey: Buffer | null,
+    noncePrefix: Buffer | null,
+    onFileSkipped?: CreateArchiveOptions["onFileSkipped"]
+): Promise<MaterializedEntry> {
     // Built with pipeline, not stream.pipe(): a read error on the underlying source (a
     // collected file deleted before it is archived) must reach the returned stream instead
     // of firing as an unhandled 'error' on the source and taking the backup process down.
@@ -238,37 +251,62 @@ async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePre
         let offset = 0;
 
         for (const part of entry.origin.parts) {
-            const content = await fs.readFile(part.localPath);
+            // Read through `collected-file.ts`, like the hash of the collection, so a file that
+            // turned into a link or a device since then is refused instead of followed. A file
+            // larger than a bundle takes is never read into memory: the plan holds by now, so it is
+            // left out and named instead, see `onFileSkipped`.
+            const content = await readSmallCollectedFile(part.root, part.file.path, BUNDLE_FILE_MAX_SIZE);
+            if (!content) {
+                parts.push(null);
+                onFileSkipped?.(part.src, part.file.path, `it is larger than the ${BUNDLE_FILE_MAX_SIZE} bytes of a file packed with others, it grew after it was collected`);
+                continue;
+            }
             buffers.push(content);
             parts.push({ offset, length: content.length });
             offset += content.length;
         }
 
         const plain = Buffer.concat(buffers);
-        const payload = entry.comp ? compressBufferSync(plain, entry.comp) : plain;
+        const payload = entry.comp ? await compressBuffer(plain, entry.comp) : plain;
 
         return { storedSize: withTag(payload.length), open: () => seal(Readable.from([payload])), parts };
     }
 
-    const localPath = entry.origin.localPath;
+    const origin = entry.origin;
 
     // A dump gets the same plaintext checksum a file gets from its collector. Hashed on the
     // way through rather than in a separate read, because a dump can be tens of gigabytes.
     // Files are not hashed here: their checksum was already taken when they were collected.
+    // A file of a directory source is opened through `collected-file.ts`, never followed as a link,
+    // since its folder holds what the server of the source sent, see `openCollectedFile`.
     let digest: string | undefined;
-    const isDatabase = entry.origin.kind === "database";
+    let plainBytes = 0;
     const read = (): NodeJS.ReadableStream => {
-        const raw = createReadStream(localPath);
-        if (!isDatabase) return raw;
+        if (origin.kind === "file") {
+            // Counted on the way through: the `s` of the file is what went into the entry, never
+            // the size its listing reported, or a restore would stop a file that grew as damaged.
+            const out = new PassThrough();
+            const count = new Transform({
+                transform(chunk: Buffer, _encoding, callback) {
+                    plainBytes += chunk.length;
+                    callback(null, chunk);
+                },
+            });
+            pipelineCb(streamCollectedFile(origin.root, origin.file.path), count, out, () => { /* surfaced on out */ });
+            return out;
+        }
         const out = new PassThrough();
-        pipelineCb(raw, hashingStream((d) => { digest = d; }), out, () => { /* surfaced on out */ });
+        pipelineCb(createReadStream(origin.localPath), hashingStream((d) => { digest = d; }), out, () => { /* surfaced on out */ });
         return out;
     };
-    const plainDigest = isDatabase ? () => digest : undefined;
+    const plainDigest = origin.kind === "database" ? () => digest : undefined;
+    const plainSize = origin.kind === "file" ? () => plainBytes : undefined;
 
     if (!entry.comp) {
-        const stats = await fs.stat(localPath);
-        return { storedSize: withTag(stats.size), open: () => seal(read()), plainDigest };
+        const size = origin.kind === "file"
+            ? await collectedFileSize(origin.root, origin.file.path)
+            : (await fs.stat(origin.localPath)).size;
+        return { storedSize: withTag(size), open: () => seal(read()), plainDigest, plainSize };
     }
 
     // Ordinals restart at 1 for every archive, so pid + ordinal is not unique: two jobs
@@ -283,7 +321,7 @@ async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePre
     await pipeline(read(), compressStream, createWriteStream(tempFile));
 
     const stats = await fs.stat(tempFile);
-    return { storedSize: withTag(stats.size), open: () => seal(createReadStream(tempFile)), tempFile, plainDigest };
+    return { storedSize: withTag(stats.size), open: () => seal(createReadStream(tempFile)), tempFile, plainDigest, plainSize };
 }
 
 /**
@@ -420,7 +458,7 @@ export async function createArchive(
     // once the header walk has produced exact offsets for everything written here.
     const tarPack = pack();
     const writePromise = pipeline(tarPack, createWriteStream(destinationPath));
-    const materializedByOrdinal = new Map<number, { storedSize: number; parts?: MaterializedEntry["parts"]; digest?: string }>();
+    const materializedByOrdinal = new Map<number, { storedSize: number; parts?: MaterializedEntry["parts"]; digest?: string; plainSize?: number }>();
 
     // Compressing an entry is independent work, so it runs ahead of the writer; appending to
     // the tar stays strictly in order, because the byte offsets that make the archive
@@ -431,7 +469,7 @@ export async function createArchive(
     const pending: (Promise<MaterializedEntry> | undefined)[] = new Array(planned.length);
     const startMaterialize = (index: number) => {
         if (index >= planned.length) return;
-        const started = materialize(planned[index], keys?.dataKey ?? null, noncePrefix);
+        const started = materialize(planned[index], keys?.dataKey ?? null, noncePrefix, options.onFileSkipped);
         // A look-ahead failure must not surface as an unhandled rejection while the writer is
         // still busy with an earlier entry. Attaching a handler marks it handled; awaiting it
         // below still rejects with the original error.
@@ -461,6 +499,7 @@ export async function createArchive(
                     storedSize: materialized.storedSize,
                     parts: materialized.parts,
                     digest: materialized.plainDigest?.(),
+                    plainSize: materialized.plainSize?.(),
                 });
             } finally {
                 if (materialized.tempFile) await fs.unlink(materialized.tempFile).catch(() => { });
@@ -528,7 +567,7 @@ export async function createArchive(
         } else if (entry.origin.kind === "file") {
             const { file, src } = entry.origin;
             fileLines.push({
-                k: "f", src, p: file.path, s: file.size, m: file.mtime,
+                k: "f", src, p: file.path, s: materialized.plainSize ?? file.size, m: file.mtime,
                 ...(file.checksum ? { h: file.checksum } : {}),
                 ...metadataToIndex(file),
                 n: entry.ordinal,
@@ -536,8 +575,10 @@ export async function createArchive(
         } else if (entry.origin.kind === "bundle") {
             entry.origin.parts.forEach((part, i) => {
                 const slice = materialized.parts![i];
+                // Left out of the bundle and named through `onFileSkipped`.
+                if (!slice) return;
                 fileLines.push({
-                    k: "f", src: part.src, p: part.file.path, s: part.file.size, m: part.file.mtime,
+                    k: "f", src: part.src, p: part.file.path, s: slice.length, m: part.file.mtime,
                     ...(part.file.checksum ? { h: part.file.checksum } : {}),
                     ...metadataToIndex(part.file),
                     n: entry.ordinal, o: slice.offset, l: slice.length,

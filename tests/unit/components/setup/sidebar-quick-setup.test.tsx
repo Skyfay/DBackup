@@ -71,7 +71,7 @@ describe("Sidebar - Quick Setup visibility", () => {
         render(
             <AppSidebar
                 permissions={allPermissions}
-                isSuperAdmin={false}
+                isPlatformAdmin={false}
                 showQuickSetup={false}
             />
         );
@@ -83,7 +83,7 @@ describe("Sidebar - Quick Setup visibility", () => {
         render(
             <AppSidebar
                 permissions={allPermissions}
-                isSuperAdmin={false}
+                isPlatformAdmin={false}
                 showQuickSetup={true}
             />
         );
@@ -95,18 +95,18 @@ describe("Sidebar - Quick Setup visibility", () => {
         render(
             <AppSidebar
                 permissions={allPermissions}
-                isSuperAdmin={false}
+                isPlatformAdmin={false}
             />
         );
 
         expect(screen.queryByText("Quick Setup")).not.toBeInTheDocument();
     });
 
-    it("should NOT show Quick Setup even for SuperAdmin when showQuickSetup is false", () => {
+    it("should NOT show Quick Setup even for a platform admin when showQuickSetup is false", () => {
         render(
             <AppSidebar
                 permissions={[]}
-                isSuperAdmin={true}
+                isPlatformAdmin={true}
                 showQuickSetup={false}
             />
         );
@@ -114,11 +114,11 @@ describe("Sidebar - Quick Setup visibility", () => {
         expect(screen.queryByText("Quick Setup")).not.toBeInTheDocument();
     });
 
-    it("should show Quick Setup for SuperAdmin when showQuickSetup is true", () => {
+    it("should show Quick Setup for a platform admin when showQuickSetup is true", () => {
         render(
             <AppSidebar
                 permissions={[]}
-                isSuperAdmin={true}
+                isPlatformAdmin={true}
                 showQuickSetup={true}
             />
         );
@@ -130,7 +130,7 @@ describe("Sidebar - Quick Setup visibility", () => {
         render(
             <AppSidebar
                 permissions={[PERMISSIONS.SOURCES.READ]}
-                isSuperAdmin={false}
+                isPlatformAdmin={false}
                 showQuickSetup={true}
             />
         );
@@ -147,7 +147,7 @@ describe("Sidebar - Quick Setup visibility", () => {
                     PERMISSIONS.DESTINATIONS.WRITE,
                     PERMISSIONS.JOBS.WRITE,
                 ]}
-                isSuperAdmin={false}
+                isPlatformAdmin={false}
                 showQuickSetup={true}
             />
         );
@@ -159,7 +159,7 @@ describe("Sidebar - Quick Setup visibility", () => {
         render(
             <AppSidebar
                 permissions={allPermissions}
-                isSuperAdmin={false}
+                isPlatformAdmin={false}
                 showQuickSetup={true}
             />
         );

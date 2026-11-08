@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { pingDatabase } from "@/services/system/database-service";
 
 /**
  * Health check endpoint for Docker HEALTHCHECK and monitoring.
@@ -11,8 +11,7 @@ export async function GET() {
     const start = Date.now();
 
     try {
-        // Verify database connectivity with a lightweight query
-        await prisma.$queryRaw`SELECT 1`;
+        await pingDatabase();
 
         const uptime = process.uptime();
         const memUsage = process.memoryUsage();

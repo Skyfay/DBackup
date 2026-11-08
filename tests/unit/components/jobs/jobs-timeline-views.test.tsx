@@ -93,4 +93,13 @@ describe("the Timeline and Upcoming views of the Jobs page", () => {
         expect(screen.getByText(/Not in the next 24 hours: Events weekly/)).toBeInTheDocument();
         expect(screen.getByText("Paused: Legacy ERP")).toBeInTheDocument();
     });
+
+    it("names a job a run waits for by the name the timeline brings, when the list holds another page", () => {
+        // The search left out the job that holds the queue, so only the timeline knows its name.
+        const shown = jobs.filter((entry) => entry.id !== "postgres");
+        render(<JobsUpcoming jobs={shown} allJobs={shown} timeline={{ data: { ...data(), names: { postgres: "Nightly Postgres" } }, error: null, reload: vi.fn() }} onOpenJob={vi.fn()} />);
+
+        expect(screen.getByText("Nightly Postgres holds the queue")).toBeInTheDocument();
+        expect(screen.queryByText(/another job/)).not.toBeInTheDocument();
+    });
 });

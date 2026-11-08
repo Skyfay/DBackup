@@ -26,7 +26,7 @@ import { GET } from "@/app/api/adapters/[id]/health-history/route";
 
 const call = (id = "pg", query = "") =>
     GET(new NextRequest(`http://localhost/api/adapters/${id}/health-history${query}`), { params: Promise.resolve({ id }) });
-const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
+const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isPlatformAdmin: false });
 
 describe("GET /api/adapters/[id]/health-history", () => {
     beforeEach(() => {

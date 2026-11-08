@@ -20,6 +20,12 @@ vi.mock('@/services/storage/verification-service', () => ({
     verificationService: { verifyFile: vi.fn() },
 }));
 
+// No tenant shares a destination with another here.
+vi.mock('@/services/sharing/provided', () => ({
+    providedConnection: vi.fn().mockResolvedValue(null),
+    providedTo: vi.fn().mockResolvedValue([]),
+}));
+
 import { registry } from '@/lib/core/registry';
 import { verificationService } from '@/services/storage/verification-service';
 import { resolveAdapterConfig } from '@/lib/adapters/config-resolver';
@@ -32,6 +38,7 @@ function makeStorageConfig(overrides: Record<string, any> = {}) {
         name: 'Test Storage',
         adapterId: 'local-fs',
         type: 'storage',
+        tenantId: 'acme',
         config: '{}',
         metadata: null,
         createdAt: new Date(),
@@ -53,6 +60,13 @@ function makeCallbacks() {
         onStage: vi.fn(),
         onFileProgress: vi.fn(),
     };
+}
+
+/** The destinations of the tenant, as the scan lists them and as each one is opened by its id. */
+function givenDestinations(configs: ReturnType<typeof makeStorageConfig>[]) {
+    prismaMock.adapterConfig.findMany.mockResolvedValue(configs as any);
+    prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: any) => configs.find((config) => config.id === where.id) ?? null) as any);
+    prismaMock.connectionShare.count.mockResolvedValue(0);
 }
 
 // Reset system settings to "destinations" scan mode by default.
@@ -120,7 +134,7 @@ describe('IntegrityService - gatherFilesFromJobs additional paths', () => {
 
         expect(result.scanFailed).toBeGreaterThanOrEqual(1);
         expect(callbacks.onLog).toHaveBeenCalledWith(
-            expect.stringContaining("adapter 'unknown-adapter' not found"),
+            expect.stringContaining('Storage adapter implementation not found: unknown-adapter'),
             'error',
         );
     });
@@ -285,7 +299,7 @@ describe('IntegrityService - gatherFilesFromDestination additional paths', () =>
         const skippedConfig = makeStorageConfig({
             metadata: JSON.stringify({ skipVerification: true }),
         });
-        prismaMock.adapterConfig.findMany.mockResolvedValue([skippedConfig as any]);
+        givenDestinations([skippedConfig]);
 
         const callbacks = makeCallbacks();
         const result = await service.runFullIntegrityCheck(callbacks);
@@ -298,7 +312,7 @@ describe('IntegrityService - gatherFilesFromDestination additional paths', () =>
     });
 
     it('falls back to per-job folder listing when root list throws (lines 343-360)', async () => {
-        prismaMock.adapterConfig.findMany.mockResolvedValue([makeStorageConfig() as any]);
+        givenDestinations([makeStorageConfig()]);
 
         const adapter = makeStorageAdapter({
             list: vi.fn()
@@ -322,7 +336,7 @@ describe('IntegrityService - gatherFilesFromDestination additional paths', () =>
     });
 
     it('silently skips unreachable job folders during fallback listing (lines 357-359)', async () => {
-        prismaMock.adapterConfig.findMany.mockResolvedValue([makeStorageConfig() as any]);
+        givenDestinations([makeStorageConfig()]);
 
         const adapter = makeStorageAdapter({
             list: vi.fn()
@@ -349,7 +363,7 @@ describe('IntegrityService - gatherFilesFromDestination additional paths', () =>
             return null;
         }) as any);
 
-        prismaMock.adapterConfig.findMany.mockResolvedValue([makeStorageConfig() as any]);
+        givenDestinations([makeStorageConfig()]);
 
         const adapter = makeStorageAdapter({
             list: vi.fn().mockResolvedValue([
@@ -366,7 +380,7 @@ describe('IntegrityService - gatherFilesFromDestination additional paths', () =>
     });
 
     it('logs singular "file" when exactly one file is found (line 381-383)', async () => {
-        prismaMock.adapterConfig.findMany.mockResolvedValue([makeStorageConfig() as any]);
+        givenDestinations([makeStorageConfig()]);
 
         const adapter = makeStorageAdapter({
             list: vi.fn().mockResolvedValue([
@@ -385,7 +399,7 @@ describe('IntegrityService - gatherFilesFromDestination additional paths', () =>
     });
 
     it('increments scanFailed when gatherFilesFromDestination throws unexpectedly (lines 123-127)', async () => {
-        prismaMock.adapterConfig.findMany.mockResolvedValue([makeStorageConfig() as any]);
+        givenDestinations([makeStorageConfig()]);
 
         // Force resolveAdapterConfig to throw so gatherFilesFromDestination propagates an error.
         vi.mocked(resolveAdapterConfig).mockRejectedValueOnce(new Error('Unexpected config error'));
@@ -412,7 +426,7 @@ describe('IntegrityService - verification pass additional paths', () => {
         service = new IntegrityService();
         mockSettingsDestinations();
 
-        prismaMock.adapterConfig.findMany.mockResolvedValue([makeStorageConfig() as any]);
+        givenDestinations([makeStorageConfig()]);
         const adapter = makeStorageAdapter({
             list: vi.fn().mockResolvedValue([
                 { name: 'backup.sql', path: 'backup.sql', size: 100, lastModified: null },

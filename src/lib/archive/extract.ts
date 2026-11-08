@@ -13,10 +13,12 @@ import path from "path";
 import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import { DATABASE_MEMBER_PREFIX, SOURCE_MEMBER_PREFIX } from "./format";
-import { databaseDumpFileName } from "./dump-names";
-import { groupFilesByEntry, openArchiveEntry, openArchiveFile, readArchiveIndex, readArchiveManifest } from "./reader";
+import { databaseDumpFileName, plainFileNameProblem } from "./dump-names";
+import { assertSingleReferences, groupFilesByEntry, openArchiveEntry, openArchiveFile, readArchiveIndex, readArchiveManifest } from "./reader";
 import { groupFilesByArchive, OpenedChainArchive } from "./chain-source";
 import { localFileSource, readAll } from "./sources";
+import { BUNDLE_READ_LIMIT } from "./limits";
+import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf } from "./link-target";
 import {
     ArchiveByteSource,
     ArchiveIndex,
@@ -118,15 +120,23 @@ export async function extractArchiveFrom(
         if (!entry) throw new Error(`Archive index is inconsistent: database '${database.name}' references missing entry ${database.n}`);
 
         const target = safeJoin(extractDir, `${DATABASE_MEMBER_PREFIX}${databaseDumpFileName(database.name, database.format)}`);
-        await writeStreamTo(await openArchiveEntry(source, manifest, entry, options?.masterKey), target);
+        await writeStreamTo(await openArchiveEntry(source, manifest, entry, options?.masterKey, database.s), target);
         databaseFiles.push({ entry: database, path: target });
     }
 
     const wantedSourceIds = new Set(wantedDirectories.map((d) => d.src));
-    const directoryRoots: ExtractResult["directoryRoots"] = wantedDirectories.map((entry) => ({
-        entry,
-        path: path.join(extractDir, SOURCE_MEMBER_PREFIX, entry.src),
-    }));
+    // The id of a source comes from the index like every path of it. It has to be a plain id: the
+    // checks of links below are keyed by it, so `a/b` or `x/../a` would put the files of one source
+    // into the folder of another, where the links of the other were never checked against them.
+    // It names a folder of its own, never the folder that holds every source.
+    const sourcesDir = path.join(extractDir, SOURCE_MEMBER_PREFIX);
+    const directoryRoots: ExtractResult["directoryRoots"] = wantedDirectories.map((entry) => {
+        const problem = plainFileNameProblem(entry.src);
+        if (problem) throw new Error(`Refusing to extract a directory source whose id is no plain name: ${problem}`);
+        const root = safeJoin(sourcesDir, entry.src);
+        if (root === sourcesDir) throw new Error(`Refusing to extract a directory source without a folder of its own: '${entry.src}'`);
+        return { entry, path: root };
+    });
     for (const root of directoryRoots) {
         await fs.mkdir(root.path, { recursive: true });
     }
@@ -138,6 +148,8 @@ export async function extractArchiveFrom(
     // landed. See createSymlinks() for why that order is a security property.
     const symlinks = selectedFiles.filter(isSymlinkLine);
     const wantedFiles = selectedFiles.filter((f) => !isSymlinkLine(f));
+    // Refused before anything is written, see `assertSingleReferences`.
+    assertSingleReferences(index.entries, wantedFiles);
 
     // Grouped by archive first: files carried over from earlier archives of an incremental
     // chain live elsewhere, and opening one sibling at a time bounds peak disk usage on
@@ -162,15 +174,17 @@ export async function extractArchiveFrom(
                     // Exactly one file per non-bundled entry, so stream it straight to disk.
                     const file = files[0];
                     await writeStreamTo(
-                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey),
+                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey, file.s),
                         safeJoin(rootBySourceId.get(file.src)!, file.p)
                     );
                     continue;
                 }
 
-                // Bundles are capped at a few MB, so one buffered read serves every file in them.
+                // Bundles are capped at a few MB, which the read holds them to, so one buffered read
+                // serves every file in them.
                 const payload = await readAll(
-                    await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                    await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey),
+                    BUNDLE_READ_LIMIT
                 );
                 for (const file of files) {
                     const slice = payload.subarray(file.o ?? 0, (file.o ?? 0) + (file.l ?? payload.length));
@@ -184,7 +198,7 @@ export async function extractArchiveFrom(
         }
     }
 
-    const skippedSymlinks = await createSymlinks(symlinks, rootBySourceId);
+    const skippedSymlinks = await createSymlinks(symlinks, rootBySourceId, throughLinkOf(index.files));
 
     return { manifest, index, databaseFiles, directoryRoots, skippedSymlinks };
 }
@@ -203,19 +217,30 @@ export async function extractArchiveFrom(
  * for its path to travel through. That is the whole defence, so this call must stay after the
  * file loop - moving it, or interleaving it for tidier code, silently reopens the hole.
  *
- * Targets themselves are stored verbatim, including absolute ones. A link's target is content,
- * not a path this code is about to follow, and a restore to the original location is exactly
- * where an absolute target is correct.
+ * A link whose target is absolute or climbs out of the folder of its source is skipped and
+ * reported, see `link-target.ts`: once laid, the next write, read or run that follows it would
+ * reach any file of the server. A relative target inside the folder is stored verbatim.
  */
 async function createSymlinks(
     symlinks: readonly (IndexFileLine & { lnk: string })[],
-    rootBySourceId: ReadonlyMap<string, string>
+    rootBySourceId: ReadonlyMap<string, string>,
+    // A link below another link of the same backup would land and point wherever that one leads,
+    // built from every line of the index, see `throughLinkOf`.
+    throughLink: (src: string, entryPath: string) => boolean
 ): Promise<{ path: string; reason: string }[]> {
     const skipped: { path: string; reason: string }[] = [];
 
     for (const link of symlinks) {
         const root = rootBySourceId.get(link.src);
         if (!root) continue;
+        if (throughLink(link.src, link.p)) {
+            skipped.push({ path: link.p, reason: ENTRY_THROUGH_LINK });
+            continue;
+        }
+        if (linkLeavesTarget(link.p, link.lnk, (resolved) => throughLink(link.src, resolved))) {
+            skipped.push({ path: link.p, reason: LINK_LEAVES_TARGET });
+            continue;
+        }
         const target = safeJoin(root, link.p);
         await fs.mkdir(path.dirname(target), { recursive: true });
 

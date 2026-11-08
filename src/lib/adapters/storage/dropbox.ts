@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, StorageReadOptions } from "@/lib/core/interfaces";
 import { DropboxSchema } from "@/lib/adapters/definitions";
 import { Dropbox, DropboxAuth } from "dropbox";
 import fs from "fs/promises";
@@ -10,6 +10,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { stripTrailingSlashes } from "@/lib/paths";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { collectCapped, FileTooLargeError, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, createPageGuard } from "@/lib/adapters/storage/common/listing-limits";
 
 const log = logger.child({ adapter: "dropbox" });
 
@@ -203,29 +205,66 @@ function buildDropboxPath(basePath: string | undefined, relativePath: string): s
 }
 
 /**
- * Recursively lists all files under a Dropbox folder.
+ * Whether a Dropbox call failed because its path does not exist: HTTP 409 with the error
+ * union `path` set to the lookup error `not_found`, as `files/list_folder` answers it.
+ */
+function isDropboxPathNotFound(error: unknown): boolean {
+    const e = error as {
+        status?: number;
+        error?: { error?: { [".tag"]?: string; path?: { [".tag"]?: string } } };
+    } | null;
+    const reason = e?.error?.error;
+    return e?.status === 409 && reason?.[".tag"] === "path" && reason.path?.[".tag"] === "not_found";
+}
+
+/**
+ * Recursively lists all files under a Dropbox folder. With `missingAsEmpty`, a folder that does
+ * not exist lists as empty instead of failing. Only the first request decides that, so a folder
+ * removed halfway through a listing still fails it rather than dropping what was read.
  */
 async function listFilesRecursive(
     dbx: Dropbox,
     folderPath: string,
-    basePrefix: string
+    basePrefix: string,
+    missingAsEmpty = false
 ): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
 
-    let result = await dbx.filesListFolder({
-        path: folderPath,
-        recursive: true,
-        limit: 2000,
-    });
+    let result: Awaited<ReturnType<Dropbox["filesListFolder"]>>;
+    try {
+        result = await dbx.filesListFolder({
+            path: folderPath,
+            recursive: true,
+            limit: 2000,
+        });
+    } catch (error: unknown) {
+        if (missingAsEmpty && isDropboxPathNotFound(error)) return files;
+        throw error;
+    }
+
+    // Dropbox ignores the case and answers with the case of the folder as it is, so the base folder is
+    // compared with `path_lower`, as a whole folder and as `path.posix.normalize` writes it, and its
+    // parts are taken off the path as Dropbox shows it.
+    const base = basePrefix ? stripTrailingSlashes(path.posix.normalize(`/${basePrefix.replace(/\\/g, "/")}`)).toLowerCase() : "";
+    const baseDepth = base.split("/").filter(Boolean).length;
+    const relativeOf = (display: string, lower: string): string => {
+        if (!base || !(lower === base || lower.startsWith(`${base}/`))) return display;
+        return display.split("/").filter(Boolean).slice(baseDepth).join("/");
+    };
+
+    // Dropbox lists the whole tree itself, page by page. Every entry, a folder too, passes the guard
+    // as it arrives, and a cursor handed out twice or pages without end stop the listing, see
+    // `listing-limits.ts`.
+    const guard = createListingGuard();
+    const pages = createPageGuard();
 
     const processEntries = (entries: typeof result.result.entries) => {
         for (const entry of entries) {
+            guard.add(entry.path_display || entry.path_lower || entry.name);
             if (entry[".tag"] === "file") {
                 // Build relative path by stripping the base folder path
-                let relativePath = entry.path_display || entry.path_lower || "";
-                if (basePrefix && relativePath.startsWith(basePrefix)) {
-                    relativePath = relativePath.slice(basePrefix.length).replace(/^\//, "");
-                }
+                const display = entry.path_display || entry.path_lower || "";
+                const relativePath = relativeOf(display, entry.path_lower || display.toLowerCase());
 
                 files.push({
                     name: entry.name,
@@ -240,6 +279,7 @@ async function listFilesRecursive(
     processEntries(result.result.entries);
 
     while (result.result.has_more) {
+        pages.next(result.result.cursor, result.result.entries.length);
         result = await dbx.filesListFolderContinue({
             cursor: result.result.cursor,
         });
@@ -247,6 +287,42 @@ async function listFilesRecursive(
     }
 
     return files;
+}
+
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. Streamed from the
+ * content endpoint rather than through the SDK, which buffers a whole download, so the transfer
+ * stops at the first chunk past the limit. Null when the file is not there.
+ */
+async function readCappedBytes(config: DropboxConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    try {
+        const auth = createDropboxAuth(config);
+        await auth.checkAndRefreshAccessToken();
+        const accessToken = auth.getAccessToken();
+        if (!accessToken) return null;
+
+        const res = await fetch("https://content.dropboxapi.com/2/files/download", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Dropbox-API-Arg": JSON.stringify({ path: buildDropboxPath(config.folderPath, remotePath) }),
+            },
+        });
+        if (!res.ok || !res.body) {
+            await res.body?.cancel().catch(() => undefined);
+            return null;
+        }
+        const announced = Number(res.headers.get("content-length"));
+        if (Number.isFinite(announced) && announced > limit) {
+            await res.body.cancel().catch(() => undefined);
+            throw new FileTooLargeError(limit);
+        }
+        return await collectCapped(Readable.fromWeb(res.body as never), limit);
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        return null;
+    }
 }
 
 export const DropboxAdapter: StorageAdapter = {
@@ -419,34 +495,24 @@ export const DropboxAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: DropboxConfig, remotePath: string): Promise<string | null> {
-        try {
-            const dbx = createDropboxClient(config);
-            const dropboxPath = buildDropboxPath(config.folderPath, remotePath);
-
-            const res = await dbx.filesDownload({ path: dropboxPath });
-            const buffer = await getFileBuffer(res.result as unknown as Record<string, unknown>);
-
-            if (!buffer) {
-                log.warn("No file data received from Dropbox read", { remotePath });
-                return null;
-            }
-
-            return buffer.toString("utf-8");
-        } catch {
-            return null;
-        }
+    async read(config: DropboxConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async list(config: DropboxConfig, dir: string = ""): Promise<FileInfo[]> {
         try {
             const dbx = createDropboxClient(config);
             const basePath = stripTrailingSlashes(config.folderPath ?? "");
-            const listPath = dir && dir !== "."
+            const isSubfolder = Boolean(dir && dir !== ".");
+            const listPath = isSubfolder
                 ? buildDropboxPath(config.folderPath, dir)
                 : (basePath || "");
 
-            return await listFilesRecursive(dbx, listPath, basePath);
+            // A subfolder nothing was written to yet is not there. It lists as empty, like on the
+            // other destinations. A missing root still fails.
+            return await listFilesRecursive(dbx, listPath, basePath, isSubfolder);
         } catch (error: unknown) {
             log.error("Dropbox list failed", { dir }, wrapError(error));
             throw error;

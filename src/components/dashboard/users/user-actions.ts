@@ -1,4 +1,5 @@
 import { KeyRound, LogOut, Pencil, ShieldOff, Trash } from "lucide-react";
+import { platformAdminAction } from "@/components/dashboard/platform/platform-admin-role";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
 import type { UserRow } from "@/services/user/users-types";
 
@@ -8,6 +9,8 @@ export interface UserActionHandlers {
     onResetTwoFactor?: (user: UserRow) => void;
     onSignOut?: (user: UserRow) => void;
     onDelete?: (user: UserRow) => void;
+    /** Makes the account a platform admin or takes the role back, on the list of every account of the Platform. */
+    onPlatformAdmin?: (user: UserRow) => void;
 }
 
 export const hasPassword = (user: Pick<UserRow, "methods">) => user.methods.some((method) => method.kind === "password");
@@ -19,11 +22,11 @@ export const signOutLabel = (user: Pick<UserRow, "isYou">) => (user.isYou ? "Sig
  * Everything one user can have done to them, as data, for the button at the end of the row, the
  * right click menu and the panel. Actions the viewer may not take have no handler and are left
  * out, and so is what makes no sense for the user: a password or a delete of the own account, or
- * a reset of a second factor they do not have. The panel shows Edit as a button of its own, so
- * `inPanel` leaves it out.
+ * a reset of a second factor they do not have, or a change of the own platform admin role. The
+ * panel shows Edit as a button of its own, so `inPanel` leaves it out.
  */
 export function userActions(user: UserRow, handlers: UserActionHandlers, inPanel = false): BackupActionGroup[] {
-    const { onEdit, onPassword, onResetTwoFactor, onSignOut, onDelete } = handlers;
+    const { onEdit, onPassword, onResetTwoFactor, onSignOut, onDelete, onPlatformAdmin } = handlers;
     const manage = onEdit && !inPanel ? [{ id: "edit", label: "Edit", icon: Pencil, onSelect: () => onEdit(user), tone: "edit" as const }] : [];
     const signIn = [
         ...(onPassword && !user.isYou
@@ -36,10 +39,12 @@ export function userActions(user: UserRow, handlers: UserActionHandlers, inPanel
             ? [{ id: "sign-out", label: signOutLabel(user), icon: LogOut, onSelect: () => onSignOut(user), tone: "destructive" as const }]
             : []),
     ];
+    const platform = onPlatformAdmin && !user.isYou ? [platformAdminAction(user.superAdmin, () => onPlatformAdmin(user))] : [];
     const remove = onDelete && !user.isYou ? [{ id: "delete", label: "Delete", icon: Trash, onSelect: () => onDelete(user), tone: "destructive" as const }] : [];
     return [
         ...(manage.length > 0 ? [{ label: "Manage", actions: manage }] : []),
         ...(signIn.length > 0 ? [{ label: "Sign-in", actions: signIn }] : []),
+        ...(platform.length > 0 ? [{ label: "Platform", actions: platform }] : []),
         ...(remove.length > 0 ? [{ actions: remove }] : []),
     ];
 }

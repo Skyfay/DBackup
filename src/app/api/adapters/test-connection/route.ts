@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registry } from "@/lib/core/registry";
-import { runAdapterTest } from "@/lib/transport/adapter-invoke";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { registerAdapters } from "@/lib/adapters";
-import { applyStoredSecrets, overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { headers } from "next/headers";
-import prisma from "@/lib/prisma";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
+import { getManagePermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
+import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
+import { withoutBinaryPaths } from "@/lib/adapters/config-resolver";
+import { requestRefusal } from "@/lib/server/permission-refusal";
+import { savedLoginRefusal, storedSecretsRefusal } from "@/lib/server/config-backup-target-guard";
+import { testConnection } from "@/services/adapters/connection-test";
+import { connectionName } from "@/services/adapters/adapter-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -16,11 +21,18 @@ const log = logger.child({ route: "adapters/test-connection" });
 // Ensure adapters are registered
 registerAdapters();
 
+/**
+ * POST /api/adapters/test-connection
+ *
+ * Tries the config of the connection form, for someone who may change connections of the kind.
+ * Who may change the saved connection itself gets its secrets filled in and keeps the version the
+ * test finds with it. All tenants belongs to no tenant and tries none.
+ */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
 
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -31,82 +43,54 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
         }
 
-        const requiredPermission = getPermissionForAdapter(adapterId);
+        // A config of a form runs as it came, with the options and programs it names, so only
+        // someone who may change connections of the kind tries one.
+        const requiredPermission = getManagePermissionForAdapter(adapterId);
         if (!requiredPermission) {
             return NextResponse.json({ success: false, message: "Unsupported adapter" }, { status: 400 });
         }
         checkPermissionWithContext(ctx, requiredPermission);
+        tenantOf(ctx);
+        if (namesSavedLogin(primaryCredentialId, sshCredentialId)) assertMayApplySavedLogin(ctx, adapterId);
+        // The secrets of the destination of the configuration backup never go to a host of the form.
+        const locked = await storedSecretsRefusal(ctx, configId) ?? await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
+        if (locked) return locked;
 
-        const adapter = registry.get(adapterId);
+        // Only someone who may change the saved connection gets its secrets filled in, and has the
+        // version the test finds kept with it.
+        const manages = canEditStoredConfig(ctx, adapterId);
+        const savedId = typeof configId === "string" && configId && manages ? configId : undefined;
 
-        if (!adapter) {
-            return NextResponse.json({ success: false, message: "Adapter not found" }, { status: 404 });
-        }
-
-        if (!adapter.test) {
-            return NextResponse.json({ success: false, message: "This adapter does not support connection testing." });
-        }
-
-        // Secrets living in the config itself are redacted on their way to the
-        // browser, so an edit of a saved source submits them missing. Fill them
-        // back in before testing, or the test runs against a config the saved
-        // source never had.
-        const submittedConfig = typeof configId === "string" && configId && canEditStoredConfig(ctx, adapterId)
-            ? await applyStoredSecrets(adapterId, configId, { ...config })
-            : { ...config };
-
-        // Overlay credential profiles onto the (plaintext) config so that the
-        // adapter receives a fully merged, ready-to-use config. Required when
-        // the user has assigned credential profiles instead of inline secrets.
-        const mergedConfig = await overlayCredentialsOnConfig(
+        const outcome = await testConnection({
             adapterId,
-            submittedConfig,
-            primaryCredentialId ?? null,
-            sshCredentialId ?? null
-        );
-
-        const TEST_TIMEOUT_MS = 10_000;
-
-        const result = await Promise.race([
-            runAdapterTest(adapter, mergedConfig).then((r) => r!),
-            new Promise<{ success: false; message: string }>((resolve) =>
-                setTimeout(
-                    () => resolve({ success: false, message: "Connection test timed out after 10s. Check the host and port settings." }),
-                    TEST_TIMEOUT_MS
-                )
-            ),
-        ]);
-
-        // If test successful and we have a configId (editing existing config), update metadata
-        if (result.success && result.version && configId) {
-            try {
-                const existingConfig = await prisma.adapterConfig.findUnique({
-                    where: { id: configId },
-                    select: { metadata: true }
-                });
-
-                const currentMeta = existingConfig?.metadata ? JSON.parse(existingConfig.metadata) : {};
-                const newMeta = {
-                    ...currentMeta,
-                    engineVersion: result.version,
-                    lastCheck: new Date().toISOString(),
-                    status: 'Online'
-                };
-
-                await prisma.adapterConfig.update({
-                    where: { id: configId },
-                    data: { metadata: JSON.stringify(newMeta) }
-                });
-            } catch (metaError: unknown) {
-                log.error("Failed to update metadata", { configId }, wrapError(metaError));
-                // Don't fail the entire request if metadata update fails
-            }
+            config: manages ? config : withoutBinaryPaths(config),
+            storedConfigId: savedId,
+            configId: savedId,
+            primaryCredentialId,
+            sshCredentialId,
+        });
+        if (!outcome.ok) {
+            return outcome.reason === "adapter-missing"
+                ? NextResponse.json({ success: false, message: "Adapter not found" }, { status: 404 })
+                : NextResponse.json({ success: false, message: "This adapter does not support connection testing." });
         }
 
-        return NextResponse.json(result);
+        // Written once the test ran, whether the server answered or not, naming the saved connection.
+        const testedId = typeof configId === "string" && configId ? configId : undefined;
+        const name = testedId ? await connectionName(testedId) : null;
+        await auditService.logFor(ctx, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.ADAPTER, {
+            action: "connection_test",
+            ...(name ? { name } : {}),
+            adapter: adapterId,
+            success: outcome.result.success === true,
+        }, name ? testedId : undefined);
+
+        return NextResponse.json(outcome.result);
 
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json({ success: false, message }, { status: 500 });
+        const refusal = requestRefusal(error);
+        if (refusal) return refusal;
+        log.error("Connection test failed", {}, wrapError(error));
+        return NextResponse.json({ success: false, message: "The connection could not be tested. The log of DBackup has the details." }, { status: 500 });
     }
 }

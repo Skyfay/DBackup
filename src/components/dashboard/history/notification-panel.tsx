@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, CircleCheck, CircleX, XCircle } from "lucide-react";
+import { ArrowUpRight, Building2, CircleCheck, CircleX, XCircle } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Banner } from "@/components/dashboard/storage/explorer/backup-details";
 import { ExecutionStatusBadge } from "@/components/dashboard/widgets/execution-status";
@@ -13,7 +13,7 @@ import { DateDisplay } from "@/components/utils/date-display";
 import type { RunRow } from "@/services/history/run-types";
 import { ChannelTile, EventChip, SentBadge } from "./notification-cells";
 import { NotificationPreview } from "./notification-preview";
-import type { NotificationLogRow } from "./notification-types";
+import { CHANNELS_HREF, type NotificationLogRow } from "./notification-types";
 import { RunTile } from "./run-cells";
 import { runHref } from "./run-links";
 
@@ -52,8 +52,23 @@ function useRunOf(entry: NotificationLogRow | null) {
     return { run, siblings: siblings.filter((sibling) => sibling.eventType === entry?.eventType) };
 }
 
+/** In All tenants: opens the channel of a message in its tenant, where it can be changed. */
+export interface ChannelInTenant {
+    label: string;
+    onSelect: () => void;
+}
+
+interface NotificationPanelProps {
+    entry: NotificationLogRow | null;
+    onClose: () => void;
+    /** The tenant of the message, beside its channel in All tenants. */
+    tenantName?: string | null;
+    /** Takes the place of Open channel in All tenants. */
+    channelInTenant?: ChannelInTenant | null;
+}
+
 /** One notification in the side panel: what went out, whether the channel took it and the run it was for. */
-export function NotificationPanel({ entry, onClose }: { entry: NotificationLogRow | null; onClose: () => void }) {
+export function NotificationPanel({ entry, onClose, tenantName = null, channelInTenant = null }: NotificationPanelProps) {
     const { run, siblings } = useRunOf(entry);
     return (
         <Sheet open={entry !== null} onOpenChange={(open) => !open && onClose()}>
@@ -65,7 +80,7 @@ export function NotificationPanel({ entry, onClose }: { entry: NotificationLogRo
                             <div className="min-w-0 space-y-1">
                                 <SheetTitle className="text-lg leading-tight">{entry.title}</SheetTitle>
                                 <SheetDescription className="truncate">
-                                    {entry.channelName} · <DateDisplay date={entry.sentAt} format="PPpp" />
+                                    {entry.channelName}{tenantName && ` · ${tenantName}`} · <DateDisplay date={entry.sentAt} format="PPpp" />
                                 </SheetDescription>
                                 <div className="flex flex-wrap gap-1.5 pt-1">
                                     <EventChip eventType={entry.eventType} />
@@ -79,9 +94,13 @@ export function NotificationPanel({ entry, onClose }: { entry: NotificationLogRo
                                     <Link href={runHref(entry.executionId)}><ArrowUpRight />Open run</Link>
                                 </Button>
                             )}
-                            <Button variant="outline" size="sm" asChild>
-                                <Link href="/dashboard/connections?tab=notifications"><ArrowUpRight />Open channel</Link>
-                            </Button>
+                            {channelInTenant ? (
+                                <Button variant="outline" size="sm" onClick={channelInTenant.onSelect}><Building2 />{channelInTenant.label}</Button>
+                            ) : (
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={CHANNELS_HREF}><ArrowUpRight />Open channel</Link>
+                                </Button>
+                            )}
                         </div>
                         {entry.status === "Failed" && (
                             <div className="px-5 pb-4">

@@ -3,7 +3,7 @@
 import { Tooltip, TooltipContent, TooltipHead, TooltipTrigger } from "@/components/ui/tooltip";
 import { stageLabel } from "@/lib/core/logs";
 import { cn } from "@/lib/utils";
-import type { BarGroup, BarKind, TimelineBar, TimeRange } from "./job-timeline-model";
+import { waitSentence, type BarGroup, type BarKind, type TimelineBar, type TimeRange } from "./job-timeline-model";
 import { aboutLength, type TimelineClock } from "./timeline-clock";
 
 /** A run that is over, filled in the color of its outcome. */
@@ -21,8 +21,7 @@ const LIKELY = "border-[1.5px] border-dashed border-destructive";
 export const percentOf = (time: number, range: TimeRange) => ((time - range.from) / (range.to - range.from)) * 100;
 
 function waitText(bar: TimelineBar, names: Map<string, string>): string {
-    const jobs = (bar.run?.waitsFor ?? bar.planned?.waitsFor ?? []).map((id) => names.get(id) ?? "another job");
-    return jobs.length > 0 ? `${jobs.join(", ")} ${jobs.length === 1 ? "holds" : "hold"} the queue` : "The queue is full";
+    return waitSentence(bar.run?.waitsFor ?? bar.planned?.waitsFor ?? [], names);
 }
 
 /** What a run tells on hover: its state first, tinted like every tooltip that tells one, then the facts. */

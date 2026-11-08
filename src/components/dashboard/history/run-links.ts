@@ -3,7 +3,7 @@
  * run can say where it leads and go there like the Back of the browser.
  */
 
-export type RunOrigin = "history" | "overview" | "jobs" | "backups" | "explorer" | "connections" | "settings" | "restore" | "setup" | "apikeys";
+export type RunOrigin = "history" | "overview" | "jobs" | "backups" | "explorer" | "connections" | "settings" | "restore" | "setup" | "apikeys" | "shared";
 
 const ORIGINS: Record<RunOrigin, { label: string; href: string }> = {
     history: { label: "History", href: "/dashboard/history" },
@@ -16,6 +16,8 @@ const ORIGINS: Record<RunOrigin, { label: string; href: string }> = {
     restore: { label: "Backups", href: "/dashboard/backups" },
     setup: { label: "Quick Setup", href: "/dashboard/setup" },
     apikeys: { label: "API keys", href: "/dashboard/users?tab=apikeys" },
+    // The backups of the shared databases, in the list of every backup.
+    shared: { label: "Backups", href: "/dashboard/backups?quick=shared" },
 };
 
 export function runHref(id: string, from: RunOrigin = "history"): string {

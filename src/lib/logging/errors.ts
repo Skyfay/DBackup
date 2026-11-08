@@ -214,12 +214,14 @@ export class PermissionError extends DBackupError {
 
   constructor(
     requiredPermission: string,
-    options?: { cause?: Error; context?: Record<string, unknown> }
+    /** `message` says why in words of its own, like that All tenants only reads, in place of the permission. */
+    options?: { cause?: Error; context?: Record<string, unknown>; message?: string }
   ) {
+    const { message, ...rest } = options ?? {};
     super(
-      `Permission denied: ${requiredPermission} required`,
+      message ?? `Permission denied: ${requiredPermission} required`,
       "PERMISSION_DENIED",
-      { ...options, context: { ...options?.context, requiredPermission } }
+      { ...rest, context: { ...rest.context, requiredPermission } }
     );
     this.requiredPermission = requiredPermission;
   }
@@ -391,6 +393,23 @@ export class ApiKeyError extends DBackupError {
       context: { ...options?.context, reason },
     });
     this.reason = reason;
+  }
+}
+
+// ============================================================================
+// Tenant Errors
+// ============================================================================
+
+/**
+ * Thrown when tenant data is read or written without a tenant, or across one. It stands for a
+ * bug, never for something the user did, since handing out every row instead would be a leak.
+ */
+export class TenantScopeError extends DBackupError {
+  public readonly model: string;
+
+  constructor(model: string, message = `${model} was queried outside a tenant`) {
+    super(message, "TENANT_SCOPE_ERROR", { isOperational: false, context: { model } });
+    this.model = model;
   }
 }
 

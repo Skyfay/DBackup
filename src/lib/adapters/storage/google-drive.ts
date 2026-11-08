@@ -1,15 +1,18 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, StorageReadOptions } from "@/lib/core/interfaces";
 import { GoogleDriveSchema } from "@/lib/adapters/definitions";
 import { google, drive_v3 } from "googleapis";
 import { Readable, Transform } from "stream";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { pipeline } from "stream/promises";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, createPageGuard, type ListingGuard } from "@/lib/adapters/storage/common/listing-limits";
 
 const log = logger.child({ adapter: "google-drive" });
 
@@ -35,6 +38,17 @@ export function isDriveFolderId(value: string): boolean {
  * Creates an authenticated Google Drive client using OAuth2 refresh token.
  * Throws if no refresh token is available (user must authorize first).
  */
+/**
+ * The account a client works for, from the app and the grant of its connection. The in-flight
+ * folder lookups below are kept per account, so two connections of different tenants that write
+ * into a folder of the same name at the same moment never share one.
+ */
+const clientAccounts = new WeakMap<object, string>();
+
+function accountKey(config: { clientId?: string; refreshToken?: string }): string {
+    return createHash("sha256").update(`${config.clientId ?? ""}\n${config.refreshToken ?? ""}`).digest("hex").slice(0, 16);
+}
+
 function createDriveClient(config: GoogleDriveConfig): drive_v3.Drive {
     if (!config.refreshToken) {
         throw new Error("Google Drive is not authorized. Please click 'Authorize with Google' to connect your account.");
@@ -49,7 +63,9 @@ function createDriveClient(config: GoogleDriveConfig): drive_v3.Drive {
         refresh_token: config.refreshToken,
     });
 
-    return google.drive({ version: "v3", auth: oauth2Client });
+    const drive = google.drive({ version: "v3", auth: oauth2Client });
+    clientAccounts.set(drive, accountKey(config));
+    return drive;
 }
 
 /**
@@ -72,29 +88,41 @@ function createDriveClient(config: GoogleDriveConfig): drive_v3.Drive {
  */
 const folderResolutions = new Map<string, Promise<string>>();
 
+/**
+ * The id of the folder called `segment` under a parent, or null when there is none. Looks up
+ * only and creates nothing.
+ */
+async function findFolder(
+    drive: drive_v3.Drive,
+    parentId: string,
+    segment: string
+): Promise<string | null> {
+    // Escape \ before ' to prevent query injection
+    const query = `name='${segment.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const res = await drive.files.list({
+        q: query,
+        fields: "files(id, name)",
+        spaces: "drive",
+    });
+
+    // Several matches mean duplicates already exist, from an earlier run or made by hand.
+    // Always taking the first keeps a restore landing in one place.
+    const first = res.data.files?.[0];
+    return first ? first.id! : null;
+}
+
 async function resolveSegment(
     drive: drive_v3.Drive,
     parentId: string,
     segment: string
 ): Promise<string> {
-    const key = `${parentId}/${segment}`;
+    const key = `${clientAccounts.get(drive) ?? ""}:${parentId}/${segment}`;
     const inFlight = folderResolutions.get(key);
     if (inFlight) return inFlight;
 
     const resolution = (async () => {
-        // Search for existing folder (escape \ before ' to prevent query injection)
-        const query = `name='${segment.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        const res = await drive.files.list({
-            q: query,
-            fields: "files(id, name)",
-            spaces: "drive",
-        });
-
-        if (res.data.files && res.data.files.length > 0) {
-            // Several matches mean duplicates already exist, from an earlier run or made by
-            // hand. Always taking the first keeps a restore landing in one place.
-            return res.data.files[0].id!;
-        }
+        const existing = await findFolder(drive, parentId, segment);
+        if (existing) return existing;
 
         const folder = await drive.files.create({
             requestBody: {
@@ -137,6 +165,25 @@ async function resolveOrCreatePath(
 }
 
 /**
+ * Resolves a folder path like "tenants/abc" below a base folder into the id of its last folder,
+ * or null when any folder on the way is not there. Unlike `resolveOrCreatePath` it creates
+ * nothing, so looking at a folder nobody wrote to leaves the drive as it was.
+ */
+async function findFolderPath(
+    drive: drive_v3.Drive,
+    baseFolderId: string,
+    folderPath: string
+): Promise<string | null> {
+    let currentParent = baseFolderId;
+    for (const segment of folderPath.split("/").filter(Boolean)) {
+        const next = await findFolder(drive, currentParent, segment);
+        if (!next) return null;
+        currentParent = next;
+    }
+    return currentParent;
+}
+
+/**
  * Finds a file by name in a specific folder.
  */
 async function findFile(
@@ -154,16 +201,30 @@ async function findFile(
     return res.data.files?.[0] || null;
 }
 
+/** What one walk of a Drive shares between its folders: the count of its entries and the folders it read. */
+interface DriveWalk {
+    guard: ListingGuard;
+    visited: Set<string>;
+}
+
 /**
  * Lists all files recursively under a folder.
  * Returns flat list with relative paths.
+ *
+ * Every entry, a folder too, passes the guard of the walk as it arrives, and a folder is read once
+ * however often it is listed, since a Drive folder can have several parents and a folder may be
+ * listed below itself. A listing of pages without end stops too, see `listing-limits.ts`.
  */
 async function listFilesRecursive(
     drive: drive_v3.Drive,
     folderId: string,
-    prefix: string = ""
+    prefix: string = "",
+    walk: DriveWalk = { guard: createListingGuard(), visited: new Set<string>() }
 ): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
+    if (walk.visited.has(folderId)) return files;
+    walk.visited.add(folderId);
+    const pages = createPageGuard();
     let pageToken: string | undefined;
 
     do {
@@ -177,10 +238,11 @@ async function listFilesRecursive(
 
         for (const file of res.data.files || []) {
             const relativePath = prefix ? `${prefix}/${file.name}` : file.name!;
+            walk.guard.add(relativePath);
 
             if (file.mimeType === "application/vnd.google-apps.folder") {
                 // Recurse into subfolder
-                const subFiles = await listFilesRecursive(drive, file.id!, relativePath);
+                const subFiles = await listFilesRecursive(drive, file.id!, relativePath, walk);
                 files.push(...subFiles);
             } else {
                 files.push({
@@ -193,9 +255,42 @@ async function listFilesRecursive(
         }
 
         pageToken = res.data.nextPageToken || undefined;
+        pages.next(pageToken, res.data.files?.length ?? 0);
     } while (pageToken);
 
     return files;
+}
+
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. The size Drive lists is
+ * checked first and the stream is cut at the limit, whatever the size said. Null when the file is
+ * not there.
+ */
+async function readCappedBytes(config: GoogleDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    try {
+        const drive = createDriveClient(config);
+        const fileName = path.basename(remotePath);
+        const dirPath = path.posix.dirname(remotePath);
+
+        // Resolve folder path
+        const folderId = dirPath === "."
+            ? (config.folderId || "root")
+            : await resolveOrCreatePath(drive, config.folderId, dirPath + "/dummy");
+
+        const file = await findFile(drive, folderId, fileName);
+        if (!file) return null;
+        assertReadSize(file.size === undefined || file.size === null ? undefined : Number(file.size), limit);
+
+        const res = await drive.files.get(
+            { fileId: file.id!, alt: "media" },
+            { responseType: "stream" }
+        );
+        return await collectCapped(res.data as unknown as Readable, limit);
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        return null;
+    }
 }
 
 export const GoogleDriveAdapter: StorageAdapter = {
@@ -355,39 +450,23 @@ export const GoogleDriveAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: GoogleDriveConfig, remotePath: string): Promise<string | null> {
-        try {
-            const drive = createDriveClient(config);
-            const fileName = path.basename(remotePath);
-            const dirPath = path.posix.dirname(remotePath);
-
-            // Resolve folder path
-            const folderId = dirPath === "."
-                ? (config.folderId || "root")
-                : await resolveOrCreatePath(drive, config.folderId, dirPath + "/dummy");
-
-            const file = await findFile(drive, folderId, fileName);
-            if (!file) return null;
-
-            const res = await drive.files.get(
-                { fileId: file.id!, alt: "media" },
-                { responseType: "text" }
-            );
-
-            return res.data as string;
-        } catch {
-            return null;
-        }
+    async read(config: GoogleDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async list(config: GoogleDriveConfig, dir: string = ""): Promise<FileInfo[]> {
         try {
             const drive = createDriveClient(config);
             let rootFolderId = config.folderId || "root";
 
-            // Navigate to subdir if specified
+            // Navigate to subdir if specified. Only looked up, never created: a subfolder nothing
+            // was written to yet is not there and lists as empty, like on the other destinations.
             if (dir && dir !== ".") {
-                rootFolderId = await resolveOrCreatePath(drive, rootFolderId, dir + "/dummy");
+                const folderId = await findFolderPath(drive, rootFolderId, dir);
+                if (!folderId) return [];
+                rootFolderId = folderId;
             }
 
             return await listFilesRecursive(drive, rootFolderId, dir || "");

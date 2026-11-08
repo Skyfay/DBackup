@@ -74,6 +74,45 @@ The returned partition has to cover the given paths exactly once. A dropped path
 directory missing from a backup that would otherwise report success, so the runner refuses
 it before anything is collected.
 
+## Names a source lists
+
+The server of a directory source may belong to a customer and answer a listing with anything,
+like `../../data/dbackup.db` or a name with a NUL in it. A name is a file of the collection
+folder only once `collectedPathProblem` in `src/lib/archive/collected-paths.ts` finds nothing
+wrong with it. The generic collection, Rsync and Docker volumes refuse every other name before
+they fetch, link or carry anything under it (`refuseListedNames`, `resolveCollectedPath`), and
+report it as a failure, which makes the run *Partial*. A new `downloadDirectory` does the same.
+
+The runner does not take that on trust. `checkCollectedEntries` in
+`src/lib/runner/steps/collected-entries.ts` checks every name again for every adapter, and the
+hash of the collection and the archive writer read a file only through `openCollectedFile` in
+`src/lib/archive/collected-file.ts`: a regular file whose real path lies inside the collection
+folder, opened without following a link. A link of the source stays an entry with its
+`linkTarget` and is never read.
+
+A listing is kept in memory until the collection is done, so it is bounded too, by
+`src/lib/adapters/storage/common/listing-limits.ts`: at most 10 million entries (the line limit of
+an index a restore reads back), no path or link target longer than 32 KB, and at most 2 GB of paths
+and link targets together (`LISTING_MAX_TOTAL_BYTES`, the most inflated index a restore reads). The walkers of SFTP,
+FTP, S3, Rsync, Docker volumes, WebDAV, SMB, Google Drive, OneDrive and Dropbox count with
+`createListingGuard` as they go, every folder included, and stop the walk at the limit, and
+`listTreeForCollection` checks the result of every adapter the same way, so a new `listTree` or
+`list` that serves a collection is held to it either way. A walker never goes back up: it goes down
+only into a folder whose name `descendableName` takes (no `/`, not of dots alone), WebDAV only into
+a folder strictly below the one it lists and never into one it read before, Google Drive never into
+a folder id twice, and a paged listing ends at a page token handed out twice or after a run of
+empty pages (`createPageGuard`), and refuses a token longer than 16 KB or tokens past 64 MB in all.
+An entry counts before a walker drops it, so S3 passes a folder marker to the guard too, and a server
+that answers pages of markers alone stops at the limit. The answer of a server for one folder is
+bounded where the walker reads it whole: a WebDAV `PROPFIND` at 256 MB (`listDavFolder` in
+`webdav-listing.ts`, which reads it in place of `getDirectoryContents`), an FTP `LIST` at 40 MB
+(`FTP_MAX_LISTING_BYTES`, passed to basic-ftp), one S3 `ListObjectsV2` page of 1000 keys at 16 MB
+(`sendListPage` in `s3-listing.ts`, a middleware that reads the answer before the SDK does), and every
+other answer of an S3 server the SDK reads itself at 1 MB, see "The answers of an S3 server" below. Past a limit the source
+fails with a message that names the limit. The size of a collected file is the one its hash read
+(`hashCollectedFile`), never the size the listing reported, see "Small-file bundling" in the
+archive format.
+
 ## Keeping a library at arm's length
 
 `storage/docker/` is worth reading as a pattern for an adapter built on a client library.
@@ -111,6 +150,11 @@ interface StorageAdapter {
 
   list(config: unknown, path: string): Promise<FileInfo[]>;
   delete(config: unknown, path: string): Promise<boolean>;
+
+  // Optional: removes a folder only while it is empty, never the folder the destination is set to.
+  // The cleanup of a customer's backups on a shared destination removes the folders they leave.
+  // Implemented by: Local Filesystem, SFTP, FTP
+  deleteEmptyFolder?(config: unknown, path: string): Promise<boolean>;
 
   // Connection tests
   test?(config: unknown): Promise<TestResult>;  // Full write/delete test (~15 s timeout)
@@ -445,19 +489,37 @@ const SFTPAdapter: StorageAdapter = {
 
 ## The `read()` Method
 
-The optional `read()` method is crucial for the Backups page. It allows reading small text files (like `.meta.json`) without downloading to disk:
+The optional `read()` method is crucial for the Backups page. It allows reading small text files (like `.meta.json`) without downloading to disk, and `readBytes()` does the same for content that is not text, like the sealed index sidecar:
 
 ```typescript
-async read(config, path) {
-  // Returns file content as string
+async read(config, path, options) {
+  // Returns file content as string, null when the file is not there
   return "{ \"jobName\": \"daily-backup\", ... }";
 }
 ```
 
-If not implemented, the system falls back to:
+Both take at most `options.maxBytes`, `SIDECAR_READ_LIMIT` (8 MB) when left out, and fail with `FileTooLargeError` from `common/read-limit.ts` past it. The server of a destination may belong to a customer, so a read stops the transfer at the first byte past the limit rather than at the end of the file: `collectCapped` for a stream, `cappedSink` for a client that writes into one, a size the server announces checked first with `assertReadSize`. A read that fails otherwise answers null. The listing of a destination reads its sidecars a few at a time and leaves one past the limit out with a log line, and the index sidecar is read with `readBytes()` up to `INDEX_MAX_STORED_BYTES`.
+
+A sidecar is read through `readSidecarText` in `common/read-sidecar.ts`. Only an adapter without `read()` falls back to:
 1. Download to temp file
-2. Read temp file
+2. Read temp file, refused past the same limit
 3. Delete temp file
+
+A `read()` that answers null means the file is not there, so it is never tried again as a download, which no limit would bound.
+
+### The answers of an S3 server
+
+The AWS SDK reads the whole body of an answer into memory before it hands anything back: of every error, any status of 300 or more, and of an answer without payload, like that of PutObject, DeleteObject or HeadObject, which it reads only to discard it. The server of an S3 destination may belong to a customer, so `S3ClientFactory.create` adds `limitResponseBodies` from `s3-response-limit.ts` to every client, for every command it sends, those of `@aws-sdk/lib-storage` for a multipart upload included. It reads such a body up to `S3_MAX_RESPONSE_BYTES` (1 MB) before the SDK does, a page of ListObjectsV2 up to `S3_MAX_LISTING_PAGE_BYTES` (16 MB), and fails the request with `S3ResponseTooLargeError` past it, which the SDK does not try again. A successful GetObject is the one answer it leaves alone, since its stream goes to the caller, which bounds it like any other read. The middleware sits in the step `deserialize` at the priority `low`, inside the deserializer and the S3 check of an error inside a 200, so the transfer stops at the first chunk past the bound. Code that talks to S3 gets its client from the factory, and a test of such a bound runs the real `S3Client` with a request handler of its own, like `s3-response-size.test.ts`.
+
+## What a download leaves on the disk
+
+`registerAdapters()` registers every storage adapter through `withCheckedDownloads` in `common/downloaded-file.ts`, so a `download()` into a local path, of the adapter or of one of its sessions, counts only once a regular file lies there, looked at with `lstat`. A link, a folder, a device or nothing at all is removed, a link as the link and never its target, and the download fails with a `DownloadedFileError`, which a directory collection reports as one file it left out. The server of a connection may belong to a customer, and a transfer that recreates what it holds, like rsync with `-a`, would otherwise lay a link to a file of the DBackup server into the temp file that every reader opens next. The readers of a downloaded file open it without following a link as well (`READ_NO_FOLLOW` and `createNoFollowReadStream` in `src/lib/server/no-follow.ts`): the byte source of an archive, the checksums, the download to the browser and through a download link, a downloaded sidecar or index sidecar, the probes of Smart Recovery and of the key recovery, and the decryption and decompression of an older backup. A new adapter needs nothing for this, a new reader of a downloaded file opens it the same way.
+
+An adapter that needs a local file itself, like the test file of `test()` or a file `read()` downloads with a command line tool, writes it into a folder of `withPrivateTempDir` from `src/lib/private-temp-dir.ts`, a new folder under a random name that nobody else can open and that is removed afterwards, never under a name it makes up in the shared temporary folder, where a link someone planted under a name that can be guessed would take the write. One that can do without a file uploads or reads from memory, like FTP.
+
+## A switch added to a saved connection
+
+A new boolean setting whose missing value in a stored config must keep the behaviour from before, while a new connection should get a safer value, goes into `LATER_SWITCHES` of `src/lib/adapters/later-switches.ts`, like `trustServerCertificate` of FTP. `createAdapter` then stores the value of today for a new connection that leaves it out, and the form of a saved connection without it shows what the adapter does with it, so saving an unrelated change never turns it over.
 
 ## Streaming Support
 
@@ -543,7 +605,7 @@ export const WebDAVAdapter: StorageAdapter = {
 ```
 
 ::: tip read() method
-The `read()` method is used by the Backups page to read `.meta.json` sidecar files. If not implemented, the system falls back to download → read → delete, which is slower.
+The `read()` method is used by the Backups page to read `.meta.json` sidecar files, and has to stop at `options.maxBytes`, see [The `read()` Method](#the-read-method). If not implemented, the system falls back to download → read → delete, which is slower.
 :::
 
 ::: tip test() method
@@ -631,21 +693,18 @@ case "webdav":
 
 Return a plain string. The table styles it, and `null` shows a dash.
 
-#### 8. RBAC: Permission regex (`src/app/api/adapters/`)
+#### 8. RBAC: Permission map (`src/lib/auth/adapter-permissions.ts`)
 
-Two API routes use regex to map adapter IDs to permission groups. Add your adapter ID to the storage regex in **both** files:
-
-- `src/app/api/adapters/test-connection/route.ts`
-- `src/app/api/adapters/access-check/route.ts`
+Every route that tries or reads a connection by its adapter ID looks up the permission in `ADAPTER_PERMISSIONS`. Add your adapter ID there with the permission to see destinations:
 
 ```typescript
-} else if (/local-filesystem|s3|sftp|smb|webdav|ftp|rsync/i.test(adapterId)) {
-    return PERMISSIONS.DESTINATIONS.READ;
-}
+"your-adapter": PERMISSIONS.DESTINATIONS.READ,
 ```
 
+`getManagePermissionForAdapter` derives the permission to change it from that entry, which Test connection and the access check need.
+
 ::: warning
-If your adapter ID is missing from this regex, the test-connection endpoint will skip RBAC permission checks for your adapter. Health checks may also behave unexpectedly.
+An adapter missing from the map gets no permission, so Test connection answers `Unsupported adapter` for it.
 :::
 
 #### 9. Dockerfile (if CLI tools needed)
@@ -678,12 +737,11 @@ brew install your-package
 | 5 | `src/components/adapter/form-constants.ts` | `STORAGE_CONNECTION_KEYS`, `STORAGE_CONFIG_KEYS`, `STORAGE_LOCATION_KEYS`, `PLACEHOLDERS` |
 | 6 | `src/components/adapter/utils.ts` | `ADAPTER_ICON_MAP` + optional `ADAPTER_COLOR_MAP` ([Icon System](/developer-guide/core/icons)) |
 | 7 | `src/lib/adapters/connection-summary.ts` | `connectionAddress()` case for the Location column |
-| 8 | `src/app/api/adapters/test-connection/route.ts` | Add ID to storage permission regex |
-| 9 | `src/app/api/adapters/access-check/route.ts` | Add ID to storage permission regex |
-| 10 | `Dockerfile` | System CLI tools (if needed) |
-| 11 | `scripts/setup-dev-macos.sh` | Local dev CLI setup (if needed) |
-| 12 | `docs/` | User guide + developer guide |
-| 13 | `changelog/unreleased/<branch>.md` | Changelog entry, which the release moves into `docs/changelog.md` |
+| 8 | `src/lib/auth/adapter-permissions.ts` | Add ID to `ADAPTER_PERMISSIONS` |
+| 9 | `Dockerfile` | System CLI tools (if needed) |
+| 10 | `scripts/setup-dev-macos.sh` | Local dev CLI setup (if needed) |
+| 11 | `docs/` | User guide + developer guide |
+| 12 | `changelog/unreleased/<branch>.md` | Changelog entry, which the release moves into `docs/changelog.md` |
 
 ### OAuth-Specific Additional Steps
 
@@ -691,8 +749,8 @@ If the new adapter requires browser-based OAuth (e.g., Google Drive, Dropbox, On
 
 | # | File | What to do |
 | :--- | :--- | :--- |
-| 13 | `src/app/api/adapters/<name>/auth/route.ts` | OAuth authorization URL generation endpoint |
-| 14 | `src/app/api/adapters/<name>/callback/route.ts` | OAuth callback - exchange code for tokens, store refresh token encrypted |
+| 13 | `src/app/api/adapters/<name>/auth/route.ts` | OAuth authorization URL generation endpoint. Its `state` is `createOAuthState({ provider, userId, tenantId, credentialId })` from `src/lib/auth/oauth-state.ts`, a random nonce bound to the person, the tenant and the saved login, never the id of the login itself |
+| 14 | `src/app/api/adapters/<name>/callback/route.ts` | OAuth callback - exchange code for tokens, store refresh token encrypted. `oauthCallbackCaller(provider, state)` from `src/lib/server/oauth-callback.ts` takes the `state` once, within 15 minutes and only for the same person signed in to the same tenant with `credentials:write`, and returns the saved login it was made for. `saveRefreshToken` keeps the token and writes the audit entry |
 | 15 | `src/components/adapter/oauth-authorization.tsx` | An entry in `PROVIDERS` with the drive's name, whose sign-in page opens and the segment of its routes. An adapter whose primary credential is `OAUTH` gets the authorization box and the Location folder field on its own. |
 | 16 | `src/components/adapter/cloud-folder-field.tsx` | An entry in `DRIVES` with the provider's name and the body key of its browse route, if it has one. The field opens the shared `FolderPickerDialog` with it. |
 | 17 | `src/lib/crypto.ts` | Add OAuth secret fields to `SENSITIVE_KEYS` (e.g., `clientSecret`, `refreshToken`) |

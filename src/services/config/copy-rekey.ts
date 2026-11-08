@@ -98,8 +98,10 @@ async function rekeySecondFactors(copy: PrismaClient, from: string, to: string):
     let rekeyed = 0;
     for (const factor of await copy.twoFactor.findMany({ select: { id: true, secret: true, backupCodes: true } })) {
         try {
+            // Selects only the id, since a copy of an older version may lack a column this client knows.
             await copy.twoFactor.update({
                 where: { id: factor.id },
+                select: { id: true },
                 data: {
                     secret: await symmetricEncrypt({ key: to, data: await symmetricDecrypt({ key: from, data: factor.secret }) }),
                     backupCodes: await symmetricEncrypt({ key: to, data: await symmetricDecrypt({ key: from, data: factor.backupCodes }) }),

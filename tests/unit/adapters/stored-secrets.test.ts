@@ -16,8 +16,11 @@ vi.mock("@/services/auth/credential-service", () => ({
 import { applyStoredSecrets } from "@/lib/adapters/config-resolver";
 import { canEditStoredConfig } from "@/lib/auth/adapter-config-access";
 import { encryptConfig } from "@/lib/crypto";
+import { ValidationError } from "@/lib/logging/errors";
+import { LOGIN_FOR_NEW_ADDRESS, SECRETS_FOR_NEW_ADDRESS } from "@/lib/adapters/stored-secrets";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { AuthContext } from "@/lib/auth/access-control";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 /**
  * A form round trip never carries a config secret back, because the adapter DTO
@@ -53,12 +56,44 @@ describe("applyStoredSecrets", () => {
         expect(merged.password).toBe("new");
     });
 
-    it("leaves structural fields entirely to the caller", async () => {
+    it("leaves structural fields to the caller while the address stays", async () => {
+        mockFindUnique.mockResolvedValue(storedRow("mysql", { host: "db.local", port: 3306, user: "root", password: "pw", database: "app" }));
+
+        const merged = await applyStoredSecrets("mysql", "ac-1", { host: "db.local", port: 3306, user: "backup", database: "shop" });
+
+        expect(merged).toMatchObject({ host: "db.local", port: 3306, user: "backup", database: "shop", password: "pw" });
+    });
+
+    it("never sends the stored password to a host the form points at instead", async () => {
         mockFindUnique.mockResolvedValue(storedRow("mysql", { host: "db.local", port: 3306, password: "pw" }));
 
-        const merged = await applyStoredSecrets("mysql", "ac-1", { host: "other.local", port: 3307 });
+        const merged = applyStoredSecrets("mysql", "ac-1", { host: "attacker.example.com", port: 3306 });
 
-        expect(merged).toMatchObject({ host: "other.local", port: 3307, password: "pw" });
+        await expect(merged).rejects.toBeInstanceOf(ValidationError);
+        await expect(merged).rejects.toThrow(LOGIN_FOR_NEW_ADDRESS);
+    });
+
+    it("never sends a stored connection string to another host either, which the caller has to type again", async () => {
+        mockFindUnique.mockResolvedValue(storedRow("mongodb", { host: "db.local", port: 27017, uri: "mongodb://u:pw@db.local:27017/app" }));
+
+        await expect(applyStoredSecrets("mongodb", "ac-1", { host: "attacker.example.com", port: 27017 }, { primaryCredentialId: "login-1" }))
+            .rejects.toThrow(SECRETS_FOR_NEW_ADDRESS);
+    });
+
+    it("leaves the stored password behind for a new host a saved login signs in to", async () => {
+        mockFindUnique.mockResolvedValue(storedRow("mysql", { host: "db.local", port: 3306, password: "pw" }));
+
+        const merged = await applyStoredSecrets("mysql", "ac-1", { host: "db2.local", port: 3306 }, { primaryCredentialId: "login-1" });
+
+        expect(merged).toEqual({ host: "db2.local", port: 3306 });
+    });
+
+    it("takes a new address with the secret typed for it", async () => {
+        mockFindUnique.mockResolvedValue(storedRow("mysql", { host: "db.local", port: 3306, password: "pw" }));
+
+        const merged = await applyStoredSecrets("mysql", "ac-1", { host: "db2.local", port: 3307, password: "new" });
+
+        expect(merged).toEqual({ host: "db2.local", port: 3307, password: "new" });
     });
 
     it("ignores a stored config belonging to a different adapter", async () => {
@@ -83,8 +118,8 @@ describe("applyStoredSecrets", () => {
 });
 
 describe("canEditStoredConfig", () => {
-    function ctx(permissions: string[], isSuperAdmin = false): AuthContext {
-        return { permissions, isSuperAdmin } as AuthContext;
+    function ctx(permissions: string[], isPlatformAdmin = false): AuthContext {
+        return { userId: "user-1", permissions, isPlatformAdmin, authMethod: "session", tenantId: HOME_TENANT_ID, allTenants: false };
     }
 
     it("allows a caller who may write sources", () => {
@@ -104,7 +139,7 @@ describe("canEditStoredConfig", () => {
         expect(canEditStoredConfig(ctx([PERMISSIONS.NOTIFICATIONS.WRITE]), "telegram")).toBe(true);
     });
 
-    it("allows a SuperAdmin", () => {
+    it("allows a platform admin", () => {
         expect(canEditStoredConfig(ctx([], true), "mongodb")).toBe(true);
     });
 

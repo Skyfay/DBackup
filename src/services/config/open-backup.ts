@@ -34,6 +34,18 @@ function storedAs(fileName: string, meta: Record<string, unknown> | null): Store
     };
 }
 
+/** What someone reads who picks a configuration backup at a destination that is not encrypted. */
+export const UNENCRYPTED_AT_DESTINATION = "A configuration backup at a destination is restored only when it is encrypted, as DBackup always writes it. Anyone who may restore files into that destination could have put a plain one there. Download it and upload it here to restore it anyway.";
+
+/**
+ * Whether a configuration backup is stored encrypted, by its name or its `.meta.json`. An encrypted
+ * one opens only with a key of the Vault or one typed in, whose AES-GCM tag proves the file was made
+ * with it, so nobody without that key can put one at a destination that a restore takes.
+ */
+export function isStoredEncrypted(fileName: string, meta: Record<string, unknown> | null): boolean {
+    return storedAs(fileName, meta).encrypted;
+}
+
 /**
  * Decrypts and unpacks a configuration backup into a temp file of its own, which the caller
  * removes. The key is the one given, the one its metadata names or one of the Vault. A missing

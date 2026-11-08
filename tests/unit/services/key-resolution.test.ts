@@ -72,6 +72,19 @@ describe("resolveBackupKey", () => {
         expect(getProfileMasterKey).toHaveBeenCalledExactlyOnceWith("chosen-by-user");
     });
 
+    it("asks for a key again when the picked profile is not in the Vault", async () => {
+        getProfileMasterKey.mockRejectedValue(new Error("Encryption profile not found: chosen-by-user"));
+
+        const error = await resolveBackupKey({
+            profileId: "named-in-metadata",
+            override: { profileId: "chosen-by-user" },
+            verify: acceptsRightKey,
+        }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(EncryptionKeyRequiredError);
+        expect((error as EncryptionKeyRequiredError).profileId).toBe("named-in-metadata");
+    });
+
     it("trusts the profile the backup names without verifying it", async () => {
         getProfileMasterKey.mockResolvedValue(WRONG_KEY);
         const verify = vi.fn(acceptsRightKey);

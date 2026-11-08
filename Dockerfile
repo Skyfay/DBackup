@@ -34,8 +34,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Step 2: Configure external APT repositories
 RUN \
-    # PGDG: PostgreSQL 18 client
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg && \
+    # PGDG: PostgreSQL 18 client. The key goes to a file first, so a retried download never hands gpg
+    # half a key followed by a whole one. Every download retries, a mirror drops a stream now and then.
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.asc && \
+    gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg /tmp/pgdg.asc && \
+    rm /tmp/pgdg.asc && \
     echo "deb [signed-by=/etc/apt/trusted.gpg.d/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 
 # Step 3: Install backup tools
@@ -64,7 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         arm64) MONGO_DEB="mongodb-database-tools-ubuntu2204-arm64-100.16.1.deb" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac && \
-    curl -fsSL "https://fastdl.mongodb.org/tools/db/${MONGO_DEB}" -o /tmp/mongo-tools.deb && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "https://fastdl.mongodb.org/tools/db/${MONGO_DEB}" -o /tmp/mongo-tools.deb && \
     apt-get install -y --no-install-recommends /tmp/mongo-tools.deb && \
     rm /tmp/mongo-tools.deb && \
     rm -rf /var/lib/apt/lists/*
@@ -97,7 +100,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         arm64) FB_ARCH="arm64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac && \
-    curl -fsSL "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_RELEASE_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_RELEASE_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
     mkdir -p /tmp/firebird-extract && \
     tar -xzf /tmp/firebird.tar.gz -C /tmp/firebird-extract --strip-components=1 && \
     tar -xzf /tmp/firebird-extract/buildroot.tar.gz -C /tmp/firebird-extract && \
@@ -122,7 +125,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # and the apphost shim from a --tool-path install is not on PATH here.
 RUN apt-get update && apt-get install -y --no-install-recommends libicu72 && \
     rm -rf /var/lib/apt/lists/* && \
-    curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && \
     bash /tmp/dotnet-install.sh --channel 10.0 --runtime dotnet --install-dir /usr/share/dotnet --no-path && \
     rm /tmp/dotnet-install.sh
 
@@ -158,7 +161,7 @@ COPY . .
 
 # Environment variables for build
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV NODE_OPTIONS="--max-old-space-size=6144"
 
 # Generate Prisma Client, build Next.js app, and compile custom server
 # --mount=type=cache persists the Next.js incremental build cache (.next/cache)
@@ -179,6 +182,10 @@ COPY --from=builder --link --chown=1001:1001 /app/scripts/dbackup-recover.js ./s
 
 # Swaps in a configuration restore before the migrations run, called by docker-entrypoint.sh.
 COPY --from=builder --link --chown=1001:1001 /app/scripts/apply-pending-restore.js ./scripts/apply-pending-restore.js
+# Keeps a copy of the database before the migrations change it, called by docker-entrypoint.sh.
+COPY --from=builder --link --chown=1001:1001 /app/scripts/backup-before-migrate.js ./scripts/backup-before-migrate.js
+# Refuses a missing or bad ENCRYPTION_KEY before the migrations run, called by docker-entrypoint.sh.
+COPY --from=builder --link --chown=1001:1001 /app/scripts/check-encryption-key.sh ./scripts/check-encryption-key.sh
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -225,6 +232,7 @@ RUN test -n "$(find /pnpm -type f -name 'schema-engine-*' | head -1)" || \
 
 # Copy compiled custom HTTPS server (replaces default Next.js server entry point)
 COPY --from=builder --link --chown=1001:1001 /app/custom-server.js ./custom-server.js
+COPY --from=builder --link --chown=1001:1001 /app/server/client-address.js ./server/client-address.js
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/

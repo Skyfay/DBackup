@@ -1,5 +1,7 @@
 import type { TriggerInfo } from "@/lib/runner";
+import type { KeyOverride } from "@/services/backup/key-resolution";
 import type { DatabaseMappingEntry } from "./database-mapping";
+import type { RestoreCaller } from "./restore-targets";
 
 /** Selects a directory entry (from a seekable v2 archive) to restore, and where to. */
 export interface DirectoryRestoreMapping {
@@ -27,9 +29,30 @@ export interface DirectoryRestoreMapping {
  */
 export type RestoreScope = 'all' | 'databases' | 'files';
 
+/** A customer's restore of a database of a shared server, see `RestoreInput.shared`. */
+export interface SharedRestore {
+    databaseName: string;
+    /**
+     * The tenant of the server, which gets a run of the same restore in its own History with the
+     * whole log, and the names of both tenants. Left out, only the customer's run is written.
+     */
+    provider?: { tenantId: string; name: string; customer: string };
+    /**
+     * The tenant whose view of the destination the path of the copy is in, the tenant of the server.
+     * A copy on a destination another tenant provides to it lies in that tenant's folder there.
+     */
+    copyTenantId?: string;
+}
+
 export interface RestoreInput {
     storageConfigId: string;
     file: string;
+    /**
+     * A restore a customer started of a database of a shared server. Its run lands in the
+     * customer's History, so it names that database alone: never the archive, its path, the
+     * destination or the other databases of the server. Only an archive with an index is read.
+     */
+    shared?: SharedRestore;
     /** Defaults to 'all', which is what every request written before scopes existed means. */
     scope?: RestoreScope;
     /** Optional - a directory-only archive has no database target. Required whenever the
@@ -57,8 +80,27 @@ export interface RestoreInput {
     };
     /**
      * Vault profile to open the backup with, when the one its metadata names does not fit
-     * and the user picked another. Absent for the ordinary case.
+     * and the user picked another. Absent for the ordinary case. A restore of a shared
+     * database hands over the key it found among the keys of the server's tenant, so the
+     * restore searches no other tenant's.
      */
-    keyOverride?: { profileId?: string };
+    keyOverride?: KeyOverride;
     triggerInfo?: TriggerInfo;
+    /**
+     * The tenant of a shared server confirmed that the restore overwrites databases its customers
+     * hold now. Without it such a restore is refused, see `customer-databases.ts`.
+     */
+    overwriteCustomerDatabases?: boolean;
+    /**
+     * The databases of customers the request confirmed overwriting, filled by `RestoreService` from
+     * its check, never by a request. The restore refuses to write into any other database a customer
+     * holds, see `assertTargetsConfirmed` in `customer-databases.ts`.
+     */
+    confirmedCustomerDatabases?: string[];
+    /**
+     * Who started the restore, set by `RestoreService` from its caller, never by a request. The
+     * restore of the directory sources writes the files only a platform admin may write by it, see
+     * `restoredFileRefusal`. Without it the restore writes them for nobody.
+     */
+    caller?: RestoreCaller;
 }

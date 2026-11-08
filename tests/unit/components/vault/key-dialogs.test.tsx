@@ -144,7 +144,7 @@ describe("RecoveryKitDialog", () => {
         await user.click(screen.getByRole("button", { name: "Download 2 keys" }));
 
         await waitFor(() => expect(onDownloaded).toHaveBeenCalledWith(["production", "offsite"]));
-        expect(fetch).toHaveBeenCalledWith("/api/vault/recovery-kit?ids=production,offsite");
+        expect(fetch).toHaveBeenCalledWith("/api/vault/recovery-kit", expect.objectContaining({ method: "POST", body: JSON.stringify({ ids: ["production", "offsite"] }) }));
     });
 
     it("opens with only the keys it was asked for", () => {
@@ -152,5 +152,22 @@ describe("RecoveryKitDialog", () => {
 
         expect(screen.getByText("1 of 2 keys")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Download kit" })).toBeEnabled();
+    });
+
+    it("leaves a locked key out with its reason, like the key of the configuration backup for a member", async () => {
+        const user = userEvent.setup();
+        const onDownloaded = vi.fn();
+        const reason = "This key encrypts the configuration backup. Only a platform admin reveals, exports or deletes it.";
+        const keys = [key(), key({ id: "config", name: "Config key", configBackup: true })];
+        render(<RecoveryKitDialog keys={keys} locked={(row) => (row.configBackup ? reason : null)} onClose={vi.fn()} onDownloaded={onDownloaded} />);
+
+        expect(screen.getByText("1 of 2 keys")).toBeInTheDocument();
+        expect(screen.getByRole("checkbox", { name: "Config key" })).toBeDisabled();
+        expect(screen.getByText(reason)).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Download kit" }));
+
+        await waitFor(() => expect(onDownloaded).toHaveBeenCalledWith(["production"]));
+        expect(fetch).toHaveBeenCalledWith("/api/vault/recovery-kit", expect.objectContaining({ method: "POST", body: JSON.stringify({ ids: ["production"] }) }));
     });
 });

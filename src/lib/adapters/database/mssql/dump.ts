@@ -9,9 +9,12 @@ import { isCompositeHost } from "@/lib/transport";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import path from "path";
+import { assertSharedFolderOffOwnData } from "./shared-folder";
 import { pack } from "tar-stream";
 import { pipeline } from "stream/promises";
 import { MSSQLConfig } from "@/lib/adapters/definitions";
+import { toPhysicalFileName } from "./identifiers";
+import { withPrivateTempDir } from "@/lib/private-temp-dir";
 
 /**
  * Extended MSSQL config for dump operations with runtime fields
@@ -81,13 +84,15 @@ export async function dump(
         // The transport decides how the .bak file travels: a shared mount makes
         // it visible locally, otherwise it is fetched over SSH.
         const useSSH = host.kind !== "direct" || isCompositeHost(host);
-        const localBackupPath = useSSH ? "/tmp" : (config.localBackupPath || "/tmp");
+        const localBackupPath = config.localBackupPath || "/tmp";
 
         if (useSSH) {
             log(`File transfer mode: SSH (remote server)`);
         } else {
             log(`File transfer mode: Local (shared filesystem)`);
             log(`Using backup paths - Server: ${serverBackupPath}, Local: ${localBackupPath}`);
+            // No run moves a backup through the own data of DBackup, see `shared-folder.ts`.
+            await assertSharedFolderOffOwnData(localBackupPath);
         }
 
         // Check if compression is supported by this SQL Server edition
@@ -98,145 +103,152 @@ export async function dump(
             log(`Compression disabled (not supported by Express/Web editions)`);
         }
 
-        // For multi-database backups, we'll create individual .bak files and combine them
-        const tempFiles: { server: string; local: string }[] = [];
+        // Over SSH the .bak files land in a folder of their own that nobody else can open, never
+        // under a name that can be guessed in the shared temporary folder, see `private-temp-dir.ts`.
+        // With a shared mount they are where SQL Server wrote them.
+        const packBackups = async (sshDir: string | null): Promise<BackupResult> => {
+            // For multi-database backups, we'll create individual .bak files and combine them
+            const tempFiles: { server: string; local: string }[] = [];
 
-        // Helper function to clean up temp files
-        const cleanupTempFiles = async () => {
-            for (const f of tempFiles) {
-                await fs.unlink(f.local).catch(() => {});
-            }
-            // Remove the server-side .bak files too. With a shared mount the
-            // unlink above already did that, since both paths are one file.
-            if (useSSH) {
+            // Helper function to clean up temp files
+            const cleanupTempFiles = async () => {
                 for (const f of tempFiles) {
-                    await host.removeFile(f.server).catch(() => {});
+                    await fs.unlink(f.local).catch(() => {});
                 }
+                // Remove the server-side .bak files too. With a shared mount the
+                // unlink above already did that, since both paths are one file.
+                if (useSSH) {
+                    for (const f of tempFiles) {
+                        await host.removeFile(f.server).catch(() => {});
+                    }
+                }
+            };
+
+            try {
+                for (const dbName of databases) {
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+                    // The name becomes a file name on the server and here, so it gets the substitution
+                    // SQL Server applies to its own physical files, like in `dumpOne`.
+                    const bakFileName = `${toPhysicalFileName(dbName)}_${timestamp}.bak`;
+                    const serverBakPath = joinServerPath(serverBackupPath, bakFileName);
+                    const localBakPath = path.join(sshDir ?? localBackupPath, bakFileName);
+
+                    log(`Backing up database: ${dbName}`, "info", "command");
+
+                    // Generate backup query using dialect
+                    const backupQuery = dialect.getBackupQuery(dbName, serverBakPath, {
+                        compression: useCompression,
+                        stats: 10, // Report progress every 10%
+                    });
+
+                    log(`Executing backup`, "info", "command", backupQuery);
+
+                    // Execute backup command on the server, capturing all SQL Server messages.
+                    // Use requestTimeout=0 (no timeout) - large DB backups can run for hours.
+                    // Stream progress messages in real-time so the UI shows live updates.
+                    await executeQueryWithMessages(config, host, backupQuery, undefined, 0, (msg: SqlServerMessage) => {
+                        if (msg.message) {
+                            log(`SQL Server: ${msg.message}`, "info", "general");
+                        }
+                    });
+
+                    log(`Backup completed for: ${dbName}`);
+                    tempFiles.push({ server: serverBakPath, local: localBakPath });
+                }
+
+                // Retrieve the .bak files. With a shared mount they are already
+                // visible locally, which is why this never copies in that case:
+                // the two paths are the same file seen from two sides.
+                for (const f of tempFiles) {
+                    const alreadyLocal = await fs.stat(f.local).then(() => true, () => false);
+                    if (alreadyLocal) continue;
+
+                    if (!useSSH) {
+                        throw missingOnMountError(f.local);
+                    }
+
+                    log(`Downloading: ${f.server} → ${f.local}`);
+                    try {
+                        await host.getFile(f.server, f.local);
+                    } catch (error: unknown) {
+                        throw wrongSshTargetError(error, f.server);
+                    }
+                    log(`Downloaded: ${path.basename(f.server)}`);
+                }
+
+                // Copy backup file(s) to final destination
+                if (tempFiles.length === 1) {
+                    // Single database - copy directly
+                    await copyFile(tempFiles[0].local, destinationPath);
+                    log(`Backup file copied to: ${destinationPath}`);
+                } else {
+                    // Multiple databases - pack all .bak files into a tar archive
+                    // MSSQL cannot create multi-DB backups in a single file like MySQL
+                    log(`Packing ${tempFiles.length} backup files into archive...`);
+
+                    // Create tar archive containing all .bak files
+                    const tarPack = pack();
+                    const outputStream = createWriteStream(destinationPath);
+
+                    // Pipe tar to output file
+                    const pipelinePromise = pipeline(tarPack, outputStream);
+
+                    // Add each backup file to the archive
+                    for (const f of tempFiles) {
+                        const fileName = path.basename(f.local);
+                        const fileStats = await fs.stat(f.local);
+
+                        // Create entry header
+                        const entry = tarPack.entry({
+                            name: fileName,
+                            size: fileStats.size,
+                        });
+
+                        // Stream file contents to tar entry
+                        const fileStream = createReadStream(f.local);
+                        await new Promise<void>((resolve, reject) => {
+                            fileStream.on("error", reject);
+                            fileStream.on("end", () => {
+                                entry.end();
+                                resolve();
+                            });
+                            fileStream.pipe(entry);
+                        });
+
+                        log(`Added to archive: ${fileName}`);
+                    }
+
+                    // Finalize the archive
+                    tarPack.finalize();
+                    await pipelinePromise;
+
+                    log(`Archive created: ${destinationPath}`);
+                }
+
+                // Verify destination file
+                const stats = await fs.stat(destinationPath);
+                if (stats.size === 0) {
+                    throw new Error("Backup file is empty. Check permissions and disk space.");
+                }
+
+                const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+                log(`Backup finished successfully. Size: ${sizeMB} MB`);
+
+                return {
+                    success: true,
+                    path: destinationPath,
+                    size: stats.size,
+                    logs,
+                    startedAt,
+                    completedAt: new Date(),
+                };
+            } finally {
+                // Always clean up temp .bak files (even on error/abort)
+                await cleanupTempFiles();
             }
         };
 
-        try {
-            for (const dbName of databases) {
-                const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                const bakFileName = `${dbName}_${timestamp}.bak`;
-                const serverBakPath = joinServerPath(serverBackupPath, bakFileName);
-                const localBakPath = useSSH
-                    ? path.join("/tmp", bakFileName)  // SSH mode: always use /tmp locally
-                    : path.join(localBackupPath, bakFileName);
-
-                log(`Backing up database: ${dbName}`, "info", "command");
-
-                // Generate backup query using dialect
-                const backupQuery = dialect.getBackupQuery(dbName, serverBakPath, {
-                    compression: useCompression,
-                    stats: 10, // Report progress every 10%
-                });
-
-                log(`Executing backup`, "info", "command", backupQuery);
-
-                // Execute backup command on the server, capturing all SQL Server messages.
-                // Use requestTimeout=0 (no timeout) - large DB backups can run for hours.
-                // Stream progress messages in real-time so the UI shows live updates.
-                await executeQueryWithMessages(config, host, backupQuery, undefined, 0, (msg: SqlServerMessage) => {
-                    if (msg.message) {
-                        log(`SQL Server: ${msg.message}`, "info", "general");
-                    }
-                });
-
-                log(`Backup completed for: ${dbName}`);
-                tempFiles.push({ server: serverBakPath, local: localBakPath });
-            }
-
-            // Retrieve the .bak files. With a shared mount they are already
-            // visible locally, which is why this never copies in that case:
-            // the two paths are the same file seen from two sides.
-            for (const f of tempFiles) {
-                const alreadyLocal = await fs.stat(f.local).then(() => true, () => false);
-                if (alreadyLocal) continue;
-
-                if (!useSSH) {
-                    throw missingOnMountError(f.local);
-                }
-
-                log(`Downloading: ${f.server} → ${f.local}`);
-                try {
-                    await host.getFile(f.server, f.local);
-                } catch (error: unknown) {
-                    throw wrongSshTargetError(error, f.server);
-                }
-                log(`Downloaded: ${path.basename(f.server)}`);
-            }
-
-            // Copy backup file(s) to final destination
-            if (tempFiles.length === 1) {
-                // Single database - copy directly
-                await copyFile(tempFiles[0].local, destinationPath);
-                log(`Backup file copied to: ${destinationPath}`);
-            } else {
-                // Multiple databases - pack all .bak files into a tar archive
-                // MSSQL cannot create multi-DB backups in a single file like MySQL
-                log(`Packing ${tempFiles.length} backup files into archive...`);
-
-                // Create tar archive containing all .bak files
-                const tarPack = pack();
-                const outputStream = createWriteStream(destinationPath);
-
-                // Pipe tar to output file
-                const pipelinePromise = pipeline(tarPack, outputStream);
-
-                // Add each backup file to the archive
-                for (const f of tempFiles) {
-                    const fileName = path.basename(f.local);
-                    const fileStats = await fs.stat(f.local);
-
-                    // Create entry header
-                    const entry = tarPack.entry({
-                        name: fileName,
-                        size: fileStats.size,
-                    });
-
-                    // Stream file contents to tar entry
-                    const fileStream = createReadStream(f.local);
-                    await new Promise<void>((resolve, reject) => {
-                        fileStream.on("error", reject);
-                        fileStream.on("end", () => {
-                            entry.end();
-                            resolve();
-                        });
-                        fileStream.pipe(entry);
-                    });
-
-                    log(`Added to archive: ${fileName}`);
-                }
-
-                // Finalize the archive
-                tarPack.finalize();
-                await pipelinePromise;
-
-                log(`Archive created: ${destinationPath}`);
-            }
-
-            // Verify destination file
-            const stats = await fs.stat(destinationPath);
-            if (stats.size === 0) {
-                throw new Error("Backup file is empty. Check permissions and disk space.");
-            }
-
-            const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
-            log(`Backup finished successfully. Size: ${sizeMB} MB`);
-
-            return {
-                success: true,
-                path: destinationPath,
-                size: stats.size,
-                logs,
-                startedAt,
-                completedAt: new Date(),
-            };
-        } finally {
-            // Always clean up temp .bak files (even on error/abort)
-            await cleanupTempFiles();
-        }
+        return useSSH ? await withPrivateTempDir("mssql-dump-", packBackups) : await packBackups(null);
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         // Not logged here: the caller turns this into a thrown

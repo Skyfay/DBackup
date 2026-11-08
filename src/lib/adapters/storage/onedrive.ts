@@ -1,9 +1,10 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, StorageReadOptions } from "@/lib/core/interfaces";
 import { OneDriveSchema } from "@/lib/adapters/definitions";
 import { Client } from "@microsoft/microsoft-graph-client";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
 import { LogLevel, LogType } from "@/lib/core/logs";
@@ -11,6 +12,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { stripSlashes } from "@/lib/paths";
 import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-concurrency";
+import { assertReadSize, collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
+import { createListingGuard, createPageGuard, descendableName, type ListingGuard } from "@/lib/adapters/storage/common/listing-limits";
 
 const log = logger.child({ adapter: "onedrive" });
 
@@ -64,12 +67,25 @@ async function getAccessToken(config: OneDriveConfig): Promise<string> {
  * Creates an authenticated Microsoft Graph client using OAuth2 refresh token.
  * The client automatically uses the access token for all API calls.
  */
-function createGraphClient(accessToken: string): Client {
-    return Client.init({
+/**
+ * The account a client works for, from the app and the grant of its connection. The in-flight
+ * folder lookups below are kept per account, so two connections of different tenants that write
+ * into a folder of the same name at the same moment never share one.
+ */
+const clientAccounts = new WeakMap<object, string>();
+
+function accountKey(config: { clientId?: string; refreshToken?: string }): string {
+    return createHash("sha256").update(`${config.clientId ?? ""}\n${config.refreshToken ?? ""}`).digest("hex").slice(0, 16);
+}
+
+function createGraphClient(accessToken: string, config: OneDriveConfig): Client {
+    const client = Client.init({
         authProvider: (done) => {
             done(null, accessToken);
         },
     });
+    clientAccounts.set(client, accountKey(config));
+    return client;
 }
 
 /**
@@ -88,7 +104,16 @@ function buildDrivePath(basePath: string | undefined, relativePath: string): str
  * Returns "/me/drive/root:/{path}:" for path-based access.
  */
 function driveItemPath(filePath: string): string {
-    return `/me/drive/root:/${filePath}:`;
+    return `/me/drive/root:/${encodeDrivePath(filePath)}:`;
+}
+
+/**
+ * A path as Graph reads it inside a URL, each name encoded on its own. The client sends the path
+ * as it is, so a name holding `%2e%2e`, `#` or `?` would otherwise be read as a parent folder, a
+ * fragment or a query instead of a name.
+ */
+function encodeDrivePath(filePath: string): string {
+    return filePath.split("/").map((segment) => encodeURIComponent(segment)).join("/");
 }
 
 /**
@@ -113,7 +138,7 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
         const targetPath = currentPath ? `${currentPath}/${segment}` : segment;
         const parentPath = currentPath;
 
-        const inFlight = folderCreations.get(targetPath);
+        const inFlight = folderCreations.get(`${clientAccounts.get(client) ?? ""}:${targetPath}`);
         if (inFlight) {
             await inFlight;
             currentPath = targetPath;
@@ -124,7 +149,7 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
             // Check if the folder already exists
             try {
                 await client
-                    .api(`/me/drive/root:/${targetPath}:`)
+                    .api(driveItemPath(targetPath))
                     .select("id,folder")
                     .get();
                 return; // Folder exists - continue to next segment
@@ -133,7 +158,7 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
             }
 
             const parentApiPath = parentPath
-                ? `/me/drive/root:/${parentPath}:/children`
+                ? `${driveItemPath(parentPath)}/children`
                 : "/me/drive/root/children";
 
             try {
@@ -151,11 +176,11 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
             }
         })();
 
-        folderCreations.set(targetPath, creation);
+        folderCreations.set(`${clientAccounts.get(client) ?? ""}:${targetPath}`, creation);
         try {
             await creation;
         } finally {
-            folderCreations.delete(targetPath);
+            folderCreations.delete(`${clientAccounts.get(client) ?? ""}:${targetPath}`);
         }
 
         currentPath = targetPath;
@@ -163,37 +188,68 @@ async function ensureFolderExists(client: Client, folderPath: string): Promise<v
 }
 
 /**
+ * Whether a Graph call failed because the item it named does not exist: HTTP 404 with the
+ * error code `itemNotFound`, as Graph answers a path that resolves to nothing.
+ */
+function isGraphItemNotFound(error: unknown): boolean {
+    const e = error as { statusCode?: number; code?: string | null } | null;
+    return e?.statusCode === 404 && e.code === "itemNotFound";
+}
+
+/** One page of the children of a folder, with the fields the listing selects. */
+interface DriveChildrenPage {
+    value?: Array<{ name: string; size?: number; lastModifiedDateTime?: string; folder?: unknown }>;
+    "@odata.nextLink"?: string;
+}
+
+/**
  * Lists all files recursively under a OneDrive folder.
- * Returns a flat list with relative paths.
+ * Returns a flat list with relative paths. With `missingAsEmpty`, a folder that does not exist
+ * lists as empty instead of failing. Only the first page decides that, so a folder removed
+ * halfway through a listing still fails it rather than dropping what was read.
  */
 async function listFilesRecursive(
     client: Client,
     folderPath: string,
-    prefix: string
+    prefix: string,
+    missingAsEmpty = false,
+    // Shared by every folder of one walk, so the whole tree counts against the limits of a
+    // listing as it arrives, see `listing-limits.ts`.
+    guard: ListingGuard = createListingGuard()
 ): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
+    const pages = createPageGuard();
 
     const apiPath = folderPath
-        ? `/me/drive/root:/${folderPath}:/children`
+        ? `${driveItemPath(folderPath)}/children`
         : "/me/drive/root/children";
 
     let url: string | null = apiPath;
 
     while (url) {
-        const res = await client.api(url)
-            .select("id,name,size,lastModifiedDateTime,folder,file")
-            .top(200)
-            .get();
+        let res: DriveChildrenPage;
+        try {
+            res = await client.api(url)
+                .select("id,name,size,lastModifiedDateTime,folder,file")
+                .top(200)
+                .get();
+        } catch (error: unknown) {
+            if (missingAsEmpty && url === apiPath && isGraphItemNotFound(error)) return files;
+            throw error;
+        }
 
         for (const item of res.value || []) {
             const relativePath = prefix ? `${prefix}/${item.name}` : item.name;
+            guard.add(relativePath);
 
             if (item.folder) {
+                // A name of dots alone or with a slash would read this folder or one above it again.
+                if (!descendableName(item.name)) continue;
                 // Recurse into subfolder
                 const subFolderPath = folderPath
                     ? `${folderPath}/${item.name}`
                     : item.name;
-                const subFiles = await listFilesRecursive(client, subFolderPath, relativePath);
+                const subFiles = await listFilesRecursive(client, subFolderPath, relativePath, false, guard);
                 files.push(...subFiles);
             } else {
                 files.push({
@@ -207,6 +263,7 @@ async function listFilesRecursive(
 
         // Handle pagination
         url = res["@odata.nextLink"] || null;
+        pages.next(url, res.value?.length ?? 0);
     }
 
     return files;
@@ -302,6 +359,41 @@ async function performOneDriveUpload(
     }
 }
 
+/**
+ * The bytes of a file, at most the limit of the read, see `read-limit.ts`. The size of the item is
+ * checked first and the download is cut at the limit, whatever the size said. Null when the file
+ * is not there.
+ */
+async function readCappedBytes(config: OneDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null> {
+    const limit = readLimitOf(options);
+    try {
+        const accessToken = await getAccessToken(config);
+        const client = createGraphClient(accessToken, config);
+        const drivePath = buildDrivePath(config.folderPath, remotePath);
+
+        // Get the download URL.
+        // Do NOT use .select() - @microsoft.graph.downloadUrl is a computed
+        // property that is only returned when the full item is requested.
+        const item = await client
+            .api(driveItemPath(drivePath))
+            .get();
+
+        const downloadUrl = item["@microsoft.graph.downloadUrl"];
+        if (!downloadUrl) return null;
+        assertReadSize(typeof item.size === "number" ? item.size : undefined, limit);
+
+        const res = await fetch(downloadUrl);
+        if (!res.ok || !res.body) {
+            await res.body?.cancel().catch(() => undefined);
+            return null;
+        }
+        return await collectCapped(Readable.fromWeb(res.body as never), limit);
+    } catch (error) {
+        if (isFileTooLarge(error)) throw error;
+        return null;
+    }
+}
+
 export const OneDriveAdapter: StorageAdapter = {
     id: "onedrive",
     type: "storage",
@@ -313,7 +405,7 @@ export const OneDriveAdapter: StorageAdapter = {
 
     async openSession(config: OneDriveConfig, onLog?): Promise<StorageSession> {
         const accessToken = await getAccessToken(config);
-        const client = createGraphClient(accessToken);
+        const client = createGraphClient(accessToken, config);
         if (onLog) onLog("Authenticated with Microsoft Graph", "info", "storage");
         const folderCache = new Set<string>();
         return {
@@ -332,7 +424,7 @@ export const OneDriveAdapter: StorageAdapter = {
     ): Promise<boolean> {
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
             return await performOneDriveUpload(client, config, localPath, remotePath, onProgress, onLog, new Set());
         } catch (error: unknown) {
             log.error("OneDrive upload failed", { remotePath }, wrapError(error));
@@ -350,7 +442,7 @@ export const OneDriveAdapter: StorageAdapter = {
         // An empty range is legal - a zero-length file's archive entry produces one.
         if (end < start) return Readable.from([]);
 
-        const client = createGraphClient(await getAccessToken(config));
+        const client = createGraphClient(await getAccessToken(config), config);
         const item = await client.api(driveItemPath(buildDrivePath(config.folderPath, remotePath))).get();
 
         const downloadUrl = item["@microsoft.graph.downloadUrl"];
@@ -370,7 +462,7 @@ export const OneDriveAdapter: StorageAdapter = {
     ): Promise<boolean> {
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
             const drivePath = buildDrivePath(config.folderPath, remotePath);
 
             if (onLog) onLog(`Starting OneDrive download: ${drivePath}`, "info", "storage");
@@ -424,41 +516,25 @@ export const OneDriveAdapter: StorageAdapter = {
 
     readConcurrency: STATELESS_READ_CONCURRENCY,
 
-    async read(config: OneDriveConfig, remotePath: string): Promise<string | null> {
-        try {
-            const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
-            const drivePath = buildDrivePath(config.folderPath, remotePath);
-
-            // Get the download URL.
-            // Do NOT use .select() - @microsoft.graph.downloadUrl is a computed
-            // property that is only returned when the full item is requested.
-            const item = await client
-                .api(driveItemPath(drivePath))
-                .get();
-
-            const downloadUrl = item["@microsoft.graph.downloadUrl"];
-            if (!downloadUrl) return null;
-
-            const res = await fetch(downloadUrl);
-            if (!res.ok) return null;
-
-            return await res.text();
-        } catch {
-            return null;
-        }
+    async read(config: OneDriveConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null> {
+        return textOf(await readCappedBytes(config, remotePath, options));
     },
+
+    readBytes: readCappedBytes,
 
     async list(config: OneDriveConfig, dir: string = ""): Promise<FileInfo[]> {
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
             const basePath = stripSlashes(config.folderPath ?? "");
-            const listPath = dir && dir !== "."
+            const isSubfolder = Boolean(dir && dir !== ".");
+            const listPath = isSubfolder
                 ? (basePath ? `${basePath}/${dir}` : dir)
                 : basePath;
 
-            return await listFilesRecursive(client, listPath, dir || "");
+            // A subfolder nothing was written to yet is not there. It lists as empty, like on the
+            // other destinations. A missing root still fails.
+            return await listFilesRecursive(client, listPath, dir || "", isSubfolder);
         } catch (error: unknown) {
             log.error("OneDrive list failed", { dir }, wrapError(error));
             throw error;
@@ -468,12 +544,12 @@ export const OneDriveAdapter: StorageAdapter = {
     async browseDirectories(config: OneDriveConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
             const basePath = stripSlashes(config.folderPath ?? "");
             const listPath = subPath ? (basePath ? `${basePath}/${subPath}` : subPath) : basePath;
 
             const apiPath = listPath
-                ? `/me/drive/root:/${listPath}:/children`
+                ? `${driveItemPath(listPath)}/children`
                 : "/me/drive/root/children";
 
             const entries: DirectoryBrowseEntry[] = [];
@@ -506,7 +582,7 @@ export const OneDriveAdapter: StorageAdapter = {
     async delete(config: OneDriveConfig, remotePath: string): Promise<boolean> {
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
             const drivePath = buildDrivePath(config.folderPath, remotePath);
 
             await client.api(driveItemPath(drivePath)).delete();
@@ -526,7 +602,7 @@ export const OneDriveAdapter: StorageAdapter = {
         if (!checksums.sha256) return 'unsupported';
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
             const drivePath = buildDrivePath(config.folderPath, remotePath);
             const item = await client.api(driveItemPath(drivePath)).select('id,file').get();
             const sha256Base64: string | undefined = item?.file?.hashes?.sha256Hash;
@@ -541,7 +617,7 @@ export const OneDriveAdapter: StorageAdapter = {
     async ping(config: OneDriveConfig): Promise<{ success: boolean; message: string }> {
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
             await client.api("/me/drive").select("id").get();
             return { success: true, message: "Connection successful" };
         } catch (error: unknown) {
@@ -556,7 +632,7 @@ export const OneDriveAdapter: StorageAdapter = {
     async test(config: OneDriveConfig): Promise<{ success: boolean; message: string }> {
         try {
             const accessToken = await getAccessToken(config);
-            const client = createGraphClient(accessToken);
+            const client = createGraphClient(accessToken, config);
 
             // Test 1: Verify we can access the drive
             const drive = await client.api("/me/drive").select("id,owner").get();

@@ -13,6 +13,11 @@
  * keys like "storage.alerts.<configId>".
  * Alert state is tracked separately with keys like "storage.alerts.<configId>.state".
  *
+ * The alerts of a destination belong to its tenant. On a destination it shares with customers the
+ * storage limit and the usage spike watch everything the destination holds, since the backups of
+ * the customers fill the same storage, while the missing backup alert watches the backups of its
+ * own tenant.
+ *
  * Triggered by saveStorageSnapshots() during the storage stats refresh cycle.
  */
 
@@ -194,6 +199,10 @@ export async function saveAlertStates(
  * Check all storage alert conditions for the given destinations.
  * Called after saving new storage snapshots.
  *
+ * One entry per destination: `size` and `count` are everything it holds, the backups of every
+ * tenant on it, and `tenantId` is the tenant of the destination, whose backups the missing backup
+ * alert looks for.
+ *
  * Loads alert state once per destination, passes it to individual checks,
  * and persists only if the state changed.
  */
@@ -267,7 +276,7 @@ export async function checkStorageAlerts(
 
 /**
  * Detect significant storage size changes between the latest
- * two snapshots for a destination.
+ * two refreshes of a destination.
  */
 async function checkUsageSpike(
   entry: StorageVolumeEntry,
@@ -275,18 +284,21 @@ async function checkUsageSpike(
   states: StorageAlertStates,
   cooldownMs?: number
 ): Promise<void> {
-  // Get the previous snapshot (second most recent)
-  const previousSnapshots = await prisma.storageSnapshot.findMany({
+  // What the destination held at its last two refreshes, the one just saved and the one before. A
+  // refresh writes one snapshot for each tenant whose backups the destination holds, all with one
+  // time, so the sum of a time is everything it held then, the backups of its customers included.
+  const refreshes = await prisma.storageSnapshot.groupBy({
+    by: ["createdAt"],
     where: { adapterConfigId: entry.configId! },
+    _sum: { size: true },
     orderBy: { createdAt: "desc" },
     take: 2,
-    select: { size: true },
   });
 
-  // Need at least 2 snapshots (1 previous + the one just saved)
-  if (previousSnapshots.length < 2) return;
+  // Need at least 2 refreshes (1 previous + the one just saved)
+  if (refreshes.length < 2) return;
 
-  const previousSize = Number(previousSnapshots[1].size);
+  const previousSize = Number(refreshes[1]._sum.size ?? 0);
   const currentSize = entry.size;
 
   // Avoid division by zero
@@ -391,6 +403,8 @@ async function checkMissingBackup(
     where: {
       type: "Backup",
       status: { in: ["Success", "Partial"] },
+      // A run of its own tenant, a backup a customer writes to a shared destination keeps no alert quiet.
+      ...(entry.tenantId ? { tenantId: entry.tenantId } : {}),
       job: {
         destinations: { some: { configId: entry.configId! } },
       },
@@ -403,8 +417,9 @@ async function checkMissingBackup(
     lastBackupAt = latestExecution.endedAt ?? latestExecution.startedAt;
   } else {
     // Fallback: snapshot count-change history (covers externally-created backups not tracked in Execution).
+    // The snapshots of its own tenant, a customer that stores a backup on a shared destination keeps no alert quiet.
     const snapshots = await prisma.storageSnapshot.findMany({
-      where: { adapterConfigId: entry.configId! },
+      where: { adapterConfigId: entry.configId!, ...(entry.tenantId ? { tenantId: entry.tenantId } : {}) },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: { count: true, createdAt: true },

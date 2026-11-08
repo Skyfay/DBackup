@@ -394,38 +394,9 @@ describe("SQLiteAdapter", () => {
 });
 ```
 
-### Integration Tests
+### Against Real Servers
 
-```typescript
-// tests/integration/adapters/sqlite.test.ts
-import { SQLiteAdapter } from "@/lib/adapters/database/sqlite";
-import fs from "fs/promises";
-
-describe("SQLiteAdapter Integration", () => {
-  const testDbPath = "/tmp/test-integration.db";
-  const backupPath = "/tmp/test-backup.db";
-
-  beforeAll(async () => {
-    // Create test database
-    await fs.writeFile(testDbPath, "test data");
-  });
-
-  it("should dump database", async () => {
-    const result = await SQLiteAdapter.dump(
-      { path: testDbPath },
-      backupPath
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.size).toBeGreaterThan(0);
-  });
-
-  afterAll(async () => {
-    await fs.unlink(testDbPath).catch(() => {});
-    await fs.unlink(backupPath).catch(() => {});
-  });
-});
-```
+An adapter that can be self-hosted also gets a service in the [Dev Lab](/developer-guide/reference/dev-lab#adding-an-engine-or-version). `pnpm lab:check --run` then tests its connection and runs a backup with it through the real runner.
 
 ## UI Integration
 

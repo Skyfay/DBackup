@@ -4,9 +4,12 @@ import { DatabaseInfo } from "@/lib/core/interfaces";
 import {
     MYSQL_ADMIN,
     MYSQL_CLIENT,
+    NO_LOCAL_INFILE,
     buildConnectionArgs,
     withAuthArgs,
 } from "./args";
+import { connectionClientOf } from "./dump-content";
+import { escapeMysqlIdentifier, escapeMysqlLiteral } from "./sql-quote";
 
 const SYSTEM_DATABASES = ["information_schema", "mysql", "performance_schema", "sys"];
 
@@ -34,12 +37,12 @@ export async function ensureDatabase(
 ) {
     try {
         const mysqlBin = await host.which(...MYSQL_CLIENT);
-        const connArgs = buildConnectionArgs(config, host, { user });
+        const connArgs = buildConnectionArgs(config, host, { user, client: await connectionClientOf(config, host, mysqlBin) });
 
         await withAuthArgs(host, pass, async (authArgs) => {
             const created = await host.exec([
-                mysqlBin, ...authArgs, ...connArgs,
-                "-e", `CREATE DATABASE IF NOT EXISTS \`${dbName}\``,
+                mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs,
+                "-e", `CREATE DATABASE IF NOT EXISTS \`${escapeMysqlIdentifier(dbName)}\``,
             ]);
             if (created.code !== 0) {
                 logs.push(`Warning ensures DB '${dbName}': ${created.stderr}`);
@@ -48,10 +51,12 @@ export async function ensureDatabase(
             logs.push(`Database '${dbName}' ensured.`);
 
             if (privileged) {
+                const db = escapeMysqlIdentifier(dbName);
+                const grantee = escapeMysqlLiteral(config.user);
                 const grantQuery =
-                    `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${config.user}'@'%'; ` +
-                    `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;`;
-                const granted = await host.exec([mysqlBin, ...authArgs, ...connArgs, "-e", grantQuery]);
+                    `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'%'; ` +
+                    `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'localhost'; FLUSH PRIVILEGES;`;
+                const granted = await host.exec([mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-e", grantQuery]);
                 logs.push(granted.code === 0
                     ? `Permissions granted for '${dbName}'.`
                     : `Warning grants for '${dbName}': ${granted.stderr}`);
@@ -79,7 +84,7 @@ export async function test(
     try {
         const mysqlBin = await host.which(...MYSQL_CLIENT);
         const adminBin = await host.which(...MYSQL_ADMIN);
-        const connArgs = buildConnectionArgs(config, host);
+        const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
         return await withAuthArgs(host, config.password, async (authArgs) => {
             // 1. Reachability. 10s allows for a server under heavy load.
@@ -92,14 +97,14 @@ export async function test(
 
             // 2. Auth. mysqladmin ping succeeds on some MariaDB builds even when
             //    query authentication does not, so credentials get their own check.
-            const auth = await host.exec([mysqlBin, ...authArgs, ...connArgs, "-N", "-s", "-e", "SELECT 1"]);
+            const auth = await host.exec([mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-N", "-s", "-e", "SELECT 1"]);
             if (auth.code !== 0) {
                 return { success: false, message: `Connection failed: ${auth.stderr.trim()}` };
             }
 
             // 3. Version, best effort.
             const versionResult = await host.exec([
-                mysqlBin, ...authArgs, ...connArgs, "-N", "-s", "-e", "SELECT VERSION()",
+                mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-N", "-s", "-e", "SELECT VERSION()",
             ]);
             if (versionResult.code !== 0) {
                 return { success: true, message: `Connection successful${via}, version unknown` };
@@ -119,11 +124,11 @@ export async function test(
 export async function getDatabases(config: MySQLConfig, hostArg: ExecutionHost): Promise<string[]> {
     const host = requireHost(hostArg);
     const mysqlBin = await host.which(...MYSQL_CLIENT);
-    const connArgs = buildConnectionArgs(config, host);
+    const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const result = await host.exec([
-            mysqlBin, ...authArgs, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
         ]);
         if (result.code !== 0) {
             throw new Error(`Failed to list databases: ${result.stderr.trim()}`);
@@ -169,11 +174,11 @@ function parseStatsOutput(stdout: string): DatabaseInfo[] {
 export async function getDatabasesWithStats(config: MySQLConfig, hostArg: ExecutionHost): Promise<DatabaseInfo[]> {
     const host = requireHost(hostArg);
     const mysqlBin = await host.which(...MYSQL_CLIENT);
-    const connArgs = buildConnectionArgs(config, host);
+    const connArgs = buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) });
 
     return withAuthArgs(host, config.password, async (authArgs) => {
         const stats = await host.exec([
-            mysqlBin, ...authArgs, ...connArgs,
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs,
             "-e", statsQuery, "--skip-column-names", "--batch",
         ]);
         if (stats.code === 0) {
@@ -184,7 +189,7 @@ export async function getDatabasesWithStats(config: MySQLConfig, hostArg: Execut
         // user, so fall back to the plain listing rather than failing the page.
         // Direct mode used to skip this fallback and simply error out.
         const fallback = await host.exec([
-            mysqlBin, ...authArgs, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-e", "SHOW DATABASES", "--skip-column-names",
         ]);
         if (fallback.code !== 0) {
             throw new Error(`Failed to list databases: ${fallback.stderr.trim()}`);

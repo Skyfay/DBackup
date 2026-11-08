@@ -1,0 +1,15 @@
+FLUSHALL
+SELECT 0
+SET shop:greeting "Grüezi 🦊"
+SET shop:session:abc "logged-in" EX 86400
+HSET shop:customer:1 name "Zoë Müller" email zoe@example.ch visits 3
+HSET shop:customer:2 name "李雷" email lilei@example.cn
+LPUSH shop:queue job-3 job-2 job-1
+SADD shop:tags vip new returning
+ZADD shop:leaderboard 10 zoe 7 lilei 3 obrien
+XADD shop:events * type order id 1
+SELECT 1
+SET inventory:A-1 12
+SET inventory:B-2 0
+SELECT 0
+SET lab:dataset loaded

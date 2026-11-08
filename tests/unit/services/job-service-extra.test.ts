@@ -9,12 +9,21 @@ vi.mock('@/lib/server/scheduler', () => ({
     }
 }));
 
+
+/** Every record a job links to is one of the tenant, see assertOwnRecords. */
+function linksAreOwn() {
+    for (const model of ["adapterConfig", "job", "encryptionProfile", "namingTemplate", "schedulePreset", "notificationTemplate", "retentionPolicy", "excludePatternPreset"] as const) {
+        (prismaMock[model].count as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (args?: { where?: { id?: { in?: string[] } } }) => args?.where?.id?.in?.length ?? 0);
+    }
+}
+
 describe('JobService (extra coverage)', () => {
     let service: JobService;
 
     beforeEach(() => {
         service = new JobService();
         vi.clearAllMocks();
+        linksAreOwn();
         // createJob validates its destinations against the adapter table; these tests are
         // about notification templates, so a plain valid destination is enough.
         prismaMock.adapterConfig.findMany.mockResolvedValue([

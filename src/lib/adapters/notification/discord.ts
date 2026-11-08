@@ -3,6 +3,7 @@ import { DiscordSchema, DiscordConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "discord" });
 
@@ -16,7 +17,7 @@ export const DiscordAdapter: NotificationAdapter = {
     async test(config: DiscordConfig): Promise<{ success: boolean; message: string }> {
         try {
             validateOutboundUrl(config.webhookUrl);
-            const response = await fetch(config.webhookUrl, {
+            const response = await webhookFetch(config.webhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -26,6 +27,8 @@ export const DiscordAdapter: NotificationAdapter = {
                 }),
             });
 
+            const redirect = redirectRefusal("Discord", response);
+            if (redirect) return { success: false, message: redirect };
             if (response.ok) {
                 return { success: true, message: "Test notification sent successfully!" };
             } else {
@@ -70,7 +73,7 @@ export const DiscordAdapter: NotificationAdapter = {
                 payload.content = undefined;
             }
 
-            const response = await fetch(config.webhookUrl, {
+            const response = await webhookFetch(config.webhookUrl, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

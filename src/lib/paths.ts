@@ -13,6 +13,19 @@
 
 /** ASCII "/" - compared by code unit so no substring is allocated while scanning. */
 const SLASH = 47;
+/** ASCII "." and " ", which Windows drops at the end of a name. */
+const DOT = 46;
+const SPACE = 32;
+
+/**
+ * Removes the dots and spaces at the end of a name, which Windows and the storages on it drop, so
+ * `Tenants. ` names the same folder as `Tenants` there. A loop for the same reason as above.
+ */
+export function stripTrailingDotsAndSpaces(value: string): string {
+    let end = value.length;
+    while (end > 0 && (value.charCodeAt(end - 1) === DOT || value.charCodeAt(end - 1) === SPACE)) end--;
+    return value.slice(0, end);
+}
 
 /** Removes trailing "/" characters. */
 export function stripTrailingSlashes(value: string): string {

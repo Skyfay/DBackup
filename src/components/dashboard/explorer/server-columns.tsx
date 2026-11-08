@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { DestinationTile } from "@/components/dashboard/storage/explorer/explorer-cells";
@@ -9,6 +8,7 @@ import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes } from "@/lib/utils";
 import type { ExplorerServer } from "@/services/databases/database-explorer-types";
 import { compactCount } from "./database-model";
+import { RecordLink } from "./record-link";
 import { serverHref, type ServerRow } from "./server-model";
 
 const STATUS: Record<ExplorerServer["status"], { label: string; dot: string }> = {
@@ -98,12 +98,13 @@ export function serverColumns({ coverage, backups, biggest, renderActions }: Col
                     <DestinationTile destination={{ adapterId: row.original.server.adapterId }} />
                     <div className="min-w-0">
                         {/* The keyboard way in, a click anywhere on the row opens it too. */}
-                        <Link
+                        <RecordLink
                             href={serverHref(row.original.server.id)}
+                            tenantId={row.original.server.tenantId}
                             className="block truncate rounded-sm font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
                         >
                             {row.original.server.name}
-                        </Link>
+                        </RecordLink>
                         <p className="truncate text-xs text-muted-foreground">{row.original.summary?.address ?? " "}</p>
                     </div>
                 </div>

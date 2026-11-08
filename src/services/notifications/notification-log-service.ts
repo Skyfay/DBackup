@@ -6,9 +6,13 @@
  */
 
 import prisma from "@/lib/prisma";
+import { runAsSystem } from "@/lib/tenant/context";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import type { Prisma } from "@prisma/client";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { FULL_VIEW, notificationLogVisibleWhere, notificationShownTo, type LogView } from "@/services/audit/log-reach";
 
 const log = logger.child({ service: "NotificationLogService" });
 
@@ -28,6 +32,11 @@ export interface NotificationLogEntry {
   renderedPayload?: string;
   error?: string;
   executionId?: string;
+  /**
+   * The tenant the message is for, which keeps the entry. Set when it differs from the tenant of the
+   * channel: a customer's run through a channel another tenant shares with it is the customer's.
+   */
+  tenantId?: string;
 }
 
 export interface NotificationLogQuery {
@@ -42,6 +51,8 @@ export interface NotificationLogQuery {
   executionId?: string;
   /** Free text, matched against the notification title. */
   search?: string;
+  /** The tenants of the Tenant filter of All tenants. Inside a tenant every entry is of that tenant anyway. */
+  tenantId?: string | string[];
 }
 
 export const NOTIFICATION_LOG_MAX_PAGE_SIZE = 100;
@@ -57,8 +68,15 @@ export async function recordNotificationLog(
   entry: NotificationLogEntry
 ): Promise<void> {
   try {
-    await prisma.notificationLog.create({
+    // The entry belongs to the tenant it names, else to the tenant of its channel, else to the code
+    // that sends it, else to the home tenant, like a system event without a channel.
+    const channel = entry.channelId && !entry.tenantId
+      ? await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: entry.channelId! }, select: { tenantId: true } }))
+      : null;
+    const tenantId = entry.tenantId ?? channel?.tenantId ?? (await currentTenantId()) ?? HOME_TENANT_ID;
+    await runAsSystem(() => prisma.notificationLog.create({
       data: {
+        tenantId,
         eventType: entry.eventType,
         channelId: entry.channelId,
         channelName: entry.channelName,
@@ -73,7 +91,7 @@ export async function recordNotificationLog(
         error: entry.error ?? null,
         executionId: entry.executionId ?? null,
       },
-    });
+    }));
   } catch (err) {
     // Never block the caller – log and swallow
     log.error("Failed to record notification log", {}, wrapError(err));
@@ -97,8 +115,10 @@ function normalizePageSize(value: number | undefined): number {
 
 /** Prisma `where` for a query. Exported for tests. */
 export function buildNotificationLogWhere(query: NotificationLogQuery): Prisma.NotificationLogWhereInput {
-  const { adapterId, channelName, eventType, status, executionId, search } = query;
+  const { adapterId, channelName, eventType, status, executionId, search, tenantId } = query;
   const where: Prisma.NotificationLogWhereInput = {};
+  const tenantIds = toList(tenantId);
+  if (tenantIds) where.tenantId = tenantIds;
   const adapterIds = toList(adapterId);
   if (adapterIds) where.adapterId = adapterIds;
   const channels = toList(channelName);
@@ -113,36 +133,53 @@ export function buildNotificationLogWhere(query: NotificationLogQuery): Prisma.N
   return where;
 }
 
+/**
+ * A query narrowed to the messages the view sees: in the log of the home tenant someone of a
+ * platform group of some tenants sees no message about the records of another tenant, see
+ * `notificationLogVisibleWhere`.
+ */
+function seenBy(view: LogView, where: Prisma.NotificationLogWhereInput): Prisma.NotificationLogWhereInput {
+  const visible = notificationLogVisibleWhere(view);
+  return visible ? { AND: [where, visible] } : where;
+}
+
 /** Counts per value for the faceted filters on the Notification Logs tab. */
 export interface NotificationLogFacets {
   adapterId: Record<string, number>;
   status: Record<string, number>;
   channelName: Record<string, number>;
   eventType: Record<string, number>;
+  /** The entries of each tenant, only in All tenants, where the log holds every tenant. */
+  tenantId?: Record<string, number>;
 }
 
-/** Per-option counts. Each column honours every other active filter but not its own. */
-export async function getNotificationLogFacets(query: NotificationLogQuery = {}): Promise<NotificationLogFacets> {
-  const count = async (column: "adapterId" | "status" | "channelName" | "eventType") => {
-    const where = buildNotificationLogWhere({ ...query, [column]: undefined });
+/**
+ * Per-option counts. Each column honours every other active filter but not its own. `byTenant`
+ * counts the tenants too, for the Tenant filter of All tenants.
+ */
+export async function getNotificationLogFacets(query: NotificationLogQuery = {}, byTenant = false, view: LogView = FULL_VIEW): Promise<NotificationLogFacets> {
+  const count = async (column: "adapterId" | "status" | "channelName" | "eventType" | "tenantId") => {
+    const where = seenBy(view, buildNotificationLogWhere({ ...query, [column]: undefined }));
     const groups = await prisma.notificationLog.groupBy({ by: [column], where, _count: { _all: true } });
     const result: Record<string, number> = {};
     for (const g of groups) result[g[column]] = g._count._all;
     return result;
   };
-  const [adapterId, status, channelName, eventType] = await Promise.all([count("adapterId"), count("status"), count("channelName"), count("eventType")]);
-  return { adapterId, status, channelName, eventType };
+  const [adapterId, status, channelName, eventType, tenantId] = await Promise.all([
+    count("adapterId"), count("status"), count("channelName"), count("eventType"), byTenant ? count("tenantId") : null,
+  ]);
+  return { adapterId, status, channelName, eventType, ...(tenantId ? { tenantId } : {}) };
 }
 
 /**
  * Fetch notification logs with pagination and optional filters.
  */
-export async function getNotificationLogs(query: NotificationLogQuery = {}) {
+export async function getNotificationLogs(query: NotificationLogQuery = {}, view: LogView = FULL_VIEW) {
   const page = query.page && query.page > 0 ? Math.floor(query.page) : 1;
   const pageSize = normalizePageSize(query.pageSize);
-  const where = buildNotificationLogWhere(query);
+  const where = seenBy(view, buildNotificationLogWhere(query));
 
-  const [data, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.notificationLog.findMany({
       where,
       orderBy: { sentAt: "desc" },
@@ -151,6 +188,8 @@ export async function getNotificationLogs(query: NotificationLogQuery = {}) {
     }),
     prisma.notificationLog.count({ where }),
   ]);
+  // A view of some tenants reads the other tenants of a message of the platform as a count, see `notificationShownTo`.
+  const data = rows.map((row) => notificationShownTo(view, row));
 
   return { data, total, page, pageSize };
 }
@@ -164,12 +203,12 @@ export interface NotificationStats {
   events: number;
 }
 
-export async function getNotificationStats(now = new Date()): Promise<NotificationStats> {
+export async function getNotificationStats(now = new Date(), view: LogView = FULL_VIEW): Promise<NotificationStats> {
   const since = new Date(now.getTime() - 30 * 86_400_000);
-  const where = { sentAt: { gte: since } };
+  const where = seenBy(view, { sentAt: { gte: since } });
   const [byStatus, lastFailed, channels, events] = await Promise.all([
     prisma.notificationLog.groupBy({ by: ["status"], where, _count: { _all: true } }),
-    prisma.notificationLog.findFirst({ where: { ...where, status: "Failed" }, orderBy: { sentAt: "desc" }, select: { channelName: true, sentAt: true } }),
+    prisma.notificationLog.findFirst({ where: { AND: [where, { status: "Failed" }] }, orderBy: { sentAt: "desc" }, select: { channelName: true, sentAt: true } }),
     prisma.notificationLog.groupBy({ by: ["channelName"], where, _count: { _all: true }, orderBy: { _count: { channelName: "desc" } } }),
     prisma.notificationLog.groupBy({ by: ["eventType"], where, _count: { _all: true } }),
   ]);
@@ -183,11 +222,12 @@ export async function getNotificationStats(now = new Date()): Promise<Notificati
   };
 }
 
-/** The options of the Channel and Event filters: every channel and every event in the log. */
-export async function getNotificationFilterOptions(): Promise<{ channels: { name: string; adapterId: string }[]; events: string[] }> {
+/** The options of the Channel and Event filters: every channel and every event of the messages the view sees. */
+export async function getNotificationFilterOptions(view: LogView = FULL_VIEW): Promise<{ channels: { name: string; adapterId: string }[]; events: string[] }> {
+  const where = seenBy(view, {});
   const [channels, events] = await Promise.all([
-    prisma.notificationLog.groupBy({ by: ["channelName", "adapterId"], _count: { _all: true } }),
-    prisma.notificationLog.groupBy({ by: ["eventType"], _count: { _all: true } }),
+    prisma.notificationLog.groupBy({ by: ["channelName", "adapterId"], where, _count: { _all: true } }),
+    prisma.notificationLog.groupBy({ by: ["eventType"], where, _count: { _all: true } }),
   ]);
   const byName = new Map<string, { name: string; adapterId: string }>();
   for (const group of channels) if (!byName.has(group.channelName)) byName.set(group.channelName, { name: group.channelName, adapterId: group.adapterId });
@@ -198,10 +238,14 @@ export async function getNotificationFilterOptions(): Promise<{ channels: { name
 }
 
 /**
- * Fetch a single notification log entry by ID.
+ * Fetch a single notification log entry by ID, null when it is gone or the view does not see it.
  */
-export async function getNotificationLogById(id: string) {
-  return prisma.notificationLog.findUnique({ where: { id } });
+export async function getNotificationLogById(id: string, view: LogView = FULL_VIEW) {
+  const visible = notificationLogVisibleWhere(view);
+  const row = visible
+    ? await prisma.notificationLog.findFirst({ where: { AND: [{ id }, visible] } })
+    : await prisma.notificationLog.findUnique({ where: { id } });
+  return row ? notificationShownTo(view, row) : null;
 }
 
 /**

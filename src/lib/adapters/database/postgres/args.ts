@@ -10,6 +10,25 @@ import type { PostgresConfig } from "@/lib/adapters/definitions";
 
 type AnyPostgresConfig = PostgresConfig & { user?: string; password?: string };
 
+/**
+ * A database name for `-d`, as libpq reads it word for word. libpq takes a `-d` value that holds
+ * an `=` or starts with `postgres://` or `postgresql://` as a whole connection string, whose host,
+ * port and login replace those of the connection, so a name from a job, a restore or the table
+ * browser could otherwise lead to another server. A `dbname='...'` keyword value is always a name.
+ */
+export function dbArg(name: string): string {
+    return `dbname='${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+/**
+ * A value as an SQL string literal. The `E''` form reads a backslash as an escape whatever
+ * `standard_conforming_strings` says, so doubling the backslashes and the quotes keeps every
+ * character of the value inside the literal on any server.
+ */
+export function sqlLiteral(value: string): string {
+    return `E'${value.replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
+}
+
 /** Connection flags shared by psql, pg_dump and pg_restore. */
 export function buildConnectionArgs(
     config: AnyPostgresConfig,

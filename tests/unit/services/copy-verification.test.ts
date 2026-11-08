@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-    configs: [] as { id: string; name: string; adapterId: string }[],
+    configs: [] as { id: string; name: string; adapterId: string; type: string; tenantId: string }[],
     native: new Set<string>(),
     verifyFile: vi.fn(),
     notify: vi.fn(),
@@ -17,10 +17,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
     default: {
-        adapterConfig: { findMany: vi.fn(async () => mocks.configs) },
+        adapterConfig: { findUnique: vi.fn(async ({ where }: { where: { id: string } }) => mocks.configs.find((config) => config.id === where.id) ?? null) },
+        // Nobody shares these destinations, so their tenant sees them as they are.
+        connectionShare: { count: vi.fn(async () => 0) },
         execution: { findUnique: vi.fn(async () => mocks.execution) },
+        tenant: { findUnique: vi.fn(async () => ({ name: "Acme" })) },
     },
 }));
+vi.mock("@/services/sharing/provided", () => ({ providedConnection: vi.fn(async () => null) }));
 vi.mock("@/lib/runner/system-task-runner", () => ({
     SystemTaskRunner: {
         create: vi.fn(async () => ({
@@ -43,6 +47,7 @@ vi.mock("@/services/storage/verification-service", () => ({
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: mocks.notify }));
 
 import { readCopyVerification, startCopyVerification } from "@/services/storage/copy-verification";
+import { runAsTenant } from "@/lib/tenant/context";
 
 const FILE = "UI Test/UI_Test_2026-09-26.tar";
 const lastCopies = () => mocks.runner.extras[mocks.runner.extras.length - 1] as { destinationId: string; state: string; method?: string; processed?: number; total?: number; reason?: string }[];
@@ -52,9 +57,9 @@ describe("checking the copies of a backup", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.configs = [
-            { id: "sftp", name: "Hetzner Box", adapterId: "sftp" },
-            { id: "nas", name: "NAS Backups", adapterId: "local-filesystem" },
-            { id: "drive", name: "Google Drive", adapterId: "google-drive" },
+            { id: "sftp", name: "Hetzner Box", adapterId: "sftp", type: "storage", tenantId: "acme" },
+            { id: "nas", name: "NAS Backups", adapterId: "local-filesystem", type: "storage", tenantId: "acme" },
+            { id: "drive", name: "Google Drive", adapterId: "google-drive", type: "storage", tenantId: "acme" },
         ];
         mocks.native = new Set(["local-filesystem", "google-drive"]);
         mocks.runner.extras = [];
@@ -106,7 +111,29 @@ describe("checking the copies of a backup", () => {
         expect(mocks.runner.finished).toBe("Failed");
         expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({
             data: expect.objectContaining({ failed: 1, passed: 1, errors: [{ file: FILE, destination: "NAS Backups", expected: "aaa", actual: "bbb" }] }),
-        }));
+        }), expect.objectContaining({ executionId: expect.any(String) }));
+    });
+
+    it("tells the platform only how many copies of a customer failed, the customer hears the files and destinations", async () => {
+        mocks.verifyFile.mockImplementationOnce(async () => ({ status: "failed", verifiedAt: "x", method: "native", expectedChecksum: "aaa", actualChecksum: "bbb" }));
+
+        await runAsTenant("acme", () => startCopyVerification([{ destinationId: "nas", file: FILE }, { destinationId: "sftp", file: FILE }], "Manu"));
+        await finished();
+        await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledTimes(2));
+
+        const sent = mocks.notify.mock.calls.map(([event, opts]) => ({ event, opts }));
+        const toPlatform = sent.filter(({ opts }) => opts?.platform !== false);
+        const toTenant = sent.filter(({ opts }) => opts?.platform === false);
+        expect(toTenant).toEqual([{
+            event: expect.objectContaining({ data: expect.objectContaining({ errors: [{ file: FILE, destination: "NAS Backups", expected: "aaa", actual: "bbb" }] }) }),
+            opts: expect.objectContaining({ executionId: "exec-1", platform: false }),
+        }]);
+        expect(toPlatform).toEqual([{
+            event: expect.objectContaining({ data: expect.objectContaining({ failed: 1, errors: [], tenants: [{ tenant: "Acme", failed: 1, totalFiles: 2 }] }) }),
+            opts: { tenantId: null },
+        }]);
+        expect(JSON.stringify(toPlatform)).not.toContain("NAS Backups");
+        expect(JSON.stringify(toPlatform)).not.toContain(FILE);
     });
 
     it("says why a copy without a checksum was skipped", async () => {

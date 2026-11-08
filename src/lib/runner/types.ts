@@ -3,6 +3,7 @@ import { DatabaseAdapter, StorageAdapter, SnapshotHandle } from "@/lib/core/inte
 import { Job, AdapterConfig, Execution, JobDestination, JobSource, NotificationTemplate, NotificationTemplateChannel, JobNotificationTemplate } from "@prisma/client";
 import { LogEntry, LogLevel, LogType, PipelineStage } from "@/lib/core/logs";
 import { RetentionConfiguration } from "@/lib/core/retention";
+import type { RunFollower } from "@/lib/execution/follower-runs";
 
 export type JobDestinationWithConfig = JobDestination & {
     config: AdapterConfig;
@@ -44,6 +45,17 @@ export interface DestinationContext {
     adapterId: string;
     /** Connected only now and then, so the run leaves it out while it does not answer. */
     airGapped?: boolean;
+    /**
+     * Why the run writes nothing to it, set before the upload: a destination of another tenant
+     * that no longer shares it, or one that takes only encrypted backups from a job without a key.
+     * It counts as a failed upload.
+     */
+    refusal?: string;
+    /**
+     * The tenant of the run, when another tenant shares the destination with it. The upload asks
+     * again right before it, since the share may end while the dump runs.
+     */
+    customer?: string;
     uploadResult?: {
         success: boolean;
         path?: string;
@@ -58,6 +70,8 @@ export interface DirectorySourceContext {
     jobSourceId: string;
     configId: string;
     configName: string;
+    /** The tenant of the connection, whose local network setting a config of a snapshot follows. */
+    tenantId?: string;
     adapter: StorageAdapter;
     config: Record<string, unknown>; // decrypted adapter config
     remotePath: string;
@@ -118,6 +132,8 @@ export interface RunnerContext {
     setUploads?: (uploads: UploadState[]) => void;
     /** Where the dump stands for each database, kept in the metadata like the uploads. */
     setDumps?: (dumps: DumpState[]) => void;
+    /** The run in the History of a customer that follows this one, see `src/lib/execution/follower-runs.ts`. */
+    follower?: RunFollower;
 
     /** The optional database source. Each of its databases becomes one archive entry. */
     sourceAdapter?: DatabaseAdapter;
@@ -189,4 +205,11 @@ export interface RunnerContext {
 
     // Auto-lock: if true the backup will be written with locked=true in .meta.json
     lock?: boolean;
+
+    /**
+     * The databases this run backs up alone, of the ones the job would. Set for a backup a customer
+     * starts of one database of a shared server. The run leaves the folders of the job out, and its
+     * backup carries the list in `.meta.json`, so retention judges it apart from the whole backups.
+     */
+    onlyDatabases?: string[];
 }

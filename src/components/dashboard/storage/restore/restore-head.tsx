@@ -8,7 +8,7 @@ import { useExplorerData } from "@/components/dashboard/storage/explorer/explore
 import type { FileInfo } from "@/components/dashboard/storage/file-info";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
-import type { ExplorerIndex } from "@/services/storage/explorer-types";
+import type { ExplorerDestination, ExplorerIndex } from "@/services/storage/explorer-types";
 import { RestoreTimeline } from "./restore-timeline";
 
 function Fact({ children }: { children: React.ReactNode }) {
@@ -22,15 +22,17 @@ interface RestoreHeadProps {
     scopeLabel: string | null;
     mode: string | null;
     onBack: () => void;
+    /** The destination it reads from, when the page loaded it already. Left out, the head loads it itself. */
+    destination?: ExplorerDestination | null;
 }
 
 /**
  * What is restored: the job with its logo and when the backup was made, its facts, the copy it
  * reads from and whether that destination answers, and the small timeline of the job on the right.
  */
-export function RestoreHead({ file, destinationId, scopeLabel, mode, onBack }: RestoreHeadProps) {
-    const index = useExplorerData<ExplorerIndex>("/api/storage/explorer");
-    const destination = index.data?.destinations.find((entry) => entry.id === destinationId) ?? null;
+export function RestoreHead({ file, destinationId, scopeLabel, mode, onBack, destination: known }: RestoreHeadProps) {
+    const index = useExplorerData<ExplorerIndex>(known === undefined ? "/api/storage/explorer" : null);
+    const destination = known !== undefined ? known : index.data?.destinations.find((entry) => entry.id === destinationId) ?? null;
     const folders = (file.sourceType ?? "").toLowerCase() === "directory-only";
     const engine = [file.sourceType && !folders ? file.sourceType : null, file.engineVersion, file.engineEdition ? `(${file.engineEdition})` : null].filter(Boolean).join(" ");
 

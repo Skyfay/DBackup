@@ -5,6 +5,9 @@ import { logger } from "@/lib/logging/logger";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { checksNatively, verificationService, type FileVerificationResult } from "./verification-service";
+import { findDestination } from "@/services/sharing/destination-access";
+import { currentTenantId } from "@/lib/tenant/current";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 const log = logger.child({ service: "CopyVerification" });
 
@@ -65,27 +68,61 @@ function settle(check: CopyCheck, result: FileVerificationResult): CopyCheckStat
     return check.state;
 }
 
+type CopyFailure = { file: string; destination: string; expected: string; actual: string };
+
+/**
+ * Tells about the copies that did not match. The check is a run of the tenant of the backup, whose
+ * channels hear about it with the files and destinations. The channels of the platform hear about a
+ * check of the home tenant the same way, and about the check of another tenant only how many of its
+ * copies failed, like the integrity check of every tenant, never the names of its files and destinations.
+ */
+async function reportFailures(executionId: string, tenantId: string, checks: CopyCheck[], failures: CopyFailure[]): Promise<void> {
+    const counts = {
+        totalFiles: checks.length,
+        failed: failures.length,
+        passed: checks.filter((check) => check.state === "passed").length,
+        skipped: checks.filter((check) => check.state === "skipped").length,
+        triggerType: "Manual" as const,
+    };
+    const eventType = NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE;
+    if (tenantId === HOME_TENANT_ID) {
+        await notify({ eventType, data: { ...counts, errors: failures } }, { executionId });
+        return;
+    }
+    await notify({ eventType, data: { ...counts, errors: failures } }, { executionId, platform: false });
+    // A name that cannot be read leaves the tenant unnamed, never the platform untold.
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }).catch((error: unknown) => {
+        log.warn("Reading the name of the tenant for the copy check notice failed", { tenantId }, wrapError(error));
+        return null;
+    });
+    await notify({
+        eventType,
+        data: { ...counts, errors: [], tenants: [{ tenant: tenant?.name ?? "A deleted tenant", failed: counts.failed, totalFiles: counts.totalFiles }] },
+    }, { tenantId: null });
+}
+
 /**
  * Checks copies of a backup one after the other in one run, which History lists. Copies whose
  * destination checks its own checksum go first, since they take seconds, and the ones that have
  * to be downloaded and hashed after them. Returns at once, the run goes on in the background.
  */
 export async function startCopyVerification(targets: CopyTarget[], triggeredBy: string): Promise<{ executionId: string }> {
-    const configs = await prisma.adapterConfig.findMany({
-        where: { id: { in: [...new Set(targets.map((target) => target.destinationId))] } },
-        select: { id: true, name: true, adapterId: true },
-    });
+    // Own destinations and those other tenants share with this one, as `verifyFile` opens them.
+    const configs = (await Promise.all([...new Set(targets.map((target) => target.destinationId))].map((id) =>
+        findDestination(id).then(({ row }) => [{ id: row.id, name: row.name, adapterId: row.adapterId }]).catch(() => [])))).flat();
     const byId = new Map(configs.map((config) => [config.id, config]));
     const native = (target: CopyTarget) => checksNatively(byId.get(target.destinationId)?.adapterId ?? "");
     // A stable sort, so the copies keep their order within each kind.
     const ordered = [...targets].sort((a, b) => Number(!native(a)) - Number(!native(b)));
 
+    // The tenant of the run, the way `SystemTaskRunner.create` gives it one.
+    const tenantId = (await currentTenantId()) ?? HOME_TENANT_ID;
     const runner = await SystemTaskRunner.create("Verification", "Manual", triggeredBy, STAGES);
     const checks: CopyCheck[] = ordered.map((target) => ({ ...target, state: "waiting" }));
     runner.setExtra({ copies: checks });
 
     void (async () => {
-        const failures: { file: string; destination: string; expected: string; actual: string }[] = [];
+        const failures: CopyFailure[] = [];
         try {
             await runner.start();
             runner.setStage("Verifying");
@@ -125,19 +162,7 @@ export async function startCopyVerification(targets: CopyTarget[], triggeredBy: 
 
             runner.setStage("Completed");
             await runner.finish(checks.some((check) => check.state === "failed" || check.state === "error") ? "Failed" : "Success");
-            if (failures.length > 0) {
-                await notify({
-                    eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
-                    data: {
-                        totalFiles: checks.length,
-                        failed: failures.length,
-                        passed: checks.filter((check) => check.state === "passed").length,
-                        skipped: checks.filter((check) => check.state === "skipped").length,
-                        triggerType: "Manual",
-                        errors: failures,
-                    },
-                });
-            }
+            if (failures.length > 0) await reportFailures(runner.id, tenantId, checks, failures);
         } catch (e: unknown) {
             log.error("Copy verification failed", { executionId: runner.id }, wrapError(e));
             runner.logEntry(getErrorMessage(e), "error");

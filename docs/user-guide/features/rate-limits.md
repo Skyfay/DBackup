@@ -4,7 +4,7 @@ Configure how many requests clients can send to the application within a given t
 
 ## Overview
 
-DBackup enforces rate limits at the middleware level - every incoming request is checked before reaching any route handler. Limits are applied **per IP address** and are split into three categories:
+DBackup enforces rate limits at the middleware level - every incoming request is checked before reaching any route handler. Limits are applied **per client address** and are split into three categories:
 
 | Limit | Applies To | Default |
 | :--- | :--- | :--- |
@@ -41,7 +41,7 @@ Every `POST`, `PUT` and `DELETE` to `/api`, like triggering a job through its AP
 
 ## How It Works
 
-Rate limits are enforced in the Next.js middleware, which runs on every request. The middleware uses in-memory counters (via `rate-limiter-flexible`) per IP address.
+Rate limits are enforced in the Next.js middleware, which runs on every request. The middleware uses in-memory counters (via `rate-limiter-flexible`) per client address, an IPv6 address by its `/64` network. Behind a reverse proxy the address comes from its `X-Forwarded-For`, as long as the proxy is trusted, see [The Address of a Client](/user-guide/installation#the-address-of-a-client). A header a client sends itself does not count.
 
 ::: info
 After a change the middleware picks up the new limits within **30 seconds**, without a restart. A limit that did not change keeps its counters, so a window always counts its full length.

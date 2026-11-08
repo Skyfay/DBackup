@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createFakeHost } from "@/lib/testing/fake-host";
-import { clientFromVersion, dumpClientOf, readableContent } from "@/lib/adapters/database/mysql/dump-content";
+import { clientFromVersion, connectionClientOf, dumpClientOf, readableContent } from "@/lib/adapters/database/mysql/dump-content";
 import type { MySQLConfig } from "@/lib/adapters/definitions";
 
 const config = { host: "db.internal", port: 3306, user: "backup", database: "shop" } as unknown as MySQLConfig;
@@ -19,24 +19,41 @@ function askingHost(answers: { events?: { code: number; stderr?: string }; hidde
 
 describe("the dump tool that runs", () => {
     it("tells MySQL's own mysqldump from MariaDB's by its version line", () => {
-        expect(clientFromVersion("mysqldump  Ver 8.0.46 for Linux on aarch64 (MySQL Community Server - GPL)")).toEqual({ setsGtidPurged: true });
-        expect(clientFromVersion("mysqldump  Ver 10.13 Distrib 5.7.44, for Linux (x86_64)")).toEqual({ setsGtidPurged: true });
-        expect(clientFromVersion("mysqldump  Ver 8.0.36-28 for Linux on x86_64 (Percona Server (GPL), Release 28)")).toEqual({ setsGtidPurged: true });
-        expect(clientFromVersion("mariadb-dump  Ver 10.19 Distrib 10.11.18-MariaDB, for debian-linux-gnu (aarch64)")).toEqual({ setsGtidPurged: false });
-        expect(clientFromVersion("mariadb-dump from 11.4.10-MariaDB, client 10.19 for debian-linux-gnu (aarch64)")).toEqual({ setsGtidPurged: false });
+        const mysql = { setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" };
+        const mariadb = { setsGtidPurged: false, sslOff: "--skip-ssl" };
+        expect(clientFromVersion("mysqldump  Ver 8.0.46 for Linux on aarch64 (MySQL Community Server - GPL)")).toEqual(mysql);
+        expect(clientFromVersion("mysqldump  Ver 10.13 Distrib 5.7.44, for Linux (x86_64)")).toEqual(mysql);
+        expect(clientFromVersion("mysqldump  Ver 8.0.36-28 for Linux on x86_64 (Percona Server (GPL), Release 28)")).toEqual(mysql);
+        expect(clientFromVersion("mysql  Ver 8.0.46-0ubuntu0.24.04.4 for Linux on x86_64 ((Ubuntu))")).toEqual(mysql);
+        expect(clientFromVersion("mariadb-dump  Ver 10.19 Distrib 10.11.18-MariaDB, for debian-linux-gnu (aarch64)")).toEqual(mariadb);
+        expect(clientFromVersion("mariadb-dump from 11.4.10-MariaDB, client 10.19 for debian-linux-gnu (aarch64)")).toEqual(mariadb);
+        expect(clientFromVersion("mysql  Ver 15.1 Distrib 10.11.6-MariaDB, for debian-linux-gnu (x86_64)")).toEqual(mariadb);
     });
 
     it("counts a mysqldump older than 5.6.9 or one that does not answer as one without --set-gtid-purged", () => {
-        expect(clientFromVersion("mysqldump  Ver 10.13 Distrib 5.5.62, for Linux (x86_64)")).toEqual({ setsGtidPurged: false });
-        expect(clientFromVersion("")).toEqual({ setsGtidPurged: false });
+        expect(clientFromVersion("mysqldump  Ver 10.13 Distrib 5.5.62, for Linux (x86_64)")).toEqual({ setsGtidPurged: false, sslOff: "--skip-ssl" });
+        expect(clientFromVersion("")).toEqual({ setsGtidPurged: false, sslOff: "--skip-ssl" });
+    });
+
+    it("turns TLS off with --ssl-mode only from MySQL 5.7.11 on, which brought it", () => {
+        expect(clientFromVersion("mysqldump  Ver 10.13 Distrib 5.7.10, for Linux (x86_64)").sslOff).toBe("--skip-ssl");
+        expect(clientFromVersion("mysqldump  Ver 10.13 Distrib 5.7.11, for Linux (x86_64)").sslOff).toBe("--ssl-mode=DISABLED");
     });
 
     it("is asked once per host and binary", async () => {
         const host = createFakeHost({ onExec: () => ({ stdout: "mysqldump  Ver 8.0.46 for Linux" }) });
 
         await dumpClientOf(host, "mysqldump");
-        expect(await dumpClientOf(host, "mysqldump")).toEqual({ setsGtidPurged: true });
+        expect(await dumpClientOf(host, "mysqldump")).toEqual({ setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" });
         expect(host.calls.exec).toEqual([["mysqldump", "--version"]]);
+    });
+
+    it("is asked about a connection only when TLS is off, where it decides the flag", async () => {
+        const host = createFakeHost({ onExec: () => ({ stdout: "mysql  Ver 8.0.46 for Linux" }) });
+
+        expect(await connectionClientOf({ disableSsl: false }, host, "mysql")).toBeUndefined();
+        expect(host.calls.exec).toEqual([]);
+        expect(await connectionClientOf({ disableSsl: true }, host, "mysql")).toMatchObject({ sslOff: "--ssl-mode=DISABLED" });
     });
 });
 

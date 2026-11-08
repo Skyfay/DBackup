@@ -27,14 +27,35 @@ describe("the dots of the page tabs worked out on the server", () => {
         prismaMock.user.findMany.mockResolvedValue([{ name: "Sara Nguyen" }] as never);
         prismaMock.apiKey.findMany.mockResolvedValue([{ name: "CI deploy" }, { name: "Backup bot" }] as never);
 
-        expect(await getUsersPageAttention(NOW)).toEqual({
+        expect(await getUsersPageAttention("default", NOW)).toEqual({
             users: { tone: "warning", note: "Sara Nguyen has no group and sees nothing" },
             apikeys: { tone: "warning", note: "CI deploy and Backup bot run out within two weeks" },
         });
-        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { groupId: null } }));
+        // An account without a group anywhere shows in the home tenant, whose admins give it one,
+        // unless it runs the platform, which needs no group.
+        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} }, platformRole: null, platformGroupId: null } }));
         expect(prismaMock.apiKey.findMany).toHaveBeenCalledWith(expect.objectContaining({
             where: { enabled: true, expiresAt: { gt: new Date(NOW), lte: new Date(NOW + 14 * 86_400_000) } },
         }));
+    });
+
+    it("marks Users in All tenants for an account that works in no tenant, and counts the keys of every tenant", async () => {
+        prismaMock.user.findMany.mockResolvedValue([{ name: "Sara Nguyen" }, { name: "Tom Weber" }] as never);
+        prismaMock.apiKey.findMany.mockResolvedValue([{ name: "CI deploy" }] as never);
+
+        expect(await getUsersPageAttention(null, NOW)).toEqual({
+            users: { tone: "warning", note: "Sara Nguyen and Tom Weber work in no tenant and see nothing" },
+            apikeys: { tone: "warning", note: "CI deploy runs out within two weeks" },
+        });
+        expect(prismaMock.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { memberships: { none: {} }, platformRole: null, platformGroupId: null } }));
+    });
+
+    it("names the accounts without a group only to the home tenant, never to a customer", async () => {
+        prismaMock.user.findMany.mockResolvedValue([{ name: "Sara Nguyen" }] as never);
+        prismaMock.apiKey.findMany.mockResolvedValue([] as never);
+
+        expect(await getUsersPageAttention("tenant-a", NOW)).toEqual({ users: undefined, apikeys: undefined });
+        expect(prismaMock.user.findMany).not.toHaveBeenCalled();
     });
 
     it("marks each Connections tab by the health check of its connections", async () => {
@@ -64,9 +85,12 @@ describe("the dots of the page tabs worked out on the server", () => {
 
     it("marks History by the newest run of each job and the newest message of each channel, not by older failures", async () => {
         const newest = new Date("2026-09-30T03:00:00.000Z");
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([{ jobId: "mysql", _max: { startedAt: newest } }, { jobId: "files", _max: { startedAt: newest } }] as never);
+        prismaMock.job.findMany.mockResolvedValue([{ id: "mysql", name: "Nightly MySQL" }, { id: "files", name: "Files to NAS" }, { id: "redis", name: "Redis" }] as never);
+        // The newest finished backup of each job, found by one raw query.
+        prismaMock.$queryRaw.mockResolvedValue([{ id: "run-mysql" }, { id: "run-files" }, { id: "run-redis" }] as never);
         mocked(prismaMock.notificationLog.groupBy).mockResolvedValue([{ channelId: "slack", _max: { sentAt: newest } }] as never);
-        prismaMock.execution.findMany.mockResolvedValue([{ status: "Failed", job: { name: "Nightly MySQL" } }, { status: "Partial", job: { name: "Files to NAS" } }] as never);
+        // Of those, the client reads the ones that failed or missed a copy.
+        prismaMock.execution.findMany.mockResolvedValue([{ status: "Failed", jobId: "mysql" }, { status: "Partial", jobId: "files" }] as never);
         prismaMock.notificationLog.findMany.mockResolvedValue([{ channelId: "slack" }] as never);
         prismaMock.adapterConfig.findMany.mockResolvedValue([{ name: "Slack ops" }] as never);
 
@@ -75,12 +99,15 @@ describe("the dots of the page tabs worked out on the server", () => {
             notifications: { tone: "destructive", note: "Slack ops failed to send its last message" },
         });
         expect(prismaMock.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({
-            where: expect.objectContaining({ status: { in: ["Failed", "Partial"] }, OR: [{ jobId: "mysql", startedAt: newest }, { jobId: "files", startedAt: newest }] }),
+            where: { id: { in: ["run-mysql", "run-files", "run-redis"] } },
+        }));
+        expect(prismaMock.notificationLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { status: "Failed", OR: [{ channelId: "slack", sentAt: newest }] },
         }));
     });
 
     it("has nothing to say for History without runs or messages", async () => {
-        mocked(prismaMock.execution.groupBy).mockResolvedValue([] as never);
+        prismaMock.job.findMany.mockResolvedValue([] as never);
         mocked(prismaMock.notificationLog.groupBy).mockResolvedValue([] as never);
 
         expect(await getHistoryAttention()).toEqual({ runs: undefined, notifications: undefined });

@@ -11,19 +11,27 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/access-control", () => ({
-    getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
+    getViewer: vi.fn(async () => mocks.viewer),
     hasPermission: vi.fn(async () => true),
     checkPermission: vi.fn(),
     currentSessionId: vi.fn(async () => "s-here"),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/prisma", () => ({ default: { account: { findFirst: vi.fn(async () => mocks.account) } } }));
+vi.mock("@/services/user/preference-service", () => ({ getAutoRedirectOnJobStart: vi.fn(), setAutoRedirectOnJobStart: vi.fn() }));
 vi.mock("@/services/auth/auth-service", () => ({ authService: { verifyPassword: mocks.verifyPassword, setPassword: mocks.setPassword } }));
-vi.mock("@/services/user/user-service", () => ({ userService: { revokeSessions: mocks.revokeSessions } }));
+vi.mock("@/services/user/user-service", () => ({ userService: { revokeSessions: mocks.revokeSessions, hasPassword: vi.fn(async () => mocks.account !== null) } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 
-const { updateOwnPassword } = await import("@/app/actions/auth/user");
+const { updateOwnPassword, updateUserPreferences } = await import("@/app/actions/auth/user");
+
+describe("the own preferences under Profile", () => {
+    it("names the account in the audit log", async () => {
+        vi.clearAllMocks();
+        expect(await updateUserPreferences("u1", { autoRedirectOnJobStart: false })).toEqual({ success: true });
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { name: "Lena Graf", preferences: { autoRedirectOnJobStart: false } }, "u1", expect.anything());
+    });
+});
 
 describe("changing the own password under Profile", () => {
     beforeEach(() => {
@@ -49,7 +57,7 @@ describe("changing the own password under Profile", () => {
 
         expect(mocks.setPassword).toHaveBeenCalledWith("u1", "Harbor-Lamp-42");
         expect(mocks.revokeSessions).toHaveBeenCalledWith("u1", "s-here");
-        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { change: "Password Changed", signedOut: 2 }, "u1");
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", { name: "Lena Graf", change: "Password Changed", signedOut: 2 }, "u1", { tenantId: "default" });
     });
 
     it("hands on the rule of Settings > Passwords that the new password breaks", async () => {

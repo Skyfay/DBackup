@@ -28,13 +28,20 @@ interface EncryptionStepProps {
     step: SetupStep;
     /** The keys in the Vault, the ones made during the setup included. */
     keys: ExistingEntry[];
+    /** May make a new key, else the part only picks one. */
+    canCreate?: boolean;
+    /** The destination that takes only encrypted backups, which leaves no way to skip the part. */
+    requiredBy?: string | null;
     picked: SetupEntry | null;
     onSkip: () => void;
     onDone: (entry: SetupEntry) => void;
 }
 
-/** A key for the backups, picked from the Vault or made here. The part can be skipped. */
-export function EncryptionStep({ number, step, keys, picked, onSkip, onDone }: EncryptionStepProps) {
+/**
+ * A key for the backups, picked from the Vault or made here by whoever may. The part can be
+ * skipped, unless the destination takes only encrypted backups.
+ */
+export function EncryptionStep({ number, step, keys, canCreate = true, requiredBy = null, picked, onSkip, onDone }: EncryptionStepProps) {
     const nameId = useId();
     const [name, setName] = useState(() => freeKeyName(keys.map((key) => key.name)));
     const [creating, setCreating] = useState(false);
@@ -65,9 +72,11 @@ export function EncryptionStep({ number, step, keys, picked, onSkip, onDone }: E
             step={step}
             actions={
                 <>
-                    <Button type="button" variant="ghost" onClick={onSkip}>
-                        Skip
-                    </Button>
+                    {!requiredBy && (
+                        <Button type="button" variant="ghost" onClick={onSkip}>
+                            Skip
+                        </Button>
+                    )}
                     {keys.length > 0 && (
                         <Button type="button" variant="outline" disabled={!selectedKey} onClick={() => selectedKey && onDone({ id: selectedKey.id, name: selectedKey.name })}>
                             Use this key
@@ -76,14 +85,24 @@ export function EncryptionStep({ number, step, keys, picked, onSkip, onDone }: E
                 </>
             }
         >
+            {requiredBy && (
+                <p className="mb-5 rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground">
+                    {requiredBy} takes only encrypted backups, so the job needs a key.
+                </p>
+            )}
             {keys.length > 0 && (
                 <div className="mb-5">
                     <p className="mb-2 text-xs font-medium text-muted-foreground">Use a key you have</p>
                     <ExistingList entries={keys} value={selected} onValueChange={setSelected} label="Keys in the Vault" />
                 </div>
             )}
-            {keys.length > 0 && <p className="mb-2 text-xs font-medium text-muted-foreground">Or create a new one</p>}
-            <div className="grid gap-2">
+            {!canCreate && keys.length === 0 && (
+                <p className="rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground">
+                    There is no key in the Vault yet. Ask someone who may add one.
+                </p>
+            )}
+            {canCreate && keys.length > 0 && <p className="mb-2 text-xs font-medium text-muted-foreground">Or create a new one</p>}
+            {canCreate && <div className="grid gap-2">
                 <Label htmlFor={nameId}>Name</Label>
                 <div className="flex flex-wrap gap-2">
                     <Input
@@ -105,7 +124,7 @@ export function EncryptionStep({ number, step, keys, picked, onSkip, onDone }: E
                     </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">Shown in the Vault and on the job.</p>
-            </div>
+            </div>}
             <ul className="mt-5 grid gap-4">
                 <Fact icon={ShieldCheck}>DBackup encrypts every backup with this key before uploading it, so the destination only ever holds encrypted files.</Fact>
                 <Fact icon={KeyRound}>

@@ -81,7 +81,7 @@ export async function resolveBackupKey({
     if (override?.rawKeyHex || override?.profileId) {
         const key = override.rawKeyHex
             ? parseRawKey(override.rawKeyHex)
-            : await getProfileMasterKey(override.profileId!);
+            : await pickedProfileKey(override.profileId!, profileId);
 
         // Verified rather than trusted, unlike the metadata's own profile: a pasted key is
         // the one input nobody has checked, and handing a wrong one to the decryption
@@ -135,6 +135,20 @@ export async function resolveBackupKey({
         `Encryption profile ${profileId ?? "(unknown)"} is missing, and no other profile could decrypt this file.`,
         profileId
     );
+}
+
+/**
+ * The key of the profile the user picked. A profile that is not in the Vault of the tenant, one
+ * that never existed or one of another tenant alike, asks for a key again: its error would
+ * otherwise read as an unusable index, and the callers fell back to reading the archive as an
+ * older format, which failed with a message of the parser.
+ */
+async function pickedProfileKey(pickedId: string, profileId: string | undefined): Promise<Buffer> {
+    try {
+        return await getProfileMasterKey(pickedId);
+    } catch {
+        throw new EncryptionKeyRequiredError("The key picked to open this backup is not in the Vault.", profileId);
+    }
 }
 
 function parseRawKey(keyHex: string): Buffer {

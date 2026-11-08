@@ -125,6 +125,12 @@ export interface BackupMetadata {
         /** Username or API key name. Only present if privacy.includeActorInMetadata is enabled. */
         actor?: string;
     };
+    /**
+     * The databases a run backed up alone, of the ones the job backs up, like a backup a customer
+     * started of one database of a shared server. Absent on a backup of the whole job. Retention
+     * judges such backups apart, by the same policy, so they never push a whole backup out.
+     */
+    onlyDatabases?: string[];
     /** Allow additional adapter-specific properties */
     [key: string]: unknown;
 }
@@ -414,6 +420,16 @@ export type FileInfo = {
      * into the same folder, and the backups the deleted job left there are not its to delete.
      */
     jobId?: string;
+    /**
+     * The databases a run backed up alone, read from its `.meta.json`. Retention judges such a
+     * backup with the others of the same databases, apart from the whole backups of the job.
+     */
+    onlyDatabases?: string[];
+    /**
+     * Set when its `.meta.json` says `sourceType: "SYSTEM"`, a file of the configuration backup,
+     * which the retention of a job never counts or deletes.
+     */
+    configBackup?: boolean;
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */
@@ -668,6 +684,12 @@ export interface SnapshotHandle {
     noun?: string;
 }
 
+/** Options of `StorageAdapter.read()` and `readBytes()`. */
+export interface StorageReadOptions {
+    /** The most bytes the read takes, `SIDECAR_READ_LIMIT` when left out. */
+    maxBytes?: number;
+}
+
 export interface StorageAdapter extends BaseAdapter {
     type: 'storage';
     /**
@@ -717,9 +739,18 @@ export interface StorageAdapter extends BaseAdapter {
     ): Promise<boolean>;
 
     /**
-     * Reads the content of a file as a string
+     * Reads the content of a file as a string, null when it is not there.
+     *
+     * Takes at most `options.maxBytes` (`SIDECAR_READ_LIMIT` when left out) and fails with
+     * `FileTooLargeError` from `common/read-limit.ts` past it, stopping the transfer there. The
+     * server of a destination may belong to a customer, so nothing is buffered without a bound.
      */
-    read?(config: AdapterConfig, remotePath: string): Promise<string | null>;
+    read?(config: AdapterConfig, remotePath: string, options?: StorageReadOptions): Promise<string | null>;
+
+    /**
+     * The same as `read()`, as bytes, for content that is not text, like a sealed index.
+     */
+    readBytes?(config: AdapterConfig, remotePath: string, options?: StorageReadOptions): Promise<Buffer | null>;
 
     /**
      * How many `read()` calls a caller may run against this destination at once.
@@ -777,6 +808,15 @@ export interface StorageAdapter extends BaseAdapter {
      * Deletes a file
      */
     delete(config: AdapterConfig, remotePath: string): Promise<boolean>;
+
+    /**
+     * Optional: removes a folder, but only while it is empty, never with anything in it, and never
+     * the folder the destination is set to. Returns false when it holds something, is gone or is
+     * that folder. Implemented where the storage has folders of their own to delete, so a storage
+     * of objects, whose folders vanish with their last file, leaves it out, and so does an adapter
+     * whose protocol deletes a folder only with everything in it.
+     */
+    deleteEmptyFolder?(config: AdapterConfig, remotePath: string): Promise<boolean>;
 
     /**
      * Optional: downloads an entire remote directory tree to a local directory, used by

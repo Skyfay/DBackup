@@ -107,6 +107,21 @@ describe('listExecutionHistory()', () => {
         expect(result.data).toEqual([{ id: 'e1' }]);
     });
 
+    it("never names the provider's run a customer's backup follows, in the list and in the row of one run", async () => {
+        const { getExecutionHistoryRow } = await import('@/services/system/execution-history-service');
+        const follower = { id: 'cust-run', metadata: JSON.stringify({ stage: 'Dumping Databases', backupOf: { database: 'shop' }, followsRun: 'provider-run' }) };
+        prismaMock.execution.findMany.mockResolvedValue([follower] as any);
+        prismaMock.execution.findUnique.mockResolvedValue(follower as any);
+
+        const listed = (await listExecutionHistory({})).data[0];
+        const one = await getExecutionHistoryRow('cust-run');
+
+        for (const row of [listed, one]) {
+            expect(row?.metadata).not.toContain('provider-run');
+            expect(JSON.parse(row?.metadata ?? '{}')).toEqual({ stage: 'Dumping Databases', backupOf: { database: 'shop' } });
+        }
+    });
+
     it('treats a missing or invalid page as the first one', async () => {
         await listExecutionHistory({ page: 0, pageSize: 10 });
         expect(prismaMock.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0 }));

@@ -1,0 +1,74 @@
+# The storage servers of the dev lab: S3 (SeaweedFS), SFTP and rsync over OpenSSH, WebDAV, SMB and
+# FTP. Every workspace writes into a folder of its own on each of them, see lab/src/seed.
+# Credentials are test values and live in lab/src/catalog.ts as well.
+
+services:
+  # SFTP and rsync destination, and the SSH host for the SSH mode of the database sources: it
+  # carries the clients of Debian 12 and a SQLite database of the dataset.
+  ssh:
+    build:
+      context: ..
+      dockerfile: compose/ssh/Dockerfile
+    restart: unless-stopped
+    profiles: ["core"]
+    ports: ["22220:22"]
+    volumes: [ssh-home:/home/dbackup]
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x sshd >/dev/null"]
+      interval: 5s
+      retries: 20
+
+  # S3 for the S3 Compatible destination. MinIO publishes no images anymore, so SeaweedFS stands
+  # in, as in the end-to-end tests of SkySend. Without identities it takes any key, so a wrong
+  # key never fails against it.
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
+    profiles: ["core"]
+    command: server -s3 -dir=/data -master.telemetry=false
+    ports: ["19000:8333"]
+    volumes: [s3:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/ || exit 1"]
+      interval: 5s
+      retries: 30
+
+  webdav:
+    image: rclone/rclone:1.69
+    restart: unless-stopped
+    profiles: ["core"]
+    command: serve webdav /data --addr :8080 --user lab --pass lab-password
+    ports: ["18080:8080"]
+    volumes: [webdav:/data]
+
+  samba:
+    image: ghcr.io/servercontainers/samba:latest
+    restart: unless-stopped
+    profiles: ["core"]
+    environment:
+      ACCOUNT_lab: lab-password
+      UID_lab: "1000"
+      SAMBA_VOLUME_CONFIG_backups: "[backups]; path=/shares/backups; valid users = lab; guest ok = no; read only = no; browseable = yes"
+    # The SMB destination has no port field, so the share sits on the standard port.
+    ports: ["445:445"]
+    volumes: [samba:/shares/backups]
+
+  ftp:
+    image: delfer/alpine-ftp-server:latest
+    restart: unless-stopped
+    profiles: ["core"]
+    environment:
+      USERS: "lab|lab-password|/ftp/lab"
+      # The address passive mode hands out, the one DBackup reaches the host under.
+      ADDRESS: ${LAB_FTP_ADDRESS:-127.0.0.1}
+      MIN_PORT: "21100"
+      MAX_PORT: "21110"
+    ports: ["2121:21", "21100-21110:21100-21110"]
+    volumes: [ftp:/ftp/lab]
+
+volumes:
+  ssh-home:
+  s3:
+  webdav:
+  samba:
+  ftp:

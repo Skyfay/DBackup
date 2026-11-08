@@ -61,3 +61,14 @@ copy_sqlite prisma/dev.db
 
 cd "$TARGET"
 pnpm install
+
+# The copied database may lack the migrations of this branch, and a new checkout has no Prisma
+# client yet. Both are needed before the app or the lab seed can open the database.
+pnpm exec prisma migrate deploy
+pnpm exec prisma generate
+
+# With a lab config of your own, the database of the workspace gets the lab right away, with its
+# destinations pointing at the folders of this workspace. See lab/README.md.
+if [ -n "${DBACKUP_LAB_CONFIG:-}" ] || [ -f "$HOME/.config/dbackup/lab.json" ]; then
+  pnpm lab:seed || echo "The lab seed failed, run pnpm lab:seed once the lab is up."
+fi

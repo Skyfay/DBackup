@@ -37,6 +37,11 @@ export interface RoadmapItem {
 
 export const ROADMAP_ITEMS: RoadmapItem[] = [
   {
+    slug: "tenants",
+    status: "in-progress",
+    category: "security-access",
+  },
+  {
     slug: "dbackup-agent",
     status: "planned",
     category: "backup-engine",

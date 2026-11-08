@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isStorageRole, STORAGE_ROLES } from "@/lib/core/storage-roles";
-import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
-import { validateStorageRole } from "@/lib/adapters/role-validation";
-import prisma from "@/lib/prisma";
-import { encryptConfig } from "@/lib/crypto";
+import { unauthorized } from "@/lib/server/unauthorized";
+import { isStorageRole } from "@/lib/core/storage-roles";
 import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { SEE_SHARING_PERMISSION } from "@/lib/tenant/sharing";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage, ValidationError, NotFoundError } from "@/lib/logging/errors";
+import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { wrapError, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
-import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
-import { getConnectionOverview } from "@/services/adapters/connection-overview";
+import { createAdapter } from "@/services/adapters/adapter-create";
+import { listAdapters } from "@/services/adapters/adapter-list";
+import { platformGroupService } from "@/services/user/platform-group-service";
 
 registerAdapters();
 
@@ -23,7 +24,7 @@ const log = logger.child({ route: "adapters" });
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     const { searchParams } = new URL(req.url);
@@ -43,45 +44,47 @@ export async function GET(req: NextRequest) {
              checkPermissionWithContext(ctx, PERMISSIONS.NOTIFICATIONS.READ);
         }
         // Security: Require type parameter to prevent leaking all adapter configs
-        else if (!type) {
+        else {
             return NextResponse.json(
                 { error: "Type parameter is required (database, storage, or notification)" },
                 { status: 400 }
             );
         }
 
-        const adapters = await prisma.adapterConfig.findMany({
-            where: {
-                ...(type ? { type } : {}),
-                ...(role && type === 'storage' ? { storageRole: role } : {}),
-            },
-            orderBy: { createdAt: 'desc' }
+        // The servers of other tenants whose databases the tenant holds, which only the Connections
+        // page asks for with `shared=true`. A tenant has to be open, All tenants lists none of them.
+        // The newest backup of each database comes along for whoever may see, restore or download it.
+        const sharedServers = type === "database" && searchParams.get("shared") === "true" && ctx.tenantId && !ctx.allTenants
+            ? {
+                  tenantId: ctx.tenantId,
+                  backups: [PERMISSIONS.STORAGE.READ, PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD].some((permission) => hasPermissionWithContext(ctx, permission)),
+              }
+            : undefined;
+
+        // Every row is the safe DTO, so a decrypted secret never reaches the client whatever the
+        // caller may see. The connection tables ask for usage, last backup and health on top.
+        const shares = hasPermissionWithContext(ctx, SEE_SHARING_PERMISSION);
+        const items = await listAdapters(type, {
+            role,
+            overview: searchParams.get("overview") === "true",
+            shares,
+            // The tenants a share names, within the reach of the platform group of the viewer.
+            shareReach: shares ? await platformGroupService.reachOf(ctx.userId) : undefined,
+            sharedServers,
         });
-
-        // Map every row through the safe DTO. `toAdapterListItem` redacts all
-        // sensitive keys (deletes them, not blanks them) and reports `secretStatus`,
-        // so a decrypted secret can never reach the client regardless of caller
-        // permission level. See src/lib/adapters/dto.ts.
-        const items = adapters.map(toAdapterListItem);
-
-        // The connection tables ask for usage, last backup and health on top. Other callers
-        // skip it, because it costs several aggregate queries.
-        if (searchParams.get("overview") === "true") {
-            const overview = await getConnectionOverview(items.map((item) => item.id));
-            return NextResponse.json(items.map((item) => ({ ...item, overview: overview.get(item.id) ?? null })));
-        }
-
         return NextResponse.json(items);
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Failed to fetch adapters";
-        return NextResponse.json({ error: message }, { status: 500 });
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
+        log.error("Listing connections failed", {}, wrapError(error));
+        return NextResponse.json({ error: "The connections could not be loaded. The log of DBackup has the details." }, { status: 500 });
     }
 }
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -95,87 +98,23 @@ export async function POST(req: NextRequest) {
             checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.WRITE);
         } else if (type === 'notification') {
             checkPermissionWithContext(ctx, PERMISSIONS.NOTIFICATIONS.WRITE);
+        } else {
+            // A kind without a permission of its own is no connection, so nothing is created.
+            return NextResponse.json({ success: false, error: "The type must be database, storage or notification" }, { status: 400 });
         }
+        // A new connection never signs in with the logins of the destination of the configuration backup.
+        const locked = await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
+        if (locked) return locked;
 
-        // Basic validation
-        if (!name || !type || !adapterId || !config) {
-            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-        }
-
-        // Validate credential profile assignments (if provided)
+        let newAdapter;
         try {
-            await validateCredentialAssignments(adapterId, primaryCredentialId ?? null, sshCredentialId ?? null);
+            newAdapter = await createAdapter({ name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, storageRole });
         } catch (e) {
-            if (e instanceof ValidationError) {
-                return NextResponse.json({ error: e.message }, { status: 400 });
-            }
-            if (e instanceof NotFoundError) {
-                return NextResponse.json({ error: e.message }, { status: 404 });
-            }
+            if (e instanceof ValidationError) return NextResponse.json({ error: e.message }, { status: 400 });
+            if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
+            if (e instanceof ConflictError) return NextResponse.json({ error: e.message }, { status: 409 });
             throw e;
         }
-
-        // An adapter that only works one way round never gets a config pointing the other
-        // way, whatever the request asked for.
-        try {
-            if (type === 'storage') {
-                validateStorageRole(adapterId, isStorageRole(storageRole) ? storageRole : STORAGE_ROLES.DESTINATION);
-            }
-        } catch (e) {
-            if (e instanceof ValidationError) {
-                return NextResponse.json({ error: e.message }, { status: 400 });
-            }
-            throw e;
-        }
-
-        // A snapshot-enabled config is only accepted when the server can actually deliver
-        // one - the form's gate alone would be bypassable through this endpoint.
-        try {
-            const configForCheck = typeof config === 'string' ? JSON.parse(config) : config;
-            await validateSnapshotConfig(
-                adapterId,
-                configForCheck,
-                isStorageRole(storageRole) ? storageRole : STORAGE_ROLES.DESTINATION,
-                primaryCredentialId ?? null,
-                sshCredentialId ?? null
-            );
-        } catch (e) {
-            if (e instanceof ValidationError) {
-                return NextResponse.json({ error: e.message }, { status: 400 });
-            }
-            throw e;
-        }
-
-        // Check name uniqueness within the same type
-        const existingByName = await prisma.adapterConfig.findFirst({
-            where: { name, type },
-        });
-        if (existingByName) {
-            return NextResponse.json({ error: `A ${type === 'database' ? 'source' : type === 'storage' ? 'destination' : 'notification'} with the name "${name}" already exists.` }, { status: 409 });
-        }
-
-        // Ensure config is object for encryption
-        const configObj = typeof config === 'string' ? JSON.parse(config) : config;
-
-        // Encrypt sensitive fields
-        const encryptedConfig = encryptConfig(configObj);
-
-        // Stringify for storage
-        const configString = JSON.stringify(encryptedConfig);
-
-        const newAdapter = await prisma.adapterConfig.create({
-            data: {
-                name,
-                type,
-                adapterId,
-                config: configString,
-                primaryCredentialId: primaryCredentialId ?? null,
-                sshCredentialId: sshCredentialId ?? null,
-                ...(metadata ? { metadata: JSON.stringify(metadata) } : {}),
-                // The role only makes sense for storage adapters - other types keep the default.
-                ...(type === 'storage' && isStorageRole(storageRole) ? { storageRole } : {}),
-            },
-        });
 
         await auditService.logFor(
             ctx,
@@ -187,7 +126,9 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(toAdapterListItem(newAdapter), { status: 201 });
     } catch (error: unknown) {
+        const refused = permissionRefusal(error);
+        if (refused) return refused;
         log.error("Create adapter error", {}, wrapError(error));
-        return NextResponse.json({ error: getErrorMessage(error) || "Failed to create adapter" }, { status: 500 });
+        return NextResponse.json({ error: "The connection could not be created. The log of DBackup has the details." }, { status: 500 });
     }
 }

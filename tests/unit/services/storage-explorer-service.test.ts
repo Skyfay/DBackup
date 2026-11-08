@@ -17,11 +17,20 @@ vi.mock('@/services/storage/storage-service', () => ({
 vi.mock('@/lib/logging/logger', () => ({
     logger: { child: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
+// The destinations another tenant shares with the tenant of the page, none unless a test names one.
+const provided = vi.hoisted(() => vi.fn(async (..._args: unknown[]): Promise<{ id: string; providerName: string }[]> => []));
+vi.mock('@/services/sharing/provided', () => ({ providedTo: provided }));
 
 import { StorageExplorerService } from '@/services/storage/explorer-service';
+import { runAsTenant } from '@/lib/tenant/context';
 
-const destination = (id: string, lastStatus = 'ONLINE') => ({ id, name: id.toUpperCase(), adapterId: 'sftp', lastStatus, lastHealthCheck: new Date(), lastError: null });
+const destination = (id: string, lastStatus = 'ONLINE') => ({ id, name: id.toUpperCase(), tenantId: 'acme', adapterId: 'sftp', lastStatus, lastHealthCheck: new Date(), lastError: null });
 const file = { name: 'a.tar', path: 'Shop/a.tar', size: 10, lastModified: new Date(), jobId: 'job-1', jobName: 'Shop', createdAt: new Date().toISOString() };
+
+// No default retention template unless a test names one.
+beforeEach(() => {
+    prismaMock.retentionPolicy.findMany.mockResolvedValue([] as never);
+});
 
 describe('the Backups page never waits for a storage', () => {
     let service: StorageExplorerService;
@@ -29,7 +38,7 @@ describe('the Backups page never waits for a storage', () => {
     beforeEach(() => {
         service = new StorageExplorerService();
         prismaMock.job.findMany.mockResolvedValue([
-            { id: 'job-1', name: 'Shop', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }] },
+            { id: 'job-1', name: 'Shop', tenantId: 'acme', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }] },
         ] as never);
         storage.isListing.mockReturnValue(false);
         storage.listingFailure.mockReturnValue(null);
@@ -46,7 +55,7 @@ describe('the Backups page never waits for a storage', () => {
 
         expect(storage.listDestinationFiles).not.toHaveBeenCalled();
         expect(storage.refreshInBackground).toHaveBeenCalledTimes(1);
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('sftp', 'rebuild');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('sftp', 'acme', 'rebuild');
         expect(index.destinations.find((entry) => entry.id === 'nas')).toMatchObject({ count: 1, listing: false });
         expect(index.destinations.find((entry) => entry.id === 'sftp')).toMatchObject({ count: 0, listedAt: null, listing: true });
     });
@@ -59,8 +68,8 @@ describe('the Backups page never waits for a storage', () => {
 
         const index = await service.getIndex();
 
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'rebuild');
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('r2', 'reconcile');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'acme', 'rebuild');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('r2', 'acme', 'reconcile');
         expect(index.destinations.map((entry) => entry.count)).toEqual([1, 1]);
     });
 
@@ -85,7 +94,7 @@ describe('the Backups page never waits for a storage', () => {
         const index = await service.getIndex();
 
         expect(storage.refreshInBackground).toHaveBeenCalledTimes(1);
-        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'rebuild');
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'acme', 'rebuild');
         expect(index.destinations.map((entry) => [entry.id, entry.airGapped])).toEqual([['usb', true], ['nas', false]]);
     });
 
@@ -104,6 +113,20 @@ describe('the Backups page never waits for a storage', () => {
         expect(index.destinations.find((entry) => entry.id === 'r2')?.health).toMatchObject({ status: 'OFFLINE', answeredAt: lastAnswer.toISOString() });
     });
 
+    it('tells a customer whether a destination of the provider answers, never how fast or since when', async () => {
+        provided.mockResolvedValueOnce([{ id: 'msp-s3', providerName: 'MSP' }]);
+        prismaMock.adapterConfig.findMany.mockImplementation((async (args: { where: { id?: unknown } }) =>
+            (args.where.id ? [{ ...destination('msp-s3', 'OFFLINE'), tenantId: 'default' }] : [destination('nas')])) as never);
+        storage.readCachedListing.mockResolvedValue(null);
+        prismaMock.healthCheckLog.findFirst.mockImplementation((async (args: { where: { status?: string } }) =>
+            (args.where.status === 'ONLINE' ? { createdAt: new Date('2026-09-24T05:00:00Z') } : { latencyMs: 12 })) as never);
+
+        const index = await runAsTenant('acme', () => service.getIndex());
+
+        expect(index.destinations.find((entry) => entry.id === 'msp-s3')?.health).toMatchObject({ status: 'OFFLINE', latencyMs: null, answeredAt: null });
+        expect(index.destinations.find((entry) => entry.id === 'nas')?.health).toMatchObject({ status: 'ONLINE', latencyMs: 12 });
+    });
+
     it('checks only destinations it knows', async () => {
         prismaMock.adapterConfig.findMany.mockResolvedValue([{ id: 'nas' }] as never);
         storage.checkNow.mockResolvedValue(true);
@@ -120,8 +143,8 @@ describe('every backup in one list', () => {
     beforeEach(() => {
         service = new StorageExplorerService();
         prismaMock.job.findMany.mockResolvedValue([
-            { id: 'job-1', name: 'Shop', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }, { configId: 'r2' }] },
-            { id: 'job-2', name: 'CRM', backupMode: 'FULL', source: { adapterId: 'mysql', name: 'CRM' }, sources: [], destinations: [{ configId: 'nas' }] },
+            { id: 'job-1', name: 'Shop', tenantId: 'acme', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }, { configId: 'r2' }] },
+            { id: 'job-2', name: 'CRM', tenantId: 'acme', backupMode: 'FULL', source: { adapterId: 'mysql', name: 'CRM' }, sources: [], destinations: [{ configId: 'nas' }] },
         ] as never);
         prismaMock.adapterConfig.findMany.mockResolvedValue([destination('nas'), destination('r2')] as never);
         storage.isListing.mockReturnValue(false);
@@ -235,17 +258,62 @@ describe('what a destination tells about itself', () => {
         const smart = JSON.stringify({ mode: 'SMART', smart: { daily: 7, weekly: 4 } });
         const keepThirty = JSON.stringify({ mode: 'SIMPLE', simple: { keepCount: 30 } });
         prismaMock.job.findMany.mockResolvedValue([{
-            id: 'job-1', name: 'Shop', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [],
+            id: 'job-1', name: 'Shop', tenantId: 'acme', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [],
             destinations: [
                 { configId: 'nas', retention: '{}', retentionPolicyId: 'p1', retentionPolicy: { config: keepSeven } },
                 { configId: 'r2', retention: smart, retentionPolicyId: null, retentionPolicy: null },
                 { configId: 'sftp', retention: '{}', retentionPolicyId: null, retentionPolicy: null },
             ],
         }] as never);
-        prismaMock.retentionPolicy.findFirst.mockResolvedValue({ config: keepThirty } as never);
+        prismaMock.retentionPolicy.findMany.mockResolvedValue([{ tenantId: 'acme', config: keepThirty }] as never);
 
         const index = await service.getIndex();
 
         expect(index.jobs.find((job) => job.key === 'job-1')?.retention).toEqual({ nas: keepSeven, r2: smart, sftp: keepThirty });
+    });
+
+    it('in All tenants falls back to the default template of the tenant of each job', async () => {
+        const keepSeven = JSON.stringify({ mode: 'SIMPLE', simple: { keepCount: 7 } });
+        const keepThirty = JSON.stringify({ mode: 'SIMPLE', simple: { keepCount: 30 } });
+        const plain = { backupMode: 'FULL', source: null, sources: [], destinations: [{ configId: 'nas', retention: '{}', retentionPolicyId: null, retentionPolicy: null }] };
+        prismaMock.job.findMany.mockResolvedValue([
+            { id: 'job-acme', name: 'Shop', tenantId: 'acme', ...plain },
+            { id: 'job-beta', name: 'Shop', tenantId: 'beta', ...plain },
+        ] as never);
+        prismaMock.retentionPolicy.findMany.mockResolvedValue([{ tenantId: 'beta', config: keepSeven }, { tenantId: 'acme', config: keepThirty }] as never);
+
+        const index = await service.getIndex();
+
+        expect(index.jobs.map((job) => [job.key, job.tenantId, job.retention.nas])).toEqual([['job-acme', 'acme', keepThirty], ['job-beta', 'beta', keepSeven]]);
+    });
+});
+
+describe('the backups of every tenant in All tenants', () => {
+    let service: StorageExplorerService;
+
+    beforeEach(() => {
+        service = new StorageExplorerService();
+        storage.isListing.mockReturnValue(false);
+        storage.listingFailure.mockReturnValue(null);
+        prismaMock.job.findMany.mockResolvedValue([] as never);
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { ...destination('acme-nas'), tenantId: 'acme' },
+            { ...destination('beta-nas'), tenantId: 'beta' },
+        ] as never);
+    });
+
+    it('names the tenant of every destination, and keeps the files without a job of each tenant apart', async () => {
+        const loose = { name: 'x.tar', path: 'x.tar', size: 10, lastModified: new Date(), jobName: 'Unknown', createdAt: new Date().toISOString() };
+        storage.readCachedListing.mockResolvedValue({ files: [loose], listedAt: new Date(), current: true });
+
+        const index = await service.getIndex();
+        const { runs } = await service.getBackups();
+
+        expect(index.destinations.map((entry) => [entry.id, entry.tenantId])).toEqual([['acme-nas', 'acme'], ['beta-nas', 'beta']]);
+        expect(index.jobs.map((job) => [job.key, job.kind, job.tenantId])).toEqual([['acme:none', 'none', 'acme'], ['beta:none', 'none', 'beta']]);
+        expect(runs.map((run) => [run.jobKey, run.tenantId, run.copies.map((copy) => copy.destinationId)])).toEqual(expect.arrayContaining([
+            ['acme:none', 'acme', ['acme-nas']],
+            ['beta:none', 'beta', ['beta-nas']],
+        ]));
     });
 });

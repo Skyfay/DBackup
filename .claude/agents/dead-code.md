@@ -17,7 +17,8 @@ Next.js 16 App Router + TypeScript + Prisma. `@/` maps to `src/`.
 - **Components**: `src/components/` - no barrel exports, direct path imports
 - **Runner**: `src/lib/runner/steps/` - 5 numbered pipeline steps
 - **Hooks**: `src/hooks/`
-- **Tests**: `tests/unit/`, `tests/integration/`, `tests/audit/`
+- **Tests**: `tests/unit/`, `tests/audit/`
+- **Dev lab**: `lab/` - run through `pnpm lab:*`, not imported by the app
 
 ## Confidence tiers
 

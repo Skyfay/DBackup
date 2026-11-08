@@ -85,14 +85,17 @@
     "q7": "What license is DBackup released under?",
     "a7": "GPL-3.0. The source code is fully open and available on GitHub.",
     "q8": "Can I send one backup to multiple storage destinations?",
-    "a8": "Yes. Multi-destination jobs upload each backup to several storage adapters at once for redundancy or off-site copies."
+    "a8": "Yes. Multi-destination jobs upload each backup to several storage adapters at once for redundancy or off-site copies.",
+    "q9": "Can one DBackup serve several customers?",
+    "a9": "Yes. Tenants keep the connections, jobs, backups, keys, people and audit log of each customer apart, and your team works across them through platform groups. A tenant of the MSP can give single databases of a shared server to their customers and share its destinations and channels with them. The platform decides what each tenant may add itself and whether it reaches the local network. <tenants>Read the tenants guide</tenants>."
   },
   "home": {
     "featureDatabase": "{name} backups",
     "featureFiles": "File and folder backups",
     "featureEncryption": "AES-256-GCM encryption",
     "featureRetention": "Compression and smart retention",
-    "featureRecovery": "Restore without DBackup through the Recovery Kit"
+    "featureRecovery": "Restore without DBackup through the Recovery Kit",
+    "featureTenants": "Tenants for managed service providers"
   },
   "blog": {
     "eyebrow": "Blog",
@@ -138,6 +141,10 @@
   },
   "roadmap": {
     "items": {
+      "tenants": {
+        "title": "Tenants for MSPs",
+        "description": "One instance for many customers, each with its own connections, jobs, backups, keys, people and audit log. Platform groups for the team of the MSP, invitation links, sign-in providers per tenant, single databases of a shared server given to their customer, shared destinations and channels, and a block of the local network per tenant."
+      },
       "dbackup-agent": {
         "title": "DBackup Agent",
         "description": "A small container on the target host that DBackup talks to instead of opening an SSH session, for hosts where SSH access is not an option. Dumps still stream back to DBackup for compression and encryption, so the encryption key and the storage credentials never leave it."
@@ -483,7 +490,23 @@
     "cmdExplorer": "Open Database Explorer",
     "cmdFailed": "Show failed runs",
     "cmdRecoveryKit": "Download Recovery Kit",
-    "alertStorage": "Email · Storage limit warning"
+    "alertStorage": "Email · Storage limit warning",
+    "tenantsTitle": "Many customers, one instance",
+    "tenantsText": "Tenants keep the connections, jobs, backups, keys, people and audit log of each customer apart. Built for MSPs, agencies and hosting companies.",
+    "tenantsPlatformGroups": "Platform groups on all tenants or selected ones",
+    "tenantsInvitations": "Invitation links and SSO per tenant",
+    "tenantsSharing": "Shared databases, destinations and channels",
+    "tenantsNetwork": "Local network blocked per tenant",
+    "tenantsGuide": "Read the tenants guide",
+    "tenantsSwitcher": "Switch tenants",
+    "allTenants": "All tenants",
+    "tenantCount": "{count} tenants",
+    "tenantOf": "Tenant {index} of {total}",
+    "findTenant": "Find a tenant",
+    "tenantStats": "{jobs} jobs · {databases} databases",
+    "tenantShared": "{count} shared",
+    "sharesWithCustomers": "Shares with customers",
+    "tenantFailed": "The newest backup failed"
   },
   "liveRun": {
     "stepDump": "Dump the database nextcloud",
@@ -806,7 +829,7 @@
         "userTitle": "Create a backup user",
         "userText": "Read access for the dump, plus what the views, triggers and events need. LOCK TABLES only matters with the snapshot off.",
         "q1": "Which MySQL versions does DBackup support?",
-        "a1": "MySQL 5.7 and newer. The integration tests run against 5.7 and 9.1. An older server gets a warning, and the dump still runs.",
+        "a1": "MySQL 5.7 and newer. Our test lab runs it against 5.7 and 9. An older server gets a warning, and the dump still runs.",
         "q2": "Does DBackup use mysqldump?",
         "a2": "In the Docker image it runs mariadb-dump, MariaDB's version of mysqldump, which dumps MySQL as well. Over SSH it takes mariadb-dump or mysqldump, whichever the server has.",
         "q3": "Are tables locked during the backup?",
@@ -842,7 +865,7 @@
         "userTitle": "Create a backup user",
         "userText": "Read access for the dump, plus what the views, triggers and events need. LOCK TABLES only matters with the snapshot off.",
         "q1": "Which MariaDB versions does DBackup support?",
-        "a1": "MariaDB 10 and 11. The integration tests run against 10.11 and 11.4.",
+        "a1": "MariaDB 10 and 11. Our test lab runs it against 10.4 and 11.8.",
         "q2": "Can I restore a MariaDB backup into MySQL?",
         "a2": "Not from the app, which refuses restores between MariaDB and MySQL and from a newer server onto an older one. The SQL file is still yours to import by hand.",
         "q3": "Does a restore stop at the first error?",
@@ -882,7 +905,7 @@
         "q2": "Is the backup a point-in-time snapshot?",
         "a2": "No. mongodump runs without --oplog, so writes during the dump can be caught in part. For a busy database, schedule the job for a quiet hour.",
         "q3": "Which MongoDB versions does DBackup support?",
-        "a3": "MongoDB 4 to 8. The image ships the MongoDB Database Tools 100.16, and the integration tests run against 4.4 and 8.0.",
+        "a3": "MongoDB 4 to 8. The image ships the MongoDB Database Tools 100.16, and our test lab runs it against 4.4 and 8.0.",
         "q4": "Are users and roles backed up?",
         "a4": "No. They live in the admin database, which DBackup leaves out with config and local. Create the users on a new server before you restore.",
         "q5": "Can I restore a backup without DBackup?",
@@ -927,7 +950,7 @@
         "q3": "Does DBackup support Redis Cluster or Sentinel?",
         "a3": "Not yet. DBackup connects to the one server you name and takes its snapshot.",
         "q4": "Which Redis versions does DBackup support?",
-        "a4": "Redis 2.8 and newer, and Valkey 7.2 and newer through its own source type. The integration tests run against Redis 6 and 8.",
+        "a4": "Redis 2.8 and newer, and Valkey 7.2 and newer through its own source type. Our test lab runs Redis 6 and 8 and Valkey 7.2 and 8.",
         "q5": "Can I restore a backup without DBackup?",
         "a5": "Yes. The Recovery Kit gets dump.rdb out, encrypted or not, and unpacks it, with nothing but Node.js. Stop Redis, put the file in its data folder and start it again.",
         "guideDocker": "Docker",

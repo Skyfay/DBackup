@@ -1,24 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { z } from "zod";
+import { backupPathIssue } from "@/lib/server/backup-path-schema";
 import { registerAdapters } from "@/lib/adapters";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, tenantOf } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { generateLinkToken, linkStatus } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { configBackupLinkRefusal } from "@/lib/server/config-backup-guard";
 import { planArchiveDownload } from "@/services/restore/archive-download";
 import { auditService } from "@/services/audit-service";
 import { backupAuditDetails } from "@/services/storage/backup-audit";
+import { findDestinationPath } from "@/services/sharing/destination-access";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, PermissionError, ValidationError, wrapError } from "@/lib/logging/errors";
 
 registerAdapters();
 
 const log = logger.child({ route: "storage/download-url" });
 
 const LinkSchema = z.object({
-    file: z.string().min(1).refine((v) => !v.includes("..") && !v.startsWith("/"), "Invalid file path"),
+    file: z.string().min(1).superRefine(backupPathIssue),
     /** False keeps the file as it is stored, encrypted when the job encrypts. */
     decrypt: z.boolean().default(true),
     /** The one dump a decrypted link of a seekable archive holds, for older callers. */
@@ -32,8 +36,10 @@ const LinkSchema = z.object({
 
 function failure(error: unknown, storageId: string, what: string): NextResponse {
     if (error instanceof PermissionError) return NextResponse.json({ success: false, error: "Permission denied" }, { status: 403 });
+    if (error instanceof NotFoundError) return NextResponse.json({ success: false, error: "Destination not found" }, { status: 404 });
+    if (error instanceof ValidationError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     log.error(what, { storageId }, wrapError(error));
-    return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json({ success: false, error: "The download link could not be made. The log of DBackup has the details." }, { status: 500 });
 }
 
 /**
@@ -42,18 +48,25 @@ function failure(error: unknown, storageId: string, what: string): NextResponse 
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await props.params;
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.DOWNLOAD);
+        const tenantId = tenantOf(ctx);
 
         const parsed = LinkSchema.safeParse(await req.json());
         if (!parsed.success) {
             return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
         }
         const { file, decrypt, database, databases, selections, profileIdOverride } = parsed.data;
+        // A link names a destination the tenant uses, own or provided, and a file in its view of
+        // it, the way the download reads it, before it is made and noted.
+        await findDestinationPath(id, file, tenantId);
+        // A link is fetched without a session, which never gets a configuration backup.
+        const configBackup = await configBackupLinkRefusal(id, file, tenantId);
+        if (configBackup) return configBackup;
 
         let fileName: string | undefined;
         const pick = databases || selections ? { databases, selections, profileIdOverride } : undefined;
@@ -67,7 +80,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             fileName = plan.fileName;
         }
 
-        const { token, expiresAt } = generateLinkToken({ storageId: id, file, userId: ctx.userId, decrypt: pick ? true : decrypt, database, pick });
+        const { token, expiresAt } = generateLinkToken({
+            tenantId, storageId: id, file, userId: ctx.userId, ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
+            decrypt: pick ? true : decrypt, database, pick,
+        });
         const url = `${req.headers.get("origin") || ""}/api/storage/public-download?token=${token}`;
 
         const dumps = databases ?? (database ? [database] : undefined);
@@ -100,7 +116,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
  */
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const ctx = await getAuthContext(await headers());
-    if (!ctx) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!ctx) return unauthorized();
 
     const { id } = await props.params;
 
@@ -110,7 +126,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const token = new URL(req.url).searchParams.get("token");
         if (!token) return NextResponse.json({ success: false, error: "Missing token" }, { status: 400 });
 
-        const status = linkStatus(token, ctx.userId);
+        // Only for the request that made it, in its tenant, with its API key and at its destination.
+        const status = linkStatus(token, { userId: ctx.userId, tenantId: ctx.tenantId, apiKeyId: ctx.apiKeyId, storageId: id });
         // A link that ran out is removed from the store, so no answer reads as expired.
         return NextResponse.json({ success: true, data: status ?? { state: "expired" } });
     } catch (error: unknown) {

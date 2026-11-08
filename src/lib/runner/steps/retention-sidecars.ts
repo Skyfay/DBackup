@@ -14,6 +14,15 @@ import { METADATA_SIDECAR_SUFFIX, chainFolderOf } from "@/lib/core/backup-files"
  * costs rather than just looping.
  */
 
+/**
+ * The group a backup is judged in: the whole backups of a job together, and the backups of some of
+ * its databases alone, like those a customer starts of one database, with the others of the same
+ * databases. So a backup on demand never pushes a whole backup out, and never stays forever.
+ */
+export function retentionGroup(onlyDatabases: readonly string[] | undefined): string {
+    return onlyDatabases && onlyDatabases.length > 0 ? [...onlyDatabases].sort().join("\n") : "";
+}
+
 /** How far mtime and the recorded creation time may drift before it is worth reporting. */
 export const TIMESTAMP_DRIFT_WARNING_MS = 60 * 60 * 1000;
 
@@ -88,7 +97,7 @@ async function applySidecar(
     file: FileInfo,
     result: SidecarLoadResult
 ): Promise<void> {
-    let meta: { locked?: boolean; chain?: { id?: string; type?: string }; jobId?: string; timestamp?: string };
+    let meta: { locked?: boolean; chain?: { id?: string; type?: string }; jobId?: string; timestamp?: string; onlyDatabases?: unknown; sourceType?: unknown };
     try {
         const content = await adapter.read!(config, file.path + METADATA_SIDECAR_SUFFIX);
         if (!content) {
@@ -104,11 +113,17 @@ async function applySidecar(
         return;
     }
 
+    // A file of the configuration backup, which no job counts as its own, see 05-retention.ts.
+    if (meta.sourceType === "SYSTEM") file.configBackup = true;
     if (meta.locked) file.locked = true;
     if (meta.chain?.id) file.chainId = meta.chain.id;
     if (meta.chain?.type === 'full' || meta.chain?.type === 'incremental') file.chainType = meta.chain.type;
     if (chainFolderOf(file.path) && (!file.chainId || !file.chainType)) file.chainMetadataUnsafe = true;
     if (typeof meta.jobId === "string" && meta.jobId) file.jobId = meta.jobId;
+    if (Array.isArray(meta.onlyDatabases)) {
+        const names = meta.onlyDatabases.filter((name): name is string => typeof name === "string" && name.length > 0);
+        if (names.length > 0) file.onlyDatabases = names;
+    }
 
     if (!meta.timestamp) {
         if (chainFolderOf(file.path)) file.chainMetadataUnsafe = true;

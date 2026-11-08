@@ -24,6 +24,8 @@ SQLite in SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/securi
 | **Where the file is** | Pick **This machine** |
 | **Database file** | Absolute path to the `.sqlite` or `.db` file |
 
+Local mode reads a file of the server DBackup runs on, so only a platform admin, signed in with a session in the home tenant, adds, changes, copies or tests such a source, and **This machine** is offered to nobody else. Anyone else opens it read-only and may still pick it in a job, see [Connections to the Server DBackup Runs On](/user-guide/admin/tenants#connections-to-the-server-dbackup-runs-on). No backup or restore reads or writes DBackup's own database, a file in its folder or in its temporary folder, also through a symbolic link, whoever saved the source.
+
 The folder button beside **Database file** opens a browser that starts where the field points. It marks the SQLite files, dims the rest and leaves hidden files out until you ask for them. **Type a path** jumps straight to a folder you know.
 
 ### SSH Mode

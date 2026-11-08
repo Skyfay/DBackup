@@ -5,6 +5,7 @@ import { createTempDir, cleanupTempDir } from "@/lib/adapters/database/common/ta
 import { createArchive } from "@/lib/archive/writer";
 import { ArchiveSourceEntry, FileMetadata } from "@/lib/archive/types";
 import { DIRECTORY_ONLY_SOURCE_TYPE, INDEX_SIDECAR_SUFFIX } from "@/lib/archive/format";
+import { shownCollectedPath } from "@/lib/archive/collected-paths";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
 import { planChain, type ChainPlan } from "@/services/backup/chain-planner";
 import { carryForward } from "@/lib/archive/chain";
@@ -71,7 +72,8 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
     // cleanup removes as a whole, whatever a step left in it.
     ctx.runDir = await createTempDir("dbackup-run-");
     const { tempFile, chainInFileName } = await resolveBackupFilename(
-        job,
+        // A run of some databases alone names the backup after them, like a job that picked them.
+        ctx.onlyDatabases ? { ...job, databases: JSON.stringify(ctx.onlyDatabases) } : job,
         isChained && plan ? { type: plan.type, index: plan.index } : undefined,
         ctx.runDir
     );
@@ -173,6 +175,12 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             // keeps a multi-database job from holding every raw dump and the finished archive
             // on disk at the same time.
             onDatabaseDumpWritten: (localPath) => fs.unlink(localPath).catch(() => { }),
+            // A small file that grew past what a bundle takes after it was collected is left out
+            // rather than read whole into memory, and the run says so like a file it could not collect.
+            onFileSkipped: (_src, filePath, reason) => {
+                ctx.log(`MISSING from this backup: ${shownCollectedPath(filePath)} (${reason})`, 'error', 'storage');
+                ctx.status = "Partial";
+            },
             ...(ctx.abortSignal ? { signal: ctx.abortSignal } : {}),
             ...(encryptionProfileId
                 ? { encryption: { masterKey: await getProfileMasterKey(encryptionProfileId), profileId: encryptionProfileId } }

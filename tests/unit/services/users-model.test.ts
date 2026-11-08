@@ -17,7 +17,8 @@ function user(overrides: Partial<Build["users"][number]> & { id: string; name: s
         createdAt: day(100),
         twoFactorEnabled: false,
         passkeyTwoFactor: false,
-        group: null,
+        platformRole: null,
+        memberships: [],
         accounts: [{ providerId: "credential" }],
         sessions: [],
         _count: { apiKeys: 0, passkeys: 0 },
@@ -26,9 +27,9 @@ function user(overrides: Partial<Build["users"][number]> & { id: string; name: s
 }
 
 const GROUPS: Build["groups"] = [
-    { id: "g-view", name: "Viewers", permissions: JSON.stringify(["jobs:read"]), _count: { users: 1 } },
-    { id: "g-super", name: "SuperAdmin", permissions: "[]", _count: { users: 1 } },
-    { id: "g-ops", name: "Operators", permissions: "not json", _count: { users: 1 } },
+    { id: "g-view", name: "Viewers", permissions: JSON.stringify(["jobs:read"]), fullAccess: false, _count: { memberships: 1 } },
+    { id: "g-full", name: "Admin", permissions: "[]", fullAccess: true, _count: { memberships: 1 } },
+    { id: "g-ops", name: "Operators", permissions: "not json", fullAccess: false, _count: { memberships: 1 } },
 ];
 
 function build(users: Build["users"], logins: Build["logins"] = new Map()) {
@@ -38,7 +39,7 @@ function build(users: Build["users"], logins: Build["logins"] = new Map()) {
         providers: [{ providerId: "authentik-417", name: "Authentik", adapterId: "authentik" }],
         logins,
         viewerId: "manu",
-        viewerSuperAdmin: true,
+        viewerPlatformAdmin: true,
         now: NOW,
     });
 }
@@ -118,16 +119,43 @@ describe("the users of the Users tab", () => {
         expect(model.stats.devices).toBe(3);
     });
 
-    it("counts who has no group and lists the SuperAdmin group first", () => {
+    it("counts who has no group in the tenant and lists the full access group first", () => {
         const model = build([
-            user({ id: "manu", name: "Manu", group: { id: "g-super", name: "SuperAdmin" } }),
+            user({ id: "manu", name: "Manu", memberships: [{ group: { id: "g-full", name: "Admin" } }] }),
             user({ id: "sara", name: "Sara Nguyen" }),
         ]);
 
-        expect(model.users.find((row) => row.id === "manu")?.superAdmin).toBe(true);
+        expect(model.users.find((row) => row.id === "manu")?.group).toEqual({ id: "g-full", name: "Admin" });
         expect(model.stats.inGroup).toBe(1);
         expect(model.stats.withoutGroup).toEqual(["Sara Nguyen"]);
-        expect(model.groups.map((group) => group.name)).toEqual(["SuperAdmin", "Operators", "Viewers"]);
+        expect(model.groups.map((group) => group.name)).toEqual(["Admin", "Operators", "Viewers"]);
+        expect(model.groups.map((group) => group.superAdmin)).toEqual([true, false, false]);
         expect(model.groups.find((group) => group.name === "Operators")?.permissions).toEqual([]);
+    });
+
+    it("marks who also works in another tenant, whom only a platform admin changes", () => {
+        const model = build([
+            user({ id: "tech", name: "Tom Tech", _count: { apiKeys: 0, passkeys: 0, memberships: 2 } }),
+            user({ id: "lena", name: "Lena Graf", _count: { apiKeys: 0, passkeys: 0, memberships: 0 } }),
+            user({ id: "sara", name: "Sara Nguyen" }),
+        ]);
+        const byId = new Map(model.users.map((row) => [row.id, row]));
+
+        expect(byId.get("tech")?.elsewhere).toBe(true);
+        expect(byId.get("lena")?.elsewhere).toBe(false);
+        expect(byId.get("sara")?.elsewhere).toBe(false);
+    });
+
+    it("marks the platform admins by their account, never by the full access group", () => {
+        const model = build([
+            user({ id: "manu", name: "Manu", platformRole: "ADMIN" }),
+            user({ id: "lena", name: "Lena Graf", memberships: [{ group: { id: "g-full", name: "Admin" } }] }),
+        ]);
+        const byId = new Map(model.users.map((row) => [row.id, row]));
+
+        // A platform admin needs no group in the tenant.
+        expect(byId.get("manu")?.superAdmin).toBe(true);
+        expect(byId.get("manu")?.group).toBeNull();
+        expect(byId.get("lena")?.superAdmin).toBe(false);
     });
 });

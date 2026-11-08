@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 
 const { mockExecuteWithMessages, mockGetDatabases, mockSupportsCompression, mockAssertSupported } = vi.hoisted(() => ({
     mockExecuteWithMessages: vi.fn(),
@@ -172,11 +173,24 @@ describe.each([
         expect(host.calls.getFile[0].hostPath).toContain("/var/opt/mssql/backup/");
     });
 
-    it("stages into /tmp rather than the mount path", async () => {
+    it("stages into a private folder of the temporary folder rather than the mount path, and removes it", async () => {
         const host = hostThatDelivers();
         await dump(config() as never, join(outDir, "out.bak"), host);
 
-        expect(host.calls.getFile[0].localPath.startsWith("/tmp/")).toBe(true);
+        const staged = host.calls.getFile[0].localPath;
+        expect(dirname(dirname(staged))).toBe(os.tmpdir());
+        expect(basename(dirname(staged))).toMatch(/^mssql-dump-/);
+        expect(existsSync(dirname(staged))).toBe(false);
+    });
+
+    it("keeps a database name with separators to one file name of that folder", async () => {
+        const host = hostThatDelivers();
+        const result = await dump({ ...config(), database: "../../shop" } as never, join(outDir, "out.bak"), host);
+
+        expect(result.success).toBe(true);
+        const staged = host.calls.getFile[0].localPath;
+        expect(basename(dirname(staged))).toMatch(/^mssql-dump-/);
+        expect(basename(staged)).toMatch(/^\.\._\.\._shop_.*\.bak$/);
     });
 
     it("removes the server-side backup file afterwards", async () => {

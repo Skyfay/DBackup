@@ -130,39 +130,21 @@ Never run `prisma migrate dev` while `pnpm dev` is running. The dev server holds
 3. Restart `pnpm dev` - the new migration applies automatically on startup
 :::
 
-## Test Database Setup
+## Test Databases and Servers
 
-For integration testing, start the test database containers:
+The [Dev Lab](/developer-guide/reference/dev-lab) runs every database engine with test data, a server for every self-hostable destination and the notification receivers in Docker, and fills your dev database with the first user and all connections:
 
 ```bash
-# Start test databases
-docker-compose -f docker-compose.test.yml up -d
+pnpm lab:init --email you@example.com
+pnpm lab:up
+pnpm lab:seed
 ```
-
-This starts:
-- **MySQL 8.0** on port 3306
-- **PostgreSQL 15** on port 5432
-- **MongoDB 6.0** on port 27017
-
-### Test Database Credentials
-
-| Database | Host | Port | User | Password |
-| :--- | :--- | :--- | :--- | :--- |
-| MySQL | localhost | 3306 | root | rootpassword |
-| PostgreSQL | localhost | 5432 | testuser | testpassword |
-| MongoDB | localhost | 27017 | - | - |
 
 ## Running Tests
 
 ```bash
-# Run unit tests
-pnpm test
-
-# Run integration tests (requires test containers)
-pnpm test:integration
-
-# Seed test data for UI testing
-pnpm test:ui
+pnpm test                # Unit tests
+pnpm lab:check --run     # Every lab connection and every lab job against the real servers
 ```
 
 ## Useful Commands
@@ -237,11 +219,11 @@ kill -9 <PID>
 ### Database Connection Issues
 
 ```bash
-# Check if containers are running
-docker ps
+# State and address of every lab service, and why one stopped
+pnpm lab:status
 
-# View container logs
-docker logs dbackup-mysql-test
+# Logs of one service, like mysql-9, with --context when the lab runs on another host
+docker compose -p dbackup-lab logs mysql-9
 ```
 
 ### CLI Tools Not Found

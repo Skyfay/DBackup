@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { pack } from "tar-stream";
 import os from "node:os";
 import { join } from "node:path";
 
@@ -100,14 +103,42 @@ describe("MSSQL prepareRestore", () => {
 });
 
 describe("MSSQL restore with a shared mount", () => {
-    it("stages the backup into the mount and runs RESTORE", async () => {
+    it("stages the backup into the mount under a name of its own, runs RESTORE and deletes the copy", async () => {
         const host = createFakeHost({ kind: "direct" });
+        // What the mount holds while SQL Server reads the file.
+        let staged: string[] = [];
+        mockExecuteWithMessages.mockImplementation(async () => {
+            staged = await readdir(mountDir);
+            return { result: {}, messages: [] };
+        });
         const result = await restore(config() as never, await makeBackupFile(), host);
 
         expect(result.success).toBe(true);
         expect(restoreQueries()[0]).toContain("RESTORE DATABASE");
+        expect(staged).toHaveLength(1);
+        expect(staged[0]).toMatch(/^dbackup-restore-[0-9a-f-]{36}\.bak$/);
+        expect(restoreQueries()[0]).toContain(`/var/opt/mssql/backup/${staged[0]}`);
         expect(host.calls.putFile).toHaveLength(0);
-        expect(await readdir(mountDir)).toHaveLength(1);
+        expect(await readdir(mountDir)).toHaveLength(0);
+        // The file the caller handed in stays, it is not the restore's to delete.
+        expect(await readFile(join(srcDir, "testdb.bak"), "utf-8")).toBe("BAKDATA");
+    });
+
+    it("never lets a name from an older archive pick the file it writes in the mount, and leaves nothing behind", async () => {
+        // A file of the mount the archive names, which a copy under the name of the archive would overwrite.
+        await writeFile(join(mountDir, "keep_2026-01-01.bak"), "KEEP");
+        const tarPath = join(srcDir, "older.tar");
+        const tar = pack();
+        tar.entry({ name: "keep_2026-01-01.bak" }, "EVIL");
+        tar.finalize();
+        await pipeline(tar, createWriteStream(tarPath));
+
+        const result = await restore({ ...config(), database: "keep" } as never, tarPath, createFakeHost({ kind: "direct" }));
+
+        expect(result.success).toBe(true);
+        expect(restoreQueries()[0]).toMatch(/dbackup-restore-[0-9a-f-]{36}\.bak/);
+        expect(await readdir(mountDir)).toEqual(["keep_2026-01-01.bak"]);
+        expect(await readFile(join(mountDir, "keep_2026-01-01.bak"), "utf-8")).toBe("KEEP");
     });
 
     it("removes only the local copy, since both paths are one file", async () => {

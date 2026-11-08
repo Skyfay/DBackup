@@ -26,7 +26,8 @@ export function fileNameOf(disposition: string | null): string | null {
 export async function downloadRecoveryKit(ids: string[]): Promise<boolean> {
     if (ids.length === 0) return false;
     try {
-        const response = await fetch(`/api/vault/recovery-kit?ids=${ids.map(encodeURIComponent).join(",")}`);
+        // A POST, since the server marks the keys and writes an entry for the kit.
+        const response = await fetch("/api/vault/recovery-kit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
         if (!response.ok) {
             const reason = await response.text().catch(() => "");
             toast.error(reason && reason.length < 200 ? reason : "The recovery kit could not be built.");

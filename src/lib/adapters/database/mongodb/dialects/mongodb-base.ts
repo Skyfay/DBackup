@@ -1,5 +1,6 @@
 import { DatabaseDialect } from "../../common/dialect";
 import { MongoDBConfig } from "@/lib/adapters/definitions";
+import { assertDatabaseArgument } from "@/lib/adapters/database/common/database-name";
 
 export class MongoDBBaseDialect implements DatabaseDialect {
     supportsVersion(_version: string): boolean {
@@ -31,7 +32,7 @@ export class MongoDBBaseDialect implements DatabaseDialect {
         // But for consistency we might want to restrict if databases are provided.
         // mongodump --db X
         if (databases.length === 1) {
-            args.push('--db', databases[0]);
+            args.push('--db', assertDatabaseArgument(databases[0]));
         }
         // If multiple DBs, mongodump doesn't support list easily without multiple runs or regex exclude?
         // Actually mongodump doesn't take a list. It takes one --db or --all (implied).

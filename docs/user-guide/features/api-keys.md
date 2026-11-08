@@ -5,13 +5,14 @@ API keys let scripts, CI/CD pipelines and monitoring tools call the DBackup API 
 ## Overview
 
 - A key starts with `dbackup_`, followed by 60 hex characters. DBackup stores only a scrypt hash of it and shows the key once, right after it was created or rotated.
-- A key **acts as its owner**, the user who created it. It never gets more than the group of its owner may do, checked at every request.
+- A key **acts as its owner**, the user who created it. It never gets more than its owner may do, checked at every request.
+- A key **belongs to the tenant** it was made in and acts only there, whichever [tenant](/user-guide/admin/tenants) its owner opens later.
 - A new key **runs out after 90 days** unless you pick another end or Never.
 - A key can be disabled and enabled again, rotated to a new secret, or deleted.
 
 ## The API Keys Tab
 
-**Users & Groups → API keys** lists every key. The strip above the list counts the keys and names the ones that run out within two weeks, were never used, may do more than read, and who owns them.
+**Users & Groups → API keys** lists every key of the open tenant. The strip above the list counts the keys and names the ones that run out within two weeks, were never used, may do more than read, and who owns them.
 
 - Search finds a key by its name or by the start of its secret, like `dbackup_4f1a9c0e`.
 - **All**, **Active**, **Runs out soon**, **Disabled** and **Expired** filter by state, **Owner** by the user who created it. **Runs out soon** is marked amber while a key runs out within two weeks.
@@ -22,7 +23,7 @@ Click a key to open its panel: what it may do in words and by area, when it was 
 
 ## Create an API Key
 
-1. Open **Users & Groups → API keys** and click **New API key**
+1. Open **Users & Groups → API keys** and click **New API key**. In a tenant whose API keys the platform switched off, it shows **API keys are off** instead and no key of the tenant works, see [What It May Add](/user-guide/admin/tenants#what-it-may-add)
 2. Pick what the key is for (step 1 of 2):
    - **Custom** starts with no permission
    - A **task** starts with exactly the permissions its calls need, see below
@@ -50,18 +51,42 @@ A task the group of your account does not allow shows why and cannot be picked.
 
 ## What a Key May Do
 
-- **Never more than its owner.** The permissions of a key are cut to what the group of its owner may do at every request. A key of a SuperAdmin can hold any permission, a key of a user without a group can do nothing.
+- **Never more than its owner.** The permissions of a key are cut to what its owner may do in the tenant of the key at every request. A key of a platform admin can hold any permission, a key of a user without a group there can do nothing.
 - **It follows the group.** When the group of the owner loses a permission, the key loses it too. The panel lists it as paused, and the key may use it again once the group allows it.
-- **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too. What a key holds already stays when someone else edits its name or end.
-- **No SuperAdmin bypass.** A key only ever uses the permissions it holds, even when its owner is a SuperAdmin.
+- **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too.
+- **A key of someone else only loses access.** A key acts as its owner, so only its owner and a platform admin rotate it, enable it again, change its permissions or let it run longer. Anyone else with `api-keys:write` may only rename it, let it run out sooner, disable or delete it, and the list and the editor offer nothing else on it. What the key holds stays as it is.
+- **No platform admin bypass.** A key only ever uses the permissions it holds, even when its owner is a platform admin, and never does what only a platform admin may, like restoring a configuration backup or downloading the database.
+- **Rights of the platform only where they belong.** With [tenants](/user-guide/admin/tenants), a key carries what a platform group gives on the platform only as listed under [Platform Keys](#platform-keys), never the settings of the instance through it, the sign-in providers or what only a platform admin does. The settings of the instance the owner's group in the home tenant gives still count in a key of the home tenant, as before tenants, and never in a key of a customer's tenant, which keeps the tenant settings of its own tenant.
+
+## Platform Keys
+
+An MSP automates its tenants with keys of its own. Two kinds of rights of the platform can go into a key, each only in one place:
+
+| Area | Permissions | Offered in | For |
+| :--- | :--- | :--- | :--- |
+| **Tenants** | `platform-tenants:read`, `platform-tenants:write` | The home tenant | Listing, creating, renaming and deleting tenants, their settings, members and invitations, see [Managing Tenants through the API](/user-guide/admin/tenants#through-the-api) |
+| **Accounts** | `platform-accounts:read`, `platform-accounts:write` | The home tenant | The accounts of the tenants the owner reaches |
+| **Sharing** | `platform-sharing:read`, `platform-sharing:write` | A tenant that [shares with customers](/user-guide/admin/shared-databases#tenants-that-share), while there is another tenant | Giving databases, destinations and channels to customers, see [Shared Databases](/user-guide/admin/shared-databases#through-the-api) |
+
+- The editor offers **Tenants** and **Accounts** only in the home tenant and only to an owner who holds one of their rights, a platform admin or someone whose [platform group](/user-guide/admin/tenants#platform-groups) gives it. What the owner does not hold stays locked.
+- The list marks such a key **Platform**, in its row, on its card and in its panel.
+- A key never gets more than its owner, also here. When the owner loses the right, or their platform group, the key loses it at its next request.
+- A key **reaches what its owner reaches.** The key of someone whose platform group reaches some tenants manages those tenants only, every other one reads as gone, and creates no tenant, exactly like its owner on **Platform → Tenants**. The key of a platform admin reaches every tenant.
+- A key with `platform-tenants:write` gives members and makes invitations up to its owner's rights in every tenant the owner reaches, so it is as strong as its owner there.
+- A key made in a customer's tenant never carries a right on the tenants or the accounts, whatever it stores. It may manage the members and invitations of its own tenant with `users:read` and `users:write`.
+- The pages under **Platform**, the sign-in providers, the configuration restore and the database download stay for a signed-in person and answer every key with `403`.
+
+::: warning
+A platform key changes customers. Give it only the area it needs, a short end, and rotate it when the person who made it leaves.
+:::
 
 ## Manage Keys
 
 Every action sits in the menu at the end of a row, in the right click menu and in the panel of a key.
 
-- **Edit** changes the name, the end and the permissions. The secret stays, so scripts keep working, and the change applies to the next request.
-- **Rotate** gives the key a new secret and shows it once. The old secret stops working at once. The dialog warns when the key was used within the last hour. Only the owner, or someone whose group may do everything the key may do, can rotate a key, since the new secret hands out its permissions.
-- **Disable** and **Enable** switch a key off and on. An expired key cannot be enabled, edit it to give it a new end.
+- **Edit** changes the name, the end and the permissions. The secret stays, so scripts keep working, and the change applies to the next request. On a key of someone else it changes only the name and lets the key run out sooner.
+- **Rotate** gives the key a new secret and shows it once. The old secret stops working at once. The dialog warns when the key was used within the last hour. Only the owner and a platform admin rotate a key, since the new secret acts as its owner.
+- **Disable** and **Enable** switch a key off and on. An expired key cannot be enabled, edit it to give it a new end. A key of someone else is enabled again only by its owner or a platform admin.
 - **Delete** removes a key for good. The runs it started stay in History.
 
 Select several keys in the table to enable, disable or delete them together.

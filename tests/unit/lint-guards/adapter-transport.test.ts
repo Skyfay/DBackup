@@ -106,6 +106,12 @@ const ADAPTER_RULES: Rule[] = [
             "connection-summary.ts":
                 "Not an adapter. It writes the address shown in the connection tables, which names the jump host of an "
                 + "SSH connection, and decides no transport.",
+            "host-local.ts":
+                "Not an adapter. It decides whether a tenant may add a connection that runs on the server DBackup runs on, "
+                + "and decides no transport. The adapter pickers load it in the browser, where the resolvers and ssh2 cannot go.",
+            "dialed-hosts.ts":
+                "Not an adapter. It names the hosts DBackup dials for a config, the SSH host alone in SSH mode, for the "
+                + "local network check of a tenant, and decides no transport. It reads the fields the resolvers read.",
         },
         reason: "Transport decisions belong in a TransportResolver, not in adapter bodies.",
     },
@@ -118,7 +124,8 @@ const ADAPTER_RULES: Rule[] = [
                 "tunnel so SSH mode cannot use the driver. A real capability difference, not a transport fork.",
             "database/mysql/args.ts":
                 "MySQL only forces TCP in direct mode. Over SSH the client is local to the server and the " +
-                "socket path is the documented setup (docs/user-guide/sources/mysql.md).",
+                "socket path is the documented setup (docs/user-guide/sources/mysql.md). The same check makes a " +
+                "restore fail closed when the client beside DBackup cannot be locked down (`runsBesideDBackup`).",
         },
         reason: "A kind check is a transport fork wearing a new hat. Use a host primitive instead.",
     },
@@ -357,14 +364,15 @@ describe("transport lint guards", () => {
         ).toEqual([]);
     }, 30_000);
 
-    it("passes a host to every adapter call in the integration tests", () => {
+    it("passes a host to every adapter call in the dev lab and the end-to-end tests", () => {
         // `test` and `ping` keep an optional host on BaseAdapter, because
         // requiring one there would have forced a host through 180 storage and
         // notification call sites that have no transport. The cost is that
         // forgetting one here compiles: the adapter then answers "requires an
         // execution host" and the test reads it as a failed connection.
-        const files = findFiles(path.resolve(__dirname, "../../integration"));
-        const call = /\badapter\.(test|ping|getDatabases|getDatabasesWithStats|dump|restore)!?\s*\(/;
+        const root = path.resolve(__dirname, "../../..");
+        const files = [...findFiles(path.join(root, "lab", "src")), ...findFiles(path.join(root, "e2e"))];
+        const call = /\badapter\.(test|ping|getDatabases|getDatabasesWithStats|dump|dumpOne|restore|restoreOne)!?\s*\(/;
 
         const violations: Violation[] = [];
         for (const file of files) {
@@ -372,7 +380,7 @@ describe("transport lint guards", () => {
             lines.forEach((line, index) => {
                 if (call.test(line) && !line.includes("host")) {
                     violations.push({
-                        file: path.relative(path.resolve(__dirname, "../../.."), file),
+                        file: path.relative(root, file),
                         line: index + 1,
                         content: line.trim(),
                         rule: "adapter call without a host",
@@ -384,8 +392,9 @@ describe("transport lint guards", () => {
         const rule: Rule[] = [{
             name: "adapter call without a host",
             pattern: call,
-            reason: "Wrap the call in withHost(adapter, config, (host) => ...) so it uses the configured transport.",
+            reason: "Use runAdapterTest, or wrap the call in withHost(adapter, config, (host) => ...) so it uses the configured transport.",
         }];
+        expect(files.length, "the dev lab and the end-to-end tests were not found").toBeGreaterThan(0);
         expect(violations, formatViolationReport(violations, rule)).toEqual([]);
     });
 

@@ -29,6 +29,8 @@ const ROLE_BLIND_ALLOWED: Record<string, string> = {
         "Health checks cover both roles on purpose - an unreachable source breaks the next backup.",
     "app/api/adapters/route.ts":
         "The listing endpoint serves both roles; callers narrow it with the optional role parameter.",
+    "services/adapters/shared-place.ts":
+        "A directory source reaches the folder of a shared destination as well as a second destination does, so the first share checks both roles.",
 };
 
 function collectFiles(dir: string, acc: string[] = []): string[] {

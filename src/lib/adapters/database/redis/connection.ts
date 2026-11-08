@@ -3,7 +3,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { RedisConfig } from "@/lib/adapters/definitions";
 import { DatabaseInfo } from "@/lib/core/interfaces";
-import { REDIS_CLI, buildConnectionArgs } from "./args";
+import { REDIS_CLI, buildConnectionArgs, redisCliOptions } from "./args";
 
 const log = logger.child({ adapter: "redis", module: "connection" });
 
@@ -44,14 +44,14 @@ export async function test(
         const redisCli = await host.which(...REDIS_CLI);
         const args = buildConnectionArgs(config);
 
-        const ping = await host.exec([redisCli, ...args, "PING"]);
+        const ping = await host.exec([redisCli, ...args, "PING"], redisCliOptions(config));
         if (ping.code !== 0 || !ping.stdout.includes("PONG")) {
             const detail = ping.stderr.trim() || ping.stdout.trim();
             return { success: false, message: `Connection failed: ${detail}` };
         }
 
         // Prefer valkey_version when present, fall back to redis_version.
-        const info = await host.exec([redisCli, ...args, "INFO", "server"]);
+        const info = await host.exec([redisCli, ...args, "INFO", "server"], redisCliOptions(config));
         let version: string | undefined;
         if (info.code === 0) {
             const valkey = info.stdout.match(/valkey_version:([^\r\n]+)/);
@@ -77,7 +77,7 @@ export async function getDatabases(config: RedisConfig, hostArg: ExecutionHost):
         const redisCli = await host.which(...REDIS_CLI);
         const args = buildConnectionArgs({ ...config, database: 0 });
 
-        const result = await host.exec([redisCli, ...args, "CONFIG", "GET", "databases"]);
+        const result = await host.exec([redisCli, ...args, "CONFIG", "GET", "databases"], redisCliOptions(config));
         if (result.code !== 0) {
             return numberedDatabases(DEFAULT_DATABASE_COUNT);
         }
@@ -116,7 +116,7 @@ export async function getDatabasesWithStats(config: RedisConfig, hostArg: Execut
         const redisCli = await host.which(...REDIS_CLI);
         const args = buildConnectionArgs({ ...config, database: 0 });
 
-        const result = await host.exec([redisCli, ...args, "INFO", "keyspace"]);
+        const result = await host.exec([redisCli, ...args, "INFO", "keyspace"], redisCliOptions(config));
         const keyCounts = result.code === 0 ? parseKeyspaceInfo(result.stdout) : {};
         return databases.map((name) => ({ name, tableCount: keyCounts[name] ?? 0 }));
     } catch (error: unknown) {

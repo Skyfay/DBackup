@@ -3,27 +3,40 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { explicitScope, runAsTenant, type TenantScope } from "@/lib/tenant/context";
+import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { ValidationError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     running: vi.fn(),
+    destination: vi.fn(),
     userName: vi.fn(),
     users: vi.fn(),
     open: vi.fn(),
     inspect: vi.fn(),
     stage: vi.fn(),
     importConfig: vi.fn(),
+    storage: { download: vi.fn(), read: vi.fn() },
 }));
 
 vi.mock("@/lib/prisma", () => ({
     default: {
         execution: { count: (...args: unknown[]) => mocks.running(...args) },
-        user: { findUnique: (...args: unknown[]) => mocks.userName(...args), count: () => mocks.users() },
+        adapterConfig: { findUnique: (...args: unknown[]) => mocks.destination(...args) },
+        user:{ findUnique: (...args: unknown[]) => mocks.userName(...args), count: () => mocks.users() },
     },
 }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
-vi.mock("@/lib/core/registry", () => ({ registry: { get: vi.fn() } }));
+vi.mock("@/lib/core/registry", () => ({ registry: { get: () => ({ id: "sftp" }) } }));
+vi.mock("@/services/sharing/destination-access", () => ({
+    isShared: async () => false,
+    openRow: async () => ({ adapter: mocks.storage, config: {} }),
+}));
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: vi.fn() }));
-vi.mock("@/services/config/open-backup", () => ({ openBackupFile: (...args: unknown[]) => mocks.open(...args) }));
+vi.mock("@/services/config/open-backup", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/services/config/open-backup")>()),
+    openBackupFile: (...args: unknown[]) => mocks.open(...args),
+}));
 vi.mock("@/services/config/copy-inspect", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/services/config/copy-inspect")>()),
     inspectDatabaseCopy: (...args: unknown[]) => mocks.inspect(...args),
@@ -34,7 +47,7 @@ vi.mock("@/services/config/import", () => ({ importConfiguration: (...args: unkn
 const root = mkdtempSync(path.join(os.tmpdir(), "dbackup-flow-"));
 vi.mock("@/lib/temp-dir", () => ({ getTempDir: () => root }));
 
-const { applyCheckedRestore, checkUploadedBackup, hasNoAccountYet } = await import("@/services/config/restore-flow");
+const { applyCheckedRestore, checkStoredBackup, checkUploadedBackup, hasNoAccountYet } = await import("@/services/config/restore-flow");
 
 const PREVIEW = { kind: "database", version: "3.4.0", createdAt: null, counts: { connections: 1, jobs: 1, templates: 0, users: 1, runs: 0 }, otherKeys: false };
 const MANU = { userId: "u-manu" };
@@ -122,5 +135,85 @@ describe("a configuration restore in two steps", () => {
         expect(await hasNoAccountYet()).toBe(true);
         mocks.users.mockResolvedValue(1);
         expect(await hasNoAccountYet()).toBe(false);
+    });
+});
+
+describe("the tenant a configuration restore reads in", () => {
+    const HOME: TenantScope = { kind: "tenant", tenantId: HOME_TENANT_ID };
+
+    it("looks up the key of an upload in the home tenant, also on the sign-up page, which has no session", async () => {
+        const scopes: (TenantScope | undefined)[] = [];
+        mocks.open.mockImplementation(async () => {
+            scopes.push(explicitScope());
+            return opened(sqlite());
+        });
+
+        await checkUploadedBackup(upload(), "setup");
+        // An admin who looks at a customer opens it with the keys of the platform all the same.
+        await runAsTenant("acme", () => checkUploadedBackup(upload(), MANU));
+
+        expect(scopes).toEqual([HOME, HOME]);
+    });
+
+    it("counts the running runs of every tenant before a copy replaces the database on the sign-up page", async () => {
+        mocks.open.mockResolvedValue(opened(sqlite()));
+        const { token } = await checkUploadedBackup(upload(), "setup");
+        let scope: TenantScope | undefined;
+        mocks.running.mockImplementation(async () => {
+            scope = explicitScope();
+            return 0;
+        });
+
+        await expect(applyCheckedRestore(token, "setup")).resolves.toMatchObject({ kind: "database" });
+        expect(scope).toEqual({ kind: "system" });
+    });
+
+    it("reads a configuration backup at a destination only from one of the home tenant", async () => {
+        let scope: TenantScope | undefined;
+        mocks.destination.mockImplementation(async () => {
+            scope = explicitScope();
+            return null;
+        });
+
+        await expect(runAsTenant("acme", () => checkStoredBackup("dest-acme", "config_backup.db.gz.enc", undefined, MANU))).rejects.toThrow("destination of the home tenant");
+        expect(scope).toEqual(HOME);
+    });
+
+    it("opens a configuration backup at a destination only when it is encrypted, so a planted plain file is never taken", async () => {
+        mocks.destination.mockResolvedValue({ id: "home-nas", name: "NAS", type: "storage", storageRole: "DESTINATION", adapterId: "sftp", tenantId: HOME_TENANT_ID, config: "{}" });
+        mocks.storage.download.mockResolvedValue(true);
+        mocks.storage.read.mockResolvedValue(JSON.stringify({ sourceType: "SYSTEM", compression: "GZIP" }));
+
+        await expect(checkStoredBackup("home-nas", "config-backups/config_backup_2026.db.gz", undefined, MANU)).rejects.toThrow("restored only when it is encrypted");
+        expect(mocks.open).not.toHaveBeenCalled();
+
+        mocks.storage.read.mockResolvedValue(JSON.stringify({ encryption: { enabled: true, iv: "aa", authTag: "bb", profileId: "config-key" } }));
+        mocks.open.mockResolvedValue(opened(sqlite()));
+        await expect(checkStoredBackup("home-nas", "config-backups/config_backup_2026.db.gz.enc", undefined, MANU)).resolves.toMatchObject({ fileName: "config_backup_2026.db.gz.enc" });
+    });
+
+    it("never reads a path that leaves the destination, also when a caller forgot to check it", async () => {
+        mocks.destination.mockResolvedValue({ id: "home-nas", name: "NAS", type: "storage", storageRole: "DESTINATION", adapterId: "sftp", tenantId: HOME_TENANT_ID, config: "{}" });
+
+        for (const file of ["../config_backup.db.gz.enc", "/srv/config_backup.db.gz.enc", "config-backups\\..\\..\\x.enc"]) {
+            await expect(checkStoredBackup("home-nas", file, undefined, MANU)).rejects.toBeInstanceOf(ValidationError);
+        }
+        expect(mocks.storage.download).not.toHaveBeenCalled();
+        expect(mocks.storage.read).not.toHaveBeenCalled();
+    });
+
+    it("reads a configuration backup only from a destination, never from a directory source or a database connection of the home tenant", async () => {
+        mocks.storage.download.mockResolvedValue(true);
+        mocks.storage.read.mockResolvedValue(JSON.stringify({ encryption: { enabled: true, iv: "aa", authTag: "bb", profileId: "config-key" } }));
+        mocks.open.mockResolvedValue(opened(sqlite()));
+
+        mocks.destination.mockResolvedValue({ id: "home-files", name: "File server", type: "storage", storageRole: "SOURCE", adapterId: "sftp", tenantId: HOME_TENANT_ID, config: "{}" });
+        await expect(checkStoredBackup("home-files", "config-backups/config_backup_2026.db.gz.enc", undefined, MANU)).rejects.toThrow("File server is no destination");
+
+        mocks.destination.mockResolvedValue({ id: "home-db", name: "Postgres", type: "database", storageRole: "DESTINATION", adapterId: "sftp", tenantId: HOME_TENANT_ID, config: "{}" });
+        await expect(checkStoredBackup("home-db", "config-backups/config_backup_2026.db.gz.enc", undefined, MANU)).rejects.toThrow("Postgres is no destination");
+
+        expect(mocks.storage.download).not.toHaveBeenCalled();
+        expect(mocks.open).not.toHaveBeenCalled();
     });
 });

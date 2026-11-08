@@ -46,6 +46,19 @@ Beyond configuring sources for backups, DBackup includes a **Database Explorer**
 
 Which databases to back up is picked in the job that uses the source.
 
+DBackup checks every connection against the fields of its type before it saves it, also one sent through the API, and names each field that does not fit without repeating its value. Every port is a whole number from 1 to 65535, and no host or user holds a line break or another control character. A copy or a connection restored from Recently deleted is checked for these two as well.
+
+## Editing a Connection
+
+The password, key or token of a connection usually sits in a [credential profile](/user-guide/security/credential-profiles), its saved login, which is picked in the form and signs in wherever the connection points. A few secrets live in the connection itself, like the connection string of MongoDB, or a password sent through the API or kept from an older version. DBackup never shows them again. Their field reads **saved, leave blank to keep**, and left blank they are kept for **Test connection**, the list of databases and saving.
+
+That holds only while the connection still reaches the same place. Once the host, the port, the SSH server or its port changes, or a URL the connection sends to points at another server, such a secret is not sent there:
+
+- A secret the form shows, like the MongoDB connection string, has to be typed again. The form says **Enter it again for the new address**.
+- A password or key the form does not show is dropped once a saved login signs in to the new address. Without one the form asks you to **Pick a saved login for the new address**.
+
+Changing the name, the user, the databases or the options keeps every secret. Cloud drives like Google Drive, OneDrive and Dropbox, Amazon S3, Telegram and Twilio always talk to their provider, so their tokens are kept whatever else changes, and S3 storage keeps its keys when only the bucket changes.
+
 ## Connection Modes
 
 DBackup supports two connection modes for most database types:

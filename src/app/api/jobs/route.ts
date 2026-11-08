@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { jobService } from "@/services/jobs/job-service";
 import { logger } from "@/lib/logging/logger";
+import { serviceRefusal } from "@/lib/server/permission-refusal";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { getJobList } from "@/services/jobs/job-list-service";
 import { auditService } from "@/services/audit-service";
@@ -14,7 +16,7 @@ const log = logger.child({ route: "jobs" });
 export async function GET(_req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -32,7 +34,7 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return unauthorized();
     }
 
     try {
@@ -86,9 +88,10 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(newJob, { status: 201 });
     } catch (error: unknown) {
+        // A linked record of another tenant, a value the job refuses or a name in use is the caller's to fix.
+        const refused = serviceRefusal(error);
+        if (refused) return refused;
         log.error("Create job error", {}, wrapError(error));
-        const message = error instanceof Error ? error.message : "Failed to create job";
-        const status = message.includes("already exists") ? 409 : 500;
-        return NextResponse.json({ error: message }, { status });
+        return NextResponse.json({ error: "The job could not be created. The log of DBackup has the details." }, { status: 500 });
     }
 }

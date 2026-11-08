@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig } from "./lib/rate-limit";
 import type { RateLimitConfig } from "./lib/rate-limit";
+import { INTERNAL_TOKEN_HEADER, internalToken } from "./lib/rate-limit/internal-token";
 import { logger } from "./lib/logging/logger";
+import { clientAddress, rateLimitKey } from "./lib/core/client-address";
+import { loginHref } from "./lib/auth/sign-in-target";
 
 const log = logger.child({ module: "Middleware" });
 
@@ -26,7 +29,11 @@ async function syncRateLimitConfig(origin: string): Promise<void> {
 
     _fetchInFlight = (async () => {
         try {
+            // The route answers only the token of this instance, see `internal-token.ts`.
+            const token = await internalToken();
+            if (!token) return;
             const res = await fetch(new URL("/api/internal/rate-limit-config", origin), {
+                headers: { [INTERNAL_TOKEN_HEADER]: token },
                 signal: AbortSignal.timeout(3000),
             });
             if (res.ok) {
@@ -74,7 +81,10 @@ function anonymizeIp(ip: string): string {
 
 export async function middleware(request: NextRequest) {
     const startTime = Date.now();
-    const ip = request.headers.get("x-forwarded-for") ?? "127.0.0.1";
+    // Set by the custom server from the socket and a trusted proxy, never by the client itself.
+    // Missing under `pnpm dev`, where every request shares one bucket.
+    const ip = clientAddress(request.headers) ?? "127.0.0.1";
+    const key = rateLimitKey(ip);
     const path = request.nextUrl.pathname;
     const method = request.method;
     const shouldLog = shouldLogRequest(path);
@@ -87,14 +97,19 @@ export async function middleware(request: NextRequest) {
     try {
         if (path.startsWith("/api/auth/sign-in")) {
              rateLimitType = "auth";
-             await getAuthLimiter().consume(ip);
+             await getAuthLimiter().consume(key);
+        } else if (path === "/invite" && method === "POST") {
+             // The Server Actions of an invitation, which make accounts without a session. They post
+             // to the page and would otherwise pass every limiter.
+             rateLimitType = "auth";
+             await getAuthLimiter().consume(key);
         } else if (path.startsWith("/api/")) {
              if (method === 'GET' || method === 'HEAD') {
                 rateLimitType = "api";
-                await getApiLimiter().consume(ip);
+                await getApiLimiter().consume(key);
              } else {
                 rateLimitType = "mutation";
-                await getMutationLimiter().consume(ip);
+                await getMutationLimiter().consume(key);
              }
         }
     } catch {
@@ -135,8 +150,9 @@ export async function middleware(request: NextRequest) {
             request.cookies.get("better-auth.session_token") ||
             request.cookies.get("__Secure-better-auth.session_token");
 
+        // The login page leads back to the page asked for once someone signed in.
         if (!sessionToken) {
-            return NextResponse.redirect(new URL("/", request.url));
+            return NextResponse.redirect(new URL(loginHref(`${request.nextUrl.pathname}${request.nextUrl.search}`), request.url));
         }
     }
 

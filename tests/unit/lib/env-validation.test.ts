@@ -93,6 +93,21 @@ describe('validateEnvironment', () => {
         expect(() => validateEnvironment()).toThrow('Startup aborted');
     });
 
+    it('refuses a key of 64 characters that are not all hex, which would fail at the first secret', () => {
+        process.env.BETTER_AUTH_SECRET = VALID_SECRET;
+        for (const key of ['g'.repeat(64), `${'a'.repeat(63)}z`, `${'a'.repeat(62)} b`, 'Z'.repeat(32) + 'f'.repeat(32), `${'a'.repeat(60)}-0ab`]) {
+            process.env.ENCRYPTION_KEY = key;
+            expect(() => validateEnvironment(), key).toThrow('ENCRYPTION_KEY must hold hex characters only');
+        }
+    });
+
+    it('takes a key of 64 hex characters in either case, like the output of openssl rand -hex 32', () => {
+        process.env.BETTER_AUTH_SECRET = VALID_SECRET;
+        process.env.ENCRYPTION_KEY = '0123456789abcdefABCDEF'.repeat(3).slice(0, 64);
+
+        expect(validateEnvironment().ENCRYPTION_KEY).toHaveLength(64);
+    });
+
     it('accepts a disabled email login and an SSO provider ID', () => {
         process.env.BETTER_AUTH_SECRET = VALID_SECRET;
         process.env.ENCRYPTION_KEY = VALID_KEY;

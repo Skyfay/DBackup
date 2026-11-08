@@ -2,7 +2,8 @@ import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
 import { isBackupFile, sidecarPathsFor, effectiveBackupTime, chainFolderOf } from '@/lib/core/backup-files';
-import { loadBackupSidecars } from './retention-sidecars';
+import { isConfigBackupPath, isInConfigBackupFolder } from '@/lib/core/config-backup-path';
+import { loadBackupSidecars, retentionGroup } from './retention-sidecars';
 import { folderKey, loadFormerBackups } from './retention-folders';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
@@ -35,10 +36,11 @@ export async function stepRetention(ctx: RunnerContext) {
         });
     }
 
-    // Refresh storage stats cache after retention deletes files (non-blocking)
+    // Refresh storage stats cache of the job's destinations after retention deletes files (non-blocking)
     if (totalDeleted > 0) {
+        const configIds = ctx.destinations.map((destination) => destination.configId);
         import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
-            refreshStorageStatsCache().catch((e) => {
+            refreshStorageStatsCache({ configIds }).catch((e) => {
                 log.warn("Failed to refresh storage stats cache after retention", {}, e instanceof Error ? e : undefined);
             });
         });
@@ -92,13 +94,22 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     }
 
     const files: FileInfo[] = await dest.adapter.list(dest.config, remoteDir);
-    const listed = files.filter(f => isBackupFile(f.name));
+    // A file of the configuration backup is never a backup of the job, whatever the job is called
+    // and wherever it writes: anything in its folder, a file whose sidecar says so, which no job
+    // writes, and a file named like one unless its sidecar names this job, whose naming template
+    // may give its backups such a name.
+    const candidates = files.filter(f => isBackupFile(f.name) && !isInConfigBackupFolder(f.path));
 
     // Each backup's sidecar carries its lock flag, its chain membership, the job that made it
     // and the time DBackup recorded when it wrote the backup. The chain id is what lets
     // retention treat an incremental chain as one indivisible unit, and the timestamp is what
     // it buckets by.
-    const sidecars = await loadBackupSidecars(dest.adapter, dest.config, files, listed);
+    const sidecars = await loadBackupSidecars(dest.adapter, dest.config, files, candidates);
+    const listed = candidates.filter(f => !f.configBackup && !(isConfigBackupPath(f.path) && f.jobId !== ctx.job!.id));
+    const configBackups = files.filter(f => isBackupFile(f.name)).length - listed.length;
+    if (configBackups > 0) {
+        ctx.log(`${destLabel} Retention: ${configBackups} file(s) of the configuration backup in this folder are left alone.`, 'info');
+    }
 
     // A backup whose sidecar names another job is not this job's to delete. A job named like a
     // deleted one writes into the same folder, and what the deleted job left there stays until
@@ -120,10 +131,17 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     for (const { folder, count } of former.folders) {
         ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
     }
-    const backupFiles = [...current, ...former.files];
-    // Folder-level chain preservation happens in RetentionService. A sidecar
-    // failure is local to that chain; unrelated flat backups and healthy chains
-    // continue following their policy, avoiding an unbounded destination-wide stop.
+    // Only backups in the selected database scope are subject to this pass.
+    const group = retentionGroup(ctx.onlyDatabases);
+    const allFiles = [...current, ...former.files];
+    const backupFiles = allFiles.filter(f => retentionGroup(f.onlyDatabases) === group);
+    if (backupFiles.length < allFiles.length) {
+        ctx.log(group
+            ? `${destLabel} Retention: Judging the ${backupFiles.length} backup(s) of ${ctx.onlyDatabases!.join(", ")} alone, ${allFiles.length - backupFiles.length} other backup(s) of the job are left as they are.`
+            : `${destLabel} Retention: ${allFiles.length - backupFiles.length} backup(s) of single databases are judged on their own and left as they are.`);
+    }
+    // Folder-level chain preservation is performed by RetentionService.
+    // A broken sidecar blocks only its chain, not independent healthy backups.
     const uncertain = backupFiles.filter(f => f.chainMetadataUnsafe);
     if (uncertain.length > 0) {
         ctx.log(
@@ -135,13 +153,13 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     for (const file of backupFiles) {
         const folder = chainFolderOf(file.path);
         if (!folder) continue;
-        const group = chainFolders.get(folder) ?? { full: false, incremental: false };
-        group.full ||= file.chainType === 'full';
-        group.incremental ||= file.chainType === 'incremental';
-        chainFolders.set(folder, group);
+        const entry = chainFolders.get(folder) ?? { full: false, incremental: false };
+        entry.full ||= file.chainType === 'full';
+        entry.incremental ||= file.chainType === 'incremental';
+        chainFolders.set(folder, entry);
     }
-    for (const [folder, group] of chainFolders) {
-        if (group.incremental && !group.full) {
+    for (const [folder, entry] of chainFolders) {
+        if (entry.incremental && !entry.full) {
             ctx.log(`${destLabel} Retention warning: chain folder ${folder} has no verifiable FULL base; preserving it for recovery.`, 'warning');
         }
     }

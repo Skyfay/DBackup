@@ -5,18 +5,20 @@ import { MySQLConfig, MariaDBConfig } from "@/lib/adapters/definitions";
 import { ensureDatabase } from "./connection";
 import { getDialect } from "./dialects";
 import fs from "fs/promises";
-import { Transform } from "stream";
-import path from "path";
 import {
     isMultiDbTar,
     extractSelectedDatabases,
+    extractedFileOf,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
     getTargetDatabaseName,
 } from "../common/tar-utils";
 import { formatBytes } from "@/lib/utils";
-import { MYSQL_CLIENT, buildConnectionArgs, withAuthArgs } from "./args";
+import { MYSQL_CLIENT, NO_LOCAL_INFILE, buildConnectionArgs, withAuthArgs } from "./args";
+import { connectionClientOf } from "./dump-content";
+import { createDatabaseRenameStream } from "./rename-stream";
+import { lockedDownClientArgs } from "./client-lock";
 
 /** Extended config with runtime fields for restore operations */
 type MySQLRestoreConfig = (MySQLConfig | MariaDBConfig) & {
@@ -27,53 +29,6 @@ type MySQLRestoreConfig = (MySQLConfig | MariaDBConfig) & {
     selectedDatabases?: string[];
     originalDatabase?: string;
 };
-
-/**
- * Returns a Transform stream that rewrites database-name references in a mysqldump
- * SQL stream when restoring to a different name.
- *
- * mysqldump always emits `USE \`originalDb\`;` and
- * `CREATE DATABASE ... \`originalDb\`` lines that would override the target
- * database specified on the mysql CLI.  This transform replaces those lines so
- * the entire dump lands in `targetDb`.
- */
-function createDatabaseRenameStream(originalDb: string, targetDb: string): Transform {
-    let buffer = '';
-    const escaped = originalDb.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    return new Transform({
-        transform(chunk, _encoding, callback) {
-            buffer += chunk.toString('utf8');
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
-
-            const out = lines.map(line => {
-                // USE `originalDb`;
-                if (line === `USE \`${originalDb}\`;`) return `USE \`${targetDb}\`;`;
-                // CREATE DATABASE ... `originalDb` ...
-                if (/^CREATE DATABASE\b/.test(line) && line.includes(`\`${originalDb}\``)) {
-                    return line.replace(new RegExp(`\\\`${escaped}\\\``, 'g'), `\`${targetDb}\``);
-                }
-                // ALTER DATABASE `originalDb` ...
-                if (/^ALTER DATABASE\b/.test(line) && line.includes(`\`${originalDb}\``)) {
-                    return line.replace(new RegExp(`\\\`${escaped}\\\``, 'g'), `\`${targetDb}\``);
-                }
-                return line;
-            });
-
-            callback(null, out.join('\n') + '\n');
-        },
-        flush(callback) {
-            if (!buffer) { callback(); return; }
-            let line = buffer;
-            if (line === `USE \`${originalDb}\`;`) line = `USE \`${targetDb}\`;`;
-            if (/^CREATE DATABASE\b/.test(line) && line.includes(`\`${originalDb}\``)) {
-                line = line.replace(new RegExp(`\\\`${escaped}\\\``, 'g'), `\`${targetDb}\``);
-            }
-            callback(null, line);
-        }
-    });
-}
 
 const MAX_STDERR_LOG_LINES = 50;
 const MAX_STDERR_LINE_LENGTH = 500;
@@ -186,7 +141,7 @@ async function logPostFailureDiagnostics(
 ): Promise<void> {
     try {
         const alive = await host.exec([
-            mysqlBin, ...authArgs, ...buildConnectionArgs(config, host), "-N", "-e", "SELECT 'alive'",
+            mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...buildConnectionArgs(config, host, { client: await connectionClientOf(config, host, mysqlBin) }), "-N", "-e", "SELECT 'alive'",
         ]);
         if (alive.stdout.includes("alive")) {
             onLog("Post-failure check: MySQL server is still running", "warning");
@@ -233,13 +188,15 @@ async function restoreSingleFile(
 
     const mysqlBin = await host.which(...MYSQL_CLIENT);
     const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
-    const args = dialect.getRestoreArgs(config, targetDb, host);
+    const client = await connectionClientOf(config, host, mysqlBin);
+    const args = dialect.getRestoreArgs(config, targetDb, host, client);
+    const locked = await lockedDownClientArgs(host, mysqlBin);
 
     await withAuthArgs(host, config.password, async (authArgs) => {
         // Best effort: server limits explain most restore failures after the fact.
         try {
             const diag = await host.exec([
-                mysqlBin, ...authArgs, ...buildConnectionArgs(config, host), "-N", "-e", DIAGNOSTICS_QUERY,
+                mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...buildConnectionArgs(config, host, { client }), "-N", "-e", DIAGNOSTICS_QUERY,
             ]);
             if (diag.code === 0 && diag.stdout.trim()) {
                 onLog(`Server settings: ${diag.stdout.trim()}`);
@@ -277,7 +234,8 @@ async function restoreSingleFile(
                     const secrets = [config.password, config.privilegedAuth?.password].filter(Boolean) as string[];
                     const stderr = createStderrHandler(onLog, secrets);
 
-                    const proc = await host.spawn([mysqlBin, ...authArgs, ...args], { stdinFile: stagedPath });
+                    // The login file has to come first, the lock right after it.
+                    const proc = await host.spawn([mysqlBin, ...authArgs, ...locked, ...args], { stdinFile: stagedPath });
                     proc.stdout.on('data', () => { /* mysql writes nothing useful here */ });
                     proc.stderr.on('data', (data: Buffer) => stderr.handle(data.toString()));
 
@@ -361,11 +319,7 @@ export async function restore(config: MySQLRestoreConfig, sourcePath: string, _h
                     }
 
                     const targetDb = getTargetDatabaseName(dbEntry.name, dbMapping);
-                    const dbFile = files.find(f => path.basename(f) === dbEntry.filename);
-
-                    if (!dbFile) {
-                        throw new Error(`Database file not found in archive: ${dbEntry.filename}`);
-                    }
+                    const dbFile = extractedFileOf(files, dbEntry);
 
                     // Ensure target database exists
                     await ensureDatabase(config, targetDb, creationUser, creationPass, usePrivileged, logs, _host);

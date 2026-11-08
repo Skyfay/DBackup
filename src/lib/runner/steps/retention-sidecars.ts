@@ -1,5 +1,5 @@
 import { FileInfo, StorageAdapter, AdapterConfig } from "@/lib/core/interfaces";
-import { METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
+import { METADATA_SIDECAR_SUFFIX, chainFolderOf } from "@/lib/core/backup-files";
 
 /**
  * Loading the `.meta.json` sidecars that retention needs before it can decide anything.
@@ -16,37 +16,6 @@ import { METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 
 /** How far mtime and the recorded creation time may drift before it is worth reporting. */
 export const TIMESTAMP_DRIFT_WARNING_MS = 60 * 60 * 1000;
-
-/**
- * Incremental retention is destructive: each chain must have trustworthy
- * per-archive metadata AND a present full base before any archive may be deleted.
- * A missing sidecar otherwise makes its FULL appear chainless while incremental
- * children retain their chain ID, causing irreversible partial chain deletion.
- */
-export function assertIncrementalRetentionSafe(backups: FileInfo[]): void {
-    if (!backups.length) return;
-    const incompleteMetadata = backups.filter(
-        file => !file.chainId || !file.backupTimestamp
-    );
-    if (incompleteMetadata.length) {
-        throw new Error(
-            "Incremental retention blocked: missing or invalid metadata for " +
-            incompleteMetadata.length + " archive(s); refusing all deletions."
-        );
-    }
-    const fullChainIds = new Set(
-        backups.filter(file => /_full-[0-9]+[.]/.test(file.name)).map(file => file.chainId!)
-    );
-    const orphaned = new Set(
-        backups.filter(file => !fullChainIds.has(file.chainId!)).map(file => file.chainId!)
-    );
-    if (orphaned.size) {
-        throw new Error(
-            "Incremental retention blocked: " + orphaned.size +
-            " chain(s) lack a FULL base archive; refusing all deletions."
-        );
-    }
-}
 
 export interface SidecarLoadResult {
     /** Backups whose sidecar supplied a usable creation time. */
@@ -92,6 +61,15 @@ export async function loadBackupSidecars(
     const targets = listingShowsSidecars
         ? backups.filter((f) => sidecarPaths.has(normalize(f.path) + METADATA_SIDECAR_SUFFIX))
         : backups;
+    // A listing that contains other sidecars proves this archive's sidecar is missing.
+    // Only chain folders need special protection: historical flat FULLs are independent.
+    if (listingShowsSidecars) {
+        for (const file of backups) {
+            if (chainFolderOf(file.path) && !sidecarPaths.has(normalize(file.path) + METADATA_SIDECAR_SUFFIX)) {
+                file.chainMetadataUnsafe = true;
+            }
+        }
+    }
 
     // Serial unless the adapter says its read() carries no per-call protocol state.
     const concurrency = Math.max(1, adapter.readConcurrency ?? 1);
@@ -110,27 +88,39 @@ async function applySidecar(
     file: FileInfo,
     result: SidecarLoadResult
 ): Promise<void> {
-    let meta: { locked?: boolean; chain?: { id?: string }; jobId?: string; timestamp?: string };
+    let meta: { locked?: boolean; chain?: { id?: string; type?: string }; jobId?: string; timestamp?: string };
     try {
         const content = await adapter.read!(config, file.path + METADATA_SIDECAR_SUFFIX);
-        if (!content) return;
+        if (!content) {
+            if (chainFolderOf(file.path)) file.chainMetadataUnsafe = true;
+            return;
+        }
         meta = JSON.parse(content);
+        if (!meta || typeof meta !== "object") throw new Error("Invalid sidecar");
     } catch {
-        // A backup whose sidecar cannot be read is still a backup. It falls back to the
-        // destination's mtime and counts as unlocked and chainless, which is what the
-        // policy assumed before sidecars existed.
+        // Preserve every member of an uncertain chain folder; ordinary flat backups
+        // still use their historical mtime fallback.
+        if (chainFolderOf(file.path)) file.chainMetadataUnsafe = true;
         return;
     }
 
     if (meta.locked) file.locked = true;
     if (meta.chain?.id) file.chainId = meta.chain.id;
+    if (meta.chain?.type === 'full' || meta.chain?.type === 'incremental') file.chainType = meta.chain.type;
+    if (chainFolderOf(file.path) && (!file.chainId || !file.chainType)) file.chainMetadataUnsafe = true;
     if (typeof meta.jobId === "string" && meta.jobId) file.jobId = meta.jobId;
 
-    if (!meta.timestamp) return;
+    if (!meta.timestamp) {
+        if (chainFolderOf(file.path)) file.chainMetadataUnsafe = true;
+        return;
+    }
     const recorded = new Date(meta.timestamp);
     // A sidecar with an unparsable timestamp must not produce an Invalid Date, which would
     // poison every comparison it takes part in and sort unpredictably.
-    if (Number.isNaN(recorded.getTime())) return;
+    if (Number.isNaN(recorded.getTime())) {
+        if (chainFolderOf(file.path)) file.chainMetadataUnsafe = true;
+        return;
+    }
 
     file.backupTimestamp = recorded;
     result.withTimestamp++;

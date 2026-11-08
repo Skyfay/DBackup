@@ -1,8 +1,8 @@
 import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
-import { isBackupFile, sidecarPathsFor, effectiveBackupTime } from '@/lib/core/backup-files';
-import { assertIncrementalRetentionSafe, loadBackupSidecars } from './retention-sidecars';
+import { isBackupFile, sidecarPathsFor, effectiveBackupTime, chainFolderOf } from '@/lib/core/backup-files';
+import { loadBackupSidecars } from './retention-sidecars';
 import { folderKey, loadFormerBackups } from './retention-folders';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
@@ -121,10 +121,29 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
     }
     const backupFiles = [...current, ...former.files];
-    if (ctx.job!.backupMode === "INCREMENTAL") {
-        // A listing missing even one chain identifier or full base cannot safely
-        // be pruned. A successful upload does not make older archives complete.
-        assertIncrementalRetentionSafe(backupFiles);
+    // Folder-level chain preservation happens in RetentionService. A sidecar
+    // failure is local to that chain; unrelated flat backups and healthy chains
+    // continue following their policy, avoiding an unbounded destination-wide stop.
+    const uncertain = backupFiles.filter(f => f.chainMetadataUnsafe);
+    if (uncertain.length > 0) {
+        ctx.log(
+            `${destLabel} Retention warning: ${uncertain.length} archive(s) have incomplete chain sidecars; their chain folders are preserved.`,
+            'warning'
+        );
+    }
+    const chainFolders = new Map<string, { full: boolean; incremental: boolean }>();
+    for (const file of backupFiles) {
+        const folder = chainFolderOf(file.path);
+        if (!folder) continue;
+        const group = chainFolders.get(folder) ?? { full: false, incremental: false };
+        group.full ||= file.chainType === 'full';
+        group.incremental ||= file.chainType === 'incremental';
+        chainFolders.set(folder, group);
+    }
+    for (const [folder, group] of chainFolders) {
+        if (group.incremental && !group.full) {
+            ctx.log(`${destLabel} Retention warning: chain folder ${folder} has no verifiable FULL base; preserving it for recovery.`, 'warning');
+        }
     }
     const own = new Set(backupFiles);
     const drifted = [...sidecars.drifted, ...former.drifted];

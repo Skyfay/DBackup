@@ -131,7 +131,8 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     for (const { folder, count } of former.folders) {
         ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
     }
-    // Only backups in the selected database scope are subject to this pass.
+    // The backups of some databases alone are judged with the others of the same databases, and the
+    // whole backups together, each group by the same policy, see retentionGroup.
     const group = retentionGroup(ctx.onlyDatabases);
     const allFiles = [...current, ...former.files];
     const backupFiles = allFiles.filter(f => retentionGroup(f.onlyDatabases) === group);

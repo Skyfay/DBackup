@@ -69,15 +69,24 @@ export function sidecarPathsFor(backupPath: string): string[] {
 }
 
 /**
+ * The name the runner gives the folder of a chain, `chain-` and the moment it started, see
+ * `chainDirName` in `chain-planner.ts`. Only that name counts, so the folder of a job that is
+ * itself called `chain-something` never reads as a chain.
+ */
+export const CHAIN_FOLDER_NAME = /^chain-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}$/;
+
+/**
  * The incremental chain folder a backup lives in, or null for a flat full backup.
  *
- * The runner names these `chain-<timestamp>`, and the folder layout is what defines the
- * chain. Anything asking "does something else depend on this archive?" starts here.
+ * The runner names these `chain-<timestamp>` inside the folder of the job, and the folder
+ * layout is what defines the chain. Anything asking "does something else depend on this
+ * archive?" starts here.
  */
 export function chainFolderOf(backupPath: string): string | null {
     const normalized = backupPath.replace(/\\/g, "/");
     const separator = normalized.lastIndexOf("/");
     if (separator === -1) return null;
     const folder = normalized.slice(0, separator);
-    return /\/chain-[^/]+$/.test(folder) ? folder : null;
+    const parent = folder.lastIndexOf("/");
+    return parent !== -1 && CHAIN_FOLDER_NAME.test(folder.slice(parent + 1)) ? folder : null;
 }

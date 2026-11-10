@@ -47,7 +47,7 @@ const { deleteBackupsBulk, setBackupsLocked } = await import('@/services/storage
 const { BULK_ROW_FAILED } = await import('@/lib/core/bulk');
 
 const file = (path: string, locked = false) => ({ path, name: path.split('/').pop(), locked });
-const chain = (name: string) => `backups/nightly/chain-1700/${name}`;
+const chain = (name: string) => `backups/nightly/chain-2026-07-15T17-00-00-000/${name}`;
 
 describe('deleteBackupsBulk', () => {
     beforeEach(() => {

@@ -11,14 +11,16 @@ const file = (relative: string, ago: number, extra: Partial<FileInfo> = {}): Fil
     lastModified: day(ago),
     ...extra,
 });
+/** A chain folder named like the runner names them, see `chainDirName`: `chain-` and the start of the chain. */
+const chainDir = (ago: number) => `chain-${day(ago).toISOString().replace(/[:.]/g, "-").replace(/Z$/, "")}`;
 const keepNewest = { mode: "SIMPLE" as const, simple: { keepCount: 1 } };
 const decide = (files: FileInfo[]) => RetentionService.calculateRetention(files, keepNewest);
 
 describe("incremental retention protects complete chain folders without blocking unrelated backups", () => {
     it("preserves a FULL with unreadable metadata and its increments, but prunes an unrelated flat backup", () => {
-        const newest = file("chain-new/full-000-new.tar", 0, { chainId: "new", chainType: "full" });
-        const missingMetaFull = file("chain-old/full-000-old.tar", 12, { chainMetadataUnsafe: true });
-        const increment = file("chain-old/inc-001-old.tar", 11, { chainId: "old", chainType: "incremental" });
+        const newest = file(`${chainDir(0)}/full-000-new.tar`, 0, { chainId: "new", chainType: "full" });
+        const missingMetaFull = file(`${chainDir(12)}/full-000-old.tar`, 12, { chainMetadataUnsafe: true });
+        const increment = file(`${chainDir(12)}/inc-001-old.tar`, 11, { chainId: "old", chainType: "incremental" });
         const flat = file("legacy-flat.tar", 14);
         const result = decide([flat, missingMetaFull, newest, increment]);
         expect(result.keep).toContain(newest);
@@ -28,10 +30,10 @@ describe("incremental retention protects complete chain folders without blocking
     });
 
     it("retains a valid FULL regardless of name template when its incremental is selected", () => {
-        const full = file("chain-current/custom-name-prefix.tar", 2, { chainId: "current", chainType: "full" });
-        const inc = file("chain-current/any-custom-template.tar", 0, { chainId: "current", chainType: "incremental" });
-        const oldFull = file("chain-previous/a.tar", 21, { chainId: "previous", chainType: "full" });
-        const oldInc = file("chain-previous/b.tar", 20, { chainId: "previous", chainType: "incremental" });
+        const full = file(`${chainDir(2)}/custom-name-prefix.tar`, 2, { chainId: "current", chainType: "full" });
+        const inc = file(`${chainDir(2)}/any-custom-template.tar`, 0, { chainId: "current", chainType: "incremental" });
+        const oldFull = file(`${chainDir(21)}/a.tar`, 21, { chainId: "previous", chainType: "full" });
+        const oldInc = file(`${chainDir(21)}/b.tar`, 20, { chainId: "previous", chainType: "incremental" });
         const result = decide([oldFull, full, inc, oldInc]);
         expect(result.keep).toEqual(expect.arrayContaining([inc, full]));
         expect(result.delete).toEqual(expect.arrayContaining([oldFull, oldInc]));
@@ -40,7 +42,7 @@ describe("incremental retention protects complete chain folders without blocking
 
     it("preserves orphaned incrementals, while older independent backups can be deleted", () => {
         const latest = file("flat-latest.tar", 0);
-        const orphan = file("chain-orphan/inc-001.tar", 18, { chainId: "orphan", chainType: "incremental" });
+        const orphan = file(`${chainDir(18)}/inc-001.tar`, 18, { chainId: "orphan", chainType: "incremental" });
         const oldFlat = file("flat-before.tar", 25);
         const result = decide([orphan, oldFlat, latest]);
         expect(result.keep).toContain(orphan);
@@ -48,10 +50,10 @@ describe("incremental retention protects complete chain folders without blocking
     });
 
     it("does not disable retention permanently for historic flat FULLs or adapters without read()", () => {
-        const recent = file("chain-latest/full-000.tar", 0);
-        const recentInc = file("chain-latest/inc-001.tar", 1);
-        const oldFull = file("chain-older/full-000.tar", 13);
-        const oldInc = file("chain-older/inc-001.tar", 12);
+        const recent = file(`${chainDir(1)}/full-000.tar`, 0);
+        const recentInc = file(`${chainDir(1)}/inc-001.tar`, 1);
+        const oldFull = file(`${chainDir(13)}/full-000.tar`, 13);
+        const oldInc = file(`${chainDir(13)}/inc-001.tar`, 12);
         const flat = file("old-full-before-job-switch.tar", 40);
         const result = decide([flat, oldInc, recentInc, oldFull, recent]);
         expect(result.keep).toEqual(expect.arrayContaining([recent, recentInc]));
@@ -74,5 +76,15 @@ describe("incremental retention protects complete chain folders without blocking
         expect(inc.chainType).toBe("incremental");
         expect(decide([full, inc, latest]).keep).toEqual(expect.arrayContaining([full, inc, latest]));
         expect(adapter.read).toHaveBeenCalledTimes(1);
+    });
+
+    it("judges the backups of a job that is itself called chain-something like any other", () => {
+        // A customer's job lists under its tenant, so its folder has a parent like a chain folder has.
+        const job = (name: string, ago: number) => file(name, ago, { path: `/tenants/acme/chain-store/${name}` });
+        const newest = job("db-new.tar.gz", 0);
+        const older = job("db-old.tar.gz", 5);
+        const result = decide([older, newest]);
+        expect(result.keep).toEqual([newest]);
+        expect(result.delete).toEqual([older]);
     });
 });

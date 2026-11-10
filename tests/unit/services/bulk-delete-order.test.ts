@@ -8,7 +8,9 @@ import {
 
 // Chain members are named so they sort chronologically, which is what both the ordering
 // and the dependency check rely on.
-const chain = (folder: string, name: string) => `backups/nightly/chain-${folder}/${name}`;
+/** A chain folder named like the runner names them, `chain-` and the moment the chain started, here at `hhmm`. */
+const folderOf = (hhmm: string) => `backups/nightly/chain-2026-07-15T${hhmm.slice(0, 2)}-${hhmm.slice(2)}-00-000`;
+const chain = (hhmm: string, name: string) => `${folderOf(hhmm)}/${name}`;
 
 describe('groupByChainFolder', () => {
     it('collects members of the same chain together', () => {
@@ -17,7 +19,7 @@ describe('groupByChainFolder', () => {
             chain('1700', 'inc-001.tar'),
         ]);
 
-        expect(groups.get('backups/nightly/chain-1700')).toEqual([
+        expect(groups.get(folderOf('1700'))).toEqual([
             chain('1700', 'full-000.tar'),
             chain('1700', 'inc-001.tar'),
         ]);
@@ -36,6 +38,12 @@ describe('groupByChainFolder', () => {
         const groups = groupByChainFolder(['backups/nightly/db-2024.sql.gz']);
 
         expect(groups.get(null)).toEqual(['backups/nightly/db-2024.sql.gz']);
+    });
+
+    it('does not mistake the folder of a job called chain-something for a chain', () => {
+        const groups = groupByChainFolder(['tenants/acme/chain-store/db.sql.gz']);
+
+        expect(groups.get(null)).toEqual(['tenants/acme/chain-store/db.sql.gz']);
     });
 
     it('does not mistake an ordinary folder for a chain', () => {

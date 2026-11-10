@@ -278,14 +278,14 @@ describe('StorageService - extra coverage', () => {
             const adapter = makeAdapter({
                 delete: vi.fn().mockResolvedValue(true),
                 list: vi.fn().mockResolvedValue([
-                    { name: 'full-2026-07-15.tar', path: 'job/chain-2026-07-15/full-2026-07-15.tar', size: 1, lastModified: new Date() },
-                    { name: 'inc-2026-07-16.tar', path: 'job/chain-2026-07-15/inc-2026-07-16.tar', size: 1, lastModified: new Date() },
+                    { name: 'full-2026-07-15.tar', path: 'job/chain-2026-07-15T02-00-00-000/full-2026-07-15.tar', size: 1, lastModified: new Date() },
+                    { name: 'inc-2026-07-16.tar', path: 'job/chain-2026-07-15T02-00-00-000/inc-2026-07-16.tar', size: 1, lastModified: new Date() },
                 ]),
             });
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
             vi.mocked(registry.get).mockReturnValue(adapter);
 
-            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15/full-2026-07-15.tar'))
+            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15T02-00-00-000/full-2026-07-15.tar'))
                 .rejects.toThrow(/incremental chain/i);
 
             expect(adapter.delete).not.toHaveBeenCalled();
@@ -295,14 +295,14 @@ describe('StorageService - extra coverage', () => {
             const adapter = makeAdapter({
                 delete: vi.fn().mockResolvedValue(true),
                 list: vi.fn().mockResolvedValue([
-                    { name: 'full-2026-07-15.tar', path: 'job/chain-2026-07-15/full-2026-07-15.tar', size: 1, lastModified: new Date() },
-                    { name: 'inc-2026-07-16.tar', path: 'job/chain-2026-07-15/inc-2026-07-16.tar', size: 1, lastModified: new Date() },
+                    { name: 'full-2026-07-15.tar', path: 'job/chain-2026-07-15T02-00-00-000/full-2026-07-15.tar', size: 1, lastModified: new Date() },
+                    { name: 'inc-2026-07-16.tar', path: 'job/chain-2026-07-15T02-00-00-000/inc-2026-07-16.tar', size: 1, lastModified: new Date() },
                 ]),
             });
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
             vi.mocked(registry.get).mockReturnValue(adapter);
 
-            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15/inc-2026-07-16.tar')).resolves.toBe(true);
+            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15T02-00-00-000/inc-2026-07-16.tar')).resolves.toBe(true);
         });
 
         it('leaves a flat full backup alone - nothing can depend on it', async () => {
@@ -322,7 +322,7 @@ describe('StorageService - extra coverage', () => {
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
             vi.mocked(registry.get).mockReturnValue(adapter);
 
-            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15/inc-1.tar'))
+            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15T02-00-00-000/inc-1.tar'))
                 .rejects.toThrow(/could not verify/i);
             expect(adapter.delete).not.toHaveBeenCalled();
         });

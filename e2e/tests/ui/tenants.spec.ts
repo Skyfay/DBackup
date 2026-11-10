@@ -319,9 +319,11 @@ test("a new tenant blocks the local network until the platform allows its range"
 
     await test.step("Acme adds a job of its own", async () => {
         const source = await theirs.connection({ ...connection, name: `${tag} own postgres`, type: "database" });
-        // An SFTP server of the lab, which the job never writes to here.
+        // An SFTP destination the job never writes to here, on the server of the range just allowed.
+        // The SFTP server of the lab does not run in the job of the UI tests, and a host that does
+        // not resolve is refused for a tenant that blocks the local network.
         const ssh = await theirs.credential(`${tag} sftp`, "SSH_KEY", { username: STORAGE.ssh.username, authType: "password", password: STORAGE.ssh.password });
-        const target = await theirs.connection({ name: `${tag} own sftp`, type: "storage", adapterId: "sftp", config: { host: STORAGE.ssh.service, port: 22, pathPrefix: `${STORAGE.ssh.home}/backups/${tag}` }, primaryCredentialId: ssh });
+        const target = await theirs.connection({ name: `${tag} own sftp`, type: "storage", adapterId: "sftp", config: { host: postgres.service, port: 22, pathPrefix: `${STORAGE.ssh.home}/backups/${tag}` }, primaryCredentialId: ssh });
         acmeJobName = `${tag} acme own`;
         const created = await raw(person.request, "post", "/api/jobs", {
             name: acmeJobName,

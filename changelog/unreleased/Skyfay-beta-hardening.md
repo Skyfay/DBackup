@@ -1,11 +1,10 @@
 ### 🐛 Bug Fixes
 
 - **Telegram**: A message sent with the parse mode Markdown is written in Markdown, so a name with `_` or `*` no longer makes Telegram refuse it.
-- **MSSQL**: A restore under the original name checks every file it places against the files of other databases, and moves the files of a backup from another server or one whose server name cannot be read.
 
 ### 🔒 Security
 
-- **auth**: A provider no longer signs someone into an account whose email its owner set themselves, until they link the provider from their own profile.
+- **auth**: A provider no longer signs someone into an account whose email its owner set themselves, also before the update, until they link the provider from their own profile.
 - **auth**: Five wrong current passwords in 15 minutes lock the password change of an account for 15 minutes.
 - **auth**: An API route signed in by the session cookie refuses a change that comes from another site.
 - **auth**: The address of a sign-in provider is trusted only for its own sign-in, never as the target of a redirect.

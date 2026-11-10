@@ -93,6 +93,25 @@ export function newSince(fragments, earlier) {
     }));
 }
 
+/** The address of the docs site, built from `main`, so a page a beta brings is not there yet. */
+const DOCS_SITE = /https:\/\/docs\.dbackup\.app\/([^)\s#]*)(#[^)\s]*)?/g;
+
+/**
+ * Points the links of the notes of a beta at the docs as the beta has them: the page in the repo at
+ * the tag of the beta, which GitHub shows with its anchors. The docs site is built from `main` and
+ * shows a page the beta adds or changes only once the release is out.
+ *
+ * @param {string} text
+ * @param {string} version Without the leading `v`.
+ * @returns {string}
+ */
+export function docsAtBeta(text, version) {
+    return text.replace(DOCS_SITE, (_match, route, anchor = "") => {
+        const page = route === "" || route.endsWith("/") ? `${route}index` : route.replace(/\.html$/, "");
+        return `https://github.com/Skyfay/DBackup/blob/v${version}/docs/${page}.md${anchor}`;
+    });
+}
+
 /**
  * The notes of a beta: what it previews and how to try it safely, what came since the beta before
  * it, then everything since the last release, then its Docker image.
@@ -120,7 +139,7 @@ export function betaNotes({ version, fragments, since = null, earlier = [], last
     }
     lines.push(lastRelease ? `## Everything since v${lastRelease}` : `## Everything in v${release}`, "", ...renderSections(fragments));
     lines.push(...dockerSection(version, dockerTags(version)));
-    return `${lines.join("\n")}\n`;
+    return docsAtBeta(`${lines.join("\n")}\n`, version);
 }
 
 /**

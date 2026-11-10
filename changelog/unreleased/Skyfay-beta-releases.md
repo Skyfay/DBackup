@@ -1,7 +1,3 @@
-### 🐛 Bug Fixes
-
-- **updates**: The update notice of an instance on a beta counts the number of a beta as a number, so `beta.10` is newer than `beta.2`.
-
 ### 📝 Documentation
 
 - **wiki**: The installation guide explains the beta versions, and the developer guide how to release one.

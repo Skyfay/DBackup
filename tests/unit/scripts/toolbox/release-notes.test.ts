@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseFragment } from "../../../../scripts/toolbox/changelog.mjs";
-import { betaNotes, fragmentsAt, newSince, previousBeta, releaseNotes } from "../../../../scripts/toolbox/release-notes.mjs";
+import { betaNotes, docsAtBeta, fragmentsAt, newSince, previousBeta, releaseNotes } from "../../../../scripts/toolbox/release-notes.mjs";
 
 const CHANGELOG = [
     "# Changelog",
@@ -91,6 +91,18 @@ describe("the notes of a beta", () => {
         ]);
         expect(notes).toContain("- **Image**: `skyfay/dbackup:v4.1.0-beta.2`\n- **Also tagged as**: `beta`");
         expect(notes).not.toContain("CI Image");
+    });
+
+    it("point a link to the docs at the page as the beta has it, since the docs site shows main", () => {
+        expect(docsAtBeta("See [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating).", "5.0.0-beta.1"))
+            .toBe("See [Before Updating](https://github.com/Skyfay/DBackup/blob/v5.0.0-beta.1/docs/user-guide/admin/tenants.md#before-updating).");
+        expect(docsAtBeta("[guides](https://docs.dbackup.app/user-guide/) and [home](https://docs.dbackup.app/)", "5.0.0-beta.1"))
+            .toBe("[guides](https://github.com/Skyfay/DBackup/blob/v5.0.0-beta.1/docs/user-guide/index.md) and [home](https://github.com/Skyfay/DBackup/blob/v5.0.0-beta.1/docs/index.md)");
+
+        const linked = { ...fragment, notes: ["> ⚠️ **Before updating:** Read [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating)."] };
+        const notes = betaNotes({ version: "4.1.0-beta.1", fragments: [linked], lastRelease: "4.0.2" });
+        expect(notes).toContain("https://github.com/Skyfay/DBackup/blob/v4.1.0-beta.1/docs/user-guide/admin/tenants.md#before-updating");
+        expect(notes).not.toContain("docs.dbackup.app");
     });
 
     it("leave out what is new for the first beta, and a part that would be empty", () => {

@@ -17,7 +17,7 @@ import { logger } from "@/lib/logging/logger"
 import { ALL_TENANTS } from "@/lib/tenant/home"
 import type { TenantSummary } from "@/services/tenant/tenant-summaries"
 import { TenantMenu } from "./tenant-menu"
-import { pageAfterSwitch, sidebarHead, type HeadInput, type HeadLines } from "./tenant-switch"
+import { canSwitch, pageAfterSwitch, sidebarHead, type HeadInput, type HeadLines } from "./tenant-switch"
 
 const log = logger.child({ component: "tenant-switcher" })
 
@@ -149,7 +149,7 @@ export function SidebarHead(input: HeadInput) {
                         <SidebarMenuButton
                             size="lg"
                             tooltip={lines.title}
-                            aria-label={`${label}. ${lines.chevrons ? "Switch the tenant" : "Tenants"}`}
+                            aria-label={`${label}. ${canSwitch(tenants) ? "Switch the tenant" : "Tenants"}`}
                             className="h-11 data-[state=open]:bg-sidebar-accent"
                             disabled={switching}
                         >

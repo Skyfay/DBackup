@@ -43,7 +43,7 @@ export interface HeadLines {
     subtitle: string | null;
     /** The head opens the menu of the tenants. Otherwise it leads to the Overview. */
     menu: boolean;
-    /** The up and down arrows at the right, while there is a tenant to switch to. */
+    /** The up and down arrows at the right, whenever the head opens the menu, so it reads as one also with a single tenant. */
     chevrons: boolean;
     /** The logo of the tenant the head names, in place of the DBackup tile. Null for the tile. */
     logo: string | null;
@@ -81,12 +81,12 @@ export function sidebarHead(input: HeadInput): HeadLines {
         return { title: active.name, subtitle: `Tenant ${at + 1} of ${tenants.length}`, menu, chevrons: true, logo: active.logo ?? null };
     }
     if (active && tenantCount > 1) {
-        return { title: active.name, subtitle: "Your backups", menu, chevrons: false, logo: active.logo ?? null };
+        return { title: active.name, subtitle: "Your backups", menu, chevrons: menu, logo: active.logo ?? null };
     }
 
     // One tenant in the instance, every install before tenants: the name of the instance and its version.
     const subtitle = version ? (instanceName ? `DBackup v${version}` : `v${version}`) : null;
-    return { title: instanceName || "DBackup", subtitle, menu, chevrons: switchable, logo: null };
+    return { title: instanceName || "DBackup", subtitle, menu, chevrons: menu, logo: null };
 }
 
 /**

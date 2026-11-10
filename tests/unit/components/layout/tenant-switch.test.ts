@@ -39,8 +39,8 @@ describe("the head of the sidebar", () => {
         expect(head({ tenants: [HOME], tenantCount: 1, isPlatformAdmin: false, instanceName: "Production" })).toMatchObject({ title: "Production", subtitle: "DBackup v4.1.0" });
     });
 
-    it("still opens the menu of a platform admin with one tenant, for New tenant and Manage tenants, without the arrows of a switch", () => {
-        expect(head({ tenants: [HOME], tenantCount: 1 })).toEqual({ title: "DBackup", subtitle: "v4.1.0", menu: true, chevrons: false, logo: null });
+    it("still opens the menu of a platform admin with one tenant, for New tenant and Manage tenants, with the arrows that show it opens", () => {
+        expect(head({ tenants: [HOME], tenantCount: 1 })).toEqual({ title: "DBackup", subtitle: "v4.1.0", menu: true, chevrons: true, logo: null });
     });
 
     it("counts the tenants in All tenants", () => {
@@ -90,7 +90,7 @@ describe("the menu of the head", () => {
     });
 
     it("opens the menu for someone of a platform group who may see the tenants, also with one tenant to open", () => {
-        expect(head({ tenants: [ACME], activeTenantId: "t-acme", isPlatformAdmin: false, canSeeTenants: true, tenantCount: 5 })).toMatchObject({ menu: true, chevrons: false });
+        expect(head({ tenants: [ACME], activeTenantId: "t-acme", isPlatformAdmin: false, canSeeTenants: true, tenantCount: 5 })).toMatchObject({ menu: true, chevrons: true });
         expect(head({ tenants: [ACME], activeTenantId: "t-acme", isPlatformAdmin: false, canSeeTenants: false, tenantCount: 5 })).toMatchObject({ menu: false });
     });
 

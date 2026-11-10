@@ -9,7 +9,7 @@ A tenant is a customer of the instance and the boundary of its data. Its connect
 Every installation has the **home tenant**, named **Default**. After the update from an earlier version it holds everything the instance held before. It also holds what the platform owns, like the runs of the system tasks and the sign-ins in the audit log, and it cannot be deleted.
 
 ::: info One tenant changes nothing
-With only the home tenant, DBackup looks as before: the head of the sidebar names DBackup. Some permissions check more than they did, see [Before Updating](#before-updating). Whoever may see the tenants opens a menu from the head with **Manage tenants**, and whoever may create one also finds **New tenant** there, to create the second one.
+With only the home tenant, DBackup looks as before: the head of the sidebar names DBackup. Some permissions check more than they did, see [Before Updating](#before-updating). Whoever may see the tenants finds the up and down arrows at the right of the head, which opens a menu with **Manage tenants**, and whoever may create one also finds **New tenant** there, to create the second one.
 :::
 
 ## Platform Admins

@@ -34,6 +34,19 @@ vi.mock("@/lib/core/registry", () => ({ registry: { get: (...a: unknown[]) => re
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: async (c: unknown) => c }));
 vi.mock("@/services/backup/encryption-service", () => ({ getProfileMasterKey: async () => MASTER_KEY }));
 
+// This unit test checks restore permissions, not the host's Docker daemon.
+// Supply a harmless unrelated volume so CI does not need Docker socket access.
+vi.mock("@/lib/adapters/storage/docker/own-container", () => ({
+    ownContainerHints: async () => ({ inContainer: false, ids: [], hostname: "unit-test" }),
+    findOwnContainer: () => null,
+}));
+vi.mock("@/lib/adapters/storage/docker/engine/connect", () => ({
+    connectDocker: () => ({
+        engine: { inspectVolume: async () => ({ mountpoint: "/mnt/unit-test-unrelated-volume" }) },
+        close: async () => {},
+    }),
+}));
+
 const {
     streamFileRestore, restoreFilesToStorage, planFileRestore,
 } = await import("@/services/restore/file-restore");

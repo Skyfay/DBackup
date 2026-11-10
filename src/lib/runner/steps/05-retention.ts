@@ -1,7 +1,7 @@
 import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
-import { isBackupFile, sidecarPathsFor, effectiveBackupTime } from '@/lib/core/backup-files';
+import { isBackupFile, sidecarPathsFor, effectiveBackupTime, chainFolderOf } from '@/lib/core/backup-files';
 import { isConfigBackupPath, isInConfigBackupFolder } from '@/lib/core/config-backup-path';
 import { loadBackupSidecars, retentionGroup } from './retention-sidecars';
 import { folderKey, loadFormerBackups } from './retention-folders';
@@ -131,8 +131,7 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     for (const { folder, count } of former.folders) {
         ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
     }
-    // The backups of some databases alone are judged with the others of the same databases, and the
-    // whole backups together, each group by the same policy, see retentionGroup.
+    // Only backups in the selected database scope are subject to this pass.
     const group = retentionGroup(ctx.onlyDatabases);
     const allFiles = [...current, ...former.files];
     const backupFiles = allFiles.filter(f => retentionGroup(f.onlyDatabases) === group);
@@ -140,6 +139,29 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         ctx.log(group
             ? `${destLabel} Retention: Judging the ${backupFiles.length} backup(s) of ${ctx.onlyDatabases!.join(", ")} alone, ${allFiles.length - backupFiles.length} other backup(s) of the job are left as they are.`
             : `${destLabel} Retention: ${allFiles.length - backupFiles.length} backup(s) of single databases are judged on their own and left as they are.`);
+    }
+    // Folder-level chain preservation is performed by RetentionService.
+    // A broken sidecar blocks only its chain, not independent healthy backups.
+    const uncertain = backupFiles.filter(f => f.chainMetadataUnsafe);
+    if (uncertain.length > 0) {
+        ctx.log(
+            `${destLabel} Retention warning: ${uncertain.length} archive(s) have incomplete chain sidecars; their chain folders are preserved.`,
+            'warning'
+        );
+    }
+    const chainFolders = new Map<string, { full: boolean; incremental: boolean }>();
+    for (const file of backupFiles) {
+        const folder = chainFolderOf(file.path);
+        if (!folder) continue;
+        const entry = chainFolders.get(folder) ?? { full: false, incremental: false };
+        entry.full ||= file.chainType === 'full';
+        entry.incremental ||= file.chainType === 'incremental';
+        chainFolders.set(folder, entry);
+    }
+    for (const [folder, entry] of chainFolders) {
+        if (entry.incremental && !entry.full) {
+            ctx.log(`${destLabel} Retention warning: chain folder ${folder} has no verifiable FULL base; preserving it for recovery.`, 'warning');
+        }
     }
     const own = new Set(backupFiles);
     const drifted = [...sidecars.drifted, ...former.drifted];

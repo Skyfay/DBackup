@@ -409,6 +409,10 @@ export type FileInfo = {
      * others.
      */
     chainId?: string;
+    /** Type recorded by the incremental chain sidecar, independent of filename templates. */
+    chainType?: 'full' | 'incremental';
+    /** A chain-folder sidecar was missing, unreadable or incomplete; do not prune it. */
+    chainMetadataUnsafe?: boolean;
     /**
      * The job that made this backup, read from its `.meta.json`.
      *

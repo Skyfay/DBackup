@@ -1,9 +1,21 @@
 import prisma from "@/lib/prisma";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, ServiceError } from "@/lib/logging/errors";
+import { NotFoundError, ServiceError, ValidationError } from "@/lib/logging/errors";
+import { namingPatternProblem } from "@/lib/templates/naming-pattern";
 
 const log = logger.child({ service: "NamingTemplateService" });
+
+/**
+ * Refuses a pattern that names more than one file, like `../other`, which the run would write
+ * outside of its own folder, see `naming-pattern.ts`.
+ *
+ * @throws ValidationError saying the rule.
+ */
+function assertPattern(pattern: string): void {
+  const problem = namingPatternProblem(pattern);
+  if (problem) throw new ValidationError(problem, { field: "pattern" });
+}
 
 /** Every naming template with how many jobs name their backups by it. */
 export async function getNamingTemplates() {
@@ -26,6 +38,7 @@ export async function createNamingTemplate(input: {
   pattern: string;
   isDefault?: boolean;
 }) {
+  assertPattern(input.pattern);
   const existing = await prisma.namingTemplate.findFirst({
     where: { name: input.name },
   });
@@ -63,6 +76,7 @@ export async function updateNamingTemplate(
     isDefault?: boolean;
   }
 ) {
+  if (input.pattern !== undefined) assertPattern(input.pattern);
   const template = await prisma.namingTemplate.findUnique({ where: { id } });
   if (!template) throw new NotFoundError("NamingTemplate", id);
   if (template.isSystem && (input.name !== undefined || input.pattern !== undefined || input.description !== undefined)) {

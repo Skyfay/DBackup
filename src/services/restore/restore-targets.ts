@@ -11,6 +11,7 @@ import { METADATA_SIDECAR_SUFFIX, SIDECAR_SUFFIXES } from "@/lib/core/backup-fil
 import { configBackupTargetRefusal } from "@/lib/server/config-backup-target-guard";
 import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { providedIds } from "@/services/sharing/provided";
 import type { RestoreInput } from "./types";
 
 /**
@@ -44,14 +45,38 @@ export function restoreTargetIds(input: Pick<RestoreInput, "targetSourceId" | "d
 }
 
 /**
+ * Refuses a restore that names a connection to write into that is neither of the caller's tenant nor
+ * provided to it, before anything else reads that connection, so no other check answers for a
+ * connection of another tenant. It reads as one that does not exist, in the words the restore uses
+ * for that further on, see `preflightRestore`. A customer's restore of a shared database writes
+ * into the server the service checked, see `restoreShared`, and names nothing else.
+ */
+async function assertTargetsInTenant(input: Pick<RestoreInput, "targetSourceId" | "directoryMapping" | "shared">, caller: RestoreCaller): Promise<void> {
+    const named = [
+        ...(input.shared || !input.targetSourceId ? [] : [{ id: input.targetSourceId, missing: "Target source not found" }]),
+        ...(input.directoryMapping ?? []).flatMap((mapping) => (mapping.targetConfigId
+            ? [{ id: mapping.targetConfigId, missing: `Invalid restore target for a directory entry: adapter '${mapping.targetConfigId}' not found` }]
+            : [])),
+    ];
+    for (const target of named) {
+        const row = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: target.id }, select: { id: true, tenantId: true } }));
+        // A connection that is gone fails the restore further on, with the same words.
+        if (!row || row.tenantId === caller.tenantId) continue;
+        if (!caller.tenantId || !(await providedIds(caller.tenantId, [row.id])).has(row.id)) throw new Error(target.missing);
+    }
+}
+
+/**
  * Refuses a restore that would write into the destination of the configuration backup for anyone
  * who is no platform admin with a session, the same as the file restore does with `checkTargets`.
  * Restored files there change what the configuration backup holds and where it reads it from. The
- * directory mappings go through `assertWriteTargets` as well.
+ * directory mappings go through `assertWriteTargets` as well. First of all every connection it
+ * names has to be of the caller's tenant or provided to it, see `assertTargetsInTenant`.
  *
- * @throws PermissionError with the sentence of the lock, ValidationError for a folder that leaves its connection.
+ * @throws Error as for a connection that does not exist for one of another tenant, PermissionError with the sentence of the lock, ValidationError for a folder that leaves its connection.
  */
-export async function assertRestoreTargetsAllowed(input: Pick<RestoreInput, "targetSourceId" | "directoryMapping">, caller: RestoreCaller): Promise<void> {
+export async function assertRestoreTargetsAllowed(input: Pick<RestoreInput, "targetSourceId" | "directoryMapping" | "shared">, caller: RestoreCaller): Promise<void> {
+    await assertTargetsInTenant(input, caller);
     const message = await configBackupTargetRefusal(caller, { connectionIds: restoreTargetIds(input) });
     if (message) throw new PermissionError("platform admin", { message });
     await assertWriteTargets(await mappingTargets(input.directoryMapping ?? []), caller);

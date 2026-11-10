@@ -10,7 +10,7 @@ import type { ExecOptions } from "@/lib/transport";
  * Escaping here would double-escape over SSH.
  */
 
-type AnyRedisConfig = RedisConfig & { username?: string; password?: string; tls?: boolean };
+type AnyRedisConfig = RedisConfig & { username?: string; password?: string; tls?: boolean; tlsServerName?: string };
 
 export function buildConnectionArgs(config: AnyRedisConfig): string[] {
     const args = ["-h", config.host, "-p", String(config.port)];
@@ -20,6 +20,9 @@ export function buildConnectionArgs(config: AnyRedisConfig): string[] {
     }
     if (config.tls) {
         args.push("--tls");
+        // `-h` holds the checked address of the name for a tenant that blocks the local network,
+        // see `pinned-host.ts`, and the name goes along for the server name of TLS.
+        if (config.tlsServerName) args.push("--sni", config.tlsServerName);
     }
     if (config.database !== undefined && config.database !== 0) {
         // The index of a database is a whole number. A restore target or a stored value of

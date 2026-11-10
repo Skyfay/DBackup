@@ -22,6 +22,8 @@ const prismaMock = {
     jobSource: { findUnique: vi.fn() },
     systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     connectionShare: { count: vi.fn().mockResolvedValue(0) },
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    execution: { findMany: vi.fn().mockResolvedValue([]) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 const registryGet = vi.fn();
@@ -110,7 +112,7 @@ describe("the origin of a restore of files", () => {
     it("gets the owners of the backup back, while every mode loses setuid, setgid and sticky", async () => {
         await buildFixture("src-1");
         await restoreFilesToStorage({ ...base, selections: [{ src: "src-1" }], target: { kind: "origin" }, caller: MEMBER });
-        expect(uploads[0].options).toEqual({ mode: 0o755, uid: 0, gid: 0 });
+        expect(uploads[0].options).toEqual({ mode: 0o755, uid: 0, gid: 0, restoreRelativePath: "docs/readme.md" });
     });
 });
 
@@ -119,7 +121,7 @@ describe("a restore into another place than the origin", () => {
         await buildFixture("src-1");
         prismaMock.jobSource.findUnique.mockResolvedValue({ configId: "storage-1", path: "/var/www" });
         await restoreFilesToStorage({ ...base, selections: [{ src: "src-1" }], target: { kind: "storage", configId: "storage-1", basePath: "/restores" }, caller: MANAGER });
-        expect(uploads).toEqual([{ remotePath: "/restores/docs/readme.md", options: { mode: 0o755 } }]);
+        expect(uploads).toEqual([{ remotePath: "/restores/docs/readme.md", options: { mode: 0o755, restoreRelativePath: "docs/readme.md" } }]);
     });
 });
 

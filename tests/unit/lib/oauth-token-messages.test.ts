@@ -60,7 +60,7 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 
-const { OAUTH_CALLBACK_FAILED, OAUTH_DENIED, TOKEN_CHECK_FAILED } = await import("@/lib/server/oauth-callback");
+const { TOKEN_CHECK_FAILED } = await import("@/lib/server/oauth-callback");
 const validators = {
     "google-drive": await import("@/app/api/adapters/google-drive/validate-token/route"),
     dropbox: await import("@/app/api/adapters/dropbox/validate-token/route"),
@@ -154,16 +154,26 @@ describe("checking a saved OneDrive login Microsoft refuses", () => {
 
 describe.each(providers)("the %s callback", (provider) => {
     const callback = (query: string) => callbacks[provider].GET(new NextRequest(`http://localhost/api/adapters/${provider}/callback?${query}`));
-    const shown = (res: Response) => new URL(res.headers.get("location") ?? "").searchParams.get("message");
+    const shown = (res: Response) => new URL(res.headers.get("location") ?? "").searchParams;
 
-    it("redirects with a fixed sentence when the exchange broke", async () => {
+    it("redirects with a fixed code when the exchange broke, and no sentence of its own", async () => {
         mocks.credential.mockRejectedValue(new Error(LEAK));
         const res = await callback("code=c-1&state=s-1");
-        expect(shown(res)).toBe(OAUTH_CALLBACK_FAILED);
+        expect(shown(res).get("code")).toBe("failed");
+        expect(shown(res).get("provider")).toBe(provider);
+        expect(shown(res).has("message")).toBe(false);
+        expect(res.headers.get("location")).not.toContain(LEAK);
     });
 
-    it("never shows the description a link brings along with a denial", async () => {
+    it("never passes on the description a link brings along with a denial", async () => {
         const res = await callback(`error=access_denied&error_description=${encodeURIComponent("Call +1 555 0100 to unlock your account")}`);
-        expect(shown(res)).toBe(OAUTH_DENIED);
+        expect(shown(res).get("code")).toBe("denied");
+        expect(res.headers.get("location")).not.toContain("555");
+    });
+
+    it("names a missing code and a refused caller by their codes", async () => {
+        expect(shown(await callback("state=s-1")).get("code")).toBe("missing_code");
+        mocks.caller.mockResolvedValue({ ok: false, code: "state_expired", message: "This authorization ran out or belongs to another session. Start it again from the saved login." });
+        expect(shown(await callback("code=c-1&state=s-1")).get("code")).toBe("state_expired");
     });
 });

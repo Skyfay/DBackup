@@ -4,7 +4,14 @@
  * redirect to it again, like from `http://` to `https://` behind a proxy or to another port, goes
  * nowhere new. A redirect to another host would send the request on to a host nobody checked, so
  * it is a failed send with a message that says so.
+ *
+ * For a channel of a tenant that blocks the local network every request dials an address checked
+ * at connect time, see `pinnedFetch` in `src/lib/network/pinned-http.ts`, so a name that resolves
+ * elsewhere after the check of the config reaches no address of the local network either.
  */
+
+import { pinnedFetch } from "@/lib/network/pinned-http";
+import type { ReachPolicy } from "@/lib/network/reach-policy";
 
 /** What every request of these channels passes to `fetch`, so a 3xx comes back as it is. */
 export const NO_REDIRECTS = { redirect: "manual" } as const satisfies RequestInit;
@@ -18,13 +25,14 @@ const isRedirect = (status: number) => status >= 300 && status <= 399;
  * Sends a request of a webhook style channel and follows a redirect while it stays on the host of
  * `url`, with the same method, headers and body. Hands back the first answer that is no redirect
  * on the same host, so a redirect to another host comes back as it is, for `redirectRefusal`.
- * Throws after `MAX_SAME_HOST_REDIRECTS` redirects.
+ * Throws after `MAX_SAME_HOST_REDIRECTS` redirects. `reach` is the policy of the tenant of the
+ * channel, `reachOf(config)`, null for one that blocks nothing.
  */
-export async function webhookFetch(url: string, init: RequestInit = {}): Promise<Response> {
+export async function webhookFetch(url: string, init: RequestInit = {}, reach: ReachPolicy | null = null): Promise<Response> {
     const host = new URL(url).hostname.toLowerCase();
     let current = url;
     for (let hop = 0; ; hop++) {
-        const response = await fetch(current, { ...init, ...NO_REDIRECTS });
+        const response = reach ? await pinnedFetch(current, init, reach) : await fetch(current, { ...init, ...NO_REDIRECTS });
         if (!isRedirect(response.status)) return response;
         const location = response.headers?.get?.("location");
         if (!location) return response;

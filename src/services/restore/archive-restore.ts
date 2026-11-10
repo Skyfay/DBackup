@@ -13,8 +13,7 @@
  * (peak disk = largest file).
  */
 
-import path from "path";
-import { assertRestoreFolder, safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { assertRestoreFolder, restoreDestination, safeRemoteJoin } from "@/lib/archive/remote-paths";
 import { isOrigin, mappingFolder, NO_RESTORE_FOLDER, restoredFileRefusal } from "./restore-targets";
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
@@ -37,7 +36,7 @@ import { resolveSelection } from "@/lib/archive/browse";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import { summariseExcluded, formatExcludeSummary } from "@/lib/exclude-summary";
 import { IndexFileLine, entryKey, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
-import { getTempDir } from "@/lib/temp-dir";
+import { giveRecordedMode, privateTempPath } from "@/lib/private-temp-dir";
 import { stripTrailingSlashes } from "@/lib/paths";
 import { openArchiveForRestore } from "./file-restore";
 import { restoreDatabases, type DatabaseMapping } from "./archive-restore-databases";
@@ -383,11 +382,15 @@ export async function restoreArchiveSnapshot(
             try {
                 await forEachSnapshotFile(archive, payloads, async (file, content) => {
                     const target = targets.get(file.src)!;
-                    const stagePath = path.join(getTempDir(), `restore-${process.pid}-${crypto.randomUUID()}`);
+                    // In the private folder, since the file is restored data, decrypted.
+                    const stagePath = await privateTempPath(`restore-${process.pid}-${crypto.randomUUID()}`);
+                    const metadata = metadataFromIndex(file, target.origin);
                     let digest: string | undefined;
 
                     try {
-                        await pipeline(content, hashingStream((d) => { digest = d; }), createWriteStream(stagePath));
+                        await pipeline(content, hashingStream((d) => { digest = d; }), createWriteStream(stagePath, { flags: "wx" }));
+                        // The mode the archive recorded, see `giveRecordedMode`, which an upload like rsync -a keeps.
+                        await giveRecordedMode(stagePath, metadata?.mode);
                         countRead(file);
 
                         // For unencrypted archives this is the only integrity check the file
@@ -396,14 +399,14 @@ export async function restoreArchiveSnapshot(
                             throw new Error(`Checksum mismatch: expected ${file.h}, got ${digest}`);
                         }
 
-                        const remotePath = safeRemoteJoin(target.basePath, file.p);
+                        const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
                         // Forward the adapter's own warnings and errors (a rate-limit retry, a real
                         // rejection) into the restore log; the per-file "started/finished" info is
                         // dropped so a large restore does not bury the history.
                         const uploadOk = await sessions.upload(
                             target, stagePath, remotePath,
                             (msg, level, type, details) => { if (level && level !== 'info') log(`${file.p}: ${msg}`, level, type ?? 'storage', details); },
-                            metadataFromIndex(file, target.origin)
+                            { ...metadata, restoreRelativePath }
                         );
                         if (!uploadOk) {
                             throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
@@ -467,11 +470,8 @@ export async function restoreArchiveSnapshot(
                     }
 
                     try {
-                        await target.adapter.createSymlink(
-                            target.config,
-                            safeRemoteJoin(target.basePath, file.p),
-                            file.lnk
-                        );
+                        const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
+                        await target.adapter.createSymlink(target.config, remotePath, file.lnk, { restoreRelativePath });
                         perSourceDone.set(src, (perSourceDone.get(src) ?? 0) + 1);
                         callbacks.record?.folderEntry(src, "restored", 0);
                     } catch (e: unknown) {

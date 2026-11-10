@@ -3,6 +3,7 @@ import { ValidationError } from "@/lib/logging/errors";
 import { ownerAt, ruleAt } from "@/lib/tenant/database-owner";
 import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { assertReached } from "./assignment-reach";
+import { assertNoSharedRestore } from "@/services/restore/shared-restores-active";
 import type { AssignmentWithTenant, MovePlace } from "./database-assignments";
 import { factsOf } from "./shared-backups";
 import { assertSharesSingleDatabases, listedDatabases, NOT_SHARING, ownSource, rememberServer, serverNames, sharesWithCustomers, sharingChanged } from "./shared-servers";
@@ -104,6 +105,7 @@ export async function moveDatabase(sourceId: string, input: MoveInput, by: strin
     const holder = ownerAt(facts.assignments, facts.rules, databaseName, now);
     if (!holder) throw new ValidationError(`${databaseName} belongs to no customer now, so it has nothing to take along. Give it to the tenant on ${to.name} instead.`);
     assertReached(reach, holder, OUTSIDE_REACH.holder(databaseName));
+    assertNoSharedRestore(from.id, { databaseName });
     const there = ownerAt(targetFacts.assignments, targetFacts.rules, toDatabase, now);
     const tenant = await prisma.tenant.findUnique({ where: { id: holder }, select: { name: true } });
     if (there && there !== holder) {

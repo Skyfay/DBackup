@@ -9,7 +9,8 @@ import fs from 'fs';
 import { PassThrough } from 'stream';
 
 /** A platform admin with a session, who may restore into any target. */
-const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+// Works in the tenant of the connections the restores name.
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session", tenantId: "tenant-1" } as const;
 
 // Mock Dependencies
 vi.mock('@/services/backup/encryption-service', () => ({
@@ -94,6 +95,8 @@ describe('RestoreService', () => {
         prismaMock.adapterConfig.findUnique.mockReset();
         // No destination of these tests is shared with other tenants.
         prismaMock.connectionShare.count.mockResolvedValue(0);
+        // No run of History wrote these backups, see `recorded-encryption.ts`.
+        prismaMock.execution.findMany.mockResolvedValue([]);
 
         // Spy on FS methods instead of full module mock to avoid import issues
         vi.spyOn(fs, 'existsSync').mockReturnValue(true);
@@ -336,8 +339,9 @@ describe('RestoreService', () => {
             return mockStorageAdapter;
         });
 
-        // DB Configs
+        // DB Configs, the first read by the check of the tenant of the target.
         prismaMock.adapterConfig.findUnique
+            .mockResolvedValueOnce(mockSourceConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any)
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockStorageConfig as any)

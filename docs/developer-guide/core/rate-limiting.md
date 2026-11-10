@@ -92,12 +92,12 @@ async function syncRateLimitConfig(origin: string): Promise<void> {
 
 Every limiter counts per client address, the key `rateLimitKey(clientAddress(headers))` from `src/lib/core/client-address.ts`, which takes an IPv6 address by its `/64` network. Neither the middleware nor a route can see the socket of a request, so the custom server works the address out and passes it on:
 
-1. `custom-server.ts` calls `clientAddressOf()` of `server/client-address.ts` for every request, with the remote address of the socket, `X-Forwarded-For`, `X-Real-IP` and the proxies of `TRUSTED_PROXIES`.
-2. Only a peer in a trusted network has its `X-Forwarded-For` read, from the right to the first address that is no trusted proxy. The left end is whatever the client wrote and never counts on its own.
+1. `custom-server.ts` calls `clientAddressOf()` of `server/client-address.ts` for every request, with the remote address of the socket, `X-Forwarded-For`, `X-Real-IP`, the proxies of `TRUSTED_PROXIES` and the header of `TRUSTED_PROXY_HEADER`.
+2. Only a peer in a trusted network has a forwarded header read, and only the one `TRUSTED_PROXY_HEADER` names, `X-Forwarded-For` by default. A proxy passes on whatever the client sent in the header it does not write, so the other one never counts. `X-Forwarded-For` is read from the right to the first address that is no trusted proxy. The left end is whatever the client wrote and never counts on its own. `X-Real-IP` counts when it holds one address.
 3. The result goes into the header `x-dbackup-client-address`, replacing a value the client sent.
 4. The middleware, the audit log, the sign-in records and better-auth (`advanced.ipAddress.ipAddressHeaders`) read that header only.
 
-Under `pnpm dev` there is no custom server, so the header is missing and every request shares one bucket. `tests/unit/lint-guards/client-address.test.ts` fails when code under `src/` reads `X-Forwarded-For` or `X-Real-IP` itself.
+Only the custom server replaces that header, so the app trusts it only while `DBACKUP_CUSTOM_SERVER` is `1`, which `custom-server.ts` sets before it creates the app. The Edge sandbox of the middleware copies `process.env` when it starts, so the middleware sees it too. Without it, under `pnpm dev` or a plain `next start`, `clientAddress()` answers `null`, every request shares one bucket, and the middleware drops a header the client sent before the app and better-auth read it. `pnpm start` runs the custom server for that reason, `next start` is not supported. `tests/unit/lint-guards/client-address.test.ts` fails when code under `src/` reads `X-Forwarded-For` or `X-Real-IP` itself.
 
 The middleware matcher **excludes** `/api/internal/` to avoid an infinite loop:
 

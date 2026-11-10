@@ -23,6 +23,7 @@ vi.mock('@/services/sharing/provided', () => ({ providedTo: provided }));
 
 import { StorageExplorerService } from '@/services/storage/explorer-service';
 import { runAsTenant } from '@/lib/tenant/context';
+import { SHARED_STORAGE_FAILURE } from '@/lib/tenant/storage-view';
 
 const destination = (id: string, lastStatus = 'ONLINE') => ({ id, name: id.toUpperCase(), tenantId: 'acme', adapterId: 'sftp', lastStatus, lastHealthCheck: new Date(), lastError: null });
 const file = { name: 'a.tar', path: 'Shop/a.tar', size: 10, lastModified: new Date(), jobId: 'job-1', jobName: 'Shop', createdAt: new Date().toISOString() };
@@ -125,6 +126,24 @@ describe('the Backups page never waits for a storage', () => {
 
         expect(index.destinations.find((entry) => entry.id === 'msp-s3')?.health).toMatchObject({ status: 'OFFLINE', latencyMs: null, answeredAt: null });
         expect(index.destinations.find((entry) => entry.id === 'nas')?.health).toMatchObject({ status: 'ONLINE', latencyMs: 12 });
+    });
+
+    it('tells a customer that a destination of the provider failed in the neutral sentence, never the words of the storage', async () => {
+        provided.mockResolvedValueOnce([{ id: 'msp-s3', providerName: 'MSP' }]);
+        prismaMock.adapterConfig.findMany.mockImplementation((async (args: { where: { id?: unknown } }) =>
+            (args.where.id
+                ? [{ ...destination('msp-s3', 'OFFLINE'), tenantId: 'default', lastError: 'getaddrinfo ENOTFOUND s3.msp.internal' }]
+                : [{ ...destination('nas', 'OFFLINE'), lastError: 'NT_STATUS_LOGON_FAILURE' }])) as never);
+        storage.readCachedListing.mockResolvedValue(null);
+        storage.listingFailure.mockImplementation((id: string) => ({ at: new Date(), error: id === 'msp-s3' ? 'Bucket msp-backups denied' : 'NT_STATUS_IO_TIMEOUT' }));
+
+        const index = await runAsTenant('acme', () => service.getIndex());
+
+        const shared = index.destinations.find((entry) => entry.id === 'msp-s3');
+        expect(shared).toMatchObject({ listError: SHARED_STORAGE_FAILURE, health: { error: null } });
+        expect(JSON.stringify(shared)).not.toMatch(/msp-backups|s3\.msp\.internal/);
+        // The own destination keeps the whole message.
+        expect(index.destinations.find((entry) => entry.id === 'nas')).toMatchObject({ listError: 'NT_STATUS_IO_TIMEOUT', health: { error: 'NT_STATUS_LOGON_FAILURE' } });
     });
 
     it('checks only destinations it knows', async () => {

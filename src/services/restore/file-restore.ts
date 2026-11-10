@@ -13,7 +13,7 @@
  */
 
 import path from "path";
-import { safeRemoteJoin } from "@/lib/archive/remote-paths";
+import { restoreDestination, safeRemoteJoin } from "@/lib/archive/remote-paths";
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { pipeline } from "stream/promises";
@@ -38,7 +38,7 @@ import { openArchiveEntry } from "@/lib/archive/reader";
 import { archiveIndexVerifier, KeyOverride, resolveBackupKey } from "@/services/backup/key-resolution";
 import { resolveTransferConcurrency } from "@/lib/adapters/transfer-concurrency";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
-import { getTempDir } from "@/lib/temp-dir";
+import { giveRecordedMode, privateTempPath } from "@/lib/private-temp-dir";
 import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 import { ArchiveIndex, ArchiveManifest, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
@@ -49,6 +49,8 @@ import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf
 import { assertRestoreFolder } from "@/lib/archive/remote-paths";
 import { assertWriteTargets, isOrigin, restoredFileRefusal, type RestoreCaller } from "./restore-targets";
 import { reserveTempSpace, type TempSpaceReservation } from "./temp-space";
+import { parseWithinBudget } from "@/services/backup/index-parse-budget";
+import { assertEncryptionKept } from "./recorded-encryption";
 
 const log = logger.child({ service: "FileRestoreService" });
 
@@ -179,6 +181,9 @@ export async function openArchiveForRestore(
     let managed = await openStorageArchiveSource(adapter, config, file, undefined);
     try {
         const manifest = await readArchiveManifest(managed.source);
+        // The manifest of the archive itself says whether it is encrypted, the run that wrote it
+        // whether it has to be, see `recorded-encryption.ts`.
+        await assertEncryptionKept(storageConfigId, file, { encrypted: !!manifest.encryption, jobId: meta.jobId }, viewerTenantId);
 
         if (!sidecarBytes) {
             // No sidecar. Every archive carries a copy of its index as its last member, but
@@ -204,13 +209,16 @@ export async function openArchiveForRestore(
             })
             : undefined;
 
-        const index = await parseArchiveIndex(indexBytes, manifest, masterKey);
+        // Within the bound on the parses of the process, see `index-parse-budget.ts`.
+        const index = await parseWithinBudget(indexBytes.length, () => parseArchiveIndex(indexBytes, manifest, masterKey));
         await assertChainComplete(adapter, config, file, index);
 
         const chain: ChainReaderOptions = {
             adapter,
             config,
             snapshotPath: file,
+            // A chain is written by one job, so a plain archive in the chain of an encrypted one was laid there.
+            requireEncryption: !!manifest.encryption,
             // Every archive of a chain is written by the same job, so the key that opened
             // this one opens its siblings - including when Smart Recovery had to find it
             // under a profile other than the one the archive names. Only a sibling naming a
@@ -576,17 +584,21 @@ export async function restoreFilesToStorage(
                 return;
             }
 
-            const stagePath = path.join(getTempDir(), `restore-${process.pid}-${crypto.randomUUID()}`);
+            // In the private folder, since the file is restored data, decrypted.
+            const stagePath = await privateTempPath(`restore-${process.pid}-${crypto.randomUUID()}`);
+            const metadata = metadataFromIndex(file, target.origin);
             let digest: string | undefined;
             try {
-                await pipeline(content, hashingStream((d) => { digest = d; }), createWriteStream(stagePath));
+                await pipeline(content, hashingStream((d) => { digest = d; }), createWriteStream(stagePath, { flags: "wx" }));
+                // The mode the archive recorded, see `giveRecordedMode`, which an upload like rsync -a keeps.
+                await giveRecordedMode(stagePath, metadata?.mode);
 
                 if (file.h && digest && digest !== file.h) {
                     throw new Error(`Checksum mismatch: expected ${file.h}, got ${digest}`);
                 }
 
-                const remotePath = safeRemoteJoin(target.basePath, file.p);
-                if (!(await sessions.upload(target, stagePath, remotePath, undefined, metadataFromIndex(file, target.origin)))) {
+                const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
+                if (!(await sessions.upload(target, stagePath, remotePath, undefined, { ...metadata, restoreRelativePath }))) {
                     throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
                 }
 
@@ -619,7 +631,7 @@ export async function restoreFilesToStorage(
                 continue;
             }
 
-            const remotePath = safeRemoteJoin(target.basePath, file.p);
+            const { remotePath, restoreRelativePath } = restoreDestination(target.basePath, file.p);
             if (!target.adapter.createSymlink) {
                 // Named individually and counted as a failure, which downgrades the restore.
                 // Object storage has no symbolic links, and reporting a complete restore that
@@ -636,7 +648,7 @@ export async function restoreFilesToStorage(
             }
 
             try {
-                await target.adapter.createSymlink(target.config, remotePath, file.lnk);
+                await target.adapter.createSymlink(target.config, remotePath, file.lnk, { restoreRelativePath });
                 restored++;
                 onProgress?.(restored, files.length, file.p);
             } catch (e: unknown) {

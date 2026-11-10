@@ -6,7 +6,7 @@ import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { formatDuration, formatBytes } from "@/lib/utils";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import path from "path";
 import fs from "fs";
 import { pipeline } from "stream/promises";
@@ -19,7 +19,7 @@ import { LogEntry, LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
 import { isMultiDbTar, readTarManifest } from "@/lib/adapters/database/common/tar-utils";
 import { resolveSqliteTargetPath } from "@/lib/adapters/database/sqlite/restore";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, ServiceError } from "@/lib/logging/errors";
 import { verifyFileChecksum } from "@/lib/crypto/checksum";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
@@ -27,6 +27,8 @@ import { registerExecution, unregisterExecution } from "@/lib/execution/abort";
 import { processQueue } from "@/lib/execution/queue-manager";
 import type { RestoreInput } from "./types";
 import { resolveDecryptionKey } from "./smart-recovery";
+import { reserveTempSpace, reserveTempSpaceUpTo, tempSpaceRefusal, type TempSpaceReservation } from "./temp-space";
+import { assertEncryptionKept } from "./recorded-encryption";
 import { restoreArchiveSnapshot } from "./archive-restore";
 import { openDestination } from "@/services/sharing/destination-access";
 import { createRestoreLogs, type ProviderRun } from "./run-logs";
@@ -63,6 +65,8 @@ const sharedFailure = (databaseName: string) => `The restore of ${databaseName} 
 export async function runRestorePipeline(executionId: string, input: RestoreInput, providerRun: ProviderRun | null = null): Promise<void> {
     const { storageConfigId, file, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
     let tempFile: string | null = null;
+    // The temporary space the whole-file passes below were promised, given back in the `finally`.
+    const tempSpaces: TempSpaceReservation[] = [];
     const restoreStartTime = Date.now();
     const abortController = registerExecution(executionId);
     // Cancel in the provider's History stops the same restore.
@@ -210,9 +214,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         //    path this is, so it never claims a download that will not happen.
         setStage(RESTORE_STAGES.DOWNLOADING);
         logs.split(`Reading backup metadata: ${shownFile}...`, `Reading backup metadata: ${file}...`);
-        const tempDir = getTempDir();
-        // A name of its own per restore, so two restores of the same file never share one.
-        tempFile = path.join(tempDir, `${randomUUID()}-${path.basename(file)}`);
+        // A name of its own per restore, so two restores of the same file never share one, in the
+        // private folder, since the download, its decrypted and its unpacked form are the data of
+        // the databases, see `privateTempDir`.
+        tempFile = await privateTempPath(`${randomUUID()}-${path.basename(file)}`);
 
         const sConf = await resolveAdapterConfig(storageConfig) as any;
 
@@ -222,6 +227,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         let compressionMeta: CompressionType | undefined = undefined;
         let expectedChecksum: string | undefined = undefined;
         let seekableArchive = false;
+        // The job the metadata names, only for the warning about a plain backup without a run.
+        let metaJobId: unknown;
 
         try {
             const metaRemotePath = file + ".meta.json";
@@ -230,6 +237,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
             if (metaContent) {
                 const metadata = JSON.parse(metaContent);
+                metaJobId = metadata?.jobId;
 
                 if (metadata.archive?.formatVersion === 2) {
                     // Seekable archive - restored by byte range below, never by full
@@ -381,6 +389,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         // below would list every database of the server in the customer's log.
         if (input.shared) throw new Error("This backup can only be restored out of an archive with an index.");
 
+        // Its metadata says whether it is encrypted, the run that wrote it whether it has to be,
+        // so a plain backup laid where an encrypted one was is refused before anything is read.
+        await assertEncryptionKept(storageConfigId, file, { encrypted: isEncrypted, jobId: metaJobId });
+
         log(`Downloading backup file: ${file}...`, 'info');
         record.opened(false);
         const downloadStartTime = Date.now();
@@ -434,6 +446,9 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 (msg, level) => log(msg, (level ?? 'info') as LogLevel),
             );
 
+            // The decrypted copy is the size of the download and lies beside it, see `reserveTempSpace`.
+            tempSpaces.push(await reserveTempSpace([(await fs.promises.lstat(tempFile)).size], 1));
+
             try {
                 log(`Starting decryption process...`, 'info');
 
@@ -469,7 +484,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                         createNoFollowReadStream(tempFile),
                         decryptTracker,
                         decryptStream,
-                        createWriteStream(decryptedTempFile)
+                        createWriteStream(decryptedTempFile, { flags: "wx", mode: PRIVATE_FILE_MODE })
                     );
                 } catch (e: unknown) {
                     // A failed tag or read leaves no half decrypted file behind.
@@ -508,6 +523,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     }
 
                     const compFileSize = (await fs.promises.lstat(tempFile)).size;
+                    // Promised before a byte is inflated, as much of the bound as the folder has
+                    // free, and the inflation stops there, see `reserveTempSpaceUpTo`.
+                    const inflateSpace = await reserveTempSpaceUpTo(legacyInflateLimit(compFileSize));
+                    tempSpaces.push(inflateSpace);
                     const decompStart = Date.now();
                     let decompProcessed = 0;
                     const decompTracker = new Transform({
@@ -528,11 +547,13 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                             createNoFollowReadStream(tempFile),
                             decompTracker,
                             decompStream,
-                            byteLimit(legacyInflateLimit(compFileSize), "the decompressed dump"),
-                            createWriteStream(unpackedFile)
+                            byteLimit(inflateSpace.bytes, "the decompressed dump"),
+                            createWriteStream(unpackedFile, { flags: "wx", mode: PRIVATE_FILE_MODE })
                         );
                     } catch (e: unknown) {
                         await fs.promises.unlink(unpackedFile).catch(() => {});
+                        // Stopped at the free space rather than at the bound, so the folder is what ran out.
+                        if (inflateSpace.short && e instanceof DamagedBackupError) throw tempSpaceRefusal(legacyInflateLimit(compFileSize));
                         throw e;
                     }
 
@@ -542,7 +563,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     tempFile = unpackedFile;
                 }
             } catch (e: unknown) {
-                if (e instanceof DamagedBackupError) throw e;
+                if (e instanceof DamagedBackupError || e instanceof ServiceError) throw e;
                 const message = e instanceof Error ? e.message : String(e);
                 throw new Error(`Decompression failed: ${message}`);
             }
@@ -724,6 +745,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         if (tempFile) {
             await fs.promises.unlink(tempFile).catch(() => {});
         }
+        for (const space of tempSpaces) space.release();
         await logs.flush(true);
         logs.dispose();
         unregisterExecution(executionId);

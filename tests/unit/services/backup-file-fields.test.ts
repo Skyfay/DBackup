@@ -100,4 +100,12 @@ describe("describeBackupFromMetadata", () => {
 
         expect(derived.backupType).toBe("incremental");
     });
+
+    it("keeps when the dumps of the run started, and nothing of a sidecar without it", () => {
+        const stamped = describeBackupFromMetadata("db.tar", meta({ timestamp: "2026-11-02T01:20:00.000Z", dumpsStartedAt: "2026-11-02T01:00:00.000Z" }));
+        expect(stamped).toMatchObject({ createdAt: "2026-11-02T01:20:00.000Z", dumpsStartedAt: "2026-11-02T01:00:00.000Z" });
+
+        expect(describeBackupFromMetadata("db.tar", meta({ timestamp: "2026-11-02T01:20:00.000Z" }))).not.toHaveProperty("dumpsStartedAt");
+        expect(describeBackupFromMetadata("db.tar", meta({ dumpsStartedAt: 42 }))).not.toHaveProperty("dumpsStartedAt");
+    });
 });

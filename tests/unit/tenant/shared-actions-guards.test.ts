@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     addRule: vi.fn(),
     removeRule: vi.fn(),
     customerDatabases: vi.fn(),
+    unsavedFirebirdTargets: vi.fn(async () => [] as string[]),
 }));
 
 vi.mock("@/lib/auth/access-control", async (importOriginal) => ({
@@ -58,7 +59,7 @@ vi.mock("@/services/tenant/database-assignments", () => ({
 vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService: { reachOf: mocks.reachOf } }));
 vi.mock("@/services/tenant/database-moves", () => ({ moveDatabase: mocks.move, moveTargets: mocks.targets }));
 vi.mock("@/services/tenant/shared-servers", () => ({ customersOfServer: mocks.customers }));
-vi.mock("@/services/restore/customer-databases", () => ({ customerDatabases: mocks.customerDatabases }));
+vi.mock("@/services/restore/customer-databases", () => ({ customerDatabases: mocks.customerDatabases, unsavedFirebirdTargets: mocks.unsavedFirebirdTargets }));
 vi.mock("@/services/tenant/shared-databases", () => ({ sharedOverview: vi.fn(), prepareSharedDownload: mocks.download, restoreSharedBackup: mocks.restore }));
 vi.mock("@/services/tenant/shared-on-demand", () => ({ requestSharedBackup: mocks.request, sharedBackupRun: mocks.run }));
 
@@ -153,6 +154,14 @@ describe("the databases of customers a restore page marks", () => {
         expect(await getCustomerDatabases("shared-mysql", ["shop_acme", "shop_globex"])).toEqual({
             success: true, data: [{ database: "shop_acme", customer: null }, { database: "shop_globex", customer: "Globex" }],
         });
+    });
+
+    it("asks the confirmation for a Firebird path that is no saved alias of a server that gives databases away", async () => {
+        mocks.granted = new Set([PERMISSIONS.STORAGE.RESTORE]);
+        mocks.customerDatabases.mockResolvedValue([]);
+        mocks.unsavedFirebirdTargets.mockResolvedValueOnce(["/data/other.fdb"]);
+
+        expect(await getCustomerDatabases("shared-firebird", ["/data/other.fdb"])).toEqual({ success: true, data: [{ database: "/data/other.fdb", customer: null }] });
     });
 });
 
@@ -260,7 +269,8 @@ describe("what the tenant of a shared server changes", () => {
         expect(await setDatabaseOnDemand("old", "shop", 2)).toEqual(refused);
         expect(await setRuleOnDemand("old", "rule-1", 2)).toEqual(refused);
         expect(await getMoveTargets("old")).toEqual(refused);
-        for (const call of [mocks.assign, mocks.addRule, mocks.removeRule, mocks.move, mocks.targets, mocks.setOnDemand, mocks.setRuleOnDemand, mocks.audit]) {
+        expect(await getSourceAssignments("old")).toEqual(refused);
+        for (const call of [mocks.assign, mocks.addRule, mocks.removeRule, mocks.move, mocks.targets, mocks.forSource, mocks.setOnDemand, mocks.setRuleOnDemand, mocks.audit]) {
             expect(call).not.toHaveBeenCalled();
         }
     });

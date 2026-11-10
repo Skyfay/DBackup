@@ -44,7 +44,9 @@ async function assertNoCustomerRun(client: typeof prisma | Tx, destinationIds: r
  * Deletes the backups of a deleted tenant on a destination another tenant shared with it, in the
  * background. A destination it was the last tenant of is shared no longer, once whatever is left in
  * the folder of the customers is gone like when its tenant stops sharing it, so its tenant never
- * sees a file of a customer. When the storage does not answer, the share stays with nobody on it.
+ * sees a file of a customer. When the storage does not answer, the share stays with nobody on it,
+ * and the hourly warmup of the storage cache deletes what is left of the folder, see
+ * `sweepDeletedTenantFolders`.
  */
 async function clearBorrowedDestination(configId: string, tenantId: string): Promise<void> {
     try {
@@ -450,7 +452,8 @@ export const tenantService = {
         sharingChanged();
         const { scheduler } = await import("@/lib/server/scheduler");
         await scheduler.refresh();
-        // The storage may take a while, so the answer does not wait for it.
+        // The storage may take a while, so the answer does not wait for it. What it does not take
+        // now goes with the next warmup of the storage cache.
         for (const destination of borrowed) void clearBorrowedDestination(destination.id, id);
         return { ...removal, withdrawn };
     },

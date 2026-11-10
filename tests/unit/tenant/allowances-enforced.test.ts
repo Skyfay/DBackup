@@ -37,7 +37,8 @@ vi.mock("@/lib/server/request-headers", () => ({ requestHeaders: vi.fn(async () 
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: vi.fn(async () => request.ctx),
     checkPermissionWithContext: vi.fn(),
-    hasPermissionWithContext: vi.fn(() => false),
+    // Reads connections of every kind, and holds no right beyond what the routes check themselves.
+    hasPermissionWithContext: vi.fn((_ctx: unknown, permission: string) => ["sources:view", "destinations:read", "notifications:read"].includes(permission)),
 }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: vi.fn() } }));
 vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: vi.fn(async () => undefined) } }));
@@ -61,7 +62,8 @@ beforeAll(async () => {
     app.client = base.$extends(tenantScopeExtension(async () => request.ctx.tenantId));
     const now = new Date("2026-10-17T10:00:00.000Z");
     await base.tenant.update({ where: { id: "default" }, data: { name: "Acme Hosting" } });
-    await base.tenant.create({ data: { id: "globex", name: "Globex", addsDatabases: false, addsDestinations: false, addsApiKeys: false } });
+    // The local network stays open here, so the made-up hosts of these tests are no network question.
+    await base.tenant.create({ data: { id: "globex", name: "Globex", addsDatabases: false, addsDestinations: false, addsApiKeys: false, blocksLocalNetwork: false } });
     await base.user.create({ data: { id: "globex-admin", name: "Gina", email: "gina@globex.example", emailVerified: true, createdAt: now, updatedAt: now } });
     // What Globex had before the platform switched it off keeps working.
     await base.adapterConfig.create({ data: { tenantId: "globex", id: "globex-db", name: "Shop", type: "database", adapterId: "mysql", config: "{}" } });

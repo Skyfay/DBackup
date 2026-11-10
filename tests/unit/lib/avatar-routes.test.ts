@@ -54,8 +54,20 @@ describe("the routes of the pictures of the people", () => {
         expect(mocks.find).toHaveBeenCalledWith({ userId: "u2" }, "u1");
         expect(response.headers.get("Content-Type")).toBe("image/gif");
         expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(response.headers.get("Content-Security-Policy")).toBe("sandbox; default-src 'none'");
         expect(response.headers.get("Cache-Control")).toBe("private, max-age=31536000, immutable");
         expect((await pictureRoute.GET(new NextRequest("http://localhost/api/avatar/u1"), params("u1"))).headers.get("Cache-Control")).toBe("private, max-age=3600");
+    });
+
+    it("serves no stored type but the four pictures an upload is kept as", async () => {
+        for (const mimeType of ["image/svg+xml", "text/html", "application/octet-stream", ""]) {
+            mocks.find.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType });
+            expect((await pictureRoute.GET(new NextRequest("http://localhost/api/avatar/u1"), params("u1"))).status).toBe(404);
+        }
+        for (const mimeType of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
+            mocks.find.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType });
+            expect((await pictureRoute.GET(new NextRequest("http://localhost/api/avatar/u1"), params("u1"))).headers.get("Content-Type")).toBe(mimeType);
+        }
     });
 
     it("shows no picture without a sign-in, and answers 404 for a person without one or one the caller may not see", async () => {

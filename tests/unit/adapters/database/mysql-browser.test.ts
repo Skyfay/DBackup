@@ -163,7 +163,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
         it("escapes single quotes in the database name", async () => {
             const host = hostWith(kind, { tables: "" });
             await getTables(baseConfig as never, "it's", host);
-            expect(queryOf(host.calls.exec[0])).toContain("'it\\'s'");
+            expect(queryOf(host.calls.exec[0])).toContain("'it''s'");
         });
 
         it("strips null bytes from the database name", async () => {
@@ -196,7 +196,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
             );
 
             const colQuery = host.calls.exec.map(queryOf).find(q => q?.includes("COLUMN_NAME"));
-            expect(colQuery).toContain("'o\\'reilly'");
+            expect(colQuery).toContain("'o''reilly'");
         });
     });
 });

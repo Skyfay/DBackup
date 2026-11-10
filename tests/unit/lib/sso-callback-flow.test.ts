@@ -36,8 +36,8 @@ vi.mock("@/lib/prisma", () => {
             },
             user: { findUnique: async ({ where }: { where: { id: string } }) => user(where.id) },
             account: {
-                findFirst: async ({ where }: { where: { userId: string; providerId: string } }) =>
-                    state.db.account.find((account) => account.userId === where.userId && account.providerId === where.providerId) ?? null,
+                findFirst: async ({ where }: { where: Record<string, unknown> }) =>
+                    state.db.account.find((account) => Object.entries(where).every(([key, value]) => account[key] === value)) ?? null,
             },
             session: { findUnique: async ({ where }: { where: { token: string } }) => state.db.session.find((session) => session.token === where.token) ?? null },
             tenantMembership: {
@@ -56,11 +56,12 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unkn
 
 const { betterAuth } = await import("better-auth");
 const { memoryAdapter } = await import("better-auth/adapters/memory");
-const { createAuthEndpoint } = await import("better-auth/api");
+const { createAuthEndpoint, createAuthMiddleware } = await import("better-auth/api");
 const { handleOAuthUserInfo } = await import("better-auth/oauth2");
-const { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser } = await import("@/lib/auth/sso-hooks");
+const { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser, refusedSsoLinkRedirect } = await import("@/lib/auth/sso-hooks");
 const { TENANT_DOMAIN_SIGN_UP_REFUSED } = await import("@/lib/auth/sso-guard");
-const { NOT_LINKED_URL, TENANT_NOT_MEMBER_URL } = await import("@/lib/auth/sso-tenant-guard");
+const { NOT_LINKED_URL, TENANT_NOT_MEMBER_URL, refuseSsoSession } = await import("@/lib/auth/sso-tenant-guard");
+const { accountLinkingOptions } = await import("@/lib/auth/account-linking");
 
 const ACME = { providerId: "entra-acme", name: "Acme Entra ID", tenantId: "acme", domain: "acme.ch", enabled: true, allowProvisioning: true, defaultGroupId: "g-acme" };
 const AUTHENTIK = { providerId: "authentik", name: "Authentik", tenantId: null, domain: null, enabled: true, allowProvisioning: true, defaultGroupId: "g-ops" };
@@ -93,7 +94,10 @@ const auth = betterAuth({
     secret: "a-secret-of-the-test-that-is-long-enough",
     logger: { disabled: true },
     database: memoryAdapter(state.db),
-    account: { accountLinking: { enabled: true, allowDifferentEmails: true } },
+    // The linking options of src/lib/auth/index.ts itself.
+    account: { accountLinking: accountLinkingOptions([]) },
+    // The after hook of src/lib/auth/index.ts puts the reason of a refused link into the redirect.
+    hooks: { after: createAuthMiddleware(async (ctx) => refusedSsoLinkRedirect(ctx)) },
     // The same hooks as src/lib/auth/index.ts, which also marks every new user's email as verified.
     databaseHooks: {
         user: {
@@ -180,6 +184,73 @@ describe("a callback of a provider, through the hooks of DBackup", () => {
         expect(sessionsOf("lena")).toHaveLength(2);
         // The link of the own account goes into the audit log, whichever page started it.
         expect(state.log).toHaveBeenCalledWith("lena", "UPDATE", "AUTH", { change: "SSO account connected", name: "Authentik", providerId: "authentik" }, "lena", expect.objectContaining({ tenantId: expect.any(String) }));
+    });
+
+    it("never links an account whose email its owner set themselves on a sign-in without its session", async () => {
+        // Eve changed her own email to Anna's before Anna ever signed in through the provider.
+        seedUser("eve", "anna@acme.ch", ["acme"], { emailVerified: false });
+
+        const response = await callback("entra-acme", "anna@acme.ch", "idp-anna");
+
+        expect(response.status).toBe(302);
+        expect(response.headers.get("location")).toContain(NOT_LINKED_URL);
+        expect(state.db.account).toHaveLength(0);
+        expect(sessionsOf("eve")).toHaveLength(0);
+    });
+
+    it.each([
+        ["of a tenant", "entra-acme", "anna@acme.ch", ["acme"]],
+        ["of the platform", "authentik", "tom@example.ch", ["default"]],
+    ])("never links such an account on a second try either, through a provider %s", async (_kind, providerId, email, tenants) => {
+        seedUser("eve", email, tenants, { emailVerified: false });
+
+        for (const _ of [1, 2]) {
+            const response = await callback(providerId, email, "idp-victim");
+            expect(response.status).toBe(302);
+            expect(response.headers.get("location")).toContain(NOT_LINKED_URL);
+        }
+
+        // A refused link leaves the flag the guard reads as it was.
+        expect(state.db.user.find((user) => user.id === "eve")?.emailVerified).toBe(false);
+        expect(state.db.account).toHaveLength(0);
+        expect(sessionsOf("eve")).toHaveLength(0);
+    });
+
+    it("signs in no second identity of a provider for an account linked to another one it may not link", async () => {
+        // Eve linked her own identity, then set Anna's email on her account.
+        seedUser("eve", "anna@acme.ch", ["acme"], { emailVerified: false });
+        seedLink("eve", "entra-acme", "idp-eve");
+
+        for (const _ of [1, 2]) {
+            const response = await callback("entra-acme", "anna@acme.ch", "idp-anna");
+            expect(response.headers.get("location")).toContain(NOT_LINKED_URL);
+        }
+
+        expect(state.db.account).toEqual([expect.objectContaining({ userId: "eve", accountId: "idp-eve" })]);
+        expect(state.db.user.find((user) => user.id === "eve")?.emailVerified).toBe(false);
+        expect(sessionsOf("eve")).toHaveLength(0);
+        // Her own identity still signs her in.
+        expect((await callback("entra-acme", "anna@acme.ch", "idp-eve")).status).toBe(200);
+        expect(sessionsOf("eve")).toHaveLength(1);
+    });
+
+    it("asks for the link of the identity the callback linked, not any link of the provider", async () => {
+        seedUser("eve", "anna@acme.ch", ["acme"]);
+        seedLink("eve", "entra-acme", "idp-eve");
+        const context = { path: "/sso/callback/:providerId", params: { providerId: "entra-acme" }, redirect: (url: string) => new Error(`redirect ${url}`) };
+
+        await expect(refuseSsoSession({ userId: "eve" }, context, context.redirect, "idp-eve")).resolves.toBeUndefined();
+        await expect(refuseSsoSession({ userId: "eve" }, context, context.redirect, "idp-anna")).rejects.toThrow(`redirect ${NOT_LINKED_URL}`);
+    });
+
+    it("links such an account from its own session, the Link button of the profile", async () => {
+        seedUser("eve", "eve@acme.ch", ["acme"], { emailVerified: false });
+        state.db.session.push({ id: "s-eve", userId: "eve", token: "tok-eve", expiresAt: new Date(Date.now() + 60_000), createdAt: new Date(), updatedAt: new Date() });
+
+        const response = await callback("entra-acme", "eve@acme.ch", "idp-eve", { cookie: "better-auth.session_token=tok-eve.signature" });
+
+        expect(response.status).toBe(200);
+        expect(state.db.account).toEqual([expect.objectContaining({ userId: "eve", providerId: "entra-acme" })]);
     });
 
     it("signs in a member of the tenant through its provider, and links them on the first sign-in", async () => {

@@ -31,6 +31,8 @@ vi.mock("@/services/restore/file-restore", () => ({
 
 const { databaseAssignmentService } = await import("@/services/tenant/database-assignments");
 const { assertCustomerDatabasesConfirmed, assertTargetsConfirmed, customerDatabases } = await import("@/services/restore/customer-databases");
+const { moveDatabase } = await import("@/services/tenant/database-moves");
+const { holdSharedRestore, sharedRestoresOn } = await import("@/services/restore/shared-restores-active");
 
 let root = "";
 let base: PrismaClient;
@@ -119,14 +121,108 @@ describe("the databases of customers a restore of the provider overwrites", () =
         await expect(asHome(() => assertTargetsConfirmed({ ...input, confirmedCustomerDatabases: [] }, ["shop_acme", "intern"]))).rejects.toThrow(/customers hold now: shop_acme\. The request did not confirm/);
         await expect(asHome(() => assertTargetsConfirmed({ ...input, confirmedCustomerDatabases: ["shop_acme"] }, ["shop_acme", "cust_1"]))).rejects.toThrow(/customers hold now: cust_1\./);
         await expect(asHome(() => assertTargetsConfirmed({ ...input, confirmedCustomerDatabases: ["shop_acme"] }, ["shop_acme", "intern"]))).resolves.toBeUndefined();
-        // The customer's own restore of its database was checked as theirs.
-        await expect(asHome(() => assertTargetsConfirmed({ ...input, shared: { databaseName: "shop_acme" } }, ["shop_acme"]))).resolves.toBeUndefined();
+        // The customer's own restore of the database it holds.
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, shared: { databaseName: "shop_acme", tenantId: "acme" } }, ["shop_acme"]))).resolves.toBeUndefined();
+    });
+
+    it("refuses at the write a customer's restore of a database it no longer holds, or of a tenant deleted since", async () => {
+        const input = { storageConfigId: "nas", file: "nightly/all.tar", targetSourceId: "shared-mysql" };
+        // Held by Globex through its rule, never by Acme.
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, shared: { databaseName: "cust_1", tenantId: "acme" } }, ["cust_1"]))).rejects.toThrow("cust_1 is no longer yours, so nothing was restored.");
+        // A restore whose customer nobody filled in writes nothing.
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, shared: { databaseName: "shop_acme" } }, ["shop_acme"]))).rejects.toThrow(/no longer yours/);
+        await expect(asHome(() => assertTargetsConfirmed({ ...input, targetSourceId: "gone-mysql", shared: { databaseName: "shop_acme", tenantId: "acme" } }, ["shop_acme"]))).rejects.toThrow(/no longer yours/);
+
+        await base.tenant.create({ data: { id: "initech", name: "Initech" } });
+        await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "intern", tenantId: "initech" }], "u-msp"));
+        const initech = { ...input, shared: { databaseName: "intern", tenantId: "initech" } };
+        await expect(asHome(() => assertTargetsConfirmed(initech, ["intern"]))).resolves.toBeUndefined();
+        // The tenant of the server takes it back while the restore stages its dump.
+        await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "intern", tenantId: null }], "u-msp"));
+        await expect(asHome(() => assertTargetsConfirmed(initech, ["intern"]))).rejects.toThrow("intern is no longer yours");
+
+        await asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "intern", tenantId: "initech" }], "u-msp"));
+        await base.tenant.delete({ where: { id: "initech" } });
+        await expect(asHome(() => assertTargetsConfirmed(initech, ["intern"]))).rejects.toThrow("intern is no longer yours");
+    });
+
+    it("refuses giving, taking back, ending the rule of or moving a database while a customer restores it", async () => {
+        const release = holdSharedRestore({ sourceId: "shared-mysql", databaseName: "cust_1", tenantId: "globex" });
+        try {
+            const refusal = "A customer restores cust_1 right now. Try again once the restore ended.";
+            await expect(asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "cust_1", tenantId: "acme" }], "u-msp"))).rejects.toThrow(refusal);
+            await expect(asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "cust_1", tenantId: null }], "u-msp"))).rejects.toThrow(refusal);
+            const rule = await base.databaseAssignmentRule.findFirstOrThrow({ where: { sourceId: "shared-mysql", pattern: "cust_*", validUntil: null } });
+            await expect(asHome(() => databaseAssignmentService.removeRule("shared-mysql", rule.id))).rejects.toThrow(refusal);
+            await expect(asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "cust_*", tenantId: "acme", priority: 5 }))).rejects.toThrow(refusal);
+            await expect(asHome(() => moveDatabase("shared-mysql", { databaseName: "cust_1", toSourceId: "plain-mysql" }, "u-msp"))).rejects.toThrow(refusal);
+            // Another database of the server, or giving it to the tenant that restores it, goes on.
+            await expect(asHome(() => databaseAssignmentService.assign("shared-mysql", [{ databaseName: "cust_1", tenantId: "globex" }], "u-msp"))).resolves.toMatchObject({ changed: 0 });
+            expect(await base.databaseAssignmentRule.count({ where: { sourceId: "shared-mysql", validUntil: null } })).toBe(1);
+        } finally {
+            release();
+        }
+        expect(sharedRestoresOn("shared-mysql")).toEqual([]);
     });
 
     it("asks nothing for a copy beside them, a restore of files or the customer's own restore", async () => {
         const copy = { ...restoring([]), databaseMapping: [{ originalName: "shop_acme", targetName: "shop_acme_restored", selected: true }] };
         await expect(asHome(() => assertCustomerDatabasesConfirmed(copy))).resolves.toEqual([]);
         await expect(asHome(() => assertCustomerDatabasesConfirmed(restoring(["shop_acme"], { scope: "files" })))).resolves.toEqual([]);
-        await expect(asHome(() => assertCustomerDatabasesConfirmed(restoring(["shop_acme"], { shared: { databaseName: "shop_acme" } })))).resolves.toEqual([]);
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(restoring(["shop_acme"], { shared: { databaseName: "shop_acme", tenantId: "acme" } })))).resolves.toEqual([]);
+    });
+});
+
+describe("the databases of customers on a Firebird server, whose restore target is a path", () => {
+    const aliases = [{ name: "fb_acme", path: "/firebird/data/acme.fdb" }, { name: "fb_intern", path: "C:\\Firebird\\Intern.FDB" }];
+
+    beforeAll(async () => {
+        await base.adapterConfig.create({ data: { id: "shared-firebird", name: "shared-firebird", type: "database", adapterId: "firebird", config: JSON.stringify({ host: "fb", databases: aliases }) } });
+        await base.databaseListCache.create({ data: { adapterConfigId: "shared-firebird", databasesJson: JSON.stringify(aliases.map(({ name }) => ({ name }))) } });
+        await asHome(() => databaseAssignmentService.assign("shared-firebird", [
+            { databaseName: "fb_acme", tenantId: "acme", validFrom: JAN },
+            { databaseName: "fb_intern", tenantId: "globex", validFrom: JAN },
+        ], "u-msp", JAN));
+    });
+
+    it("counts the path of an alias as the alias a customer holds", async () => {
+        expect(await asHome(() => customerDatabases("shared-firebird", ["/firebird/data/acme.fdb"]))).toEqual([{ database: "fb_acme", tenantId: "acme", customer: "Acme" }]);
+        expect(await asHome(() => customerDatabases("shared-firebird", ["/firebird/data/./acme.fdb"]))).toEqual([{ database: "fb_acme", tenantId: "acme", customer: "Acme" }]);
+        // A path on Windows in another case is the same file.
+        expect(await asHome(() => customerDatabases("shared-firebird", ["c:\\firebird\\intern.fdb"]))).toEqual([{ database: "fb_intern", tenantId: "globex", customer: "Globex" }]);
+        expect(await asHome(() => customerDatabases("shared-firebird", ["/firebird/data/scratch.fdb"]))).toEqual([]);
+    });
+
+    it("refuses a restore by the path of a customer's alias without the confirmation, before and at the write", async () => {
+        const api = { storageConfigId: "nas", file: "nightly/fb.tar", targetSourceId: "shared-firebird", databaseMapping: [{ originalName: "fb_acme", targetName: "/firebird/data/acme.fdb", selected: true }] };
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(api))).rejects.toThrow(/customers hold now: fb_acme\./);
+        await expect(asHome(() => assertCustomerDatabasesConfirmed({ ...api, overwriteCustomerDatabases: true }))).resolves.toEqual([{ database: "fb_acme", tenantId: "acme", customer: "Acme" }]);
+        await expect(asHome(() => assertTargetsConfirmed({ ...api, confirmedCustomerDatabases: [] }, ["/firebird/data/acme.fdb"]))).rejects.toThrow(/customers hold now: fb_acme\. The request did not confirm/);
+        await expect(asHome(() => assertTargetsConfirmed({ ...api, confirmedCustomerDatabases: ["fb_acme"] }, ["/firebird/data/acme.fdb"]))).resolves.toBeUndefined();
+    });
+
+    it("asks the confirmation for a target that is no saved alias, since a path the server resolves can still reach a customer's file", async () => {
+        // A link or a mount to acme.fdb, which no comparison of paths finds.
+        const target = "/srv/firebird-link/acme.fdb";
+        const api = { storageConfigId: "nas", file: "nightly/fb.tar", targetSourceId: "shared-firebird", databaseMapping: [{ originalName: "fb_acme", targetName: target, selected: true }] };
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(api))).rejects.toThrow(/writes into \/srv\/firebird-link\/acme\.fdb, which is no saved database of this Firebird server\..*Confirm overwriting to restore\./);
+        // Confirmed, it goes through, and names no customer, since none holds the path by an alias.
+        await expect(asHome(() => assertCustomerDatabasesConfirmed({ ...api, overwriteCustomerDatabases: true }))).resolves.toEqual([]);
+
+        // At the write the request has to carry the confirmation too.
+        await expect(asHome(() => assertTargetsConfirmed({ ...api, confirmedCustomerDatabases: [] }, [target]))).rejects.toThrow(/no saved database of this Firebird server.*The request did not confirm it/);
+        await expect(asHome(() => assertTargetsConfirmed({ ...api, overwriteCustomerDatabases: true, confirmedCustomerDatabases: [] }, [target]))).resolves.toBeUndefined();
+    });
+
+    it("asks nothing for a saved alias nobody holds or for a path on a Firebird server that gives nothing away", async () => {
+        await base.adapterConfig.create({ data: { id: "plain-firebird", name: "plain-firebird", type: "database", adapterId: "firebird", config: JSON.stringify({ host: "fb", databases: aliases }) } });
+        const intoPath = (sourceId: string, targetName: string) => ({ storageConfigId: "nas", file: "nightly/fb.tar", targetSourceId: sourceId, databaseMapping: [{ originalName: "fb_acme", targetName, selected: true }] });
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(intoPath("plain-firebird", "/srv/scratch.fdb")))).resolves.toEqual([]);
+        await expect(asHome(() => assertTargetsConfirmed({ ...intoPath("plain-firebird", "/srv/scratch.fdb"), confirmedCustomerDatabases: [] }, ["/srv/scratch.fdb"]))).resolves.toBeUndefined();
+
+        // A saved alias of the sharing server that no customer holds is no path of its own.
+        await base.adapterConfig.update({ where: { id: "shared-firebird" }, data: { config: JSON.stringify({ host: "fb", databases: [...aliases, { name: "fb_free", path: "/firebird/data/free.fdb" }] }) } });
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(intoPath("shared-firebird", "fb_free")))).resolves.toEqual([]);
+        await expect(asHome(() => assertCustomerDatabasesConfirmed(intoPath("shared-firebird", "/firebird/data/free.fdb")))).resolves.toEqual([]);
     });
 });

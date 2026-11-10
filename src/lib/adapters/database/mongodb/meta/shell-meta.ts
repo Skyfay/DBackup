@@ -1,6 +1,6 @@
 import type { ExecutionHost } from "@/lib/transport";
 import type { MongoDBConfig } from "@/lib/adapters/definitions";
-import { MONGOSH, SYSTEM_DATABASES, buildShellConnectionArgs } from "../args";
+import { MONGOSH, SYSTEM_DATABASES, withShellConnection } from "../args";
 import type {
     MongoCollectionInfo,
     MongoDatabaseStats,
@@ -16,7 +16,8 @@ import type {
  * Every script is passed as one argument to `--eval` rather than pasted into a
  * shell command line, so a database or collection name cannot terminate the
  * quoting. Values that reach a script go through JSON.stringify, which produces
- * a JavaScript literal.
+ * a JavaScript literal. The connection string with the password reaches mongosh through a file of
+ * mode 0600, never argv, see `withShellConnection`.
  */
 export class ShellMongoMeta implements MongoMeta {
     private binary: Promise<string> | null = null;
@@ -36,9 +37,8 @@ export class ShellMongoMeta implements MongoMeta {
     /** Run a script and parse the single JSON value it prints. */
     private async evaluate<T>(script: string, what: string): Promise<T> {
         const mongosh = await this.mongosh();
-        const result = await this.host.exec([
-            mongosh, ...buildShellConnectionArgs(this.config), "--quiet", "--eval", script,
-        ]);
+        const result = await withShellConnection(this.host, this.config, (args, prelude) =>
+            this.host.exec([mongosh, ...args, "--eval", `${prelude}${script}`]));
 
         if (result.code !== 0) {
             throw new Error(`Failed to ${what}: ${result.stderr.trim() || result.stdout.trim()}`);
@@ -59,10 +59,8 @@ export class ShellMongoMeta implements MongoMeta {
 
     async serverVersion(): Promise<string> {
         const mongosh = await this.mongosh();
-        const result = await this.host.exec([
-            mongosh, ...buildShellConnectionArgs(this.config), "--quiet",
-            "--eval", "print(db.adminCommand({buildInfo:1}).version)",
-        ]);
+        const result = await withShellConnection(this.host, this.config, (args, prelude) =>
+            this.host.exec([mongosh, ...args, "--eval", `${prelude}print(db.adminCommand({buildInfo:1}).version)`]));
 
         if (result.code !== 0) {
             throw new Error(result.stderr.trim() || result.stdout.trim() || "mongosh failed");

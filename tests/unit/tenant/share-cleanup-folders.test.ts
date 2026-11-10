@@ -45,7 +45,7 @@ vi.mock("@/services/sharing/destination-access", () => {
     return { openRow: async (_row: unknown, mode: StorageViewMode) => ({ adapter: storageView(adapter(), mode), config: {} }) };
 });
 
-const { deleteTenantBackups, foldersOf, sweepCustomerFolder } = await import("@/services/sharing/share-cleanup");
+const { deleteTenantBackups, foldersOf, sweepCustomerFolder, sweepDeletedTenantFolders } = await import("@/services/sharing/share-cleanup");
 
 /** Puts files on the destination with every folder they lie in. */
 function lay(...files: string[]) {
@@ -135,5 +135,31 @@ describe("the folders a customer's backups leave behind", () => {
 
         expect([...storage.folders]).toEqual(["MSP"]);
         expect(storage.removed.at(-1)).toBe("tenants");
+    });
+
+    it("deletes the folder of a tenant that no longer exists, and nothing of a tenant that does", async () => {
+        // Acme was deleted, Globex is still a customer. A file right inside tenants/ is of no tenant.
+        lay("tenants/stray.txt");
+        prismaMock.tenant.findMany.mockResolvedValue([{ id: "globex" }] as never);
+
+        expect(await sweepDeletedTenantFolders("nas")).toEqual(["acme"]);
+
+        expect(prismaMock.tenant.findMany).toHaveBeenCalledWith({ where: { id: { in: ["acme", "globex"] } }, select: { id: true } });
+        expect([...storage.files].sort()).toEqual(["MSP/own.tar", "tenants/globex/Web/web_1.tar", "tenants/stray.txt"]);
+        expect(storage.folders.has("tenants/acme")).toBe(false);
+        expect(storage.folders.has("tenants/globex/Web")).toBe(true);
+    });
+
+    it("reads no tenant while the folder of the customers is empty, and throws when the storage keeps a file", async () => {
+        storage.files.clear();
+        lay("MSP/own.tar");
+        expect(await sweepDeletedTenantFolders("nas")).toEqual([]);
+        expect(prismaMock.tenant.findMany).not.toHaveBeenCalled();
+
+        lay("tenants/acme/Shop/shop_1.tar");
+        prismaMock.tenant.findMany.mockResolvedValue([] as never);
+        const kept = vi.spyOn(storage.files, "delete").mockReturnValue(false);
+        await expect(sweepDeletedTenantFolders("nas")).rejects.toThrow("refused to delete 1 file");
+        kept.mockRestore();
     });
 });

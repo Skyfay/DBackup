@@ -1,5 +1,7 @@
 import type { Duplex, Readable, Transform, Writable } from "node:stream";
 
+import type { ReachPolicy } from "@/lib/network/reach-policy";
+
 /**
  * Transport layer contracts.
  *
@@ -24,13 +26,18 @@ export interface SshConnectionConfig {
     password?: string;
     privateKey?: string;
     passphrase?: string;
+    /**
+     * Set for a connection of a tenant that blocks the local network: the SSH server is dialed at
+     * an address checked at connect time, see `reach-check.ts`. Never read from a stored field.
+     */
+    reach?: ReachPolicy;
 }
 
 export interface ExecOptions {
     /**
-     * Extra environment for the process. The SSH transport renders these as
-     * `export K='v'; cmd` rather than putting them in argv, so secrets never
-     * show up in the remote `ps` output.
+     * Extra environment for the process. The SSH transport writes these to a 0600
+     * temp file that the remote shell sources and removes before the command
+     * starts, so secrets never show up in the remote `ps` output.
      */
     env?: Record<string, string | undefined>;
     cwd?: string;
@@ -173,7 +180,8 @@ export interface ExecutionHost {
  * connection. Produced by a TransportResolver, consumed by createHost.
  */
 export type TransportSpec =
-    | { kind: "direct" }
+    /** `reach` holds `connect` to checked addresses for a tenant that blocks the local network. */
+    | { kind: "direct"; reach?: ReachPolicy }
     | { kind: "ssh"; ssh: SshConnectionConfig }
     /** Commands run on one transport, files move over another. MSSQL's legacy fileTransferMode. */
     | { kind: "composite"; exec: TransportSpec; files: TransportSpec };

@@ -15,7 +15,9 @@ import { hostLocalReason, mssqlUsesLocalFolder } from "@/lib/adapters/host-local
  * `dbackup.db`, its copies before a migration and a restore that waits for the next start, the folder
  * of its TLS certificate, its temporary folder (`getTempDir()`), which holds the plain copy of the
  * database the configuration backup uploads and the decrypted copies of a restore, and the folder the
- * configuration backup writes to when its destination is a Local Filesystem. The database download and the configuration backup are for a platform admin
+ * configuration backup writes to when its destination is a Local Filesystem. `/proc` counts as well,
+ * which shows the keys of DBackup in the environment of its process, and so do the files the keys
+ * were read from. The database download and the configuration backup are for a platform admin
  * alone, so a connection that reads or writes one of these folders is too. A path that is one of them,
  * lies inside one or holds one counts, resolved with every symbolic link.
  *
@@ -28,6 +30,8 @@ import { hostLocalReason, mssqlUsesLocalFolder } from "@/lib/adapters/host-local
 export const OWN_DATA_REFUSED = "This path reaches the folder of DBackup's own database, which only a platform admin connects.";
 /** What someone reads whose connection reaches the folder of the configuration backup. */
 export const CONFIG_BACKUP_FOLDER_REFUSED = "This path reaches the folder of the configuration backup, which only a platform admin connects.";
+/** What someone reads whose connection reaches the files of DBackup's process or of its keys. */
+export const OWN_SECRETS_REFUSED = "This path reaches the files of DBackup's own process or of its keys, which only a platform admin connects.";
 /** What someone reads whose connection reaches the temporary folder of DBackup. */
 export const TEMP_FOLDER_REFUSED = "This path reaches DBackup's temporary folder, which holds plain copies of databases and which only a platform admin connects.";
 /** What a check reads that could not find out where the configuration backup lies. */
@@ -82,7 +86,7 @@ function within(child: string, parent: string): boolean {
 const reaches = (candidate: string, folder: string) => within(candidate, folder) || within(folder, candidate);
 
 interface OwnFolder {
-    kind: "data" | "temp" | "config-backup";
+    kind: "data" | "secrets" | "temp" | "config-backup";
     /** The folder as written and with its links resolved, so a link to it or from it counts too. */
     paths: string[];
     /** The destination of the configuration backup, which writes into its own folder. */
@@ -101,15 +105,34 @@ async function configBackupFolder(): Promise<{ storageId: string; folder: string
     });
 }
 
+/**
+ * What the process of DBackup itself shows: `/proc`, whose `self/environ` holds `ENCRYPTION_KEY` and
+ * `BETTER_AUTH_SECRET`, and the files those were read from, named by `ENCRYPTION_KEY_FILE` and
+ * `BETTER_AUTH_SECRET_FILE`.
+ */
+function secretPaths(): string[] {
+    const files = [process.env.ENCRYPTION_KEY_FILE, process.env.BETTER_AUTH_SECRET_FILE].filter((file): file is string => !!file && file.trim() !== "");
+    return ["/proc", ...files];
+}
+
 async function ownFolders(): Promise<OwnFolder[]> {
     const data = [databaseFolder(), process.env.CERTS_DIR || "/data/certs"].filter((folder): folder is string => !!folder);
     const folders: OwnFolder[] = await Promise.all(data.map(async (folder) => ({ kind: "data" as const, paths: [path.resolve(folder), await realPath(folder)] })));
+    for (const secret of secretPaths()) folders.push({ kind: "secrets", paths: [path.resolve(secret), await realPath(secret)] });
     const temp = getTempDir();
     folders.push({ kind: "temp", paths: [path.resolve(temp), await realPath(temp)] });
     const config = await configBackupFolder();
     if (config) folders.push({ kind: "config-backup", storageId: config.storageId, paths: [config.folder, await realPath(config.folder)] });
     return folders;
 }
+
+/** The sentence that refuses a path, by the kind of folder it reaches. */
+const REFUSAL_OF: Record<OwnFolder["kind"], string> = {
+    data: OWN_DATA_REFUSED,
+    secrets: OWN_SECRETS_REFUSED,
+    temp: TEMP_FOLDER_REFUSED,
+    "config-backup": CONFIG_BACKUP_FOLDER_REFUSED,
+};
 
 export interface OwnDataOptions {
     /** The saved connection, which may be the destination of the configuration backup and write into its folder. */
@@ -139,7 +162,7 @@ export async function ownDataRefusal(adapterId: string, config: Record<string, u
         if (folder.kind === "config-backup" && options.configId && options.configId === folder.storageId) continue;
         if (folder.kind === "temp" && OWN_NAMES_ONLY.has(adapterId)) continue;
         if (candidates.some((candidate) => folder.paths.some((own) => reaches(candidate, own)))) {
-            return folder.kind === "data" ? OWN_DATA_REFUSED : folder.kind === "temp" ? TEMP_FOLDER_REFUSED : CONFIG_BACKUP_FOLDER_REFUSED;
+            return REFUSAL_OF[folder.kind];
         }
     }
     return null;

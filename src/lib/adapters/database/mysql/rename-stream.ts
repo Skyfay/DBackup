@@ -1,4 +1,5 @@
 import { Transform } from "stream";
+import { escapeMysqlIdentifier } from "./sql-quote";
 
 /**
  * Returns a Transform stream that rewrites database-name references in a mysqldump
@@ -15,8 +16,10 @@ import { Transform } from "stream";
  * through unchanged, and a line longer than a chunk stays one line.
  */
 export function createDatabaseRenameStream(originalDb: string, targetDb: string): Transform {
-    // The names as the dump spells them, in UTF-8, seen through latin1 like the lines.
-    const quoted = (name: string) => `\`${Buffer.from(name, "utf8").toString("latin1")}\``;
+    // The names as the dump spells them, in UTF-8, seen through latin1 like the lines. mysqldump
+    // doubles a backtick inside a name, so the matched name is escaped the same way, and the
+    // written name too, or a backtick in the target ended the identifier early.
+    const quoted = (name: string) => `\`${Buffer.from(escapeMysqlIdentifier(name), "utf8").toString("latin1")}\``;
     const original = quoted(originalDb);
     const target = quoted(targetDb);
 

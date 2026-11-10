@@ -154,7 +154,8 @@ export function toolConnection(config: AnyMongoConfig): { args: string[]; secret
     if (config.uri) return { args: [], secrets: `uri: ${yamlString(config.uri)}\n` };
 
     const { host, port, srv, multiHost } = parseMongoTarget(config);
-    // See `buildConnectionArgs`, an SRV name or a seed list only fit into a connection string.
+    // An SRV name has no address record, so --host cannot resolve it, and a seed list does not fit
+    // into one --host either, so both go as a connection string.
     if (srv || multiHost) return { args: [], secrets: `uri: ${yamlString(buildConnectionUri(config))}\n` };
 
     const args = ["--host", host, "--port", String(port)];
@@ -177,50 +178,26 @@ export async function withToolConnection<T>(host: ExecutionHost, config: AnyMong
 }
 
 /**
- * Connection flags with the password in argv, for mongosh, which has no file or environment
- * variable for it. mongodump and mongorestore go through `withToolConnection`.
+ * The connection string mongosh connects with: the one of the driver, and `directConnection` for a
+ * single host, which the tools get for a single `--host` on their own, see `connectsDirectly`.
  */
-export function buildConnectionArgs(config: AnyMongoConfig): string[] {
-    if (config.uri) {
-        return [`--uri=${config.uri}`];
-    }
-
-    const { host, port, srv, multiHost } = parseMongoTarget(config);
-
-    // An SRV hostname has no address record, so --host cannot resolve it, and a
-    // seed list does not fit into one --host either. The database tools take the
-    // same URI the driver does, so hand them that instead.
-    if (srv || multiHost) {
-        return [`--uri=${buildConnectionUri(config)}`];
-    }
-
-    const args = ["--host", host, "--port", String(port)];
-
-    if (config.user && config.password) {
-        args.push("--username", config.user);
-        args.push("--password", config.password);
-        args.push("--authenticationDatabase", config.authenticationDatabase || "admin");
-    }
-
-    return args;
+export function shellConnectionUri(config: AnyMongoConfig): string {
+    const uri = buildConnectionUri(config);
+    if (config.uri || !connectsDirectly(config)) return uri;
+    return `${uri}${uri.includes("?") ? "&" : "?"}directConnection=true`;
 }
 
 /**
- * Connection arguments for mongosh.
- *
- * mongosh takes a connection string as a positional argument and has no `--uri`
- * flag, so the two builders cannot be the same function.
+ * Runs `fn` with what a mongosh call needs to connect: the flags and the statement its `--eval`
+ * script starts with. mongosh takes a password only in argv or in the connection string, and has no
+ * file or environment variable for it, so the connection string goes into a script of mode 0600 on
+ * the execution host, which `load()` reads before the script connects without a server of its own
+ * (`--nodb`). The password is then in no process list and in no command an SSH server logs. The
+ * older `mongo` shell reads the same `load()` and `connect()`.
  */
-export function buildShellConnectionArgs(config: AnyMongoConfig): string[] {
-    if (config.uri) {
-        return [config.uri];
-    }
-
-    const { srv, multiHost } = parseMongoTarget(config);
-    if (srv || multiHost) {
-        return [buildConnectionUri(config)];
-    }
-    return buildConnectionArgs(config);
+export async function withShellConnection<T>(host: ExecutionHost, config: AnyMongoConfig, fn: (args: string[], prelude: string) => Promise<T>): Promise<T> {
+    const content = `db = connect(${JSON.stringify(shellConnectionUri(config))});\n`;
+    return host.withTempFile({ content, mode: 0o600, suffix: ".js" }, (path) => fn(["--nodb", "--quiet"], `load(${JSON.stringify(path)});`));
 }
 
 /**

@@ -92,7 +92,7 @@ vi.mock("@/services/backup/key-recovery", () => ({ recoverEncryptionKey: mocks.r
 vi.mock("@/services/backup/archive-index-service", () => ({ archiveIndexService: { clear: vi.fn() } }));
 vi.mock("@/services/storage/config-backup-access", () => ({ isConfigBackupFile: mocks.isConfigBackupFile }));
 vi.mock("@/lib/auth/oauth-state", () => ({ consumeOAuthState: mocks.consumeState, createOAuthState: () => "state" }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: mocks.logFor, log: mocks.log } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { logFor: mocks.logFor, logForStrict: mocks.logFor, log: mocks.log } }));
 
 const { configBackupTargetRefusal } = await import("@/lib/server/config-backup-target-guard");
 const adapterRoute = await import("@/app/api/adapters/[id]/route");
@@ -209,7 +209,7 @@ describe("the saved login of the destination of the configuration backup", () =>
         const caller = await oauthCallbackCaller("dropbox", "state");
 
         expect(started.status).toBe(403);
-        expect(caller).toEqual({ ok: false, message: CONFIG_BACKUP_LOGIN_LOCKED });
+        expect(caller).toEqual({ ok: false, code: "locked", message: CONFIG_BACKUP_LOGIN_LOCKED });
         expect(mocks.decryptCredential).not.toHaveBeenCalled();
     });
 

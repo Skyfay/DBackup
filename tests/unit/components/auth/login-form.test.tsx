@@ -347,4 +347,10 @@ describe("the sign-in of the login page", () => {
 
         expect(screen.getByRole("alert")).toHaveTextContent("Not a member here yet");
     });
+
+    it("says when a provider of a tenant refuses an account that works in other tenants too", () => {
+        renderForm({ errorCode: "sso_tenant_shared_account" });
+
+        expect(screen.getByRole("alert")).toHaveTextContent("works in other tenants or on the platform too");
+    });
 });

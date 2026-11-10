@@ -7,17 +7,21 @@ import { resolveDecryptionKey } from "@/services/restore/smart-recovery";
 import { writeDatabaseDump } from "@/services/restore/archive-download";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { CompressionType } from "@/lib/crypto/compression";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
+import { assertEncryptionKept, EncryptionDowngradeError, recordedEncryption } from "@/services/restore/recorded-encryption";
+import { readArchiveManifest } from "@/lib/archive/reader";
+import { localFileSource } from "@/lib/archive/sources";
+import { openStorageArchiveSource } from "@/lib/archive/storage-source";
 import path from "path";
 import { writeStoreZip } from "@/lib/store-zip";
 import { createNoFollowReadStream } from "@/lib/server/no-follow";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
-import { ConflictError, EncryptionKeyRequiredError, NotFoundError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ConflictError, EncryptionKeyRequiredError, NotFoundError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
 import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
-import { assertBackupPath, assertFilePath } from "@/lib/tenant/storage-view";
+import { SHARED_STORAGE_FAILURE, assertBackupPath, assertFilePath } from "@/lib/tenant/storage-view";
 import { isBackupFile, sidecarPathsFor, chainFolderOf, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 import { dependentsOf, fileNameOf } from "./bulk-delete-order";
 
@@ -38,6 +42,11 @@ export type RichFileInfo = FileInfo & {
     jobName?: string;
     /** When the backup was made, from its sidecar. The same at every destination. */
     createdAt?: string;
+    /**
+     * When the run started to dump its databases, from its sidecar, which `createdAt` comes after.
+     * Backups made before it was kept lack it.
+     */
+    dumpsStartedAt?: string;
     /** The databases the backup holds, when its sidecar names them. */
     databases?: string[];
     /**
@@ -260,7 +269,11 @@ export class StorageService {
         const metaPath = filePath + METADATA_SIDECAR_SUFFIX;
         metadata.locked = locked;
 
-        const tempPath = path.join(getTempDir(), `meta-${randomUUID()}.json`);
+        // The metadata names the databases, so it goes into the private folder.
+        const tempPath = await privateTempPath(`meta-${randomUUID()}.json`);
+        // The default mode, not `PRIVATE_FILE_MODE`, since an upload like rsync -a carries the mode of
+        // the file to the destination, where the sidecar keeps the mode the backup run gave it. The
+        // private folder keeps it from other users here.
         await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2), { flag: "wx" });
 
         try {
@@ -508,8 +521,8 @@ export class StorageService {
             .then(() => {
                 listingState.failures.delete(key);
             })
-            .catch((error: unknown) => {
-                listingState.failures.set(key, { at: Date.now(), error: getErrorMessage(error) });
+            .catch(async (error: unknown) => {
+                listingState.failures.set(key, { at: Date.now(), error: await this.failureText(adapterConfigId, tenant, error) });
                 throw error;
             })
             .finally(() => listingState.reconciliations.delete(key));
@@ -658,6 +671,16 @@ export class StorageService {
             || listingState.starting.has(key);
     }
 
+    /**
+     * The words a failed listing is remembered with. A customer of a shared destination gets the
+     * neutral sentence, since the message of the storage names its host, bucket or folders, which
+     * stay with the tenant that shares it, see `SHARED_STORAGE_FAILURE`.
+     */
+    private async failureText(adapterConfigId: string, tenantId: string, error: unknown): Promise<string> {
+        const owner = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: adapterConfigId }, select: { tenantId: true } })).catch(() => null);
+        return owner?.tenantId === tenantId ? getErrorMessage(error) : SHARED_STORAGE_FAILURE;
+    }
+
     /** Why the last listing of a destination for a tenant failed, until one succeeds again. */
     listingFailure(adapterConfigId: string, tenantId: string): { at: Date; error: string } | null {
         const failure = listingState.failures.get(keyOf(adapterConfigId, tenantId));
@@ -723,8 +746,8 @@ export class StorageService {
                 listingState.failures.delete(key);
                 return result;
             })
-            .catch((error: unknown) => {
-                listingState.failures.set(key, { at: Date.now(), error: getErrorMessage(error) });
+            .catch(async (error: unknown) => {
+                listingState.failures.set(key, { at: Date.now(), error: await this.failureText(adapterConfigId, tenantId, error) });
                 throw error;
             })
             .finally(() => listingState.listings.delete(key));
@@ -927,30 +950,36 @@ export class StorageService {
 
             // LEGACY-FORMAT(shared): Whole-file decryption. Older database backups need it, and so do config
             // backups, which still use that format.
+            let encryptionParams: { profileId: string, iv: string, authTag: string } | null = null;
+
+            if (meta && meta.encryption && typeof meta.encryption === 'object' && meta.encryption.enabled) {
+                encryptionParams = {
+                    profileId: meta.encryption.profileId,
+                    iv: meta.encryption.iv,
+                    authTag: meta.encryption.authTag
+                };
+            } else if (meta && meta.encryptionProfileId && meta.iv && meta.authTag) {
+                // Flat metadata, written before the nested `encryption` object existed.
+                // These keys reach BackupMetadata only through its index signature, so
+                // their shape has to be asserted here.
+                const flat = meta as unknown as { encryptionProfileId: string; iv: string; authTag: string };
+                encryptionParams = {
+                    profileId: flat.encryptionProfileId,
+                    iv: flat.iv,
+                    authTag: flat.authTag
+                };
+            }
+
+            // A plain file where its run wrote an encrypted archive is refused before it is fetched,
+            // see `recorded-encryption.ts`. Without a sidecar nothing says the file is plain, so the
+            // archive itself is asked, see `assertSidecarlessDownload`.
+            if (!encryptionParams && meta) await assertEncryptionKept(adapterConfigId, remotePath, { encrypted: false, jobId: meta.jobId });
+            if (!meta) await assertSidecarlessDownload(adapterConfigId, remotePath, adapter, config);
+
             const success = await adapter.download(config, remotePath, localDestination);
             if (!success) return { success: false };
 
             try {
-                let encryptionParams: { profileId: string, iv: string, authTag: string } | null = null;
-
-                if (meta && meta.encryption && typeof meta.encryption === 'object' && meta.encryption.enabled) {
-                    encryptionParams = {
-                        profileId: meta.encryption.profileId,
-                        iv: meta.encryption.iv,
-                        authTag: meta.encryption.authTag
-                    };
-                } else if (meta && meta.encryptionProfileId && meta.iv && meta.authTag) {
-                    // Flat metadata, written before the nested `encryption` object existed.
-                    // These keys reach BackupMetadata only through its index signature, so
-                    // their shape has to be asserted here.
-                    const flat = meta as unknown as { encryptionProfileId: string; iv: string; authTag: string };
-                    encryptionParams = {
-                        profileId: flat.encryptionProfileId,
-                        iv: flat.iv,
-                        authTag: flat.authTag
-                    };
-                }
-
                 if (encryptionParams) {
                     // One resolution path for all three cases - a key the user typed, a
                     // profile they picked, or whatever the vault can offer. A supplied key
@@ -987,7 +1016,7 @@ export class StorageService {
                             // The download, read without following a link, see `downloaded-file.ts`.
                             createNoFollowReadStream(localDestination),
                             decryptStream,
-                            createWriteStream(decryptedPath, { flags: "wx", mode: 0o600 })
+                            createWriteStream(decryptedPath, { flags: "wx", mode: PRIVATE_FILE_MODE })
                         );
                     } catch (error) {
                         await fs.unlink(decryptedPath).catch(() => { });
@@ -1049,8 +1078,52 @@ export class StorageService {
        }
 
        const success = await adapter.download(config, remotePath, localDestination);
+       if (success) await assertDownloadStillEncrypted(adapterConfigId, remotePath, localDestination);
        return { success, isZip: false };
     }
+}
+
+/**
+ * Refuses a download as it is of a plain file where its run wrote an encrypted archive, see
+ * `recorded-encryption.ts`. Read from the downloaded file, since the `.meta.json` beside it comes
+ * from the destination too. Only a backup with such a record is opened, and the file is removed
+ * when it is refused.
+ */
+async function assertDownloadStillEncrypted(destinationId: string, remotePath: string, localFile: string): Promise<void> {
+    const record = await recordedEncryption(destinationId, remotePath);
+    if (!record?.encrypted) return;
+    const encrypted = await readArchiveManifest(await localFileSource(localFile))
+        .then((manifest) => !!manifest.encryption, () => false);
+    if (encrypted) return;
+    await fs.unlink(localFile).catch(() => { });
+    log.warn("Refusing the download of a plain backup that its run wrote encrypted", { destinationId, remotePath, executionId: record.executionId });
+    throw new EncryptionDowngradeError();
+}
+
+/**
+ * A decrypted download of a backup whose `.meta.json` cannot be read, which says nothing about its
+ * encryption. Read as before unless its run wrote it encrypted. Then the manifest of the archive
+ * decides: a plain one is refused as replaced, see `EncryptionDowngradeError`, an encrypted one
+ * with its own message, since nothing tells how to decrypt it without the sidecar.
+ */
+async function assertSidecarlessDownload(destinationId: string, remotePath: string, adapter: StorageAdapter, config: unknown): Promise<void> {
+    const record = await recordedEncryption(destinationId, remotePath);
+    if (!record?.encrypted) return;
+    const managed = await openStorageArchiveSource(adapter, config as never, remotePath);
+    let encrypted: boolean;
+    try {
+        encrypted = await readArchiveManifest(managed.source).then((manifest) => !!manifest.encryption, () => false);
+    } finally {
+        await managed.dispose();
+    }
+    if (!encrypted) {
+        log.warn("Refusing the decrypted download of a plain backup that its run wrote encrypted", { destinationId, remotePath, executionId: record.executionId });
+        throw new EncryptionDowngradeError();
+    }
+    throw new ValidationError(
+        "The metadata file (.meta.json) of this backup cannot be read, so it cannot be downloaded decrypted. Download it as it is, or put the metadata file back beside it.",
+        { field: "file" }
+    );
 }
 
 export const storageService = new StorageService();

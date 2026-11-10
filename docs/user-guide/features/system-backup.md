@@ -64,8 +64,8 @@ A restore brings back the whole instance, every [tenant](/user-guide/admin/tenan
 
 ### What Happens
 
-1. DBackup opens the file with the key its metadata names, or any key of the home tenant's Vault that fits, and asks for one when none does
-2. It checks the file: a database of DBackup, not damaged, and not from a newer version
+1. DBackup opens the file with the key its metadata names, or any key of the home tenant's Vault that fits, and asks for one when none does. A file from a destination opens on its own only with the key picked under **Configuration backup**, see [From a Destination](#from-a-destination)
+2. It checks the file: a database of DBackup, not damaged, not from a newer version, and with at least one account
 3. It shows what the backup holds, then **Replace and restart** starts the restore
 4. DBackup ends, and its container starts it again. The restored copy replaces the database before the migrations run, which bring an older copy up to date
 5. Everyone signs in again, with an account of the backup
@@ -80,7 +80,9 @@ A backup made by a DBackup with another `ENCRYPTION_KEY` or `BETTER_AUTH_SECRET`
 2. Open it. DBackup reads it on the server, so its size does not matter
 3. Check what it holds and click **Replace and restart**
 
-A configuration backup restores only from a destination of the home tenant, whichever tenant you have open, since whoever owns the destination of a customer could have put a file there. From a destination only an encrypted file restores, as DBackup always writes it, since a plain one could come from anyone who may restore files into that destination. An unencrypted file of an older version restores from a file instead. Restores of files never write into `config-backups/`, under the name `config_backup_*` or a `.meta.json` for anyone but a platform admin, see [Restoring](/user-guide/features/file-backups#restoring).
+A configuration backup restores only from a destination of the home tenant, whichever tenant you have open, since whoever owns the destination of a customer could have put a file there. From a destination only an encrypted file restores, as DBackup always writes it, since a plain one could come from anyone who may restore files into that destination. An unencrypted file of an older version restores from a file instead.
+
+The file opens on its own only with the key picked under **Configuration backup**, which only a platform admin reveals or changes. Any member with the rights on the Vault may add a key of their own, so the key the `.meta.json` names and the other keys of the Vault are not tried. A file made with another key, for example the one picked before the key changed, opens once you pick or type its key when DBackup asks for one. A restore of a file of an older version in parts from the **Backups** page has no such question and fails, so pick its key under **Configuration backup** first or restore it from a file. Restores of files never write into `config-backups/`, under the name `config_backup_*` or a `.meta.json` for anyone but a platform admin, see [Restoring](/user-guide/features/file-backups#restoring).
 
 ### From a File
 
@@ -98,7 +100,7 @@ The file can be up to 10 MB. A bigger one, for example with the history, is rest
 3. Drop the backup file and its `.meta.json` together, and paste the key from its recovery kit or drop the kit as `.zip` on the key field
 4. Check what it holds, click **Restore and restart**, then sign in with an account of the backup
 
-This works only while nobody has an account yet. For a file over 10 MB, create an account first, add the destination as a connection, and restore from the **Backups** page.
+This works only while nobody has an account yet, and only for a backup that holds at least one account, so the first start ends with it. For a file over 10 MB, create an account first, add the destination as a connection, and restore from the **Backups** page.
 
 ### Files of Older Versions
 
@@ -114,6 +116,8 @@ These files hold no templates, no folders of file jobs and no second factors. A 
 | Folders in a file backup job | The job backs up no folders until it gets them again |
 | Two-factor sign-in for a user | It is off for that user until they set it up again |
 | A job destination or an API key whose connection or user is missing | It is left out |
+| A user whose email or ID an account here holds that also works in another tenant | It is left out with its sign-ins and API keys, and the account here stays as it was |
+| A user whose account is here already | It keeps whether its email is verified here |
 
 ## Troubleshooting
 
@@ -131,11 +135,17 @@ These files hold no templates, no folders of file jobs and no second factors. A 
 
 ### Cannot Decrypt Config
 
-**Causes**: Wrong key, a key deleted from the Vault, or the `.meta.json` is missing.
+**Causes**: Wrong key, a key deleted from the Vault, the `.meta.json` is missing, or a file at a destination was made with another key than the one picked under **Configuration backup**.
 
 **Solutions**:
 1. Pick the `.meta.json` together with the backup
-2. Paste the key from the recovery kit when DBackup asks for one
+2. Paste the key from the recovery kit, or pick it from the Vault, when DBackup asks for one
+
+### The Backup Holds No Account
+
+**Cause**: The copy has no user. A copy replaces every account, so DBackup would be left without one, and on the first start a file of an older version without users does the same.
+
+**Solution**: Restore a backup that holds the accounts. In Settings, a file of an older version without users still restores, since it keeps the accounts that are there.
 
 ### Going Back to the Database Before a Restore
 

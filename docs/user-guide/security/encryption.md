@@ -215,6 +215,16 @@ If profile ID doesn't match (e.g., after key import):
 2. Validates each by opening the index of the archive, which only the right key can do
 3. Uses matching key automatically
 
+### A Plain File in Place of an Encrypted Backup
+
+The `.meta.json` and the archive itself come from the destination, so they cannot be what decides whether a backup has to be encrypted. The run of the job records that in History, along with every destination it reached. A restore, a download and a browse of a backup whose run encrypted it refuse a plain file at that path:
+
+```
+This backup was written encrypted, but the file at the destination is not encrypted. It may have been replaced there, so DBackup does not read it.
+```
+
+The same holds for every archive of an incremental chain: a plain archive in the chain of an encrypted backup is refused. A backup that no run in History wrote, imported or older than its record, is read as before.
+
 ### Manual (Recovery Kit)
 
 If DBackup is unavailable, a recovery kit opens the backups. Download it under **Vault** > **Encryption** > **Recovery kit**. It holds the key and the tool `dbackup-recover.js`, which needs nothing but Node.js 18 or newer. See [Recovery Kit](/user-guide/security/recovery-kit) for how to use it.

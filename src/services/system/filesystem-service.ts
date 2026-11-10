@@ -7,7 +7,8 @@ import { answerOf } from "@/lib/adapters/adapter-answer";
 import { DBackupError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { currentTenantId } from "@/lib/tenant/current";
-import { assertHostsReachable } from "@/services/tenant/tenant-network";
+import { assertHostsReachable, tenantReach } from "@/services/tenant/tenant-network";
+import { reachableAddress } from "@/lib/network/checked-socket";
 
 const log = logger.child({ service: "FilesystemService" });
 
@@ -140,10 +141,16 @@ export async function listRemoteDirectory({ config, path: requestedPath = "/", a
         }
     }
     // The browse dials this host whatever mode the form holds, so its tenant's network rule counts for it.
-    await assertHostsReachable(await currentTenantId(), hostsIn(resolved.host));
+    const tenantId = await currentTenantId();
+    await assertHostsReachable(tenantId, hostsIn(resolved.host));
+    // And at the address checked at connect time, see `reach-check.ts`.
+    const { policy } = await tenantReach(tenantId);
 
     // What the server says, like a refused login or a missing folder, goes back to the picker.
-    return answerOf("sftp", "list folder", () => listOverSftp(resolved, requestedPath));
+    return answerOf("sftp", "list folder", async () => {
+        const host = policy ? await reachableAddress(String(resolved.host), Number(resolved.port) || 22, policy.allowed) : resolved.host as string;
+        return listOverSftp({ ...resolved, host }, requestedPath);
+    });
 }
 
 /** Lists one folder over SFTP with a config that already holds its login. */

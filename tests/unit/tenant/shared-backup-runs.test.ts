@@ -40,9 +40,9 @@ const HIDDEN = ["Nightly", "other_db", "Retention", "Notifications", "MSP NAS", 
 
 const RUN = { tenantId: "acme", databaseName: "shop", serverName: "Shared MySQL", adapterId: "mysql", providerName: "Skyfay Hosting", person: "Sara" };
 
-/** The real run of the server's tenant, waiting in the queue. */
+/** The real run of the server's tenant, waiting in the queue, of the job that backs up the shared server. */
 async function leader(id: string) {
-    await base.execution.create({ data: { id, tenantId: "default", type: "Backup", status: "Pending", logs: "[]", metadata: JSON.stringify({ progress: 0, stage: "Queued", onlyDatabases: ["shop"] }), triggerType: "Manual", triggerLabel: "Acme · Sara" } });
+    await base.execution.create({ data: { id, tenantId: "default", jobId: "nightly", type: "Backup", status: "Pending", logs: "[]", metadata: JSON.stringify({ progress: 0, stage: "Queued", onlyDatabases: ["shop"] }), triggerType: "Manual", triggerLabel: "Acme · Sara" } });
 }
 
 beforeAll(async () => {
@@ -55,6 +55,10 @@ beforeAll(async () => {
     base = new PrismaClient({ datasources: { db: { url: `file:${file}` } } });
     app.client = base.$extends(tenantScopeExtension(async () => null));
     await base.tenant.create({ data: { id: "acme", name: "Acme" } });
+    await base.adapterConfig.create({ data: { id: "shared-mysql", name: "Shared MySQL", type: "database", adapterId: "mysql", config: "{}" } });
+    await base.job.create({ data: { id: "nightly", name: "Nightly", schedule: "0 2 * * *", sourceId: "shared-mysql" } });
+    await base.sharedServer.create({ data: { id: "shared-mysql", name: "Shared MySQL", adapterId: "mysql", tenantId: "default" } });
+    await base.databaseAssignment.create({ data: { sourceId: "shared-mysql", databaseName: "shop", tenantId: "acme", validFrom: new Date("2026-01-01T00:00:00Z") } });
 }, 120_000);
 
 afterAll(async () => {
@@ -109,6 +113,32 @@ describe("the customer's run of a backup they started", () => {
         const page = await runAsTenant("acme", () => getRunDetail(id));
         expect(page?.status).toBe("Success");
         expect(page?.steps.map((step) => step.name)).toEqual(["Initializing", "Dumping Databases", "Uploading"]);
+    });
+
+    it("leaves out the size of the dump of a database that is no longer the customer's at the end", async () => {
+        await leader("leader-lost");
+        const id = await createCustomerBackupRun({ ...RUN, leaderId: "leader-lost" });
+        const follower = await customerBackupFollower("leader-lost");
+        follower!.start();
+        // The tenant of the server takes the database back while the backup runs.
+        const held = await base.databaseAssignment.findFirstOrThrow({ where: { sourceId: "shared-mysql", databaseName: "shop", validUntil: null } });
+        const now = new Date();
+        await base.databaseAssignment.update({ where: { id: held.id }, data: { validUntil: now } });
+        await base.databaseAssignment.create({ data: { sourceId: "shared-mysql", databaseName: "shop", tenantId: null, validFrom: now } });
+        try {
+            await follower!.end({ status: "Success", dumps: [{ name: "shop", state: "done", bytes: 5632 }] });
+
+            const row = await base.execution.findUniqueOrThrow({ where: { id } });
+            expect(row.status).toBe("Success");
+            expect(row.size).toBeNull();
+            const messages = await messagesOf(id);
+            expect(messages).toContain("Backup of shop completed.");
+            expect(JSON.stringify(messages)).not.toContain("5.5 KB");
+        } finally {
+            // Acme holds it again for the cases after this one.
+            await base.databaseAssignment.updateMany({ where: { sourceId: "shared-mysql", databaseName: "shop", validUntil: null }, data: { validUntil: new Date(now.getTime() + 1) } });
+            await base.databaseAssignment.create({ data: { sourceId: "shared-mysql", databaseName: "shop", tenantId: "acme", validFrom: new Date(now.getTime() + 1) } });
+        }
     });
 
     it("says the backup failed in neutral words and who sees why", async () => {

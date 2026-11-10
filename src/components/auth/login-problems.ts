@@ -39,7 +39,11 @@ const SSO_PROBLEMS: Record<string, LoginProblem> = {
     },
     sso_tenant_refused: {
         title: "Not through this provider",
-        text: "This provider signs in only emails of its own domain, and never a platform admin. Sign in another way.",
+        text: "This provider signs in only emails of its own domain. Sign in another way.",
+    },
+    sso_tenant_shared_account: {
+        title: "Not through this provider",
+        text: "This provider signs in only accounts that work in its tenant alone. Your account works in other tenants or on the platform too, so sign in with your password, a passkey or the provider of the platform.",
     },
     sso_tenant_domain: {
         title: "Your organization has its own sign-in",

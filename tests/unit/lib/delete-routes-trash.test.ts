@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // An admin who may change the settings, unless a test takes that away.
-const ADMIN = ["jobs:write", "destinations:write", "credentials:delete", "tenant-settings:write"];
+const ADMIN = ["jobs:write", "destinations:read", "destinations:write", "credentials:delete", "tenant-settings:write"];
 const ctx = { userId: "u1", permissions: [...ADMIN], isPlatformAdmin: false, authMethod: "session", apiKeyId: undefined };
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));

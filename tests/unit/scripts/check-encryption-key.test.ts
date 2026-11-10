@@ -67,10 +67,10 @@ describe("the check of ENCRYPTION_KEY before the migrations", () => {
 
     it("runs in the entrypoint before the copy of the database and the migrations, and ships in the image", () => {
         const entrypoint = readFileSync(path.join(ROOT, "docker-entrypoint.sh"), "utf8");
-        const at = entrypoint.indexOf("sh /app/scripts/check-encryption-key.sh");
+        const at = entrypoint.indexOf("sh /usr/local/lib/dbackup/check-encryption-key.sh");
         expect(at).toBeGreaterThan(entrypoint.indexOf("_resolve_secret ENCRYPTION_KEY\n"));
         expect(at).toBeLessThan(entrypoint.indexOf("backup-before-migrate.js"));
         expect(at).toBeLessThan(entrypoint.indexOf("prisma migrate deploy"));
-        expect(readFileSync(path.join(ROOT, "Dockerfile"), "utf8")).toContain("/app/scripts/check-encryption-key.sh ./scripts/check-encryption-key.sh");
+        expect(readFileSync(path.join(ROOT, "Dockerfile"), "utf8")).toContain("/app/scripts/check-encryption-key.sh /usr/local/lib/dbackup/check-encryption-key.sh");
     });
 });

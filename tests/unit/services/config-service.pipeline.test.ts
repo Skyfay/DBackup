@@ -53,8 +53,14 @@ vi.mock('@/lib/logging/logger', () => ({
 }));
 
 // Use vi.hoisted so mockCreateReadStream is available inside the vi.mock factory
-const { mockCreateReadStream } = vi.hoisted(() => ({
+const { mockCreateReadStream, opensWith } = vi.hoisted(() => ({
   mockCreateReadStream: vi.fn(),
+  // Whether a key fits the file, as the check of its first bytes judges it. Every key by default.
+  opensWith: vi.fn(async (_key: Buffer) => true),
+}));
+
+vi.mock('@/services/restore/smart-recovery', () => ({
+  legacyStreamVerifier: () => (key: Buffer) => opensWith(key),
 }));
 
 vi.mock('fs', async (importOriginal) => {
@@ -101,9 +107,29 @@ const ENCRYPTED_META = JSON.stringify({
 const encryptedAdapter = (overrides: Record<string, any> = {}) => {
   (encryptionService.getEncryptionProfiles as any).mockResolvedValue([{ id: 'config-key', name: 'Config key' }]);
   (encryptionService.getProfileMasterKey as any).mockResolvedValue(Buffer.alloc(32));
+  configBackupKey('config-key');
   return makeStorageAdapter({ read: vi.fn().mockResolvedValue(ENCRYPTED_META), ...overrides });
 };
 const ENCRYPTED_FILE = 'config-backups/config_backup_2026.json.enc';
+
+/** The key picked under Configuration backup, or none. */
+function configBackupKey(profileId: string | null) {
+  prismaMock.systemSetting.findUnique.mockResolvedValue(profileId ? { value: profileId } as any : null);
+}
+
+/** Every key of the Vault, each its own bytes, so a test tells which one opened the file. */
+const VAULT_KEYS: Record<string, Buffer> = { 'config-key': Buffer.alloc(32, 1), 'member-key': Buffer.alloc(32, 2), 'picked-key': Buffer.alloc(32, 3) };
+const vaultKeys = () => {
+  (encryptionService.getEncryptionProfiles as any).mockResolvedValue(Object.keys(VAULT_KEYS).map((id) => ({ id, name: id })));
+  (encryptionService.getProfileMasterKey as any).mockImplementation(async (id: string) => {
+    if (!VAULT_KEYS[id]) throw new Error('Not found');
+    return VAULT_KEYS[id];
+  });
+};
+const metaNaming = (profileId: string) => makeStorageAdapter({
+  read: vi.fn().mockResolvedValue(JSON.stringify({ encryption: { enabled: true, profileId, iv: 'aabbccddeeff0011aabbccddeeff0011', authTag: '00112233445566778899aabbccddeeff' } })),
+});
+const finalRun = () => (prismaMock.execution.update as any).mock.calls.at(-1)[0].data;
 
 // Build a PassThrough that emits JSON content then ends
 const makeJsonStream = (content: string) => {
@@ -143,6 +169,8 @@ describe('restoreFromStorage', () => {
 
     // Default: createReadStream returns a stream with valid JSON backup content
     mockCreateReadStream.mockReturnValue(makeJsonStream(validBackupJson));
+    opensWith.mockResolvedValue(true);
+    configBackupKey(null);
   });
 
   it('creates an execution record and returns its ID immediately', async () => {
@@ -256,7 +284,7 @@ describe('restoreFromStorage', () => {
     expect(prismaMock.execution.update).toHaveBeenCalled();
   });
 
-  it('attempts smart recovery when specified profile is not found', async () => {
+  it('marks execution as Failed when the profile the file names is missing and no key opens it', async () => {
     const adapter = makeStorageAdapter({
       read: vi.fn().mockResolvedValue(JSON.stringify({
         encryption: { enabled: true, profileId: 'missing-profile', iv: 'aabb', authTag: 'ccdd' },
@@ -382,61 +410,82 @@ describe('restoreFromStorage', () => {
     expect(prismaMock.execution.update).toHaveBeenCalled();
   });
 
-  it('reads encryptionProfileId from flat metadata format (line 118 and 135 branches)', async () => {
-    const encProfileId = 'flat-enc-profile';
-    // Flat meta: no nested .encryption object, iv/authTag/encryptionProfileId at root
+  it('opens a file of flat metadata with the key of the configuration backup, never the profile it names', async () => {
     const adapter = makeStorageAdapter({
       read: vi.fn().mockResolvedValue(JSON.stringify({
-        encryptionProfileId: encProfileId,
+        encryptionProfileId: 'flat-enc-profile',
         iv: 'aabbccddeeff0011aabbccddeeff0011',
         authTag: '00112233445566778899aabbccddeeff',
       })),
     });
     (registry.get as any).mockReturnValue(adapter);
-
     (encryptionService.getProfileMasterKey as any).mockResolvedValue(Buffer.alloc(32));
+    configBackupKey('config-key');
     (importConfiguration as any).mockResolvedValue({ notes: [] });
 
-    // No explicit decryptionProfileId; pipeline must derive it from flat meta
     await restoreFromStorage(storageConfigId, 'backups/config.json');
     await flushAsync();
 
-    // The profile named by the flat metadata is the one asked for.
-    expect(encryptionService.getProfileMasterKey).toHaveBeenCalledWith(encProfileId);
-    expect(prismaMock.execution.update).toHaveBeenCalled();
+    expect(encryptionService.getProfileMasterKey).toHaveBeenCalledWith('config-key');
+    expect(encryptionService.getProfileMasterKey).not.toHaveBeenCalledWith('flat-enc-profile');
+    expect(finalRun().status).toBe('Success');
   });
 
-  it('succeeds via smart recovery when a candidate profile key works (lines 183-199)', async () => {
-    const meta = {
-      encryption: {
-        enabled: true,
-        iv: 'aabbccddeeff0011aabbccddeeff0011',
-        authTag: '00112233445566778899aabbccddeeff',
-        profileId: 'original-profile',
-      },
-    };
+  it('restores a file the configuration backup wrote, which names its key', async () => {
+    vaultKeys();
+    configBackupKey('config-key');
+    opensWith.mockImplementation(async (key: Buffer) => key.equals(VAULT_KEYS['config-key']));
+    (registry.get as any).mockReturnValue(metaNaming('config-key'));
 
-    const adapter = makeStorageAdapter({
-      read: vi.fn().mockResolvedValue(JSON.stringify(meta)),
-    });
-    (registry.get as any).mockReturnValue(adapter);
-
-    // Original profile not found -> triggers smart recovery
-    prismaMock.encryptionProfile.findUnique.mockResolvedValue(null);
-    (encryptionService.getEncryptionProfiles as any).mockResolvedValue([
-      { id: 'candidate-key', name: 'Candidate Profile' },
-    ]);
-    // Candidate key resolves successfully
-    (encryptionService.getProfileMasterKey as any).mockResolvedValue(Buffer.alloc(32));
-    (importConfiguration as any).mockResolvedValue({ notes: [] });
-
-    await restoreFromStorage(storageConfigId, 'backups/config.enc');
+    await restoreFromStorage(storageConfigId, ENCRYPTED_FILE);
     await flushAsync();
 
-    // Smart recovery succeeded -> status is Success
-    expect(prismaMock.execution.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'Success' }) }),
-    );
+    expect(finalRun().status).toBe('Success');
+    expect(importConfiguration).toHaveBeenCalled();
+  });
+
+  it('refuses a file encrypted with a key a member added to the Vault, also when its metadata names that key', async () => {
+    vaultKeys();
+    configBackupKey('config-key');
+    opensWith.mockImplementation(async (key: Buffer) => key.equals(VAULT_KEYS['member-key']));
+
+    for (const named of ['member-key', 'gone-profile']) {
+      vi.mocked(importConfiguration).mockClear();
+      (registry.get as any).mockReturnValue(metaNaming(named));
+
+      await restoreFromStorage(storageConfigId, ENCRYPTED_FILE);
+      await flushAsync();
+
+      expect(finalRun().status).toBe('Failed');
+      expect(finalRun().logs).toContain('opens on its own only with the key picked under Configuration backup');
+      expect(importConfiguration).not.toHaveBeenCalled();
+    }
+    // No Smart Recovery over the Vault, which holds the key of the member.
+    expect(encryptionService.getEncryptionProfiles).not.toHaveBeenCalled();
+    expect(encryptionService.getProfileMasterKey).not.toHaveBeenCalledWith('member-key');
+  });
+
+  it('refuses an encrypted file while no key is picked under Configuration backup', async () => {
+    vaultKeys();
+    (registry.get as any).mockReturnValue(metaNaming('member-key'));
+
+    await restoreFromStorage(storageConfigId, ENCRYPTED_FILE);
+    await flushAsync();
+
+    expect(finalRun().status).toBe('Failed');
+    expect(importConfiguration).not.toHaveBeenCalled();
+  });
+
+  it('opens a file with the key the admin picked for the run', async () => {
+    vaultKeys();
+    configBackupKey('config-key');
+    opensWith.mockImplementation(async (key: Buffer) => key.equals(VAULT_KEYS['picked-key']));
+    (registry.get as any).mockReturnValue(metaNaming('gone-profile'));
+
+    await restoreFromStorage(storageConfigId, ENCRYPTED_FILE, 'picked-key');
+    await flushAsync();
+
+    expect(finalRun().status).toBe('Success');
   });
 
   it('marks execution as Failed when file is encrypted but no profile ID is available (line 141)', async () => {

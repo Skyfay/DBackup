@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -85,6 +85,24 @@ describe("a configuration restore in two steps", () => {
         expect(override).toEqual({ rawKeyHex: "ab12" });
     });
 
+    it("writes an upload into the private temporary folder, readable by DBackup alone", async () => {
+        let seen: { dir: string; dirMode: number; fileMode: number } | null = null;
+        mocks.open.mockImplementation(async (file: string) => {
+            seen = { dir: path.dirname(file), dirMode: statSync(path.dirname(file)).mode & 0o777, fileMode: statSync(file).mode & 0o777 };
+            return opened(sqlite());
+        });
+
+        await checkUploadedBackup(upload(), MANU);
+
+        expect(seen).not.toBeNull();
+        expect(path.dirname(seen!.dir)).toBe(root);
+        expect(path.basename(seen!.dir)).toMatch(/^dbackup-private-/);
+        if (process.platform !== "win32") {
+            expect(seen!.dirMode).toBe(0o700);
+            expect(seen!.fileMode).toBe(0o600);
+        }
+    });
+
     it("replaces the database with a checked copy, noting who restored it", async () => {
         mocks.open.mockResolvedValue(opened(sqlite()));
         const { token } = await checkUploadedBackup(upload(), MANU);
@@ -128,6 +146,30 @@ describe("a configuration restore in two steps", () => {
         mocks.open.mockResolvedValue(opened("hello"));
 
         await expect(checkUploadedBackup(upload("notes.txt"), MANU)).rejects.toThrow("no configuration backup of DBackup");
+    });
+
+    it("refuses a copy of the database without any account, which would leave the first sign-up open in it", async () => {
+        mocks.inspect.mockResolvedValue({ preview: { ...PREVIEW, counts: { ...PREVIEW.counts, users: 0 } }, keys: null });
+
+        for (const owner of ["setup", MANU] as const) {
+            const plain = opened(sqlite());
+            mocks.open.mockResolvedValue(plain);
+            await expect(checkUploadedBackup(upload(), owner)).rejects.toThrow("holds no account");
+            // Nothing waits for a Restore, and the opened copy is gone.
+            expect(existsSync(plain)).toBe(false);
+        }
+        expect(mocks.stage).not.toHaveBeenCalled();
+    });
+
+    it("refuses a file of an older version without users on the sign-up page, and still takes it in Settings, which keeps its accounts", async () => {
+        const noUsers = () => opened(JSON.stringify({ metadata: { version: "3.3.0", exportedAt: "2026-09-01T00:00:00.000Z" }, adapters: [], jobs: [], users: [] }));
+
+        mocks.open.mockResolvedValue(noUsers());
+        await expect(checkUploadedBackup(upload("config_backup.json.gz.enc"), "setup")).rejects.toThrow("holds no account");
+        expect(mocks.importConfig).not.toHaveBeenCalled();
+
+        mocks.open.mockResolvedValue(noUsers());
+        await expect(checkUploadedBackup(upload("config_backup.json.gz.enc"), MANU)).resolves.toMatchObject({ preview: { kind: "json", counts: { users: 0 } } });
     });
 
     it("allows a restore without a sign-in only while DBackup has no account", async () => {

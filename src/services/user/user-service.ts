@@ -3,7 +3,7 @@ import { runAsTenant } from "@/lib/tenant/context";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { ValidationError } from "@/lib/logging/errors";
 import { authService } from "@/services/auth/auth-service";
-import { accountRefusal, type AccountActor, type AccountTarget } from "@/lib/auth/account-access";
+import { accountRefusal, emailClaimScope, type AccountActor, type AccountTarget } from "@/lib/auth/account-access";
 import { EVERY_PERMISSION, PLATFORM_ADMIN_ROLE, permissionsIn } from "@/lib/auth/owner-permissions";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { PlatformReach } from "@/lib/auth/platform-group-caps";
@@ -158,12 +158,18 @@ export const userService = {
   /**
    * Why someone may not change their own email to this one, null when they may: an email of a
    * domain the provider of a tenant they do not work in claims, see `claimedEmailRefusal`. The
-   * people of the platform count as people of the home tenant.
+   * people of the platform count as people of the home tenant. Whoever may give such an email to
+   * others, a platform admin or someone with `platform-accounts:write` whose platform group reaches
+   * the tenant that claims it, gives it to themselves too, see `emailClaimScope`.
    */
   async ownEmailRefusal(userId: string, email: string): Promise<string | null> {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } } });
     if (!user) return null;
-    return claimedEmailRefusal(email, emailTenantsFrom(user), user.platformRole === PLATFORM_ADMIN_ROLE);
+    const isPlatformAdmin = user.platformRole === PLATFORM_ADMIN_ROLE;
+    // The rights of the platform count from the home tenant, see `permissionsIn`.
+    const permissions = isPlatformAdmin ? [] : await this.permissionsIn(userId, HOME_TENANT_ID);
+    const scope = emailClaimScope({ isPlatformAdmin, permissions, reach: await this.accountsReachOf({ id: userId, isPlatformAdmin, permissions }) });
+    return claimedEmailRefusal(email, [...emailTenantsFrom(user), ...scope.tenantIds], scope.platformLevel);
   },
 
   /**
@@ -230,7 +236,8 @@ export const userService = {
   },
 
   /**
-   * Reset a user's two-factor authentication.
+   * Reset a user's two-factor authentication. Their passkeys go too, since a passkey signs in on its
+   * own and whoever held a session of the account may have added one.
    */
   async resetTwoFactor(userId: string) {
     return await prisma.$transaction([
@@ -245,34 +252,24 @@ export const userService = {
       prisma.twoFactor.deleteMany({
         where: { userId },
       }),
+      prisma.passkey.deleteMany({
+        where: { userId },
+      }),
     ]);
   },
 
   /** Deletes a user, who waits in Recently deleted unless `permanently`. Their sessions end either way. The last platform admin stays. */
   async deleteUser(userId: string, options: DeleteOptions = {}) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, name: true, email: true, platformRole: true },
-    });
-
-    if (!user) {
-      throw new ValidationError("User not found");
-    }
-
-    if (user.platformRole === PLATFORM_ADMIN_ROLE) {
-      const platformAdmins = await prisma.user.count({ where: { platformRole: PLATFORM_ADMIN_ROLE } });
-      if (platformAdmins <= 1) {
-        throw new ValidationError("Cannot delete the last platform admin.");
-      }
-    }
-
-    // Check if user is the last one
-    const userCount = await prisma.user.count();
-    if (userCount <= 1) {
-      throw new ValidationError("Cannot delete the last user.");
-    }
-
+    // Read and counted in the transaction that deletes, so two platform admins who delete each
+    // other at the same time never leave none, like `setPlatformAdmin`.
     return prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, platformRole: true } });
+      if (!user) throw new ValidationError("User not found");
+      if (user.platformRole === PLATFORM_ADMIN_ROLE) {
+        const otherAdmins = await tx.user.count({ where: { platformRole: PLATFORM_ADMIN_ROLE, id: { not: userId } } });
+        if (otherAdmins === 0) throw new ValidationError("Cannot delete the last platform admin.");
+      }
+      if ((await tx.user.count({ where: { id: { not: userId } } })) === 0) throw new ValidationError("Cannot delete the last user.");
       if (!options.permanently) await keepInTrash(tx, "user", userId, options.by);
       return tx.user.delete({ where: { id: userId } });
     });
@@ -330,7 +327,9 @@ export const userService = {
   },
 
   /**
-   * Update user profile details.
+   * Update user profile details. A new email says who set it in `emailSetBy`: an email the person
+   * picked themselves (`self`) vouches for nobody, so a sign-in provider no longer links the account
+   * by it, one an admin set (`admin`) does, see `allowTenantSsoLink`. Left out, the flag stays.
    */
   async updateUser(
     userId: string,
@@ -340,7 +339,8 @@ export const userService = {
       timezone?: string;
       dateFormat?: string;
       timeFormat?: string;
-    }
+    },
+    emailSetBy?: "self" | "admin"
   ) {
     return await prisma.user.update({
       where: {
@@ -352,6 +352,7 @@ export const userService = {
         timezone: data.timezone,
         dateFormat: data.dateFormat,
         timeFormat: data.timeFormat,
+        ...(data.email !== undefined && emailSetBy ? { emailVerified: emailSetBy === "admin" } : {}),
       },
     });
   },

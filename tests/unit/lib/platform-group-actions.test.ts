@@ -178,11 +178,25 @@ describe("making and changing platform groups", () => {
         expect(mocks.service.update).not.toHaveBeenCalled();
         expect(mocks.service.delete).not.toHaveBeenCalled();
 
-        // A reach of all tenants and a platform admin go on.
+        // A reach of all tenants goes on while the accounts of the members are within its rights, and a
+        // platform admin always.
         mocks.service.reachOf.mockResolvedValue("all");
         expect(await updatePlatformGroup("pg-helpdesk", values())).toEqual({ success: true });
+        expect(mocks.accountRefusalFor).toHaveBeenCalledWith(expect.objectContaining({ id: "nina", reach: "all" }), "sam");
         mocks.viewer = ROOT;
         expect(await deletePlatformGroup("pg-helpdesk")).toEqual(expect.objectContaining({ success: true }));
+    });
+
+    it("never lets a platform group of all tenants change or delete a group whose member holds a group beyond it", async () => {
+        mocks.service.memberIds.mockImplementation(async (id: string) => (id === "pg-helpdesk" ? ["lena"] : []));
+        mocks.service.reachOf.mockResolvedValue("all");
+        mocks.accountRefusalFor.mockResolvedValue("Their group in Acme may do more than you may there.");
+        const refusal = (verb: string) => ({ success: false, error: `Someone in this platform group has an account you may not change, so only someone who may change all of them ${verb} it.` });
+
+        expect(await updatePlatformGroup("pg-helpdesk", values())).toEqual(refusal("changes"));
+        expect(await deletePlatformGroup("pg-helpdesk")).toEqual(refusal("deletes"));
+        expect(mocks.service.update).not.toHaveBeenCalled();
+        expect(mocks.service.delete).not.toHaveBeenCalled();
     });
 
     it("changes a group within reach and keeps what changed in the log of the home tenant", async () => {
@@ -250,16 +264,24 @@ describe("giving someone a platform group", () => {
         expect(mocks.service.setFor).not.toHaveBeenCalled();
     });
 
-    it("leaves a platform admin and a platform group of all tenants as they were", async () => {
+    it("lets a platform admin give a platform group to any account, without asking about the account", async () => {
         mocks.viewer = ROOT;
         expect(await setUserPlatformGroup("max-of-globex", { kind: "group", id: "pg-helpdesk" })).toEqual(expect.objectContaining({ success: true }));
+        expect(mocks.accountRefusalFor).not.toHaveBeenCalled();
+    });
 
+    it("asks about the account for a platform group of all tenants too, whose groups in the tenants may do more", async () => {
         mocks.viewer = NINA;
         mocks.service.reachOf.mockResolvedValue("all");
         mocks.service.shapeOf.mockResolvedValue({ id: "pg-support", shape: { ...SUPPORT, allTenants: true, tenantIds: [] } });
         expect(await setUserPlatformGroup("max-of-globex", { kind: "group", id: "pg-helpdesk" })).toEqual(expect.objectContaining({ success: true }));
-        expect(await setUserPlatformGroup("fresh", { kind: "group", id: "pg-helpdesk" })).toEqual(expect.objectContaining({ success: true }));
-        expect(mocks.accountRefusalFor).not.toHaveBeenCalled();
+        expect(mocks.accountRefusalFor).toHaveBeenCalledWith(expect.objectContaining({ id: "nina", reach: "all" }), "max-of-globex");
+
+        // Max holds a group in Globex that may do more than Nina may there.
+        const beyond = "This account belongs to a group that may do more than you may, so only someone who may do all of it can change it.";
+        mocks.accountRefusalFor.mockResolvedValueOnce(beyond);
+        expect(await setUserPlatformGroup("max-of-globex", { kind: "group", id: "pg-helpdesk" })).toEqual({ success: false, error: beyond });
+        expect(mocks.service.setFor).toHaveBeenCalledTimes(1);
     });
 });
 

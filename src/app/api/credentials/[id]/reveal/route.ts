@@ -35,8 +35,9 @@ export async function GET(
         // The profile without its secret, which names the entry. An unknown id ends here as a 404.
         const profile = await credentialService.getCredentialProfile(id);
 
-        // Audit BEFORE decrypting the secret so a reveal is never silent
-        await auditService.logFor(
+        // Audit BEFORE decrypting the secret so a reveal is never silent. An entry that could not
+        // be written throws, and the secret stays where it is.
+        await auditService.logForStrict(
             ctx,
             AUDIT_ACTIONS.EXPORT,
             AUDIT_RESOURCES.CREDENTIAL,

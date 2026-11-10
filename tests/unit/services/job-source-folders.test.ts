@@ -95,3 +95,48 @@ describe("a job whose directory source leaves the folder of its connection", () 
         expect(prismaMock.job.create).not.toHaveBeenCalled();
     });
 });
+
+/**
+ * A Docker Volumes source names a volume. Docker reads a path like `/etc` as a folder of its host
+ * and would mount it into the helper, so a member who may only pick the connection of the platform
+ * admin would read any folder of the Docker host.
+ */
+describe("a job whose Docker Volumes source names no volume", () => {
+    let service: JobService;
+    const docker = (path: string) => ({ ...job(path), sources: [{ configId: "docker-1", priority: 0, path, excludePatterns: [] }] });
+
+    beforeEach(() => {
+        service = new JobService();
+        vi.clearAllMocks();
+        linksAreOwn();
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { id: "docker-1", name: "Docker", adapterId: "docker-volume", type: "storage", storageRole: "SOURCE" },
+            { id: "dest-1", name: "Backup NAS", adapterId: "local-filesystem", type: "storage", storageRole: "DESTINATION" },
+        ] as never);
+        prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+    });
+
+    it.each(["/etc", "/var/lib/docker/volumes/dbackup-data/_data", "/", "data:/x", "vol/sub"])("is not created with %s", async (path) => {
+        await expect(service.createJob(docker(path))).rejects.toThrow(ValidationError);
+        expect(prismaMock.job.create).not.toHaveBeenCalled();
+    });
+
+    it("is created with a volume", async () => {
+        prismaMock.job.create.mockResolvedValue({ id: "job-1" } as never);
+        await expect(service.createJob(docker("immich_upload"))).resolves.toEqual({ id: "job-1" });
+    });
+
+    it("is not copied when it was saved before the rule", async () => {
+        prismaMock.job.findUnique.mockResolvedValue({
+            id: "job-1", name: "Old", schedule: "0 0 * * *", sourceId: null, databases: "[]", encryptionProfileId: null,
+            compression: "NONE", pgCompression: "", notificationEvents: "ALWAYS", schedulePresetId: null, namingTemplateId: null,
+            skipVerification: false, backupMode: "FULL", fullEveryDays: 7, verifyByHash: false,
+            notifications: [], notificationTemplates: [],
+            destinations: [{ configId: "dest-1", priority: 0, retention: "{}", retentionPolicyId: null }],
+            sources: [{ configId: "docker-1", priority: 0, path: "/etc", excludePatterns: "[]", stopContainers: true, useStagingCache: false, excludePatternPresets: [] }],
+        } as never);
+
+        await expect(service.cloneJob("job-1", "Old copy")).rejects.toThrow("is no Docker volume name");
+        expect(prismaMock.job.create).not.toHaveBeenCalled();
+    });
+});

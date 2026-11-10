@@ -65,16 +65,17 @@ After lowering a retention period, run **Clean old data** first and then optimiz
 
 ### Download the database
 
-**Download** hands you a copy of the whole SQLite file after it asked first. DBackup writes the copy with `VACUUM INTO` to its temp directory (`TMPDIR`), so it is consistent, compacted and a single `.db` file with nothing left in a WAL file.
+**Download** hands you a copy of the whole SQLite file after it asked first. DBackup writes the copy with `VACUUM INTO` to a private folder in its temp directory (`TMPDIR`) that only DBackup can open, so it is consistent, compacted and a single `.db` file with nothing left in a WAL file.
 
 - Only a [platform admin](/user-guide/admin/tenants#platform-admins) sees the button, since the file holds every tenant. API keys cannot download the database.
 - Is refused while a backup, restore or integrity check of any tenant is running.
 - Needs free space in the temp directory for the data in use.
 - The temp copy is deleted once the download finishes or is cancelled, and a few minutes later if it was never collected.
+- The sessions and verification codes are left empty in the copy, so it signs nobody in. The tables are still there.
 - Every download is recorded in the audit log.
 
 ::: danger Treat the file like a password
-The file holds every user with their password hash, active session tokens, API key hashes and all stored credentials. Credentials stay encrypted and can only be read with this instance's `ENCRYPTION_KEY`, but a session token can be used as it is. Store the file safely and delete it when you no longer need it.
+The file holds every user with their password hash, the secrets of their second factor, API key hashes and all stored credentials. Credentials stay encrypted and can only be read with this instance's `ENCRYPTION_KEY`. Store the file safely and delete it when you no longer need it.
 :::
 
 To move the configuration to another instance without the execution history, use the [system backup](/user-guide/features/system-backup) instead.
@@ -85,3 +86,4 @@ To move the configuration to another instance without the execution history, use
 2. In the `db` folder of the `/data` volume, replace `dbackup.db` with the downloaded file, renamed to `dbackup.db`.
 3. Delete `dbackup.db-wal` and `dbackup.db-shm` if they exist. They belong to the old file.
 4. Start the container with the same `ENCRYPTION_KEY` and the same or a newer DBackup version. Pending migrations are applied on startup.
+5. Everyone signs in again, since the copy holds no sessions.

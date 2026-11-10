@@ -93,7 +93,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | :--- | :---: | :--- |
 | `ENCRYPTION_KEY` | ✅ | 32-byte hex string (64 chars, only 0-9 and a-f) for encrypting credentials at rest. DBackup does not start with another value. |
 | `BETTER_AUTH_SECRET` | ✅ | Base64 secret for authentication sessions. |
-| `BETTER_AUTH_URL` | ✅ | **Primary** URL where users access DBackup (for auth redirects). |
+| `BETTER_AUTH_URL` | ✅ | **Primary** URL where users access DBackup, exactly as the browser opens it, `https://` included behind a proxy that serves HTTPS. Used for the sign-in redirects and the session cookie, see [The Address and the Session Cookie](#the-address-and-the-session-cookie). |
 | `TRUSTED_ORIGINS` | ❌ | Additional access URLs, comma-separated (see below). |
 | `PORT` | ❌ | Internal server port. Default: `3000` |
 | `DATABASE_URL` | ❌ | SQLite path. Default: `file:/data/db/dbackup.db` |
@@ -103,6 +103,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | `LOG_LEVEL` | ❌ | Logging verbosity: `debug`, `info`, `warn`, `error`. Default: `info` |
 | `DISABLE_HTTPS` | ❌ | Set to `true` to use plain HTTP. Default: `false` (HTTPS). **Set this when running behind a reverse proxy** - see [Reverse Proxy Setup](#reverse-proxy-setup) |
 | `TRUSTED_PROXIES` | ❌ | The reverse proxies whose `X-Forwarded-For` counts: addresses, CIDR ranges and the keywords `private` and `cloudflare`, comma-separated, or `none`. Default: `private`, the loopback and private networks, see [The Address of a Client](#the-address-of-a-client) |
+| `TRUSTED_PROXY_HEADER` | ❌ | The header these proxies write the client into: `x-forwarded-for` or `x-real-ip`. Default: `x-forwarded-for` |
 | `PUID` | ❌ | User ID the container runs as. Default: `1001` |
 | `PGID` | ❌ | Group ID the container runs as. Set it to the host's `docker` group to reach the [Docker socket](/user-guide/sources/docker-volumes). Default: `1001` |
 | `DISABLE_EMAIL_LOGIN` | ❌ | Set to `true` to switch off password sign-in, leaving SSO and passkeys. Default: `false` |
@@ -312,6 +313,25 @@ https://...` plus `proxy_ssl_verify off` in nginx, `serversTransport.insecureSki
 Traefik).
 :::
 
+### The Address and the Session Cookie
+
+`BETTER_AUTH_URL` is the address people open in the browser. Behind a proxy that serves HTTPS, it starts with `https://`, like `https://backup.example.com`, even though the proxy talks plain HTTP to the container with `DISABLE_HTTPS=true`.
+
+The session cookie is marked `Secure` (and named `__Secure-better-auth.session_token`), so the browser sends it over HTTPS only, when either of these holds:
+
+- `BETTER_AUTH_URL` starts with `https://`.
+- `BETTER_AUTH_URL` is not set and DBackup serves HTTPS itself, which it does unless `DISABLE_HTTPS=true`.
+
+With an `http://` address, the cookie goes out without `Secure`, whatever DBackup serves itself, since a proxy may speak plain HTTP to the browser and HTTPS to DBackup. That is right for plain HTTP, where a browser would drop a `Secure` cookie, but behind a proxy that serves HTTPS it leaves the session cookie open to an unencrypted request. DBackup warns at the start when `BETTER_AUTH_URL` is not set, which makes it assume `http://localhost:3000`, and when it is `http://` with a host other than `localhost` or `127.0.0.1`.
+
+| Setup | `BETTER_AUTH_URL` | `DISABLE_HTTPS` |
+| :--- | :--- | :--- |
+| Behind a proxy that serves HTTPS | `https://backup.example.com` | `true` |
+| Browser straight at the container, the self-signed certificate of DBackup | `https://<host>:3000` | unset |
+| Plain HTTP in a trusted network, no TLS anywhere | `http://<host>:3000` | `true` |
+
+A change of the cookie name signs everyone out once, for example after `BETTER_AUTH_URL` moved from `http://` to `https://`.
+
 ### The Address of a Client
 
 DBackup counts its [rate limits](/user-guide/features/rate-limits) per client address and writes it into the audit log and the sessions. It reads `X-Forwarded-For` only on a connection from a trusted proxy, and walks it from the right, the end each proxy appends to, up to the first address that is no trusted proxy. A client can put any address at the left end, so that one never counts on its own.
@@ -335,6 +355,8 @@ environment:
 ```
 
 An entry that is no address, range or keyword stops DBackup at the start, with a message that names it. DBackup logs the value it uses when it starts.
+
+DBackup reads one header of the proxy, `X-Forwarded-For` by default, and ignores the other one. A proxy passes on whatever a client sent in a header it does not write itself, so reading both would let a client name its own address. The Nginx example below, Traefik and Caddy all write `X-Forwarded-For`. For a proxy that sets only `X-Real-IP`, set `TRUSTED_PROXY_HEADER=x-real-ip`, which then ignores `X-Forwarded-For`. Without that setting, such a proxy shows its own address for every request. Any other value stops DBackup at the start.
 
 ::: tip Devices in the same network
 With the default, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out.

@@ -22,6 +22,7 @@ import type { KeyOverride } from "@/services/backup/key-resolution";
 import { downloadShape, resolveContents } from "./archive-selection";
 import { describeSelection, openArchiveForRestore, streamFileRestore, type FileRestoreInput, type FileRestorePlan } from "./file-restore";
 import { reserveTempSpace } from "./temp-space";
+import { PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 
 export interface ArchiveDownload {
     stream: NodeJS.ReadableStream;
@@ -168,7 +169,8 @@ function pickDatabase(databases: IndexDatabaseLine[], hasDirectories: boolean, n
  *
  * This is what a decrypted download of a seekable archive resolves to, including a wget link,
  * which needs the finished file on disk before it can send a Content-Length. A dump that fails
- * its checksum is deleted rather than left for the caller to serve.
+ * its checksum is deleted rather than left for the caller to serve. `localPath` is a new file in
+ * the private folder, see `privateTempPath`, since the dump is the data of the database, decrypted.
  */
 export async function writeDatabaseDump(
     params: { storageConfigId: string; file: string; database?: string; keyOverride?: KeyOverride },
@@ -188,7 +190,8 @@ export async function writeDatabaseDump(
             await pipeline(
                 await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, database.s),
                 hashingStream((d) => { digest = d; }),
-                createWriteStream(localPath)
+                // A new file only DBackup reads, the callers name one in `privateTempDir`.
+                createWriteStream(localPath, { flags: "wx", mode: PRIVATE_FILE_MODE })
             );
         } catch (e: unknown) {
             // A dump cut off by its declared size or a failed read leaves no half file behind.

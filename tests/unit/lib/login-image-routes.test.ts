@@ -55,9 +55,24 @@ describe("the routes of the login picture", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toBe("image/webp");
         expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(response.headers.get("Content-Security-Policy")).toBe("sandbox; default-src 'none'");
         // The address changes with the picture, so the browser asks for it once.
         expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
         expect((await publicRoute.GET(new NextRequest("http://localhost/api/login-image"))).headers.get("Cache-Control")).toBe("public, max-age=3600");
+    });
+
+    it("serves no stored type but the four pictures an upload is kept as, also in the preview of the settings", async () => {
+        for (const mimeType of ["image/svg+xml", "text/html"]) {
+            mocks.readPublic.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType, updatedAt: new Date() });
+            mocks.read.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType });
+            expect((await publicRoute.GET(new NextRequest("http://localhost/api/login-image"))).status).toBe(404);
+            expect((await settingsRoute.GET()).status).toBe(404);
+        }
+        mocks.read.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType: "image/png" });
+        const preview = await settingsRoute.GET();
+        expect(preview.headers.get("Content-Type")).toBe("image/png");
+        expect(preview.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(preview.headers.get("Content-Security-Policy")).toBe("sandbox; default-src 'none'");
     });
 
     it("answers 404 while the login page shows the logos", async () => {

@@ -80,8 +80,8 @@ export async function setUserPassword(userId: string, input: z.input<typeof Pass
 }
 
 /**
- * Removes the authenticator app and the passkey as second factor, so the user can set one up
- * again. Who may is the same as for setting their password.
+ * Removes the authenticator app, the passkey as second factor and the passkeys, so the user can set
+ * one up again. Who may is the same as for setting their password.
  */
 export async function resetUserTwoFactor(userId: string) {
     const currentUser = await checkPermission(ACCOUNT_CHANGE);

@@ -1,7 +1,7 @@
 import { registry } from "@/lib/core/registry";
 import { StorageAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -99,7 +99,8 @@ export class VerificationService {
 
                     // Native check failed — compute actual checksum via download for diagnostics.
                     if (metadata.checksum) {
-                        const tempFile = path.join(getTempDir(), `verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
+                        // In the private folder, since a plain backup is the data of the databases.
+                        const tempFile = await privateTempPath(`verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
                         try {
                             const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
                             if (downloadOk) {
@@ -125,7 +126,8 @@ export class VerificationService {
             return { status: 'no_checksum', verifiedAt };
         }
 
-        const tempFile = path.join(getTempDir(), `verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
+        // In the private folder, since a plain backup is the data of the databases.
+        const tempFile = await privateTempPath(`verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
         try {
             const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
             if (!downloadOk) {
@@ -167,8 +169,12 @@ export class VerificationService {
         verification: NonNullable<BackupMetadata['verification']>
     ) {
         metadata.verification = verification;
-        const tempPath = path.join(getTempDir(), `meta-verify-${crypto.randomUUID()}.json`);
-        await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2));
+        // The metadata names the databases, so it goes into the private folder as well.
+        const tempPath = await privateTempPath(`meta-verify-${crypto.randomUUID()}.json`);
+        // The default mode, not `PRIVATE_FILE_MODE`, since an upload like rsync -a carries the mode of
+        // the file to the destination, where the sidecar keeps the mode the backup run gave it. The
+        // private folder keeps it from other users here.
+        await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2), { flag: "wx" });
         try {
             await adapter.upload(config, tempPath, metaPath);
         } finally {

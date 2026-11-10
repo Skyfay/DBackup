@@ -8,6 +8,7 @@
  * change nothing any more.
  */
 
+import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { STORAGE } from "../../../lab/src/catalog";
@@ -30,6 +31,14 @@ const globex = `Globex ${tag}`;
 /** Two databases of one server of the home tenant: one goes to Acme, the other stays. */
 const given = `${tag}_acme`;
 const kept = `${tag}_kept`;
+/**
+ * The server set up for customers as the guide of shared databases says: the database of Acme
+ * belongs to an owner role of its own, and the login of the connection is no superuser and acts
+ * as that role alone, or a customer's restore is refused. It reads the other database through a
+ * grant on its table, which is no membership.
+ */
+const ownerRole = `${tag}_owner`;
+const providerLogin = { username: `e2e_login_${randomBytes(6).toString("hex")}`, password: randomBytes(18).toString("base64url") };
 const customer = { name: "Ada Acme", email: `${tag}@acme.e2e.dbackup.test`, password: "Harbor-Violet-3816" };
 
 const postgres: Target = FAMILIES.find((family) => family.name === "postgres")!.targets.find((target) => target.key === "postgres-18")!;
@@ -88,6 +97,7 @@ test.beforeAll(async ({ browser }: { browser: Browser }) => {
 test.afterAll(async () => {
     if (!process.env.E2E_KEEP) {
         for (const database of [given, kept]) await dropIn(lab, "postgres", postgres.service, database);
+        await psql("postgres", `DROP ROLE IF EXISTS ${providerLogin.username}; DROP ROLE IF EXISTS ${ownerRole};`);
     }
     await admin?.close();
     await person?.close();
@@ -170,15 +180,16 @@ test("an invitation brings the admin of Acme, who sees nothing of the other tena
 test("the home tenant gives Acme one database of its server", async () => {
     const home = new App(admin.request);
     await test.step("two databases on a server of the lab", async () => {
-        for (const database of [given, kept]) {
-            await dropIn(lab, "postgres", postgres.service, database);
-            await psql("postgres", `CREATE DATABASE ${database};`);
-            await psql(database, `CREATE TABLE owner (name text); INSERT INTO owner VALUES ('${database}');`);
-        }
+        for (const database of [given, kept]) await dropIn(lab, "postgres", postgres.service, database);
+        await psql("postgres", `CREATE ROLE ${ownerRole} NOLOGIN; CREATE ROLE ${providerLogin.username} LOGIN PASSWORD '${providerLogin.password}'; GRANT ${ownerRole} TO ${providerLogin.username};`);
+        await psql("postgres", `CREATE DATABASE ${given} OWNER ${ownerRole};`);
+        await psql(given, `SET ROLE ${ownerRole}; CREATE TABLE owner (name text); INSERT INTO owner VALUES ('${given}');`);
+        await psql("postgres", `CREATE DATABASE ${kept};`);
+        await psql(kept, `CREATE TABLE owner (name text); INSERT INTO owner VALUES ('${kept}'); GRANT SELECT ON owner TO ${providerLogin.username};`);
     });
 
     await test.step("its connection in the home tenant", async () => {
-        const source = await createSource(home, postgres, tag);
+        const source = await createSource(home, { ...postgres, login: providerLogin }, tag);
         server = source.id;
         const tested = await home.testConnection(source.connection);
         expect(tested.success, tested.message).toBe(true);
@@ -308,9 +319,11 @@ test("a new tenant blocks the local network until the platform allows its range"
 
     await test.step("Acme adds a job of its own", async () => {
         const source = await theirs.connection({ ...connection, name: `${tag} own postgres`, type: "database" });
-        // An SFTP server of the lab, which the job never writes to here.
+        // An SFTP destination the job never writes to here, on the server of the range just allowed.
+        // The SFTP server of the lab does not run in the job of the UI tests, and a host that does
+        // not resolve is refused for a tenant that blocks the local network.
         const ssh = await theirs.credential(`${tag} sftp`, "SSH_KEY", { username: STORAGE.ssh.username, authType: "password", password: STORAGE.ssh.password });
-        const target = await theirs.connection({ name: `${tag} own sftp`, type: "storage", adapterId: "sftp", config: { host: STORAGE.ssh.service, port: 22, pathPrefix: `${STORAGE.ssh.home}/backups/${tag}` }, primaryCredentialId: ssh });
+        const target = await theirs.connection({ name: `${tag} own sftp`, type: "storage", adapterId: "sftp", config: { host: postgres.service, port: 22, pathPrefix: `${STORAGE.ssh.home}/backups/${tag}` }, primaryCredentialId: ssh });
         acmeJobName = `${tag} acme own`;
         const created = await raw(person.request, "post", "/api/jobs", {
             name: acmeJobName,

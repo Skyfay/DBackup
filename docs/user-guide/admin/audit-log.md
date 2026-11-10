@@ -61,7 +61,7 @@ The view switch shows the timeline above the list: a row per person and API key,
 A download or restore of a [shared database](/user-guide/admin/shared-databases) goes into the log of the customer, a change of who a database belongs to into the log of the server's tenant. A tenant that stops sharing a [destination or channel](/user-guide/admin/shared-connections) with a customer writes the stop into the log of that customer too. A change keeps what it changed from and to. An entry keeps the name of the person who wrote it, so it still names them after the person is deleted. A request made with an API key names the key and its owner.
 
 ::: tip
-The address comes from the `X-Forwarded-For` or `X-Real-IP` header of a trusted reverse proxy in front of DBackup, see [The Address of a Client](/user-guide/installation#the-address-of-a-client). A header a client sends itself is not written.
+The address comes from the header a trusted reverse proxy in front of DBackup writes, `X-Forwarded-For` or, with `TRUSTED_PROXY_HEADER=x-real-ip`, `X-Real-IP`, see [The Address of a Client](/user-guide/installation#the-address-of-a-client). A header a client sends itself is not written.
 :::
 
 ## How Long Entries Stay

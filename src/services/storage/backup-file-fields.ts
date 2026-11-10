@@ -46,6 +46,7 @@ export function describeBackupFromMetadata(
         ...(sidecar.jobId ? { jobId: sidecar.jobId } : {}),
         jobName: sidecar.jobName || (isConfigBackup ? "Config Backup" : undefined),
         ...(sidecar.timestamp ? { createdAt: sidecar.timestamp } : {}),
+        ...(typeof sidecar.dumpsStartedAt === 'string' ? { dumpsStartedAt: sidecar.dumpsStartedAt } : {}),
         ...(names && names.length > 0 ? { databases: names } : {}),
         ...(sidecar.sourceId ? { sourceId: sidecar.sourceId } : {}),
         sourceName: sidecar.sourceName || (isConfigBackup ? "System" : undefined),

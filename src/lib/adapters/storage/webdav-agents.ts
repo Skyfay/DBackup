@@ -1,6 +1,9 @@
 import http from "node:http";
 import https from "node:https";
 
+import { guardAgent } from "@/lib/network/pinned-http";
+import type { ReachPolicy } from "@/lib/network/reach-policy";
+
 /**
  * The HTTP agents of a WebDAV connection, which open a socket only to the host of its URL.
  *
@@ -8,7 +11,8 @@ import https from "node:https";
  * these agents for every connection, the one to the address of a redirect too. The local network
  * check of a tenant read the host of the URL, see `dialed-hosts.ts`, so a redirect to another host
  * would reach one nobody checked. A redirect on the same host, like the one a server sends for a
- * missing trailing slash, keeps working.
+ * missing trailing slash, keeps working. For a tenant that blocks the local network the agents
+ * also dial only addresses checked at connect time, see `pinned-http.ts`.
  */
 
 type Connect = (options: { host?: string | null; hostname?: string | null }, callback: (error: Error | null, socket?: unknown) => void) => unknown;
@@ -34,7 +38,8 @@ function pinned<T extends http.Agent>(agent: T, host: string): T {
     return agent;
 }
 
-/** The agents for the webdav client of a connection whose URL names `host`. */
-export function webdavAgents(host: string): { httpAgent: http.Agent; httpsAgent: https.Agent } {
-    return { httpAgent: pinned(new http.Agent(), host), httpsAgent: pinned(new https.Agent(), host) };
+/** The agents for the webdav client of a connection whose URL names `host`, `reach` the policy of its tenant. */
+export function webdavAgents(host: string, reach: ReachPolicy | null = null): { httpAgent: http.Agent; httpsAgent: https.Agent } {
+    const guarded = <T extends http.Agent>(agent: T) => (reach ? guardAgent(agent, reach) : agent);
+    return { httpAgent: pinned(guarded(new http.Agent()), host), httpsAgent: pinned(guarded(new https.Agent()), host) };
 }

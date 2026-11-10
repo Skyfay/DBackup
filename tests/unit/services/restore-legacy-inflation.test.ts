@@ -38,6 +38,8 @@ const sourceRow = { id: 'source-1', type: 'database', adapterId: 'mysql', name: 
 function wire() {
     const restore = vi.fn(async () => ({ success: true }));
     prismaMock.execution.update.mockResolvedValue({} as never);
+    // No run of History wrote these backups, see `recorded-encryption.ts`.
+    prismaMock.execution.findMany.mockResolvedValue([]);
     prismaMock.adapterConfig.findUnique.mockImplementation((async ({ where }: { where: { id: string } }) =>
         where.id === 'storage-1' ? storageRow : where.id === 'source-1' ? sourceRow : null) as never);
     vi.mocked(registry.get).mockImplementation(((id: string) => (id === 'local-fs'
@@ -80,7 +82,10 @@ describe('a whole-file backup that inflates past its bound', () => {
         expect(finalStatus()).toBe('Failed');
         expect(loggedMessages().some((message) => message.includes('The backup is damaged'))).toBe(true);
         expect(restore).not.toHaveBeenCalled();
-        expect(await fs.readdir(tempDir)).toEqual([]);
+        // The private folder of the download stays for the next one, empty, see `privateTempDir`.
+        const left = await fs.readdir(tempDir);
+        expect(left.every((name) => name.startsWith('dbackup-private-'))).toBe(true);
+        for (const folder of left) expect(await fs.readdir(path.join(tempDir, folder))).toEqual([]);
     });
 
     it('restores one below the bound as before', async () => {

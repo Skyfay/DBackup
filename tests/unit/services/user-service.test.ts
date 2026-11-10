@@ -23,6 +23,10 @@ vi.mock('@/lib/prisma', () => ({
       findMany: vi.fn(),
       upsert: vi.fn(),
       delete: vi.fn(),
+      count: vi.fn(),
+    },
+    passkey: {
+      deleteMany: vi.fn(),
     },
     twoFactor: {
       deleteMany: vi.fn(),
@@ -86,6 +90,15 @@ describe('User Service', () => {
 
       expect(prisma.tenantMembership.delete).toHaveBeenCalledWith({ where: { userId_tenantId: { userId: '1', tenantId: 'tenant-a' } } });
       expect(prisma.tenantMembership.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should leave the verified email as it is when the last membership ends, which membershipEndRefusal guards', async () => {
+      (prisma.tenantMembership.findUnique as any).mockResolvedValue({ group: VIEWERS });
+      (prisma.tenantMembership.count as any).mockResolvedValue(0);
+
+      await membershipService.setRole('1', 'tenant-a', null, CUSTOMER_ADMIN);
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('should leave a user without a membership as they are when no group is picked', async () => {
@@ -206,16 +219,27 @@ describe('User Service', () => {
 
     it('should prevent deleting last platform admin', async () => {
       (prisma.user.findUnique as any).mockResolvedValue({ id: '1', platformRole: 'ADMIN' });
-      (prisma.user.count as any).mockResolvedValue(1);
+      (prisma.user.count as any).mockResolvedValue(0);
 
       await expect(userService.deleteUser('1')).rejects.toThrow('Cannot delete the last platform admin.');
-      expect(prisma.user.count).toHaveBeenCalledWith({ where: { platformRole: 'ADMIN' } });
+      expect(prisma.user.count).toHaveBeenCalledWith({ where: { platformRole: 'ADMIN', id: { not: '1' } } });
       expect(prisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('reads the user and counts the other platform admins in the transaction that deletes', async () => {
+      const tx = { user: { findUnique: vi.fn(async () => ({ id: '1', platformRole: 'ADMIN' })), count: vi.fn(async () => 0), delete: vi.fn() } };
+      (prisma.$transaction as any).mockImplementationOnce(async (work: (client: unknown) => unknown) => work(tx));
+
+      await expect(userService.deleteUser('1')).rejects.toThrow('Cannot delete the last platform admin.');
+      expect(tx.user.count).toHaveBeenCalledWith({ where: { platformRole: 'ADMIN', id: { not: '1' } } });
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.count).not.toHaveBeenCalled();
+      expect(tx.user.delete).not.toHaveBeenCalled();
     });
 
     it('should prevent deleting last user in system', async () => {
       (prisma.user.findUnique as any).mockResolvedValue({ id: '1', platformRole: null });
-      (prisma.user.count as any).mockResolvedValue(1);
+      (prisma.user.count as any).mockResolvedValue(0);
 
       await expect(userService.deleteUser('1')).rejects.toThrow('Cannot delete the last user');
     });
@@ -223,8 +247,8 @@ describe('User Service', () => {
     it('should delete a platform admin when other platform admins exist', async () => {
       (prisma.user.findUnique as any).mockResolvedValue({ id: '1', platformRole: 'ADMIN' });
       (prisma.user.count as any)
-        .mockResolvedValueOnce(2) // platform admins > 1
-        .mockResolvedValueOnce(5); // total userCount > 1
+        .mockResolvedValueOnce(1) // another platform admin
+        .mockResolvedValueOnce(4); // other users
       (prisma.user.delete as any).mockResolvedValue({ id: '1' });
 
       await userService.deleteUser('1');
@@ -239,7 +263,7 @@ describe('User Service', () => {
 
       await userService.deleteUser('1');
 
-      expect(prisma.user.count).not.toHaveBeenCalledWith({ where: { platformRole: 'ADMIN' } });
+      expect(prisma.user.count).not.toHaveBeenCalledWith({ where: { platformRole: 'ADMIN', id: { not: '1' } } });
       expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: '1' } });
     });
   });
@@ -287,6 +311,16 @@ describe('User Service', () => {
         },
       });
       expect(result).toEqual(updatedUser);
+    });
+  });
+
+  describe('resetTwoFactor', () => {
+    it('removes the authenticator app and the passkeys, which a held session may have added', async () => {
+      await userService.resetTwoFactor('1');
+
+      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: '1' }, data: { twoFactorEnabled: false, passkeyTwoFactor: false } });
+      expect(prisma.twoFactor.deleteMany).toHaveBeenCalledWith({ where: { userId: '1' } });
+      expect(prisma.passkey.deleteMany).toHaveBeenCalledWith({ where: { userId: '1' } });
     });
   });
 

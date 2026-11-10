@@ -111,3 +111,20 @@ describe('Key validation', () => {
         expect(() => createDecryptionStream(longKey, iv, authTag)).toThrow('Invalid key length');
     });
 });
+
+describe('Tag length', () => {
+    it('refuses a tag of another length than 16 bytes, also the leading bytes of the real one', async () => {
+        const key = Buffer.alloc(32, 'a');
+        const { stream, getAuthTag, iv } = createEncryptionStream(key);
+        const chunks: Buffer[] = [];
+        await pipeline(Readable.from([Buffer.from('Sensible Datenbank Informationen')]), stream, new Writable({
+            write(chunk, _encoding, callback) { chunks.push(chunk); callback(); },
+        }));
+
+        for (const bytes of [4, 8, 12, 15]) {
+            expect(() => createDecryptionStream(key, iv, getAuthTag().subarray(0, bytes))).toThrow('Invalid auth tag length');
+        }
+        expect(() => createDecryptionStream(key, iv, Buffer.alloc(17))).toThrow('Invalid auth tag length');
+        expect(() => createDecryptionStream(key, iv, getAuthTag())).not.toThrow();
+    });
+});

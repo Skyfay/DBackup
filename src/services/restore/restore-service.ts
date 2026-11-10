@@ -16,6 +16,7 @@ import { assertDatabaseTarget, normalizeDatabaseMapping } from "./database-mappi
 import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 import { runAsSystem } from "@/lib/tenant/context";
 import { assertRestoreTargetsAllowed, CUSTOMER_RESTORE_CALLER, type RestoreCaller } from "./restore-targets";
+import { holdSharedRestore } from "./shared-restores-active";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -46,13 +47,26 @@ export class RestoreService {
      * its destination, its key and the server belong to the tenant of the server, so the restore
      * reads them for every tenant, with nothing but the ids the caller fixed. With
      * `input.shared.provider` the tenant of the server gets a run of the same restore with the whole
-     * log in its own History.
+     * log in its own History. Until the run ended, nobody gives the database to another tenant,
+     * takes it back or moves it, see `shared-restores-active.ts`.
      */
     async restoreShared(input: RestoreInput, customerTenantId: string) {
-        return runAsSystem(() => this.start(input, CUSTOMER_RESTORE_CALLER, customerTenantId));
+        // The customer is the caller's word, never the request's, and the restore checks it still
+        // holds the database right before it writes.
+        const shared = input.shared ? { ...input.shared, tenantId: customerTenantId } : undefined;
+        const release = shared && input.targetSourceId
+            ? holdSharedRestore({ sourceId: input.targetSourceId, databaseName: shared.databaseName, tenantId: customerTenantId })
+            : () => {};
+        try {
+            return await runAsSystem(() => this.start({ ...input, ...(shared ? { shared } : {}) }, CUSTOMER_RESTORE_CALLER, customerTenantId, release));
+        } catch (error: unknown) {
+            release();
+            throw error;
+        }
     }
 
-    private async start(rawInput: RestoreInput, caller: RestoreCaller, runTenantId?: string) {
+    /** `onEnd` is called once the run ended, a start that throws leaves it to the caller. */
+    private async start(rawInput: RestoreInput, caller: RestoreCaller, runTenantId?: string, onEnd?: () => void) {
         // One mapping shape from here on, so the preflight checks the same databases the
         // pipeline then restores.
         // The caller goes along for the files of the directory sources, see `restoredFileRefusal`,
@@ -129,7 +143,7 @@ export class RestoreService {
         // Run in background (do not await)
         runRestorePipeline(executionId, input, providerRun).catch(err => {
             svcLog.error("Background restore failed", { executionId }, wrapError(err));
-        });
+        }).finally(() => onEnd?.());
 
         return {
             success: true,

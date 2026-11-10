@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/apply-pending-restore.js && node scripts/backup-before-migrate.js && prisma migrate deploy && prisma generate && next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "tsx custom-server.ts",
     "lint": "eslint",
     "type": "tsc --noEmit",
     "validate": "./scripts/validate.sh",

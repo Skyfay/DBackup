@@ -14,6 +14,7 @@ import { apiKeyTemplate, type ApiKeyTemplate } from "@/lib/auth/api-key-template
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { freeGroupName } from "@/lib/auth/group-templates";
 import { areaChanges, describeChange, keyAreas, knownKeyPermissions } from "@/lib/auth/permission-areas";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { useTenantView } from "@/components/tenant/tenant-view";
 import { wrapError } from "@/lib/logging/errors";
@@ -31,6 +32,18 @@ export type ApiKeyFormMode = { kind: "create" } | { kind: "edit"; key: ApiKeyRow
 
 /** The areas of the home tenant's rights of the platform, offered only to an owner who holds one of them. */
 const OWNER_ONLY_AREAS = new Set(["platform-tenants", "platform-accounts"]);
+
+/** The rights of the Sharing area of a key. */
+const SHARING_RIGHTS: readonly string[] = [PERMISSIONS.PLATFORM.SHARING_READ, PERMISSIONS.PLATFORM.SHARING_WRITE];
+
+/**
+ * Whether the editor of a key offers the Sharing area: in a tenant that shares databases while
+ * there is another tenant to share with, or while the key holds one of its rights already, so a
+ * save keeps what the key holds instead of dropping it.
+ */
+export function keyOffersSharing(tenantShares: boolean, tenantCount: number, held: readonly string[]): boolean {
+    return (tenantShares && tenantCount > 1) || held.some((permission) => SHARING_RIGHTS.includes(permission));
+}
 
 interface ApiKeyFormDialogProps {
     open: boolean;
@@ -144,7 +157,11 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, viewerIs
     // A key in a tenant that shares databases may share them too, for a hosting panel, and a key of
     // the home tenant may manage the tenants and the accounts, for the automation of an MSP, see `keyAreas`.
     const { activeTenantId, tenants, tenantCount } = useTenantView();
-    const tenantShares = (tenantCount ?? tenants.length) > 1 && tenants.some((tenant) => tenant.id === activeTenantId && tenant.sharesWithCustomers);
+    const tenantShares = keyOffersSharing(
+        tenants.some((tenant) => tenant.id === activeTenantId && tenant.sharesWithCustomers),
+        tenantCount ?? tenants.length,
+        initial.permissions,
+    );
     const homeTenant = activeTenantId === HOME_TENANT_ID;
     // A key never gets more than the group of its owner may do, and nobody hands out more than they may do.
     const owner = key?.owner;

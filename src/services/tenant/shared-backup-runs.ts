@@ -4,7 +4,10 @@ import { FOLLOWS_KEY, activeFollowersOf, providerHint, type RunFollower } from "
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { runAsSystem } from "@/lib/tenant/context";
+import { ownerAt } from "@/lib/tenant/database-owner";
 import { formatBytes, formatDuration } from "@/lib/utils";
+import { factsOf } from "./owner-facts";
+import { assertTenantsLive } from "./shared-servers";
 
 /**
  * The run a customer sees of a backup they started of a database on a shared server. The backup
@@ -74,23 +77,30 @@ export async function createCustomerBackupRun(run: CustomerBackupRun): Promise<s
         onlyDatabases: [run.databaseName],
         [FOLLOWS_KEY]: run.leaderId,
     };
-    const created = await runAsSystem(() => prisma.execution.create({
-        data: {
-            tenantId: run.tenantId,
-            type: "Backup",
-            status: "Pending",
-            logs: JSON.stringify([line(`Backup of ${run.databaseName} on ${run.serverName} queued.`, "Queued")]),
-            metadata: JSON.stringify(metadata),
-            triggerType: "Manual",
-            triggerLabel: run.person,
-        },
-        select: { id: true },
+    // The run belongs to the customer and names its tenant itself, whichever scope starts the backup.
+    // A customer deleted meanwhile would keep a run under its dead id. Once the run waits, the delete
+    // of the customer is refused until it ended, see `assertNoActiveRun` in `tenant-service.ts`.
+    const created = await runAsSystem(() => prisma.$transaction(async (tx) => {
+        await assertTenantsLive(tx, [run.tenantId]);
+        return tx.execution.create({
+            data: {
+                tenantId: run.tenantId,
+                type: "Backup",
+                status: "Pending",
+                logs: JSON.stringify([line(`Backup of ${run.databaseName} on ${run.serverName} queued.`, "Queued")]),
+                metadata: JSON.stringify(metadata),
+                triggerType: "Manual",
+                triggerLabel: run.person,
+            },
+            select: { id: true },
+        });
     }));
     return created.id;
 }
 
 /** Removes the customer's run of a backup that never got queued. */
 export async function dropCustomerBackupRun(id: string): Promise<void> {
+    // The run belongs to the customer, and the start that failed drops it whichever scope it failed in.
     await runAsSystem(() => prisma.execution.deleteMany({ where: { id, status: "Pending" } }));
 }
 
@@ -108,6 +118,28 @@ function dumpSize(dumps: unknown, database: string): number | null {
     if (!Array.isArray(dumps)) return null;
     const dump = (dumps as { name?: unknown; state?: unknown; bytes?: unknown }[]).find((entry) => entry?.name === database);
     return dump && dump.state === "done" && typeof dump.bytes === "number" ? dump.bytes : null;
+}
+
+/**
+ * Whether the customer still holds the database at the end of the run, on the server of the job of
+ * the real run. One given to another tenant, taken back or moved meanwhile is no longer theirs, so
+ * the size of its dump says nothing to them. Unknown counts as not.
+ */
+async function heldAtEnd(tenantId: string | null, leaderId: string, database: string): Promise<boolean> {
+    if (!tenantId) return false;
+    try {
+        // The real run and its server belong to the tenant of the server, not to the customer.
+        return await runAsSystem(async () => {
+            const leader = await prisma.execution.findUnique({ where: { id: leaderId }, select: { job: { select: { sourceId: true } } } });
+            const sourceId = leader?.job?.sourceId;
+            if (!sourceId) return false;
+            const facts = await factsOf(sourceId);
+            return ownerAt(facts.assignments, facts.rules, database, new Date()) === tenantId;
+        });
+    } catch (error: unknown) {
+        log.warn("Who holds the database at the end of a customer's backup could not be read", { leaderId }, wrapError(error));
+        return false;
+    }
 }
 
 /**
@@ -138,6 +170,7 @@ export async function customerBackupFollower(leaderId: string): Promise<RunFollo
     const write = (data: { status?: string; startedAt?: Date; endedAt?: Date; size?: number | null }) => {
         const logs = JSON.stringify(lines);
         const update = { ...data, logs, metadata: meta() };
+        // The runner of the real run writes it, in the scope of the tenant of the server.
         chain = chain
             .then(() => runAsSystem(() => prisma.execution.update({ where: { id: row.id }, data: update })))
             .catch((error: unknown) => log.error("Writing the customer's run of a backup failed", { executionId: row.id, leaderId }, wrapError(error)));
@@ -168,7 +201,8 @@ export async function customerBackupFollower(leaderId: string): Promise<RunFollo
             void write({});
         },
         async end({ status, dumps }) {
-            const size = dumpSize(dumps, facts.database);
+            const measured = dumpSize(dumps, facts.database);
+            const size = measured !== null && (await heldAtEnd(row.tenantId, leaderId, facts.database)) ? measured : null;
             // Some copies of the provider that failed are the provider's to fix, the backup is there.
             if (status === "Success" || status === "Partial") {
                 moveTo("Completed");

@@ -1,7 +1,8 @@
 /**
  * A Recovery Kit holds the master keys of the picked encryption profiles. Its route answers a refused
  * permission with 403, finds every profile first, writes the audit entry with their names before a
- * key is decrypted, and writes none for a kit it never builds.
+ * key is decrypted, writes none for a kit it never builds, and hands out no key when the entry could
+ * not be written.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -30,7 +31,7 @@ vi.mock("@/services/backup/encryption-service", () => ({
     markRecoveryKit: (...args: unknown[]) => mocks.markKit(...args),
 }));
 vi.mock("@/services/backup/recovery-kit", () => ({ buildRecoveryKit: (...args: unknown[]) => mocks.build(...args) }));
-vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { logForStrict: (...args: unknown[]) => mocks.audit(...args) } }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -95,6 +96,17 @@ describe("a Recovery Kit", () => {
         }
         expect(mocks.getProfile).not.toHaveBeenCalled();
         expect(mocks.audit).not.toHaveBeenCalled();
+        expect(mocks.markKit).not.toHaveBeenCalled();
+    });
+
+    it("hands out no key when its audit entry could not be written", async () => {
+        mocks.audit.mockRejectedValue(new Error("database is locked"));
+
+        const response = await kit("k1");
+
+        expect(response.status).toBe(500);
+        expect(mocks.decryptKey).not.toHaveBeenCalled();
+        expect(mocks.build).not.toHaveBeenCalled();
         expect(mocks.markKit).not.toHaveBeenCalled();
     });
 });

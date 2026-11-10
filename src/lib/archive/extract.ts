@@ -14,7 +14,7 @@ import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import { DATABASE_MEMBER_PREFIX, SOURCE_MEMBER_PREFIX } from "./format";
 import { databaseDumpFileName, plainFileNameProblem } from "./dump-names";
-import { assertSingleReferences, groupFilesByEntry, openArchiveEntry, openArchiveFile, readArchiveIndex, readArchiveManifest } from "./reader";
+import { assertSingleReferences, bundleSlices, groupFilesByEntry, openArchiveEntry, openArchiveFile, readArchiveIndex, readArchiveManifest } from "./reader";
 import { groupFilesByArchive, OpenedChainArchive } from "./chain-source";
 import { localFileSource, readAll } from "./sources";
 import { BUNDLE_READ_LIMIT } from "./limits";
@@ -186,11 +186,12 @@ export async function extractArchiveFrom(
                     await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey),
                     BUNDLE_READ_LIMIT
                 );
-                for (const file of files) {
-                    const slice = payload.subarray(file.o ?? 0, (file.o ?? 0) + (file.l ?? payload.length));
+                // Every slice is checked before the first file of the bundle is written.
+                const slices = bundleSlices(payload, files);
+                for (const [i, file] of files.entries()) {
                     const target = safeJoin(rootBySourceId.get(file.src)!, file.p);
                     await fs.mkdir(path.dirname(target), { recursive: true });
-                    await fs.writeFile(target, slice);
+                    await fs.writeFile(target, slices[i]);
                 }
             }
         } finally {

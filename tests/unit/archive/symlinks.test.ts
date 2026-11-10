@@ -306,6 +306,18 @@ describe("symbolic links in the archive format", () => {
         expect(linkLeavesTarget("a/b/c", "./../d/./e", noLinks)).toBe(false);
     });
 
+    it("refuses a part of dots and spaces alone, which some systems read as `..`, like every other path of a restore", () => {
+        const noLinks = () => false;
+        for (const part of ["...", ".. ", " ..", ". .", "%2e%2e", "%2E%2e%2e", " "]) {
+            expect(linkLeavesTarget("a/b/c", `${part}/x`, noLinks), `${JSON.stringify(part)} at the start`).toBe(true);
+            expect(linkLeavesTarget("a/b/c", `d/${part}`, noLinks), `${JSON.stringify(part)} after a folder`).toBe(true);
+            expect(linkLeavesTarget("a/b/c", `..\\${part}\\x`, noLinks), `${JSON.stringify(part)} between backslashes`).toBe(true);
+        }
+        // A name that only holds dots among other characters stays a name.
+        expect(linkLeavesTarget("a/b/c", "d/.hidden/x..y", noLinks)).toBe(false);
+        expect(linkLeavesTarget("a/b/c", "../d.e", noLinks)).toBe(false);
+    });
+
     it("refuses a target that runs through a link of the same backup and source", () => {
         const throughLink = throughLinkOf([
             { src: "a", p: "x/up", lnk: ".." },

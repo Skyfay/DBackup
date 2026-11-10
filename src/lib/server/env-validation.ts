@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { logger } from "@/lib/logging/logger";
+import { authUrlWarning } from "@/lib/auth/secure-cookies";
 
 const log = logger.child({ module: "EnvValidation" });
 
@@ -131,6 +132,10 @@ export function validateEnvironment(): ValidatedEnv {
             throw new Error(`Startup aborted: ${critical.join("; ")}`);
         }
     }
+
+    // An address the browser does not use breaks the redirects, and plain HTTP the Secure cookies.
+    const authUrl = authUrlWarning(process.env);
+    if (authUrl) log.warn(`ENV warning: ${authUrl}`);
 
     log.info("Environment validation passed");
 

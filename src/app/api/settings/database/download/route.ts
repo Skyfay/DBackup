@@ -5,7 +5,7 @@ import { AuthContext, getAuthContext } from "@/lib/auth/access-control";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
 import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
 import { DATABASE_BUSY } from "@/lib/server/database-maintenance";
-import { createDatabaseSnapshot } from "@/services/system/database-service";
+import { createDownloadCopy } from "@/services/config/database-copy";
 import { platformLogFor } from "@/services/system/settings-save";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -21,9 +21,10 @@ const log = logger.child({ route: "settings/database/download" });
 const DATABASE_DOWNLOAD_SCOPE = "dbackup-database";
 
 /**
- * Security: deliberately stricter than any permission. The file holds every user's password hash,
- * active session tokens and all stored credentials, so a copy is enough to take over the instance.
- * Only a platform admin signed in with a session qualifies, which also rules out API keys.
+ * Security: deliberately stricter than any permission. The file holds every user's password hash
+ * and all stored credentials, so a copy is enough to take over the instance. The live sessions and
+ * verification codes are left out of it (`createDownloadCopy`). Only a platform admin signed in
+ * with a session qualifies, which also rules out API keys.
  */
 async function requirePlatformAdmin(): Promise<AuthContext | Response> {
     // A disabled, expired or blocked API key has no context, `unauthorized` says why.
@@ -46,7 +47,7 @@ export async function POST() {
     if (ctx instanceof Response) return ctx;
 
     try {
-        const snapshot = await createDatabaseSnapshot();
+        const snapshot = await createDownloadCopy();
 
         await auditService.log(
             ctx.userId,

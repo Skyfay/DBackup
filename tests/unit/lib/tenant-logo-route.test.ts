@@ -81,6 +81,8 @@ describe("who sees the logo of a tenant", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toBe("image/png");
         expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        // Opened on its own address it runs no script and loads nothing.
+        expect(response.headers.get("Content-Security-Policy")).toBe("sandbox; default-src 'none'");
 
         mocks.ctx = null;
         expect((await get("t-acme")).status).toBe(401);
@@ -140,6 +142,36 @@ describe("who changes the logo of a tenant", () => {
         expect(response.status).toBe(413);
         expect(await response.json()).toEqual({ success: false, error: "The logo is larger than 1 MB." });
         expect(formData).not.toHaveBeenCalled();
+    });
+
+    it("refuses a body sent in chunks without a Content-Length once it passes the limit", async () => {
+        mocks.ctx = member("t-acme", PERMISSIONS.TENANT_SETTINGS.WRITE);
+        const form = new FormData();
+        form.append("file", new File([new Uint8Array(3 * 1024 * 1024)], "logo.png", { type: "image/png" }));
+        const encoded = new Response(form);
+        // Sent piece by piece and stopped on a cancel, like the body Next.js hands a route. The stream
+        // of a Response would keep writing after the route cancelled it.
+        const bytes = new Uint8Array(await encoded.clone().arrayBuffer());
+        let offset = 0;
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                if (offset >= bytes.length) return controller.close();
+                controller.enqueue(bytes.subarray(offset, offset + 64 * 1024));
+                offset += 64 * 1024;
+            },
+        });
+        const request = new NextRequest("http://localhost/api/tenants/t-acme/logo", {
+            method: "POST",
+            body,
+            headers: { "content-type": encoded.headers.get("content-type")! },
+            duplex: "half",
+        } as ConstructorParameters<typeof NextRequest>[1]);
+        expect(request.headers.get("content-length")).toBeNull();
+
+        const response = await route.POST(request, params("t-acme"));
+
+        expect(response.status).toBe(413);
+        expect(prismaMock.tenantLogo.upsert).not.toHaveBeenCalled();
     });
 
     it("refuses an SVG and anything that is no picture by its bytes, whatever the file claims", async () => {

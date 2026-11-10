@@ -13,6 +13,7 @@ import { STATELESS_READ_CONCURRENCY } from "@/lib/adapters/storage/common/read-c
 import { createListingGuard } from "@/lib/adapters/storage/common/listing-limits";
 import { collectCapped, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
 import { urlHost } from "@/lib/adapters/dialed-hosts";
+import { reachOf } from "@/lib/network/reach-policy";
 import { webdavAgents } from "./webdav-agents";
 import { listDavFolder } from "./webdav-listing";
 
@@ -28,13 +29,13 @@ interface WebDAVConfig {
 /**
  * The client of a connection. Its agents connect only to the host of the URL, so a redirect to
  * another host fails instead of reaching a host the local network check never read, see
- * `webdav-agents.ts`.
+ * `webdav-agents.ts`, and for a tenant that blocks the local network only to checked addresses.
  */
 function getClient(config: WebDAVConfig): WebDAVClient {
     return createClient(config.url, {
         username: config.username,
         password: config.password,
-        ...webdavAgents(urlHost(config.url) ?? ""),
+        ...webdavAgents(urlHost(config.url) ?? "", reachOf(config)),
     });
 }
 

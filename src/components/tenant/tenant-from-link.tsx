@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Building2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TENANT_PARAM } from "@/lib/notifications/templates/format";
 import { useMayOpenTenant, useOpenInTenant, useTenantView } from "./tenant-view";
 
@@ -34,6 +36,11 @@ function address(withoutTenant: boolean): string {
     return `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`;
 }
 
+/** Takes the tenant off the address in the history of the browser, so the page stays as it is. Next.js follows it in useSearchParams. */
+function dropTenant(): void {
+    window.history.replaceState(null, "", address(true));
+}
+
 /**
  * Whether the address names a tenant the dashboard is about to switch into. A page waits with what
  * a link opens until the tenant shows, or it would look for the record in the wrong one.
@@ -50,32 +57,62 @@ export function useSwitchFromLink(): boolean {
  * parameter stays until the tenant shows, so the page keeps waiting meanwhile, and then goes. A
  * tenant the viewer may not open, or the one open already, only loses the parameter. Mounted once,
  * by the dashboard layout.
+ *
+ * A switch changes the tenant of every tab of the session, so a link the dashboard opened with asks
+ * first: a mail, a chat, a bookmark or any other site, also through the login page, which follows
+ * its `next` page within the browser. A link followed while the dashboard is open already is one of
+ * DBackup's own and switches at once. Neither a marker in the address nor `document.referrer` tells
+ * that apart, since any site can add the marker, and the referrer of the login page is DBackup.
  */
 export function TenantFromLink() {
     const wanted = useSearchParams().get(TENANT_PARAM);
-    const { allTenants, activeTenantId } = useTenantView();
+    const { tenants, allTenants, activeTenantId } = useTenantView();
     const mayOpen = useMayOpenTenant();
     const openInTenant = useOpenInTenant();
     const tried = useRef<string | null>(null);
+    // The tenant of the address the dashboard opened with, which waits for an answer.
+    const [asking, setAsking] = useState(wanted);
 
     useEffect(() => {
         if (!wanted) {
             tried.current = null;
             return;
         }
-        // The history of the browser, so the page stays as it is. Next.js follows it in useSearchParams.
-        const drop = () => window.history.replaceState(null, "", address(true));
         if (linkTenantMove(wanted, { allTenants, activeTenantId }, mayOpen) === "drop") {
-            drop();
+            // Answered as well, so a later link of the app to this tenant switches at once.
+            setAsking(null);
+            dropTenant();
             return;
         }
         // Switches once. A tenant that is gone or closed meanwhile says so, and the page stays where it is.
-        if (tried.current === wanted) return;
+        if (tried.current === wanted || asking === wanted) return;
         tried.current = wanted;
         void openInTenant(wanted, address(false), { replace: true }).then((opened) => {
-            if (!opened) drop();
+            if (!opened) dropTenant();
         });
-    }, [wanted, allTenants, activeTenantId, mayOpen, openInTenant]);
+    }, [wanted, asking, allTenants, activeTenantId, mayOpen, openInTenant]);
 
-    return null;
+    const open = Boolean(wanted) && asking === wanted && linkTenantMove(wanted!, { allTenants, activeTenantId }, mayOpen) === "switch";
+    const name = tenants.find((tenant) => tenant.id === wanted)?.name ?? "another tenant";
+    const stay = () => {
+        // Never switches for this link, also while the address still names it for a moment.
+        tried.current = wanted;
+        setAsking(null);
+        dropTenant();
+    };
+
+    return (
+        <ConfirmDialog
+            open={open}
+            onOpenChange={(next) => !next && stay()}
+            tone="pick"
+            icon={Building2}
+            title={`Switch to ${name}?`}
+            note="Every tab of this session follows"
+            description={`This link opens ${name}. Switch to it?`}
+            confirmLabel="Switch"
+            cancelLabel="Stay"
+            onConfirm={() => setAsking(null)}
+        />
+    );
 }

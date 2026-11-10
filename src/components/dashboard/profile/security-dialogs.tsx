@@ -67,7 +67,7 @@ interface SecretFieldProps {
     autoComplete?: string;
 }
 
-function SecretField({ label, value, onChange, autoFocus = false, autoComplete = "current-password" }: SecretFieldProps) {
+export function SecretField({ label, value, onChange, autoFocus = false, autoComplete = "current-password" }: SecretFieldProps) {
     const id = useId();
     return (
         <div className="grid gap-2">

@@ -1,16 +1,16 @@
 import fs from "fs/promises";
-import path from "path";
 import prisma from "@/lib/prisma";
 import { generateSharedDownloadToken } from "@/lib/auth/download-tokens";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import type { DatabasePlace } from "@/lib/tenant/database-owner";
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import { writeDatabaseDump } from "@/services/restore/archive-download";
 import { openArchiveForRestore } from "@/services/restore/file-restore";
 import { restoreService } from "@/services/restore/restore-service";
+import { holdSharedRestore } from "@/services/restore/shared-restores-active";
 import { backupKeyOf, factsOf, serverBackupFiles, sharedBackupsOf, sharedDumpName, type OwnerFacts, type ServerBackupFile, type SharedBackupRecord } from "./shared-backups";
 import { dumpSizes, type DumpSize } from "./shared-dump-sizes";
 import { onDemandStates, requestersByBackup, type SharedOnDemand } from "./shared-on-demand";
@@ -276,8 +276,9 @@ export function prepareSharedDownload(tenantId: string, userId: string, ref: Sha
         const provider = { tenantId: serverTenantId, serverName: names.serverName, customerName: names.customerName };
         let failure: unknown = null;
         for (const copy of backup.copies) {
-            // A name nobody can guess, so no one lays a file there first for the download to write through.
-            const tempFile = path.join(getTempDir(), `shared_${randomUUID()}`);
+            // A name nobody can guess in the private folder, so no one lays a file there first for the
+            // download to write through and nobody else reads the dump.
+            const tempFile = await privateTempPath(`shared_${randomUUID()}`);
             const keyOverride = namedKey(copy);
             try {
                 // Read in the tenant of the server, whose backup it is: with the key the backup
@@ -367,24 +368,30 @@ export async function restoreSharedBackup(tenantId: string, ref: SharedBackupRef
         const providerTenantId = found.target.sourceId === ref.sourceId ? serverTenantId : await serverTenantOf(found.target.sourceId);
         return { backup: checked, target: found.target, serverTenantId, providerTenantId, names: await restoreNames(tenantId, providerTenantId, found.target.sourceId) };
     });
-    const { copy, keyOverride } = await readableCopy(backup, serverTenantId);
-    const result = await restoreService.restoreShared(
-        {
-            storageConfigId: copy.destinationId,
-            file: copy.file,
-            scope: "databases",
-            targetSourceId: target.sourceId,
-            databaseMapping: [{ originalName: ref.databaseName, targetName: target.databaseName, selected: true }],
-            ...(keyOverride ? { keyOverride } : {}),
-            triggerInfo: { type: "Manual", label: triggerLabel },
-            // The path of the copy is in the view of the server's tenant, also on a destination another tenant provides to it.
-            shared: { databaseName: target.databaseName, provider: { tenantId: providerTenantId, name: names.providerName, customer: names.customerName }, copyTenantId: serverTenantId },
-        },
-        tenantId
-    );
-    return {
-        executionId: result.executionId,
-        target,
-        provider: { tenantId: providerTenantId, executionId: result.providerExecutionId ?? null, serverName: names.serverName, customerName: names.customerName },
-    };
+    // From here on nobody gives the database away, takes it back or moves it, until the run ended.
+    const release = holdSharedRestore({ sourceId: target.sourceId, databaseName: target.databaseName, tenantId });
+    try {
+        const { copy, keyOverride } = await readableCopy(backup, serverTenantId);
+        const result = await restoreService.restoreShared(
+            {
+                storageConfigId: copy.destinationId,
+                file: copy.file,
+                scope: "databases",
+                targetSourceId: target.sourceId,
+                databaseMapping: [{ originalName: ref.databaseName, targetName: target.databaseName, selected: true }],
+                ...(keyOverride ? { keyOverride } : {}),
+                triggerInfo: { type: "Manual", label: triggerLabel },
+                // The path of the copy is in the view of the server's tenant, also on a destination another tenant provides to it.
+                shared: { databaseName: target.databaseName, provider: { tenantId: providerTenantId, name: names.providerName, customer: names.customerName }, copyTenantId: serverTenantId },
+            },
+            tenantId
+        );
+        return {
+            executionId: result.executionId,
+            target,
+            provider: { tenantId: providerTenantId, executionId: result.providerExecutionId ?? null, serverName: names.serverName, customerName: names.customerName },
+        };
+    } finally {
+        release();
+    }
 }

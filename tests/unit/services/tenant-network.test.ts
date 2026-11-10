@@ -98,8 +98,34 @@ describe("the local network check of a tenant", () => {
         await expect(assertTenantReach("acme", "postgres", { host: "db.example.com", connectionMode: "ssh", sshHost: "db.internal" })).rejects.toThrow("db.internal is 10.0.0.5");
     });
 
-    it("lets a host through that does not resolve, its connection fails on its own", async () => {
-        await expect(assertHostsReachable("acme", ["nowhere.invalid"])).resolves.toBeUndefined();
+    it("refuses a host that does not resolve for a blocking tenant, since nothing says where it leads", async () => {
+        await expect(assertHostsReachable("acme", ["nowhere.invalid"])).rejects.toThrow(
+            "Acme reaches no address of the local network. nowhere.invalid does not resolve (ENOTFOUND), so DBackup cannot check that it lies outside the local network."
+        );
+        // A tenant without the block still lets it through, its connection fails on its own.
+        await expect(assertHostsReachable("open", ["nowhere.invalid"])).resolves.toBeUndefined();
+    });
+
+    it("refuses a host whose lookup does not answer in time", async () => {
+        vi.useFakeTimers();
+        try {
+            lookup.mockImplementationOnce(() => new Promise(() => {}));
+            const refusal = expect(assertHostsReachable("acme", ["slow.example.com"])).rejects.toThrow("slow.example.com does not resolve (no answer within 5 seconds)");
+            await vi.advanceTimersByTimeAsync(5_000);
+            await refusal;
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("refuses a MongoDB seed list or SRV name for a blocking tenant, whose members the server announces", async () => {
+        for (const host of ["a.example.com:27017,db.example.com:27017", "mongodb+srv://cluster.example.com", "cluster0.ab12c.mongodb.net"]) {
+            await expect(assertTenantReach("acme", "mongodb", { host }), host).rejects.toThrow("connects to the members its servers announce");
+            await expect(assertTenantReach("open", "mongodb", { host }), host).resolves.toBeUndefined();
+        }
+        await expect(assertTenantReach("acme", "mongodb", { host: "db.example.com", port: 27017 })).resolves.toBeUndefined();
+        // In SSH mode the tools reach the members from the SSH server.
+        await expect(assertTenantReach("acme", "mongodb", { host: "a,b", connectionMode: "ssh", sshHost: "jump.example.com" })).resolves.toBeUndefined();
     });
 
     it("names a host that is an address once", () => {

@@ -39,9 +39,9 @@ vi.mock("@/lib/server/database-maintenance", () => ({ assertNoDatabaseMaintenanc
 
 const { restoreService } = await import("@/services/restore/restore-service");
 
-const ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
-const ADMIN_KEY = { isPlatformAdmin: true, authMethod: "apikey" } as const;
-const MEMBER = { isPlatformAdmin: false, authMethod: "session" } as const;
+const ADMIN = { isPlatformAdmin: true, authMethod: "session", tenantId: "default" } as const;
+const ADMIN_KEY = { isPlatformAdmin: true, authMethod: "apikey", tenantId: "default" } as const;
+const MEMBER = { isPlatformAdmin: false, authMethod: "session", tenantId: "default" } as const;
 
 const INTO_CONFIG_DESTINATION = {
     storageConfigId: "acme-s3",
@@ -111,9 +111,11 @@ describe("a full restore into the destination of the configuration backup", () =
     });
 
     it("is refused for a customer's restore of a shared database, whoever starts it", async () => {
-        const shared = { ...INTO_CONFIG_DESTINATION, shared: { databaseName: "shop_acme" } };
+        const shared = { storageConfigId: "acme-s3", file: "a.tar", scope: "databases" as const, targetSourceId: "home-nas", shared: { databaseName: "shop_acme" } };
 
         await expect(restoreService.restoreShared(shared, "acme")).rejects.toThrow(CONFIG_BACKUP_DESTINATION_LOCKED);
+        // A directory mapping names a connection of no tenant of the restore, so it never gets that far.
+        await expect(restoreService.restoreShared({ ...INTO_CONFIG_DESTINATION, shared: { databaseName: "shop_acme" } }, "acme")).rejects.toThrow("adapter 'home-nas' not found");
         expect(mocks.create).not.toHaveBeenCalled();
     });
 });

@@ -14,7 +14,8 @@ import path from "path";
 import crypto from "crypto";
 import { formatInTimeZone } from "date-fns-tz";
 import prisma from "@/lib/prisma";
-import { getTempDir, getTempPath } from "@/lib/temp-dir";
+import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, restrictFile } from "@/lib/private-temp-dir";
 import { DATABASE_BUSY, beginDatabaseMaintenance, endDatabaseMaintenance } from "@/lib/server/database-maintenance";
 import { formatBytes } from "@/lib/utils";
 import { ServiceError, wrapError } from "@/lib/logging/errors";
@@ -194,15 +195,17 @@ export async function vacuumDatabase(): Promise<VacuumResult> {
 
 /**
  * Writes a consistent, compacted copy of the database to a temp file. Includes everything still
- * in the WAL, which a plain file copy would miss. The caller owns the file and deletes it.
+ * in the WAL, which a plain file copy would miss. The caller owns the file and deletes it. The copy
+ * holds every secret of the instance, so it lies in the private temporary folder as a 0600 file.
  */
 export async function createDatabaseSnapshot(): Promise<DatabaseSnapshot> {
     return withMaintenance("snapshot", async (info) => {
         await requireFreeSpace("snapshot", getTempDir(), info.usedBytes);
 
-        const tempFile = getTempPath(`dbackup-database-${process.pid}-${crypto.randomUUID()}.db`);
+        const tempFile = await privateTempPath(`dbackup-database-${process.pid}-${crypto.randomUUID()}.db`);
         try {
             await prisma.$executeRaw`VACUUM INTO ${tempFile}`;
+            await restrictFile(tempFile);
             const sizeBytes = (await fs.stat(tempFile)).size;
             const fileName = `dbackup-database_${formatInTimeZone(new Date(), "UTC", "yyyy-MM-dd_HH-mm-ss")}.db`;
             log.info("Database snapshot created", { sizeBytes });

@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "stream";
 import { NextRequest } from "next/server";
-import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { PermissionError } from "@/lib/logging/errors";
+
+// The custom server sets the header of the address, which the app trusts only then.
+vi.stubEnv("DBACKUP_CUSTOM_SERVER", "1");
 
 const mocks = vi.hoisted(() => ({
     permissions: [] as string[],
@@ -292,7 +295,7 @@ describe("a download link for a whole backup", () => {
         mocks.tempDir = mkdtempSync(path.join(os.tmpdir(), "dbackup-link-"));
     });
 
-    it("stages the file in the temporary folder of DBackup under a name nobody can guess, and removes it once it was sent", async () => {
+    it("stages the file in the private folder of the temporary folder under a name nobody can guess, and removes it once it was sent", async () => {
         const { storageService } = await import("@/services/storage/storage-service");
         let staged = "";
         vi.mocked(storageService.downloadFile).mockImplementation(async (_id: string, _file: string, local: string) => {
@@ -304,7 +307,10 @@ describe("a download link for a whole backup", () => {
 
         const response = await fetchLink(data.url);
 
-        expect(path.dirname(staged)).toBe(mocks.tempDir);
+        // The folder only DBackup opens, see `privateTempDir`, since the file is the backup.
+        expect(path.dirname(path.dirname(staged))).toBe(mocks.tempDir);
+        expect(path.basename(path.dirname(staged))).toMatch(/^dbackup-private-/);
+        if (process.platform !== "win32") expect(statSync(path.dirname(staged)).mode & 0o777).toBe(0o700);
         expect(path.basename(staged)).toMatch(/^download_[0-9a-f-]{36}$/);
         expect(await response.text()).toBe("whole backup");
         await vi.waitFor(() => expect(existsSync(staged)).toBe(false));

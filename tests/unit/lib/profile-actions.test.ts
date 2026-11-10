@@ -40,7 +40,8 @@ describe("the account of the own profile", () => {
     it("saves a new name and email and writes what changed", async () => {
         expect(await saveProfileAccountAction({ name: "Lena Keller", email: "Lena.Keller@example.ch" })).toEqual({ success: true });
 
-        expect(mocks.updateUser).toHaveBeenCalledWith("u1", { name: "Lena Keller", email: "lena.keller@example.ch" });
+        // An email the person picked themselves, which no sign-in provider links the account by.
+        expect(mocks.updateUser).toHaveBeenCalledWith("u1", { name: "Lena Keller", email: "lena.keller@example.ch" }, "self");
         expect(mocks.audit).toHaveBeenCalledWith("u1", "UPDATE", "USER", {
             name: "Lena Keller",
             changes: [
@@ -48,6 +49,11 @@ describe("the account of the own profile", () => {
                 { field: "Email", from: "lena@example.ch", to: "lena.keller@example.ch" },
             ],
         }, "u1", { tenantId: "default" });
+    });
+
+    it("leaves the flag of the email alone when only the name changes", async () => {
+        expect(await saveProfileAccountAction({ name: "Lena Keller", email: "lena@example.ch" })).toEqual({ success: true });
+        expect(mocks.updateUser).toHaveBeenCalledWith("u1", { name: "Lena Keller", email: "lena@example.ch" }, undefined);
     });
 
     it("keeps the name and the email to what the group allows, also when the browser skips the page", async () => {

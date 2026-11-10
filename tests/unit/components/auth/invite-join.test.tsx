@@ -47,6 +47,26 @@ describe("joining a tenant through an invitation", () => {
         expect(mocks.push).toHaveBeenCalledWith("/dashboard");
     });
 
+    it("warns an account whose provider of a customer's tenant stops signing it in once it joins", async () => {
+        vi.doMock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push, refresh: mocks.refresh }) }));
+        vi.doMock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+        vi.doMock("@/lib/auth/client", () => ({ signOut: vi.fn() }));
+        vi.doMock("@/app/actions/tenant/invitation", () => ({ acceptInvitation: (...args: unknown[]) => mocks.accept(...args) }));
+        vi.doMock("@/components/tenant/tenant-sync", () => ({ announceTenantSwitch: vi.fn() }));
+        const { InviteStep } = await import("@/components/auth/invite-step");
+        const invitation = { tenantId: "globex", tenantName: "Globex AG", groupName: "Operators", expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+
+        const { rerender } = render(<InviteStep token={"t".repeat(32)} invitation={invitation} signedIn={{ name: "Lena", email: "lena@acme.ch" }} passwordSignUp rules={null} endsProviders={["Acme Entra ID"]} />);
+
+        expect(screen.getByRole("alert")).toHaveTextContent("Your sign-in provider stops signing you in");
+        expect(screen.getByRole("alert")).toHaveTextContent("Once you join Globex AG, Acme Entra ID no longer signs you in.");
+        // Joining stays possible, the warning only says what it ends.
+        expect(screen.getByRole("button", { name: "Join Globex AG" })).toBeEnabled();
+
+        rerender(<InviteStep token={"t".repeat(32)} invitation={invitation} signedIn={{ name: "Lena", email: "lena@acme.ch" }} passwordSignUp rules={null} />);
+        expect(screen.queryByRole("alert")).toBeNull();
+    });
+
     it("answers with the tenant joined by its id, which the page announces", async () => {
         vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
         vi.doMock("@/lib/auth/access-control", () => ({

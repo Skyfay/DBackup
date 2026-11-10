@@ -37,6 +37,10 @@ Someone of a platform group of selected tenants shares with those tenants only. 
 
 A chat or a webhook channel always sends where it is set, its address is the recipient.
 
+::: tip Backups private from the provider
+The logins of a shared destination stay with you, so your tenant can read every file a customer writes there. A customer that needs its backups private from you encrypts them with a key of its own [Vault](/user-guide/security/encryption), which stays in its tenant. **Only encrypted backups** makes that the rule for every customer of the destination.
+:::
+
 ### Where the Backups Go
 
 A customer writes under `tenants/` and its tenant id on the destination and sees only that folder. Its Backups page, downloads, restores, retention and integrity checks never reach outside it. Your own backups stay where they are, and your tenant no longer sees `tenants/` on that destination.
@@ -66,7 +70,7 @@ The list of the tab has the column **Shared with**: **Only this tenant**, **All 
 
 A confirmation lists each tenant with what it loses first. **Stop sharing with** on a destination also asks you to type the name of the tenant. While a run of that tenant writes to the destination or waits to, the stop waits, try again once the run finished. The tenants that lose it come off the share before anything is deleted, so no run of theirs starts writing there meanwhile. When the storage stops answering on the way, or keeps a file it refuses to delete, the tenants that lost everything already are off the share and every other one keeps it as it was.
 
-Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again. The same happens when the last customer of a destination is deleted, once its backups there are gone. A folder of a tenant that no longer gets the destination counts for nobody in the numbers of the card. When the storage does not answer then, or keeps a file it refuses to delete, the destination stays shared with nobody and your tenant still does not see `tenants/`. Its share dialog says so in amber, and **Stop sharing** with no tenant picked tries the delete again. Until then the destination counts as shared and cannot be deleted.
+Once nobody gets a destination any more, whatever is left in `tenants/`, like the backups of a deleted customer the storage did not take at the time, is deleted, and your tenant sees the whole destination again. The same happens when the last customer of a destination is deleted, once its backups there are gone. The backups of a deleted customer go right after its delete without waiting for the storage, and what the storage did not take then goes with the hourly system task **Backups page cache**, one entry in the server log per folder. A folder of a tenant that no longer gets the destination counts for nobody in the numbers of the card. When the storage does not answer then, or keeps a file it refuses to delete, the destination stays shared with nobody and your tenant still does not see `tenants/`. Its share dialog says so in amber, and **Stop sharing** with no tenant picked tries the delete again. Until then the destination counts as shared and cannot be deleted.
 
 - **A shared connection cannot be deleted.** Stop sharing it first.
 - **Stop sharing with customers** on the tenant is refused while it shares a destination or a channel.

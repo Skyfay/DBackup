@@ -6,7 +6,6 @@
  * disk usage is therefore the largest single dump, not the sum of them.
  */
 
-import path from "path";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import crypto from "crypto";
@@ -21,7 +20,7 @@ import { openArchiveEntry } from "@/lib/archive/reader";
 import { hashingStream } from "@/lib/archive/hashing";
 import { EXTENSION_BY_FORMAT } from "@/lib/archive/format";
 import { entryKey } from "@/lib/archive/types";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import type { openArchiveForRestore } from "./file-restore";
 import type { ArchiveRestoreCallbacks } from "./archive-restore";
 import { sharedLogScrubber, type RunLog } from "./shared-restore-log";
@@ -29,6 +28,7 @@ import { assertTargetsConfirmed } from "./customer-databases";
 import type { RestoreInput } from "./types";
 import { findDestination } from "@/services/sharing/destination-access";
 import { listedDatabases } from "@/services/tenant/shared-servers";
+import { customerRestoreRefusal } from "@/services/tenant/customer-restores";
 import { runAsSystem } from "@/lib/tenant/context";
 import { reserveTempSpace } from "./temp-space";
 
@@ -116,12 +116,17 @@ export async function restoreDatabases(
     if (!sourceAdapter.restoreOne) {
         throw new Error(`Database adapter '${sourceConfig.adapterId}' cannot restore from this backup format`);
     }
+    // Checked again here, before anything is staged or dropped, for every way a customer's restore
+    // reaches this point. The service refused it already when it named the target.
+    const refusal = input.shared ? customerRestoreRefusal(sourceConfig.adapterId) : null;
+    if (refusal) throw new Error(refusal);
 
     const dbConf = await resolveAdapterConfig(sourceConfig) as Record<string, unknown>;
     dbConf.type = sourceConfig.adapterId;
     if (input.privilegedAuth) dbConf.privilegedAuth = input.privilegedAuth;
     // A customer's restore of a shared database writes content the customer controls with the
-    // provider's login, so the adapter restores it as the owner of the database where it can.
+    // provider's login, so the adapter restores it as the owner of the database where it can, or
+    // refuses it where the login could do more than that owner.
     if (input.shared) dbConf.sharedRestore = true;
 
     const targetFor = (dbName: string) =>
@@ -205,9 +210,9 @@ export async function restoreDatabases(
 
             const targetName = targetFor(dbName);
             // The extension matters: SqlPackage refuses a BACPAC without one, and a readable
-            // name makes a leftover temp file identifiable.
-            const dumpPath = path.join(
-                getTempDir(),
+            // name makes a leftover temp file identifiable. In the private folder, since the
+            // dump is the data of the database, decrypted.
+            const dumpPath = await privateTempPath(
                 `restore-db-${process.pid}-${crypto.randomUUID()}.${EXTENSION_BY_FORMAT[dbLine.format] ?? "dump"}`
             );
 
@@ -218,7 +223,7 @@ export async function restoreDatabases(
                 await pipeline(
                     await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey, dbLine.s),
                     hashingStream((d) => { digest = d; }),
-                    createWriteStream(dumpPath)
+                    createWriteStream(dumpPath, { flags: "wx", mode: PRIVATE_FILE_MODE })
                 );
                 record?.read(entry.size);
 
@@ -228,6 +233,9 @@ export async function restoreDatabases(
                     throw new Error(`Checksum mismatch: expected ${dbLine.h}, got ${digest}`);
                 }
 
+                // Checked again right before the write, since staging the dump takes a while and the
+                // tenant of the server may give the database away, take it back or move it meanwhile.
+                await assertTargetsConfirmed(input, [targetName]);
                 log(`Restoring database: ${dbName} → ${targetName}`, 'info');
                 await sourceAdapter.restoreOne(
                     dbConf,

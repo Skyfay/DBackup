@@ -21,6 +21,7 @@ import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import { formatExcludeSummary, summariseExcluded } from "@/lib/exclude-summary";
 import { runRsync, sanitizeCommand, type RsyncCommand } from "./rsync-process";
 import { rsyncUsernameProblem } from "./rsync-user";
+import type { DialAddress } from "./rsync-pin";
 import { plainHost, validPort } from "@/lib/adapters/command-values";
 
 const execAsync = promisify(exec);
@@ -28,7 +29,7 @@ const execFileAsync = promisify(execFile);
 
 const log = logger.child({ adapter: "rsync" });
 
-interface RsyncConfig {
+interface RsyncConfig extends DialAddress {
     host: string;
     port: number;
     username: string;
@@ -182,10 +183,14 @@ function shellEscapeSingleQuote(value: string): string {
  * leading `-` is an option, takes a spec with a `/` before the `:` for a local path of the server
  * DBackup runs on, and ends the host at a `:`, so an IPv6 address goes in brackets.
  */
-function sshTarget(config: RsyncConfig): string {
+export function sshTarget(config: RsyncConfig, inRsyncPath = false): string {
     const problem = rsyncUsernameProblem(config.username);
     if (problem) throw new Error(problem);
-    return `${config.username}@${plainHost(config.host, "rsync")}`;
+    const host = plainHost(config.host, "rsync");
+    // The address checked for a tenant that blocks the local network, see `rsync-pin.ts`. OpenSSH
+    // takes an IPv6 address bare, rsync in brackets, since it ends the host of a path at a `:`.
+    const dial = config.dialAddress && inRsyncPath && config.dialAddress.includes(":") ? `[${config.dialAddress}]` : config.dialAddress;
+    return `${config.username}@${dial ?? host}`;
 }
 
 /**
@@ -203,7 +208,7 @@ export function remoteArgument(remotePath: string): string {
  */
 function buildRemotePath(config: RsyncConfig, relativePath: string): string {
     const fullPath = path.posix.join(config.pathPrefix, relativePath);
-    return `${sshTarget(config)}:${remoteArgument(fullPath)}`;
+    return `${sshTarget(config, true)}:${remoteArgument(fullPath)}`;
 }
 
 /**

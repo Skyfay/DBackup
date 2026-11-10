@@ -66,3 +66,21 @@ export async function assertRuleReached(
         }
     }
 }
+
+/**
+ * Refuses ending a rule when a database the server lists now would pass from the rule's tenant to a
+ * tenant beyond the reach, through a rule of a lower priority that matches it too. Only the databases
+ * DBackup last read from the server are known, like `assertRuleReached`.
+ */
+export async function assertRuleEndReached(sourceId: string, rule: { id: string; pattern: string }, reach: PlatformReach, now: Date): Promise<void> {
+    if (reach === "all") return;
+    const [listed, facts] = await Promise.all([listedDatabases(sourceId), factsOf(sourceId)]);
+    const ended = facts.rules.map((fact) => (fact.id === rule.id ? { ...fact, validUntil: now } : fact));
+    for (const { name } of listed) {
+        const after = ownerAt(facts.assignments, ended, name, now);
+        if (!after || reachCovers(reach, after)) continue;
+        if (after !== ownerAt(facts.assignments, facts.rules, name, now)) {
+            throw new ValidationError(OUTSIDE_REACH.ruleEnd(rule.pattern, name));
+        }
+    }
+}

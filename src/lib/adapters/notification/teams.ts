@@ -3,7 +3,9 @@ import { TeamsSchema, TeamsConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
 import { redirectRefusal, webhookFetch } from "./http";
+import { escapeAdaptiveCard } from "./escape";
 
 const log = logger.child({ adapter: "teams" });
 
@@ -34,7 +36,7 @@ export const TeamsAdapter: NotificationAdapter = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(card),
-            });
+            }, reachOf(config));
 
             const redirect = redirectRefusal("Teams", response);
             if (redirect) return { success: false, message: redirect };
@@ -63,7 +65,7 @@ export const TeamsAdapter: NotificationAdapter = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(card),
-            });
+            }, reachOf(config));
 
             if (!response.ok) {
                 const body = await response.text().catch(() => "");
@@ -80,7 +82,8 @@ export const TeamsAdapter: NotificationAdapter = {
 };
 
 /**
- * Builds an Adaptive Card payload compatible with Teams Workflows / Power Automate webhooks.
+ * Builds an Adaptive Card payload compatible with Teams Workflows / Power Automate webhooks. Its
+ * TextBlocks and facts render Markdown, so every text is escaped and a name never becomes a link.
  *
  * @see https://adaptivecards.io/explorer/
  */
@@ -95,7 +98,7 @@ function buildAdaptiveCard(
     // Color stripe via a ColumnSet with a thin colored column
     body.push({
         type: "TextBlock",
-        text: title,
+        text: escapeAdaptiveCard(title),
         size: "Large",
         weight: "Bolder",
         color: mapHexToAdaptiveColor(color),
@@ -104,7 +107,7 @@ function buildAdaptiveCard(
 
     body.push({
         type: "TextBlock",
-        text: message,
+        text: escapeAdaptiveCard(message),
         wrap: true,
         spacing: "Small",
     });
@@ -114,8 +117,8 @@ function buildAdaptiveCard(
         body.push({
             type: "FactSet",
             facts: fields.map((f) => ({
-                title: f.name,
-                value: f.value || "-",
+                title: escapeAdaptiveCard(f.name),
+                value: escapeAdaptiveCard(f.value || "-"),
             })),
             spacing: "Medium",
         });

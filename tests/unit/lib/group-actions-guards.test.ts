@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     groups: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), find: vi.fn(), heldBy: vi.fn(), holdsPlatformAdmin: vi.fn(), namesOf: vi.fn(), memberIds: vi.fn(async (..._args: unknown[]): Promise<string[]> => []) },
     /** Why a membership may not end, see `membershipEndRefusal`, by the account. */
     endRefused: new Set<string>(),
+    lastTenant: new Set<string>(),
     memberships: { roleOf: vi.fn(), setRoles: vi.fn(), isPersonOf: vi.fn(async (..._args: unknown[]) => true), isPlatformAdmin: vi.fn(async () => false) },
     users: { namesOf: vi.fn(), accountOf: vi.fn(), permissionsIn: vi.fn(async (..._args: unknown[]): Promise<string[]> => []) },
     /** The tenants the platform group of the viewer reaches. */
@@ -46,7 +47,8 @@ vi.mock("@/services/user/platform-group-service", () => ({ platformGroupService:
 vi.mock("@/services/user/account-visibility", () => ({ maySeeAccount: vi.fn(async (_viewer: unknown, id: string) => mocks.seen.has(id)) }));
 vi.mock("@/services/tenant/membership-end", () => ({
     MEMBERSHIP_END_HANDS_OVER: "hands over",
-    membershipEndRefusal: vi.fn(async (_caller: unknown, id: string) => (mocks.endRefused.has(id) ? "hands over" : null)),
+    MEMBERSHIP_END_MOVES_ACCOUNT: "moves account",
+    membershipEndRefusal: vi.fn(async (_caller: unknown, id: string) => (mocks.lastTenant.has(id) ? "moves account" : mocks.endRefused.has(id) ? "hands over" : null)),
 }));
 
 const { bulkDeleteGroups, createGroup, deleteGroup, moveUsersToGroup, updateGroup } = await import("@/app/actions/auth/group");
@@ -107,6 +109,7 @@ function reset(viewer: TestViewer) {
     mocks.users.permissionsIn.mockResolvedValue([]);
     mocks.reach = [];
     mocks.endRefused = new Set();
+    mocks.lastTenant = new Set();
 }
 
 describe("what may be done to groups and their people", () => {
@@ -303,6 +306,12 @@ describe("what may be done to groups and their people", () => {
         expect(await deleteGroup("g-ops", null)).toEqual({ success: false, error: expect.stringContaining("would afterwards work only in tenants where you manage the users") });
         expect(mocks.groups.delete).not.toHaveBeenCalled();
         expect(await deleteGroup("g-ops", "g-view")).toEqual({ success: true, data: { moved: 2 } });
+
+        // A member in no other tenant is named for that, since a group for them is not all that helps.
+        mocks.lastTenant = new Set(["tech"]);
+        mocks.groups.delete.mockClear();
+        expect(await deleteGroup("g-ops", null)).toEqual({ success: false, error: expect.stringContaining("is in no other tenant") });
+        expect(mocks.groups.delete).not.toHaveBeenCalled();
     });
 
     it("names an account of another tenant only while the viewer may see it, and answers any other like one that does not exist", async () => {

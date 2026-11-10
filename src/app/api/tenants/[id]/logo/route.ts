@@ -10,18 +10,14 @@ import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { TENANT_SETTINGS_AREA } from "@/services/tenant/tenant-settings-audit";
 import { tenantService } from "@/services/tenant/tenant-service";
+import { IMAGE_SECURITY_HEADERS, servedImageType } from "@/lib/server/image-response";
+import { formLimitFor, readFormWithin } from "@/lib/server/upload-size";
 import { findTenantLogo, mayViewTenantLogo, removeTenantLogo, saveTenantLogo, TENANT_LOGO_MAX_BYTES } from "@/services/tenant/tenant-logo-service";
 
 const log = logger.child({ route: "tenants/[id]/logo" });
 
 const FIELD = "Logo";
 const TOO_LARGE = "The logo is larger than 1 MB.";
-
-/** The room a form takes beside the file, its boundaries and headers, so a body above it holds a file too large. */
-const FORM_OVERHEAD_BYTES = 64 * 1024;
-
-/** The types an upload is stored with, read from its bytes. A stored row of any other type is never served. */
-const SERVED_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 /**
  * The logo of a tenant, for its people and for platform admins, who see every tenant. Anyone else
@@ -33,14 +29,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { id } = await params;
     const logo = (await mayViewTenantLogo(ctx, id)) ? await findTenantLogo(id) : null;
-    if (!logo || !SERVED_TYPES.has(logo.mimeType)) return new NextResponse(null, { status: 404 });
+    // A stored row of another type than an upload is stored with is never served.
+    const type = servedImageType(logo?.mimeType);
+    if (!logo || !type) return new NextResponse(null, { status: 404 });
     return new NextResponse(Buffer.from(logo.data), {
         headers: {
-            "Content-Type": logo.mimeType,
+            ...IMAGE_SECURITY_HEADERS,
+            "Content-Type": type,
             "Content-Length": String(logo.data.length),
             // The address carries the time of the logo in `?v=`, so a new logo gets a new address.
             "Cache-Control": req.nextUrl.searchParams.has("v") ? "private, max-age=31536000, immutable" : "private, max-age=3600",
-            "X-Content-Type-Options": "nosniff",
         },
     });
 }
@@ -70,12 +68,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const refused = guardChange(ctx, id);
     if (refused) return refused;
-    // Refused before the form is read, which would hold the whole body in memory.
-    if (Number(req.headers.get("content-length") ?? 0) > TENANT_LOGO_MAX_BYTES + FORM_OVERHEAD_BYTES) {
-        return NextResponse.json({ success: false, error: TOO_LARGE }, { status: 413 });
-    }
-
-    const form = await req.formData().catch(() => null);
+    // Refused before the whole body is read, which would hold it in memory.
+    const { form, tooLarge } = await readFormWithin(req, formLimitFor(TENANT_LOGO_MAX_BYTES));
+    if (tooLarge) return NextResponse.json({ success: false, error: TOO_LARGE }, { status: 413 });
     const file = form?.get("file");
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "Pick a picture to upload." }, { status: 400 });
     if (file.size > TENANT_LOGO_MAX_BYTES) return NextResponse.json({ success: false, error: TOO_LARGE }, { status: 400 });

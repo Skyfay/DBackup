@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
     destinationAuditName: vi.fn(),
     deleteAdapters: vi.fn(),
     updateAdapterFlags: vi.fn(),
-    getAdapterTypes: vi.fn(),
+    /** The type of each connection id that exists. */
+    types: {} as Record<string, string>,
+    /** What hasPermissionWithContext grants, the read permissions of every kind unless a test says otherwise. */
+    has: vi.fn(),
     deleteBackupsBulk: vi.fn(),
     setBackupsLocked: vi.fn(),
 }));
@@ -25,6 +28,7 @@ vi.mock("next/headers", () => ({
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: (...args: unknown[]) => mocks.getAuthContext(...args),
     checkPermissionWithContext: (...args: unknown[]) => mocks.checkPermissionWithContext(...args),
+    hasPermissionWithContext: (...args: unknown[]) => mocks.has(...args),
 }));
 
 vi.mock("@/services/jobs/job-service", () => ({
@@ -48,8 +52,8 @@ vi.mock("@/services/storage/backup-audit", () => ({
 vi.mock("@/services/adapters/adapter-service", () => ({
     deleteAdapters: (...args: unknown[]) => mocks.deleteAdapters(...args),
     updateAdapterFlags: (...args: unknown[]) => mocks.updateAdapterFlags(...args),
-    getAdapterTypes: (...args: unknown[]) => mocks.getAdapterTypes(...args),
 }));
+vi.mock("@/services/adapters/adapter-list", () => ({ getAdapterType: async (id: string) => mocks.types[id] ?? null }));
 
 vi.mock("@/services/storage/bulk-delete", () => ({
     deleteBackupsBulk: (...args: unknown[]) => mocks.deleteBackupsBulk(...args),
@@ -200,7 +204,8 @@ describe("POST /api/adapters/bulk", () => {
         mocks.getAuthContext.mockReset();
         mocks.checkPermissionWithContext.mockReset();
         mocks.deleteAdapters.mockReset().mockResolvedValue({ succeeded: ["a"], failed: [] });
-        mocks.getAdapterTypes.mockReset().mockResolvedValue(["database"]);
+        mocks.types = { a: "database", b: "database" };
+        mocks.has.mockReset().mockImplementation((_ctx: unknown, permission: string) => [PERMISSIONS.SOURCES.VIEW, PERMISSIONS.DESTINATIONS.READ, PERMISSIONS.NOTIFICATIONS.READ].includes(permission as never));
         mocks.auditLog.mockReset().mockResolvedValue(undefined);
         mocks.headers.mockResolvedValue(new Headers());
     });
@@ -230,7 +235,7 @@ describe("POST /api/adapters/bulk", () => {
     // would let a source:write holder delete destinations by mixing them into a batch.
     it("checks one permission per distinct type in a mixed selection", async () => {
         mocks.getAuthContext.mockResolvedValue(authed());
-        mocks.getAdapterTypes.mockResolvedValue(["database", "storage", "notification"]);
+        mocks.types = { a: "database", b: "storage", c: "notification" };
 
         await bulkAdapters(request({ action: "delete", ids: ["a", "b", "c"] }));
 
@@ -242,7 +247,7 @@ describe("POST /api/adapters/bulk", () => {
 
     it("refuses the batch when one type in it is not permitted", async () => {
         mocks.getAuthContext.mockResolvedValue(authed());
-        mocks.getAdapterTypes.mockResolvedValue(["database", "storage"]);
+        mocks.types = { a: "database", b: "storage" };
         mocks.checkPermissionWithContext.mockImplementation((_ctx: unknown, permission: string) => {
             if (permission === PERMISSIONS.DESTINATIONS.WRITE) throw new PermissionError(permission);
         });
@@ -255,12 +260,45 @@ describe("POST /api/adapters/bulk", () => {
 
     it("answers 404 when none of the ids exist", async () => {
         mocks.getAuthContext.mockResolvedValue(authed());
-        mocks.getAdapterTypes.mockResolvedValue([]);
+        mocks.types = {};
 
         const res = await bulkAdapters(request({ action: "delete", ids: ["ghost"] }));
 
         expect(res.status).toBe(404);
         expect(mocks.deleteAdapters).not.toHaveBeenCalled();
+    });
+
+    // A 403 for an id of a kind the caller may not see would tell that it exists, and its kind.
+    it("answers a selection of connections the caller may not read like one of missing ids", async () => {
+        mocks.getAuthContext.mockResolvedValue(authed());
+        mocks.types = { nas: "storage" };
+        mocks.has.mockReturnValue(false);
+
+        const hidden = await bulkAdapters(request({ action: "delete", ids: ["nas"] }));
+        mocks.types = {};
+        const missing = await bulkAdapters(request({ action: "delete", ids: ["nas"] }));
+
+        expect(hidden.status).toBe(404);
+        expect(await hidden.json()).toEqual(await missing.json());
+        expect(mocks.checkPermissionWithContext).not.toHaveBeenCalled();
+        expect(mocks.deleteAdapters).not.toHaveBeenCalled();
+    });
+
+    it("acts only on the connections the caller may read, and fails a hidden id with the row of a missing one", async () => {
+        mocks.getAuthContext.mockResolvedValue(authed());
+        mocks.types = { a: "database", nas: "storage" };
+        mocks.has.mockImplementation((_ctx: unknown, permission: string) => permission === PERMISSIONS.SOURCES.VIEW);
+
+        const res = await bulkAdapters(request({ action: "delete", ids: ["a", "nas", "ghost"] }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(mocks.deleteAdapters).toHaveBeenCalledWith(["a"], expect.anything());
+        expect(mocks.checkPermissionWithContext).toHaveBeenCalledExactlyOnceWith(expect.anything(), PERMISSIONS.SOURCES.WRITE);
+        expect(body.data.failed).toEqual([
+            { id: "nas", error: "The connection no longer exists." },
+            { id: "ghost", error: "The connection no longer exists." },
+        ]);
     });
 
     it("rejects a malformed body", async () => {
@@ -292,7 +330,7 @@ describe("POST /api/adapters/bulk", () => {
 
     it("marks destinations air-gapped and switches their integrity checks with the permission of destinations", async () => {
         mocks.getAuthContext.mockResolvedValue(authed());
-        mocks.getAdapterTypes.mockResolvedValue(["storage"]);
+        mocks.types = { nas: "storage" };
         mocks.updateAdapterFlags.mockReset().mockResolvedValue({ succeeded: ["nas"], failed: [] });
 
         expect((await bulkAdapters(request({ action: "mark-air-gapped", ids: ["nas"] }))).status).toBe(200);

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { unauthorized } from "@/lib/server/unauthorized";
 import { registerAdapters } from "@/lib/adapters";
 import { storageService } from "@/services/storage/storage-service";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath } from "@/lib/private-temp-dir";
 import path from "path";
 import { randomUUID } from "crypto";
 import fsPromises from "fs/promises";
@@ -113,9 +113,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const configBackup = await configBackupRefusal(ctx, params.id, file);
         if (configBackup) return configBackup;
 
-        const tempDir = getTempDir();
-        // A name nobody can guess, so two downloads never meet and no one lays a file there first.
-        tempFile = path.join(tempDir, `download_${randomUUID()}`);
+        // A name nobody can guess in the private folder, so two downloads never meet, no one lays a
+        // file there first and nobody else reads the backup, decrypted or not.
+        tempFile = await privateTempPath(`download_${randomUUID()}`);
 
         // Delegate logic to Service with decrypt flag
         // Note: storageService handles config retrieval, decryption and adapter lookup
@@ -189,8 +189,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const configBackup = await configBackupRefusal(ctx, params.id, file);
         if (configBackup) return configBackup;
 
-        const tempDir = getTempDir();
-        tempFile = path.join(tempDir, `download_${randomUUID()}`);
+        // See the GET above.
+        tempFile = await privateTempPath(`download_${randomUUID()}`);
 
         const result = await storageService.downloadFile(params.id, file, tempFile, true, { rawKeyHex, profileIdOverride, database });
 

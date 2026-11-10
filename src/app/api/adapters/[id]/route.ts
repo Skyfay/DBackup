@@ -8,6 +8,7 @@ import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } 
 import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { permissionRefusal } from "@/lib/server/permission-refusal";
+import { connectionNotFound, seesConnectionType } from "@/lib/server/connection-access";
 import { configBackupTargetResponse, savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
 import { wrapError, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
@@ -31,11 +32,9 @@ export async function DELETE(
 
     const params = await props.params;
     try {
-        // RBAC: Check permission based on adapter type
+        // RBAC: Check permission based on adapter type, a missing one and one the caller may not read alike.
         const type = await getAdapterType(params.id);
-        if (!type) {
-            return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
-        }
+        if (!seesConnectionType(ctx, type)) return connectionNotFound();
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
         // The destination of the configuration backup goes only with a platform admin.
         const locked = await configBackupTargetResponse(ctx, { connectionIds: [params.id] });
@@ -80,11 +79,9 @@ export async function PUT(
 
     const params = await props.params;
     try {
-        // RBAC: Check permission based on adapter type
+        // RBAC: Check permission based on adapter type, a missing one and one the caller may not read alike.
         const type = await getAdapterType(params.id);
-        if (!type) {
-            return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
-        }
+        if (!seesConnectionType(ctx, type)) return connectionNotFound();
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(type));
         // Pointed elsewhere or given another login, the next configuration backup would go there.
         const locked = await configBackupTargetResponse(ctx, { connectionIds: [params.id] });

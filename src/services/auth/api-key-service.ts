@@ -1,4 +1,4 @@
-import { randomBytes, createHash, scryptSync } from "crypto";
+import { randomBytes, createHash, scrypt } from "crypto";
 import { assertMayAddKind } from "@/services/tenant/tenant-allowances";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
@@ -18,10 +18,17 @@ const SCRYPT_KEYLEN = 32;
 const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 
 /**
- * Hash a raw API key using scrypt (CWE-916 compliant)
+ * Hash a raw API key using scrypt (CWE-916 compliant). Every request with a Bearer value hashes it
+ * before anything else, so this runs on the thread pool of Node rather than blocking the event loop.
+ * The hash is the same as the one `scryptSync` made before, so existing keys keep working.
  */
-function hashKey(rawKey: string): string {
-  return scryptSync(rawKey, SCRYPT_SALT, SCRYPT_KEYLEN, SCRYPT_OPTIONS).toString("hex");
+function hashKey(rawKey: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    scrypt(rawKey, SCRYPT_SALT, SCRYPT_KEYLEN, SCRYPT_OPTIONS, (error, derived) => {
+      if (error) reject(error);
+      else resolve(derived.toString("hex"));
+    });
+  });
 }
 
 /**
@@ -84,7 +91,7 @@ export class ApiKeyService {
     // The platform decides whether the tenant makes API keys itself.
     await assertMayAddKind("apiKeys");
     const rawKey = generateRawKey();
-    const hashed = hashKey(rawKey);
+    const hashed = await hashKey(rawKey);
     const prefix = rawKey.substring(0, PREFIX_LENGTH);
 
     const record = await prisma.apiKey.create({
@@ -270,7 +277,7 @@ export class ApiKeyService {
     }
 
     const rawKey = generateRawKey();
-    const hashed = hashKey(rawKey);
+    const hashed = await hashKey(rawKey);
     // The same length as a new key, the list tells keys apart by it.
     const prefix = rawKey.substring(0, PREFIX_LENGTH);
 
@@ -366,7 +373,7 @@ export class ApiKeyService {
       return null;
     }
 
-    const hashed = hashKey(rawKey);
+    const hashed = await hashKey(rawKey);
 
     // The roles of the owner decide the most the key may do, at every request.
     const withOwner = { user: OWNER_ROLES } as const;

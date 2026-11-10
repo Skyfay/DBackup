@@ -173,6 +173,8 @@ export async function stepUpload(ctx: RunnerContext) {
         engineVersion: ctx.metadata?.engineVersion,
         engineEdition: ctx.metadata?.engineEdition,
         timestamp: new Date().toISOString(),
+        // When the run started to dump its databases, which `timestamp` comes long after.
+        ...(typeof ctx.metadata?.dumpsStartedAt === 'string' ? { dumpsStartedAt: ctx.metadata.dumpsStartedAt } : {}),
         originalFileName: path.basename(ctx.tempFile),
         compression: compressionMeta,
         encryption: encryptionMeta,

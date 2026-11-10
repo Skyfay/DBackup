@@ -1,11 +1,13 @@
 import { createHash, randomBytes } from "crypto";
 import prisma from "@/lib/prisma";
 import { roleRefusal } from "@/lib/auth/account-access";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { authService } from "@/services/auth/auth-service";
 import { assertPasswordAllowed } from "@/services/auth/password-policy-service";
 import { claimedEmailRefusal } from "@/services/sso/email-domain-claims";
 import { countEmailRefusal, emailTriesSpent, MAX_FAILED_SIGN_UPS } from "@/services/user/email-tries";
+import { platformGroupService } from "@/services/user/platform-group-service";
 import { userService } from "@/services/user/user-service";
 import { membershipService } from "./membership-service";
 
@@ -92,11 +94,23 @@ async function openInvitation(token: string) {
     return invitation;
 }
 
+/**
+ * Whether whoever made a link may still make it: they still manage the people of its tenant, with
+ * `users:write` there or `platform-tenants:write` of a platform group that reaches it, and may still
+ * give its group. A platform admin always may.
+ */
 async function creatorMayGive(invitation: { tenantId: string; createdById: string | null; group: { permissions: string; fullAccess: boolean } }): Promise<boolean> {
     if (!invitation.createdById) return false;
     if (await membershipService.isPlatformAdmin(invitation.createdById)) return true;
     const permissions = await userService.permissionsIn(invitation.createdById, invitation.tenantId);
+    if (!(await managesPeopleOf(invitation.createdById, invitation.tenantId, permissions))) return false;
     return roleRefusal({ isPlatformAdmin: false, tenantId: invitation.tenantId, permissions }, invitation.group) === null;
+}
+
+/** Whether someone who is no platform admin manages the people of a tenant, the right that makes a link. */
+async function managesPeopleOf(userId: string, tenantId: string, permissions: readonly string[]): Promise<boolean> {
+    if (permissions.includes(PERMISSIONS.USERS.WRITE)) return true;
+    return permissions.includes(PERMISSIONS.PLATFORM.TENANTS_WRITE) && (await platformGroupService.reaches(userId, tenantId));
 }
 
 export const invitationService = {
@@ -256,6 +270,8 @@ export const invitationService = {
         await prisma.$transaction([
             prisma.tenantInvitation.update({ where: { id: invitation.id }, data: { acceptedById: created.user.id } }),
             prisma.tenantMembership.create({ data: { userId: created.user.id, tenantId: invitation.tenantId, groupId: invitation.groupId } }),
+            // Whoever opened the link picked the email, so no sign-in provider links the account by it, see `allowTenantSsoLink`.
+            prisma.user.update({ where: { id: created.user.id }, data: { emailVerified: false } }),
         ]);
         return { tenantId: invitation.tenantId, tenantName: invitation.tenant.name, joined: true, userId: created.user.id, email };
     },

@@ -1,10 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-    buildConnectionArgs,
     buildConnectionUri,
-    buildShellConnectionArgs,
     maskSecrets,
     parseMongoTarget,
+    shellConnectionUri,
     toolConnection,
 } from "@/lib/adapters/database/mongodb/args";
 
@@ -120,51 +119,17 @@ describe("buildConnectionUri", () => {
     });
 });
 
-describe("buildConnectionArgs", () => {
-    it("passes host and port flags for a normal server", () => {
-        const args = buildConnectionArgs(withAuth as never);
-        expect(args[args.indexOf("--host") + 1]).toBe("mongo.internal");
-        expect(args[args.indexOf("--port") + 1]).toBe("27017");
-        expect(args[args.indexOf("--username") + 1]).toBe("root");
-        expect(args[args.indexOf("--authenticationDatabase") + 1]).toBe("admin");
+describe("shellConnectionUri", () => {
+    it("connects mongosh directly to a single host, as the tools do for one --host", () => {
+        expect(shellConnectionUri(withAuth as never)).toBe("mongodb://root:s3cr3t@mongo.internal:27017/?authSource=admin&directConnection=true");
+        expect(shellConnectionUri(base as never)).toBe("mongodb://mongo.internal:27017/?directConnection=true");
     });
 
-    it("passes a URI instead of host flags for an SRV hostname", () => {
-        const args = buildConnectionArgs({ ...withAuth, host: "cluster0.ab12c.mongodb.net" } as never);
-        expect(args).toEqual([
-            "--uri=mongodb+srv://root:s3cr3t@cluster0.ab12c.mongodb.net/?authSource=admin",
-        ]);
-        expect(args).not.toContain("--host");
-    });
-
-    it("cleans a trailing slash out of the host flag", () => {
-        const args = buildConnectionArgs({ ...withAuth, host: "mongo.internal/" } as never);
-        expect(args[args.indexOf("--host") + 1]).toBe("mongo.internal");
-    });
-
-    it("passes a URI for a replica set seed list, which no single --host can express", () => {
-        const args = buildConnectionArgs({ ...withAuth, host: "rs1.example.com,rs2.example.com" } as never);
-        expect(args).toEqual([
-            "--uri=mongodb://root:s3cr3t@rs1.example.com:27017,rs2.example.com:27017/?authSource=admin",
-        ]);
-    });
-});
-
-describe("buildShellConnectionArgs", () => {
-    it("passes the connection string positionally, because mongosh has no --uri flag", () => {
-        const args = buildShellConnectionArgs({ ...withAuth, host: "cluster0.ab12c.mongodb.net" } as never);
-        expect(args).toEqual([
-            "mongodb+srv://root:s3cr3t@cluster0.ab12c.mongodb.net/?authSource=admin",
-        ]);
-    });
-
-    it("passes a stored inline uri positionally too", () => {
+    it("keeps an SRV name, a seed list and a stored inline uri as the driver gets them", () => {
+        expect(shellConnectionUri({ ...withAuth, host: "cluster0.ab12c.mongodb.net" } as never)).toBe("mongodb+srv://root:s3cr3t@cluster0.ab12c.mongodb.net/?authSource=admin");
+        expect(shellConnectionUri({ ...withAuth, host: "rs1.example.com,rs2.example.com" } as never)).toBe("mongodb://root:s3cr3t@rs1.example.com:27017,rs2.example.com:27017/?authSource=admin");
         const uri = "mongodb://legacy:pw@mongo.internal:27017";
-        expect(buildShellConnectionArgs({ ...withAuth, uri } as never)).toEqual([uri]);
-    });
-
-    it("falls back to host flags for a normal server", () => {
-        expect(buildShellConnectionArgs(withAuth as never)).toContain("--host");
+        expect(shellConnectionUri({ ...withAuth, uri } as never)).toBe(uri);
     });
 });
 

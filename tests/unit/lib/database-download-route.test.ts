@@ -14,8 +14,8 @@ vi.mock("@/lib/auth/access-control", () => ({
 vi.mock("next/headers", () => ({ headers: () => new Headers() }));
 
 const mockCreateSnapshot = vi.fn();
-vi.mock("@/services/system/database-service", () => ({
-    createDatabaseSnapshot: (...args: unknown[]) => mockCreateSnapshot(...args),
+vi.mock("@/services/config/database-copy", () => ({
+    createDownloadCopy: (...args: unknown[]) => mockCreateSnapshot(...args),
 }));
 
 const mockAuditLog = vi.fn();

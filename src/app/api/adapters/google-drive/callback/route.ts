@@ -4,7 +4,8 @@ import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
-import { OAUTH_CALLBACK_FAILED, OAUTH_DENIED, oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
+import { oauthReturnUrl, type OAuthErrorCode } from "@/lib/core/oauth-result";
+import { oauthCallbackCaller, saveRefreshToken } from "@/lib/server/oauth-callback";
 
 const log = logger.child({ route: "adapters/google-drive/callback" });
 
@@ -14,12 +15,12 @@ const log = logger.child({ route: "adapters/google-drive/callback" });
  * `state` is the one the auth route made, bound to the person, the tenant and the OAUTH credential
  * profile, see `oauthCallbackCaller`. The refresh token is written back into that profile, so every
  * destination referencing it becomes authorized.
- * Redirects back to the destinations page with success/error status.
+ * Redirects back to the destinations page with a fixed code of how it went, see `oauthReturnUrl`.
  */
 export async function GET(req: NextRequest) {
     const origin = process.env.BETTER_AUTH_URL || req.nextUrl.origin;
-    const fail = (message: string) =>
-        NextResponse.redirect(`${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(message)}`);
+    // The page shows a fixed sentence for the code, never one from the address.
+    const fail = (code: OAuthErrorCode) => NextResponse.redirect(oauthReturnUrl(origin, "google-drive", code));
 
     const code = req.nextUrl.searchParams.get("code");
     const state = req.nextUrl.searchParams.get("state");
@@ -28,19 +29,19 @@ export async function GET(req: NextRequest) {
     // Handle user denial
     if (error) {
         log.warn("Google OAuth denied by user", { error });
-        return fail(OAUTH_DENIED);
+        return fail("denied");
     }
 
     if (!code || !state) {
         log.warn("Missing code or state in Google OAuth callback");
-        return fail("Missing authorization code or state.");
+        return fail("missing_code");
     }
 
     // Who brings the code back, and the login the authorization was started for.
     const caller = await oauthCallbackCaller("google-drive", state);
     if (!caller.ok) {
         log.warn("Refused a Google OAuth callback", { reason: caller.message });
-        return fail(caller.message);
+        return fail(caller.code);
     }
     const { ctx, credentialId } = caller;
 
@@ -61,18 +62,16 @@ export async function GET(req: NextRequest) {
 
         if (!tokens.refresh_token) {
             log.warn("No refresh token received from Google", { credentialId });
-            return fail("No refresh token received. Please revoke app access in your Google Account settings and try again.");
+            return fail("no_refresh_token");
         }
 
         await saveRefreshToken(ctx, credentialId, profile, tokens.refresh_token);
 
         log.info("Google Drive OAuth completed successfully", { credentialId });
 
-        return NextResponse.redirect(
-            `${origin}/dashboard/connections?tab=destinations&oauth=success&message=${encodeURIComponent("Google Drive authorized successfully!")}`
-        );
+        return NextResponse.redirect(oauthReturnUrl(origin, "google-drive", null));
     } catch (err) {
         log.error("Google OAuth callback failed", { credentialId }, wrapError(err));
-        return fail(OAUTH_CALLBACK_FAILED);
+        return fail("failed");
     }
 }

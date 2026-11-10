@@ -13,6 +13,7 @@ import { PermissionError, ValidationError } from "@/lib/logging/errors";
 const db = vi.hoisted(() => ({
     rows: new Map<string, { id: string; adapterId: string; tenantId: string; config: string }>(),
     sources: new Map<string, { configId: string; path: string }>(),
+    provided: new Set<string>(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -32,7 +33,10 @@ vi.mock("@/lib/adapters/own-data", () => ({
         return own.volumes.has(volume.split("/")[0]) ? OWN_VOLUME : null;
     },
 }));
-vi.mock("@/lib/server/config-backup-target-guard", () => ({ configBackupTargetRefusal: async () => null }));
+const guard = vi.hoisted(() => ({ calls: 0 }));
+vi.mock("@/lib/server/config-backup-target-guard", () => ({ configBackupTargetRefusal: async () => { guard.calls++; return null; } }));
+// The connections another tenant shares with the caller.
+vi.mock("@/services/sharing/provided", () => ({ providedIds: async (_tenantId: string, ids: string[]) => new Set(ids.filter((id) => db.provided.has(id))) }));
 
 const {
     assertRestoreTargetsAllowed, assertWriteTargets, restoredFileRefusal, writeTargetRefusal,
@@ -281,6 +285,36 @@ describe("the directory mappings of a full restore", () => {
         await expect(assertRestoreTargetsAllowed(mapping("nas", "   "), MANAGER)).rejects.toBeInstanceOf(ValidationError);
         // A source left out writes nothing, so it needs no folder.
         await expect(assertRestoreTargetsAllowed({ directoryMapping: [{ entryId: "src-1", targetConfigId: "nas", targetPath: "", selected: false }] }, MEMBER)).resolves.toBeUndefined();
+    });
+
+    it("refuses a connection of another tenant before any other check, in the words of one that does not exist", async () => {
+        db.rows.set("acme-nas", { id: "acme-nas", adapterId: "sftp", tenantId: "acme", config: "{}" });
+        db.sources.set("src-acme", { configId: "acme-nas", path: "/var/www" });
+        guard.calls = 0;
+        own.calls.length = 0;
+        const acme = { directoryMapping: [{ entryId: "src-acme", targetConfigId: "acme-nas", targetPath: "/var/www", selected: true }] };
+        const missing = "Invalid restore target for a directory entry: adapter 'acme-nas' not found";
+        for (const caller of [MEMBER, MANAGER, ADMIN]) {
+            await expect(assertRestoreTargetsAllowed(acme, caller)).rejects.toThrow(missing);
+        }
+        // Left out of the pick, the restore still opens it for the source, so it counts too.
+        await expect(assertRestoreTargetsAllowed({ directoryMapping: [{ ...acme.directoryMapping[0], selected: false }] }, ADMIN)).rejects.toThrow(missing);
+        await expect(assertRestoreTargetsAllowed({ targetSourceId: "acme-nas" }, ADMIN)).rejects.toThrow("Target source not found");
+        await expect(assertRestoreTargetsAllowed(acme, { isPlatformAdmin: true, authMethod: "session" })).rejects.toThrow(missing);
+        expect(guard.calls).toBe(0);
+        expect(own.calls).toEqual([]);
+        // Acme sees its own connection.
+        await expect(assertRestoreTargetsAllowed(acme, { ...MEMBER, tenantId: "acme" })).resolves.toBeUndefined();
+    });
+
+    it("lets through a connection another tenant provides to the caller", async () => {
+        db.rows.set("msp-nas", { id: "msp-nas", adapterId: "sftp", tenantId: "msp", config: "{}" });
+        db.provided.add("msp-nas");
+        try {
+            await expect(assertRestoreTargetsAllowed({ directoryMapping: [{ entryId: "src-www", targetConfigId: "msp-nas", targetPath: "/restores", selected: true }] }, MANAGER)).rejects.toThrow(OTHER_TARGET_REFUSED);
+        } finally {
+            db.provided.clear();
+        }
     });
 
     it("reads the folder the restore writes into the same way the restore does", () => {

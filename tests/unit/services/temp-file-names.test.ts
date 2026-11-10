@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({ download: vi.fn(), analyzeDump: vi.fn() }));
 
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/temp-dir", () => ({ getTempDir: () => "/tmp/dbackup-test" }));
+// The private folder a download of a backup goes into, see `privateTempDir`, at the same made-up place.
+vi.mock("@/lib/private-temp-dir", () => ({
+    privateTempPath: async (name: string) => `/tmp/dbackup-test/dbackup-private-test/${name}`,
+    PRIVATE_FILE_MODE: 0o600,
+}));
 vi.mock("@/lib/core/registry", () => ({ registry: { get: () => ({ id: "mysql", analyzeDump: mocks.analyzeDump }) } }));
 vi.mock("@/services/storage/storage-lookup", () => ({
     openStorage: async () => ({ adapter: { download: mocks.download }, config: {} }),
@@ -31,7 +36,7 @@ describe("the temporary files of a read of a backup", () => {
 
         const [first, second] = targets();
         expect(first).not.toBe(second);
-        expect(first).not.toBe("/tmp/dbackup-test/backup.sql");
+        expect(first).not.toBe("/tmp/dbackup-test/dbackup-private-test/backup.sql");
         expect(first.endsWith("backup.sql")).toBe(true);
     });
 

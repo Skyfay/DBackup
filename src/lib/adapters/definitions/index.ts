@@ -29,10 +29,10 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "mongodb", type: "database", group: "Document", name: "MongoDB", sharesSingleDatabases: true, configSchema: MongoDBSchema },
     { id: "sqlite", type: "database", group: "File based", name: "SQLite", sharesSingleDatabases: true, configSchema: SQLiteSchema },
     { id: "mssql", type: "database", group: "Relational", name: "Microsoft SQL Server", sharesSingleDatabases: true, configSchema: MSSQLSchema },
-    { id: "azure-sql", type: "database", group: "Relational", name: "Azure SQL Database", beta: true, sharesSingleDatabases: true, configSchema: AzureSQLSchema },
+    { id: "azure-sql", type: "database", group: "Relational", name: "Azure SQL Database", beta: true, sharesSingleDatabases: true, customerRestores: false, configSchema: AzureSQLSchema },
     { id: "redis", type: "database", group: "Key value", name: "Redis", sharesSingleDatabases: false, configSchema: RedisSchema },
     { id: "valkey", type: "database", group: "Key value", name: "Valkey", sharesSingleDatabases: false, configSchema: RedisSchema },
-    { id: "firebird", type: "database", group: "Relational", name: "Firebird", beta: true, sharesSingleDatabases: true, configSchema: FirebirdSchema },
+    { id: "firebird", type: "database", group: "Relational", name: "Firebird", beta: true, sharesSingleDatabases: true, customerRestores: false, configSchema: FirebirdSchema },
 
     { id: "local-filesystem", type: "storage", group: "Local", name: "Local Filesystem", configSchema: LocalStorageSchema },
     {
@@ -170,4 +170,12 @@ export function getAdapterDefinition(id: string) {
 export function sharesSingleDatabases(adapterId: string): boolean {
     const definition = getAdapterDefinition(adapterId);
     return definition?.type === "database" && definition.sharesSingleDatabases === true;
+}
+
+/**
+ * Whether a customer may restore a database of a server of this engine that was given to them,
+ * see `AdapterDefinition.customerRestores`. Only an engine that shares single databases does.
+ */
+export function customerRestores(adapterId: string): boolean {
+    return sharesSingleDatabases(adapterId) && getAdapterDefinition(adapterId)?.customerRestores !== false;
 }

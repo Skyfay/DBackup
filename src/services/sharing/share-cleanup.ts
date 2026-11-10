@@ -39,6 +39,33 @@ export async function deleteTenantBackups(configId: string, tenantId: string): P
 }
 
 /**
+ * Deletes the folders of deleted tenants on a shared destination: `tenants/<id>/` of every id that
+ * names no tenant. The delete of a tenant empties its folders in the background and never waits for
+ * the storage, so what the storage did not take then goes here, through the hourly warmup of the
+ * storage cache. Returns the ids of the folders it emptied, and throws when the storage refuses.
+ */
+export async function sweepDeletedTenantFolders(configId: string): Promise<string[]> {
+    const row = await runAsSystem(() => prisma.adapterConfig.findUnique({ where: { id: configId } }));
+    if (!row) return [];
+    const { adapter, config } = await openRow(row, { kind: "own" });
+    const ids = new Set<string>();
+    for (const file of await adapter.list(config, TENANTS_FOLDER)) {
+        // A file right inside `tenants/` lies in the folder of no tenant.
+        const parts = file.path.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".");
+        if (parts.length >= 3 && parts[0] === TENANTS_FOLDER) ids.add(parts[1]);
+    }
+    if (ids.size === 0) return [];
+    // Read after the listing, so a tenant made meanwhile counts as one that exists.
+    const live = new Set((await runAsSystem(() => prisma.tenant.findMany({ where: { id: { in: [...ids] } }, select: { id: true } }))).map((tenant) => tenant.id));
+    const gone = [...ids].filter((id) => !live.has(id));
+    for (const tenantId of gone) {
+        log.info("Deleting the folder of a deleted tenant on a shared destination", { configId, tenantId });
+        await deleteTenantBackups(configId, tenantId);
+    }
+    return gone;
+}
+
+/**
  * Deletes every file and throws when the storage kept one. Most storage adapters answer a delete
  * they could not do with false instead of throwing, so a file whose delete answered false counts as
  * kept while a second listing of `dir` still shows it. One that went in between, like by the

@@ -16,6 +16,7 @@ import { ConfigurationError, wrapError } from "@/lib/logging/errors";
 import { CONFIG_BACKUP_FOLDER_NAME, isConfigBackupFolderName } from "@/lib/core/config-backup-path";
 import { JOB_FOLDER_NAME, isUnsafeJobFolderName } from "@/lib/core/job-folder";
 import { assertSourceFolder } from "@/lib/archive/remote-paths";
+import { volumeSourceProblem } from "@/lib/adapters/storage/docker/volume-name";
 
 const log = logger.child({ step: "initialize" });
 
@@ -135,6 +136,9 @@ export async function stepInitialize(ctx: RunnerContext) {
             const reason = error instanceof Error ? error.message : String(error);
             throw new ConfigurationError(src.config.adapterId, `Job ${job.name}, source ${src.config.name}: ${reason} Edit the job to run it again.`);
         }
+        // A Docker Volumes source names one volume, never a folder of the Docker host, see `volume-name.ts`.
+        const volumeProblem = src.config.adapterId === "docker-volume" ? volumeSourceProblem(src.path) : null;
+        if (volumeProblem) throw new ConfigurationError(src.config.adapterId, `Job ${job.name}, source ${src.config.name}: ${volumeProblem} Edit the job to run it again.`);
 
         const sourceConfig = await resolveAdapterConfig(src.config) as Record<string, unknown>;
         // "/" is the form's sentinel for "the whole adapter" (see DirectoryBrowseDialog in job-form.tsx).

@@ -2,10 +2,11 @@ import prisma from "@/lib/prisma";
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { holderAt, matchesPattern, ownerAt } from "@/lib/tenant/database-owner";
 import { OUTSIDE_REACH, reachCovers, TENANT_BEYOND_REACH, type PlatformReach } from "@/lib/tenant/sharing-reach";
-import { assertChangesReached, assertReached, assertRuleReached } from "./assignment-reach";
+import { assertChangesReached, assertReached, assertRuleEndReached, assertRuleReached } from "./assignment-reach";
 import { movesOf } from "./database-moves";
+import { assertNoSharedRestore } from "@/services/restore/shared-restores-active";
 import { backupDatesByDatabase, serverBackupFiles } from "./shared-backups";
-import { assertCustomer, listedDatabases, NOT_SHARING, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
+import { assertCustomer, assertTenantsLive, listedDatabases, NOT_SHARING, onDemandValue, ownSource, rememberServer, sharesWithCustomers, sharingChanged, tenantOnDemand } from "./shared-servers";
 
 export { listedDatabases, sharesWithCustomers };
 
@@ -231,11 +232,15 @@ export const databaseAssignmentService = {
             if (change.tenantId) assertReached(reach, change.tenantId, OUTSIDE_REACH.give);
             if (change.tenantId) await assertCustomer(change.tenantId, source);
             if (change.validFrom && change.validFrom.getTime() > now.getTime()) throw new ValidationError("An assignment starts today or earlier.");
+            // A customer's restore would write an old dump into a database that is no longer theirs.
+            assertNoSharedRestore(sourceId, { databaseName: change.databaseName }, (tenantId) => tenantId === change.tenantId);
         }
 
         let changed = 0;
         const tenants = new Set<string>();
         await prisma.$transaction(async (tx) => {
+            // A customer deleted since `assertCustomer` would keep an assignment under its dead id.
+            await assertTenantsLive(tx, changes.map((change) => change.tenantId));
             const rules = await tx.databaseAssignmentRule.findMany({ where: { sourceId } });
             await assertChangesReached(tx, sourceId, changes, rules, reach, now);
             if (changes.length > 0) await rememberServer(tx, source);
@@ -275,9 +280,12 @@ export const databaseAssignmentService = {
         assertReached(reach, input.tenantId, OUTSIDE_REACH.give);
         await assertCustomer(input.tenantId, source);
         if (input.validFrom && input.validFrom.getTime() > now.getTime()) throw new ValidationError("A rule starts today or earlier.");
+        assertNoSharedRestore(sourceId, { pattern }, (tenantId) => tenantId === input.tenantId);
         await assertRuleReached(sourceId, { pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now }, reach, now);
         const onDemandPerDay = onDemandValue(input.onDemandPerDay);
         const rule = await prisma.$transaction(async (tx) => {
+            // A customer deleted since `assertCustomer` would keep a rule under its dead id.
+            await assertTenantsLive(tx, [input.tenantId]);
             await rememberServer(tx, source);
             return tx.databaseAssignmentRule.create({
                 data: { sourceId, pattern, tenantId: input.tenantId, priority: Math.round(input.priority ?? 0), validFrom: input.validFrom ?? now, onDemandPerDay, createdAt: now },
@@ -289,14 +297,18 @@ export const databaseAssignmentService = {
 
     /**
      * Ends a rule. The databases it gave belong to nobody else from now on, unless another rule
-     * takes them. The rule stays for the backups of its time, which stay with the customer it gave
-     * them to, like those of an ended assignment.
+     * takes them, which is refused when that rule's tenant is beyond the reach. The rule stays for
+     * the backups of its time, which stay with the customer it gave them to, like those of an ended
+     * assignment.
      */
     async removeRule(sourceId: string, ruleId: string, now = new Date(), reach: PlatformReach = "all"): Promise<{ pattern: string; tenantId: string; tenantName: string }> {
         await ownSource(sourceId);
         const rule = await prisma.databaseAssignmentRule.findFirst({ where: { id: ruleId, sourceId, validUntil: null } });
         if (!rule) throw new NotFoundError("Rule", ruleId);
         assertReached(reach, rule.tenantId, OUTSIDE_REACH.rule(rule.pattern));
+        assertNoSharedRestore(sourceId, { pattern: rule.pattern }, (tenantId) => tenantId !== rule.tenantId);
+        // The databases it gave may fall to a rule of a lower priority, of a tenant beyond the reach.
+        await assertRuleEndReached(sourceId, rule, reach, now);
         await prisma.databaseAssignmentRule.update({ where: { id: ruleId }, data: { validUntil: now } });
         sharingChanged();
         return { pattern: rule.pattern, tenantId: rule.tenantId, tenantName: (await tenantNames([rule.tenantId]))(rule.tenantId) };

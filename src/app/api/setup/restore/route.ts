@@ -3,6 +3,7 @@ import { CONFIG_UPLOAD_MAX_BYTES, CONFIG_UPLOAD_TOO_BIG } from "@/lib/core/confi
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
+import { readFormWithin } from "@/lib/server/upload-size";
 import { checkUploadedBackup, hasNoAccountYet } from "@/services/config/restore-flow";
 
 const log = logger.child({ route: "setup/restore" });
@@ -20,11 +21,8 @@ export async function POST(req: NextRequest) {
     if (!(await hasNoAccountYet())) {
         return NextResponse.json({ success: false, error: "DBackup has an account already. Sign in and restore under Settings." }, { status: 403 });
     }
-    if (Number(req.headers.get("content-length") ?? 0) > CONFIG_UPLOAD_MAX_BYTES) {
-        return NextResponse.json({ success: false, error: CONFIG_UPLOAD_TOO_BIG }, { status: 413 });
-    }
-
-    const form = await req.formData().catch(() => null);
+    const { form, tooLarge } = await readFormWithin(req, CONFIG_UPLOAD_MAX_BYTES);
+    if (tooLarge) return NextResponse.json({ success: false, error: CONFIG_UPLOAD_TOO_BIG }, { status: 413 });
     const backup = form?.get("backupFile");
     if (!form || !(backup instanceof File)) return NextResponse.json({ success: false, error: "No backup file provided" }, { status: 400 });
     const meta = form.get("metaFile");

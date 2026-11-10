@@ -17,12 +17,21 @@ import { sharingChanged } from "./shared-servers";
 /** What a tenant that shares beyond the reach of the viewer is called. */
 export const PROVIDER_BEYOND_REACH = TENANT_BEYOND_REACH.name;
 
+/**
+ * What a server, a database and a pattern of a tenant beyond the reach of the viewer are called,
+ * since their names tell as much of that tenant as its own.
+ */
+export const SERVER_BEYOND_REACH = "A server of another tenant";
+export const DATABASE_BEYOND_REACH = "A database of another tenant";
+export const PATTERN_BEYOND_REACH = "A pattern of another tenant";
+
 /** A database given by name or a rule of a customer that sets a number of its own. */
 export interface OnDemandOverride {
     kind: "database" | "rule";
     /** The id of the assignment or of the rule. */
     id: string;
-    sourceId: string;
+    /** The connection of the server, left out for a server beyond the viewer's reach. */
+    sourceId?: string;
     serverName: string;
     /** The tenant the server belongs to, which shares it, none once it was deleted. */
     providerId: string | null;
@@ -52,7 +61,8 @@ function perDayValue(perDay: number | null): number | null {
 export const tenantOnDemandService = {
     /**
      * The number of a customer and what its databases and rules of now set on their own. A tenant
-     * that shares beyond `reach` shows as `PROVIDER_BEYOND_REACH`, without its id.
+     * that shares beyond `reach` shows as `PROVIDER_BEYOND_REACH`, without its id, and so do its
+     * server, database and pattern, without the id of the server.
      */
     async find(tenantId: string, reach: PlatformReach = "all"): Promise<TenantOnDemand | null> {
         return runAsSystem(async () => {
@@ -75,21 +85,28 @@ export const tenantOnDemandService = {
             const providers = await prisma.tenant.findMany({ where: { id: { in: [...new Set(servers.map((server) => server.tenantId))] } }, select: { id: true, name: true } });
             const serverOf = new Map(servers.map((server) => [server.id, server]));
             const providerOf = new Map(providers.map((provider) => [provider.id, provider.name]));
-            const place = (sourceId: string) => {
-                const server = serverOf.get(sourceId);
+            const override = (kind: OnDemandOverride["kind"], entry: { id: string; sourceId: string; onDemandPerDay: number | null }, name: string): OnDemandOverride => {
+                const server = serverOf.get(entry.sourceId);
                 const providerId = server && providerOf.has(server.tenantId) ? server.tenantId : null;
+                const perDay = entry.onDemandPerDay as number;
                 if (providerId && !reachCovers(reach, providerId)) {
-                    return { serverName: server?.name ?? "A deleted server", providerId: null, providerName: PROVIDER_BEYOND_REACH, beyondReach: true };
+                    const masked = kind === "rule" ? PATTERN_BEYOND_REACH : DATABASE_BEYOND_REACH;
+                    return { kind, id: entry.id, serverName: SERVER_BEYOND_REACH, providerId: null, providerName: PROVIDER_BEYOND_REACH, name: masked, perDay, beyondReach: true };
                 }
                 return {
+                    kind,
+                    id: entry.id,
+                    sourceId: entry.sourceId,
                     serverName: server?.name ?? "A deleted server",
                     providerId,
                     providerName: (server && providerOf.get(server.tenantId)) ?? "A deleted tenant",
+                    name,
+                    perDay,
                 };
             };
             const overrides: OnDemandOverride[] = [
-                ...assignments.map((entry) => ({ kind: "database" as const, id: entry.id, sourceId: entry.sourceId, ...place(entry.sourceId), name: entry.databaseName, perDay: entry.onDemandPerDay as number })),
-                ...rules.map((entry) => ({ kind: "rule" as const, id: entry.id, sourceId: entry.sourceId, ...place(entry.sourceId), name: entry.pattern, perDay: entry.onDemandPerDay as number })),
+                ...assignments.map((entry) => override("database", entry, entry.databaseName)),
+                ...rules.map((entry) => override("rule", entry, entry.pattern)),
             ].sort((a, b) => a.serverName.localeCompare(b.serverName) || a.name.localeCompare(b.name));
             return { name: tenant.name, perDay: tenant.onDemandPerDay, overrides };
         });
@@ -119,7 +136,8 @@ export const tenantOnDemandService = {
         const current = found?.overrides.find((entry) => entry.kind === kind && entry.id === id);
         if (!found || !current) throw new NotFoundError(kind === "rule" ? "Rule" : "Database", id);
         if (reach !== "all" && !(current.providerId && reachCovers(reach, current.providerId))) {
-            throw new ValidationError(OUTSIDE_REACH.provider(current.serverName));
+            // The server of a tenant beyond the reach goes by no name, like in `find`.
+            throw new ValidationError(OUTSIDE_REACH.provider(current.providerId ? SERVER_BEYOND_REACH : current.serverName));
         }
         await runAsSystem(() => (kind === "rule"
             ? prisma.databaseAssignmentRule.update({ where: { id }, data: { onDemandPerDay: null } })

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// The custom server sets the header of the address, which the app trusts only then.
+vi.stubEnv("DBACKUP_CUSTOM_SERVER", "1");
+
 const mocks = vi.hoisted(() => ({
     log: vi.fn(),
     user: vi.fn(),

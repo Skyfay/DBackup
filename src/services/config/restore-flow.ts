@@ -12,7 +12,7 @@ import prisma from "@/lib/prisma";
 import { registerAdapters } from "@/lib/adapters";
 import { registry } from "@/lib/core/registry";
 import { isShared, openRow } from "@/services/sharing/destination-access";
-import { getTempDir } from "@/lib/temp-dir";
+import { privateTempPath, restrictFile, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import { ValidationError } from "@/lib/logging/errors";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
@@ -53,10 +53,13 @@ export function keyOverride(keyHex?: string | null, profileId?: string | null): 
     return profileId ? { profileId } : undefined;
 }
 
-/** Writes an upload to the temp folder. Only its base name is kept, which tells how it is stored. */
+/**
+ * Writes an upload to the private temp folder, since a plain backup holds every secret. Only its
+ * base name is kept, which tells how it is stored.
+ */
 async function toTempFile(file: File): Promise<string> {
-    const target = path.join(getTempDir(), `upload_restore_${randomUUID()}_${path.basename(file.name)}`);
-    await fs.writeFile(target, Buffer.from(await file.arrayBuffer()));
+    const target = await privateTempPath(`upload_restore_${randomUUID()}_${path.basename(file.name)}`);
+    await fs.writeFile(target, Buffer.from(await file.arrayBuffer()), { flag: "wx", mode: PRIVATE_FILE_MODE });
     return target;
 }
 
@@ -70,14 +73,24 @@ async function readJson(file: string): Promise<AppConfigurationBackup> {
     throw new ValidationError("The file is no configuration backup of DBackup.");
 }
 
+/**
+ * A restore that brings back no account. A copy replaces every account, so it would leave DBackup
+ * without one and open the first sign-up again, in a database whoever made the copy wrote. On the
+ * sign-up page a file of an older version does the same. In Settings such a file only adds to the
+ * accounts there, so an older file without users still restores.
+ */
+const NO_ACCOUNT = "The backup holds no account, so DBackup would be left without one to sign in with. Restore a backup that holds the accounts.";
+
 /** Checks an opened backup and holds it for its restore, which then owns the file. */
 async function check(plain: string, fileName: string, owner: RestoreOwner): Promise<CheckedRestore> {
     try {
         if (await isDatabaseCopy(plain)) {
             const { preview, keys } = await inspectDatabaseCopy(plain);
+            if (preview.counts.users === 0) throw new ValidationError(NO_ACCOUNT);
             return { token: await holdRestore({ file: plain, fileName, preview, keys, owner }), fileName, preview };
         }
         const preview = previewOfJson(await readJson(plain));
+        if (owner === "setup" && preview.counts.users === 0) throw new ValidationError(NO_ACCOUNT);
         return { token: await holdRestore({ file: plain, fileName, preview, keys: null, owner }), fileName, preview };
     } catch (error: unknown) {
         await fs.unlink(plain).catch(() => undefined);
@@ -137,9 +150,10 @@ async function checkStored(destinationId: string, file: string, override: KeyOve
     // Shared with customers, the destination holds their folder too, which their jobs filled. No file of it is taken.
     const { adapter, config: resolved } = await openRow(config, (await isShared(config.id)) ? { kind: "provider" } : { kind: "own" });
 
-    const local = path.join(getTempDir(), `config_restore_${randomUUID()}_${path.basename(file)}`);
+    const local = await privateTempPath(`config_restore_${randomUUID()}_${path.basename(file)}`);
     try {
         await adapter.download(resolved, file, local);
+        await restrictFile(local);
         let meta: Record<string, unknown> | null = null;
         try {
             const text = adapter.read ? await adapter.read(resolved, `${file}.meta.json`) : null;
@@ -147,9 +161,11 @@ async function checkStored(destinationId: string, file: string, override: KeyOve
         } catch {
             meta = null;
         }
-        // A plain file there could come from anyone who may restore files into the destination.
+        // A plain file there could come from anyone who may restore files into the destination, and
+        // an encrypted one from anyone who may add a key to the Vault, so it opens only with the key
+        // of the configuration backup or one the admin gave.
         if (!isStoredEncrypted(path.basename(file), meta)) throw new ValidationError(UNENCRYPTED_AT_DESTINATION);
-        const plain = await openBackupFile(local, meta, override);
+        const plain = await openBackupFile(local, meta, override, "destination");
         return await check(plain, path.basename(file), owner);
     } finally {
         await fs.unlink(local).catch(() => undefined);

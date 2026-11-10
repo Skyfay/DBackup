@@ -3,7 +3,9 @@ import { DiscordSchema, DiscordConfig } from "@/lib/adapters/definitions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
 import { redirectRefusal, webhookFetch } from "./http";
+import { escapeMarkdown } from "./escape";
 
 const log = logger.child({ adapter: "discord" });
 
@@ -25,7 +27,7 @@ export const DiscordAdapter: NotificationAdapter = {
                     username: config.username || "Backup Manager Test",
                     avatar_url: config.avatarUrl,
                 }),
-            });
+            }, reachOf(config));
 
             const redirect = redirectRefusal("Discord", response);
             if (redirect) return { success: false, message: redirect };
@@ -44,9 +46,11 @@ export const DiscordAdapter: NotificationAdapter = {
         try {
             validateOutboundUrl(config.webhookUrl);
             const payload: any = {
-                content: message,
+                content: escapeMarkdown(message),
                 username: config.username,
                 avatar_url: config.avatarUrl,
+                // A name like `@everyone` or `<@&role>` in a message pings nobody.
+                allowed_mentions: { parse: [] },
             };
 
             if (context) {
@@ -58,12 +62,13 @@ export const DiscordAdapter: NotificationAdapter = {
 
                 const embed: any = {
                     title: context.title || "Notification",
-                    description: message,
+                    // Names stay text, never a masked link or markup.
+                    description: escapeMarkdown(message),
                     color,
                     timestamp: new Date().toISOString(),
                     fields: (context.fields || []).map((f: any) => ({
                         name: f.name,
-                        value: f.value,
+                        value: escapeMarkdown(f.value || "-"),
                         inline: f.inline ?? true,
                     })),
                 };
@@ -79,7 +84,7 @@ export const DiscordAdapter: NotificationAdapter = {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify(payload),
-            });
+            }, reachOf(config));
 
             if (!response.ok) {
                 log.warn("Discord notification failed", { status: response.status, statusText: response.statusText });

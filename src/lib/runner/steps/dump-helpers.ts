@@ -1,6 +1,7 @@
 import path from "path";
 import prisma from "@/lib/prisma";
 import { applyNamingPattern, chainSegment, fileNameParts, patternUsesChain } from "@/lib/templates/naming-template-engine";
+import { safeFileName } from "@/lib/templates/naming-pattern";
 import fs from "fs/promises";
 import { formatBytes } from "@/lib/utils";
 import { JobWithRelations, RunnerContext } from "../types";
@@ -53,8 +54,14 @@ export async function resolveBackupFilename(
     // Only an incremental run has a position to write; for everything else the token resolves
     // to nothing and takes its separator with it.
     const chainValue = chain ? chainSegment(chain.type, chain.index) : "";
-    const fileName = applyNamingPattern(pattern, sanitizedName, dbNameRaw, new Date(), timezone, chainValue) + ".tar";
+    // One part of a path, whatever a pattern saved before the rule holds, so the archive, its
+    // sidecars and their cleanup never leave the folder of the run, see `naming-pattern.ts`.
+    const resolved = applyNamingPattern(pattern, sanitizedName, dbNameRaw, new Date(), timezone, chainValue);
+    const fileName = safeFileName(resolved, sanitizedName) + ".tar";
     const tempFile = path.join(runDir, fileName);
+    if (path.dirname(path.resolve(tempFile)) !== path.resolve(runDir)) {
+        throw new Error(`The naming template of job ${job.name} does not name a file inside the folder of its run.`);
+    }
 
     return { tempDir: runDir, tempFile, fileName, chainInFileName: patternUsesChain(pattern) };
 }

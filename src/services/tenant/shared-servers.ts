@@ -66,7 +66,25 @@ export async function assertCustomer(tenantId: string, server: Pick<ServerFacts,
     if (!(await sharesWithCustomers(serverTenantId))) throw new ValidationError(NOT_SHARING);
     assertSharesSingleDatabases(server.adapterId);
     if (tenantId === serverTenantId) throw new ValidationError("A database of this server belongs to this tenant already. Pick another tenant.");
-    if (!(await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }))) throw new ValidationError("The tenant no longer exists.");
+    if (!(await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } }))) throw new ValidationError(TENANT_GONE);
+}
+
+/** What a writer answers when a tenant it names was deleted meanwhile. */
+export const TENANT_GONE = "The tenant no longer exists.";
+
+/**
+ * Refuses a write that names a tenant deleted since its checks, inside the transaction of the write.
+ * The delete of a tenant ends or removes what names it in its own transaction, so a row written after
+ * that one committed would keep the id of a tenant that is gone. SQLite lets one transaction write at
+ * a time and never commits a write over a read another commit made stale, so the delete either
+ * committed before this read and the write is refused, or it comes after the write and ends or
+ * removes that row too.
+ */
+export async function assertTenantsLive(tx: Tx, tenantIds: readonly (string | null)[]): Promise<void> {
+    const wanted = [...new Set(tenantIds.filter((id): id is string => !!id))];
+    if (wanted.length === 0) return;
+    const found = await tx.tenant.count({ where: { id: { in: wanted } } });
+    if (found < wanted.length) throw new ValidationError(TENANT_GONE);
 }
 
 /** What a database or a rule stores for backups on demand: null as the customer, 0 none, else a number of backups a day. */

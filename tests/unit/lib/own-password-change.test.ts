@@ -24,6 +24,7 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } 
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 
 const { updateOwnPassword, updateUserPreferences } = await import("@/app/actions/auth/user");
+const { MAX_WRONG_PASSWORDS, PASSWORD_LOCKED, resetPasswordTries } = await import("@/services/auth/password-tries");
 
 describe("the own preferences under Profile", () => {
     it("names the account in the audit log", async () => {
@@ -36,6 +37,7 @@ describe("the own preferences under Profile", () => {
 describe("changing the own password under Profile", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        resetPasswordTries();
         mocks.account = { id: "a1" };
         mocks.verifyPassword.mockResolvedValue(true);
         mocks.setPassword.mockResolvedValue(undefined);
@@ -50,6 +52,19 @@ describe("changing the own password under Profile", () => {
         expect(mocks.verifyPassword).toHaveBeenCalledWith("u1", "not-the-one");
         expect(mocks.setPassword).not.toHaveBeenCalled();
         expect(mocks.revokeSessions).not.toHaveBeenCalled();
+    });
+
+    it("locks the change for a while after a few wrong current passwords, also for the right one", async () => {
+        mocks.verifyPassword.mockResolvedValue(false);
+        for (let attempt = 1; attempt < MAX_WRONG_PASSWORDS; attempt++) {
+            expect(await updateOwnPassword("guess", "Harbor-Lamp-42")).toEqual({ success: false, error: "Incorrect current password" });
+        }
+        expect(await updateOwnPassword("guess", "Harbor-Lamp-42")).toEqual({ success: false, error: PASSWORD_LOCKED });
+
+        mocks.verifyPassword.mockResolvedValue(true);
+        expect(await updateOwnPassword("old-secret", "Harbor-Lamp-42")).toEqual({ success: false, error: PASSWORD_LOCKED });
+        expect(mocks.verifyPassword).toHaveBeenCalledTimes(MAX_WRONG_PASSWORDS);
+        expect(mocks.setPassword).not.toHaveBeenCalled();
     });
 
     it("sets the new password, ends every other session and keeps the one in use", async () => {

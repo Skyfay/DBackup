@@ -3,8 +3,12 @@ import { stripTrailingSlashes } from "@/lib/paths";
 import { cleanPath } from "@/lib/tenant/storage-view";
 import { ValidationError } from "@/lib/logging/errors";
 
-/** A part of a path that some storage reads as `..`: dots and spaces alone, also once its `%` escapes are read. */
-function leavesFolder(part: string): boolean {
+/**
+ * A part of a path that some storage reads as `..`: dots and spaces alone, also once its `%` escapes
+ * are read. A plain `.` and `..` are left to the caller, which knows what they do there. The link
+ * targets of a restore follow the same rule, see `link-target.ts`.
+ */
+export function leavesFolder(part: string): boolean {
     if (/^[. ]+$/.test(part) && part !== "." && part !== "..") return true;
     try {
         const decoded = decodeURIComponent(part);
@@ -100,4 +104,14 @@ export function safeRemoteJoin(basePath: string, relativePath: string): string {
 
     const safeRelative = probe.slice(SENTINEL.length + 1);
     return base === "" ? safeRelative : `${base}/${safeRelative}`;
+}
+
+/**
+ * Where a restore writes an entry of the archive: the remote path, and the part of it below the
+ * folder of the restore. Every write and link of a restore hands its adapter both, so a destination
+ * that follows links keeps it inside that folder, not only inside its connection, see
+ * `UploadOptions.restoreRelativePath`.
+ */
+export function restoreDestination(basePath: string, relativePath: string): { remotePath: string; restoreRelativePath: string } {
+    return { remotePath: safeRemoteJoin(basePath, relativePath), restoreRelativePath: safeRemoteJoin("", relativePath) };
 }

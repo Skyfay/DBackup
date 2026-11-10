@@ -175,12 +175,15 @@ pnpm dev
 # Build for production
 pnpm run build
 
-# Start production server
+# Start the production build with the custom server, as the Docker image does
+# (needs a writable CERTS_DIR, or DISABLE_HTTPS=true)
 pnpm start
 
 # Lint code
 pnpm lint
 ```
+
+A plain `next start` is not supported. Only `custom-server.ts` works out the address of a client, without it every request shares one rate limit bucket, see [Rate Limiting](/developer-guide/core/rate-limiting).
 
 ## IDE Setup
 

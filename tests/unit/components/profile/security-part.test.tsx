@@ -14,7 +14,7 @@ vi.mock("@/components/dashboard/profile/passkeys-section", () => ({
     PasskeysSection: () => null,
     usePasskeys: () => ({ passkeys: [{ id: "k1", name: "1Password", createdAt: null, backedUp: true }], load: vi.fn() }),
 }));
-vi.mock("@/components/dashboard/profile/security-dialogs", () => ({ BackupCodesDialog: () => null, PasswordDialog: () => null, TwoFactorOffDialog: () => null, TwoFactorOnDialog: () => null }));
+vi.mock("@/components/dashboard/profile/security-dialogs", () => ({ BackupCodesDialog: () => null, PasswordDialog: () => null, SecretField: () => null, TwoFactorOffDialog: () => null, TwoFactorOnDialog: () => null }));
 vi.mock("@/components/dashboard/profile/sign-in-providers", () => ({ SignInProviders: () => null }));
 
 function model(twoFactorEnabled: boolean, passkeyTwoFactor: boolean, manage2FA = true): ProfileModel {

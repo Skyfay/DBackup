@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { assignmentAt, followMoves, holderAt, matchesPattern, ownerAt, ruleAt, type DatabasePlace, type PlacedAssignment } from "@/lib/tenant/database-owner";
 import { effectiveOnDemand } from "@/lib/tenant/sharing";
 import { sharesSingleDatabases } from "@/lib/adapters/definitions";
+import { customerRestoreRefusal } from "./customer-restores";
 import { backupDatesByDatabase, factsOf, serverBackupFiles, type OwnerFacts } from "./shared-backups";
 import { listedDatabases, tenantOnDemand } from "./shared-servers";
 
@@ -213,7 +214,7 @@ export async function sharesSingleDatabasesOf(sourceId: string): Promise<boolean
 /**
  * Where a backup of a customer restores into now: the database it was made of, at the place it
  * moved to since. Null when that server was deleted, is of an engine that gives no database alone
- * or the database is not theirs now.
+ * or that a customer never restores, or the database is not theirs now.
  */
 export async function restoreTarget(tenantId: string, place: DatabasePlace, createdAt: string, now: Date): Promise<{ target: DatabasePlace | null; reason: string | null }> {
     const assignments = await prisma.databaseAssignment.findMany({ where: { tenantId }, select: ASSIGNMENT });
@@ -224,6 +225,8 @@ export async function restoreTarget(tenantId: string, place: DatabasePlace, crea
     if (!sharesSingleDatabases(live.adapterId) || !(await sharesSingleDatabasesOf(place.sourceId))) {
         return { target: null, reason: `${target.databaseName} is not a database of yours, so you cannot restore it.` };
     }
+    const refusal = customerRestoreRefusal(live.adapterId);
+    if (refusal) return { target: null, reason: refusal };
     const facts = await factsOf(target.sourceId);
     if (ownerAt(facts.assignments, facts.rules, target.databaseName, now) !== tenantId) {
         return { target: null, reason: "The database is no longer yours, so a backup of it can only be downloaded." };

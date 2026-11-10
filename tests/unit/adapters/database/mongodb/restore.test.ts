@@ -152,6 +152,24 @@ describe.each<HostKind>(["direct", "ssh"])("MongoDB restore over a %s host", (ki
             const argv = host.calls.spawn[0];
             expect(argv[argv.indexOf("--nsInclude") + 1]).toBe("target.*");
         });
+
+        it("escapes a * in a name, so the pattern matches only that database", async () => {
+            const host = restoreHost(kind);
+            await restoreOne(baseConfig as never, "/tmp/a.archive", "new*db", host, undefined, undefined, "old*db");
+            await restoreOne(baseConfig as never, "/tmp/a.archive", "only*db", host);
+
+            const [renamed, included] = host.calls.spawn;
+            expect(renamed[renamed.indexOf("--nsFrom") + 1]).toBe("old\\*db.*");
+            expect(renamed[renamed.indexOf("--nsTo") + 1]).toBe("new\\*db.*");
+            expect(included[included.indexOf("--nsInclude") + 1]).toBe("only\\*db.*");
+        });
+
+        it.each(["a.b", "a$b", "a\\b", "a/b", "a b", "a\"b"])("runs no mongorestore for the name %s, which MongoDB refuses", async (name) => {
+            const host = restoreHost(kind);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", name, host)).rejects.toThrow(/does not allow/);
+            await expect(restoreOne(baseConfig as never, "/tmp/a.archive", "target", host, undefined, undefined, name)).rejects.toThrow(/does not allow/);
+            expect(host.calls.spawn).toHaveLength(0);
+        });
     });
 
     describe("multi database archives", () => {

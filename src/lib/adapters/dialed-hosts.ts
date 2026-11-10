@@ -18,7 +18,7 @@
  * unchecked. Every adapter id has an entry, which `tests/unit/adapters/dialed-hosts.test.ts` checks.
  */
 
-import { dialedMongoHosts } from "./database/mongodb/args";
+import { connectsDirectly, dialedMongoHosts } from "./database/mongodb/args";
 import { namesKerberosRealm, parseSmbAddress, SMB_ADDRESS_HINT } from "./smb-address";
 
 type Config = Record<string, unknown>;
@@ -258,6 +258,23 @@ export const DIALED_HOSTS: Readonly<Record<string, HostsOf>> = {
     "twilio-sms": none,
     email: host,
 };
+
+/**
+ * Why a config dials hosts no check can name beforehand, because its server announces them, as the
+ * sentence that says so, or null. A tenant that blocks the local network is refused such a config,
+ * see `assertTenantReach` in `tenant-network.ts`.
+ *
+ * MongoDB in direct mode with a seed list, an SRV name or the older URI: the driver and the tools
+ * connect to every member of the replica set its servers announce, and the tools take no hook to
+ * check them. One host alone is dialed with `directConnection`, see `connectsDirectly`. SQL Server
+ * also follows a routing redirect, which its pool checks itself, see `mssql/connector.ts`.
+ */
+export function announcedHostsReason(adapterId: string, config: Config): string | null {
+    if (adapterId !== "mongodb" || config.connectionMode === "ssh") return null;
+    const mongo = { host: text(config.host), port: Number(config.port) || 27017, uri: text(config.uri) || undefined } as Parameters<typeof connectsDirectly>[0];
+    if (connectsDirectly(mongo)) return null;
+    return "MongoDB with a seed list, an SRV name or a connection URI connects to the members its servers announce, which DBackup cannot check before the tools dial them. Enter the host of one server instead, or connect over SSH.";
+}
 
 /**
  * What an id without an entry dials, like the SSH test of a form that names no adapter: the SSH

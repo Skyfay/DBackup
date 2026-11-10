@@ -20,7 +20,7 @@ vi.mock("mongodb", () => ({
 }));
 
 const { DriverMongoMeta } = await import("@/lib/adapters/database/mongodb/meta/driver-meta");
-const { buildConnectionArgs, connectsDirectly } = await import("@/lib/adapters/database/mongodb/args");
+const { connectsDirectly, toolConnection } = await import("@/lib/adapters/database/mongodb/args");
 
 async function optionsFor(config: Record<string, unknown>) {
     created.length = 0;
@@ -53,6 +53,6 @@ describe("the MongoDB driver", () => {
     it("hands the tools a single --host as before, which they connect to directly", () => {
         const config = { host: "mongo.example.com", port: 27017, user: "u", password: "p" };
         expect(connectsDirectly(config as never)).toBe(true);
-        expect(buildConnectionArgs(config as never)).toEqual(["--host", "mongo.example.com", "--port", "27017", "--username", "u", "--password", "p", "--authenticationDatabase", "admin"]);
+        expect(toolConnection(config as never).args).toEqual(["--host", "mongo.example.com", "--port", "27017", "--username", "u", "--authenticationDatabase", "admin"]);
     });
 });

@@ -4,7 +4,9 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
 import { stripTrailingSlashes } from "@/lib/paths";
+import { reachOf } from "@/lib/network/reach-policy";
 import { redirectRefusal, webhookFetch } from "./http";
+import { escapeMarkdownLinks } from "./escape";
 
 const log = logger.child({ adapter: "ntfy" });
 
@@ -41,13 +43,17 @@ function mapTagsFromContext(context?: any): string[] {
     return tags;
 }
 
+/**
+ * The body, sent with `Markdown: yes`. Every text is escaped, so the name of a job or a tenant never
+ * becomes a link. The title goes in a header, which ntfy shows as plain text.
+ */
 function buildMarkdownMessage(message: string, context?: any): string {
-    if (!context?.fields?.length) return message;
+    if (!context?.fields?.length) return escapeMarkdownLinks(message);
 
-    const parts: string[] = [message, ""];
+    const parts: string[] = [escapeMarkdownLinks(message), ""];
 
     for (const field of context.fields) {
-        parts.push(`${field.name}: ${field.value || "-"}`);
+        parts.push(`${escapeMarkdownLinks(field.name)}: ${escapeMarkdownLinks(field.value || "-")}`);
     }
 
     return parts.join("\n");
@@ -80,7 +86,7 @@ export const NtfyAdapter: NotificationAdapter = {
                 method: "POST",
                 headers,
                 body: "This is a test notification to verify your ntfy configuration.",
-            });
+            }, reachOf(config));
 
             const redirect = redirectRefusal("ntfy", response);
             if (redirect) return { success: false, message: redirect };
@@ -120,7 +126,7 @@ export const NtfyAdapter: NotificationAdapter = {
                 method: "POST",
                 headers,
                 body: formattedMessage,
-            });
+            }, reachOf(config));
 
             if (!response.ok) {
                 const body = await response.text().catch(() => "");

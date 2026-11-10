@@ -54,6 +54,11 @@ vi.mock('@/lib/adapters/config-resolver', () => ({
 vi.mock('@/lib/temp-dir', () => ({
     getTempDir: vi.fn().mockReturnValue('/tmp/dbackup-test'),
 }));
+// The private folder the download goes into, see `privateTempDir`, at the same made-up place.
+vi.mock('@/lib/private-temp-dir', () => ({
+    privateTempPath: vi.fn(async (name: string) => `/tmp/dbackup-test/${name}`),
+    PRIVATE_FILE_MODE: 0o600,
+}));
 
 vi.mock('stream/promises', async (importOriginal) => {
     const actual = await importOriginal<typeof import('stream/promises')>();
@@ -163,6 +168,8 @@ describe('runRestorePipeline', () => {
         // No destination of these tests is shared with other tenants.
         prismaMock.connectionShare.count.mockResolvedValue(0);
         prismaMock.execution.update.mockResolvedValue({} as any);
+        // No run of History wrote these backups, see `recorded-encryption.ts`.
+        prismaMock.execution.findMany.mockResolvedValue([]);
         vi.mocked(abortModule.registerExecution).mockReturnValue(new AbortController());
 
         // Default fs behaviour: metadata file not found (graceful fallback),

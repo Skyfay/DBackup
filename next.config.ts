@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { CONFIG_UPLOAD_MAX_BYTES } from "./src/lib/core/config-upload";
 
 /**
  * The hosts `next dev` hands its hot reload and other dev resources to, besides localhost. A dev
@@ -20,9 +21,21 @@ function devOrigins(): string[] {
   return [...hosts];
 }
 
+/**
+ * How much of a body the middleware holds for itself before it hands the rest on cut off. Next.js
+ * neither refuses nor marks such a body, so the upload routes count their bodies themselves
+ * (`readFormWithin`). Set a megabyte above the largest upload, the 10 MB of a configuration
+ * backup, so a body too large still reaches the route past its limit and is answered 413 there
+ * rather than arriving broken.
+ */
+const PROXY_BODY_BYTES = CONFIG_UPLOAD_MAX_BYTES + 1024 * 1024;
+
 const nextConfig: NextConfig = {
   output: "standalone",
   allowedDevOrigins: devOrigins(),
+  experimental: {
+    proxyClientMaxBodySize: PROXY_BODY_BYTES,
+  },
   async redirects() {
     return [
       // The Storage Explorer became the Backups page. Links, bookmarks and notifications that

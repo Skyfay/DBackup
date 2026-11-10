@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import { createRestoreTracker } from "@/services/restore/restore-record";
 
 describe("the record a restore keeps for the summary of its run", () => {
-    it("keeps the destination and the archive of the server out of a customer's run", () => {
+    it("keeps the destination, the archive of the server and how it was read out of a customer's run", () => {
         const record = createRestoreTracker();
         record.from("Local", "local-filesystem");
         record.archive("Lab PostgreSQL 18 to Local/a.tar");
+        record.opened(true);
         record.planDatabases([{ name: "inventory", target: "inventory", bytes: 5_632 }]);
 
-        expect(record.view(false)).toMatchObject({ from: { name: "Local", adapterId: "local-filesystem" }, archive: "Lab PostgreSQL 18 to Local/a.tar" });
-        expect(record.view(true)).toMatchObject({ from: null, archive: null, databases: [expect.objectContaining({ name: "inventory" })] });
+        expect(record.view(false)).toMatchObject({ from: { name: "Local", adapterId: "local-filesystem" }, archive: "Lab PostgreSQL 18 to Local/a.tar", ranged: true });
+        expect(record.view(true)).toMatchObject({ from: null, archive: null, ranged: null, databases: [expect.objectContaining({ name: "inventory" })] });
     });
 
     it("follows a database from waiting through restoring to done, with how far it is only while it restores", () => {

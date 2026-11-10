@@ -259,7 +259,8 @@ describe("SFTPAdapter", () => {
             for (let i = 0; i < 5; i++) await session.upload(`/tmp/f${i}`, `Job/f${i}`);
             await session.close();
 
-            expect(mockSftpExists).toHaveBeenCalledTimes(1);
+            // Each file is still looked at once itself, see `putReplacing`.
+            expect(mockSftpExists.mock.calls.filter(([p]) => p === '/backups/Job')).toHaveLength(1);
         });
 
         it("closes every connection it opened", async () => {

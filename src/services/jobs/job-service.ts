@@ -17,6 +17,7 @@ import { providedTo } from "@/services/sharing/provided";
 import { assertJobFolderName } from "./job-folder-rules";
 import { databaseNameProblem } from "@/lib/adapters/database/common/database-name";
 import { assertSourceFolder } from "@/lib/archive/remote-paths";
+import { volumeSourceProblem } from "@/lib/adapters/storage/docker/volume-name";
 
 /**
  * Refuses a database of a job that no tool reads as a database name, like one that starts with
@@ -28,6 +29,21 @@ function assertDatabaseNames(databases: readonly unknown[] | undefined): void {
     for (const name of databases ?? []) {
         const problem = databaseNameProblem(name);
         if (problem) throw new ValidationError(problem, { field: "databases" });
+    }
+}
+
+/**
+ * Refuses a directory source of Docker Volumes whose path is no single volume name, since Docker
+ * reads a path like `/etc` as a folder of its host and would mount it, see `volume-name.ts`. The
+ * runner checks it again before a run reads.
+ *
+ * @throws ValidationError naming the path.
+ */
+function assertVolumeSources(sources: readonly { configId: string; path: string }[], configs: readonly { id: string; adapterId: string }[]): void {
+    const docker = new Set(configs.filter((config) => config.adapterId === "docker-volume").map((config) => config.id));
+    for (const source of sources) {
+        const problem = docker.has(source.configId) ? volumeSourceProblem(source.path) : null;
+        if (problem) throw new ValidationError(problem, { field: "sources" });
     }
 }
 
@@ -224,6 +240,7 @@ export class JobService {
                     throw new ValidationError(`Adapter "${config.name}" is not a directory source.`);
                 }
             }
+            assertVolumeSources(sources, configs);
         }
 
         if (effectiveSourceId && effectiveSourceCount > 0) {
@@ -655,6 +672,12 @@ export class JobService {
 
         // A folder saved before the rule existed is not copied into a new job, see `assertSourceFolder`.
         for (const source of original.sources) assertSourceFolder(source.path);
+        if (original.sources.length > 0) {
+            assertVolumeSources(original.sources, await prisma.adapterConfig.findMany({
+                where: { id: { in: [...new Set(original.sources.map((source) => source.configId))] } },
+                select: { id: true, adapterId: true },
+            }));
+        }
 
         // The terms of a shared destination may have changed since the original was saved, so the
         // copy passes the checks of a new job: a key where only encrypted backups are taken.

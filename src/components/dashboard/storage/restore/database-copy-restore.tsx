@@ -73,8 +73,9 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
                 closeKeyDialog();
                 setChecked(answer.data);
             } else if (answer.code === "ENCRYPTION_KEY_REQUIRED") {
-                // A key that was tried and does not fit keeps the dialog open and says so.
-                setKeyDialog({ open: true, profileId: answer.profileId ?? "", error: key ? answer.error || WRONG_KEY : undefined });
+                // A key that was tried and does not fit keeps the dialog open and says so. The first
+                // answer says why the key of the configuration backup did not open it.
+                setKeyDialog({ open: true, profileId: answer.profileId ?? "", error: key ? answer.error || WRONG_KEY : answer.error });
             } else {
                 closeKeyDialog();
                 setProblem(answer.error ?? "The backup could not be read.");

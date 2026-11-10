@@ -35,7 +35,7 @@ export interface SignInHookContext {
         secret?: string;
         createAuthCookie?: (name: string) => { name: string };
         /** Where better-auth keeps the account a pending second factor belongs to. */
-        internalAdapter?: { findVerificationValue: (identifier: string) => Promise<{ value: string } | null | undefined> };
+        internalAdapter?: { findVerificationValue: (identifier: string) => Promise<{ value: string; expiresAt?: Date | string } | null | undefined> };
         /** The session the request came with. A code of the second factor with one finishes its setup, it signs nobody in. */
         session?: { session: unknown } | null;
         newSession?: {
@@ -115,15 +115,18 @@ const TWO_FACTOR_COOKIE = "two_factor";
 
 /**
  * The account a pending second factor belongs to, from the signed cookie of the first step and the
- * value better-auth stored for it, or null where better-auth does not expose it.
+ * value better-auth stored for it, or null where better-auth does not expose it or the value ran
+ * out. better-auth hands back a value past its end once more before it cleans up.
  */
-async function pendingTwoFactorUser(ctx: SignInHookContext): Promise<string | null> {
+export async function pendingTwoFactorUser(ctx: SignInHookContext): Promise<string | null> {
     const { secret, createAuthCookie, internalAdapter } = ctx.context;
     if (!ctx.getSignedCookie || !secret || !createAuthCookie || !internalAdapter) return null;
     try {
         const identifier = await ctx.getSignedCookie(createAuthCookie(TWO_FACTOR_COOKIE).name, secret);
         if (!identifier) return null;
-        return (await internalAdapter.findVerificationValue(identifier))?.value ?? null;
+        const pending = await internalAdapter.findVerificationValue(identifier);
+        if (!pending || (pending.expiresAt !== undefined && new Date(pending.expiresAt).getTime() <= Date.now())) return null;
+        return pending.value;
     } catch {
         return null;
     }

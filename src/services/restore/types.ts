@@ -33,6 +33,12 @@ export type RestoreScope = 'all' | 'databases' | 'files';
 export interface SharedRestore {
     databaseName: string;
     /**
+     * The customer whose restore it is, filled by `RestoreService.restoreShared` from its caller,
+     * never by a request. The restore checks right before it writes that this tenant still exists
+     * and holds the database, see `assertTargetsConfirmed` in `customer-databases.ts`.
+     */
+    tenantId?: string;
+    /**
      * The tenant of the server, which gets a run of the same restore in its own History with the
      * whole log, and the names of both tenants. Left out, only the customer's run is written.
      */

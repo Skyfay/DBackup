@@ -2,6 +2,8 @@ import sql from "mssql";
 
 import type { ExecutionHost, PortForward } from "@/lib/transport";
 import type { MSSQLConfig } from "@/lib/adapters/definitions";
+import { reachOf } from "@/lib/network/reach-policy";
+import { tdsConnector } from "./connector";
 
 /**
  * Opening a TDS connection, through an SSH tunnel when the transport asks for one.
@@ -42,6 +44,11 @@ function buildConnectionConfig(
             requestTimeout: options.requestTimeout ?? config.requestTimeout ?? 300000,
         },
     };
+
+    // For a tenant that blocks the local network every socket goes through a connector that checks
+    // its address, and a routing redirect too, see `connector.ts`.
+    const connector = tdsConnector(forward.host, forward.forwarded, reachOf(config));
+    if (connector) connConfig.options!.connector = connector as NonNullable<sql.config["options"]>["connector"];
 
     if (forward.forwarded) {
         // The driver now dials 127.0.0.1, and its default TLS server name

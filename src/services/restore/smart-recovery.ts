@@ -1,6 +1,7 @@
 import { createNoFollowReadStream } from "@/lib/server/no-follow";
 import crypto from "crypto";
 import { CompressionType } from "@/lib/crypto/compression";
+import { GCM_TAG_LENGTH, assertAuthTagLength } from "@/lib/crypto/gcm-tag";
 import {
     KeyOverride,
     KeyResolutionLog,
@@ -112,12 +113,16 @@ function checkDecryptedHead(
         // Use crypto.Decipher.update() directly.
         // We intentionally skip final() so that auth-tag verification is never
         // triggered on this partial 1 KB slice (the tag covers the full file).
+        // A tag of another length than DBackup writes is refused, the file is no backup of it.
+        const authTag = Buffer.from(encryptionMeta.authTag, 'hex');
+        assertAuthTagLength(authTag);
         const decipher = crypto.createDecipheriv(
             'aes-256-gcm',
             candidateKey,
-            Buffer.from(encryptionMeta.iv, 'hex')
+            Buffer.from(encryptionMeta.iv, 'hex'),
+            { authTagLength: GCM_TAG_LENGTH }
         );
-        decipher.setAuthTag(Buffer.from(encryptionMeta.authTag, 'hex'));
+        decipher.setAuthTag(authTag);
 
         return isValidDecryptedContent(decipher.update(head), compressionMeta);
     } catch (_e) {

@@ -5,9 +5,11 @@ import { checkPermission, currentSessionId, getViewer, hasPermission, hasPermiss
 import { ACCOUNT_CHANGE, emailClaimScope, roleRefusal } from "@/lib/auth/account-access";
 import { reachCovers } from "@/lib/auth/platform-group-caps";
 import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
+import { passkeyFactorOffRefusal } from "@/lib/auth/reauth-guard";
 import { DATE_FORMAT_VALUES, TIME_FORMAT_VALUES, isKnownTimezone } from "@/lib/core/profile-formats";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { authService } from "@/services/auth/auth-service";
+import { checkCurrentPassword, PASSWORD_LOCKED } from "@/services/auth/password-tries";
 import { userService } from "@/services/user/user-service";
 import { groupService } from "@/services/user/group-service";
 import { membershipService } from "@/services/tenant/membership-service";
@@ -246,17 +248,18 @@ export async function deleteUser(id: string, mode?: DeleteMode) {
     }
 }
 
-const PasskeyTwoFactorSchema = z.object({ userId: z.string().min(1).max(200), enabled: z.boolean() });
+const PasskeyTwoFactorSchema = z.object({ userId: z.string().min(1).max(200), enabled: z.boolean(), currentPassword: z.string().max(MAX_PASSWORD_LENGTH).optional() });
 
 /**
- * Switches whether a passkey counts as the second factor of an account.
+ * Switches whether a passkey counts as the second factor of an account. Turning off the own one
+ * asks for the current password, like turning off the authenticator app.
  * @no-permission-required - Self-service for the own account, as far as `profile:manage_passkeys`
  * checked below allows. Another account needs `ACCOUNT_CHANGE` and `accountRefusal`, checked below too.
  */
-export async function togglePasskeyTwoFactor(id: string, on: boolean) {
+export async function togglePasskeyTwoFactor(id: string, on: boolean, currentPassword?: string) {
     const currentUser = await getViewer();
     if (!currentUser) throw new Error("Unauthorized");
-    const input = PasskeyTwoFactorSchema.safeParse({ userId: id, enabled: on });
+    const input = PasskeyTwoFactorSchema.safeParse({ userId: id, enabled: on, currentPassword });
     if (!input.success) return { success: false, error: "Invalid request" };
     const { userId, enabled } = input.data;
 
@@ -273,6 +276,11 @@ export async function togglePasskeyTwoFactor(id: string, on: boolean) {
     } else if (enabled && !(await hasPermission(PERMISSIONS.PROFILE.MANAGE_2FA)) && !(await userService.hasAuthenticatorApp(userId))) {
         // Without an authenticator app the switch turns the second factor on, like setting up one.
         return { success: false, error: "Your group may not turn on your second factor." };
+    }
+    if (currentUser.id === userId && !enabled) {
+        // A session alone never ends the second factor, also through the lockout of the password.
+        const refusal = await passkeyFactorOffRefusal(userId, input.data.currentPassword);
+        if (refusal) return { success: false, error: refusal };
     }
 
     try {
@@ -315,10 +323,10 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
     }
 
     try {
-        // Checked against the stored hash, without signing in.
-        if (!(await authService.verifyPassword(currentUser.id, parsed.data.currentPassword))) {
-            return { success: false, error: "Incorrect current password" };
-        }
+        // Checked against the stored hash, without signing in, and locked for a while after a few wrong ones.
+        const check = await checkCurrentPassword(currentUser.id, parsed.data.currentPassword);
+        if (check === "locked") return { success: false, error: PASSWORD_LOCKED };
+        if (check === "wrong") return { success: false, error: "Incorrect current password" };
         const origin = await accountLogOrigin(currentUser, currentUser.id);
         await authService.setPassword(currentUser.id, parsed.data.newPassword);
         const signedOut = await userService.revokeSessions(currentUser.id, await currentSessionId());
@@ -363,6 +371,8 @@ export async function updateUser(userId: string, input: { name?: string; email?:
     const data = parsed.data.data;
     // The entry always names the account, also when the name stays.
     let accountName = currentUser.name || currentUser.email;
+    // Who set a new email, which decides whether a sign-in provider links the account by it, see `userService.updateUser`.
+    let emailSetBy: "self" | "admin" | undefined;
 
     // Allow user to edit their own profile, otherwise require permission
     if (currentUser.id !== userId) {
@@ -381,6 +391,7 @@ export async function updateUser(userId: string, input: { name?: string; email?:
             // Whoever does not see the account that holds the email never learns that it exists, see `takenEmailRefusal`.
             const taken = await takenEmailRefusal(data.email!, { ...currentUser, userId: currentUser.id }, currentUser.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: userId });
             if (taken) return { success: false, error: taken };
+            emailSetBy = "admin";
         }
     } else {
         // The own name and email change only as far as the profile permissions allow, whatever else the group gives.
@@ -395,11 +406,12 @@ export async function updateUser(userId: string, input: { name?: string; email?:
         if (claimed) return { success: false, error: claimed };
         const taken = emailChanges ? await takenEmailRefusal(data.email!, { ...currentUser, userId: currentUser.id }, currentUser.tenantId, CHANGED_EMAIL_ANSWERS, { accountId: currentUser.id }) : null;
         if (taken) return { success: false, error: taken };
+        if (emailChanges) emailSetBy = "self";
     }
 
     try {
         const origin = await accountLogOrigin(currentUser, userId);
-        await userService.updateUser(userId, data);
+        await userService.updateUser(userId, data, emailSetBy);
         revalidatePath("/dashboard/users");
         revalidatePath("/dashboard/settings");
 

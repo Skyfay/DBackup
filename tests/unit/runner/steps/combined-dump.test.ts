@@ -255,6 +255,25 @@ describe('executeCombinedDump', () => {
         expect(stagesSet(ctx)).toEqual(['Collecting Files', 'Processing']);
     });
 
+    it('keeps when the dumps started, before the first database was dumped, for the sidecar', async () => {
+        const dumpedAt: number[] = [];
+        const base = makeFakeDbAdapter();
+        const dbAdapter = makeFakeDbAdapter({
+            dumpOne: vi.fn(async (...args: Parameters<NonNullable<DatabaseAdapter['dumpOne']>>) => {
+                dumpedAt.push(Date.now());
+                return base.dumpOne!(...args);
+            }),
+        });
+        const ctx = makeCtx({ sourceAdapter: dbAdapter, job: makeJob({ databases: JSON.stringify(['db1', 'db2']) }) });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        const started = new Date(ctx.metadata.dumpsStartedAt).getTime();
+        expect(started).toBeLessThanOrEqual(dumpedAt[0]);
+        expect(ctx.metadata.names).toEqual(['db1', 'db2']);
+    });
+
     it('combines multiple database dumps and a directory source into one v2 archive', async () => {
         const dbAdapter = makeFakeDbAdapter();
         const dirSource = makeDirectorySource({

@@ -4,8 +4,11 @@ import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig 
 import type { RateLimitConfig } from "./lib/rate-limit";
 import { INTERNAL_TOKEN_HEADER, internalToken } from "./lib/rate-limit/internal-token";
 import { logger } from "./lib/logging/logger";
-import { clientAddress, rateLimitKey } from "./lib/core/client-address";
+import { clientAddress, rateLimitKey, withoutClientAddress } from "./lib/core/client-address";
 import { loginHref } from "./lib/auth/sign-in-target";
+import { CROSS_SITE_REFUSED, isCrossSiteRequest } from "./lib/server/cross-site";
+import { CONTENT_SECURITY_POLICY } from "@/lib/server/security-headers";
+
 
 const log = logger.child({ module: "Middleware" });
 
@@ -82,7 +85,7 @@ function anonymizeIp(ip: string): string {
 export async function middleware(request: NextRequest) {
     const startTime = Date.now();
     // Set by the custom server from the socket and a trusted proxy, never by the client itself.
-    // Missing under `pnpm dev`, where every request shares one bucket.
+    // Unknown under `pnpm dev`, where every request shares one bucket.
     const ip = clientAddress(request.headers) ?? "127.0.0.1";
     const key = rateLimitKey(ip);
     const path = request.nextUrl.pathname;
@@ -123,17 +126,22 @@ export async function middleware(request: NextRequest) {
         return new NextResponse("Too Many Requests", { status: 429 });
     }
 
-    const response = NextResponse.next();
+    // A change through an API route signed in by the session cookie comes from DBackup itself, see cross-site.ts.
+    if (isCrossSiteRequest(method, path, request.headers)) {
+        log.warn("Cross-site request refused", { ip: anonymizeIp(ip), path, method, site: request.headers.get("sec-fetch-site") ?? undefined });
+        return NextResponse.json({ success: false, error: CROSS_SITE_REFUSED }, { status: 403 });
+    }
+
+    // Without the custom server a value in the header of the address came from the client, so the
+    // app and better-auth never see it.
+    const kept = withoutClientAddress(request.headers);
+    const response = kept ? NextResponse.next({ request: { headers: kept } }) : NextResponse.next();
 
     // Add security headers to all responses
     response.headers.set("X-Frame-Options", "DENY");
     response.headers.set("X-Content-Type-Options", "nosniff");
     response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    // Simple CSP to prevent common XSS
-    response.headers.set(
-        "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self';"
-    );
+    response.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
     response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), browsing-topics=()");
 
     // HSTS: If request arrived via HTTPS (directly or via reverse proxy), enforce future HTTPS

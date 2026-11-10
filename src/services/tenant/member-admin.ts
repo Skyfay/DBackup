@@ -168,6 +168,7 @@ export function tenantCallerOf(ctx: Pick<AuthContext, "userId" | "isPlatformAdmi
         isPlatformAdmin: ctx.isPlatformAdmin,
         tenantId: ctx.tenantId,
         permissions: ctx.permissions,
+        authMethod: ctx.authMethod,
         apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
     };
 }

@@ -32,8 +32,13 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
+/** Backups of the Firebird and the Azure SQL server, made while shop was Acme's. */
+const ENGINE_BACKUPS = (["fb-1", "az-1"] as const).map((sourceId) => ({
+    ...SNAPSHOT, name: `${sourceId}.tar`, path: `Shops/${sourceId}.tar`, databases: ["shop"], sourceId, jobId: `${sourceId}-nightly`,
+}));
+
 vi.mock("@/services/storage/storage-service", () => ({
-    storageService: { readCachedListing: async (id: string) => (id === "msp-nas" ? { files: [SNAPSHOT], listedAt: new Date(), current: true } : null) },
+    storageService: { readCachedListing: async (id: string) => (id === "msp-nas" ? { files: [SNAPSHOT, ...ENGINE_BACKUPS], listedAt: new Date(), current: true } : null) },
 }));
 vi.mock("@/services/backup/backup-service", () => ({ backupService: { executeJob: vi.fn() } }));
 vi.mock("@/services/system/system-settings-service", () => ({ getTimezone: async () => "UTC" }));
@@ -77,6 +82,8 @@ beforeAll(async () => {
     await server("cache-2", "redis", ["0", "1"]);
     await server("kv-1", "valkey", ["0"]);
     await server("solo-mysql", "mysql", ["crm"], "solo");
+    await server("fb-1", "firebird", ["shop"]);
+    await server("az-1", "azure-sql", ["shop"]);
     await base.adapterConfig.create({ data: { id: "msp-nas", name: "MSP NAS", type: "storage", adapterId: "local-filesystem", config: "{}", tenantId: HOME } });
     // Given before the check existed, straight into the table.
     await base.sharedServer.create({ data: { id: "cache-1", name: "cache-1", adapterId: "redis", tenantId: HOME } });
@@ -127,6 +134,23 @@ describe("a server whose backup holds every database in one snapshot", () => {
 
     it("starts no backup on demand of it for the customer", async () => {
         await expect(requestSharedBackup("acme", { id: "u-acme", name: "Sara" }, { sourceId: "cache-1", databaseName: "1" }, NOW)).rejects.toThrow(/is not a database of yours/);
+    });
+});
+
+describe("a server of an engine whose restore cannot keep the customer's code to their rights", () => {
+    it.each([["fb-1", "Firebird"], ["az-1", "Azure SQL Database"]])("lists and downloads the backups of %s, and refuses the customer's restore before anything is read", async (sourceId, engine) => {
+        await asHome(() => databaseAssignmentService.assign(sourceId, [{ databaseName: "shop", tenantId: "acme", validFrom: new Date("2026-01-01T00:00:00.000Z") }], "u-msp", NOW));
+        const ref = { sourceId, databaseName: "shop", backupId: sharedBackupId(sourceId, "shop", `Shops/${sourceId}.tar`) };
+        expect((await sharedOverview("acme", NOW)).backups.map((backup) => backup.id)).toContain(ref.backupId);
+
+        const refusal = `A customer cannot restore a ${engine} database of a shared server, since its restore runs with the login of the provider. The provider can restore it from its own History.`;
+        await expect(restoreSharedBackup("acme", ref, "Sara", NOW)).rejects.toThrow(refusal);
+        expect(mocks.openArchive).not.toHaveBeenCalled();
+        expect(mocks.restoreShared).not.toHaveBeenCalled();
+        expect(await runAsSystem(() => restoreTarget("acme", ref, SNAPSHOT.createdAt, NOW))).toEqual({ target: null, reason: refusal });
+
+        // The dump of the database still downloads.
+        await expect(prepareSharedDownload("acme", "u-acme", ref)).resolves.toMatchObject({ provider: { tenantId: HOME } });
     });
 });
 

@@ -28,31 +28,55 @@ export function shellEscape(value: string): string {
 }
 
 /**
- * Render an argv array plus execution options into a single command string for
- * `ssh2.exec`.
+ * Render environment values as `export K='v'` lines for a file the remote shell sources.
  *
- * Layout is `export VARS; cd DIR && argv < STDIN_FILE`:
- *   - exports come first so they apply even if `cd` fails
- *   - environment values go into `export` rather than argv, so secrets stay out
- *     of the remote process list
- *   - `cd` is joined with `&&` so the command does not run in the wrong
- *     directory when the target does not exist
+ * The values never go into the command string itself. That string is the argument of
+ * the remote login shell (`sh -c`, or `su - root -c` on NetBird), so anything in it shows
+ * up in `ps` on the target for as long as the command runs. Returns null when nothing
+ * is left to export.
  */
-export function buildRemoteCommand(
-    argv: string[],
-    options: Pick<ExecOptions, "env" | "cwd" | "stdinFile"> = {},
-): string {
-    if (argv.length === 0) {
-        throw new Error("Cannot build a remote command from an empty argv array.");
-    }
+export function renderEnvFile(env: ExecOptions["env"] = {}): string | null {
+    const exports = envExports(env);
+    return exports.length > 0 ? exports.map((line) => `${line}\n`).join("") : null;
+}
 
+/** One `export K='v'` per value that is set, the name checked. A value may hold a newline, inside its quotes. */
+function envExports(env: ExecOptions["env"] = {}): string[] {
     const exports: string[] = [];
-    for (const [key, value] of Object.entries(options.env ?? {})) {
+    for (const [key, value] of Object.entries(env)) {
         if (value === undefined || value === "") continue;
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
             throw new Error(`Invalid environment variable name: ${key}`);
         }
         exports.push(`export ${key}=${shellEscape(value)}`);
+    }
+    return exports;
+}
+
+/**
+ * Render an argv array plus execution options into a single command string for
+ * `ssh2.exec`.
+ *
+ * Layout is `. ENV_FILE && rm -f ENV_FILE && cd DIR && argv < STDIN_FILE`:
+ *   - the environment comes from a 0600 file written by the caller (see
+ *     `renderEnvFile`), never from the command string, so secrets stay out of the
+ *     remote process list
+ *   - the file is removed right after it is sourced and before the command starts,
+ *     so a command that fails, hangs or is killed leaves nothing behind. When the
+ *     shell never gets that far, the caller removes it
+ *   - every step is joined with `&&`, so the command never runs without its
+ *     environment or in the wrong directory
+ *
+ * `inlineEnv` is the last resort of a target where no file could be written, see
+ * `SshHost.writeEnvFile`. Its values become `export K='v'; ` in front of the command,
+ * as before the file, where the process list of the target shows them.
+ */
+export function buildRemoteCommand(
+    argv: string[],
+    options: Pick<ExecOptions, "cwd" | "stdinFile"> & { envFile?: string; inlineEnv?: ExecOptions["env"] } = {},
+): string {
+    if (argv.length === 0) {
+        throw new Error("Cannot build a remote command from an empty argv array.");
     }
 
     let command = argv.map(shellEscape).join(" ");
@@ -65,5 +89,14 @@ export function buildRemoteCommand(
         command = `cd ${shellEscape(options.cwd)} && ${command}`;
     }
 
-    return exports.length > 0 ? `${exports.join("; ")}; ${command}` : command;
+    if (options.envFile) {
+        const file = shellEscape(options.envFile);
+        command = `. ${file} && rm -f ${file} && ${command}`;
+    } else if (options.inlineEnv) {
+        // Joined with `; ` so they apply even if `cd` fails, as before the file.
+        const exports = envExports(options.inlineEnv);
+        if (exports.length > 0) command = `${exports.join("; ")}; ${command}`;
+    }
+
+    return command;
 }

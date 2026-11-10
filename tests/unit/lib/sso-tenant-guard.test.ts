@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
     provider: vi.fn(),
+    providers: vi.fn(),
     user: vi.fn(),
     membership: vi.fn(),
     group: vi.fn(),
@@ -13,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
     default: {
-        ssoProvider: { findUnique: (...args: unknown[]) => mocks.provider(...args) },
+        ssoProvider: { findUnique: (...args: unknown[]) => mocks.provider(...args), findMany: (...args: unknown[]) => mocks.providers(...args) },
         user: { findUnique: (...args: unknown[]) => mocks.user(...args) },
         tenantMembership: {
             findUnique: (...args: unknown[]) => mocks.membership(...args),
@@ -26,7 +27,7 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.log(...args) } }));
 
 const { refuseSsoSignUp } = await import("@/lib/auth/sso-guard");
-const { allowTenantSsoLink, joinSsoTenant, refuseTenantSsoSession, tenantSignInRefusal, TENANT_NOT_MEMBER_URL, TENANT_REFUSED_URL } = await import("@/lib/auth/sso-tenant-guard");
+const { allowTenantSsoLink, joinSsoTenant, providersEndedByJoining, refuseTenantSsoSession, tenantSignInRefusal, worksBeyond, TENANT_NOT_MEMBER_URL, TENANT_REFUSED_URL, TENANT_SHARED_ACCOUNT_URL } = await import("@/lib/auth/sso-tenant-guard");
 
 const CALLBACK = { path: "/sso/callback/:providerId", params: { providerId: "entra-acme" } };
 const ACME = { providerId: "entra-acme", name: "Acme Entra ID", tenantId: "acme", domain: "acme.ch", allowProvisioning: true, defaultGroupId: "group-acme", enabled: true };
@@ -78,7 +79,10 @@ describe("sign-ins through the provider of a tenant", () => {
         mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "globex" }] });
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
 
+        // A member of the tenant who works in another one too signs in another way, see below.
         mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "globex" }, { tenantId: "acme" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }] });
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
 
         mocks.user.mockResolvedValue({ ...LENA, platformGroupId: "pg-support" });
@@ -101,6 +105,33 @@ describe("sign-ins through the provider of a tenant", () => {
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
     });
 
+    it("links no account by an email the person picked themselves, only from the own profile while signed in", async () => {
+        const signedIn = { ...CALLBACK, headers: new Headers({ cookie: "better-auth.session_token=tok-lena.sig" }) };
+        mocks.session.mockResolvedValue({ userId: "lena", expiresAt: new Date(Date.now() + 60_000) });
+
+        // A provider of the tenant, for an account of its own people.
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: false, memberships: [{ tenantId: "acme" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(true);
+
+        // A provider of the platform, for an account of the home tenant, also for a platform admin.
+        mocks.provider.mockResolvedValue(AUTHENTIK);
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: false, memberships: [{ tenantId: "default" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(true);
+        mocks.user.mockResolvedValue({ ...MANU, emailVerified: false });
+        expect(await allowTenantSsoLink({ userId: "manu" }, CALLBACK)).toBe(false);
+
+        // Someone else signed in links nobody else's account.
+        mocks.session.mockResolvedValue({ userId: "mallory", expiresAt: new Date(Date.now() + 60_000) });
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: false, memberships: [{ tenantId: "default" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(false);
+
+        // An email an admin set links as before.
+        mocks.user.mockResolvedValue({ ...LENA, emailVerified: true, memberships: [{ tenantId: "default" }] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
+    });
+
     it("leaves links outside a sign-in through a provider of a tenant alone", async () => {
         expect(await allowTenantSsoLink({ userId: "lena" }, { path: "/sign-up/email" })).toBe(true);
         expect(await allowTenantSsoLink({ userId: "lena" }, null)).toBe(true);
@@ -116,7 +147,10 @@ describe("sign-ins through the provider of a tenant", () => {
         await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).resolves.toBeUndefined();
 
         mocks.user.mockResolvedValue(MANU);
-        await expect(refuseTenantSsoSession({ userId: "manu" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_REFUSED_URL}`);
+        await expect(refuseTenantSsoSession({ userId: "manu" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_SHARED_ACCOUNT_URL}`);
+
+        mocks.user.mockResolvedValue({ ...LENA, email: "lena@skyfay.ch", memberships: [{ tenantId: "acme" }] });
+        await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_REFUSED_URL}`);
 
         mocks.user.mockResolvedValue(null);
         await expect(refuseTenantSsoSession({ userId: "gone" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_REFUSED_URL}`);
@@ -142,7 +176,7 @@ describe("sign-ins through the provider of a tenant", () => {
 
         it("signs in a member of its tenant", async () => {
             mocks.provider.mockResolvedValue(QUIET);
-            mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "default" }, { tenantId: "acme" }] });
+            mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }] });
 
             await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).resolves.toBeUndefined();
             expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
@@ -152,7 +186,45 @@ describe("sign-ins through the provider of a tenant", () => {
             mocks.provider.mockResolvedValue(QUIET);
             mocks.user.mockResolvedValue({ ...MANU, memberships: [] });
 
-            await expect(refuseTenantSsoSession({ userId: "manu" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_REFUSED_URL}`);
+            await expect(refuseTenantSsoSession({ userId: "manu" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_SHARED_ACCOUNT_URL}`);
+        });
+    });
+
+    describe("an account that works beyond the tenant of a customer's provider", () => {
+        it("is refused by the provider of a customer's tenant, also beside the home tenant", () => {
+            expect(tenantSignInRefusal(ACME, { ...LENA, memberships: [{ tenantId: "acme" }, { tenantId: "globex" }] })).toBe("other-tenant");
+            expect(tenantSignInRefusal(ACME, { ...LENA, memberships: [{ tenantId: "default" }, { tenantId: "acme" }] })).toBe("other-tenant");
+            expect(tenantSignInRefusal(ACME, { ...LENA, memberships: [{ tenantId: "acme" }] })).toBeNull();
+            // A platform group or any role of the platform reaches beyond the tenant as well.
+            expect(tenantSignInRefusal(ACME, { ...LENA, platformGroupId: "support" })).toBe("platform-group");
+            expect(tenantSignInRefusal(ACME, { ...LENA, platformRole: "SUPPORT" })).toBe("platform-admin");
+        });
+
+        it("keeps signing in through the provider of the home tenant and of the platform", () => {
+            const HOME = { ...ACME, tenantId: "default" };
+            expect(tenantSignInRefusal(HOME, { ...LENA, memberships: [{ tenantId: "default" }, { tenantId: "acme" }] })).toBeNull();
+            expect(tenantSignInRefusal(AUTHENTIK, { ...LENA, memberships: [{ tenantId: "acme" }, { tenantId: "globex" }] })).toBeNull();
+        });
+
+        it("leaves an account that is no member of the tenant to the reasons of membership", () => {
+            expect(worksBeyond("acme", [{ tenantId: "globex" }])).toBe(false);
+            expect(worksBeyond("acme", [])).toBe(false);
+            expect(worksBeyond("acme", undefined)).toBe(false);
+            expect(worksBeyond("acme", [{ tenantId: "acme" }, { tenantId: "globex" }])).toBe(true);
+            expect(worksBeyond("default", [{ tenantId: "default" }, { tenantId: "globex" }])).toBe(false);
+        });
+
+        it("sends the sign-in back to the login page with its own reason, and links nothing", async () => {
+            mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }, { tenantId: "globex" }] });
+
+            await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_SHARED_ACCOUNT_URL}`);
+            expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+        });
+
+        it("refuses an account of a platform group with the same reason", async () => {
+            mocks.user.mockResolvedValue({ ...LENA, platformGroupId: "support", memberships: [{ tenantId: "acme" }] });
+
+            await expect(refuseTenantSsoSession({ userId: "lena" }, CALLBACK, redirect)).rejects.toThrow(`redirect ${TENANT_SHARED_ACCOUNT_URL}`);
         });
     });
 
@@ -252,3 +324,38 @@ describe("the endpoints of the SSO plugin that manage providers", () => {
         expect(isSsoManagementRequest("/sso/register", false)).toBe(false);
     });
 });
+
+describe("the providers an invitation ends for the account that accepts it", () => {
+    const ACME_OKTA = { name: "Acme Okta", tenantId: "acme", domain: "acme.ch", allowProvisioning: false };
+    const OTHER_DOMAIN = { name: "Acme Partners", tenantId: "acme", domain: "partner.ch", allowProvisioning: true };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.providers.mockResolvedValue([ACME, ACME_OKTA, OTHER_DOMAIN]);
+    });
+
+    it("names the providers of the account's tenant that sign it in today and refuse it after joining", async () => {
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }] });
+
+        expect(await providersEndedByJoining("lena", "globex")).toEqual(["Acme Entra ID", "Acme Okta"]);
+        expect(mocks.providers).toHaveBeenCalledWith(expect.objectContaining({ where: { enabled: true, tenantId: { in: ["acme"] } } }));
+    });
+
+    it("names none when nothing changes", async () => {
+        // A member of the tenant of the invitation keeps the group it has there.
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }] });
+        expect(await providersEndedByJoining("lena", "acme")).toEqual([]);
+
+        // Working in two tenants already, the providers of either refuse the account today.
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "acme" }, { tenantId: "initech" }] });
+        expect(await providersEndedByJoining("lena", "globex")).toEqual([]);
+
+        // A provider of the home tenant keeps signing in the platform's own people.
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [{ tenantId: "default" }] });
+        expect(await providersEndedByJoining("lena", "globex")).toEqual([]);
+
+        mocks.user.mockResolvedValue(null);
+        expect(await providersEndedByJoining("gone", "globex")).toEqual([]);
+    });
+});
+

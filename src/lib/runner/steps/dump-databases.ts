@@ -172,6 +172,9 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
         const dumps: DumpState[] = dbNames.map((name) => ({ name, state: "waiting", bytes: null, startedAt: null, endedAt: null }));
         const report = () => ctx.setDumps?.(dumps.map((dump) => ({ ...dump })));
         report();
+        // When the first dump started, for the sidecar. A shared database belongs to a customer's
+        // backup only when the customer held it from then until the backup was stored.
+        ctx.metadata = { ...ctx.metadata, dumpsStartedAt: new Date().toISOString() };
 
         for (const [position, dbName] of dbNames.entries()) {
             // Between databases rather than only between steps, so cancelling a multi-DB job

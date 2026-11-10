@@ -176,6 +176,18 @@ describe('checkKeyCandidate (via resolveDecryptionKey)', () => {
         expect(result).toBe(correctKey);
     });
 
+    it('takes no key for a file whose metadata names a tag shorter than 16 bytes', async () => {
+        const plaintext = Buffer.concat([Buffer.from([0x1f, 0x8b, 0x08, 0x00]), Buffer.alloc(20)]);
+        const { ciphertext, authTag } = encryptBuffer(correctKey, plaintext, iv);
+
+        setupSmartRecovery(correctKey);
+        mockCreateReadStream.mockReturnValue(makeReadStream(ciphertext));
+
+        await expect(
+            resolveDecryptionKey(makeEncryptionMeta(iv, authTag.subarray(0, 4)), '/tmp/backup.sql.gz.enc', 'GZIP', noop),
+        ).rejects.toThrow('missing, and no other profile could decrypt this file');
+    });
+
     it('throws when decrypted GZIP content has wrong magic bytes (wrong key)', async () => {
         const plaintext = Buffer.concat([Buffer.from([0x1f, 0x8b, 0x08, 0x00]), Buffer.alloc(20)]);
         const { ciphertext, authTag } = encryptBuffer(correctKey, plaintext, iv);

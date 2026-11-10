@@ -9,7 +9,7 @@ Send JSON payloads to any HTTP endpoint. Use for custom integrations with PagerD
 | **Webhook** | `WEBHOOK` [credential profile](/user-guide/security/credential-profiles) holding the target URL and, optionally, the authorization header (e.g., `Bearer token`) | - | ✅ |
 | **Method** | `POST`, `PUT`, or `PATCH` | `POST` | ❌ |
 | **Content type** | Content-Type header value | `application/json` | ❌ |
-| **Extra headers** | Additional headers (one per line, `Key: Value`) | - | ❌ |
+| **Extra headers** | Additional headers (one per line, `Key: Value`), stored encrypted like a password | - | ❌ |
 | **Payload template** | Custom JSON with `{{variable}}` placeholders | - | ❌ |
 
 ## Setup Guide
@@ -55,6 +55,10 @@ Use `{{variable}}` placeholders to create your own payload structure:
 Variable names must match the pattern `[a-zA-Z0-9_]+` - no hyphens or special characters.
 :::
 
+The template is JSON. Every variable but `{{fields}}` goes in as the text of a JSON string, with quotes, backslashes and line breaks escaped, so put it between quotes like the examples below. A name with a quote in it, of a job or a person, then stays text and never adds a key or breaks the payload. `{{fields}}` is a whole JSON array and goes in without quotes.
+
+That holds for a Content-Type that ends in `json`, the default `application/json` among them. With `application/x-www-form-urlencoded` every variable but `{{fields}}` is URL-encoded instead, so a name never adds a field, and with any other type, like `text/plain`, the variables go in as they are.
+
 <details>
 <summary>Template examples (PagerDuty, Uptime Kuma, Simple Text)</summary>
 
@@ -86,7 +90,7 @@ https://uptime.example.com/api/push/TOKEN?status=up&msg={{message}}
 ## Authentication
 
 - **Bearer Token:** Set Authorization to `Bearer your-token`
-- **API Key:** Use Custom Headers: `X-API-Key: your-key`
+- **API Key:** Use Extra headers: `X-API-Key: your-key`. Once saved, the form shows them as set and keeps them while the field stays blank, type them again to change them
 - **Basic Auth:** Set Authorization to `Basic <base64>` (generate with `echo -n "user:pass" | base64`)
 
 ## Troubleshooting

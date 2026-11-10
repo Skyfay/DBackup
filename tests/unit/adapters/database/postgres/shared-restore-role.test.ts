@@ -7,7 +7,9 @@ import type { HostKind } from "@/lib/transport/types";
 
 /**
  * A customer's restore of a shared PostgreSQL database runs pg_restore as the owner of the
- * database, so the customer's functions never come to belong to the provider's login.
+ * database, so the customer's functions never come to belong to the provider's login. The code of
+ * the dump can still `RESET ROLE` to the login while pg_restore loads the data, so the restore is
+ * refused whenever the login could do more than the owner.
  */
 
 const provider = {
@@ -41,7 +43,7 @@ const lookupCall = (host: FakeHost) => host.calls.exec.find((argv) => argv[0] ==
 
 describe.each<HostKind>(["direct", "ssh"])("A customer's restore of a shared PostgreSQL database over a %s host", (kind) => {
     it("runs pg_restore as the owner of the database when the owner is another role than the login", async () => {
-        const host = server(kind, { stdout: "f|f|shop_acme_owner\n" });
+        const host = server(kind, { stdout: "f|f|f|0|shop_acme_owner\n" });
 
         await restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop_acme", host);
 
@@ -54,21 +56,47 @@ describe.each<HostKind>(["direct", "ssh"])("A customer's restore of a shared Pos
     });
 
     it("keeps a role name with a pipe in it whole", async () => {
-        const host = server(kind, { stdout: "f|f|odd|name\n" });
+        const host = server(kind, { stdout: "f|f|f|0|odd|name\n" });
 
         await restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop", host);
 
         expect(restoreCall(host)).toContain("--role=odd|name");
     });
 
-    it("restores as the login, without a role, when the login owns the database", async () => {
-        const host = server(kind, { stdout: "t|f|provider_admin\n" });
+    it.each([
+        ["the login owns the database", "t|f|f|0|provider_admin", "it belongs to the login of the connection"],
+        ["the owner is a superuser", "f|t|f|0|postgres", "it belongs to a superuser role"],
+        ["the login is a superuser, may create roles, bypass row security or owns a database", "f|f|t|0|shop_acme_owner", "the login of the connection is a superuser, may create roles or bypass row security, or owns a database"],
+        ["the login is a member of the owner role of another customer", "f|f|f|1|shop_acme_owner", "the login of the connection is a member of other roles than its owner"],
+    ])("refuses before pg_restore when %s", async (_case, row, why) => {
+        const host = server(kind, { stdout: `${row}\n` });
+
+        const restore = restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop_acme", host);
+
+        await expect(restore).rejects.toThrow(`A customer cannot restore database 'shop_acme', since ${why}`);
+        await expect(restore).rejects.toThrow("The provider can restore it from its own History.");
+        expect(restoreCall(host)).toBeUndefined();
+    });
+
+    it("reads the rights of the login itself and every role it is a member of beside the owner", async () => {
+        const host = server(kind, { stdout: "f|f|f|0|shop_acme_owner\n" });
 
         await restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop_acme", host);
 
-        const argv = restoreCall(host)!;
-        expect(argv).toBeDefined();
-        expect(argv.some((arg) => arg.startsWith("--role"))).toBe(false);
+        const query = queryOf(lookupCall(host)!)!;
+        expect(query).toContain("r.rolname = session_user");
+        expect(query).toContain("l.rolsuper OR l.rolcreaterole OR l.rolbypassrls OR EXISTS (SELECT 1 FROM pg_database o WHERE o.datdba = l.oid)");
+        expect(query).toContain("FROM pg_auth_members m");
+        // The built-in roles count too, pg_execute_server_program reaches the server.
+        expect(query).toContain("AND g.oid <> r.oid), ");
+        expect(query).not.toContain("'pg_'");
+    });
+
+    it("stops before pg_restore when the rights of the login come back incomplete", async () => {
+        const host = server(kind, { stdout: "f|f|shop_acme_owner\n" });
+
+        await expect(restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop_acme", host)).rejects.toThrow(/Could not read the owner/);
+        expect(restoreCall(host)).toBeUndefined();
     });
 
     it("stops before pg_restore when the owner cannot be read", async () => {
@@ -87,14 +115,14 @@ describe.each<HostKind>(["direct", "ssh"])("A customer's restore of a shared Pos
     });
 
     it("explains a login that may not act as the owner", async () => {
-        const host = server(kind, { stdout: "f|f|shop_acme_owner\n" }, { code: 1, stderr: 'pg_restore: error: could not execute query: ERROR:  permission denied to set role "shop_acme_owner"' });
+        const host = server(kind, { stdout: "f|f|f|0|shop_acme_owner\n" }, { code: 1, stderr: 'pg_restore: error: could not execute query: ERROR:  permission denied to set role "shop_acme_owner"' });
 
         await expect(restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop_acme", host))
             .rejects.toThrow(/may not act as the owner 'shop_acme_owner'/);
     });
 
     it("leaves a restore that is not shared as it was, without a lookup and without a role", async () => {
-        const host = server(kind, { stdout: "f|f|shop_acme_owner\n" });
+        const host = server(kind, { stdout: "f|f|f|0|shop_acme_owner\n" });
 
         await restoreOne(provider as never, "/tmp/a.dump", "shop_acme", host);
 
@@ -103,7 +131,7 @@ describe.each<HostKind>(["direct", "ssh"])("A customer's restore of a shared Pos
     });
 
     it("quotes the database name as a literal in the owner lookup", async () => {
-        const host = server(kind, { stdout: "f|f|owner\n" });
+        const host = server(kind, { stdout: "f|f|f|0|owner\n" });
         const name = "x' OR '1'='1\\";
 
         await restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", name, host);
@@ -114,7 +142,7 @@ describe.each<HostKind>(["direct", "ssh"])("A customer's restore of a shared Pos
     });
 
     it("keeps the password out of argv", async () => {
-        const host = server(kind, { stdout: "f|f|owner\n" });
+        const host = server(kind, { stdout: "f|f|f|0|owner\n" });
 
         await restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop", host);
 

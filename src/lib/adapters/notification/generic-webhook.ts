@@ -3,6 +3,7 @@ import { GenericWebhookSchema, GenericWebhookConfig } from "@/lib/adapters/defin
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { validateOutboundUrl } from "@/lib/url-validation";
+import { reachOf } from "@/lib/network/reach-policy";
 import { redirectRefusal, webhookFetch } from "./http";
 
 const log = logger.child({ adapter: "generic-webhook" });
@@ -40,7 +41,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             const headers = buildHeaders(config);
 
             const body = config.payloadTemplate
-                ? renderTemplate(config.payloadTemplate, {
+                ? renderTemplate(config.payloadTemplate, config.contentType, {
                       title: "DBackup Connection Test",
                       message: "This is a test notification to verify your webhook configuration.",
                       success: "true",
@@ -64,7 +65,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await webhookFetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts, reachOf(config));
 
             const redirect = redirectRefusal("The webhook", response);
             if (redirect) return { success: false, message: redirect };
@@ -97,7 +98,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             let body: string;
 
             if (config.payloadTemplate) {
-                body = renderTemplate(config.payloadTemplate, {
+                body = renderTemplate(config.payloadTemplate, config.contentType, {
                     title,
                     message,
                     success: String(success),
@@ -123,7 +124,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             if (method !== "GET" && method !== "HEAD") {
                 fetchOpts.body = body;
             }
-            const response = await webhookFetch(config.webhookUrl, fetchOpts);
+            const response = await webhookFetch(config.webhookUrl, fetchOpts, reachOf(config));
 
             if (!response.ok) {
                 const responseBody = await response.text().catch(() => "");
@@ -170,11 +171,33 @@ function buildHeaders(config: GenericWebhookConfig): Record<string, string> {
     return headers;
 }
 
+/** The variables that go into the template as a whole JSON value rather than as text. */
+const JSON_VALUES = new Set(["fields"]);
+
+/** A value as the text inside a JSON string, so a name never ends the string or adds a key. */
+function jsonText(value: string): string {
+    return JSON.stringify(value).slice(1, -1);
+}
+
 /**
- * Replace `{{variable}}` placeholders in a template string with actual values.
+ * How a text goes into the template, by the Content-Type it is sent as: inside a JSON string for a
+ * JSON type, encoded for a form, so a name never adds a key or a field, and as it is for any other.
  */
-function renderTemplate(template: string, variables: Record<string, string>): string {
+function textEscaper(contentType: string | undefined): (value: string) => string {
+    const type = (contentType || "application/json").split(";")[0].trim().toLowerCase();
+    if (type.endsWith("json")) return jsonText;
+    if (type === "application/x-www-form-urlencoded") return encodeURIComponent;
+    return (value) => value;
+}
+
+/**
+ * Replace `{{variable}}` placeholders in the template with actual values. Each text is escaped for
+ * the Content-Type of the body, see `textEscaper`, `{{fields}}` is a JSON array of its own.
+ */
+function renderTemplate(template: string, contentType: string | undefined, variables: Record<string, string>): string {
+    const escape = textEscaper(contentType);
     return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-        return variables[key] ?? "";
+        const value = variables[key] ?? "";
+        return JSON_VALUES.has(key) ? value : escape(value);
     });
 }

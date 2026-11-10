@@ -15,7 +15,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import type { InvitationPreview } from "@/services/tenant/invitation-service";
 import { InviteAccountForm } from "./invite-account-form";
-import { inviteSignInHref, inviteStep } from "./invite-model";
+import { inviteSignInHref, inviteStep, providerEndNote } from "./invite-model";
 import { LoginHeading, LoginNote, OrDivider } from "./login-parts";
 
 const log = logger.child({ component: "invite-step" });
@@ -28,6 +28,8 @@ interface InviteStepProps {
     passwordSignUp: boolean;
     /** The rules of a new password, only for someone who may make an account here. */
     rules: PasswordRules | null;
+    /** The providers of customers' tenants the signed-in account stops signing in through once it joins. */
+    endsProviders?: string[];
 }
 
 /** The tenant and the group a link leads to, with how long it still works. */
@@ -69,7 +71,7 @@ function GoneStep({ signedIn }: { signedIn: boolean }) {
 }
 
 /** Someone signed in joins with the account they have. */
-function JoinStep({ token, invitation, signedIn }: { token: string; invitation: InvitationPreview; signedIn: { name: string; email: string } }) {
+function JoinStep({ token, invitation, signedIn, endsProviders }: { token: string; invitation: InvitationPreview; signedIn: { name: string; email: string }; endsProviders: string[] }) {
     const router = useRouter();
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -108,6 +110,11 @@ function JoinStep({ token, invitation, signedIn }: { token: string; invitation: 
                 You join as <span className="font-medium text-foreground">{signedIn.name || signedIn.email}</span>
                 {signedIn.name && <> · {signedIn.email}</>}
             </p>
+            {endsProviders.length > 0 && (
+                <div className="mt-4">
+                    <LoginNote title="Your sign-in provider stops signing you in">{providerEndNote(endsProviders, invitation.tenantName)}</LoginNote>
+                </div>
+            )}
             {problem && <div className="mt-4"><LoginNote title="Joining did not work">{problem}</LoginNote></div>}
             <Button type="button" tone="create" size="lg" className="mt-4 w-full" onClick={() => void join()} disabled={busy}>
                 {busy ? <Loader2 className="animate-spin" /> : <DoorOpen />}
@@ -129,7 +136,7 @@ function JoinStep({ token, invitation, signedIn }: { token: string; invitation: 
  * with a click, and offers everyone else the sign-in or, while passwords are on, a new account.
  * The sign-in comes back here, where they join with a click.
  */
-export function InviteStep({ token, invitation, signedIn, passwordSignUp, rules }: InviteStepProps) {
+export function InviteStep({ token, invitation, signedIn, passwordSignUp, rules, endsProviders = [] }: InviteStepProps) {
     const step = inviteStep({ invitation, signedIn });
     if (step === "gone" || !invitation) return <GoneStep signedIn={signedIn !== null} />;
 
@@ -139,7 +146,7 @@ export function InviteStep({ token, invitation, signedIn, passwordSignUp, rules 
             <InvitationCard invitation={invitation} />
 
             {step === "join" && signedIn ? (
-                <JoinStep token={token} invitation={invitation} signedIn={signedIn} />
+                <JoinStep token={token} invitation={invitation} signedIn={signedIn} endsProviders={endsProviders} />
             ) : (
                 <>
                     <div className="mt-5 space-y-2.5">

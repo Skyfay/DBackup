@@ -8,6 +8,11 @@
  * client can put anything at the left end, so the first entry is never taken on trust. This is what
  * `trust proxy` does in Express.
  *
+ * Which header the proxy writes is a setting, TRUSTED_PROXY_HEADER, never a guess from the request.
+ * A proxy passes on whatever the client sent in the header it does not write, so X-Forwarded-For
+ * behind a proxy that sets only X-Real-IP is the client's own, and so is X-Real-IP behind one that
+ * appends to X-Forwarded-For. Only the header of the setting is read, the other one never.
+ *
  * Compiled with custom-server.ts by tsconfig.server.json, so it imports nothing of the app.
  */
 
@@ -15,6 +20,27 @@ import { BlockList, isIP } from "node:net";
 
 /** The header the custom server sets on every request. Read by src/lib/core/client-address.ts. */
 export const CLIENT_ADDRESS_HEADER = "x-dbackup-client-address";
+
+/**
+ * The variable the custom server sets to "1" before Next.js loads, so the app trusts the header
+ * above, see `addressHeaderSet` in src/lib/core/client-address.ts, which keeps the same name.
+ */
+export const CUSTOM_SERVER_MARK = "DBACKUP_CUSTOM_SERVER";
+
+/** The headers a trusted proxy writes the address of the client into, the values of TRUSTED_PROXY_HEADER. */
+export const PROXY_HEADERS = ["x-forwarded-for", "x-real-ip"] as const;
+export type ProxyHeader = (typeof PROXY_HEADERS)[number];
+
+/**
+ * The header the proxies write, from the value of TRUSTED_PROXY_HEADER: unset for X-Forwarded-For.
+ * Throws on any other value, so a typo does not silently read the wrong header.
+ */
+export function proxyHeaderFrom(value: string | undefined): ProxyHeader {
+    const setting = value?.trim().toLowerCase() || "x-forwarded-for";
+    const header = PROXY_HEADERS.find((name) => name === setting);
+    if (!header) throw new Error(`TRUSTED_PROXY_HEADER: "${value}" is none of ${PROXY_HEADERS.join(", ")}`);
+    return header;
+}
 
 /**
  * The networks a reverse proxy in front of DBackup usually sits in: loopback, the private ranges of
@@ -86,18 +112,20 @@ const joined = (value: HeaderValue) => (Array.isArray(value) ? value.join(",") :
  *
  * @param peer       The remote address of the socket.
  * @param forwarded  X-Forwarded-For as it arrived.
- * @param realIp     X-Real-IP as it arrived, for a proxy that sets only that one.
+ * @param realIp     X-Real-IP as it arrived.
+ * @param header     The header the trusted proxies write, from `proxyHeaderFrom`. The other one is ignored.
  */
-export function clientAddressOf(peer: string | undefined, forwarded: HeaderValue, realIp: HeaderValue, trusted: BlockList): string {
+export function clientAddressOf(peer: string | undefined, forwarded: HeaderValue, realIp: HeaderValue, trusted: BlockList, header: ProxyHeader = "x-forwarded-for"): string {
     const remote = peer ? normalizeAddress(peer) : "unknown";
     if (!isTrusted(remote, trusted)) return remote;
 
-    const chain = joined(forwarded).split(",").map(normalizeAddress).filter(Boolean);
-    if (chain.length === 0) {
+    if (header === "x-real-ip") {
         const real = joined(realIp).split(",").map(normalizeAddress).filter(Boolean);
         // A trusted proxy that sets X-Real-IP sets one address, anything else is not its doing.
         return real.length === 1 && isIP(real[0]) ? real[0] : remote;
     }
+    const chain = joined(forwarded).split(",").map(normalizeAddress).filter(Boolean);
+    if (chain.length === 0) return remote;
     for (let index = chain.length - 1; index >= 0; index--) {
         const hop = chain[index];
         // An entry that is no address was not written by a proxy, so nothing left of it counts.

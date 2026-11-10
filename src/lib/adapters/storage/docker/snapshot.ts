@@ -13,6 +13,7 @@ import { logger } from "@/lib/logging/logger";
 import { startAll, stopRunning, type StoppedContainer } from "./containers";
 import type { ContainerInfo, DockerEngine } from "./engine/types";
 import { planVolumeGroups } from "./grouping";
+import { ownContainerStopRefusal } from "./own-container-stop";
 import { findOrphanedHelpers, releaseOrphanedHelper } from "./recovery";
 import {
     SESSION_CONFIG_KEY,
@@ -22,6 +23,7 @@ import {
     registerSession,
 } from "./session";
 import { createHelper, removeHelper } from "./temp-container";
+import { assertVolumeName } from "./volume-name";
 
 const log = logger.child({ adapter: "docker-volume" });
 
@@ -70,6 +72,8 @@ export async function planDockerSourceGroups(
     config: Record<string, unknown>,
     volumes: string[]
 ): Promise<string[][]> {
+    // Before Docker hears them, whose filter matches folders as well as volumes.
+    volumes.forEach(assertVolumeName);
     const connection = openConnection(config);
     try {
         return await planVolumeGroups(connection.engine, volumes);
@@ -83,6 +87,8 @@ export async function createDockerSnapshot(
     volumes: string[],
     options?: SnapshotOptions
 ): Promise<SnapshotHandle> {
+    // A source that is no volume name would mount a folder of the Docker host, see `volume-name.ts`.
+    volumes.forEach(assertVolumeName);
     const say = sayVia(options?.onLog);
     // Info, not a warning: falling back to the Docker CLI is a working setup, not a problem,
     // and warning on every run of one trains people to ignore warnings. If the CLI is missing
@@ -115,6 +121,9 @@ export async function createDockerSnapshot(
             // because the option was off.
             say(`No container is using ${volumes.join(", ")}, so nothing had to be stopped`);
         } else {
+            // Never DBackup's own container, whose stop would end this run and leave it down.
+            const refusal = await ownContainerStopRefusal(engine, config, holders, "backup");
+            if (refusal) throw new Error(`${volumes.join(", ")}: ${refusal}`);
             stopped = await stopRunning(engine, holders, say);
         }
 

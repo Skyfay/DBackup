@@ -9,6 +9,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { consumeOAuthState, type OAuthProvider } from "@/lib/auth/oauth-state";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import type { OAuthData } from "@/lib/core/credentials";
+import type { OAuthErrorCode } from "@/lib/core/oauth-result";
 import { requestHeaders } from "@/lib/server/request-headers";
 import { configBackupTargetRefusal } from "@/lib/server/config-backup-target-guard";
 import { auditService } from "@/services/audit-service";
@@ -16,19 +17,10 @@ import { credentialChanges, credentialSnapshot } from "@/services/auth/credentia
 import { updateCredentialProfile } from "@/services/auth/credential-service";
 
 /**
- * What a callback that broke shows on the destinations page. The error itself, which can carry the
- * answer of the provider or a path of the server, goes to the log.
- */
-export const OAUTH_CALLBACK_FAILED = "The authorization could not be completed. See the server log for details.";
-
-/**
  * What the validate-token routes answer for a check that failed for another reason than an expired
  * authorization. The answer of the provider goes to the log.
  */
 export const TOKEN_CHECK_FAILED = "The authorization could not be checked. See the server log for details.";
-
-/** What a callback shows when the provider reports a refused authorization, whatever it adds. */
-export const OAUTH_DENIED = "Authorization was denied by the user.";
 
 /** What the auth routes answer an API key, see `oauthStartRefusal`. */
 export const OAUTH_START_SESSION_ONLY = "An authorization is started by a signed-in person, never with an API key.";
@@ -45,24 +37,25 @@ export function oauthStartRefusal(ctx: Pick<AuthContext, "authMethod">): Respons
 
 export type OAuthCallbackCaller =
     | { ok: true; ctx: AuthContext; credentialId: string }
-    | { ok: false; message: string };
+    | { ok: false; code: OAuthErrorCode; message: string };
 
 /**
  * The caller of a callback and the login its authorization was started for: a signed-in person
  * who may change saved logins, in the tenant the authorization started in, and the same person
- * who started it. The provider only hands the `state` back, so it names nothing by itself.
+ * who started it. The provider only hands the `state` back, so it names nothing by itself. A
+ * refusal carries the code the page shows it by and its sentence for the log.
  */
 export async function oauthCallbackCaller(provider: OAuthProvider, state: string): Promise<OAuthCallbackCaller> {
     const ctx = await getAuthContext(await requestHeaders()).catch(() => null);
-    if (!ctx || ctx.authMethod !== "session") return { ok: false, message: "Authentication required. Please log in and try again." };
+    if (!ctx || ctx.authMethod !== "session") return { ok: false, code: "auth_required", message: "Authentication required. Please log in and try again." };
     if (!ctx.tenantId || !hasPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.WRITE)) {
-        return { ok: false, message: "You may not change saved logins in this tenant." };
+        return { ok: false, code: "no_rights", message: "You may not change saved logins in this tenant." };
     }
     const bound = consumeOAuthState(state, { provider, userId: ctx.userId, tenantId: ctx.tenantId });
-    if (!bound) return { ok: false, message: "This authorization ran out or belongs to another session. Start it again from the saved login." };
+    if (!bound) return { ok: false, code: "state_expired", message: "This authorization ran out or belongs to another session. Start it again from the saved login." };
     // A new token of the login of the destination of the configuration backup comes only from a platform admin.
     const locked = await configBackupTargetRefusal(ctx, { credentialIds: [bound.credentialId] });
-    if (locked) return { ok: false, message: locked };
+    if (locked) return { ok: false, code: "locked", message: locked };
     return { ok: true, ctx, credentialId: bound.credentialId };
 }
 

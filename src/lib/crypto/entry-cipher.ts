@@ -123,9 +123,14 @@ export function sealEntry(key: Buffer, noncePrefix: Buffer, ordinal: number): Tr
  *
  * The trailing 16 bytes of the input are the authentication tag, which is only known once
  * the stream ends. The implementation therefore holds back a rolling 16-byte tail and
- * feeds everything before it to the decipher. Authentication failures surface as a stream
- * error on flush, so a truncated or tampered entry can never yield partial plaintext that
- * a caller mistakes for a successful restore.
+ * feeds everything before it to the decipher, whose plaintext flows on at once. The tag is
+ * checked on flush, so a truncated or tampered entry fails the stream only after its bytes
+ * went out: everything this stream emits is unverified until it ends without an error.
+ *
+ * A caller acts on the plaintext only once the stream ended. The restores do: a dump and a
+ * file are staged whole in a temp file before they reach a database or a storage, and a
+ * bundle is read whole into memory. A download that streams an entry to the browser cannot
+ * wait, it is cut off with the error instead, and holds the bytes received until then.
  *
  * @param key - The archive's data or index subkey, from deriveArchiveKeys()
  * @param noncePrefix - The archive's nonce prefix, from the manifest
@@ -133,7 +138,7 @@ export function sealEntry(key: Buffer, noncePrefix: Buffer, ordinal: number): Tr
  */
 export function openEntry(key: Buffer, noncePrefix: Buffer, ordinal: number): Transform {
     assertKey(key);
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, buildNonce(noncePrefix, ordinal));
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, buildNonce(noncePrefix, ordinal), { authTagLength: TAG_LENGTH });
     // The held-back tail is always a copy, never a view. Both `chunk` and any subarray of
     // it share memory the stream is free to reuse for the next read, and the tail has to
     // survive until flush.

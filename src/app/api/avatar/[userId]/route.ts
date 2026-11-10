@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth/access-control";
 import { findVisibleAvatar } from "@/services/user/account-visibility";
 import { unauthorized } from "@/lib/server/unauthorized";
+import { IMAGE_SECURITY_HEADERS, servedImageType } from "@/lib/server/image-response";
 
 /**
  * The picture of a person, to whoever sees their name beside it, see `maySeePicture`. It shows in
@@ -15,15 +16,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ user
     if (!ctx) return unauthorized();
 
     const avatar = await findVisibleAvatar(ctx, (await params).userId);
-    if (!avatar) return new NextResponse(null, { status: 404 });
+    // A stored row of another type than an upload is stored with is never served.
+    const type = servedImageType(avatar?.mimeType);
+    if (!avatar || !type) return new NextResponse(null, { status: 404 });
     return new NextResponse(Buffer.from(avatar.data), {
         headers: {
-            "Content-Type": avatar.mimeType,
+            ...IMAGE_SECURITY_HEADERS,
+            "Content-Type": type,
             "Content-Length": String(avatar.data.length),
             // The address carries the time of the picture in `?v=`, so a new picture gets a new address
             // and the browser keeps each one for good. Without it an hour.
             "Cache-Control": req.nextUrl.searchParams.has("v") ? "private, max-age=31536000, immutable" : "private, max-age=3600",
-            "X-Content-Type-Options": "nosniff",
         },
     });
 }

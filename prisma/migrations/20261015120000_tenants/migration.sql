@@ -69,10 +69,19 @@ INSERT INTO "TenantMembership" ("userId", "tenantId", "groupId", "createdAt")
     SELECT "id", 'default', "groupId", CURRENT_TIMESTAMP FROM "User" WHERE "groupId" IS NOT NULL;
 
 -- The SuperAdmin group becomes the role Admin with every permission of a tenant. Its members become
--- platform admins below. A group already named Admin keeps its name.
+-- platform admins below. The app shows every group with every permission as Admin, so a group
+-- already named Admin beside it becomes Admin (before update) first, or that name with the start of
+-- its id when a group has that name too. Group names are unique and a clash would stop the upgrade
+-- half way, so SuperAdmin still falls back to Admin (was SuperAdmin) should Admin be taken anyway.
+UPDATE "Group" SET "name" = 'Admin (before update)'
+    WHERE "name" = 'Admin' AND EXISTS (SELECT 1 FROM "Group" WHERE "name" = 'SuperAdmin')
+    AND NOT EXISTS (SELECT 1 FROM "Group" WHERE "name" = 'Admin (before update)');
+UPDATE "Group" SET "name" = 'Admin (before update ' || substr("id", 1, 8) || ')'
+    WHERE "name" = 'Admin' AND EXISTS (SELECT 1 FROM "Group" WHERE "name" = 'SuperAdmin');
 UPDATE "Group" SET "fullAccess" = true WHERE "name" = 'SuperAdmin';
 UPDATE "Group" SET "name" = 'Admin' WHERE "name" = 'SuperAdmin' AND NOT EXISTS (SELECT 1 FROM "Group" WHERE "name" = 'Admin');
-UPDATE "Group" SET "name" = 'Admin (was SuperAdmin)' WHERE "name" = 'SuperAdmin';
+UPDATE "Group" SET "name" = 'Admin (was SuperAdmin)' WHERE "name" = 'SuperAdmin' AND NOT EXISTS (SELECT 1 FROM "Group" WHERE "name" = 'Admin (was SuperAdmin)');
+UPDATE "Group" SET "name" = 'Admin (was SuperAdmin ' || substr("id", 1, 8) || ')' WHERE "name" = 'SuperAdmin';
 
 -- RedefineTables
 PRAGMA defer_foreign_keys=ON;

@@ -35,9 +35,10 @@ vi.mock("@/services/config/config-backup-targets", () => ({ getConfigBackupTarge
 
 const { restoreService } = await import("@/services/restore/restore-service");
 const { SharedRestoreRefused } = await import("@/services/restore/refused-restore");
+const { sharedRestoresOn } = await import("@/services/restore/shared-restores-active");
 
 /** A platform admin with a session, who may restore into any target. */
-const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" } as const;
+const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session", tenantId: "default" } as const;
 
 const INPUT = {
     storageConfigId: "msp-nas",
@@ -82,6 +83,26 @@ describe("the run of a restore a customer starts on a shared server", () => {
         expect(JSON.parse(provider.metadata)).toEqual(expect.objectContaining({ restoreOf: { database: "acme_shop", customer: "Acme" }, followsRun: customer.id }));
         // The pipeline writes both.
         expect(mocks.pipeline).toHaveBeenCalledWith(customer.id, expect.anything(), { id: provider.id, provider: "Skyfay Hosting", customer: "Acme" });
+    });
+
+    it("names the customer of the caller and holds the database until the run ended", async () => {
+        let finish: () => void = () => {};
+        mocks.pipeline.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+
+        await restoreService.restoreShared({ ...INPUT, shared: { databaseName: "acme_shop", tenantId: "globex" } }, "acme");
+
+        expect(mocks.pipeline.mock.calls[0][1].shared).toMatchObject({ databaseName: "acme_shop", tenantId: "acme" });
+        expect(sharedRestoresOn("shared-mysql")).toEqual([{ sourceId: "shared-mysql", databaseName: "acme_shop", tenantId: "acme" }]);
+        finish();
+        await vi.waitFor(() => expect(sharedRestoresOn("shared-mysql")).toEqual([]));
+    });
+
+    it("lets go of the database when the restore is refused before it started", async () => {
+        mocks.preflight.mockRejectedValue(new Error("Incompatible database types"));
+
+        await restoreService.restoreShared({ ...INPUT, shared: { databaseName: "acme_shop" } }, "acme").catch(() => null);
+
+        expect(sharedRestoresOn("shared-mysql")).toEqual([]);
     });
 
     it("writes one run for a restore that names no provider", async () => {

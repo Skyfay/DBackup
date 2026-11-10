@@ -31,6 +31,10 @@ export interface TenantAdminActor {
     tenantId: string | null;
     /** The API key of the request, which every audit entry names. */
     apiKeyId?: string | null;
+    /** Set for an API key, whose own rights count where a check asks for rights, see `placementRefusal`. */
+    authMethod?: "session" | "apikey";
+    /** The rights of the API key, set with `authMethod`. */
+    permissions?: readonly string[];
     /**
      * The tenants the actor looks after, see `platformGroupService.reachOf`. A route reads it once.
      * Left out, every check asks the platform group of the actor.
@@ -58,12 +62,13 @@ export class TenantAdminRefusal extends PermissionError {
 }
 
 /** The actor of an API route: the person of the session or the owner of the key, with their reach read once. */
-export async function routeActor(ctx: Pick<AuthContext, "userId" | "isPlatformAdmin" | "tenantId" | "authMethod" | "apiKeyId">): Promise<TenantAdminActor> {
+export async function routeActor(ctx: Pick<AuthContext, "userId" | "isPlatformAdmin" | "tenantId" | "authMethod" | "apiKeyId" | "permissions">): Promise<TenantAdminActor> {
     return {
         id: ctx.userId,
         isPlatformAdmin: ctx.isPlatformAdmin,
         tenantId: ctx.tenantId,
         apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
+        ...(ctx.authMethod === "apikey" ? { authMethod: "apikey" as const, permissions: ctx.permissions } : {}),
         reach: await platformGroupService.reachOf(ctx.userId),
     };
 }

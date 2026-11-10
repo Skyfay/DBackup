@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, renderHook, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { TenantViewProvider, type TenantView } from "@/components/tenant/tenant-view";
 
@@ -61,6 +61,7 @@ describe("the tenant a link of a notification names", () => {
     it("switches the session into the tenant of the run, then takes the tenant off the address", async () => {
         openAddress("id=run-1&from=history&tenant=acme");
         const { rerender } = render(<TenantViewProvider value={IN_HOME}><TenantFromLink /></TenantViewProvider>);
+        fireEvent.click(screen.getByRole("button", { name: "Switch" }));
 
         await waitFor(() => expect(mocks.switchTenant).toHaveBeenCalledExactlyOnceWith("acme"));
         // The same page loads in the tenant, and the address keeps naming it until the tenant shows.
@@ -97,9 +98,42 @@ describe("the tenant a link of a notification names", () => {
         mocks.switchTenant.mockResolvedValue({ success: false, error: "That tenant is gone." });
         openAddress("id=run-1&tenant=acme");
         render(<TenantViewProvider value={IN_HOME}><TenantFromLink /></TenantViewProvider>);
+        fireEvent.click(screen.getByRole("button", { name: "Switch" }));
 
         await waitFor(() => expect(window.location.search).toBe("?id=run-1"));
         expect(mocks.replace).not.toHaveBeenCalled();
+    });
+
+    it("asks before it switches for the link the dashboard opened with, which any site can send", () => {
+        openAddress("id=run-1&tenant=acme");
+        render(<TenantViewProvider value={IN_HOME}><TenantFromLink /></TenantViewProvider>);
+
+        expect(screen.getByRole("alertdialog")).toHaveTextContent("This link opens Acme GmbH. Switch to it?");
+        expect(screen.getByRole("button", { name: "Stay" })).toBeInTheDocument();
+        expect(mocks.switchTenant).not.toHaveBeenCalled();
+    });
+
+    it("stays in the tenant open on Stay and takes the tenant off the address", async () => {
+        openAddress("id=run-1&tenant=acme");
+        const { rerender } = render(<TenantViewProvider value={IN_HOME}><TenantFromLink /></TenantViewProvider>);
+
+        fireEvent.click(screen.getByRole("button", { name: "Stay" }));
+        // Still named for a moment, until Next.js follows the history.
+        rerender(<TenantViewProvider value={IN_HOME}><TenantFromLink /></TenantViewProvider>);
+
+        expect(window.location.search).toBe("?id=run-1");
+        await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+        expect(mocks.switchTenant).not.toHaveBeenCalled();
+    });
+
+    it("switches at once for a link followed inside the dashboard, one of DBackup's own", async () => {
+        const { rerender } = render(<TenantViewProvider value={IN_HOME}><TenantFromLink /></TenantViewProvider>);
+
+        openAddress("id=run-1&tenant=acme");
+        rerender(<TenantViewProvider value={IN_HOME}><TenantFromLink /></TenantViewProvider>);
+
+        expect(screen.queryByRole("alertdialog")).toBeNull();
+        await waitFor(() => expect(mocks.switchTenant).toHaveBeenCalledExactlyOnceWith("acme"));
     });
 });
 

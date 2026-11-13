@@ -1584,6 +1584,96 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /adapters/{id}/ssh-host-key:
+    post:
+      tags: [Adapters]
+      summary: Trust SSH Host Key
+      description: |
+        Trusts the host key the SSH server of the connection presents now, when its fingerprint
+        is the one sent. DBackup pins the key of an SSH server on the first connect and refuses
+        a server that presents another one, so this is how a reinstalled server is accepted.
+        Needs the write permission of the adapter type.
+      operationId: trustSshHostKey
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fingerprint]
+              properties:
+                fingerprint:
+                  type: string
+                  description: The fingerprint of the key to trust, as the failed test showed it
+                  example: "SHA256:i/c1atPNRStBTDutcRTeVHLTAIuqx5IvlY4j7lJwjV0"
+      responses:
+        "200":
+          description: The key is trusted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      fingerprint:
+                        type: string
+                      previous:
+                        type: string
+                        nullable: true
+        "400":
+          description: No fingerprint was sent, or the server presents another key than the one sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags: [Adapters]
+      summary: Forget SSH Host Key
+      description: |
+        Forgets the pinned host key of the connection. The next successful connect pins the key
+        the server presents then. Needs the write permission of the adapter type.
+      operationId: forgetSshHostKey
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The key is forgotten
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      previous:
+                        type: string
+                        nullable: true
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /adapters/{id}/databases:
     get:
       tags: [Adapters]

@@ -121,9 +121,41 @@ describe("the database tools", () => {
     });
 
     it("leave the MongoDB host its name when its options turn TLS on, whose certificate the tools check against it", async () => {
-        for (const config of [{ host: "db.example.com", options: "--tls" }, { host: "db.example.com", options: "--ssl --sslCAFile=/x" }, { host: "db.example.com/?tls=true" }]) {
+        for (const config of [{ host: "db.example.com", options: "--tls" }, { host: "db.example.com", options: "--ssl --sslCAFile=/x" }]) {
             expect(((await pinDatabaseHost(adapter("mongodb"), marked(config))).config as Record<string, unknown>).host, JSON.stringify(config)).toBe(config.host);
         }
+    });
+
+    it("pin a MongoDB host in every spelling the adapter reads as one host, so none of them dials the name", async () => {
+        const hostOf = async (host: string) => ((await pinDatabaseHost(adapter("mongodb"), marked({ host, port: 27017 }))).config as Record<string, unknown>).host;
+        // The parser of the adapter cuts a path, a query, a user part and a scheme off, and the pin reads it the same way.
+        for (const host of ["db.example.com", "db.example.com/", "x@db.example.com", "mongodb://db.example.com", "db.example.com/?tls=true", "mongodb://u:p@db.example.com/admin?ssl=true"]) {
+            expect(await hostOf(host), host).toBe("93.184.216.34:27017");
+        }
+        expect(await hostOf("db.example.com:27018/")).toBe("93.184.216.34:27018");
+        expect(await hostOf("v6.example.com/")).toBe("[2606:4700::1111]:27017");
+        // A name that leads into the blocked network at connect time is refused in every spelling too.
+        for (const host of ["db.internal/", "x@db.internal", "mongodb://db.internal", "db.internal/?tls=true"]) {
+            await expect(hostOf(host), host).rejects.toThrow("db.internal is 10.0.0.5");
+        }
+    });
+
+    it("refuse a host that is no text instead of leaving it unpinned, which a tool would read as its text", async () => {
+        for (const id of ["redis", "valkey", "mysql", "mongodb", "postgres", "firebird"]) {
+            await expect(pinDatabaseHost(adapter(id), marked({ host: ["127.0.0.1"], disableSsl: true })), id).rejects.toThrow("is no text");
+        }
+        expect(() => redisArgs({ host: ["127.0.0.1"], port: 6379 } as never)).toThrow("is no text");
+    });
+
+    it("lets the forward of an SSH tunnel carry SQL Server for every tenant through its own dial alone", async () => {
+        const dialTunnel = vi.fn(async () => net.connect({ host: "127.0.0.1", port }));
+        const open = tdsConnector("127.0.0.1", true, null, dialTunnel)!;
+        const socket = await open({ host: "127.0.0.1", port: 15001 }, null, new AbortController().signal);
+        socket.destroy();
+        expect(dialTunnel).toHaveBeenCalledTimes(1);
+        const blocked = tdsConnector("127.0.0.1", true, blocking, dialTunnel)!;
+        await expect(blocked({ host: "redirect.internal", port: 1433 }, null, new AbortController().signal)).rejects.toThrow("outside the SSH tunnel");
+        expect(dialTunnel).toHaveBeenCalledTimes(1);
     });
 
     it("pin MySQL and MariaDB only with TLS off, where no certificate is checked against the name", async () => {

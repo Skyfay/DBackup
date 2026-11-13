@@ -66,6 +66,8 @@ function setupMinimalImport() {
   prismaMock.group.upsert.mockResolvedValue({} as any);
   prismaMock.group.update.mockResolvedValue({} as any);
   prismaMock.user.findUnique.mockResolvedValue(null);
+  // An account here that a user of the file matches works in the home tenant alone.
+  prismaMock.user.findMany.mockResolvedValue([{ platformRole: null, platformGroupId: null, memberships: [{ tenantId: 'default' }] }] as any);
   prismaMock.user.upsert.mockResolvedValue({} as any);
   prismaMock.user.update.mockResolvedValue({} as any);
   prismaMock.account.upsert.mockResolvedValue({} as any);
@@ -99,7 +101,7 @@ describe('import.ts - uncovered branches', () => {
     } as any);
 
     const backup = makeBackup({
-      groups: [{ id: 'g1', name: 'Admin', permissions: [], createdAt: new Date(), updatedAt: new Date() }],
+      groups: [{ id: 'g1', name: 'Admin', permissions: '[]', createdAt: new Date(), updatedAt: new Date() }],
       users: [{ id: 'backup-user-id', email: 'shared@example.com', groupId: null, accounts: [] }],
     });
 
@@ -325,7 +327,7 @@ describe('import.ts - uncovered branches', () => {
     prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'db-user-id', email: 'admin@example.com' } as any);
 
     const backup = makeBackup({
-      groups: [{ id: 'backup-group-id', name: 'Admins', permissions: [], createdAt: new Date(), updatedAt: new Date() }],
+      groups: [{ id: 'backup-group-id', name: 'Admins', permissions: '[]', createdAt: new Date(), updatedAt: new Date() }],
       users: [{
         id: 'backup-user-id',
         email: 'admin@example.com',

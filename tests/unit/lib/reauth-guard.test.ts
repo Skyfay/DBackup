@@ -11,7 +11,8 @@ import { prismaMock } from "@/lib/testing/prisma-mock";
 const verifyPassword = vi.hoisted(() => vi.fn(async (_userId: string, password: string) => password === "right"));
 vi.mock("@/services/auth/auth-service", () => ({ authService: { verifyPassword } }));
 
-const { refuseWithoutReauth, passkeyFactorOffRefusal, FRESH_SIGN_IN_MS, SIGN_IN_AGAIN } = await import("@/lib/auth/reauth-guard");
+const { refuseWithoutReauth, passkeyFactorOffRefusal, keptSessionAge, FRESH_SIGN_IN_MS, SIGN_IN_AGAIN } = await import("@/lib/auth/reauth-guard");
+const { MAX_SESSION_CODES, SESSION_CODE_WINDOW_MS, SESSION_CODES_LOCKED, resetSessionCodeTries } = await import("@/services/auth/code-tries");
 const { MAX_WRONG_PASSWORDS, PASSWORD_LOCKED, resetPasswordTries } = await import("@/services/auth/password-tries");
 const { refusedFromBrowser, profilePermissionFor } = await import("@/lib/auth/profile-guard");
 
@@ -74,28 +75,80 @@ describe("the end of the passkey as second factor", () => {
         prismaMock.user.findUnique.mockResolvedValue({ passkeyTwoFactor: true } as never);
     });
 
-    it("deletes the last passkey of the second factor only with the right password", async () => {
+    it("deletes a passkey of the second factor only with the right password", async () => {
         expect(await refusal(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k1" } }, signedIn, NOW))).toEqual({ code: "INVALID_PASSWORD", message: "Enter your password." });
         expect(await refusal(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k1", password: "guess" } }, signedIn, NOW))).toMatchObject({ code: "INVALID_PASSWORD" });
         await expect(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k1", password: "right" } }, signedIn, NOW)).resolves.toBeUndefined();
     });
 
-    it("deletes any other passkey without the password", async () => {
+    it("asks for the password however many passkeys are left, so two deletes at once never take the last two without it", async () => {
+        // Both requests of the race read two passkeys. Neither passes on that count.
         prismaMock.passkey.count.mockResolvedValue(2);
-        await expect(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k1" } }, signedIn, NOW)).resolves.toBeUndefined();
-        prismaMock.passkey.count.mockResolvedValue(1);
+        const both = await Promise.all([
+            refusal(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k1" } }, signedIn, NOW)),
+            refusal(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k2" } }, signedIn, NOW)),
+        ]);
+        expect(both).toEqual([{ code: "INVALID_PASSWORD", message: "Enter your password." }, { code: "INVALID_PASSWORD", message: "Enter your password." }]);
+    });
+
+    it("deletes a passkey without the password while no passkey is the second factor, or the account has no password", async () => {
         prismaMock.user.findUnique.mockResolvedValue({ passkeyTwoFactor: false } as never);
+        await expect(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k1" } }, signedIn, NOW)).resolves.toBeUndefined();
+        prismaMock.user.findUnique.mockResolvedValue({ passkeyTwoFactor: true } as never);
+        prismaMock.account.findFirst.mockResolvedValue(null);
         await expect(refuseWithoutReauth({ path: "/passkey/delete-passkey", body: { id: "k1" } }, signedIn, NOW)).resolves.toBeUndefined();
     });
 
-    it("turns the passkey factor off only with the password, while a passkey and a password are left", async () => {
+    it("turns the passkey factor off only with the password, also with no passkey left", async () => {
         expect(await passkeyFactorOffRefusal("u1", undefined)).toBe("Enter your password.");
         expect(await passkeyFactorOffRefusal("u1", "guess")).toBe("Invalid password");
         expect(await passkeyFactorOffRefusal("u1", "right")).toBeNull();
+        // The state two deletes at once would leave: the factor on and no passkey.
         prismaMock.passkey.count.mockResolvedValue(0);
-        expect(await passkeyFactorOffRefusal("u1", undefined)).toBeNull();
+        expect(await passkeyFactorOffRefusal("u1", undefined)).toBe("Enter your password.");
+        expect(await passkeyFactorOffRefusal("u1", "right")).toBeNull();
         prismaMock.passkey.count.mockResolvedValue(1);
         prismaMock.account.findFirst.mockResolvedValue(null);
         expect(await passkeyFactorOffRefusal("u1", undefined)).toBeNull();
+    });
+});
+
+describe("a code of the second factor sent with a session", () => {
+    beforeEach(() => resetSessionCodeTries());
+
+    it.each(["/two-factor/verify-totp", "/two-factor/verify-otp", "/two-factor/verify-backup-code"])("stops the guessing on %s after a few codes per account", async (path) => {
+        for (let attempt = 1; attempt <= MAX_SESSION_CODES; attempt++) {
+            await expect(refuseWithoutReauth({ path, body: { code: "000000" } }, signedIn, NOW)).resolves.toBeUndefined();
+        }
+        expect(await refusal(refuseWithoutReauth({ path, body: { code: "000000" } }, signedIn, NOW))).toEqual({ code: "CODE_LOCKED", message: SESSION_CODES_LOCKED });
+        // Another session of the same account shares the count, another account does not.
+        const other = async () => ({ user: { id: "u2" }, session: { createdAt: new Date(NOW) } });
+        await expect(refuseWithoutReauth({ path, body: { code: "000000" } }, other, NOW)).resolves.toBeUndefined();
+        // The window ran out.
+        await expect(refuseWithoutReauth({ path, body: { code: "000000" } }, signedIn, NOW + SESSION_CODE_WINDOW_MS)).resolves.toBeUndefined();
+    });
+
+    it("leaves the code of someone signing in, who has no session yet, to the limits of better-auth", async () => {
+        for (let attempt = 0; attempt < MAX_SESSION_CODES + 3; attempt++) {
+            await expect(refuseWithoutReauth({ path: "/two-factor/verify-totp", body: { code: "000000" } }, async () => null, NOW)).resolves.toBeUndefined();
+        }
+    });
+
+    it("keeps an old session old when a right code finishes the setup of the authenticator app, so it adds no passkey", async () => {
+        const createdAt = new Date(NOW - 60 * 24 * 3600 * 1000);
+        const expiresAt = new Date(NOW + 3600 * 1000);
+        const kept = keptSessionAge({ path: "/two-factor/verify-totp", context: { session: { session: { createdAt, expiresAt } } } });
+        expect(kept).toEqual({ createdAt, expiresAt });
+        // The session better-auth hands out is checked with the age it kept.
+        const replaced = async () => ({ user: { id: "u1" }, session: { createdAt: kept!.createdAt } });
+        expect(await refusal(refuseWithoutReauth({ path: "/passkey/generate-register-options" }, replaced, NOW))).toEqual({ code: "SESSION_NOT_FRESH", message: SIGN_IN_AGAIN });
+        expect(keptSessionAge({ path: "/two-factor/verify-otp", context: { session: { session: { createdAt: createdAt.toISOString() } } } })).toEqual({ createdAt });
+    });
+
+    it("gives a sign-in a new session, with or without a second step", () => {
+        // The second step of a sign-in carries no session.
+        expect(keptSessionAge({ path: "/two-factor/verify-totp", context: { session: null } })).toBeNull();
+        expect(keptSessionAge({ path: "/sign-in/email", context: { session: { session: { createdAt: new Date(NOW - 1000) } } } })).toBeNull();
+        expect(keptSessionAge(null)).toBeNull();
     });
 });

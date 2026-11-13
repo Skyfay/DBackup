@@ -41,7 +41,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             const headers = buildHeaders(config);
 
             const body = config.payloadTemplate
-                ? renderTemplate(config.payloadTemplate, config.contentType, {
+                ? renderTemplate(config.payloadTemplate, sentContentType(headers), {
                       title: "DBackup Connection Test",
                       message: "This is a test notification to verify your webhook configuration.",
                       success: "true",
@@ -98,7 +98,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
             let body: string;
 
             if (config.payloadTemplate) {
-                body = renderTemplate(config.payloadTemplate, config.contentType, {
+                body = renderTemplate(config.payloadTemplate, sentContentType(headers), {
                     title,
                     message,
                     success: String(success),
@@ -179,25 +179,46 @@ function jsonText(value: string): string {
     return JSON.stringify(value).slice(1, -1);
 }
 
-/**
- * How a text goes into the template, by the Content-Type it is sent as: inside a JSON string for a
- * JSON type, encoded for a form, so a name never adds a key or a field, and as it is for any other.
- */
-function textEscaper(contentType: string | undefined): (value: string) => string {
-    const type = (contentType || "application/json").split(";")[0].trim().toLowerCase();
-    if (type.endsWith("json")) return jsonText;
-    if (type === "application/x-www-form-urlencoded") return encodeURIComponent;
-    return (value) => value;
+/** A value as the text of an XML element or attribute, so a name never closes or opens an element. */
+function xmlText(value: string): string {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+interface Escaper {
+    /** For a text, like the title or the message. */
+    text: (value: string) => string;
+    /** For a value that is JSON already, `{{fields}}`. */
+    json: (value: string) => string;
+}
+
+/** The Content-Type the request really carries, which a line of the custom headers can replace. */
+function sentContentType(headers: Record<string, string>): string | undefined {
+    const types = Object.entries(headers).filter(([name]) => name.toLowerCase() === "content-type");
+    return types[types.length - 1]?.[1];
 }
 
 /**
- * Replace `{{variable}}` placeholders in the template with actual values. Each text is escaped for
- * the Content-Type of the body, see `textEscaper`, `{{fields}}` is a JSON array of its own.
+ * How a value goes into the template, by the Content-Type the body is sent as: inside a JSON string
+ * for a JSON type, where `{{fields}}` is a JSON array of its own, encoded for a form and escaped for
+ * XML, `{{fields}}` included, so a name never adds a key, a field or an element, and as it is for
+ * any other type.
+ */
+function escaperFor(contentType: string | undefined): Escaper {
+    const type = (contentType || "application/json").split(";")[0].trim().toLowerCase();
+    if (type.endsWith("json")) return { text: jsonText, json: (value) => value };
+    if (type === "application/x-www-form-urlencoded") return { text: encodeURIComponent, json: encodeURIComponent };
+    if (type.endsWith("xml")) return { text: xmlText, json: xmlText };
+    return { text: (value) => value, json: (value) => value };
+}
+
+/**
+ * Replace `{{variable}}` placeholders in the template with actual values. Each value is escaped for
+ * the Content-Type of the body, see `escaperFor`.
  */
 function renderTemplate(template: string, contentType: string | undefined, variables: Record<string, string>): string {
-    const escape = textEscaper(contentType);
+    const escape = escaperFor(contentType);
     return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
         const value = variables[key] ?? "";
-        return JSON_VALUES.has(key) ? value : escape(value);
+        return JSON_VALUES.has(key) ? escape.json(value) : escape.text(value);
     });
 }

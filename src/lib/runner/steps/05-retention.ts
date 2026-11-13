@@ -1,7 +1,7 @@
 import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
-import { isBackupFile, sidecarPathsFor, effectiveBackupTime, chainFolderOf } from '@/lib/core/backup-files';
+import { isBackupFile, sidecarPathsFor, effectiveBackupTime, chainFolderOf, METADATA_SIDECAR_SUFFIX } from '@/lib/core/backup-files';
 import { isConfigBackupPath, isInConfigBackupFolder } from '@/lib/core/config-backup-path';
 import { loadBackupSidecars, retentionGroup } from './retention-sidecars';
 import { folderKey, loadFormerBackups } from './retention-folders';
@@ -113,11 +113,24 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
 
     // A backup whose sidecar names another job is not this job's to delete. A job named like a
     // deleted one writes into the same folder, and what the deleted job left there stays until
-    // someone deletes it on the Backups page. A backup without a sidecar or a job id counts
-    // as this job's, as it always did, so this only ever keeps more.
+    // someone deletes it on the Backups page. A backup whose sidecar names no job counts as
+    // this job's, as it always did, so this only ever keeps more.
     const jobId = ctx.job!.id;
     const foreign = listed.filter(f => f.jobId !== undefined && f.jobId !== jobId);
-    const current = listed.filter(f => f.jobId === undefined || f.jobId === jobId);
+    // A file with no sidecar beside it, in a listing that shows sidecars, is nothing a run wrote,
+    // like a file someone restored or copied into the folder. It takes no place in the policy, so
+    // it never pushes a real backup out, and it is never deleted here. A listing without any
+    // sidecar says nothing about that, see loadBackupSidecars, and counts every file as before.
+    const sidecarNames = new Set(files.filter(f => f.name.endsWith(METADATA_SIDECAR_SUFFIX)).map(f => f.path.replace(/\\/g, '/')));
+    const written = (f: FileInfo) => sidecarNames.size === 0 || sidecarNames.has(f.path.replace(/\\/g, '/') + METADATA_SIDECAR_SUFFIX);
+    const current = listed.filter(f => written(f) && (f.jobId === undefined || f.jobId === jobId));
+    const strangers = listed.filter(f => !written(f));
+    // A chain folder that holds such a file stays whole, as before: the file may be an archive of
+    // the chain that lost its sidecar, and a chain is only ever deleted as a whole.
+    const heldFolders = new Set(strangers.map(f => chainFolderOf(f.path)).filter((folder): folder is string => folder !== null));
+    if (strangers.length > 0) {
+        ctx.log(`${destLabel} Retention: ${strangers.length} file(s) without backup metadata are left alone and do not count.`, 'info');
+    }
     if (foreign.length > 0) {
         ctx.log(
             `${destLabel} Retention: ${foreign.length} backup(s) in this folder belong to another job and are left alone: ${foreign.map(f => f.name).join(', ')}`,
@@ -199,7 +212,17 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         ctx.log(`${destLabel} Retention: Found file: ${labelOf(f)} (${effective.toISOString()})${mtimeNote}`);
     }
 
-    const { keep, delete: filesToDelete, keptForChain } = RetentionService.calculateRetention(backupFiles, policy, timezone);
+    const judged = RetentionService.calculateRetention(backupFiles, policy, timezone);
+    const held = judged.delete.filter(f => heldFolders.has(chainFolderOf(f.path) ?? ''));
+    const filesToDelete = judged.delete.filter(f => !held.includes(f));
+    const keep = [...judged.keep, ...held];
+    const keptForChain = judged.keptForChain;
+    if (held.length > 0) {
+        ctx.log(
+            `${destLabel} Retention warning: ${held.length} backup(s) past the policy are kept because their chain folder holds a file without backup metadata: ${held.map(f => f.name).join(', ')}`,
+            'warning'
+        );
+    }
 
     const chainCount = new Set(backupFiles.map(f => f.chainId).filter(Boolean)).size;
     if (chainCount > 0) {

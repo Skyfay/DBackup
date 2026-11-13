@@ -80,6 +80,16 @@ describe("what a listing keeps of a sidecar", () => {
         });
     });
 
+    it("keeps when the run started to dump, by which a shared backup is judged over its whole dump window", async () => {
+        const sidecar = { jobName: "srv", sourceType: "mysql", sourceId: "srv-1", databases: { count: 1, names: ["crm"] }, timestamp: "2026-11-02T01:20:00.000Z", dumpsStartedAt: "2026-11-02T01:00:00.000Z", archive: { formatVersion: 2 } };
+        const { adapter } = slowAdapter(8, async () => JSON.stringify(sidecar));
+        const map = await readListedSidecars(adapter, {}, [metaFile("crm.tar")], "dest-1");
+        const { describeBackupFromMetadata } = await import("@/services/storage/backup-file-fields");
+
+        expect(map.get("crm.tar")?.dumpsStartedAt).toBe("2026-11-02T01:00:00.000Z");
+        expect(describeBackupFromMetadata("crm.tar", map.get("crm.tar")!)).toEqual(expect.objectContaining({ createdAt: "2026-11-02T01:20:00.000Z", dumpsStartedAt: "2026-11-02T01:00:00.000Z" }));
+    });
+
     it("leaves out a sidecar that is no object", async () => {
         const { adapter } = slowAdapter(8, async (path) => (path.includes("null") ? "null" : "[1]"));
         const map = await readListedSidecars(adapter, {}, [metaFile("null.tar"), metaFile("list.tar")], "dest-1");

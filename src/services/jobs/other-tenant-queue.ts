@@ -23,6 +23,8 @@ export async function queueViewer(): Promise<string | null> {
 /** A job of another tenant with a schedule. Its id stays on the server. */
 export interface OtherTenantJob {
     id: string;
+    /** Its tenant, for the turn of each tenant in the plan of the queue. Stays on the server too. */
+    tenantId: string;
     /** The effective expression, the preset's when the job follows one. */
     schedule: string;
     /** How long a run takes, from its last runs. */
@@ -33,6 +35,7 @@ export interface OtherTenantJob {
 export interface OtherTenantRun {
     id: string;
     jobId: string;
+    tenantId: string;
     status: string;
     startedAt: Date;
 }
@@ -59,9 +62,9 @@ export async function otherTenantQueue(tenantId: string): Promise<OtherTenantQue
         })),
     ]);
     return {
-        jobs: jobs.flatMap((job) => (job.tenantId === tenantId ? [] : [{ id: job.id, schedule: job.schedule, estimatedMs: job.estimatedMs }])),
+        jobs: jobs.flatMap((job) => (job.tenantId === tenantId ? [] : [{ id: job.id, tenantId: job.tenantId, schedule: job.schedule, estimatedMs: job.estimatedMs }])),
         live: live
-            .flatMap((run) => (run.jobId && run.type === "Backup" && run.tenantId !== tenantId ? [{ id: run.id, jobId: run.jobId, status: run.status, startedAt: run.startedAt }] : []))
+            .flatMap((run) => (run.jobId && run.type === "Backup" && run.tenantId !== tenantId ? [{ id: run.id, jobId: run.jobId, tenantId: run.tenantId, status: run.status, startedAt: run.startedAt }] : []))
             .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime()),
     };
 }

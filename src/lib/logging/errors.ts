@@ -202,6 +202,34 @@ export class ValidationError extends DBackupError {
   }
 }
 
+/**
+ * Error thrown when an SSH server presents another host key than the one pinned for the
+ * connection. The login never started, so no password, key signature or data was sent. A
+ * `ValidationError`, so its sentence reaches the person who acts like any other refusal.
+ */
+export class HostKeyMismatchError extends ValidationError {
+  public readonly host: string;
+  public readonly port: number;
+  /** The fingerprint DBackup trusts, `SHA256:...`. */
+  public readonly expected: string;
+  /** The fingerprint the server presented, null when the client did not report it. */
+  public readonly presented: string | null;
+
+  constructor(mismatch: { host: string; port: number; expected: string; presented: string | null }) {
+    super(hostKeyMismatchMessage(mismatch), { field: "config" });
+    this.host = mismatch.host;
+    this.port = mismatch.port;
+    this.expected = mismatch.expected;
+    this.presented = mismatch.presented;
+  }
+}
+
+/** The sentence of a host key mismatch, the same in a test, a run, a health check and a browse. */
+export function hostKeyMismatchMessage(mismatch: { host: string; port: number; expected: string; presented: string | null }): string {
+  const presented = mismatch.presented ? ` (${mismatch.presented})` : "";
+  return `The server at ${mismatch.host}:${mismatch.port} presents another host key${presented} than the one DBackup trusts (${mismatch.expected}). Nothing was sent to it. If the server was reinstalled, open the connection and trust the new key.`;
+}
+
 // ============================================================================
 // Authorization Errors
 // ============================================================================

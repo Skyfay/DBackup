@@ -251,6 +251,16 @@ const result = await runConnectivityCheck(adapter, config, { timeoutMs: 15_000 }
 
 There is no pooling. Two parallel jobs against the same server open two connections.
 
+### SSH host keys
+
+Every SSH login checks the host key of its server against the one pinned for the connection (trust on first use). `src/lib/transport/host-key.ts` is the one place that decides: the ssh2 clients (`openSshClient`, `connectSFTP` of the SFTP adapter, the folder browse in `filesystem-service.ts`) take their `hostVerifier` from `sshHostKeyCheck`, and rsync gets the options of its `ssh` from `host-key-openssh.ts` through the wrapper `withRsyncHostKey`, which writes a `known_hosts` file per call.
+
+- The pin is in `AdapterConfig.metadata` under `sshHostKeys.primary` (`src/lib/adapters/ssh-host-key-pins.ts`): the whole public key, its type and fingerprint, the host and port it was taken at, when and how. It counts only while the connection still dials that host and port (`sshEndpointOf` in `src/lib/transport/ssh-endpoint.ts`). Only the server writes it, a save keeps the stored one whatever metadata the request sends.
+- `resolveAdapterConfig` marks the resolved config with an `SshHostKeyPolicy` under a symbol (`markHostKey`, `hostKeyOf`), like the reach policy, and `resolveTransport` hands it to `SshConnectionConfig.hostKey`. A config without a policy accepts every key: a connection with `verifyHostKey: false`, or a config of a form that names no saved connection, like the SSH test button and the remote file browser.
+- With a pin the verifier answers false for another key, so ssh2 ends before any login, and the client throws `HostKeyMismatchError` with both fingerprints. Without a pin the key is accepted and reported to `onFirstKey` once the login succeeded, which `pinFirstKey` in `src/services/adapters/ssh-host-key-service.ts` stores with a compare-and-set on the metadata. Two first logins that saw different keys cannot both pin, the second fails as a mismatch.
+- The test of a form (`testConnection`) answers `hostKey` for a server without a pin and `hostKeyMismatch` for a changed key. The form sends `sshHostKey` with its save, which `createAdapter` and `updateAdapter` store as the pin. `POST` and `DELETE /api/adapters/{id}/ssh-host-key` and the actions in `src/app/actions/adapter/ssh-host-key.ts` trust the key a server presents now, after one login that compares it with the fingerprint the person was shown, and forget the pin.
+- A new adapter with an SSH login spreads `sshFields`, which carries `verifyHostKey`, and gets its SSH endpoint read in `sshEndpointOf` when its fields differ. A new SSH client takes its verifier from `sshHostKeyCheck` and never sets `hostVerifier` itself.
+
 ### Adding a new adapter
 
 1. Take `host: ExecutionHost` as the parameter after your mandatory arguments.

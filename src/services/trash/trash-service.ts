@@ -27,7 +27,9 @@ import { CONFIG_BACKUP_LOGIN_APPLY_LOCKED } from "@/lib/core/config-backup-locks
 import type { AuthContext } from "@/lib/auth/access-control";
 import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
 import { assertOffSharedPlaces } from "@/services/adapters/shared-place";
+import { assertOffSharedLogins } from "@/services/adapters/shared-login";
 import { restoreSnapshot } from "./trash-restore";
+import { placelessReturnOf, type PlacelessReturn } from "./account-return";
 import { assertStoredLoginFields, assertStoredLoginOffHost } from "@/services/auth/credential-service";
 import type { CredentialSnapshot, UserSnapshot } from "./trash-snapshot";
 import { isTrashKind, type TrashKind, type TrashPart, type TrashRestoreResult, type TrashRow } from "./trash-types";
@@ -207,6 +209,8 @@ async function assertConnectionSaveChecks(record: DeletedConnection, config: Rec
     }
     registerAdapters();
     await validateCredentialAssignments(record.adapterId, primaryCredentialId, sshCredentialId);
+    // A saved login that a destination shared with customers took since signs in there alone.
+    await assertOffSharedLogins({ primaryCredentialId, sshCredentialId });
     if (record.type === "storage") await assertOffSharedPlaces(record.adapterId, config, { primaryCredentialId, sshCredentialId });
 }
 
@@ -234,8 +238,9 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
             continue;
         }
         const kind = entry.kind;
+        let placeless: PlacelessReturn | undefined;
         const restore = () => prisma.$transaction(async (tx) => {
-            const done = await restoreSnapshot(tx, kind, JSON.parse(entry.data), newName);
+            const done = await restoreSnapshot(tx, kind, JSON.parse(entry.data), newName, placeless);
             await tx.deletedRecord.delete({ where: { id } });
             return done;
         });
@@ -262,6 +267,9 @@ export async function restoreFromTrash(ids: string[], options: { newName?: strin
                 // Nor with a password or a username a save refuses today, which an earlier version may have stored.
                 await assertStoredLoginFields(record.id, record.type, record.data);
             }
+            // An account that lost every group comes back in no tenant only where that is its own
+            // place, or through a platform admin. Read before the transaction, like the checks above.
+            if (kind === "user") placeless = await placelessReturnOf(JSON.parse(entry.data) as UserSnapshot, newName, options.caller ?? NO_PLATFORM_ADMIN);
             // An account belongs to no tenant, so its Undo also works in All tenants and in another
             // tenant, which changes no tenant. Its entry lives in the tenant that keeps it.
             const restored = kind === "user" ? await runAsTenant(entry.tenantId, restore) : await restore();

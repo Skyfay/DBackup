@@ -63,9 +63,10 @@ describe("a tenant's plan of the queue", () => {
     it("lets a planned run of the tenant wait behind a job of another tenant, named only as such", async () => {
         const timeline = await runAsTenant("beta", () => getJobTimeline(now));
 
-        const atThree = timeline.planned.find((entry) => entry.jobId === "beta-shop" && entry.due === "2026-10-03T03:00:00.000Z");
-        // Acme's run of the same time is due first by its key and takes the slot for 40 minutes.
-        expect(atThree?.start).toBe("2026-10-03T03:40:00.000Z");
+        const atThree = timeline.planned.find((entry) => entry.jobId === "beta-shop" && entry.due === "2026-10-02T03:00:00.000Z");
+        // Acme's run of 02:30 holds the only slot for its 40 minutes. Then it is Beta's turn, ahead
+        // of Acme's run of the same time, since the queue gives its slots to the tenants in turn.
+        expect(atThree?.start).toBe("2026-10-02T03:10:00.000Z");
         expect(atThree?.waitsFor).toEqual([OTHER_TENANT_JOB]);
         expect(timeline.planned.every((entry) => entry.jobId === "beta-shop")).toBe(true);
         expect(timeline.otherTenants?.length).toBeGreaterThan(0);

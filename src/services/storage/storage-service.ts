@@ -17,7 +17,8 @@ import { writeStoreZip } from "@/lib/store-zip";
 import { createNoFollowReadStream } from "@/lib/server/no-follow";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
-import { ConflictError, EncryptionKeyRequiredError, NotFoundError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { ConflictError, EncryptionKeyRequiredError, NotFoundError, PermissionError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { wholeFileKeyRefusal, type KeyCaller } from "@/services/backup/config-key-lock";
 import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { currentTenantId } from "@/lib/tenant/current";
 import { findDestination, openDestination, openRow } from "@/services/sharing/destination-access";
@@ -106,8 +107,10 @@ export type RichFileInfo = FileInfo & {
  * - 4: `jobId`, `createdAt` and `databases` from the sidecar, which the explorer needs to put
  *      the copies of one run side by side and to tell a deleted job from a renamed one.
  * - 5: `sourceId` from the sidecar, by which a shared database finds the backups of its server.
+ * - 6: `dumpsStartedAt` from the sidecar, by which a shared backup is judged over its whole dump
+ *      window. A listing read from the storage dropped it, so rows cached without it are rebuilt.
  */
-export const CACHE_SCHEMA_VERSION = 5;
+export const CACHE_SCHEMA_VERSION = 6;
 
 /**
  * The oldest payload that is still served, while a rebuild runs in the background.
@@ -924,7 +927,16 @@ export class StorageService {
         remotePath: string,
         localDestination: string,
         decrypt: boolean = false,
-        options?: { profileIdOverride?: string; rawKeyHex?: string; database?: string }
+        options?: {
+            profileIdOverride?: string;
+            rawKeyHex?: string;
+            database?: string;
+            /**
+             * Who downloads, for the key a decryption of a whole file may use, see `config-key-lock.ts`.
+             * Left out, the caller counts as no platform admin.
+             */
+            caller?: KeyCaller;
+        }
     ): Promise<{ success: boolean; isZip?: boolean; fileName?: string }> {
         const { adapter, config } = await openDestination(adapterConfigId);
 
@@ -1001,6 +1013,8 @@ export class StorageService {
                             else log.info(msg, {});
                         },
                         { rawKeyHex: options?.rawKeyHex, profileId: options?.profileIdOverride },
+                        // A renamed copy of a configuration backup never opens with its key for anyone else.
+                        wholeFileKeyRefusal(options?.caller),
                     );
 
                     const iv = Buffer.from(encryptionParams.iv, 'hex');
@@ -1031,7 +1045,7 @@ export class StorageService {
             } catch (e: unknown) {
                 // A missing key is a question for the user, not a decryption failure -
                 // relabelling it would hide the one error the UI knows how to answer.
-                if (e instanceof EncryptionKeyRequiredError) throw e;
+                if (e instanceof EncryptionKeyRequiredError || e instanceof PermissionError) throw e;
                 throw new Error("Decryption failed: " + getErrorMessage(e));
             }
        }

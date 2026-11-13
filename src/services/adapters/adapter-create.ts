@@ -18,11 +18,15 @@ import { hostLocalReason } from "@/lib/adapters/host-local";
 import { assertOffOwnData } from "@/lib/adapters/own-data";
 import { assertConfigFitsSchema } from "@/lib/adapters/config-check";
 import { withFreshSwitches } from "@/lib/adapters/later-switches";
+import { sshEndpointOf, verifiesHostKey } from "@/lib/transport/ssh-endpoint";
+import { withoutPin, withPin } from "@/lib/adapters/ssh-host-key-pins";
 import { currentTenantId } from "@/lib/tenant/current";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { assertTenantReach } from "@/services/tenant/tenant-network";
 import { assertOffSharedPlaces } from "./shared-place";
+import { assertOffSharedLogins } from "./shared-login";
+import { asPin } from "./ssh-host-key-service";
 
 export interface CreateAdapterInput {
     name: string;
@@ -34,6 +38,22 @@ export interface CreateAdapterInput {
     sshCredentialId?: string | null;
     /** Storage only. A destination unless it says SOURCE. */
     storageRole?: string | null;
+    /**
+     * The host key the test of the form saw at the SSH server, which the new connection pins. Left
+     * out, like by a request of the API, the first successful login pins the key it sees.
+     */
+    sshHostKey?: unknown;
+}
+
+/**
+ * The metadata of a new connection: what the request sent without any pin of its own, and with
+ * the host key the form tested as the pin, while the connection checks host keys at all.
+ */
+function metadataOfNew(adapterId: string, config: Record<string, unknown>, metadata: Record<string, unknown> | null | undefined, sshHostKey: unknown): Record<string, unknown> | null {
+    const base = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? withoutPin(metadata) : null;
+    const endpoint = sshEndpointOf(adapterId, config);
+    const pin = endpoint && verifiesHostKey(config) && sshHostKey && typeof sshHostKey === "object" ? asPin(endpoint, sshHostKey as { type?: unknown; key?: unknown }, "form-test") : null;
+    return pin ? withPin(base ?? {}, pin) : base;
 }
 
 const KIND_NAMES: Record<string, string> = { database: "source", storage: "destination", notification: "notification" };
@@ -49,7 +69,7 @@ const KIND_NAMES: Record<string, string> = { database: "source", storage: "desti
  * @throws ConflictError when a connection of the same type has the name already.
  */
 export async function createAdapter(input: CreateAdapterInput): Promise<AdapterConfig> {
-    const { name, type, adapterId, config, metadata, storageRole } = input;
+    const { name, type, adapterId, config, storageRole } = input;
     const primaryCredentialId = input.primaryCredentialId ?? null;
     const sshCredentialId = input.sshCredentialId ?? null;
 
@@ -79,7 +99,9 @@ export async function createAdapter(input: CreateAdapterInput): Promise<AdapterC
     assertConfigFitsSchema(adapterId, configObject);
     // Before the snapshot check, which already logs in to the server the config names.
     await assertMayReachHost(adapterId, configObject, { primaryCredentialId, sshCredentialId });
-    // Nor where a destination of the tenant shared with customers keeps their backups.
+    // Nor with a saved login of a destination of the tenant shared with customers, for a connection
+    // of any kind, nor where such a destination keeps their backups.
+    await assertOffSharedLogins({ primaryCredentialId, sshCredentialId });
     if (type === "storage") await assertOffSharedPlaces(adapterId, configObject, { primaryCredentialId, sshCredentialId });
     // A snapshot-enabled config is only accepted when the server can actually deliver one, the
     // gate of the form alone could be bypassed.
@@ -90,6 +112,7 @@ export async function createAdapter(input: CreateAdapterInput): Promise<AdapterC
         throw new ConflictError(`A ${KIND_NAMES[type] ?? type} with the name "${name}" already exists.`);
     }
 
+    const metadata = metadataOfNew(adapterId, configObject, input.metadata, input.sshHostKey);
     return prisma.adapterConfig.create({
         data: {
             name,

@@ -159,6 +159,42 @@ function throughLinkOf(lines) {
     };
 }
 
+/**
+ * Whether writing `target` would land outside of `root` on this disk. The checks above work on
+ * strings, and a symbolic link that an earlier run or anyone else left in the output folder is
+ * followed by every write below it. So the folders of the target that exist are resolved, and a
+ * link among them that leads out of the output folder, or to nowhere, refuses the write.
+ * `root` has to exist.
+ */
+function leavesRootOnDisk(root, target) {
+    const realRoot = fs.realpathSync(root);
+    let dir = path.dirname(path.resolve(target));
+    for (;;) {
+        let real;
+        try {
+            real = fs.realpathSync(dir);
+        } catch (error) {
+            if (!error || error.code !== "ENOENT") return true;
+            // A link to nowhere exists and still fails to resolve. A write would follow it.
+            let dangling = false;
+            try { fs.lstatSync(dir); dangling = true; } catch { /* a folder not made yet */ }
+            const parent = path.dirname(dir);
+            if (dangling || parent === dir) return true;
+            dir = parent;
+            continue;
+        }
+        const relative = path.relative(realRoot, real);
+        return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+    }
+}
+
+/** Removes a symbolic link at the place of a file about to be written, so the write never goes through it. */
+function dropLinkAt(target) {
+    let existing = null;
+    try { existing = fs.lstatSync(target); } catch { /* not there, which is the normal case */ }
+    if (existing && existing.isSymbolicLink()) fs.unlinkSync(target);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Crypto
 // ══════════════════════════════════════════════════════════════════════════════
@@ -604,9 +640,18 @@ function openArchive(archivePath, hexKey) {
         if (parsed.k === "e") index.entries.set(entryKey(parsed.a, parsed.n), parsed);
         else if (parsed.k === "deps") index.deps = parsed.archives;
         else if (parsed.k === "db") index.databases.push(parsed);
-        else if (parsed.k === "d") index.directories.push(parsed);
+        else if (parsed.k === "d") {
+            // The id of a source becomes one folder of the output, so it is one plain name.
+            if (!isPlainFileName(parsed.src)) {
+                fs.closeSync(fd);
+                throw new Error("The backup is damaged: its index names a source that is no plain folder name.");
+            }
+            index.directories.push(parsed);
+        }
         else if (parsed.k === "f") {
-            const problem = entryPathProblem(parsed.p);
+            // The checks of links measure a path from the folder of its source, which holds only
+            // when that folder lies directly below the output folder.
+            const problem = isPlainFileName(parsed.src) ? entryPathProblem(parsed.p) : "a source that is no plain folder name";
             if (problem) {
                 fs.closeSync(fd);
                 throw new Error(`The backup is damaged: its index names ${problem}.`);
@@ -722,6 +767,7 @@ function createUnsealStream(key, noncePrefixHex, ordinal) {
 async function streamEntryToFile(target, entry, targetPath, expectedChecksum) {
     const partial = `${targetPath}.partial`;
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    dropLinkAt(partial);
 
     const hash = crypto.createHash("sha256");
     const stages = [fs.createReadStream(target.filePath, { start: entry.off, end: entry.off + entry.size - 1 })];
@@ -956,10 +1002,11 @@ async function unpackMultiDbTar(tarPath, outputDir, selection) {
         // Refuse anything that would escape the output directory.
         const target = path.resolve(outputDir, member.name);
         const root = path.resolve(outputDir);
-        if (target !== root && !target.startsWith(root + path.sep)) {
+        if (target === root || !target.startsWith(root + path.sep) || leavesRootOnDisk(root, target)) {
             console.error(`SKIPPED (unsafe path): ${member.name}`);
             continue;
         }
+        dropLinkAt(target);
 
         // Streamed, not buffered: a single dump in here can be tens of gigabytes.
         fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -1701,7 +1748,8 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             const extension = safeNameSegment(DUMP_EXTENSIONS[db.format] || db.format);
             const target = path.resolve(outputDir, "databases", `${safeNameSegment(db.name)}.${extension}`);
             const root = path.resolve(outputDir);
-            if (!target.startsWith(root + path.sep)) {
+            fs.mkdirSync(root, { recursive: true });
+            if (!target.startsWith(root + path.sep) || leavesRootOnDisk(root, target)) {
                 console.error(`SKIPPED (unsafe name): ${db.name}`);
                 continue;
             }
@@ -1730,8 +1778,15 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             // Refuse anything that would escape the output directory.
             const target = path.resolve(outputDir, file.src, file.p);
             const root = path.resolve(outputDir);
-            if (target !== root && !target.startsWith(root + path.sep)) {
+            if (!target.startsWith(root + path.sep)) {
                 console.error(`SKIPPED (unsafe path): ${file.p}`);
+                continue;
+            }
+            // A link that an earlier extraction left in this folder is on disk already, so the
+            // order of this run does not cover it. The file system is asked before each write.
+            fs.mkdirSync(root, { recursive: true });
+            if (leavesRootOnDisk(root, target)) {
+                console.error(`SKIPPED (a link in the output folder leads out of it): ${file.p}`);
                 continue;
             }
 
@@ -1753,6 +1808,7 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
                     mismatches++;
                 }
                 fs.mkdirSync(path.dirname(target), { recursive: true });
+                dropLinkAt(target);
                 fs.writeFileSync(target, content);
             } else {
                 // Everything else streams: a single file here can be tens of gigabytes,
@@ -1779,6 +1835,11 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             }
             if (linkLeavesTarget(link.p, link.linkTarget, (resolved) => throughLink(link.src, resolved))) {
                 console.error(`SKIPPED (link leads out of the output folder): ${link.p} -> ${link.linkTarget}`);
+                continue;
+            }
+            // Links laid earlier in this loop or by an earlier run are on disk now.
+            if (leavesRootOnDisk(path.resolve(outputDir), link.target)) {
+                console.error(`SKIPPED (a link in the output folder leads out of it): ${link.p}`);
                 continue;
             }
             fs.mkdirSync(path.dirname(link.target), { recursive: true });

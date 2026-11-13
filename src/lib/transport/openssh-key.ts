@@ -19,6 +19,8 @@ import { createHash } from "crypto";
 import { utils as sshUtils } from "ssh2";
 import type { SshKeyType } from "@/lib/core/credentials";
 
+import { assertKeyCost } from "./key-cost";
+
 export interface GeneratedSshKey {
     /** Private key in OpenSSH format. Stored encrypted, never returned to a client. */
     privateKey: string;
@@ -67,12 +69,15 @@ export async function generateSshKeyPair(
  * Used for keys that were pasted rather than generated, so the profile can show which key to
  * install on a host without anyone needing the reveal permission. Best effort by design: an
  * unparseable or passphrase-protected key returns null and the profile simply has no public
- * half on record.
+ * half on record. Throws a ValidationError for a key whose derivation costs too much, see
+ * `key-cost.ts`.
  */
 export function readPublicKey(
     privateKey: string,
     passphrase?: string
 ): { publicKey: string; fingerprint: string } | null {
+    // Outside the try: a key that names a derivation too costly to run is refused, not skipped.
+    assertKeyCost(privateKey);
     try {
         const parsed = passphrase
             ? sshUtils.parseKey(privateKey, passphrase)

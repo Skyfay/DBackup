@@ -88,7 +88,7 @@ export async function PUT(
         if (locked) return locked;
 
         const body = await req.json();
-        const { name, config, metadata, primaryCredentialId, sshCredentialId, storageRole } = body;
+        const { name, config, metadata, primaryCredentialId, sshCredentialId, storageRole, sshHostKey } = body;
         // Nor does another connection sign in with the logins of that destination, the ones the
         // request names and, for a new config, the ones it keeps.
         const kept = config !== undefined ? await getConnectionLoginIds(params.id) : [];
@@ -97,7 +97,7 @@ export async function PUT(
 
         let result;
         try {
-            result = await updateAdapter(params.id, { name, config, metadata, primaryCredentialId, sshCredentialId, storageRole });
+            result = await updateAdapter(params.id, { name, config, metadata, primaryCredentialId, sshCredentialId, storageRole, sshHostKey });
         } catch (e) {
             // A role or shadow copies the adapter cannot serve have always come with success: false, the rest without.
             if (e instanceof UnsupportedSettingError) return NextResponse.json({ success: false, error: e.message }, { status: 400 });

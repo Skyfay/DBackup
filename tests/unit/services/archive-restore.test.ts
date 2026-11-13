@@ -22,6 +22,8 @@ vi.mock('@/lib/core/registry', () => ({
 // The check of customers' databases runs against a real database in restore-customer-databases.test.ts.
 const confirmTargets = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => undefined));
 vi.mock('@/services/restore/customer-databases', () => ({ assertTargetsConfirmed: confirmTargets }));
+// A recorded run of the job of each source wrote these backups, see restore-recorded-origin.test.ts.
+vi.mock('@/services/restore/recorded-origin', () => ({ archiveReadSource: async () => true }));
 
 vi.mock('@/lib/adapters/config-resolver', () => ({
     // Mirrors the real resolver: it takes the stored adapter row and hands back the parsed

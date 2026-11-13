@@ -25,6 +25,7 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 | **Login** | `SSH_KEY` credential profile (username + key or password). The username is a login name without `:`, `/`, spaces or a leading `-`. A Windows or AD login like `alice@corp.local` works, the server is always the one in **Host** | - | ✅ |
 | **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ✅ |
 | **Options** | Additional rsync flags (e.g. `--bwlimit=1000`) | - | ❌ |
+| **Check the host key** | Refuses a server that presents another host key than the one pinned on the first connect, see [Host Key Check](#host-key-check) | On | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
 
@@ -95,6 +96,10 @@ The server answered with more than 256 MB. Back up its subfolders as separate so
 DBackup lists a folder with one `find` over SSH before it copies it, and that list may run for 10 minutes and hold up to 256 MB, enough for millions of files.
 
 **Solution:** Split the folder into several directory sources, one per subfolder. A message that the server did not finish within 600 seconds means the same, often on a server whose `find` lacks `-printf`, like macOS, where each file costs a `stat` of its own.
+
+### Host Key Check
+
+DBackup pins the host key of the server on the first successful connect and refuses a server that presents another one before it logs in, the same way as for [SFTP](/user-guide/destinations/sftp#host-key-check). The `ssh` that rsync runs reads the pinned key from a file DBackup writes for each call, never from a `known_hosts` file of the machine. After a reinstall of the server, open the connection, run **Test connection** and choose **Trust the new key**. The switch **Check the host key** turns the check off for this connection, which accepts every key.
 
 ### Bandwidth Limiting
 

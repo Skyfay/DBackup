@@ -7,7 +7,7 @@
  * is decided in `reach.ts`, once per connection.
  */
 
-import { createHost, standardTransport, type ExecutionHost } from "@/lib/transport";
+import { createHost, resolveTransport, type ExecutionHost } from "@/lib/transport";
 import { DEFAULT_DOCKER_SOCKET } from "@/lib/adapters/definitions/storage";
 import { createDockerodeEngine } from "./dockerode-engine";
 import { createReacher } from "./reach";
@@ -30,17 +30,17 @@ export interface DockerConnection {
  * created here therefore has to be closed by whoever called, which is what the session
  * above this exists to guarantee.
  *
- * `standardTransport` is called directly rather than through `resolveTransport`, because the
- * per-adapter resolver hangs off `DatabaseAdapter` and this is a storage adapter - the first
- * one to use an ExecutionHost at all, since SFTP and rsync bring their own SSH client.
- * Widening the storage interface for a single adapter that follows the standard
- * `connectionMode` convention exactly would add surface for nothing.
+ * The spec comes from `resolveTransport` without a resolver of its own, so the standard
+ * `connectionMode` convention reads the config, and the reach policy of the tenant goes onto
+ * the SSH spec: for a tenant that blocks the local network the SSH host is dialed at an
+ * address checked at connect time, like by every other host, see `withReach` in
+ * `transport/spec.ts`. Never `standardTransport` directly, which leaves the policy behind.
  */
 export function connectDocker(
     config: Record<string, unknown>,
     onLog?: (message: string) => void,
 ): DockerConnection {
-    const host: ExecutionHost = createHost(standardTransport(config));
+    const host: ExecutionHost = createHost(resolveTransport({ id: "docker-volume" }, config));
     const socketPath = typeof config.socketPath === "string" && config.socketPath.length > 0
         ? config.socketPath
         : DEFAULT_DOCKER_SOCKET;

@@ -194,6 +194,23 @@ describe("an invitation link", () => {
         expect(made[0].memberships).toEqual([{ tenantId: "acme" }]);
     });
 
+    it("leaves no account of no tenant when the group of the link is deleted while the account is made", async () => {
+        await base.group.create({ data: { id: "g-tmp", name: "Throwaway", permissions: "[]", tenantId: "acme" } });
+        const { token } = await invite("g-tmp");
+        // The admin deletes the empty group while Better Auth hashes the password, which takes the link with it.
+        mocks.createUser.mockImplementationOnce(async (data: { name: string; email: string }) => {
+            const user = await base.user.create({ data: { id: "u-planted", name: data.name, email: data.email, emailVerified: true, createdAt: now, updatedAt: now } });
+            await base.account.create({ data: { id: "cred-planted", accountId: "u-planted", providerId: "credential", userId: "u-planted", password: "hash-chosen-by-the-opener", createdAt: now, updatedAt: now } });
+            await base.group.delete({ where: { id: "g-tmp" } });
+            return { user };
+        });
+
+        await expect(invitationService.acceptWithNewAccount(token, { name: "New Hire", email: "hire@msp.example", password: STRONG })).rejects.toBeInstanceOf(NotFoundError);
+
+        expect(await base.user.findUnique({ where: { email: "hire@msp.example" } })).toBeNull();
+        expect(await base.account.count({ where: { userId: "u-planted" } })).toBe(0);
+    });
+
     it("opens the link again when the account could not be made", async () => {
         const { token } = await invite();
         mocks.createUser.mockRejectedValueOnce(new Error("Better Auth refused it"));

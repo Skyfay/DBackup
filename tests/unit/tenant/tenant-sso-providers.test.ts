@@ -115,10 +115,16 @@ describe("the sign-in provider of a tenant", () => {
         await base.account.create({ data: { id: "a-lena", accountId: "sub-lena", providerId: "entra-acme", userId: "u-lena", createdAt: now, updatedAt: now } });
         await base.account.create({ data: { id: "a-lena-pw", accountId: "u-lena", providerId: "credential", userId: "u-lena", password: "hash", createdAt: now, updatedAt: now } });
 
+        await base.account.create({ data: { id: "a-tom", accountId: "sub-tom", providerId: "entra-acme", userId: "u-tom", createdAt: now, updatedAt: now } });
+        await base.account.create({ data: { id: "a-tom-pw", accountId: "u-tom", providerId: "credential", userId: "u-tom", password: "hash", createdAt: now, updatedAt: now } });
+
         await tenantService.delete(acme);
 
         expect(await base.ssoProvider.count({ where: { tenantId: acme } })).toBe(0);
-        expect(await base.account.findMany({ where: { userId: "u-lena" }, select: { providerId: true } })).toEqual([{ providerId: "credential" }]);
+        // Tom also works in the home tenant and keeps his password, only the link of the provider goes.
+        expect(await base.account.findMany({ where: { userId: "u-tom" }, select: { providerId: true } })).toEqual([{ providerId: "credential" }]);
+        // Lena worked in the deleted tenant alone, so her account stays without a way to sign in.
+        expect(await base.account.count({ where: { userId: "u-lena" } })).toBe(0);
         expect(await base.user.count({ where: { id: { in: ["u-lena", "u-tom"] } } })).toBe(2);
         expect(await membershipsOf("u-tom")).toEqual([expect.objectContaining({ tenantId: "default" })]);
     });

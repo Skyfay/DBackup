@@ -15,8 +15,21 @@ import { serverFreeDefaults, useMayReachServer } from "./host-local-access";
 export type ConnectionTestState =
     | { status: "idle" }
     | { status: "running" }
-    | { status: "passed"; version?: string }
-    | { status: "failed"; message: string };
+    | { status: "passed"; version?: string; hostKey?: TestedHostKey }
+    | { status: "failed"; message: string; hostKeyMismatch?: HostKeyMismatchSeen };
+
+/** The host key of the SSH server a passing test saw, which a save pins, see `ssh-host-key.tsx`. */
+export interface TestedHostKey {
+    type: string;
+    key: string;
+    fingerprint: string;
+}
+
+/** The fingerprints of a test that met another host key than the pinned one. */
+export interface HostKeyMismatchSeen {
+    expected: string;
+    presented: string | null;
+}
 
 /** Switches a connection keeps in its metadata instead of its config, stored the way the API expects them. */
 export interface ConnectionMetadata {
@@ -56,6 +69,8 @@ interface TestResponse {
     success: boolean;
     message?: string;
     version?: string;
+    hostKey?: TestedHostKey;
+    hostKeyMismatch?: HostKeyMismatchSeen;
 }
 
 /** The connection as saved, for a page that goes on with it, like the setup. */
@@ -149,10 +164,10 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         try {
             const result = await requestTest(form.getValues());
             if (result.success) {
-                setTest({ status: "passed", version: result.version });
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey });
             } else {
                 const message = result.message || "Connection failed";
-                setTest({ status: "failed", message });
+                setTest({ status: "failed", message, hostKeyMismatch: result.hostKeyMismatch });
                 toast.error(message);
             }
         } catch {
@@ -172,7 +187,8 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         return storedMetadata;
     };
 
-    const save = async (values: ConnectionFormValues) => {
+    /** `hostKey` is the key the test of these values saw, which the save pins. */
+    const save = async (values: ConnectionFormValues, hostKey: TestedHostKey | undefined = test.status === "passed" ? test.hostKey : undefined) => {
         setSaving(true);
         try {
             const res = await fetch(initialData ? `/api/adapters/${initialData.id}` : "/api/adapters", {
@@ -187,6 +203,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
                     primaryCredentialId,
                     sshCredentialId,
                     ...(adapter.type === "storage" ? { storageRole } : {}),
+                    ...(hostKey ? { sshHostKey: { type: hostKey.type, key: hostKey.key } } : {}),
                 }),
             });
             if (res.ok) {
@@ -214,12 +231,12 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         try {
             const result = await requestTest(values);
             if (result.success) {
-                setTest({ status: "passed", version: result.version });
-                await save(values);
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey });
+                await save(values, result.hostKey);
                 return;
             }
             const message = result.message || "Connection failed";
-            setTest({ status: "failed", message });
+            setTest({ status: "failed", message, hostKeyMismatch: result.hostKeyMismatch });
             setFailure({ message, values });
         } catch {
             setTest({ status: "failed", message: "The connection could not be tested." });
@@ -229,7 +246,8 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
 
     const saveAnyway = async () => {
         if (!failure) return;
-        await save(failure.values);
+        // The test failed, so there is no key of it to pin.
+        await save(failure.values, undefined);
         setFailure(null);
     };
 
@@ -260,6 +278,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         sshCredentialId,
         test,
         runTest,
+        resetTest: () => setTest({ status: "idle" }),
         onValid,
         failure,
         dismissFailure: () => setFailure(null),

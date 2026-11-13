@@ -142,7 +142,30 @@ export class ArchiveIndexService {
     ): Promise<ArchiveIndex | null> {
         const bytes = await this.fetchSidecar(configId, file, archive.indexFile);
         if (!bytes) return null;
+        return this.open(configId, file, archive, override, jobId, bytes);
+    }
 
+    /**
+     * Opens sidecar bytes the caller fetched and checked itself, past the cache. The chain planner
+     * compares the bytes with what the run recorded before it builds on them, and a cached index
+     * was parsed from bytes nobody compared.
+     *
+     * @returns The parsed index, or null when the bytes are unusable
+     */
+    async parseSidecar(configId: string, file: string, meta: BackupMetadata, bytes: Buffer): Promise<ArchiveIndex | null> {
+        if (meta.archive?.formatVersion !== 2) return null;
+        return this.open(configId, file, meta.archive, undefined, meta.jobId, bytes);
+    }
+
+    /** Opens the bytes of a sidecar: the encryption the run recorded, the key, the parse. */
+    private async open(
+        configId: string,
+        file: string,
+        archive: NonNullable<BackupMetadata["archive"]>,
+        override: KeyOverride | undefined,
+        jobId: unknown,
+        bytes: Buffer
+    ): Promise<ArchiveIndex | null> {
         // A plain index is only taken from a backup whose run did not encrypt it, see
         // `recorded-encryption.ts`. Outside the catch below, so the refusal reaches the caller
         // instead of a fallback to the index inside the archive.

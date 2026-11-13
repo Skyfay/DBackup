@@ -57,7 +57,7 @@ Variable names must match the pattern `[a-zA-Z0-9_]+` - no hyphens or special ch
 
 The template is JSON. Every variable but `{{fields}}` goes in as the text of a JSON string, with quotes, backslashes and line breaks escaped, so put it between quotes like the examples below. A name with a quote in it, of a job or a person, then stays text and never adds a key or breaks the payload. `{{fields}}` is a whole JSON array and goes in without quotes.
 
-That holds for a Content-Type that ends in `json`, the default `application/json` among them. With `application/x-www-form-urlencoded` every variable but `{{fields}}` is URL-encoded instead, so a name never adds a field, and with any other type, like `text/plain`, the variables go in as they are.
+That holds for a Content-Type that ends in `json`, the default `application/json` among them. With `application/x-www-form-urlencoded` every variable is URL-encoded instead, `{{fields}}` included, so a name never adds a field. With a type that ends in `xml` every variable is escaped for XML, and with any other type, like `text/plain`, the variables go in as they are. A `Content-Type` line in the extra headers counts for this like the Content-Type field.
 
 <details>
 <summary>Template examples (PagerDuty, Uptime Kuma, Simple Text)</summary>

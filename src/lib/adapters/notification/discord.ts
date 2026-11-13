@@ -61,13 +61,13 @@ export const DiscordAdapter: NotificationAdapter = {
                       : 0xff0000;
 
                 const embed: any = {
-                    title: context.title || "Notification",
-                    // Names stay text, never a masked link or markup.
+                    // Names stay text, never a masked link or markup, in the title as well.
+                    title: escapeMarkdown(context.title || "Notification"),
                     description: escapeMarkdown(message),
                     color,
                     timestamp: new Date().toISOString(),
                     fields: (context.fields || []).map((f: any) => ({
-                        name: f.name,
+                        name: escapeMarkdown(f.name),
                         value: escapeMarkdown(f.value || "-"),
                         inline: f.inline ?? true,
                     })),

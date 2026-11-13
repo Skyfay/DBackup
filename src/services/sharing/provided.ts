@@ -1,3 +1,4 @@
+import { parseMetadata, withoutPin } from "@/lib/adapters/ssh-host-key-pins";
 import prisma from "@/lib/prisma";
 import { runAsSystem } from "@/lib/tenant/context";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
@@ -88,7 +89,9 @@ export async function providedTo(tenantId: string, filter: { kind?: SharedKind; 
             // A share of a tenant that shares no longer, or of a connection that is no destination or channel, gives nothing.
             if (!providerName || !row.share || !sharedKindOf(row)) return [];
             const { share, tenantId: providerId, ...rest } = row;
-            return [{ ...rest, providerId, providerName, ...share }];
+            // Without the pinned SSH host key, which names the server of the provider.
+            const metadata = rest.metadata ? JSON.stringify(withoutPin(parseMetadata(rest.metadata))) : rest.metadata;
+            return [{ ...rest, metadata, providerId, providerName, ...share }];
         });
     });
 }

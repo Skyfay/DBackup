@@ -4,6 +4,7 @@ import { CompressionType } from "@/lib/crypto/compression";
 import { GCM_TAG_LENGTH, assertAuthTagLength } from "@/lib/crypto/gcm-tag";
 import {
     KeyOverride,
+    KeyRefusal,
     KeyResolutionLog,
     KeyVerifier,
     resolveBackupKey,
@@ -41,12 +42,15 @@ export async function resolveDecryptionKey(
     compressionMeta: CompressionType | undefined,
     log: LogFn,
     override?: KeyOverride,
+    /** The profiles that may not open this file for its caller, see `wholeFileKeyRefusal`. */
+    refuse?: KeyRefusal,
 ): Promise<Buffer> {
     return resolveBackupKey({
         profileId: encryptionMeta.profileId,
         override,
         verify: legacyStreamVerifier(encryptionMeta, tempFile, compressionMeta),
         log,
+        refuse,
     });
 }
 

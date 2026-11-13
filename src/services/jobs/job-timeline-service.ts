@@ -37,7 +37,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
     const to = new Date(now.getTime() + TIMELINE_REACH_MS);
     const viewer = await queueViewer();
     const [jobs, executions, history, timezone, slots, others] = await Promise.all([
-        prisma.job.findMany({ select: { id: true, name: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } } } }),
+        prisma.job.findMany({ select: { id: true, tenantId: true, name: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } } } }),
         prisma.execution.findMany({
             where: { type: "Backup", jobId: { not: null }, OR: [{ startedAt: { gte: from } }, { status: { in: ["Running", "Pending"] } }] },
             orderBy: { startedAt: "asc" },
@@ -57,6 +57,8 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
         if (latestOutcome(runs)?.status === "Failed") failing.push(job.id);
     }
     const otherEstimates = new Map(others.jobs.map((job) => [job.id, job.estimatedMs]));
+    // The queue gives its slots to the tenants in turn, so every run of the plan names its tenant.
+    const tenantOf = new Map(jobs.map((job) => [job.id, job.tenantId]));
 
     const items: QueueItem[] = [];
     for (const execution of executions) {
@@ -65,6 +67,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
         items.push({
             key: execution.id,
             jobId: execution.jobId,
+            tenantId: tenantOf.get(execution.jobId),
             due: time,
             durationMs: estimates[execution.jobId] ?? 0,
             startedAt: execution.status === "Running" ? time : undefined,
@@ -72,7 +75,7 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
     }
     const otherItems: QueueItem[] = others.live.map((run) => {
         const time = run.startedAt.getTime();
-        return { key: run.id, jobId: run.jobId, due: time, durationMs: otherEstimates.get(run.jobId) ?? 0, startedAt: run.status === "Running" ? time : undefined };
+        return { key: run.id, jobId: run.jobId, tenantId: run.tenantId, due: time, durationMs: otherEstimates.get(run.jobId) ?? 0, startedAt: run.status === "Running" ? time : undefined };
     });
 
     const measured = Math.round(getTimezoneOffset(timezone, now) / 60_000);
@@ -90,12 +93,12 @@ export async function getJobTimeline(now = new Date()): Promise<JobTimeline> {
         if (times.truncated) truncated.push(job.id);
         for (const at of times.times) {
             due.push({ jobId: job.id, at });
-            items.push({ key: plannedKey(job.id, at), jobId: job.id, due: at, durationMs: estimates[job.id] ?? 0 });
+            items.push({ key: plannedKey(job.id, at), jobId: job.id, tenantId: job.tenantId, due: at, durationMs: estimates[job.id] ?? 0 });
         }
     }
     for (const job of others.jobs) {
         for (const at of plannedOf(job.schedule).times) {
-            otherItems.push({ key: plannedKey(job.id, at), jobId: job.id, due: at, durationMs: otherEstimates.get(job.id) ?? 0 });
+            otherItems.push({ key: plannedKey(job.id, at), jobId: job.id, tenantId: job.tenantId, due: at, durationMs: otherEstimates.get(job.id) ?? 0 });
         }
     }
 

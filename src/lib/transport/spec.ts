@@ -1,5 +1,6 @@
 import { ConfigurationError } from "@/lib/logging/errors";
 import { reachOf, type ReachPolicy } from "@/lib/network/reach-policy";
+import { hostKeyOf, type SshHostKeyPolicy } from "./host-key";
 import type { SshConnectionConfig, TransportResolver, TransportSpec } from "./types";
 
 /**
@@ -130,6 +131,22 @@ function withReach(spec: TransportSpec, reach: ReachPolicy | null): TransportSpe
 }
 
 /**
+ * A spec whose SSH hosts check the host key of their server by the policy of the connection, see
+ * `host-key.ts`. Like the reach policy it comes from the resolved config, never from a field of it.
+ */
+function withHostKey(spec: TransportSpec, hostKey: SshHostKeyPolicy | null): TransportSpec {
+    if (!hostKey) return spec;
+    switch (spec.kind) {
+        case "direct":
+            return spec;
+        case "ssh":
+            return { ...spec, ssh: { ...spec.ssh, hostKey } };
+        case "composite":
+            return { ...spec, exec: withHostKey(spec.exec, hostKey), files: withHostKey(spec.files, hostKey) };
+    }
+}
+
+/**
  * Apply an adapter's own resolver, or the standard convention when it has none.
  *
  * Resolution failures are rewrapped so the message names the adapter, which is
@@ -141,7 +158,7 @@ export function resolveTransport(
 ): TransportSpec {
     const resolver = adapter.transport ?? standardTransport;
     try {
-        return withReach(resolver((config ?? {}) as Record<string, unknown>), reachOf(config));
+        return withHostKey(withReach(resolver((config ?? {}) as Record<string, unknown>), reachOf(config)), hostKeyOf(config));
     } catch (error) {
         throw new ConfigurationError(adapter.id, error instanceof Error ? error.message : String(error), {
             cause: error instanceof Error ? error : undefined,

@@ -82,12 +82,18 @@ export function parseJobDatabases(databasesJson: string | null | undefined): str
  * Adapters write their dump straight to disk and report no byte counts of their own, so the
  * file size is the only live progress there is. `onBytes` hears every new size. Returns the
  * function that stops watching.
+ *
+ * Only a file that grew is reported. Every report stamps the heartbeat of the run, so a report
+ * for a size that stands still would keep a dump that hangs looking alive, and the stuck run check
+ * would never end it and free its slot of the queue.
  */
 export function watchDumpSize(ctx: RunnerContext, file: string, label: string, onBytes?: (bytes: number) => void): () => void {
     const startedAt = Date.now();
+    let lastSize = 0;
     const timer = setInterval(() => {
         fs.stat(file).then((stats) => {
-            if (stats.size === 0) return;
+            if (stats.size === lastSize) return;
+            lastSize = stats.size;
             const elapsed = (Date.now() - startedAt) / 1000;
             const speed = elapsed > 0 ? Math.round(stats.size / elapsed) : 0;
             ctx.updateDetail(`${label}: ${formatBytes(stats.size)} dumped - ${formatBytes(speed)}/s`);

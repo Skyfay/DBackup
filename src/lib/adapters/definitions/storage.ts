@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { safePath, sshFields } from "./shared";
+import { safePath, sshFields, verifyHostKeyField } from "./shared";
 import { isSmbAddress, isSmbCommandSafe, SMB_ADDRESS_HINT, SMB_FOLDER_HINT, SMB_LOGIN_HINT, smbLoginHasPercent } from "../smb-address";
 import { rsyncUsernameProblem } from "../storage/rsync-user";
 import { isPortOrDefault, plainHostProblem, PLAIN_HOST_HINT, PORT_HINT } from "../command-values";
@@ -91,6 +91,7 @@ export const SFTPSchema = z.object({
     password: z.string().optional().describe("Password"),
     privateKey: z.string().optional().describe("Private Key (PEM format, optional)"),
     passphrase: z.string().optional().describe("Passphrase for Private Key (optional)"),
+    verifyHostKey: verifyHostKeyField,
     pathPrefix: z.string().optional().describe("Remote destination folder"),
 });
 
@@ -142,6 +143,7 @@ export const RsyncSchema = z.object({
     password: z.string().optional().describe("Password"),
     privateKey: z.string().optional().describe("Private Key (PEM format, optional)"),
     passphrase: z.string().optional().describe("Passphrase for Private Key (optional)"),
+    verifyHostKey: verifyHostKeyField,
     pathPrefix: safePath("Remote destination path").describe("Remote destination folder (e.g. /backups)"),
     options: z.string().optional().describe("Additional rsync options"),
 });

@@ -35,13 +35,33 @@ export class HostFormatError extends Error {
     }
 }
 
-const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+/**
+ * A field as text. A value that is there and no text, like a list, an object or a number, names no
+ * host here, while the tool that gets it as an argument reads its text, `["127.0.0.1"]` as
+ * `127.0.0.1`. So it is refused like an address no client reads, never read as an empty field.
+ *
+ * @throws HostFormatError for a value that is no text.
+ */
+function text(value: unknown): string {
+    if (value === undefined || value === null) return "";
+    if (typeof value !== "string") throw new HostFormatError("A host or address of the connection is no text.");
+    return value.trim();
+}
 
 const present = (host: string | null | undefined): host is string => typeof host === "string" && host !== "";
 
 /** The host of a URL, with or without a scheme, without the brackets of an IPv6 address, null when it names none. */
 export function urlHost(value: unknown): string | null {
-    const raw = text(value);
+    return urlHostOf(typeof value === "string" ? value : "");
+}
+
+/** `urlHost` for a field of a config, which refuses a value that is no text, see `text`. */
+function fieldUrlHost(value: unknown): string | null {
+    return urlHostOf(text(value));
+}
+
+function urlHostOf(value: string): string | null {
+    const raw = value.trim();
     if (!raw) return null;
     for (const candidate of [raw, `https://${raw}`]) {
         try {
@@ -59,7 +79,7 @@ export function urlHost(value: unknown): string | null {
  * Null for a socket path, which reaches the server DBackup runs on and is `host-local.ts`'s.
  */
 export function hostOf(value: unknown): string | null {
-    const raw = text(value);
+    const raw = typeof value === "string" ? value.trim() : "";
     if (!raw || raw.startsWith("/")) return null;
     if (raw.includes("://")) return urlHost(raw);
     const bracketed = /^\[([^\]]+)\](?::\d*)?$/.exec(raw);
@@ -188,8 +208,8 @@ const directOrSsh = (direct: HostsOf): HostsOf => (config) => (config.connection
 
 const host: HostsOf = (config) => hostsIn(config.host);
 const none: HostsOf = () => [];
-const webhook: HostsOf = (config) => [urlHost(config.webhookUrl)].filter(present);
-const server: HostsOf = (config) => [urlHost(config.serverUrl)].filter(present);
+const webhook: HostsOf = (config) => [fieldUrlHost(config.webhookUrl)].filter(present);
+const server: HostsOf = (config) => [fieldUrlHost(config.serverUrl)].filter(present);
 
 /** MySQL and MariaDB: the host, `127.0.0.1` for an empty one as `buildConnectionArgs` passes it. */
 const mysql = directOrSsh((config) => (text(config.host) ? hostsIn(config.host) : [FALLBACK_HOST]));
@@ -233,7 +253,7 @@ export const DIALED_HOSTS: Readonly<Record<string, HostsOf>> = {
     "docker-volume": (config) => (config.connectionMode === "ssh" ? hostsIn(config.sshHost) : []),
     // The SDK builds the endpoint from the region, which it checks itself.
     "s3-aws": none,
-    "s3-generic": (config) => s3Hosts(urlHost(config.endpoint), config.bucket, config.forcePathStyle),
+    "s3-generic": (config) => s3Hosts(fieldUrlHost(config.endpoint), config.bucket, config.forcePathStyle),
     "s3-r2": (config) => s3Hosts(r2Endpoint(config), config.bucket, false),
     "s3-hetzner": (config) => s3Hosts(urlHost(`https://${text(config.region)}.your-objectstorage.com`), config.bucket, false),
     "google-drive": none,
@@ -245,7 +265,7 @@ export const DIALED_HOSTS: Readonly<Record<string, HostsOf>> = {
     rsync: (config) => rsyncHosts(config.host),
     // Only `//server/share` or `\\server\share` and a login without a realm, anything else throws `HostFormatError`.
     smb: smbHosts,
-    webdav: (config) => [urlHost(config.url)].filter(present),
+    webdav: (config) => [fieldUrlHost(config.url)].filter(present),
 
     // Notification channels
     discord: webhook,

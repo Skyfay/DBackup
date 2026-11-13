@@ -135,6 +135,28 @@ function namesOf(value: unknown): SentencePart[] {
     return [plain(": "), strong(shown.join(", ")), ...(more > 0 ? [plain(` and ${more} more`)] : [])];
 }
 
+/**
+ * An entry about the pinned SSH host key of a connection, written by `ssh-host-key-service.ts`. It
+ * reads `host`, `port`, `fingerprint`, `previous`, `expected` and `presented`, all public values.
+ */
+function hostKeySentence(kind: string, it: SentencePart[], details: Record<string, unknown>): { parts: SentencePart[]; glyph: EntryGlyph } | null {
+    const host = text(details.host);
+    const at = host ? [plain(" at "), strong(typeof details.port === "number" ? `${host}:${details.port}` : host)] : [];
+    const key = (value: unknown) => (text(value) ? [plain(" ("), strong(text(value)!), plain(")")] : []);
+    switch (kind) {
+        case "ssh-host-key.pin":
+            return { parts: [plain("Pinned the SSH host key of "), ...it, ...at, ...key(details.fingerprint)], glyph: "lock" };
+        case "ssh-host-key.accept":
+            return { parts: [plain("Trusted a new SSH host key of "), ...it, ...at, ...key(details.fingerprint)], glyph: "key" };
+        case "ssh-host-key.forget":
+            return { parts: [plain("Forgot the SSH host key of "), ...it, ...at, ...key(details.previous)], glyph: "unlock" };
+        case "ssh-host-key.mismatch":
+            return { parts: [plain("The SSH server of "), ...it, ...at, plain(" presented another host key"), ...key(details.presented), plain(" than the pinned one, so nothing was sent to it")], glyph: "alert" };
+        default:
+            return null;
+    }
+}
+
 /** "the job Shop nightly" with the name in bold, or "a job" without one. */
 function object(noun: [string, string], name: string | null): SentencePart[] {
     return name ? [plain(`the ${noun[0]} `), strong(name)] : [plain(noun[1])];
@@ -153,6 +175,10 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
     // An invitation is about a tenant but changes none, so it never reads as a tenant created or deleted.
     const invitation = entry.resource === R.TENANT ? INVITATION_CHANGES[String(details.change)] : undefined;
     if (invitation) return { parts: [plain(invitation[0]), ...(name ? [strong(name)] : [plain("a tenant")])], glyph: invitation[1] };
+
+    // The pinned SSH host key of a connection: pinned on a first login, trusted or forgotten on purpose, or refused.
+    const hostKey = kind?.startsWith("ssh-host-key.") ? hostKeySentence(kind, it, details) : null;
+    if (hostKey) return hostKey;
 
     switch (entry.action) {
         case A.LOGIN: {

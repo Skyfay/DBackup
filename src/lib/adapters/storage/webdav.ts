@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, DirectoryBrowseEntry, StorageReadOptions } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, StorageReadOptions, UploadOptions } from "@/lib/core/interfaces";
 import { WebDAVSchema } from "@/lib/adapters/definitions";
 import { createClient, WebDAVClient, FileStat } from "webdav";
 import { createReadStream, createWriteStream } from "fs";
@@ -82,6 +82,11 @@ async function readCappedBytes(config: WebDAVConfig, remotePath: string, options
     }
 }
 
+/**
+ * `UploadOptions.restoreRelativePath` of a write of a restore is taken and not acted on: WebDAV
+ * knows no symbolic links, a server answers a link of its file system as the folder or file it
+ * points at. Whether one below the folder of the restore is followed is decided by the server alone.
+ */
 export const WebDAVAdapter: StorageAdapter = {
     id: "webdav",
     type: "storage",
@@ -89,7 +94,7 @@ export const WebDAVAdapter: StorageAdapter = {
     configSchema: WebDAVSchema,
     credentials: { primary: "USERNAME_PASSWORD" },
 
-    async upload(config: WebDAVConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+    async upload(config: WebDAVConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _options?: UploadOptions): Promise<boolean> {
         try {
             const client = getClient(config);
             const destination = resolvePath(config, remotePath);

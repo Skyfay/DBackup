@@ -162,4 +162,55 @@ describe("a notification with a name that looks like markup", () => {
 
         expect(await sentAs("text/plain", "{{title}}: {{message}}")).toBe(`${name}: ${name}\nagain`);
     });
+
+    it("adds no parameter to a form through the fields either, from a name or from an error text", async () => {
+        const name = "db&priority=-2&url=https://attacker.example/x";
+        const fields = [{ name: "Source", value: name }, { name: "Last Error", value: "connect failed&priority=-2" }];
+        const payloadTemplate = "token=T&priority=1&title={{title}}&message={{message}}&fields={{fields}}";
+        await GenericWebhookAdapter.send({ webhookUrl: "https://hooks.example.com/in", method: "POST", contentType: "application/x-www-form-urlencoded", payloadTemplate }, `${name} is offline`, context({ title: `${name} is offline`, fields }));
+
+        const form = new URLSearchParams(mockFetch.mock.calls[0][1].body as string);
+        expect([...form.keys()]).toEqual(["token", "priority", "title", "message", "fields"]);
+        expect(form.getAll("priority")).toEqual(["1"]);
+        expect(JSON.parse(form.get("fields")!)).toEqual(fields);
+    });
+
+    it("escapes for the Content-Type the request carries, when a custom header replaces the one of the field", async () => {
+        const name = `nightly","severity":"info","x":"`;
+        const payloadTemplate = '{"text":"{{title}}","severity":"critical"}';
+        await GenericWebhookAdapter.send({ webhookUrl: "https://hooks.example.com/in", method: "POST", contentType: "text/plain", customHeaders: "content-type: application/json", payloadTemplate }, "Finished", context({ title: name }));
+
+        expect(body()).toEqual({ text: name, severity: "critical" });
+    });
+
+    it("adds no element to an XML template, through a text or through the fields", async () => {
+        const name = "x</title><severity>info</severity><title>y";
+        const payloadTemplate = "<alert><title>{{title}}</title><severity>critical</severity><fields>{{fields}}</fields></alert>";
+        await GenericWebhookAdapter.send({ webhookUrl: "https://hooks.example.com/in", method: "POST", contentType: "application/xml; charset=utf-8", payloadTemplate }, "Offline", context({ title: name, fields: [{ name: "Source", value: name }] }));
+
+        const sent = mockFetch.mock.calls[0][1].body as string;
+        expect(sent.match(/<severity>/g)).toHaveLength(1);
+        expect(sent.match(/<title>/g)).toHaveLength(1);
+        expect(sent).toContain("<title>x&lt;/title&gt;&lt;severity&gt;info&lt;/severity&gt;&lt;title&gt;y</title>");
+    });
+
+    it("shows the title and the name of a field as text on Discord too", async () => {
+        await DiscordAdapter.send({ webhookUrl: "https://discord.com/api/webhooks/1/abc" }, "Finished", context({ fields: [{ name: JOB, value: "ok" }] }));
+
+        const [embed] = body().embeds;
+        expect(embed.title).toBe(escapeMarkdown(`Backup of ${JOB}`));
+        expect(embed.fields[0].name).toBe(escapeMarkdown(JOB));
+        expect(embed.title).not.toContain("[click](");
+    });
+
+    it("sends an ntfy title with a line break or a letter beyond ASCII as one valid header", async () => {
+        await NtfyAdapter.send({ serverUrl: "https://ntfy.sh", topic: "backups", priority: 3 }, "Finished", context({ title: "Backup of shop\r\nPriority: 1" }));
+        expect(mockFetch.mock.calls[0][1].headers.Title).toBe("Backup of shop Priority: 1");
+
+        mockFetch.mockClear();
+        await NtfyAdapter.send({ serverUrl: "https://ntfy.sh", topic: "backups", priority: 3 }, "Finished", context({ title: "Backup of 店" }));
+        const title = mockFetch.mock.calls[0][1].headers.Title as string;
+        expect(title).toMatch(/^=\?UTF-8\?B\?[A-Za-z0-9+/=]+\?=$/);
+        expect(Buffer.from(title.slice(10, -2), "base64").toString("utf8")).toBe("Backup of 店");
+    });
 });

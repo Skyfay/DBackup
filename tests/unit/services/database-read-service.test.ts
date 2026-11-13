@@ -11,12 +11,18 @@ const mocks = vi.hoisted(() => ({
     getTables: vi.fn(),
     getTableData: vi.fn(),
     getDatabases: vi.fn(),
+    findSource: vi.fn(),
+    storedConfig: vi.fn(),
+    mayReachHost: vi.fn(),
 }));
 
+vi.mock("@/lib/prisma", () => ({ default: { adapterConfig: { findUnique: (...args: unknown[]) => mocks.findSource(...args) } } }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/adapters/config-resolver", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/lib/adapters/config-resolver")>()),
     assertConfigOffHost: (...args: unknown[]) => mocks.offHost(...args),
+    resolveAdapterConfig: (...args: unknown[]) => mocks.storedConfig(...args),
+    mayReachHost: () => mocks.mayReachHost(),
 }));
 vi.mock("@/lib/core/registry", () => ({
     registry: {
@@ -61,6 +67,40 @@ describe("a read by the config of a form", () => {
 
         await expect(listTables({ adapterId: "sqlite", config: { ...FORM, mode: "local" } }, "app")).rejects.toThrow("SQLite in local mode");
         expect(mocks.getTables).not.toHaveBeenCalled();
+    });
+});
+
+describe("the tables of a saved connection that reaches the server DBackup runs on", () => {
+    const options = { database: "app", table: "user", page: 1, pageSize: 50 };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.findSource.mockResolvedValue({ id: "local-db", adapterId: "sqlite" });
+        mocks.storedConfig.mockResolvedValue({ mode: "local", path: "/data/app.db" });
+        mocks.getTables.mockResolvedValue([]);
+        mocks.getTableData.mockResolvedValue({ rows: [], columns: [], totalCount: 0 });
+    });
+
+    it("are refused to a member before the program on the server runs", async () => {
+        mocks.mayReachHost.mockResolvedValue(false);
+
+        await expect(listTables({ sourceId: "local-db" }, "app")).rejects.toThrow("only a platform admin browses its tables");
+        await expect(readTableData({ sourceId: "local-db" }, options)).rejects.toBeInstanceOf(ValidationError);
+        expect(mocks.getTables).not.toHaveBeenCalled();
+        expect(mocks.getTableData).not.toHaveBeenCalled();
+    });
+
+    it("are read for a platform admin with a session in the home tenant", async () => {
+        mocks.mayReachHost.mockResolvedValue(true);
+
+        await expect(listTables({ sourceId: "local-db" }, "app")).resolves.toEqual({ ok: true, value: [] });
+    });
+
+    it("stay open to a member for a saved connection over SSH", async () => {
+        mocks.mayReachHost.mockResolvedValue(false);
+        mocks.storedConfig.mockResolvedValue({ mode: "ssh", host: "files.acme", path: "/srv/app.db" });
+
+        await expect(readTableData({ sourceId: "local-db" }, options)).resolves.toMatchObject({ ok: true });
     });
 });
 

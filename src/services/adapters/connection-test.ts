@@ -11,6 +11,9 @@ import { hostLocalReason } from "@/lib/adapters/host-local";
 import { sameAddress } from "@/lib/adapters/stored-secrets";
 import { decryptConfig } from "@/lib/crypto";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
+import { markHostKey } from "@/lib/transport/host-key";
+import { hostKeyMismatchMessage } from "@/lib/logging/errors";
+import { formHostKeyProbe } from "./ssh-host-key-service";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -36,6 +39,13 @@ export interface ConnectionTestResult {
     success: boolean;
     message: string;
     version?: string;
+    /**
+     * The host key of the SSH server, when the test logged in to one that has no pin with the
+     * connection yet. A new connection sends it with its save, which pins it.
+     */
+    hostKey?: { type: string; key: string; fingerprint: string };
+    /** Set when the server presented another host key than the pinned one, so the form can offer to trust it. */
+    hostKeyMismatch?: { expected: string; presented: string | null };
 }
 
 /** The result of the test, or why there was none: no such adapter, or one that cannot be tested. */
@@ -63,8 +73,12 @@ export async function testConnection(input: ConnectionTestInput): Promise<Connec
         input.primaryCredentialId ?? null,
         input.sshCredentialId ?? null
     );
+    // The SSH clients check the host key against the pin of the saved connection the form edits,
+    // and report the key of a server without one, see `ssh-host-key-service.ts`.
+    const hostKey = await formHostKeyProbe(adapterId, mergedConfig, configId);
+    markHostKey(mergedConfig, hostKey.policy);
 
-    const result = await Promise.race([
+    const tested = await Promise.race([
         runAdapterTest(adapter, mergedConfig).then((r) => r!),
         new Promise<{ success: false; message: string }>((resolve) =>
             setTimeout(
@@ -74,10 +88,34 @@ export async function testConnection(input: ConnectionTestInput): Promise<Connec
         ),
     ]);
 
+    const result: ConnectionTestResult = { ...tested };
+    const mismatch = hostKey.mismatch();
+    if (mismatch) {
+        // The adapters word a failed login each their own way, a changed key reads the same everywhere.
+        result.success = false;
+        result.message = hostKeyMismatchMessage(mismatch);
+        result.hostKeyMismatch = { expected: mismatch.expected, presented: mismatch.presented };
+    }
+    const seen = hostKey.seen();
+    if (result.success && seen) {
+        result.hostKey = seen;
+        // A saved connection without a pin gets it from its first successful test.
+        if (configId) await pinTested(hostKey.pinSeen, configId);
+    }
+
     if (result.success && result.version && configId) {
         await recordVersion(configId, adapterId, submittedConfig, result.version);
     }
     return { ok: true, result };
+}
+
+/** Pins the key a passing test saw with the saved connection. A failure here never fails the test. */
+async function pinTested(pin: () => Promise<void>, configId: string): Promise<void> {
+    try {
+        await pin();
+    } catch (error: unknown) {
+        log.warn("The SSH host key of a tested connection was not pinned", { configId }, wrapError(error));
+    }
 }
 
 /**

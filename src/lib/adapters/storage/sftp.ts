@@ -10,6 +10,8 @@ import {
     UploadOptions,
 } from "@/lib/core/interfaces";
 import { normalizeSshPrivateKey } from "@/lib/transport/pkcs8-compat";
+import { assertKeyCost } from "@/lib/transport/key-cost";
+import { hostKeyOf, sshHostKeyCheck } from "@/lib/transport/host-key";
 import { createConnectionPool } from "@/lib/adapters/storage/common/connection-pool";
 import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
 import { createListingGuard, descendableName, listedNameProblem, ListingTooLargeError } from "@/lib/adapters/storage/common/listing-limits";
@@ -75,6 +77,8 @@ export const connectSFTP = async (config: SFTPConfig, onDisconnect?: (reason: st
     // PKCS#8 encrypted keys (BEGIN ENCRYPTED PRIVATE KEY) are not supported by
     // ssh2-sftp-client. Decrypt them in-memory via Node.js crypto first.
     let privateKey = config.privateKey;
+    // ssh2 derives the key of an encrypted file on the event loop, so its cost is bounded first.
+    assertKeyCost(privateKey);
     if (privateKey?.includes("BEGIN ENCRYPTED PRIVATE KEY")) {
         if (!config.passphrase) {
             throw new Error("This private key is passphrase-protected. Please provide the passphrase.");
@@ -99,17 +103,33 @@ export const connectSFTP = async (config: SFTPConfig, onDisconnect?: (reason: st
     // For a tenant that blocks the local network ssh2 gets a socket to a checked address, see `checked-socket.ts`.
     const reach = reachOf(config);
     const sock = reach ? await checkedSocket(config.host, config.port || 22, reach.allowed) : undefined;
-    await sftp.connect({
-        ...(sock ? { sock } : {}),
-        host: config.host,
-        port: config.port,
-        username: config.username,
-        password: config.password,
-        privateKey,
-        // passphrase only needed for non-PKCS#8-encrypted keys
-        passphrase: privateKey !== config.privateKey ? undefined : config.passphrase,
-        ...CONNECTION_TUNING,
-    });
+    // The host key of the server is checked against the pin of the connection, see `host-key.ts`.
+    const check = sshHostKeyCheck(hostKeyOf(config), config);
+    try {
+        await sftp.connect({
+            ...(sock ? { sock } : {}),
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: config.password,
+            privateKey,
+            // passphrase only needed for non-PKCS#8-encrypted keys
+            passphrase: privateKey !== config.privateKey ? undefined : config.passphrase,
+            hostVerifier: check.verifier,
+            ...(check.algorithms ? { algorithms: check.algorithms } : {}),
+            ...CONNECTION_TUNING,
+        });
+    } catch (error: unknown) {
+        // A refused host key reaches here as a plain handshake error, the check knows why.
+        throw check.failure(error);
+    }
+    try {
+        // The key of a server without a pin is pinned only now, after the login succeeded.
+        await check.loggedIn();
+    } catch (error: unknown) {
+        await endSftpClient(sftp).catch(() => {});
+        throw error;
+    }
     return sftp;
 };
 

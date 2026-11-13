@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     mayReachHost: vi.fn(),
     isShared: vi.fn(),
     viewModeOf: vi.fn(),
+    assertOffSharedLogins: vi.fn(),
 }));
 
 vi.mock("@/lib/core/registry", () => ({ registry: { get: (...args: unknown[]) => mocks.get(...args) } }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/adapters/config-resolver", () => ({
     resolveAdapterConfig: (...args: unknown[]) => mocks.resolveAdapterConfig(...args),
     mayReachHost: () => mocks.mayReachHost(),
 }));
+vi.mock("@/services/adapters/shared-login", () => ({ assertOffSharedLogins: (...args: unknown[]) => mocks.assertOffSharedLogins(...args) }));
 vi.mock("@/services/sharing/destination-access", () => ({
     isShared: (...args: unknown[]) => mocks.isShared(...args),
     viewModeOf: (...args: unknown[]) => mocks.viewModeOf(...args),
@@ -40,6 +42,7 @@ describe("browseLocation", () => {
         mocks.browseDirectories.mockResolvedValue([{ name: "srv", path: "srv" }]);
         mocks.isShared.mockResolvedValue(false);
         mocks.mayReachHost.mockResolvedValue(true);
+        mocks.assertOffSharedLogins.mockResolvedValue(undefined);
     });
 
     it("refuses the folder of a saved destination shared with other tenants, whose top holds the folders of its customers", async () => {
@@ -48,6 +51,16 @@ describe("browseLocation", () => {
         await expect(browseLocation({ adapterId: "s3-aws", config: { bucket: "company" }, storedConfigId: "shared", path: "" }))
             .rejects.toThrow("It is shared with other tenants");
         expect(mocks.applyStoredSecrets).not.toHaveBeenCalled();
+        expect(mocks.browseDirectories).not.toHaveBeenCalled();
+    });
+
+    it("refuses the saved login of a destination shared with customers without its id, before it signs in anywhere", async () => {
+        mocks.assertOffSharedLogins.mockRejectedValue(new ValidationError("This saved login signs in to a destination shared with customers"));
+
+        await expect(browseLocation({ adapterId: "sftp", config: { host: "127.0.0.1" }, primaryCredentialId: "shared-login", path: "srv/tenants" }))
+            .rejects.toThrow("This saved login signs in to a destination shared with customers");
+        expect(mocks.assertOffSharedLogins).toHaveBeenCalledWith({ primaryCredentialId: "shared-login" });
+        expect(mocks.overlayCredentialsOnConfig).not.toHaveBeenCalled();
         expect(mocks.browseDirectories).not.toHaveBeenCalled();
     });
 

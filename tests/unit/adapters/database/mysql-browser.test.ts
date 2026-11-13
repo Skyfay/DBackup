@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
-import { createFakeHost, type FakeHost } from "@/lib/testing/fake-host";
+import type { FakeHost } from "@/lib/testing/fake-host";
+import { clientHost, statements } from "./mysql/client-help";
 import { getTables, getTableData } from "@/lib/adapters/database/mysql/browser";
 import type { HostKind } from "@/lib/transport/types";
 
@@ -26,7 +27,7 @@ function queryOf(argv: string[]): string {
 
 /** Route a canned stdout to whichever of the three concurrent queries asked for it. */
 function hostWith(kind: HostKind, responses: { columns?: string; count?: string; data?: string; tables?: string }): FakeHost {
-    return createFakeHost({
+    return clientHost({
         kind,
         onExec: (argv) => {
             const query = queryOf(argv) ?? "";
@@ -76,7 +77,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
             const host = hostWith(kind, { tables: "" });
             await getTables(baseConfig as never, "testdb", host);
 
-            const argv = host.calls.exec[0];
+            const argv = statements(host)[0];
             expect(argv).toContain("-h");
             expect(argv[argv.indexOf("-h") + 1]).toBe("localhost");
             expect(argv[argv.indexOf("-P") + 1]).toBe("3306");
@@ -86,7 +87,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
         });
 
         it("reports a failing query instead of returning an empty list", async () => {
-            const host = createFakeHost({
+            const host = clientHost({
                 kind,
                 onExec: () => ({ code: 1, stderr: "ERROR 1044: Access denied" }),
             });
@@ -136,12 +137,12 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
                 host,
             );
 
-            const dataQuery = host.calls.exec.map(queryOf).find(q => q?.startsWith("SELECT * FROM"));
+            const dataQuery = statements(host).map(queryOf).find(q => q?.startsWith("SELECT * FROM"));
             expect(dataQuery).toContain("ORDER BY `name` DESC");
         });
 
         it("surfaces which of the three queries failed", async () => {
-            const host = createFakeHost({
+            const host = clientHost({
                 kind,
                 onExec: (argv) => queryOf(argv)?.includes("COUNT(*)")
                     ? { code: 1, stderr: "boom" }
@@ -157,20 +158,20 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
         it("doubles backslashes in the database name", async () => {
             const host = hostWith(kind, { tables: "" });
             await getTables(baseConfig as never, "back\\slash", host);
-            expect(queryOf(host.calls.exec[0])).toContain("'back\\\\slash'");
+            expect(queryOf(statements(host)[0])).toContain("'back\\\\slash'");
         });
 
         it("escapes single quotes in the database name", async () => {
             const host = hostWith(kind, { tables: "" });
             await getTables(baseConfig as never, "it's", host);
-            expect(queryOf(host.calls.exec[0])).toContain("'it''s'");
+            expect(queryOf(statements(host)[0])).toContain("'it''s'");
         });
 
         it("strips null bytes from the database name", async () => {
             const host = hostWith(kind, { tables: "" });
             await getTables(baseConfig as never, "db\0name", host);
 
-            const query = queryOf(host.calls.exec[0]);
+            const query = queryOf(statements(host)[0]);
             expect(query).toContain("'dbname'");
             expect(query).not.toContain("\0");
         });
@@ -183,7 +184,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
                 host,
             );
 
-            const colQuery = host.calls.exec.map(queryOf).find(q => q?.includes("COLUMN_NAME"));
+            const colQuery = statements(host).map(queryOf).find(q => q?.includes("COLUMN_NAME"));
             expect(colQuery).toContain("'back\\\\slash'");
         });
 
@@ -195,7 +196,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL browser over a %s host", (kind
                 host,
             );
 
-            const colQuery = host.calls.exec.map(queryOf).find(q => q?.includes("COLUMN_NAME"));
+            const colQuery = statements(host).map(queryOf).find(q => q?.includes("COLUMN_NAME"));
             expect(colQuery).toContain("'o''reilly'");
         });
     });
@@ -211,15 +212,15 @@ describe("MySQL browser transport differences", () => {
         await getTables(baseConfig as never, "testdb", direct);
         await getTables(baseConfig as never, "testdb", ssh);
 
-        expect(direct.calls.exec[0]).toContain("--protocol=tcp");
-        expect(ssh.calls.exec[0]).not.toContain("--protocol=tcp");
+        expect(statements(direct)[0]).toContain("--protocol=tcp");
+        expect(statements(ssh)[0]).not.toContain("--protocol=tcp");
     });
 
     it("keeps the password out of argv and in a 0600 defaults-file", async () => {
         const host = hostWith("ssh", { tables: "" });
         await getTables(baseConfig as never, "testdb", host);
 
-        expect(host.calls.exec[0].join(" ")).not.toContain("secret");
+        expect(statements(host)[0].join(" ")).not.toContain("secret");
         expect(host.calls.tempFiles[0]).toMatchObject({ mode: 0o600 });
         expect(host.calls.tempFiles[0].content).toContain('password="secret"');
     });

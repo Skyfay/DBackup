@@ -7,8 +7,10 @@ import { urlHost } from "./dialed-hosts";
  * the same. A destination shared with customers keeps their backups under `tenants/<id>/` of its
  * folder, so no other connection of its tenant may overlap it, see `shared-place.ts`.
  *
- * It compares the address as typed, lowercased where the protocol ignores case. A name and its IP
- * address, or two ports of one server, count as two storages. The folder of Google Drive is an id,
+ * It compares the address as typed, lowercased where the protocol ignores case, a host without the
+ * dot at its end and the brackets of an IPv6 address, and every name of the loopback as one. A name
+ * and its IP address, or two ports of one server, still count as two storages, so the saved logins
+ * of a shared destination are kept to it as well, see `shared-login.ts`. The folder of Google Drive is an id,
  * so a folder inside another one is not found there, only the same folder and the top of the drive.
  */
 
@@ -22,6 +24,14 @@ export interface StoragePlace {
 }
 
 const text = (value: unknown) => (typeof value === "string" || typeof value === "number" ? String(value).trim() : "");
+
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0", "::"]);
+
+/** A host as two spellings of it compare: lowercased, without brackets and the dot of the root, the loopback under one name. */
+function hostKey(value: unknown): string {
+    const host = text(value).toLowerCase().replace(/^\[(.*)\]$/, "$1").replace(/\.+$/, "");
+    return LOOPBACK.has(host) || host.endsWith(".localhost") ? "localhost" : host;
+}
 
 /** The levels of a path, with `.` dropped and `..` taken back, so `a/./b/../c` is `a/c`. */
 function levelsOf(...paths: unknown[]): string[] {
@@ -79,10 +89,10 @@ function drivePlace(kind: string, config: Config, folder: string[]): StoragePlac
 const PLACES: Readonly<Record<string, (config: Config) => StoragePlace | null>> = {
     "local-filesystem": (config) => ({ storage: "file:", folder: levelsOf(config.basePath) }),
     // SFTP and rsync reach the same files of a server over SSH.
-    sftp: (config) => (text(config.host) ? { storage: `ssh:${text(config.host).toLowerCase()}`, folder: accountFolder(config, config.pathPrefix) } : null),
-    rsync: (config) => (text(config.host) ? { storage: `ssh:${text(config.host).toLowerCase()}`, folder: accountFolder(config, config.pathPrefix) } : null),
+    sftp: (config) => (text(config.host) ? { storage: `ssh:${hostKey(config.host)}`, folder: accountFolder(config, config.pathPrefix) } : null),
+    rsync: (config) => (text(config.host) ? { storage: `ssh:${hostKey(config.host)}`, folder: accountFolder(config, config.pathPrefix) } : null),
     // An FTP account usually starts in a root of its own.
-    ftp: (config) => (text(config.host) ? { storage: `ftp:${text(config.host).toLowerCase()}:${text(config.username) || "anonymous"}`, folder: levelsOf(config.pathPrefix) } : null),
+    ftp: (config) => (text(config.host) ? { storage: `ftp:${hostKey(config.host)}:${text(config.username) || "anonymous"}`, folder: levelsOf(config.pathPrefix) } : null),
     smb: smbPlace,
     webdav: webdavPlace,
     "s3-aws": (config) => s3Place("amazonaws.com", config),

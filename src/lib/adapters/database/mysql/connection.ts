@@ -8,6 +8,7 @@ import {
     buildConnectionArgs,
     withAuthArgs,
 } from "./args";
+import { queryClientArgs } from "./client-lock";
 import { connectionClientOf } from "./dump-content";
 import { escapeMysqlIdentifier, escapeMysqlLiteral } from "./sql-quote";
 
@@ -40,8 +41,10 @@ export async function ensureDatabase(
         const connArgs = buildConnectionArgs(config, host, { user, client: await connectionClientOf(config, host, mysqlBin) });
 
         await withAuthArgs(host, pass, async (authArgs) => {
+            // Both statements hold the name of the target, so the client reads them as UTF-8 with its own commands off.
+            const lock = await queryClientArgs(host, mysqlBin);
             const created = await host.exec([
-                mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs,
+                mysqlBin, ...authArgs, ...lock, ...connArgs,
                 "-e", `CREATE DATABASE IF NOT EXISTS \`${escapeMysqlIdentifier(dbName)}\``,
             ]);
             if (created.code !== 0) {
@@ -56,7 +59,7 @@ export async function ensureDatabase(
                 const grantQuery =
                     `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'%'; ` +
                     `GRANT ALL PRIVILEGES ON \`${db}\`.* TO '${grantee}'@'localhost'; FLUSH PRIVILEGES;`;
-                const granted = await host.exec([mysqlBin, ...authArgs, NO_LOCAL_INFILE, ...connArgs, "-e", grantQuery]);
+                const granted = await host.exec([mysqlBin, ...authArgs, ...lock, ...connArgs, "-e", grantQuery]);
                 logs.push(granted.code === 0
                     ? `Permissions granted for '${dbName}'.`
                     : `Warning grants for '${dbName}': ${granted.stderr}`);

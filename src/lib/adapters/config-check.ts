@@ -89,6 +89,51 @@ export function configSchemaProblems(adapterId: string, config: Config): string[
     return [...byField].map(([key, message]) => `${configFieldLabel(key)}: ${message}`);
 }
 
+const isNested = (value: unknown) => typeof value === "object" && value !== null;
+
+/** The issue codes of Zod that say a value has another type than its field. */
+const TYPE_ISSUES: ReadonlySet<string> = new Set(["invalid_type", "invalid_union", "invalid_value"]);
+
+/**
+ * The fields of a config of a form whose value has another type than the schema of its adapter
+ * gives them, as `label: problem`, with `commandFieldProblems`. Never names a value.
+ *
+ * A form is tried before it is saved, so it may be incomplete, and this checks no more than the
+ * types: a list or an object only where the schema takes one without coercing it, text where the
+ * schema wants text. The checks of a form (`hostLocalReason`, `dialedHosts`, `own-data.ts`) and the
+ * pins read a field as text, so a host sent as `["127.0.0.1"]` would name no host for them, while
+ * the tool that gets it as an argument reads `127.0.0.1`. A key the schema does not name holds no
+ * list and no object either. An adapter id without a schema, like the SSH test of a form that names
+ * no adapter, is checked the same way.
+ */
+export function formConfigProblems(adapterId: string, config: Config): string[] {
+    const shape = (getAdapterDefinition(adapterId)?.configSchema.shape ?? {}) as Record<string, z.ZodType>;
+    const problems: string[] = [];
+    for (const [key, value] of Object.entries(config)) {
+        if (value === undefined || value === null || typeof value === "string") continue;
+        const field = Object.hasOwn(shape, key) ? shape[key] : null;
+        const result = field?.safeParse(value);
+        if (isNested(value)) {
+            // A coercing field takes a list and reads it as its text or number, which is no list.
+            if (!result?.success || !isNested(result.data)) problems.push(`${configFieldLabel(key)}: has the wrong type`);
+        } else if (result && !result.success && result.error.issues.some((issue) => TYPE_ISSUES.has(issue.code))) {
+            problems.push(`${configFieldLabel(key)}: has the wrong type`);
+        }
+    }
+    return [...new Set([...problems, ...commandFieldProblems(config)])];
+}
+
+/**
+ * Refuses a config of a form whose fields have another type than its adapter gives them, see
+ * `formConfigProblems`, before any check or client reads it.
+ *
+ * @throws ValidationError naming the fields, never their values.
+ */
+export function assertFormConfigTypes(adapterId: string, config: Config): void {
+    const problems = formConfigProblems(adapterId, config);
+    if (problems.length > 0) throw new ValidationError(refusal(problems), { field: "config" });
+}
+
 /** The sentence that refuses a config, with what is wrong with each field. */
 function refusal(problems: string[]): string {
     return `The settings of the connection do not fit. ${problems.map((problem) => problem.replace(/\.$/, "")).join(". ")}.`;

@@ -21,6 +21,7 @@ import type { AppConfigurationBackup, RestorePreview } from "@/lib/types/config-
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import { inspectDatabaseCopy, isDatabaseCopy, previewOfJson } from "./copy-inspect";
 import { importConfiguration } from "./import";
+import { LEAVES_NO_ACCOUNT } from "./import-shape";
 import { isStoredEncrypted, openBackupFile, UNENCRYPTED_AT_DESTINATION } from "./open-backup";
 import { holdRestore, peekRestore, takeRestore, type RestoreOwner } from "./pending-restores";
 import { stageDatabaseRestore } from "./restore-staging";
@@ -78,8 +79,12 @@ async function readJson(file: string): Promise<AppConfigurationBackup> {
  * without one and open the first sign-up again, in a database whoever made the copy wrote. On the
  * sign-up page a file of an older version does the same. In Settings such a file only adds to the
  * accounts there, so an older file without users still restores.
+ *
+ * The count of the uploaded file only refuses early. What decides is what the restore leaves
+ * behind: `prepareCopy` counts the accounts of the copy it stages, and `importConfiguration` those
+ * left at the end of its transaction, since a file can lose the accounts it showed on the way.
  */
-const NO_ACCOUNT = "The backup holds no account, so DBackup would be left without one to sign in with. Restore a backup that holds the accounts.";
+const NO_ACCOUNT = LEAVES_NO_ACCOUNT;
 
 /** Checks an opened backup and holds it for its restore, which then owns the file. */
 async function check(plain: string, fileName: string, owner: RestoreOwner): Promise<CheckedRestore> {
@@ -193,7 +198,7 @@ export async function applyCheckedRestore(token: string, owner: RestoreOwner): P
             await stageDatabaseRestore(entry.file, entry.keys, { actorName: actor?.name ?? null, fileName: entry.fileName });
             return { kind: "database", fileName: entry.fileName };
         }
-        const { notes } = await importConfiguration(await readJson(entry.file), "OVERWRITE");
+        const { notes } = await importConfiguration(await readJson(entry.file), "OVERWRITE", undefined, { requireAccount: owner === "setup" });
         return { kind: "json", notes, fileName: entry.fileName };
     } finally {
         await fs.unlink(entry.file).catch(() => undefined);

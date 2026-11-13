@@ -1,4 +1,5 @@
 import type { AzureSQLConfig } from "@/lib/adapters/definitions";
+import type { PinnedServer } from "./pinned-server";
 
 /**
  * The ADO.NET connection string SqlPackage is given.
@@ -26,12 +27,18 @@ function quote(value: string): string {
  * `Encrypt=True` and `TrustServerCertificate=False` are pinned rather than
  * configurable. Azure presents a real certificate on every connection, so relaxing
  * either is never a legitimate setup.
+ *
+ * `pinned` is the checked address of the host for a tenant that blocks the local network, from
+ * `pinnedServer`, which every caller that hands the string to SqlPackage asks first.
  */
-export function buildConnectionString(config: AzureSQLConfig, database: string): string {
+export function buildConnectionString(config: AzureSQLConfig, database: string, pinned: PinnedServer | null = null): string {
     const port = config.port || 1433;
 
     const pairs: [string, string][] = [
-        ["Server", `tcp:${config.host},${port}`],
+        // For a tenant that blocks the local network the checked address, so SqlPackage resolves
+        // nothing itself, and the name for the certificate check, see `pinned-server.ts`.
+        ["Server", `tcp:${pinned ? pinned.address : config.host},${port}`],
+        ...(pinned && pinned.name !== pinned.address ? [["HostNameInCertificate", pinned.name] as [string, string]] : []),
         ["Initial Catalog", database],
         ["User ID", config.user],
         ["Password", config.password || ""],

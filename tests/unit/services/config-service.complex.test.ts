@@ -65,6 +65,12 @@ vi.mock('@/lib/prisma', () => {
                      accounts: Array.from(mockDb.accounts.values()).filter((a: any) => a.userId === u.id)
                  }));
             }
+            if (args?.select?.memberships) {
+                 // The seeded accounts work in the home tenant alone.
+                 values = values
+                     .filter((u: any) => !args?.where?.id?.in || args.where.id.in.includes(u.id))
+                     .map(() => ({ platformRole: null, platformGroupId: null, memberships: [{ tenantId: 'default' }] }));
+            }
             if (args?.select?.id && args?.select?.notifications) {
                  // Return job IDs with empty notifications for M:M mock
                  values = values.map((j: any) => ({ id: j.id, notifications: [] }));

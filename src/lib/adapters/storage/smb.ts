@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, SnapshotHandle, StorageReadOptions } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, SnapshotHandle, StorageReadOptions, UploadOptions } from "@/lib/core/interfaces";
 import { probeSnapshotSupport, createShadowCopy, releaseShadowCopy, findOrphanedShadowCopies } from "./smb-vss";
 import { SMBSchema } from "@/lib/adapters/definitions";
 import { isSmbAddress, isSmbCommandSafe, SMB_ADDRESS_HINT, SMB_LOGIN_HINT, smbCommandRefusal, smbLoginHasPercent, smbResolveOptions } from "@/lib/adapters/smb-address";
@@ -312,6 +312,13 @@ async function readCappedBytes(config: SMBConfig, remotePath: string, options?: 
     }
 }
 
+/**
+ * `UploadOptions.restoreRelativePath` of a write of a restore is taken and not acted on: smbclient
+ * lists a symbolic link of the server as the folder or file it points at, so nothing here can tell
+ * one from a plain folder. Whether a link below the folder of the restore is followed is decided
+ * by the server alone. Samba follows none that leaves the share unless `wide links` is on, and
+ * Windows resolves no link of the server for a client by default.
+ */
 export const SMBAdapter: StorageAdapter = {
     id: "smb",
     type: "storage",
@@ -324,13 +331,13 @@ export const SMBAdapter: StorageAdapter = {
         if (onLog) onLog(`Connecting to SMB share ${config.address}`, "info", "storage");
         const dirCache = new Set<string>();
         return {
-            upload: (localPath, remotePath, onProgress, uploadLog) =>
+            upload: (localPath, remotePath, onProgress, uploadLog, _options?: UploadOptions) =>
                 performSmbUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache),
             close: async () => { },
         };
     },
 
-    async upload(config: SMBConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+    async upload(config: SMBConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _options?: UploadOptions): Promise<boolean> {
         const client = createClient(config);
         if (onLog) onLog(`Connecting to SMB share ${config.address}`, "info", "storage");
         return performSmbUpload(client, config, localPath, remotePath, onProgress, onLog, new Set());

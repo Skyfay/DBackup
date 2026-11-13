@@ -13,6 +13,7 @@ import { runAsSystem } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { providedIds } from "@/services/sharing/provided";
 import type { RestoreInput } from "./types";
+import { archiveReadSource } from "./recorded-origin";
 
 /**
  * Who starts a restore, as far as the targets it may write into depend on it. The tenant, All
@@ -75,11 +76,14 @@ async function assertTargetsInTenant(input: Pick<RestoreInput, "targetSourceId" 
  *
  * @throws Error as for a connection that does not exist for one of another tenant, PermissionError with the sentence of the lock, ValidationError for a folder that leaves its connection.
  */
-export async function assertRestoreTargetsAllowed(input: Pick<RestoreInput, "targetSourceId" | "directoryMapping" | "shared">, caller: RestoreCaller): Promise<void> {
+export async function assertRestoreTargetsAllowed(
+    input: Pick<RestoreInput, "targetSourceId" | "directoryMapping" | "shared"> & Partial<Pick<RestoreInput, "storageConfigId" | "file">>,
+    caller: RestoreCaller
+): Promise<void> {
     await assertTargetsInTenant(input, caller);
     const message = await configBackupTargetRefusal(caller, { connectionIds: restoreTargetIds(input) });
     if (message) throw new PermissionError("platform admin", { message });
-    await assertWriteTargets(await mappingTargets(input.directoryMapping ?? []), caller);
+    await assertWriteTargets(await mappingTargets(input.directoryMapping ?? [], { storageConfigId: input.storageConfigId, file: input.file }), caller);
 }
 
 /** Where the files of one directory source go, as far as who may write there depends on it. */
@@ -93,7 +97,10 @@ export interface WriteTarget {
     config: Record<string, unknown>;
     /** The folder inside the connection, for Docker Volumes the volume first. */
     basePath: string;
-    /** Whether the files go back to the volume or folder the directory source read them from. */
+    /**
+     * Whether the files go back to the volume or folder the directory source read them from, out of
+     * a backup a run of the job of that source wrote, see `originOfBackup`.
+     */
     origin: boolean;
 }
 
@@ -142,8 +149,9 @@ function managesConnection(caller: RestoreCaller, target: WriteTarget): boolean 
  * - Docker Volumes without SSH reach the Docker of the server DBackup runs on, and a restore empties
  *   each volume it writes into and lays the modes and owners of the archive on it, so only a platform
  *   admin does that, see `callerReachesHost`.
- * - Every connection takes back the folder the backup read, Docker Volumes over SSH its volume, and
- *   anything else only from someone who may change the connection. A restore overwrites what lies
+ * - Every connection takes back the folder the backup read, Docker Volumes over SSH its volume, out
+ *   of a backup a recorded run of the job of that source wrote (`originOfBackup`), and anything
+ *   else only from someone who may change the connection. A restore overwrites what lies
  *   there, like the backups of other jobs at a destination or another volume on the same host, which
  *   the right to restore files never covers.
  */
@@ -205,6 +213,32 @@ export function isOrigin(source: { configId: string; path: string } | null, conn
     return folder.length <= target.length && folder.every((part, index) => part === target[index]);
 }
 
+/** The backup a restore reads, as its request names it: the destination and the path there. */
+export interface RestoredBackup {
+    storageConfigId?: string;
+    file?: string;
+}
+
+/**
+ * Whether a restore of this backup into a target writes the files of a directory source back where
+ * a run read them: the target is the place of the source, see `isOrigin`, and a recorded run of the
+ * job of that source wrote the backup, see `archiveReadSource`. The id of the source comes from the
+ * request and from the index at the destination, so without that record the backup is one anyone
+ * could have laid there, and the restore needs the right to change the connection.
+ */
+export async function originOfBackup(
+    backup: RestoredBackup,
+    jobSourceId: string,
+    source: { configId: string; path: string } | null,
+    connectionId: string,
+    basePath: string,
+    adapterId: string
+): Promise<boolean> {
+    if (!isOrigin(source, connectionId, basePath, adapterId)) return false;
+    if (!backup.storageConfigId || !backup.file) return false;
+    return archiveReadSource(backup.storageConfigId, backup.file, jobSourceId);
+}
+
 /** What someone reads whose full restore names no folder for a directory source it restores. */
 export const NO_RESTORE_FOLDER = "Pick the folder each restored directory source goes into.";
 
@@ -219,7 +253,7 @@ export function mappingFolder(mapping: { targetPath?: string | null }): string |
 }
 
 /** The targets of the directory mappings of a full restore, read for every tenant, as their ids name them. */
-async function mappingTargets(mappings: NonNullable<RestoreInput["directoryMapping"]>): Promise<WriteTarget[]> {
+async function mappingTargets(mappings: NonNullable<RestoreInput["directoryMapping"]>, backup: RestoredBackup): Promise<WriteTarget[]> {
     const targets: WriteTarget[] = [];
     for (const mapping of mappings) {
         if (!mapping.targetConfigId) continue;
@@ -246,7 +280,7 @@ async function mappingTargets(mappings: NonNullable<RestoreInput["directoryMappi
             // A config that cannot be read counts as one of the server DBackup runs on, the stricter way.
         }
         const source = await runAsSystem(() => prisma.jobSource.findUnique({ where: { id: mapping.entryId }, select: { configId: true, path: true } }));
-        targets.push({ connectionId: row.id, adapterId: row.adapterId, tenantId: row.tenantId, config, basePath, origin: isOrigin(source, row.id, basePath, row.adapterId) });
+        targets.push({ connectionId: row.id, adapterId: row.adapterId, tenantId: row.tenantId, config, basePath, origin: await originOfBackup(backup, mapping.entryId, source, row.id, basePath, row.adapterId) });
     }
     return targets;
 }

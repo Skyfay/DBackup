@@ -104,11 +104,23 @@ export async function mayCreateTenants(actor: TenantAdminActor): Promise<boolean
 /** A tenant as `GET /api/tenants` lists it: the row of Platform > Tenants with the numbers of its summary. */
 export type TenantListEntry = TenantRow & Pick<TenantSummary, "databases" | "health">;
 
+/**
+ * The rows of the tenants the actor looks after, the home tenant first, for Platform > Tenants and
+ * `GET /api/tenants`. The rows are read in the system scope with the numbers and the network ranges
+ * of every tenant, so a tenant the actor is only a member of gets none here: a membership gives no
+ * right on the platform.
+ */
+export async function managedTenantRows(actor: Pick<TenantAdminActor, "id" | "isPlatformAdmin" | "reach">): Promise<TenantRow[]> {
+    const all = await tenantService.list();
+    if (actor.isPlatformAdmin) return all;
+    if (actor.reach) return all.filter((tenant) => reachCovers(actor.reach!, tenant.id));
+    const reached = await platformGroupService.reachedAmong(actor.id, all.map((tenant) => tenant.id));
+    return all.filter((tenant) => reached.includes(tenant.id));
+}
+
 /** The tenants the actor looks after, with the fields of Platform > Tenants, the home tenant first. */
 export async function tenantsFor(actor: TenantAdminActor): Promise<TenantListEntry[]> {
-    const all = await tenantService.list();
-    const reached: TenantRow[] = [];
-    for (const tenant of all) if (await managesTenant(actor, tenant.id)) reached.push(tenant);
+    const reached = await managedTenantRows(actor);
     const summaries = new Map((await tenantSummaries(reached.map((tenant) => tenant.id))).map((summary) => [summary.id, summary]));
     return reached.map((tenant) => ({ ...tenant, databases: summaries.get(tenant.id)?.databases ?? 0, health: summaries.get(tenant.id)?.health ?? null }));
 }

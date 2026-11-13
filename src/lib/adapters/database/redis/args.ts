@@ -13,6 +13,9 @@ import type { ExecOptions } from "@/lib/transport";
 type AnyRedisConfig = RedisConfig & { username?: string; password?: string; tls?: boolean; tlsServerName?: string };
 
 export function buildConnectionArgs(config: AnyRedisConfig): string[] {
+    // A host that is no text, like a list from a request, would reach redis-cli as the text of
+    // its entries, a host no check of the config ever read.
+    if (typeof config.host !== "string") throw new Error("The Redis host is no text.");
     const args = ["-h", config.host, "-p", String(config.port)];
 
     if (config.username) {

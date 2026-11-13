@@ -33,6 +33,10 @@ const createTransporter = async (config: any) => {
 
     if (config.secure === "none") {
         options.ignoreTLS = true;
+    } else if (!secure) {
+        // STARTTLS is asked for, so a server that does not offer it fails the send. Without this
+        // nodemailer goes on in clear and sends the login unencrypted.
+        options.requireTLS = true;
     }
 
     const reach = reachOf(config);

@@ -10,7 +10,9 @@
 import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { registerAdapters } from "@/lib/adapters";
-import { assertConfigOffHost, resolveAdapterConfig, withoutBinaryPaths } from "@/lib/adapters/config-resolver";
+import { assertConfigOffHost, mayReachHost, resolveAdapterConfig, withoutBinaryPaths } from "@/lib/adapters/config-resolver";
+import { hostLocalReason } from "@/lib/adapters/host-local";
+import { ValidationError } from "@/lib/logging/errors";
 import type { DatabaseAdapter, DatabaseInfo, TableDataOptions, TableDataResult, TableInfo } from "@/lib/core/interfaces";
 import { registry } from "@/lib/core/registry";
 import { withHost } from "@/lib/transport";
@@ -28,6 +30,9 @@ export type ReadRefusal = "source-missing" | "adapter-missing" | "unsupported";
 export type StatsRefusal = ReadRefusal | "incomplete";
 
 export type ReadOutcome<T, R extends string = ReadRefusal> = { ok: true; value: T } | { ok: false; reason: R };
+
+/** What the tables and rows of a saved connection to the server of DBackup answer anyone but a platform admin with a session. */
+export const HOST_LOCAL_BROWSE_REFUSAL = "This connection reaches the server DBackup runs on, so only a platform admin browses its tables.";
 
 const refused = <R extends string>(reason: R): { ok: false; reason: R } => ({ ok: false, reason });
 
@@ -152,7 +157,13 @@ async function resolveTarget(target: DatabaseTarget): Promise<ReadOutcome<{ adap
         const source = await prisma.adapterConfig.findUnique({ where: { id: target.sourceId } });
         if (!source) return refused("source-missing");
         adapterId = source.adapterId;
-        config = await resolveAdapterConfig(source);
+        const stored = await resolveAdapterConfig(source);
+        // A job reads such a source for whoever picks it. Here the reader writes the question, and
+        // the program that answers it runs on the server of DBackup, like the form of such a connection.
+        if (hostLocalReason(adapterId, stored as Record<string, unknown>) && !(await mayReachHost())) {
+            throw new ValidationError(HOST_LOCAL_BROWSE_REFUSAL);
+        }
+        config = stored;
     } else {
         adapterId = target.adapterId;
         config = await formConfig(adapterId, target.config);

@@ -6,7 +6,7 @@ import { TenantsClient } from "@/components/dashboard/tenants/tenants-client";
 import { withSummaries } from "@/components/dashboard/tenants/tenant-words";
 import { getViewer, hasPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { tenantService } from "@/services/tenant/tenant-service";
+import { managedTenantRows } from "@/services/tenant/tenant-admin";
 import { tenantSummaries } from "@/services/tenant/tenant-summaries";
 import { platformGroupService } from "@/services/user/platform-group-service";
 import { getTablePreferences } from "@/services/user/preference-service";
@@ -16,7 +16,8 @@ export const metadata: Metadata = { title: "Tenants" };
 
 /**
  * The tenants of this DBackup with what each holds, under Platform. Whoever may see the tenants
- * opens it, someone of a platform group with the tenants they may open. Whoever may manage them
+ * opens it, someone of a platform group with the tenants their group reaches (`managedTenantRows`),
+ * never one they are only a member of. Whoever may manage them
  * creates, changes, deletes and gives members here. The tenants are the platform's.
  */
 export default async function TenantsPage() {
@@ -25,15 +26,12 @@ export default async function TenantsPage() {
     if (!viewer) redirect("/");
     if (!hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_READ)) redirect("/dashboard");
 
-    const [all, reachable, layouts] = await Promise.all([
-        tenantService.list(),
-        viewer.isPlatformAdmin ? null : tenantService.switchable(viewer.id, false),
+    const [tenants, layouts] = await Promise.all([
+        managedTenantRows({ id: viewer.id, isPlatformAdmin: viewer.isPlatformAdmin }),
         getTablePreferences(viewer.id, [TENANTS_TABLE_ID]),
     ]);
-    const tenants = reachable ? all.filter((tenant) => reachable.some((entry) => entry.id === tenant.id)) : all;
     const canManage = hasPermissionWithContext(viewer, PERMISSIONS.PLATFORM.TENANTS_WRITE);
-    // A membership opens a tenant, but only a platform admin and the platform group that reaches it
-    // look after it here, and only one who reaches every tenant reaches a new one.
+    // Every row is a tenant the viewer looks after, and only one who reaches every tenant reaches a new one.
     const [summaries, managed, reachesAll] = await Promise.all([
         tenantSummaries(tenants.map((tenant) => tenant.id)),
         !canManage ? [] : viewer.isPlatformAdmin ? null : platformGroupService.reachedAmong(viewer.id, tenants.map((tenant) => tenant.id)),

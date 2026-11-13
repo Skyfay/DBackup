@@ -3,6 +3,7 @@
  * or its counterpart.
  */
 
+import { parseMetadata, withoutPin } from "@/lib/adapters/ssh-host-key-pins";
 import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { isStorageRole } from "@/lib/core/storage-roles";
@@ -15,6 +16,7 @@ import { isShared } from "@/services/sharing/destination-access";
 import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { assertMayReachHost } from "./adapter-create";
 import { assertOffSharedPlaces } from "./shared-place";
+import { assertOffSharedLogins } from "./shared-login";
 
 registerAdapters();
 
@@ -70,7 +72,9 @@ export async function cloneAdapter(id: string, input: CloneAdapterInput): Promis
     // may have stored. The rest of its schema is not asked, see `config-check.ts`.
     assertCommandFields(decryptConfig(JSON.parse(original.config)) as Record<string, unknown>);
     await assertMayReachHost(original.adapterId, () => decryptConfig(JSON.parse(original.config)) as Record<string, unknown>, logins);
-    // Nor one where a destination of the tenant shared with customers keeps their backups.
+    // Nor one that signs in with a saved login of a destination of the tenant shared with customers,
+    // nor one where such a destination keeps their backups.
+    await assertOffSharedLogins(logins);
     if (original.type === "storage") {
         await assertOffSharedPlaces(original.adapterId, decryptConfig(JSON.parse(original.config)) as Record<string, unknown>, logins);
     }
@@ -85,7 +89,8 @@ export async function cloneAdapter(id: string, input: CloneAdapterInput): Promis
             config: original.config,
             primaryCredentialId: original.primaryCredentialId ?? null,
             sshCredentialId: original.sshCredentialId ?? null,
-            ...(original.metadata ? { metadata: original.metadata } : {}),
+            // Without the pinned SSH host key: the copy pins the key of its own first login.
+            ...(original.metadata ? { metadata: JSON.stringify(withoutPin(parseMetadata(original.metadata))) } : {}),
             // The health fields are left out, the copy starts fresh.
         },
     });

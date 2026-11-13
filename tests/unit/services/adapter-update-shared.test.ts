@@ -68,6 +68,17 @@ describe("editing a destination shared with other tenants", () => {
         prismaMock.jobSource.findMany.mockResolvedValue([]);
     });
 
+    it("gives no other connection the saved login of a destination shared with customers, which would open their folder under another spelling of its address", async () => {
+        mocks.isShared.mockResolvedValue(false);
+        prismaMock.adapterConfig.findUnique.mockResolvedValue(stored({ name: "Alias", adapterId: "sftp" }, { host: "localhost", pathPrefix: "/srv/tenants" }) as never);
+        // The shared destination signs in with this login.
+        prismaMock.connectionShare.findFirst.mockResolvedValueOnce({ id: "nas" } as never);
+
+        await expect(updateAdapter("dest-1", { primaryCredentialId: "nas-key" }))
+            .rejects.toThrow("This saved login signs in to a destination shared with customers");
+        expect(prismaMock.adapterConfig.update).not.toHaveBeenCalled();
+    });
+
     it("refuses a folder that would reach into the backups of its customers", async () => {
         await expect(updateAdapter("dest-1", { config: { ...S3, pathPrefix: "backups/tenants/acme" } }))
             .rejects.toThrow("It is shared with other tenants, so where it keeps the files stays as it is. Stop sharing it first.");

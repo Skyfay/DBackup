@@ -103,7 +103,7 @@ curl -s -X POST "${BASE_URL}/api/adapters/${SERVER_ID}/database-assignments/rule
   -d '{ "pattern": "acme_*", "tenantId": "cm2x8k1q40000acme", "priority": 10 }'
 ```
 
-A new rule takes `pattern`, `tenantId`, and optionally `priority`, `validFrom` and `onDemandPerDay`, with the limits of [By Rules](#by-rules). It answers `400` for the same reasons as the `PUT` above, and for a rule that would rank above a rule of a tenant the owner of the key does not reach. Ending a rule answers `400` when a database it gives would fall to a rule of such a tenant, and `404` for a rule that is gone or ended already.
+A new rule takes `pattern`, `tenantId`, and optionally `priority`, `validFrom` and `onDemandPerDay`, with the limits of [By Rules](#by-rules). It answers `400` for the same reasons as the `PUT` above, and for a rule that would rank above a rule of a tenant the owner of the key does not reach that can match the same databases. Ending a rule answers `400` while a rule of such a tenant ranks below it and can match the same databases, also ones DBackup has not read from the server yet, and `404` for a rule that is gone or ended already.
 
 Every change writes an entry to the [audit log](/user-guide/admin/audit-log) of the server's tenant.
 

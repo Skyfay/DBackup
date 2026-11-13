@@ -276,6 +276,37 @@ describe("RsyncAdapter", () => {
             expect(onLog).toHaveBeenCalledWith(expect.stringContaining("backup.example.com"), "info", "storage");
         });
 
+        it("checks the folders of a write of a restore on the server before rsync runs", async () => {
+            sshSucceeds("DBACKUP_RESTORE_DIR:ok\n");
+
+            const result = await RsyncAdapter.upload(agentConfig, "/tmp/stage", "apps/d/victim.txt", undefined, undefined, { restoreRelativePath: "d/victim.txt" });
+
+            expect(result).toBe(true);
+            const command = String((mockExecFileCb.mock.calls[0][1] as string[]).at(-1));
+            expect(command).toContain("f='\\''/backups/apps'\\''");
+            expect(command).toContain("step '\\''d'\\''");
+            expect(command).not.toContain("mkdir -p '/backups/apps/d'");
+            expect(mockRsyncExecute).toHaveBeenCalled();
+        });
+
+        it("refuses a write of a restore below a link out of the folder of the restore, and never starts rsync", async () => {
+            sshSucceeds("DBACKUP_RESTORE_DIR:link\n");
+
+            const result = await RsyncAdapter.upload(agentConfig, "/tmp/stage", "apps/d/victim.txt", undefined, undefined, { restoreRelativePath: "d/victim.txt" });
+
+            expect(result).toBe(false);
+            expect(mockRsyncExecute).not.toHaveBeenCalled();
+        });
+
+        it("refuses a write of a restore when the server could not check its folders", async () => {
+            sshFails("This account runs rsync only");
+
+            const result = await RsyncAdapter.upload(agentConfig, "/tmp/stage", "apps/d/victim.txt", undefined, undefined, { restoreRelativePath: "d/victim.txt" });
+
+            expect(result).toBe(false);
+            expect(mockRsyncExecute).not.toHaveBeenCalled();
+        });
+
         it("cleans up temp key even on upload error (private key)", async () => {
             rsyncFails("upload error");
 

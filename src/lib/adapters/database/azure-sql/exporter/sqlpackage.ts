@@ -3,6 +3,7 @@ import type { ExecutionHost } from "@/lib/transport";
 import type { AzureSQLConfig } from "@/lib/adapters/definitions";
 import { AdapterError } from "@/lib/logging/errors";
 import { buildConnectionString, describeConnection } from "./connection-string";
+import { pinnedServer } from "./pinned-server";
 import type { BacpacExporter, ExporterLog } from "./types";
 
 /**
@@ -125,6 +126,9 @@ export const sqlpackageExporter: BacpacExporter = {
     async exportDatabase(config, dbName, destPath, host, log) {
         const binary = await host.which(BINARY);
 
+        // The address SqlPackage dials for a tenant that blocks the local network, checked now.
+        const server = await pinnedServer(config);
+
         log(`Exporting ${describeConnection(config, dbName)}`, "info", "command");
 
         await run(
@@ -133,7 +137,7 @@ export const sqlpackageExporter: BacpacExporter = {
                 "/Action:Export",
                 `/TargetFile:${destPath}`,
                 "/OverwriteFiles:True",
-                `/SourceConnectionString:${buildConnectionString(config, dbName)}`,
+                `/SourceConnectionString:${buildConnectionString(config, dbName, server)}`,
             ],
             host,
             log,
@@ -143,6 +147,9 @@ export const sqlpackageExporter: BacpacExporter = {
 
     async importDatabase(config, srcPath, targetDbName, host, log, onProgress) {
         const binary = await host.which(BINARY);
+
+        // The address SqlPackage dials for a tenant that blocks the local network, checked now.
+        const server = await pinnedServer(config);
 
         log(`Importing into ${describeConnection(config, targetDbName)}`, "info", "command");
 
@@ -162,7 +169,7 @@ export const sqlpackageExporter: BacpacExporter = {
                 binary,
                 "/Action:Import",
                 `/SourceFile:${srcPath}`,
-                `/TargetConnectionString:${buildConnectionString(config, targetDbName)}`,
+                `/TargetConnectionString:${buildConnectionString(config, targetDbName, server)}`,
             ],
             host,
             log,

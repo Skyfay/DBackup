@@ -16,6 +16,7 @@ import { assertSourceFolder } from "@/lib/archive/remote-paths";
 import { EMAIL_REFUSED } from "@/services/user/new-account-email";
 import type { ConnectionSnapshot, CredentialSnapshot, JobSnapshot, KeySnapshot, UserSnapshot } from "./trash-snapshot";
 import type { TrashKind } from "./trash-types";
+import { assertKeepsItsPlace, HOME_RETURN, type PlacelessReturn } from "./account-return";
 
 /** What a destination keeps while its retention policy is gone: every backup. */
 const KEEP_EVERYTHING = JSON.stringify({ mode: "NONE" });
@@ -226,7 +227,7 @@ async function restoreJob(tx: Tx, snapshot: JobSnapshot, newName?: string): Prom
     return { name: job.name, notes };
 }
 
-async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): Promise<RestoredRecord> {
+async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string, placeless: PlacelessReturn = HOME_RETURN): Promise<RestoredRecord> {
     const email = newEmail ? newEmail.trim().toLowerCase() : snapshot.record.email;
     if (await tx.user.findUnique({ where: { email }, select: { id: true } })) {
         // The action checks the email first, its own or a new one, see `takenEmailRefusal`. One taken since never says that an account holds it.
@@ -257,6 +258,8 @@ async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): P
         if (group && tenant) await tx.tenantMembership.create({ data: { userId: record.id, ...membership } });
         else lost++;
     }
+    // Without any of its tenants it would count as one of another tenant, see `account-return.ts`. The throw takes the account back out.
+    assertKeepsItsPlace(record, memberships, memberships.length - lost, placeless);
     if (lost > 0) notes.push(lost === memberships.length ? "Its group is gone, so it sees nothing until it gets one." : `${plural(lost, "of its groups is", "of its groups are")} gone.`);
     for (const account of snapshot.accounts) await tx.account.create({ data: account });
     if (snapshot.twoFactor) await tx.twoFactor.create({ data: snapshot.twoFactor });
@@ -286,8 +289,11 @@ async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): P
     return { name: record.name || email, notes };
 }
 
-/** Restores one deleted record from its snapshot. `newName` is a new email for a user. */
-export async function restoreSnapshot(tx: Tx, kind: TrashKind, data: unknown, newName?: string): Promise<RestoredRecord> {
+/**
+ * Restores one deleted record from its snapshot. `newName` is a new email for a user, and
+ * `placeless` says where an account lands that lost every membership, see `placelessReturnOf`.
+ */
+export async function restoreSnapshot(tx: Tx, kind: TrashKind, data: unknown, newName?: string, placeless?: PlacelessReturn): Promise<RestoredRecord> {
     switch (kind) {
         case "encryptionKey":
             return restoreKey(tx, data as KeySnapshot, newName);
@@ -298,6 +304,6 @@ export async function restoreSnapshot(tx: Tx, kind: TrashKind, data: unknown, ne
         case "job":
             return restoreJob(tx, data as JobSnapshot, newName);
         case "user":
-            return restoreUser(tx, data as UserSnapshot, newName);
+            return restoreUser(tx, data as UserSnapshot, newName, placeless);
     }
 }

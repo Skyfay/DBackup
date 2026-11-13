@@ -113,7 +113,10 @@ const visibleOfView = new WeakMap<LogView, Promise<Prisma.AuditLogWhereInput>>()
  * account it sees, and those of no person, but a failed sign-in of an account it does not see.
  * A failed sign-in names the account it tried by `resourceId` alone, without a relation, so the
  * accounts of the failed sign-ins the log holds are looked up first. An entry of a deleted account
- * kept its name only, and nothing tells its tenants any more, so it stays hidden. Of these it
+ * kept its name only, and nothing tells its tenants any more, so it stays hidden. An entry about an
+ * account (`resource` USER), like a change of its email by a platform admin, names that account by
+ * `resourceId` the same way and is kept only for an account the view sees, whoever acted, so the
+ * log shows no account the pages of the accounts hide (`reachSees`). Of these it
  * keeps only the entries about tenants of the reach, see `aboutReachedTenants`, so whoever acted,
  * an entry about a customer beyond the reach, like its rename or delete, stays hidden.
  *
@@ -135,8 +138,9 @@ export function auditVisibleWhere(view: LogView): Promise<Prisma.AuditLogWhereIn
 }
 
 async function readVisibleWhere(view: LogView, reach: readonly string[]): Promise<Prisma.AuditLogWhereInput> {
+    // The accounts the entries are about: those a failed sign-in tried and those an entry changed.
     const tried = await prisma.auditLog.findMany({
-        where: { tenantId: HOME_TENANT_ID, action: AUDIT_ACTIONS.LOGIN_FAILED, resourceId: { not: null } },
+        where: { tenantId: HOME_TENANT_ID, resourceId: { not: null }, OR: [{ action: AUDIT_ACTIONS.LOGIN_FAILED }, { resource: AUDIT_RESOURCES.USER }] },
         distinct: ["resourceId"],
         select: { resourceId: true },
     });
@@ -145,15 +149,18 @@ async function readVisibleWhere(view: LogView, reach: readonly string[]): Promis
     const seen = triedIds.length === 0
         ? []
         : await prisma.user.findMany({ where: { AND: [{ id: { in: triedIds } }, accountsOf(view)] }, select: { id: true } });
+    const seenIds = seen.map((user) => user.id);
     return {
         AND: [
             {
                 OR: [
                     { userId: { not: null }, user: { is: accountsOf(view) } },
                     { userId: null, actorName: null, action: { not: AUDIT_ACTIONS.LOGIN_FAILED } },
-                    { userId: null, actorName: null, action: AUDIT_ACTIONS.LOGIN_FAILED, OR: [{ resourceId: null }, { resourceId: { in: seen.map((user) => user.id) } }] },
+                    { userId: null, actorName: null, action: AUDIT_ACTIONS.LOGIN_FAILED, OR: [{ resourceId: null }, { resourceId: { in: seenIds } }] },
                 ],
             },
+            // An entry about an account only of one the view sees, whoever changed it.
+            { OR: [{ resource: { not: AUDIT_RESOURCES.USER } }, { resourceId: null }, { resourceId: { in: seenIds } }] },
             ...aboutReachedTenants(reach, reachedLists),
         ],
     };

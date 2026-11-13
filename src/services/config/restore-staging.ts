@@ -15,6 +15,8 @@ import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { getDatabaseFilePath } from "@/services/system/database-service";
 import { COPY_KEYS_SETTING, DROPPED_TABLES, openCopy, type CopyKeys } from "./database-copy";
 import { rekeyCopy } from "./copy-rekey";
+import { ValidationError } from "@/lib/logging/errors";
+import { LEAVES_NO_ACCOUNT } from "./import-shape";
 
 /** The name the swap script looks for beside the live database. */
 export const PENDING_RESTORE_FILE = "restore-pending.db";
@@ -50,7 +52,27 @@ async function noteRestore(copy: PrismaClient, record: RestoreRecord): Promise<v
     );
 }
 
-/** Makes a copy ready to be the database here: encrypted for this DBackup, without sign-ins and without anything that runs by itself. */
+/** A copy whose accounts hang off other rows, which no version of DBackup ever wrote. */
+export const FOREIGN_SCHEMA = "The backup is no copy of a DBackup database, its accounts are tied to other rows. Restore a backup DBackup made.";
+
+/**
+ * Refuses a copy whose accounts go when another row goes. The schema of the copy becomes the schema
+ * here, and no migration of DBackup ever let a delete cascade into `User`. A copy with such a link
+ * would lose its accounts with the sign-ins a restore drops, or later in normal use, and DBackup
+ * without an account takes the first sign-up again.
+ */
+async function assertAccountsStandAlone(copy: PrismaClient): Promise<void> {
+    const links = await copy.$queryRawUnsafe<{ on_delete: string }[]>(`PRAGMA foreign_key_list("User")`);
+    if (links.some((link) => String(link.on_delete).toUpperCase() === "CASCADE")) throw new ValidationError(FOREIGN_SCHEMA);
+}
+
+/**
+ * Makes a copy ready to be the database here: encrypted for this DBackup, without sign-ins and
+ * without anything that runs by itself. What it stages holds an account, counted after its last
+ * write, never by what the copy showed before.
+ *
+ * @throws ValidationError for a copy that is left without an account, or whose accounts are tied to other rows.
+ */
 async function prepareCopy(file: string, keys: CopyKeys | null, record: RestoreRecord): Promise<void> {
     const copy = openCopy(file);
     try {
@@ -58,10 +80,13 @@ async function prepareCopy(file: string, keys: CopyKeys | null, record: RestoreR
         const extras = await copy.$queryRawUnsafe<{ type: string; name: string }[]>(`SELECT type, name FROM sqlite_master WHERE type IN ('trigger', 'view')`);
         for (const { type, name } of extras) await copy.$executeRawUnsafe(`DROP ${type === "view" ? "VIEW" : "TRIGGER"} IF EXISTS "${name.replace(/"/g, '""')}"`);
 
+        await assertAccountsStandAlone(copy);
         if (keys) await rekeyCopy(copy, keys);
         await copy.$executeRawUnsafe(`DELETE FROM "SystemSetting" WHERE "key" = ?`, COPY_KEYS_SETTING);
         for (const table of DROPPED_TABLES) await copy.$executeRawUnsafe(`DELETE FROM "${table}"`);
         await noteRestore(copy, record);
+        const [{ accounts }] = await copy.$queryRawUnsafe<{ accounts: bigint | number }[]>(`SELECT COUNT(*) AS accounts FROM "User"`);
+        if (Number(accounts) === 0) throw new ValidationError(LEAVES_NO_ACCOUNT);
     } finally {
         await copy.$disconnect();
     }

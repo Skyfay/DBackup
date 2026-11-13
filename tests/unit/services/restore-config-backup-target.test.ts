@@ -29,6 +29,8 @@ vi.mock("@/services/config/config-backup-targets", () => ({
     getConfigBackupTargets: async () => ({ storageId: "home-nas", profileId: "config-key", credentialIds: ["nas-login"] }),
 }));
 vi.mock("@/services/restore/customer-databases", () => ({ assertCustomerDatabasesConfirmed: async () => [] }));
+// A recorded run of the job of each source wrote these backups, see restore-recorded-origin.test.ts.
+vi.mock("@/services/restore/recorded-origin", () => ({ archiveReadSource: async () => true }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },

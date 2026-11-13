@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import type { Tx } from "@/lib/prisma-tx";
 import { ValidationError } from "@/lib/logging/errors";
-import { ownerAt, type RuleFact } from "@/lib/tenant/database-owner";
+import { ownerAt, patternsMayOverlap, type RuleFact } from "@/lib/tenant/database-owner";
 import { OUTSIDE_REACH, reachCovers, type PlatformReach } from "@/lib/tenant/sharing-reach";
 import { factsOf } from "./shared-backups";
 import { listedDatabases } from "./shared-servers";
@@ -42,10 +42,32 @@ export async function assertChangesReached(
     }
 }
 
+/** Whether a rule still gives at the time or will, one that starts later included. */
+const notEnded = (rule: RuleFact, now: Date) => !rule.validUntil || now.getTime() < rule.validUntil.getTime();
+
+/** Whether `upper` wins a name both rules match, by the order of `ruleAt`. */
+function ranksAbove(upper: RuleFact, lower: RuleFact): boolean {
+    return (upper.priority - lower.priority || lower.createdAt.getTime() - upper.createdAt.getTime() || (lower.id ?? "").localeCompare(upper.id ?? "")) > 0;
+}
+
 /**
- * Refuses a new rule for a tenant beyond the reach, and one whose priority would take a database the
- * server holds now from such a tenant's rule. Only the databases DBackup last read from the server
- * are known, a name the server gets later goes to whichever rule ranks highest.
+ * A rule of a tenant beyond the reach that `rule` ranks above and that can match a name `rule`
+ * matches. The list DBackup last read from a server is a cache, a database made since is missing
+ * from it, so the rules themselves decide what a change of `rule` gives to or takes from such a
+ * tenant.
+ */
+function outrankedBeyondReach(rules: readonly RuleFact[], rule: RuleFact, reach: PlatformReach, now: Date): RuleFact | undefined {
+    return rules.find((other) => other.id !== rule.id
+        && notEnded(other, now)
+        && !reachCovers(reach, other.tenantId)
+        && ranksAbove(rule, other)
+        && patternsMayOverlap(rule.pattern, other.pattern));
+}
+
+/**
+ * Refuses a new rule for a tenant beyond the reach, and one that ranks above a rule of such a tenant
+ * that can match the same names, also names the server gets later, or whose priority would take a
+ * database the server holds now from such a tenant.
  */
 export async function assertRuleReached(
     sourceId: string,
@@ -65,12 +87,15 @@ export async function assertRuleReached(
             throw new ValidationError(OUTSIDE_REACH.takes(name));
         }
     }
+    // A name the server gets later, or one DBackup has not read yet, would go the same way.
+    if (outrankedBeyondReach(facts.rules, added, reach, now)) throw new ValidationError(OUTSIDE_REACH.takesRule);
 }
 
 /**
- * Refuses ending a rule when a database the server lists now would pass from the rule's tenant to a
- * tenant beyond the reach, through a rule of a lower priority that matches it too. Only the databases
- * DBackup last read from the server are known, like `assertRuleReached`.
+ * Refuses ending a rule while a rule of a tenant beyond the reach ranks below it and can match the
+ * same names, since every such name would pass to that tenant, also one DBackup has not read from
+ * the server yet. A database the server lists now that would pass to such a tenant another way is
+ * refused by its name.
  */
 export async function assertRuleEndReached(sourceId: string, rule: { id: string; pattern: string }, reach: PlatformReach, now: Date): Promise<void> {
     if (reach === "all") return;
@@ -83,4 +108,7 @@ export async function assertRuleEndReached(sourceId: string, rule: { id: string;
             throw new ValidationError(OUTSIDE_REACH.ruleEnd(rule.pattern, name));
         }
     }
+    // A name the server gets later, or one DBackup has not read yet, would go the same way.
+    const own = facts.rules.find((fact) => fact.id === rule.id);
+    if (own && outrankedBeyondReach(facts.rules, own, reach, now)) throw new ValidationError(OUTSIDE_REACH.ruleEndFalls(rule.pattern));
 }

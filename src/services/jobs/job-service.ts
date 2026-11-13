@@ -17,6 +17,7 @@ import { providedTo } from "@/services/sharing/provided";
 import { assertJobFolderName } from "./job-folder-rules";
 import { databaseNameProblem } from "@/lib/adapters/database/common/database-name";
 import { assertSourceFolder } from "@/lib/archive/remote-paths";
+import { excludePatternsProblem } from "@/lib/exclude-pattern-rules";
 import { volumeSourceProblem } from "@/lib/adapters/storage/docker/volume-name";
 
 /**
@@ -217,6 +218,7 @@ export class JobService {
      * - every directory source points at a storage adapter whose role is SOURCE
      * - a database source combined with directory sources is on the combinable list
      * - the folder of every directory source stays inside its connection, see `assertSourceFolder`
+     * - every exclude pattern has a shape that is cheap to match, see `excludePatternProblem`
      * This mirrors the destinations.length===0 guard already enforced at runner init time
      * (defense in depth), plus the source-role/combinability checks this feature introduces.
      */
@@ -228,7 +230,11 @@ export class JobService {
         }
 
         if (sources && sources.length > 0) {
-            for (const source of sources) assertSourceFolder(source.path);
+            for (const source of sources) {
+                assertSourceFolder(source.path);
+                const patternProblem = excludePatternsProblem(source.excludePatterns ?? []);
+                if (patternProblem) throw new ValidationError(patternProblem);
+            }
             const configIds = [...new Set(sources.map((s) => s.configId))];
             const configs = await prisma.adapterConfig.findMany({ where: { id: { in: configIds } } });
             for (const configId of configIds) {

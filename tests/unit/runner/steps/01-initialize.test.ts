@@ -288,6 +288,29 @@ describe('stepInitialize', () => {
             });
         });
 
+        it('fails the run of a job stored with an exclude pattern that is slow to match, before the source is read', async () => {
+            // Saved before a save refused it. Matching it would hold the server of every tenant.
+            const prisma = (await import('@/lib/prisma')).default;
+            const { registry } = await import('@/lib/core/registry');
+            (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({
+                sources: [
+                    {
+                        id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '["*.tmp","logs/*a*a*a*a*a*a*a*b"]',
+                        excludePatternPresets: [],
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage', tenantId: 'tenant-1' },
+                    },
+                ],
+            }));
+            (registry.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+                if (id === 'mysql') return { type: 'database', dump: vi.fn() };
+                if (id === 'local-filesystem') return { type: 'storage', upload: vi.fn() };
+                if (id === 'sftp') return { type: 'storage', upload: vi.fn(), download: vi.fn() };
+                return null;
+            });
+
+            await expect(stepInitialize(makeCtx({ execution: { id: 'exec-1' } as any }))).rejects.toThrow(/exclude pattern "logs\/\*a\*a\*a\*a\*a\*a\*a\*b".*Edit the job/);
+        });
+
         it('carries the per-source stop choice through to the runner', async () => {
             // Set on the job source, read much later by whatever prepares the source for
             // reading. Nothing in between looks at it, which is exactly why a break here

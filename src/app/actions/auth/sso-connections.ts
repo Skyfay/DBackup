@@ -1,6 +1,6 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
@@ -9,6 +9,8 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
 import { countSignInAccounts, listSsoConnections, prepareSsoConnect, providerNameOf, type SsoConnections } from "@/services/sso/sso-connections-service";
+import { CONNECT_CALLBACK_PATH, CONNECT_NONCE_COOKIE, CONNECT_TOKEN_TTL_MS } from "@/lib/auth/sso-connect-nonce";
+import { secureCookiesFor } from "@/lib/auth/secure-cookies";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { userMessage } from "@/lib/logging/user-message";
@@ -84,7 +86,8 @@ export async function unlinkMySsoAccount(providerId: string, accountId: string) 
  * "link to my current session" endpoint - its sign-in flow resolves/creates
  * users purely from the IdP's returned email, unaware of any existing
  * session. The service hands back a callbackURL with a short-lived token that
- * the link callback checks against the resulting session.
+ * the link callback checks against the resulting session, and a nonce this
+ * action sets as a cookie, so the callback acts only for the browser that asked.
  * @no-permission-required - only ever targets the caller's own account
  */
 export async function initiateSsoConnect(
@@ -99,5 +102,15 @@ export async function initiateSsoConnect(
     const parsed = IdSchema.safeParse(providerId);
     if (!parsed.success) return { success: false, error: "Invalid request" };
 
-    return prepareSsoConnect(currentUser.id, parsed.data);
+    const prepared = await prepareSsoConnect(currentUser.id, parsed.data);
+    if (!prepared.success) return prepared;
+    // Only the hash of the nonce is in the address, so a link passed on to someone else lacks the cookie.
+    (await cookies()).set(CONNECT_NONCE_COOKIE, prepared.nonce, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: secureCookiesFor(process.env),
+        path: CONNECT_CALLBACK_PATH,
+        maxAge: CONNECT_TOKEN_TTL_MS / 1000,
+    });
+    return { success: true, callbackURL: prepared.callbackURL };
 }

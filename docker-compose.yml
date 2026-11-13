@@ -10,6 +10,7 @@ services:
       - ENCRYPTION_KEY= # openssl rand -hex 32
       - BETTER_AUTH_URL=https://localhost:3000
       - BETTER_AUTH_SECRET= # openssl rand -base64 32
+      - TRUSTED_PROXIES=none # No reverse proxy in front. Behind one, set its address here or remove the line
       # - DISABLE_HTTPS=true  # Optional: Set to "true" to use plain HTTP (default: HTTPS)
       # - TZ=Europe/Zurich    # Optional: Server timezone
       # - PUID=1001           # Optional: User ID for file permissions

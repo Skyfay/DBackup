@@ -9,3 +9,6 @@ export const CONFIG_BACKUP_DESTINATION_LOCKED = "This destination holds the conf
 export const CONFIG_BACKUP_LOGIN_LOCKED = "This saved login opens the destination of the configuration backup. Only a platform admin reveals or changes it.";
 export const CONFIG_BACKUP_LOGIN_APPLY_LOCKED = "This saved login opens the destination of the configuration backup. Only a platform admin signs in with it on another connection or in a connection form.";
 export const CONFIG_BACKUP_KEY_LOCKED = "This key encrypts the configuration backup. Only a platform admin reveals, exports or deletes it.";
+
+/** What someone reads whose download or restore would decrypt a whole file with the key of the configuration backup. */
+export const CONFIG_BACKUP_KEY_USE_LOCKED = "This file is encrypted as one stream with the key of the configuration backup, like the configuration backup itself. Only a platform admin signed in to DBackup opens it.";

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { AuthenticationError, PermissionError } from "@/lib/logging/errors";
+import { AuthenticationError, PermissionError, ValidationError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     checkPermission: vi.fn(),
@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
     graphGet: vi.fn(),
     /** The paths the OneDrive route asked Microsoft Graph for. */
     graphPaths: [] as string[],
+    assertOffSharedLogins: vi.fn(),
 }));
+
+vi.mock("@/services/adapters/shared-login", () => ({ assertOffSharedLogins: (...args: unknown[]) => mocks.assertOffSharedLogins(...args) }));
 
 vi.mock("@/lib/auth/access-control", () => ({ checkPermission: (...args: unknown[]) => mocks.checkPermission(...args) }));
 vi.mock("@/services/auth/credential-service", () => ({
@@ -57,8 +60,25 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.graphPaths.length = 0;
     mocks.checkPermission.mockResolvedValue({ id: "ada", isPlatformAdmin: false });
+    mocks.assertOffSharedLogins.mockResolvedValue(undefined);
     // The access token of the OneDrive route.
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ access_token: "access" }) })));
+});
+
+describe("a drive browsed with the saved login of a destination shared with customers", () => {
+    it.each([
+        ["dropbox", browseDropbox],
+        ["onedrive", browseOneDrive],
+    ])("is refused on %s before the drive is asked", async (drive, browse) => {
+        mocks.assertOffSharedLogins.mockRejectedValue(new ValidationError("This saved login signs in to a destination shared with customers."));
+
+        const response = await browse(request(drive, { credentialId: "shared-drive-login" }));
+
+        expect(response.status).toBe(400);
+        expect(mocks.assertOffSharedLogins).toHaveBeenCalledWith({ primaryCredentialId: "shared-drive-login" });
+        expect(mocks.filesListFolder).not.toHaveBeenCalled();
+        expect(mocks.graphPaths).toEqual([]);
+    });
 });
 
 describe("POST /api/system/filesystem/dropbox", () => {

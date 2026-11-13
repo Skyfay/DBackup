@@ -242,6 +242,35 @@ describe("the entries of the home log about a tenant beyond the reach", () => {
     });
 });
 
+describe("the entries of the home log about an account beyond the reach", () => {
+    // Her own entries, so only the account they are about can hide them.
+    const ABOUT = ["changed-anna", "changed-gus", "changed-gus-by-nobody"];
+
+    beforeAll(async () => {
+        await entry("changed-anna", 30, { userId: "nina", action: "UPDATE", resource: "USER", resourceId: "anna", details: { name: "anna", email: "anna.new@example.ch" } });
+        await entry("changed-gus", 31, { userId: "nina", action: "UPDATE", resource: "USER", resourceId: "gus", details: { name: "gus", email: "gus.new@globex.test" } });
+        await entry("changed-gus-by-nobody", 32, { action: "DELETE", resource: "USER", resourceId: "gus", details: { name: "gus" } });
+    });
+
+    afterAll(async () => {
+        await base.auditLog.deleteMany({ where: { id: { in: ABOUT } } });
+    });
+
+    it("hides a change of an account of a tenant beyond the reach in the list, the panel, the search and the export, whoever made it", async () => {
+        const view = await asHome(() => logViewOf(NINA));
+        const { rows } = await asHome(() => listAudit({ ...FILTER, page: 1, pageSize: 100 }, NOW, view));
+
+        expect(ids(rows).filter((id) => ABOUT.includes(id))).toEqual(["changed-anna"]);
+        expect(await asHome(() => getAuditEntryDetails("changed-gus", view))).toBeNull();
+        expect(await asHome(() => getAuditEntryDetails("changed-anna", view))).toEqual(expect.objectContaining({ id: "changed-anna" }));
+        expect((await asHome(() => listAudit({ ...FILTER, page: 1, pageSize: 100, search: "gus.new@globex" }, NOW, view))).total).toBe(0);
+        expect((await asHome(() => auditCsv(FILTER, NOW, view))).csv).not.toContain("gus.new@globex.test");
+        // A platform admin reads all of them.
+        const all = await asHome(() => listAudit({ ...FILTER, page: 1, pageSize: 100 }, NOW, FULL_VIEW));
+        expect(ids(all.rows).filter((id) => ABOUT.includes(id))).toEqual([...ABOUT].sort());
+    });
+});
+
 describe("the notice of a failed integrity check in the home log", () => {
     beforeAll(async () => {
         // The message of the platform names every other tenant with copies that failed.

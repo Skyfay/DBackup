@@ -87,6 +87,9 @@ When using SSH mode, the required database client tools **must be installed on t
 | **SSH host** | SSH server hostname or IP | - | ✅ |
 | **Port** | SSH server port | `22` | ❌ |
 | **SSH login** | An `SSH_KEY` [credential profile](/user-guide/security/credential-profiles) with the username and a password, a private key or the SSH agent | - | ✅ |
+| **Check the host key** | Refuses an SSH server that presents another host key than the one pinned on the first connect | On | ❌ |
+
+DBackup pins the host key of the SSH server on the first successful connect or test and refuses a server that presents another one, before it sends the login or a database password. After a reinstall of the server, open the source, run **Test connection** and choose **Trust the new key**. How it works and what the switch does is described under [Host Key Check](/user-guide/destinations/sftp#host-key-check) of SFTP, it is the same for every SSH login.
 
 ::: tip SSH Agent
 To use SSH agent forwarding in Docker, mount the agent socket:

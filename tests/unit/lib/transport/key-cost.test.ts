@@ -190,6 +190,15 @@ describe("an encrypted PKCS#8 key cannot name a derivation above the limits", ()
         expect(() => checkCost(pbkdf2Key(MAX_PBKDF2_ITERATIONS))).not.toThrow();
     });
 
+    it("answers a text of many BEGIN lines and no END line at once", () => {
+        const starts = "-----BEGIN ENCRYPTED PRIVATE KEY-----a".repeat(1700);
+        const began = Date.now();
+
+        expect(() => encryptedPkcs8Der(starts)).toThrow(ValidationError);
+        expect(Date.now() - began).toBeLessThan(100);
+        expect(() => encryptedPkcs8Der(starts.repeat(4))).toThrow("too long");
+    });
+
     it("still converts a key that OpenSSL encrypted with its defaults", () => {
         const { privateKey } = generateKeyPairSync("ed25519", {
             publicKeyEncoding: { type: "spki", format: "pem" },

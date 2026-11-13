@@ -13,17 +13,34 @@ interface PemBlock {
   pem: string;
 }
 
+const PEM_BEGIN = "-----BEGIN ";
+const PEM_DASHES = "-----";
+/** The longest label of a real block, like `ENCRYPTED PRIVATE KEY`, is far below this. */
+const MAX_LABEL = 64;
+
 /** Every PEM block of a file. A BEGIN line without its END line refuses the file. */
 function pemBlocks(text: string, what: string): PemBlock[] {
+  const invalid = () => new ValidationError(`Invalid ${what} format. Every PEM block needs its BEGIN and END line.`);
   const blocks: PemBlock[] = [];
-  const pattern = /-----BEGIN ([A-Z0-9 ]+)-----[\s\S]*?-----END \1-----/g;
-  for (const match of text.matchAll(pattern)) {
-    blocks.push({ label: match[1], pem: match[0] });
+  // Walked by position, each block once. An expression that looks for the END from every BEGIN
+  // takes a time that grows with the square of a file of many BEGIN lines and no END.
+  let position = 0;
+  for (;;) {
+    const start = text.indexOf(PEM_BEGIN, position);
+    if (start === -1) break;
+    const labelStart = start + PEM_BEGIN.length;
+    const labelEnd = text.indexOf(PEM_DASHES, labelStart);
+    const label = labelEnd === -1 || labelEnd - labelStart > MAX_LABEL ? "" : text.slice(labelStart, labelEnd);
+    if (!/^[A-Z0-9 ]+$/.test(label)) throw invalid();
+    const endLine = `-----END ${label}-----`;
+    const bodyStart = labelEnd + PEM_DASHES.length;
+    const end = text.indexOf(endLine, bodyStart);
+    const nextBegin = text.indexOf(PEM_BEGIN, bodyStart);
+    if (end === -1 || (nextBegin !== -1 && nextBegin < end)) throw invalid();
+    position = end + endLine.length;
+    blocks.push({ label, pem: text.slice(start, position) });
   }
-  const begins = text.match(/-----BEGIN /g)?.length ?? 0;
-  if (blocks.length === 0 || begins !== blocks.length) {
-    throw new ValidationError(`Invalid ${what} format. Every PEM block needs its BEGIN and END line.`);
-  }
+  if (blocks.length === 0) throw invalid();
   return blocks;
 }
 

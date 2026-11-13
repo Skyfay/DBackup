@@ -102,6 +102,15 @@ describe("an uploaded TLS certificate the server could not start with", () => {
     expect(mockRenameSync).not.toHaveBeenCalled();
   });
 
+  it("is refused at once when the file is a megabyte of BEGIN lines without an END line", () => {
+    const starts = "-----BEGIN CERTIFICATE-----a".repeat(38_000);
+    const began = Date.now();
+
+    expect(() => uploadCertificate(starts, KEY_A)).toThrow(refusal);
+    expect(Date.now() - began).toBeLessThan(500);
+    expect(() => uploadCertificate(`-----BEGIN CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n`, KEY_A)).toThrow(refusal);
+  });
+
   it("is refused when the key file holds a second key or a block that is no key", () => {
     expect(() => uploadCertificate(CERT_A, KEY_A + KEY_B)).toThrow(refusal);
     expect(() => uploadCertificate(CERT_A, KEY_A + CERT_A)).toThrow(refusal);

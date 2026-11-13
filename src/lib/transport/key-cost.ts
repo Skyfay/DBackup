@@ -25,7 +25,8 @@ export const MAX_PRIVATE_KEY_CHARS = 64 * 1024;
 
 /** The same expression ssh2 matches an OpenSSH key with, on the trimmed text. */
 const OPENSSH_KEY = /^-----BEGIN OPENSSH PRIVATE KEY-----(?:\r\n|\n)([\s\S]+)(?:\r\n|\n)-----END OPENSSH PRIVATE KEY-----$/;
-const PKCS8_ENCRYPTED_KEY = /-----BEGIN ENCRYPTED PRIVATE KEY-----([\s\S]*?)-----END ENCRYPTED PRIVATE KEY-----/;
+const PKCS8_BEGIN = "-----BEGIN ENCRYPTED PRIVATE KEY-----";
+const PKCS8_END = "-----END ENCRYPTED PRIVATE KEY-----";
 
 const OPENSSH_MAGIC = "openssh-key-v1\0";
 
@@ -60,9 +61,15 @@ export function assertKeyCost(privateKey: unknown): void {
  * these bytes, so the parameters checked are the parameters derived from.
  */
 export function encryptedPkcs8Der(pem: string): Buffer {
-    const body = PKCS8_ENCRYPTED_KEY.exec(pem)?.[1];
-    if (body === undefined) throw malformed();
-    return Buffer.from(body.replace(/\s+/g, ""), "base64");
+    if (pem.length > MAX_PRIVATE_KEY_CHARS) throw new ValidationError("The private key is too long.", { field: "privateKey" });
+    // Found by position, in one pass. An expression that looks for the end from every start would
+    // take a time that grows with the square of a text of many starts and no end.
+    const start = pem.indexOf(PKCS8_BEGIN);
+    if (start === -1) throw malformed();
+    const bodyStart = start + PKCS8_BEGIN.length;
+    const end = pem.indexOf(PKCS8_END, bodyStart);
+    if (end === -1) throw malformed();
+    return Buffer.from(pem.slice(bodyStart, end).replace(/\s/g, ""), "base64");
 }
 
 // ---------------------------------------------------------------------------

@@ -48,7 +48,8 @@ export function backupSuccessTemplate(data: BackupResultData, options?: Template
         ? `${what} ${data.databases && data.databases > 1 ? "are" : "is"} now in ${plural(done.length, "destination")}.`
         : `${data.jobName} finished${data.duration !== undefined ? ` in ${duration(data.duration)}` : ""}.`;
     return {
-        title: `${data.jobName} finished`,
+        title: `Backup Successful: ${data.jobName}`,
+        heading: `${data.jobName} finished`,
         message,
         preheader: done.length > 0
             ? `${data.size !== undefined ? size(data.size) : "The backup"} went to ${names(done.map((dest) => dest.name))}${data.duration !== undefined ? ` in ${duration(data.duration)}` : ""}.`
@@ -84,7 +85,8 @@ export function backupPartialTemplate(data: BackupResultData, options?: Template
         ? `${done.length} of ${plural(all.length, "destination")} got the backup.${failed.length ? ` ${names(failed.map((dest) => dest.name), 3)} did not.` : ""}`
         : "Some destinations did not get the backup.";
     return {
-        title: `${data.jobName} finished partially`,
+        title: `Backup Partial: ${data.jobName}`,
+        heading: `${data.jobName} finished partially`,
         message,
         preheader: data.problem ? `${message} ${data.problem.title}.` : message,
         fields: [
@@ -124,7 +126,8 @@ export function backupFailureTemplate(data: BackupResultData, options?: Template
     const last = data.lastSuccessAt ? ago(data.lastSuccessAt, data.timestamp) : null;
     const raw = data.problem?.raw ?? data.error;
     return {
-        title: `${data.jobName} failed`,
+        title: `Backup Failed: ${data.jobName}`,
+        heading: `${data.jobName} failed`,
         message,
         preheader: `${data.problem ? `${data.problem.title}.` : message}${last ? ` Last clean run ${last}.` : ""}`,
         fields: [

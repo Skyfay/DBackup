@@ -42,6 +42,16 @@ describe("the notification mail", () => {
     expect(html).toContain("· Production");
   });
 
+  it("keeps the title as the subject and shows the heading in the banner", async () => {
+    const { html, subject, text } = await renderNotificationEmail({ ...FAILED, title: "Backup Failed: postgres-nightly", heading: "postgres-nightly failed" }, BRAND);
+
+    expect(subject).toBe("Backup Failed: postgres-nightly");
+    expect(html).toContain("<title>Backup Failed: postgres-nightly</title>");
+    expect(html).toContain(">postgres-nightly failed<");
+    expect(html.slice(html.indexOf("<body"))).not.toContain("Backup Failed: postgres-nightly");
+    expect(text.startsWith("postgres-nightly failed\n")).toBe(true);
+  });
+
   it("lists the fields the tiles leave out when the payload names no details", async () => {
     const { text } = await renderNotificationEmail(FAILED, BRAND);
 

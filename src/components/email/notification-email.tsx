@@ -89,7 +89,7 @@ export function NotificationEmail({ payload, brand }: { payload: NotificationPay
                                         <Banner
                                             tone={tone}
                                             icon={{ light: assetUrl.banner(icon, tone, "light"), dark: assetUrl.banner(icon, tone, "dark") }}
-                                            title={payload.title}
+                                            title={payload.heading ?? payload.title}
                                             message={payload.message}
                                         />
                                     </td>

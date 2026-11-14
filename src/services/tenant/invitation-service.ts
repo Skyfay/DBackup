@@ -265,14 +265,23 @@ export const invitationService = {
             return refuse(error instanceof Error ? error : new Error(String(error)));
         }
         failures().delete(key);
-        // Better Auth signs a new account in on the server, where no browser gets the session.
-        await prisma.session.deleteMany({ where: { userId: created.user.id } });
-        await prisma.$transaction([
-            prisma.tenantInvitation.update({ where: { id: invitation.id }, data: { acceptedById: created.user.id } }),
-            prisma.tenantMembership.create({ data: { userId: created.user.id, tenantId: invitation.tenantId, groupId: invitation.groupId } }),
-            // Whoever opened the link picked the email, so no sign-in provider links the account by it, see `allowTenantSsoLink`.
-            prisma.user.update({ where: { id: created.user.id }, data: { emailVerified: false } }),
-        ]);
+        try {
+            // Whoever opened the link picked the email, so no sign-in provider links the account by
+            // it, see `allowTenantSsoLink`. First of all, so nothing that fails below leaves it verified.
+            await prisma.user.update({ where: { id: created.user.id }, data: { emailVerified: false } });
+            // Better Auth signs a new account in on the server, where no browser gets the session.
+            await prisma.session.deleteMany({ where: { userId: created.user.id } });
+            await prisma.$transaction([
+                prisma.tenantInvitation.update({ where: { id: invitation.id }, data: { acceptedById: created.user.id } }),
+                prisma.tenantMembership.create({ data: { userId: created.user.id, tenantId: invitation.tenantId, groupId: invitation.groupId } }),
+            ]);
+        } catch {
+            // The link, its group or its tenant went while the account was made. An account of no
+            // tenant would count as one of the home tenant, with the email and the password whoever
+            // opened the link chose, so none stays without the tenant it was made for.
+            await prisma.user.deleteMany({ where: { id: created.user.id } });
+            throw new NotFoundError("Invitation", "link");
+        }
         return { tenantId: invitation.tenantId, tenantName: invitation.tenant.name, joined: true, userId: created.user.id, email };
     },
 };

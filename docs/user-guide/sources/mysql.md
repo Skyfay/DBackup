@@ -34,6 +34,8 @@ DBackup needs three client tools, on its own server in direct mode and on the SS
 
 **Restores lock the client down.** A dump can hold commands of the client itself, like `system` or `\!` for a shell command and `source` or `tee` for a file of the machine the client runs on. A restore runs the client with `--binary-mode`, which turns those commands off, with `--sandbox` (MariaDB) or `--skip-system-command` (MySQL), and with `--local-infile=0`. A dump that holds such a command fails at that line. In direct mode a client that knows neither `--sandbox` nor `--system-command`, or no `--binary-mode`, is refused before the restore starts, with its version in the message. That needs MariaDB client 10.5.25, 10.6.18, 10.11.8 or 11.4.2 or newer, or MySQL client 8.0.40 or 8.4.3 or newer. The Docker image ships one. Over SSH an older client on the SSH server still restores with whatever of these options it knows.
 
+**The Database Explorer does the same for its queries.** The tables and rows it reads, and the database a restore creates, go through the client with `--default-character-set=utf8mb4`, `--sandbox` or `--skip-system-command` and `--local-infile=0`. In direct mode a client that knows neither `--sandbox` nor `--system-command` is refused with its version in the message, so the Database Explorer needs the same client versions as a restore.
+
 ### SSH Mode
 
 Install a client package on the SSH server:

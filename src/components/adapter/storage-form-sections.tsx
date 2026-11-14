@@ -15,6 +15,8 @@ import { OAuthAuthorization } from "./oauth-authorization";
 import { SwitchList, SwitchRow } from "./setting-switches";
 import { SnapshotSwitch } from "./snapshot-switch";
 import { SshTestButton } from "./ssh-test-button";
+import { HostKeySwitch } from "./ssh-host-key";
+import { VERIFY_HOST_KEY } from "@/lib/transport/ssh-endpoint";
 import { PLATFORM_ADMIN_ONLY, useMayReachServer } from "./host-local-access";
 import { isOAuthAdapter, storageReachKeys } from "./storage-form-layout";
 import { ParallelTransfersField, ParallelUploadFields } from "./storage-speed-fields";
@@ -90,6 +92,8 @@ function ReachFields({ adapter, role }: { adapter: AdapterDefinition; role: Stor
         <>
             {keys.map((key) => {
                 if (key === "port" && keys.includes("host")) return null;
+                // SFTP and rsync log in to this server, so the check of its host key sits with it.
+                if (key === VERIFY_HOST_KEY) return <HostKeySwitch key={key} />;
                 if (key === "host" && keys.includes("port")) return <HostPortFields key={key} adapter={adapter} hostKey="host" portKey="port" />;
                 return <Field key={key} adapter={adapter} fieldKey={key} description={key === "basePath" ? folderNote(role) : undefined} />;
             })}
@@ -297,6 +301,7 @@ export function StorageSection({ id, keys, ...props }: ConnectionSectionProps & 
                 <>
                     <HostPortFields adapter={adapter} hostKey="sshHost" portKey="sshPort" hostLabel="SSH host" />
                     <LoginField adapter={adapter} slot="ssh" value={props.sshCredentialId} onChange={props.onSshChange} />
+                    <HostKeySwitch />
                 </>
             );
         case "service":

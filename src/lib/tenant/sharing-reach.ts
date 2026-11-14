@@ -27,6 +27,10 @@ export const OUTSIDE_REACH = {
     rule: (pattern: string) => `The rule ${pattern} gives to a tenant your platform group does not reach, so you cannot change it.`,
     /** Ending a rule whose database would fall to a lower rule of such a tenant. */
     ruleEnd: (pattern: string, database: string) => `Ending the rule ${pattern} would give ${database} to a tenant your platform group does not reach, so you cannot end it.`,
+    /** Ending a rule above a lower rule of such a tenant that can match the same names, also ones the server gets later. */
+    ruleEndFalls: (pattern: string) => `Ending the rule ${pattern} would leave its databases to a rule of a tenant your platform group does not reach, so you cannot end it.`,
+    /** A new rule that ranks above a rule of such a tenant that can match the same names. */
+    takesRule: "The rule would rank above a rule of a tenant your platform group does not reach that can match the same databases. Give it a lower priority or a narrower pattern.",
     /** A new rule that ranks above the rule that gives a database to such a tenant now. */
     takes: (database: string) => `The rule would take ${database} from a tenant your platform group does not reach. Give it a lower priority or a narrower pattern.`,
     /** Sharing a destination or a channel with a tenant, or stopping it. */

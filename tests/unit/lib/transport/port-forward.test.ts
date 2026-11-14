@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import net from "node:net";
 import type { Client } from "ssh2";
 
 import { createPortForward } from "@/lib/transport/port-forward";
+import type { PortForward } from "@/lib/transport/types";
 
 /**
  * The forward is tested against a real TCP target with a fake SSH client.
@@ -31,10 +32,9 @@ function fakeClient(target: { port: number } | { fail: Error }): Client {
     } as unknown as Client;
 }
 
-/** Send one line and read the reply through the given local address. */
-function roundTrip(port: number, payload: string): Promise<string> {
+/** Send one line and read the reply over a socket. */
+function exchange(socket: net.Socket, payload: string): Promise<string> {
     return new Promise((resolve, reject) => {
-        const socket = net.createConnection({ host: "127.0.0.1", port });
         let received = "";
         socket.on("data", (chunk) => {
             received += chunk.toString();
@@ -44,6 +44,16 @@ function roundTrip(port: number, payload: string): Promise<string> {
         socket.on("error", reject);
         socket.write(payload);
     });
+}
+
+/** The round trip of the owner of a forward, through the socket its `dial` opens. */
+async function roundTrip(forward: PortForward, payload: string): Promise<string> {
+    return exchange(await forward.dial!(), payload);
+}
+
+/** The round trip of anyone else who finds the port of the listener, like a connection of another tenant. */
+function strangerRoundTrip(port: number, payload: string): Promise<string> {
+    return exchange(net.createConnection({ host: "127.0.0.1", port }), payload);
 }
 
 describe("createPortForward", () => {
@@ -75,7 +85,7 @@ describe("createPortForward", () => {
     it("carries bytes in both directions", async () => {
         const forward = await createPortForward(fakeClient({ port: echoPort }), "db.internal", 1433);
         try {
-            expect(await roundTrip(forward.port, "SELECT 1")).toBe("SELECT 1");
+            expect(await roundTrip(forward, "SELECT 1")).toBe("SELECT 1");
         } finally {
             await forward.close();
         }
@@ -84,8 +94,8 @@ describe("createPortForward", () => {
     it("handles several sequential connections", async () => {
         const forward = await createPortForward(fakeClient({ port: echoPort }), "db.internal", 1433);
         try {
-            expect(await roundTrip(forward.port, "one")).toBe("one");
-            expect(await roundTrip(forward.port, "two")).toBe("two");
+            expect(await roundTrip(forward, "one")).toBe("one");
+            expect(await roundTrip(forward, "two")).toBe("two");
         } finally {
             await forward.close();
         }
@@ -97,8 +107,32 @@ describe("createPortForward", () => {
         const denied = new Error("Channel open failure: administratively prohibited");
         const forward = await createPortForward(fakeClient({ fail: denied }), "db.internal", 1433);
         try {
-            await roundTrip(forward.port, "SELECT 1").catch(() => undefined);
+            await roundTrip(forward, "SELECT 1").catch(() => undefined);
             expect(forward.lastError?.message).toContain("administratively prohibited");
+        } finally {
+            await forward.close();
+        }
+    });
+
+    it("carries no byte of a peer that finds the port, so the tunnel of one tenant is no path for another", async () => {
+        const forwardOut = vi.fn();
+        const forward = await createPortForward({ forwardOut } as unknown as Client, "tenant-a-db.internal", 1433);
+        try {
+            // Closed without an answer, and nothing was opened through the SSH login of the owner.
+            expect(await strangerRoundTrip(forward.port, "SELECT 1")).toBe("");
+            expect(forwardOut).not.toHaveBeenCalled();
+            expect(forward.lastError).toBeNull();
+        } finally {
+            await forward.close();
+        }
+    });
+
+    it("keeps carrying the owner while a stranger knocks", async () => {
+        const forward = await createPortForward(fakeClient({ port: echoPort }), "db.internal", 1433);
+        try {
+            const stranger = strangerRoundTrip(forward.port, "intruder");
+            expect(await roundTrip(forward, "SELECT 1")).toBe("SELECT 1");
+            expect(await stranger).toBe("");
         } finally {
             await forward.close();
         }
@@ -109,7 +143,8 @@ describe("createPortForward", () => {
         const { port } = forward;
         await forward.close();
 
-        await expect(roundTrip(port, "SELECT 1")).rejects.toMatchObject({ code: "ECONNREFUSED" });
+        await expect(strangerRoundTrip(port, "SELECT 1")).rejects.toMatchObject({ code: "ECONNREFUSED" });
+        await expect(forward.dial!()).rejects.toThrow("closed");
     });
 
     it("is safe to close twice", async () => {

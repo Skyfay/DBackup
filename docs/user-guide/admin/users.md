@@ -93,7 +93,7 @@ Click **Edit** or **Change group** and pick another card. The group applies in t
 
 Click **Delete** in the menu of the user and confirm. Their sessions end at once and they cannot sign in anymore, while the audit log keeps what they did under their name. Tick several rows to delete them together.
 
-A deleted user waits in [Recently deleted](/user-guide/admin/recently-deleted) for 30 days and comes back from there with their password, second factor, passkeys and API keys. With the right to change the tenant settings, tick **Delete it permanently now** for an account that has to be gone at once. Your own account, the last platform admin and the last account cannot be deleted. Only a platform admin restores or deletes for good from Recently deleted the account of a platform admin, of a platform group or of someone who also worked in another tenant.
+A deleted user waits in [Recently deleted](/user-guide/admin/recently-deleted) for 30 days and comes back from there with their password, second factor, passkeys and API keys. With the right to change the tenant settings, tick **Delete it permanently now** for an account that has to be gone at once. Your own account, the last platform admin and the last account cannot be deleted. Only a platform admin restores or deletes for good from Recently deleted the account of a platform admin, of a platform group or of someone who also worked in another tenant. An account of a customer tenant whose group was deleted meanwhile would come back in no tenant, so only a platform admin restores it.
 
 ## Every Account of the Instance
 

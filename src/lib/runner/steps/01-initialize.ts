@@ -7,6 +7,7 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { ownDataRefusal, ownVolumeRefusal } from "@/lib/adapters/own-data";
 import { jobFolderRefusal } from "./job-folder-check";
 import { resolveExcludePatterns, parseJsonStringArray } from "@/lib/exclude-groups";
+import { excludePatternProblem } from "@/lib/exclude-pattern-rules";
 import { RetentionConfiguration } from "@/lib/core/retention";
 import { isAirGapped } from "@/lib/core/air-gap";
 import { SHARED_STORAGE_FAILURE, storageView } from "@/lib/tenant/storage-view";
@@ -128,6 +129,12 @@ export async function stepInitialize(ctx: RunnerContext) {
         }));
         const ownPatterns: string[] = JSON.parse(src.excludePatterns || "[]");
         const excludePatterns = [...new Set([...presetPatterns, ...ownPatterns])];
+        // A save refuses a pattern that is slow to match, this stops a job or preset saved before
+        // that. Matching it would hold the server of every tenant while the source is read.
+        for (const pattern of excludePatterns) {
+            const patternProblem = typeof pattern === "string" ? excludePatternProblem(pattern) : "An exclude pattern is text.";
+            if (patternProblem) throw new ConfigurationError(src.config.adapterId, `Job ${job.name}, source ${src.config.name}: ${patternProblem} Edit the job or its exclude preset to run it again.`);
+        }
 
         // A save refuses a folder that leaves its connection, this stops a job saved before that.
         try {

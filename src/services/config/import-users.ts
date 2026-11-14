@@ -36,11 +36,22 @@ export function withTenantSettings(permissions: string): string {
 }
 
 /**
+ * Whether an account here is provably the platform's own, so a user of a file may merge into it: it
+ * works in the home tenant alone, or in no tenant while a platform role or group holds it. An
+ * account of no tenant without either may be one a deleted tenant left behind, or one a tenant took
+ * out of itself, see `userService.placelessTenantOf`, and nothing here tells them apart.
+ */
+export function isPlatformsOwn(account: { platformRole: string | null; platformGroupId: string | null; memberships: readonly { tenantId: string }[] }): boolean {
+    if (account.memberships.some((membership) => membership.tenantId !== HOME_TENANT_ID)) return false;
+    return account.memberships.length > 0 || !!account.platformRole || !!account.platformGroupId;
+}
+
+/**
  * Groups, users with their sign-ins, and API keys. An ordinary group of the same id here takes the
  * one of the file, else a group of the same name or a user of the same email does and keeps its id. A file holds one group per user, from
  * before tenants, which becomes their group in the home tenant. The SuperAdmin group of a file is
  * the group with every permission here, and its people become platform admins. A user whose email
- * or id an account here holds that also works in another tenant is left out with a note.
+ * or id an account here holds that is not the platform's own (`isPlatformsOwn`) is left out with a note.
  */
 export async function importUsers({ tx, data, ids, known, notes }: ImportContext): Promise<void> {
     const fullAccessIds = new Set<string>();
@@ -91,10 +102,16 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
         const existingUser = await tx.user.findUnique({ where: { email: user.email } });
         // The file holds the home tenant alone. An account here that also works in a customer's
         // tenant is that tenant's too, maybe made there under the email of the file, so the user of
-        // the file never merges into it and gives it rights in the home tenant or the platform.
+        // the file never merges into it and gives it rights in the home tenant or the platform. An
+        // account of no tenant that the platform holds by no role or group may be what a customer's
+        // tenant left behind, with a password its maker knows, so it is left out as well.
         const sameId = existingUser?.id === user.id ? null : await tx.user.findUnique({ where: { id: user.id }, select: { id: true } });
         const matched = [existingUser?.id, sameId?.id].filter((id): id is string => !!id);
-        if (matched.length > 0 && (await tx.tenantMembership.count({ where: { userId: { in: matched }, tenantId: { not: HOME_TENANT_ID } } })) > 0) {
+        const matchedAccounts = matched.length === 0 ? [] : await tx.user.findMany({
+            where: { id: { in: matched } },
+            select: { platformRole: true, platformGroupId: true, memberships: { select: { tenantId: true } } },
+        });
+        if (matchedAccounts.some((account) => !isPlatformsOwn(account))) {
             leftOut.add(user.id);
             continue;
         }
@@ -158,7 +175,7 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
     }
     if (leftOut.size > 0) {
         const emails = data.users.filter((user) => leftOut.has(user.id)).map((user) => user.email);
-        notes.push(`${counted(emails.length, "user was", "users were")} left out, since an account of the same email or id here also works in another tenant: ${listed(emails)}.`);
+        notes.push(`${counted(emails.length, "user was", "users were")} left out, since an account of the same email or id here works in another tenant or in none: ${listed(emails)}. Give the account here a group of the home tenant and restore again to merge one.`);
     }
     if (keysLeftOut > 0) notes.push(`${counted(keysLeftOut, "API key was", "API keys were")} left out, since the user it belongs to is not here.`);
 }

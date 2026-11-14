@@ -1,6 +1,9 @@
+import type { Socket } from "node:net";
 import type { Duplex, Readable, Transform, Writable } from "node:stream";
 
 import type { ReachPolicy } from "@/lib/network/reach-policy";
+
+import type { SshHostKeyPolicy } from "./host-key";
 
 /**
  * Transport layer contracts.
@@ -31,6 +34,11 @@ export interface SshConnectionConfig {
      * an address checked at connect time, see `reach-check.ts`. Never read from a stored field.
      */
     reach?: ReachPolicy;
+    /**
+     * What the login does with the host key of the server, see `host-key.ts`. Comes from the
+     * resolved config like `reach`, never from a stored field. Without it every key is accepted.
+     */
+    hostKey?: SshHostKeyPolicy;
 }
 
 export interface ExecOptions {
@@ -122,6 +130,12 @@ export interface PortForward {
      * forward fails per connection and tedious only reports a reset peer.
      */
     readonly lastError: Error | null;
+    /**
+     * A connected socket to the forward, the only way through a forwarded address: its listener
+     * closes every peer this did not open, see `port-forward.ts`. Missing when nothing is
+     * forwarded, the driver then dials the address itself.
+     */
+    dial?(signal?: AbortSignal): Promise<Socket>;
     close(): Promise<void>;
 }
 

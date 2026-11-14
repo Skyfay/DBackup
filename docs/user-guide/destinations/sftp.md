@@ -14,6 +14,7 @@ SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) o
 | **Host** | Hostname or IP of the SFTP server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
 | **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Check the host key** | Refuses a server that presents another host key than the one pinned on the first connect, see [Host Key Check](#host-key-check) | On | ❌ |
 | **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
@@ -78,13 +79,19 @@ EACCES: permission denied
 
 **Solution:** Ensure the SSH user has write access to the target directory. Check ownership and file permissions on the remote server.
 
-### Host Key Verification
+## Host Key Check
+
+DBackup pins the host key of the SSH server per connection (trust on first use). The first successful connect or test stores the key the server presents, and the connection form shows its fingerprint under **Server key**. Every later connect refuses a server that presents another key, before a password, a key signature or any data is sent. A connection saved before DBackup had this check pins the key on its first successful connect after the upgrade.
+
+A refused key fails the test, the run or the health check with this message:
 
 ```
-Host key verification failed
+The server at host:22 presents another host key (SHA256:...) than the one DBackup trusts (SHA256:...).
 ```
 
-**Solution:** DBackup accepts host keys automatically on first connection. If the server was reinstalled, the host key may have changed. This is expected after server reprovisioning.
+**After a reinstall of the server** its key is a new one, so the connection goes offline until you accept it. Open the connection, run **Test connection**, compare the presented fingerprint with the one of the server (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on it) and choose **Trust the new key**. Before a planned reinstall you can use **Forget** instead, and the next connect pins the key it sees. A changed key nobody can explain means another machine answers for the address, so do not accept it.
+
+The switch **Check the host key** is on for every connection. Turned off, DBackup accepts every key as it did before, and whoever answers for the address of the server can receive the login and the backups. A pin belongs to the host and port it was taken at, so a connection moved to another server pins again, and a copy of a connection starts without one.
 
 ## Next Steps
 

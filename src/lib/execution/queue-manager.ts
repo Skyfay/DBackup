@@ -4,6 +4,7 @@ import { runAsSystem, runAsTenant } from "@/lib/tenant/context";
 import { logger } from "@/lib/logging/logger";
 import { isShutdownRequested } from "@/lib/server/shutdown";
 import { isDatabaseMaintenanceActive, isRunHoldActive } from "@/lib/server/database-maintenance";
+import { pickFairly, type LastServed } from "@/lib/core/queue-fairness";
 import { LEADING_RUNS } from "./follower-runs";
 
 const log = logger.child({ module: "Queue" });
@@ -18,6 +19,13 @@ export const QUEUED_RUNS: Prisma.ExecutionWhereInput = {
 };
 
 /**
+ * The order in which the tenants last got a slot, kept by this process, which is the only one that
+ * runs the queue. After a restart no tenant is ahead, and the oldest run goes first as before.
+ */
+const lastServed: LastServed = new Map();
+let served = 0;
+
+/**
  * Checks the queue and starts jobs if slots are available.
  *
  * A run waits while another run of the same job is still going, like one started by hand
@@ -26,7 +34,10 @@ export const QUEUED_RUNS: Prisma.ExecutionWhereInput = {
  * when the queue is checked again at the end of the first.
  *
  * The queue is one for every tenant, so it reads the runs of all of them, whoever asks for it, and
- * starts each run in the tenant of its job.
+ * starts each run in the tenant of its job. A free slot goes to the tenant with the fewest running
+ * runs, then to the one that got a slot longest ago, and inside a tenant to its oldest run
+ * (`pickFairly`), so the waiting runs of one tenant never hold back those of the others by more
+ * than the runs that hold a slot already.
  */
 export function processQueue(): Promise<void> {
     return runAsSystem(processAllTenants);
@@ -73,7 +84,7 @@ async function processAllTenants() {
     // the queue never starts, so a long restore of one tenant holds no backup of another.
     const running = await prisma.execution.findMany({
         where: { status: "Running", AND: [LEADING_RUNS, QUEUED_RUNS] },
-        select: { jobId: true },
+        select: { jobId: true, tenantId: true },
     });
 
     if (running.length >= maxJobs) {
@@ -84,16 +95,29 @@ async function processAllTenants() {
     const availableSlots = maxJobs - running.length;
     const busyJobs = new Set(running.flatMap((execution) => (execution.jobId ? [execution.jobId] : [])));
 
-    // The oldest waiting run of every job that is not running, up to the free slots.
-    const pendingJobs: typeof pending = [];
+    const runningOf = new Map<string | undefined, number>();
+    for (const execution of running) runningOf.set(execution.tenantId, (runningOf.get(execution.tenantId) ?? 0) + 1);
+
+    // The oldest waiting run of every job that is not running. A run whose job was deleted starts
+    // as before and ends right there.
+    const candidates: typeof pending = [];
+    const waitingJobs = new Set<string>();
     for (const execution of pending) {
-        if (pendingJobs.length >= availableSlots) break;
-        if (execution.jobId && busyJobs.has(execution.jobId)) {
-            log.debug("Run waits for the running one of its job", { executionId: execution.id, jobId: execution.jobId });
+        if (execution.jobId && (busyJobs.has(execution.jobId) || waitingJobs.has(execution.jobId))) {
+            log.debug("Run waits for another run of its job", { executionId: execution.id, jobId: execution.jobId });
             continue;
         }
-        // A run whose job was deleted starts as before and ends right there.
-        if (execution.jobId) busyJobs.add(execution.jobId);
+        if (execution.jobId) waitingJobs.add(execution.jobId);
+        candidates.push(execution);
+    }
+
+    // Each free slot goes to the tenant whose turn it is, so one tenant with a long line of waiting
+    // runs does not take every slot before the run of another tenant starts.
+    const pendingJobs: typeof pending = [];
+    while (pendingJobs.length < availableSlots && candidates.length > 0) {
+        const [execution] = candidates.splice(pickFairly(candidates, runningOf, lastServed), 1);
+        runningOf.set(execution.tenantId, (runningOf.get(execution.tenantId) ?? 0) + 1);
+        lastServed.set(execution.tenantId, ++served);
         pendingJobs.push(execution);
     }
 

@@ -12,6 +12,7 @@ import { placesOverlap, storagePlaceOf } from "@/lib/adapters/storage-place";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
+import { assertSharedLoginsAlone } from "./shared-login";
 
 const log = logger.child({ service: "SharedPlace" });
 
@@ -57,14 +58,17 @@ const STORAGE_ROW = { id: true, name: true, adapterId: true, config: true, prima
 /**
  * Refuses the first share of a destination while another storage connection of the tenant that
  * runs now reaches its folder, one made before the destination was shared or brought back from
- * Recently deleted, which `assertOffSharedPlaces` never saw.
+ * Recently deleted, which `assertOffSharedPlaces` never saw, or signs in with one of its saved
+ * logins, which open its folder under any spelling of its address, see `shared-login.ts`.
  *
  * @throws ValidationError naming the other connection.
  */
 export async function assertSharedPlaceAlone(destinationId: string): Promise<void> {
     const destination = await prisma.adapterConfig.findUnique({ where: { id: destinationId }, select: STORAGE_ROW });
-    const place = destination ? await placeOfRow(destination) : null;
-    if (!destination || !place) return;
+    if (!destination) return;
+    await assertSharedLoginsAlone(destination);
+    const place = await placeOfRow(destination);
+    if (!place) return;
     const others = await prisma.adapterConfig.findMany({ where: { type: "storage", id: { not: destinationId } }, select: STORAGE_ROW });
     for (const other of others) {
         const otherPlace = await placeOfRow(other);

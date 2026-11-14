@@ -3,6 +3,7 @@ import { existsSync, writeFileSync, mkdirSync, unlinkSync, renameSync } from "no
 import path from "node:path";
 import { logger } from "@/lib/logging/logger";
 import { ServiceError, ValidationError, wrapError } from "@/lib/logging/errors";
+import { assertServableCertificate } from "@/services/system/certificate-check";
 
 const log = logger.child({ service: "CertificateService" });
 
@@ -174,6 +175,10 @@ export function uploadCertificate(certPem: string, keyPem: string): void {
   if (!keyPem.includes("-----BEGIN") || !keyPem.includes("PRIVATE KEY-----")) {
     throw new ValidationError("Invalid private key format. Must be PEM encoded.");
   }
+
+  // Every block of both texts, and that the server can start with them. The openssl commands below
+  // read only the first block of a file.
+  assertServableCertificate(certPem, keyPem);
 
   // Ensure directory exists
   if (!existsSync(CERTS_DIR)) {

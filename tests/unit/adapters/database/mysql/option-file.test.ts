@@ -7,6 +7,7 @@ import { getTables } from "@/lib/adapters/database/mysql/browser";
 import { MySQLSchema, MariaDBSchema } from "@/lib/adapters/definitions";
 import { AdapterError } from "@/lib/logging/errors";
 import type { HostKind } from "@/lib/transport/types";
+import { clientHost } from "./client-help";
 
 /**
  * The MySQL and MariaDB tools read their password from an option file DBackup writes. A line break
@@ -49,7 +50,7 @@ describe.each<HostKind>(["direct", "ssh"])("the option file of the MySQL tools o
     });
 
     it("turns off local files on every call of the mysql client, so a server never reads one of this machine", async () => {
-        const host = createFakeHost({ kind, onExec: () => ({ stdout: "8.0.44\n" }) });
+        const host = clientHost({ kind, onExec: () => ({ stdout: "8.0.44\n" }) });
         await testConnection(config as never, host);
         await getDatabases(config as never, host);
         await getDatabasesWithStats(config as never, host);
@@ -57,7 +58,7 @@ describe.each<HostKind>(["direct", "ssh"])("the option file of the MySQL tools o
 
         const clientCalls = host.calls.exec.filter((argv) => argv[0] === "mariadb" || argv[0] === "mysql");
         expect(clientCalls.length).toBeGreaterThanOrEqual(5);
-        for (const argv of clientCalls.filter((call) => !call.includes("--version"))) {
+        for (const argv of clientCalls.filter((call) => !call.includes("--version") && !call.includes("--help"))) {
             // Right after the login file, which has to come first.
             expect(argv[1]).toMatch(/^--defaults-file=/);
             expect(argv[2]).toBe(NO_LOCAL_INFILE);

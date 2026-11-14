@@ -48,7 +48,9 @@ const direct = (config: Record<string, unknown>) => config.connectionMode !== "s
  * take a host that ends in `.sock` or holds an encoded `/` (`%2F`) as a socket path.
  */
 function namesSocket(adapterId: string, host: unknown): boolean {
-    if (typeof host !== "string") return false;
+    if (host === undefined || host === null) return false;
+    // A host that is no text, like a list, reads as its text for the tool and as nothing here, so it counts.
+    if (typeof host !== "string") return true;
     const value = host.trim();
     if (value.startsWith("/")) return true;
     if (adapterId === "postgres") {

@@ -18,6 +18,7 @@ import { WebDAVAdapter } from "./storage/webdav";
 import { FTPAdapter } from "./storage/ftp";
 import { RsyncAdapter } from "./storage/rsync";
 import { withPinnedRsyncHost } from "./storage/rsync-pin";
+import { withRsyncHostKey } from "./storage/rsync-host-key";
 import { withPinnedDatabaseHost } from "./database/common/pinned-host";
 import { GoogleDriveAdapter } from "./storage/google-drive";
 import { DropboxAdapter } from "./storage/dropbox";
@@ -45,7 +46,8 @@ export function registerAdapters() {
     // Pre-detect binary commands asynchronously (non-blocking)
 
     // The client tools of a tenant that blocks the local network dial the checked address of their
-    // host, see `pinned-host.ts`. SQL Server pins in its pool, see `mssql/connector.ts`.
+    // host, see `pinned-host.ts`. SQL Server pins in its pool, see `mssql/connector.ts`,
+    // and Azure SQL there and for SqlPackage, see `azure-sql/exporter/pinned-server.ts`.
     registry.register(withPinnedDatabaseHost(MySQLAdapter));
     registry.register(withPinnedDatabaseHost(MariaDBAdapter));
     registry.register(withPinnedDatabaseHost(PostgresAdapter));
@@ -69,7 +71,7 @@ export function registerAdapters() {
     registry.register(withCheckedDownloads(SMBAdapter));
     registry.register(withCheckedDownloads(WebDAVAdapter));
     registry.register(withCheckedDownloads(FTPAdapter));
-    registry.register(withCheckedDownloads(withPinnedRsyncHost(RsyncAdapter)));
+    registry.register(withCheckedDownloads(withPinnedRsyncHost(withRsyncHostKey(RsyncAdapter))));
     registry.register(withCheckedDownloads(GoogleDriveAdapter));
     registry.register(withCheckedDownloads(DropboxAdapter));
     registry.register(withCheckedDownloads(OneDriveAdapter));

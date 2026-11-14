@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { safePath, safePathRegex, safeBinaryPath, sshFields } from "./shared";
+import { safePath, safePathRegex, safeBinaryPath, sshFields, verifyHostKeyField } from "./shared";
 import { PASSWORD_LINE_BREAK, fitsOptionFile } from "../database/mysql/option-file";
 import { firebirdHostProblem } from "../database/firebird/host";
 
@@ -79,6 +79,7 @@ export const SQLiteSchema = z.object({
     password: z.string().optional().describe("SSH Password"),
     privateKey: z.string().optional().describe("SSH Private Key"),
     passphrase: z.string().optional().describe("SSH Key Passphrase"),
+    verifyHostKey: verifyHostKeyField,
 });
 
 export const MSSQLSchema = z.object({

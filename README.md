@@ -98,6 +98,7 @@ services:
       - ENCRYPTION_KEY=       # openssl rand -hex 32
       - BETTER_AUTH_URL=https://localhost:3000
       - BETTER_AUTH_SECRET=   # openssl rand -base64 32
+      - TRUSTED_PROXIES=none  # No reverse proxy in front. Behind one, set its address here or remove the line
     volumes:
       - ./data:/data          # All persistent data
       - ./backups:/backups    # Optional, for local backups

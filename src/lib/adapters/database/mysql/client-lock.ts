@@ -46,6 +46,20 @@ async function versionOf(host: ExecutionHost, mysqlBin: string): Promise<string>
     }
 }
 
+/** The help of a client, empty for one that cannot describe itself, which then knows no option. */
+async function helpOf(host: ExecutionHost, mysqlBin: string): Promise<string> {
+    try {
+        const result = await host.exec([mysqlBin, "--help"]);
+        return result.code === 0 ? result.stdout : "";
+    } catch {
+        return "";
+    }
+}
+
+/** The option that turns the shell commands of this client off, null for a client with none. */
+const shellLockOf = (help: string) =>
+    knows(help, "--sandbox") ? "--sandbox" : knows(help, "--system-command") ? "--skip-system-command" : null;
+
 /**
  * The options that lock the client down, see the module. A client beside DBackup (direct mode) that
  * knows neither `--sandbox` nor `--system-command`, or no `--binary-mode`, is refused before it reads
@@ -56,19 +70,50 @@ async function versionOf(host: ExecutionHost, mysqlBin: string): Promise<string>
  */
 export async function lockedDownClientArgs(host: ExecutionHost, mysqlBin: string): Promise<string[]> {
     const args = [NO_LOCAL_INFILE];
-    let help = "";
-    try {
-        const result = await host.exec([mysqlBin, "--help"]);
-        if (result.code === 0) help = result.stdout;
-    } catch {
-        // A client that cannot describe itself knows none of the options below.
-    }
+    const help = await helpOf(host, mysqlBin);
     const binary = knows(help, "--binary-mode");
     if (binary) args.push("--binary-mode");
-    const shell = knows(help, "--sandbox") ? "--sandbox" : knows(help, "--system-command") ? "--skip-system-command" : null;
+    const shell = shellLockOf(help);
     if (shell) args.push(shell);
     if ((!binary || !shell) && runsBesideDBackup(host)) {
         throw new AdapterError("mysql", "restore", `The client ${await versionOf(host, mysqlBin)} ${UNLOCKED_CLIENT_REFUSED}`);
+    }
+    return args;
+}
+
+/**
+ * The character set the client reads a statement of `-e` in. Node writes argv as UTF-8, and the
+ * client finds the end of a quoted name or value in its own character set, which the MariaDB client
+ * takes from the locale of the process otherwise. In a locale like GBK the last byte of a UTF-8
+ * character and the quote or backslash after it read as one character, so the quote DBackup doubled
+ * ends the name and the rest of it is input of the client. Both the `mariadb` and the `mysql` client
+ * know this option in this spelling, and it also makes the answer UTF-8, which is how it is read.
+ */
+export const STATEMENT_CHARSET = "--default-character-set=utf8mb4";
+
+/** What someone reads whose client beside DBackup cannot turn off its shell commands for a query. */
+export const UNLOCKED_QUERY_CLIENT_REFUSED = "cannot turn off its shell and file commands, and a name of a request could run them on the server DBackup runs on, so the query was not started. "
+    + "Install MariaDB client 10.5.25, 10.6.18, 10.11.8, 11.4.2 or newer, or MySQL client 8.0.40, 8.4.3 or newer, or run the DBackup Docker image, which ships one.";
+
+/**
+ * The options for a client call whose `-e` statement holds a name or a value of a request, like the
+ * table browser or the database a restore creates. They go right after the login prefix, in place
+ * of `NO_LOCAL_INFILE`, which they start with. The statement is read as UTF-8 whatever the locale
+ * says (`STATEMENT_CHARSET`), and the shell commands of the client are off a second time, with
+ * `--sandbox` on a MariaDB client and `--skip-system-command` on a MySQL client, whichever its help
+ * lists. No `--binary-mode` here, it only acts on a file the client reads.
+ *
+ * A client beside DBackup (direct mode) that knows neither is refused, as for a restore. Over SSH an
+ * older client runs with the character set alone, on the server of whoever set the connection up.
+ *
+ * @throws AdapterError in direct mode for a client that cannot turn its shell commands off.
+ */
+export async function queryClientArgs(host: ExecutionHost, mysqlBin: string): Promise<string[]> {
+    const args = [NO_LOCAL_INFILE, STATEMENT_CHARSET];
+    const shell = shellLockOf(await helpOf(host, mysqlBin));
+    if (shell) args.push(shell);
+    if (!shell && runsBesideDBackup(host)) {
+        throw new AdapterError("mysql", "query", `The client ${await versionOf(host, mysqlBin)} ${UNLOCKED_QUERY_CLIENT_REFUSED}`);
     }
     return args;
 }

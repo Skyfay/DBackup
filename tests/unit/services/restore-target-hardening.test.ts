@@ -26,6 +26,9 @@ const prismaMock = {
     execution: { findMany: vi.fn().mockResolvedValue([]) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
+// Whether a recorded run of the job of a source wrote the backup, see `recorded-origin.ts`.
+const recorded = vi.hoisted(() => ({ byRun: true }));
+vi.mock("@/services/restore/recorded-origin", () => ({ archiveReadSource: async () => recorded.byRun }));
 const registryGet = vi.fn();
 vi.mock("@/lib/core/registry", () => ({ registry: { get: (...a: unknown[]) => registryGet(...a) } }));
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: async (c: unknown) => c }));
@@ -79,6 +82,7 @@ async function buildFixture(sourceId: string) {
 
 beforeEach(async () => {
     vi.clearAllMocks();
+    recorded.byRun = true;
     workDir = await fs.mkdtemp(path.join(os.tmpdir(), "restore-hardening-"));
     uploads = [];
     registryGet.mockReturnValue(makeAdapter());
@@ -107,6 +111,22 @@ describe("the origin of a restore of files", () => {
 
         await restoreFilesToStorage({ ...base, selections: [{ src: "src-1" }], target: { kind: "origin" }, caller: MEMBER });
         expect(uploads.map((upload) => upload.remotePath)).toEqual(["/var/www/docs/readme.md"]);
+    });
+
+    it("is never a backup no recorded run of the job of the source wrote, whatever its index and the request name", async () => {
+        // An archive laid at the destination by hand, whose index names the source of a job.
+        await buildFixture("src-1");
+        recorded.byRun = false;
+
+        await expect(restoreFilesToStorage({ ...base, selections: [{ src: "src-1" }], target: { kind: "origin" }, caller: MEMBER }))
+            .rejects.toBeInstanceOf(PermissionError);
+        await expect(restoreFilesToStorage({ ...base, selections: [{ src: "src-1" }], target: { kind: "storage", configId: "storage-1", basePath: "/var/www" }, caller: MEMBER }))
+            .rejects.toBeInstanceOf(PermissionError);
+        expect(uploads).toEqual([]);
+
+        // Someone who may change the connection restores it there like into any other place, without the owners.
+        await restoreFilesToStorage({ ...base, selections: [{ src: "src-1" }], target: { kind: "origin" }, caller: MANAGER });
+        expect(uploads).toEqual([{ remotePath: "/var/www/docs/readme.md", options: { mode: 0o755, restoreRelativePath: "docs/readme.md" } }]);
     });
 
     it("gets the owners of the backup back, while every mode loses setuid, setgid and sticky", async () => {

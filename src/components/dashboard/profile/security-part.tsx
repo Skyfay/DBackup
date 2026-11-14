@@ -146,7 +146,7 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
                 </p>
             )}
 
-            <PasskeysSection userId={model.user.id} canManage={can.managePasskeys} canEndFactor={can.manage2FA} passkeyFactor={passkeyFactor} passkeys={passkeys} reload={load} onFactorChanged={changed} />
+            <PasskeysSection userId={model.user.id} canManage={can.managePasskeys} canEndFactor={can.manage2FA} passkeyFactor={passkeyFactor} hasPassword={hasPassword} passkeys={passkeys} reload={load} onFactorChanged={changed} />
 
             {model.showSignInProviders && <SignInProviders canManage={can.manageSso} />}
 

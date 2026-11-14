@@ -14,7 +14,7 @@
  */
 
 import { assertRestoreFolder, restoreDestination, safeRemoteJoin } from "@/lib/archive/remote-paths";
-import { isOrigin, mappingFolder, NO_RESTORE_FOLDER, restoredFileRefusal } from "./restore-targets";
+import { originOfBackup, mappingFolder, NO_RESTORE_FOLDER, restoredFileRefusal } from "./restore-targets";
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { formatBytes } from "@/lib/utils";
@@ -253,7 +253,7 @@ export async function restoreArchiveSnapshot(
                         config: target.config,
                         basePath,
                         label: `${target.row.name}:${basePath}`,
-                        origin: isOrigin(source, mappingEntry.targetConfigId, basePath, target.row.adapterId),
+                        origin: await originOfBackup(input, mappingEntry.entryId, source, mappingEntry.targetConfigId, basePath, target.row.adapterId),
                     });
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : String(e);

@@ -129,6 +129,15 @@ export const safeBinaryPath = z.string().regex(
     "Binary path may only contain letters, digits, slashes, underscores, hyphens, and dots"
 );
 
+/**
+ * Whether the SSH clients of a connection check the host key of its server against the one pinned
+ * on the first connect, see `src/lib/transport/host-key.ts`. One name in every schema with an SSH
+ * login: `sshFields`, SQLite, SFTP and rsync. Zod defaults do not run on a stored config, so a
+ * missing value is read as on, see `verifiesHostKey` in `ssh-endpoint.ts`, and the form shows it
+ * as on, see `HostKeySwitch`. Optional like the other SSH fields, so a config may leave it out.
+ */
+export const verifyHostKeyField = z.boolean().default(true).optional().describe("Check the host key of the SSH server against the one pinned on the first connect");
+
 // Shared SSH fields for adapters that support SSH remote execution mode
 export const sshFields = {
     connectionMode: z.enum(["direct", "ssh"]).default("direct").describe("Connection mode (direct TCP or via SSH)"),
@@ -139,4 +148,5 @@ export const sshFields = {
     sshPassword: z.string().optional().describe("SSH password"),
     sshPrivateKey: z.string().optional().describe("SSH private key (PEM format)"),
     sshPassphrase: z.string().optional().describe("Passphrase for SSH private key"),
+    verifyHostKey: verifyHostKeyField,
 };

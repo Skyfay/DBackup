@@ -3,6 +3,9 @@
  * check an edit has to pass lives here, in the order the API has always answered them.
  */
 
+import { sshEndpointOf, verifiesHostKey } from "@/lib/transport/ssh-endpoint";
+import { keepPinKeys, parseMetadata, pinFor, storedPin, withoutPin, withPin } from "@/lib/adapters/ssh-host-key-pins";
+import { asPin } from "./ssh-host-key-service";
 import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { encryptConfig, decryptConfig } from "@/lib/crypto";
@@ -24,6 +27,7 @@ import { assertMayAdd } from "@/services/tenant/tenant-allowances";
 import { connectionChanges } from "./adapter-audit";
 import { assertMayManageHostLocal, assertMayReachHost } from "./adapter-create";
 import { assertOffSharedPlaces } from "./shared-place";
+import { assertOffSharedLogins, assertSharedLoginsAlone } from "./shared-login";
 
 registerAdapters();
 
@@ -44,6 +48,8 @@ export interface UpdateAdapterInput {
     sshCredentialId?: string | null;
     /** A storage role. Anything else is refused. */
     storageRole?: unknown;
+    /** The host key the test of the form saw at the SSH server, pinned when the connection holds no pin for that server. */
+    sshHostKey?: unknown;
 }
 
 export interface AdapterUpdateResult {
@@ -70,6 +76,27 @@ const LOCATION_KEYS = [
 
 export const SHARED_PLACE_STAYS = "It is shared with other tenants, so where it keeps the files stays as it is. Stop sharing it first.";
 const SHARED_ROLE_STAYS = "It is shared with other tenants, so it stays a destination. Stop sharing it first.";
+
+/**
+ * The metadata an edit stores, undefined to leave the column as it is. The pin keys come from the
+ * stored metadata, never from the request. With a new config the pin stays only while the
+ * connection still dials the server it was taken at, and a connection without one for its server
+ * pins the key the test of the form saw.
+ */
+function metadataAfterEdit(adapterId: string, stored: string | null, incoming: unknown, config: Record<string, unknown> | undefined, sshHostKey: unknown): string | undefined {
+    const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+    if (incoming !== undefined && !isObject(incoming)) return JSON.stringify(incoming);
+    const before = parseMetadata(stored);
+    let next = isObject(incoming) ? keepPinKeys(incoming, before) : before;
+    if (config !== undefined) {
+        const endpoint = sshEndpointOf(adapterId, config);
+        if (storedPin(next) && !pinFor(next, endpoint)) next = withoutPin(next);
+        const pin = endpoint && verifiesHostKey(config) && !storedPin(next) && isObject(sshHostKey) ? asPin(endpoint, sshHostKey, "form-test") : null;
+        if (pin) next = withPin(next, pin);
+    }
+    const text = JSON.stringify(next);
+    return incoming === undefined && text === JSON.stringify(before) ? undefined : text;
+}
 
 /** What the edit compares with, read before anything changes. */
 const EXISTING_SELECT = {
@@ -189,6 +216,12 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
         const after = await locationOf(existing.adapterId, mergedConfig ?? readExisting(), logins.primaryCredentialId, logins.sshCredentialId);
         if (movedLocationKeys(before, after).length > 0) throw new ValidationError(SHARED_PLACE_STAYS, { field: "config" });
     }
+    // A saved login of a destination shared with customers signs in on that destination alone,
+    // whatever kind this connection is, and a shared destination takes no login another one uses.
+    if (loginsChange) {
+        await assertOffSharedLogins(logins, id);
+        if (shared) await assertSharedLoginsAlone({ id, name: existing.name, ...logins });
+    }
     // Nor may it move to where another destination of the tenant shared with customers keeps their backups.
     if (existing.type === "storage" && placeMayMove) {
         await assertOffSharedPlaces(existing.adapterId, mergedConfig ?? readExisting(), logins, id);
@@ -204,6 +237,10 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
         }
     }
 
+    // The pinned SSH host key stays with the server it was taken at: an edit to another host or
+    // port drops it, and the metadata of a request never sets one, see `ssh-host-key-pins.ts`.
+    const nextMetadata = metadataAfterEdit(existing.adapterId, existing.metadata, metadata, mergedConfig ?? (config === undefined ? undefined : readExisting()), input.sshHostKey);
+
     const adapter = await prisma.adapterConfig.update({
         where: { id },
         data: {
@@ -211,7 +248,7 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
             ...(configString !== undefined ? { config: configString } : {}),
             ...(primaryCredentialId !== undefined ? { primaryCredentialId: primaryCredentialId ?? null } : {}),
             ...(sshCredentialId !== undefined ? { sshCredentialId: sshCredentialId ?? null } : {}),
-            ...(metadata !== undefined ? { metadata: JSON.stringify(metadata) } : {}),
+            ...(nextMetadata !== undefined ? { metadata: nextMetadata } : {}),
             ...(isStorageRole(storageRole) ? { storageRole } : {}),
             // A login assigned now clears the flag the health check set for the missing one.
             ...(primaryCredentialId && existing.lastError === "No credential profile assigned"

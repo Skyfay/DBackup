@@ -119,7 +119,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         // Delegate logic to Service with decrypt flag
         // Note: storageService handles config retrieval, decryption and adapter lookup
-        const result = await storageService.downloadFile(params.id, file, tempFile, decrypt, { profileIdOverride, database });
+        const result = await storageService.downloadFile(params.id, file, tempFile, decrypt, { profileIdOverride, database, caller: ctx });
 
         if (!result.success) {
              await fsPromises.unlink(tempFile).catch(() => {});
@@ -192,7 +192,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         // See the GET above.
         tempFile = await privateTempPath(`download_${randomUUID()}`);
 
-        const result = await storageService.downloadFile(params.id, file, tempFile, true, { rawKeyHex, profileIdOverride, database });
+        const result = await storageService.downloadFile(params.id, file, tempFile, true, { rawKeyHex, profileIdOverride, database, caller: ctx });
 
         if (!result.success) {
             await fsPromises.unlink(tempFile).catch(() => {});

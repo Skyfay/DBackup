@@ -1,8 +1,7 @@
 import prisma from "@/lib/prisma";
 import { encrypt } from "@/lib/crypto";
 import { tenantSignInRefusal } from "@/lib/auth/sso-tenant-guard";
-
-const CONNECT_TOKEN_TTL_MS = 5 * 60 * 1000;
+import { CONNECT_CALLBACK_PATH, CONNECT_TOKEN_TTL_MS, newConnectNonce } from "@/lib/auth/sso-connect-nonce";
 
 export interface SsoConnection {
     /** Account row's DB id - React list key only, NOT what better-auth matches on for unlink. */
@@ -101,12 +100,13 @@ export async function countSignInAccounts(userId: string): Promise<number> {
  * Starts connecting another provider to a user. The callback URL carries a short-lived encrypted
  * token, which src/app/api/auth/sso-link-callback/route.ts checks against the session the
  * provider signs in, so a provider that answers with another registered email never switches
- * the browser to that account silently.
+ * the browser to that account silently. The token also names the hash of `nonce`, which the caller
+ * sets as a cookie of the browser that asked, so the callback acts only for that browser.
  */
 export async function prepareSsoConnect(
     userId: string,
     providerId: string
-): Promise<{ success: true; callbackURL: string } | { success: false; error: string }> {
+): Promise<{ success: true; callbackURL: string; nonce: string } | { success: false; error: string }> {
     const provider = await prisma.ssoProvider.findUnique({ where: { providerId }, select: { enabled: true, tenantId: true, domain: true } });
     if (!provider || !provider.enabled || (provider.tenantId && !mayConnect(provider, await connectingUser(userId)))) {
         return { success: false, error: "This provider is not available." };
@@ -117,9 +117,11 @@ export async function prepareSsoConnect(
         return { success: false, error: "This provider is already connected." };
     }
 
-    const token = encrypt(JSON.stringify({ userId, expiresAt: Date.now() + CONNECT_TOKEN_TTL_MS }));
+    const { nonce, nonceHash } = newConnectNonce();
+    const token = encrypt(JSON.stringify({ userId, expiresAt: Date.now() + CONNECT_TOKEN_TTL_MS, nonceHash }));
     return {
         success: true,
-        callbackURL: `/api/auth/sso-link-callback?t=${encodeURIComponent(token)}`,
+        callbackURL: `${CONNECT_CALLBACK_PATH}?t=${encodeURIComponent(token)}`,
+        nonce,
     };
 }

@@ -5,9 +5,10 @@ import { reachOf } from "@/lib/network/reach-policy";
 /**
  * The address rsync and ssh dial for a connection of a tenant that blocks the local network: the
  * one the check resolved right before the call, see `reach-check.ts`, so a name that answers
- * otherwise for ssh reaches no address of the local network either. ssh checks no host key here,
- * see `SSH_HOST_KEY_OPTIONS` in `rsync.ts`, so dialing the address instead of the name changes
- * nothing else. A connection of any other tenant dials its host as before.
+ * otherwise for ssh reaches no address of the local network either. ssh looks the host key up
+ * under a fixed alias, see `HOST_KEY_ALIAS` in `host-key-openssh.ts`, so dialing the address
+ * instead of the name changes nothing about the pin. A connection of any other tenant dials its
+ * host as before.
  */
 
 /**

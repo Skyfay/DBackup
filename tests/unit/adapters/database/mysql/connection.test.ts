@@ -8,6 +8,7 @@ import {
     getDatabasesWithStats,
 } from "@/lib/adapters/database/mysql/connection";
 import type { HostKind } from "@/lib/transport/types";
+import { clientHost, statements } from "./client-help";
 
 /**
  * Direct and SSH used to be two implementations with two test suites. They are
@@ -212,45 +213,45 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (k
 
     describe("ensureDatabase()", () => {
         it("creates the database without granting when not privileged", async () => {
-            const host = createFakeHost({ kind });
+            const host = clientHost({ kind });
             const logs: string[] = [];
 
             await ensureDatabase(baseConfig as never, "shop", "root", "pw", false, logs, host);
 
-            expect(host.calls.exec).toHaveLength(1);
-            expect(queryOf(host.calls.exec[0])).toBe("CREATE DATABASE IF NOT EXISTS `shop`");
+            expect(statements(host)).toHaveLength(1);
+            expect(queryOf(statements(host)[0])).toBe("CREATE DATABASE IF NOT EXISTS `shop`");
             expect(logs).toContain("Database 'shop' ensured.");
         });
 
         it("grants privileges as well when privileged", async () => {
-            const host = createFakeHost({ kind });
+            const host = clientHost({ kind });
             const logs: string[] = [];
 
             await ensureDatabase(baseConfig as never, "shop", "admin", "pw", true, logs, host);
 
-            expect(host.calls.exec).toHaveLength(2);
-            expect(queryOf(host.calls.exec[1])).toContain("GRANT ALL PRIVILEGES ON `shop`.*");
+            expect(statements(host)).toHaveLength(2);
+            expect(queryOf(statements(host)[1])).toContain("GRANT ALL PRIVILEGES ON `shop`.*");
             expect(logs).toContain("Permissions granted for 'shop'.");
         });
 
         it("keeps a backtick in the target name inside the name", async () => {
-            const host = createFakeHost({ kind });
+            const host = clientHost({ kind });
             await ensureDatabase({ ...baseConfig, user: "app'x" } as never, "shop`x", "admin", "pw", true, [], host);
 
-            expect(queryOf(host.calls.exec[0])).toBe("CREATE DATABASE IF NOT EXISTS `shop``x`");
-            expect(queryOf(host.calls.exec[1])).toContain("ON `shop``x`.* TO 'app''x'@'%'");
+            expect(queryOf(statements(host)[0])).toBe("CREATE DATABASE IF NOT EXISTS `shop``x`");
+            expect(queryOf(statements(host)[1])).toContain("ON `shop``x`.* TO 'app''x'@'%'");
         });
 
         it("connects as the privileged user when one is given", async () => {
-            const host = createFakeHost({ kind });
+            const host = clientHost({ kind });
             await ensureDatabase(baseConfig as never, "shop", "admin", "pw", false, [], host);
 
-            const argv = host.calls.exec[0];
+            const argv = statements(host)[0];
             expect(argv[argv.indexOf("-u") + 1]).toBe("admin");
         });
 
         it("warns instead of throwing when the create fails", async () => {
-            const host = createFakeHost({ kind, onExec: () => ({ code: 1, stderr: "denied" }) });
+            const host = clientHost({ kind, onExec: () => ({ code: 1, stderr: "denied" }) });
             const logs: string[] = [];
 
             await ensureDatabase(baseConfig as never, "shop", "root", "pw", false, logs, host);
@@ -260,7 +261,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (k
         });
 
         it("warns when only the grant fails", async () => {
-            const host = createFakeHost({
+            const host = clientHost({
                 kind,
                 onExec: (argv) => queryOf(argv)?.startsWith("GRANT")
                     ? { code: 1, stderr: "no grant option" }
@@ -275,7 +276,7 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (k
         });
 
         it("warns instead of throwing when the transport fails", async () => {
-            const host = createFakeHost({ kind, onWhich: () => null });
+            const host = clientHost({ kind, onWhich: () => null });
             const logs: string[] = [];
 
             await ensureDatabase(baseConfig as never, "shop", "root", "pw", false, logs, host);
@@ -284,11 +285,11 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL connection over a %s host", (k
         });
 
         it("writes no defaults-file when there is no password", async () => {
-            const host = createFakeHost({ kind });
+            const host = clientHost({ kind });
             await ensureDatabase(baseConfig as never, "shop", "root", undefined, false, [], host);
 
             expect(host.calls.tempFiles).toHaveLength(0);
-            expect(host.calls.exec[0].some(a => a.startsWith("--defaults-file"))).toBe(false);
+            expect(statements(host)[0].some(a => a.startsWith("--defaults-file"))).toBe(false);
         });
     });
 });

@@ -52,6 +52,9 @@ export async function serverBackupFiles(sourceId: string): Promise<ServerBackupF
         // The listing of the server's tenant, never one of a customer the destination is shared
         // with. On a destination another tenant shares, it holds the folder of the server's tenant.
         const listing = await storageService.readCachedListing(destination.id, source.tenantId);
+        // A listing of an older version may hold rows read without their dump start, which would be
+        // judged by their stamp alone, so it counts for nobody until it is rebuilt.
+        if (listing?.current === false) continue;
         for (const file of listing?.files ?? []) {
             if (!file.hasFileIndex || !file.createdAt || !file.databases?.length) continue;
             if (!fromServer(file, sourceId)) continue;

@@ -135,3 +135,29 @@ export function clientAddressOf(peer: string | undefined, forwarded: HeaderValue
     // Every hop is a trusted network, like a client in the LAN behind a proxy in Docker.
     return chain[0];
 }
+
+/**
+ * What the server logs the first time a forwarded header counts by the default alone, null any
+ * other time. With TRUSTED_PROXIES unset every peer of a private network counts as a reverse proxy,
+ * and the server cannot tell a proxy from a device of that network that connects directly and names
+ * its own address in the header. So the first such request names the peer and the setting that
+ * pins it. A value someone set, also `private`, is a decision and gets no line.
+ *
+ * @param setting  TRUSTED_PROXIES as it is set.
+ * @returns A function for every request, which answers the line once and null from then on.
+ */
+export function defaultTrustNotice(setting: string | undefined, trusted: BlockList, header: ProxyHeader = "x-forwarded-for"): (peer: string | undefined, forwarded: HeaderValue, realIp: HeaderValue) => string | null {
+    let pending = !setting?.trim();
+    return (peer, forwarded, realIp) => {
+        if (!pending || !peer) return null;
+        if (!joined(header === "x-real-ip" ? realIp : forwarded).trim()) return null;
+        const remote = normalizeAddress(peer);
+        if (!isTrusted(remote, trusted)) return null;
+        pending = false;
+        const name = header === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For";
+        return `${name} of ${remote} counts as the address of the client, because TRUSTED_PROXIES is unset and every private network is trusted. `
+            + `If ${remote} is your reverse proxy, set TRUSTED_PROXIES=${remote} to trust it alone. `
+            + "If DBackup is reached without a reverse proxy, set TRUSTED_PROXIES=none. "
+            + "Until then any device of a private network that connects directly names its own address for the rate limits and the audit log.";
+    };
+}

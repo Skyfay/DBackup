@@ -23,6 +23,9 @@ vi.mock("@/lib/prisma", () => ({
     },
 }));
 vi.mock("@/lib/crypto", () => ({ decryptConfig: (value: unknown) => value }));
+// Whether a recorded run of the job of a source wrote the backup, see `recorded-origin.ts`.
+const recorded = vi.hoisted(() => ({ byRun: true }));
+vi.mock("@/services/restore/recorded-origin", () => ({ archiveReadSource: async () => recorded.byRun }));
 // The volumes DBackup's own container keeps its data in, on the Docker of the server it runs on.
 const own = vi.hoisted(() => ({ volumes: new Set<string>(), calls: [] as unknown[][] }));
 const OWN_VOLUME = "DBackup's own container keeps its database in this volume.";
@@ -256,7 +259,9 @@ describe("the directory mappings of a full restore", () => {
         db.sources.set("src-www", { configId: "nas", path: "/var/www" });
     });
 
-    const mapping = (targetConfigId: string, targetPath: string) => ({ directoryMapping: [{ entryId: "src-1", targetConfigId, targetPath, selected: true }] });
+    // The backup the restore reads, which a recorded run of the job of the source wrote unless a test says otherwise.
+    const backup = { storageConfigId: "dest-1", file: "Shop/Shop_2026-10-01.tar" };
+    const mapping = (targetConfigId: string, targetPath: string) => ({ ...backup, directoryMapping: [{ entryId: "src-1", targetConfigId, targetPath, selected: true }] });
 
     it("refuses the Docker of the server before anything runs, unless a platform admin restores", async () => {
         await expect(assertRestoreTargetsAllowed(mapping("docker-local", "nextcloud_data"), MEMBER)).rejects.toBeInstanceOf(PermissionError);
@@ -270,10 +275,25 @@ describe("the directory mappings of a full restore", () => {
     });
 
     it("takes back the folder a source read, and refuses another place to a member", async () => {
-        const www = (targetConfigId: string, targetPath: string) => ({ directoryMapping: [{ entryId: "src-www", targetConfigId, targetPath, selected: true }] });
+        const www = (targetConfigId: string, targetPath: string) => ({ ...backup, directoryMapping: [{ entryId: "src-www", targetConfigId, targetPath, selected: true }] });
         await expect(assertRestoreTargetsAllowed(www("nas", "/var/www"), MEMBER)).resolves.toBeUndefined();
         await expect(assertRestoreTargetsAllowed(www("nas", "/backups/Shop"), MEMBER)).rejects.toThrow(OTHER_TARGET_REFUSED);
         await expect(assertRestoreTargetsAllowed(www("nas", "/backups/Shop"), MANAGER)).resolves.toBeUndefined();
+    });
+
+    it("takes back the folder a source read only out of a backup a recorded run of its job wrote", async () => {
+        const www = { ...backup, directoryMapping: [{ entryId: "src-www", targetConfigId: "nas", targetPath: "/var/www/sub", selected: true }] };
+        recorded.byRun = false;
+        try {
+            // An archive laid at the destination, whose mapping names the source of a job.
+            await expect(assertRestoreTargetsAllowed(www, MEMBER)).rejects.toThrow(OTHER_TARGET_REFUSED);
+            await expect(assertRestoreTargetsAllowed(mapping("docker-ssh", "nextcloud_data"), MEMBER)).rejects.toThrow(OTHER_VOLUME_REFUSED);
+            await expect(assertRestoreTargetsAllowed(www, MANAGER)).resolves.toBeUndefined();
+        } finally {
+            recorded.byRun = true;
+        }
+        // A request that names no backup has no run to show either.
+        await expect(assertRestoreTargetsAllowed({ directoryMapping: www.directoryMapping }, MEMBER)).rejects.toThrow(OTHER_TARGET_REFUSED);
     });
 
     it("refuses a folder that leaves its connection", async () => {
@@ -292,7 +312,7 @@ describe("the directory mappings of a full restore", () => {
         db.sources.set("src-acme", { configId: "acme-nas", path: "/var/www" });
         guard.calls = 0;
         own.calls.length = 0;
-        const acme = { directoryMapping: [{ entryId: "src-acme", targetConfigId: "acme-nas", targetPath: "/var/www", selected: true }] };
+        const acme = { ...backup, directoryMapping: [{ entryId: "src-acme", targetConfigId: "acme-nas", targetPath: "/var/www", selected: true }] };
         const missing = "Invalid restore target for a directory entry: adapter 'acme-nas' not found";
         for (const caller of [MEMBER, MANAGER, ADMIN]) {
             await expect(assertRestoreTargetsAllowed(acme, caller)).rejects.toThrow(missing);

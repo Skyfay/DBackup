@@ -176,3 +176,83 @@ describe("an account back from Recently deleted", () => {
         expect(await runAsSystem(() => db.deletedRecord.count({ where: { id: trashId } }))).toBe(0);
     });
 });
+
+describe("a deleted account of a customer tenant whose group was deleted meanwhile", () => {
+    const TENANT_ADMIN = { isPlatformAdmin: false, authMethod: "session" as const };
+    const PLATFORM_ADMIN = { isPlatformAdmin: true, authMethod: "session" as const };
+
+    /** The admin of Acme deletes the account they made and then its now empty group. */
+    async function deleteWithGroup(userId = "u-carla") {
+        await db.account.create({ data: { id: `cred-${userId}`, accountId: userId, providerId: "credential", userId, password: "hash-chosen-by-the-customer", createdAt: now, updatedAt: now } });
+        const trashId = await runAsTenant("acme", () => deleteAccount(userId));
+        await runAsTenant("acme", () => db.group.delete({ where: { id: "g-acme" } }));
+        return trashId;
+    }
+
+    it("never comes back as an account of no tenant, among the people of the home tenant, through the admin of the customer", async () => {
+        const trashId = await deleteWithGroup();
+        app.requestTenant = "acme";
+
+        const settings = await restoreFromTrash([trashId], { caller: TENANT_ADMIN });
+        const undo = await restoreFromTrash([trashId], { anyTenantAccounts: true, caller: TENANT_ADMIN });
+
+        for (const result of [settings, undo]) {
+            expect(result.restored).toEqual([]);
+            expect(result.failed).toEqual([expect.objectContaining({ id: trashId, error: expect.stringContaining("would come back in no tenant") })]);
+        }
+        expect(await db.user.findUnique({ where: { id: "u-carla" } })).toBeNull();
+        expect(await db.account.count({ where: { userId: "u-carla" } })).toBe(0);
+        // It still waits in Recently deleted for a platform admin, or to be deleted for good.
+        expect(await entryOf(trashId)).toMatchObject({ recordId: "u-carla" });
+    });
+
+    it("refuses a restore that names no caller the same way", async () => {
+        const trashId = await deleteWithGroup();
+        app.requestTenant = "acme";
+
+        expect((await restoreFromTrash([trashId])).restored).toEqual([]);
+        expect(await db.user.findUnique({ where: { id: "u-carla" } })).toBeNull();
+    });
+
+    it("comes back without a group through a platform admin, who may place it anywhere", async () => {
+        const trashId = await deleteWithGroup();
+        app.requestTenant = "acme";
+
+        const result = await restoreFromTrash([trashId], { caller: PLATFORM_ADMIN });
+
+        expect(result.restored).toEqual([expect.objectContaining({ recordId: "u-carla", notes: ["Its group is gone, so it sees nothing until it gets one."] })]);
+        expect(await db.tenantMembership.count({ where: { userId: "u-carla" } })).toBe(0);
+    });
+
+    it("comes back with its membership through the admin of the customer while the group is still there", async () => {
+        const trashId = await runAsTenant("acme", () => deleteAccount("u-carla"));
+        app.requestTenant = "acme";
+
+        const result = await restoreFromTrash([trashId], { caller: TENANT_ADMIN });
+
+        expect(result.restored).toEqual([expect.objectContaining({ recordId: "u-carla", notes: [] })]);
+        expect(await db.tenantMembership.findMany({ where: { userId: "u-carla" }, select: { tenantId: true } })).toEqual([{ tenantId: "acme" }]);
+    });
+
+    it("comes back without a group where the sign-in provider of its own tenant claims its email, since it stays that tenant's", async () => {
+        await db.ssoProvider.create({ data: { tenantId: "acme", providerId: "acme-oidc", adapterId: "generic", name: "Acme login", domain: "example.ch" } });
+        const trashId = await deleteWithGroup();
+        app.requestTenant = "acme";
+
+        const result = await restoreFromTrash([trashId], { caller: TENANT_ADMIN });
+
+        expect(result.restored).toHaveLength(1);
+    });
+
+    it("lets an account of the home tenant come back without its deleted group through an admin of the home tenant", async () => {
+        await runAsSystem(() => db.user.create({ data: { id: "u-homer", name: "Homer", email: "u-homer@example.ch", emailVerified: true, createdAt: now, updatedAt: now, memberships: { create: { tenantId: HOME_TENANT_ID, groupId: "g-home" } } } }));
+        await db.tenantMembership.deleteMany({ where: { userId: "u-root" } });
+        const trashId = await runAsTenant(HOME_TENANT_ID, () => deleteAccount("u-homer"));
+        await runAsTenant(HOME_TENANT_ID, () => db.group.delete({ where: { id: "g-home" } }));
+        app.requestTenant = HOME_TENANT_ID;
+
+        const result = await restoreFromTrash([trashId], { caller: TENANT_ADMIN });
+
+        expect(result.restored).toEqual([expect.objectContaining({ recordId: "u-homer" })]);
+    });
+});

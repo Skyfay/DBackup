@@ -5,6 +5,8 @@ import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { requestRefusal } from "@/lib/server/permission-refusal";
+import { assertOffSharedLogins } from "@/services/adapters/shared-login";
 import { isDriveFolderId } from "@/lib/adapters/storage/google-drive";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
@@ -78,6 +80,9 @@ export async function POST(req: NextRequest) {
         // its folders to someone who may not change it.
         const locked = await savedLoginRefusal({ isPlatformAdmin: viewer.isPlatformAdmin, authMethod: "session" }, credentialId);
         if (locked) return locked;
+        // Nor with the saved login of a destination shared with customers: the drive holds their
+        // folders, which the view of that destination hides and this list would not.
+        await assertOffSharedLogins({ primaryCredentialId: credentialId });
 
         const config = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 
@@ -177,6 +182,9 @@ export async function POST(req: NextRequest) {
     } catch (err) {
         if (err instanceof AuthenticationError) return unauthorized();
         if (err instanceof PermissionError) return NextResponse.json({ success: false, error: "Access denied" }, { status: 403 });
+        // A saved login this list refuses is the caller's to change, no failure of the drive.
+        const refusal = requestRefusal(err);
+        if (refusal) return refusal;
         if (browsing) await logProbe(browsing, "folder_browse", { adapterId: "google-drive" }, false);
         log.error("Google Drive folder browse failed", {}, wrapError(err));
         return NextResponse.json(

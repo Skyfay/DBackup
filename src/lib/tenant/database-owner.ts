@@ -46,6 +46,30 @@ export function matchesPattern(pattern: string, databaseName: string): boolean {
     return matcher.match(databaseName);
 }
 
+/** What a glob reads as more than itself, so the text before the first one is a fixed start. */
+const GLOB_SIGN = /[*?[\]{}()!+@|\\]/;
+
+/**
+ * Whether two patterns can match the same name, as far as their fixed starts and ends tell: `shop_*`
+ * and `blog_*` cannot, `shop_*` and `*_eu` can. True whenever it cannot be ruled out, for a check
+ * that has to hold for names nobody listed yet.
+ */
+export function patternsMayOverlap(a: string, b: string): boolean {
+    const [first, second] = [a.trim(), b.trim()];
+    if (!first || !second) return false;
+    const startOf = (pattern: string) => pattern.slice(0, Math.max(0, pattern.search(GLOB_SIGN) === -1 ? pattern.length : pattern.search(GLOB_SIGN)));
+    const endOf = (pattern: string) => {
+        let from = pattern.length;
+        while (from > 0 && !GLOB_SIGN.test(pattern[from - 1])) from--;
+        return pattern.slice(from);
+    };
+    const plain = (pattern: string) => !GLOB_SIGN.test(pattern);
+    if (plain(first)) return matchesPattern(second, first);
+    if (plain(second)) return matchesPattern(first, second);
+    const [startA, startB, endA, endB] = [startOf(first), startOf(second), endOf(first), endOf(second)];
+    return (startA.startsWith(startB) || startB.startsWith(startA)) && (endA.endsWith(endB) || endB.endsWith(endA));
+}
+
 /** The assignment of the name that holds at the time, if any. */
 export function assignmentAt<T extends AssignmentFact>(assignments: readonly T[], databaseName: string, at: Date): T | null {
     return assignments.find((assignment) =>

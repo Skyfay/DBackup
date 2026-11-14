@@ -100,9 +100,10 @@ describe("what a group lets someone change of the own profile", () => {
 
             expect(await togglePasskeyTwoFactor("u1", false, "right")).toEqual({ success: true });
             expect(mocks.passwordCheck).toHaveBeenLastCalledWith("u1", "right");
-            // With the last passkey gone, whose delete asked for the password, nothing is left to end.
+            // With the last passkey gone the password is still asked for, the deletes may have run at once.
             mocks.passkeys = 0;
-            expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: true });
+            expect(await togglePasskeyTwoFactor("u1", false)).toEqual({ success: false, error: "Enter your password." });
+            expect(await togglePasskeyTwoFactor("u1", false, "right")).toEqual({ success: true });
             // Turning it on asks for nothing.
             expect(await togglePasskeyTwoFactor("u1", true)).toEqual({ success: true });
         } finally {

@@ -59,6 +59,17 @@ function buildMarkdownMessage(message: string, context?: any): string {
     return parts.join("\n");
 }
 
+/**
+ * A title as the value of a header. A line break or another control character becomes a space, and
+ * a title beyond ASCII goes as an RFC 2047 word, which ntfy decodes. A header takes neither as
+ * written, so the name of a job with such a character would keep the whole notification from going out.
+ */
+function headerText(title: string): string {
+    const line = title.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+    if (/^[ -~]*$/.test(line)) return line;
+    return `=?UTF-8?B?${Buffer.from(line, "utf8").toString("base64")}?=`;
+}
+
 export const NtfyAdapter: NotificationAdapter = {
     id: "ntfy",
     type: "notification",
@@ -111,7 +122,7 @@ export const NtfyAdapter: NotificationAdapter = {
             const formattedMessage = buildMarkdownMessage(message, context);
 
             const headers: Record<string, string> = {
-                "Title": context?.title || "DBackup Notification",
+                "Title": headerText(context?.title || "DBackup Notification"),
                 "Priority": String(priority),
                 "Tags": tags.join(","),
                 "Markdown": "yes",

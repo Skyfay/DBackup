@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, storageRole } = body;
+        const { name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, storageRole, sshHostKey } = body;
 
         // Permission Check
         if (type === 'database') {
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
 
         let newAdapter;
         try {
-            newAdapter = await createAdapter({ name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, storageRole });
+            newAdapter = await createAdapter({ name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, storageRole, sshHostKey });
         } catch (e) {
             if (e instanceof ValidationError) return NextResponse.json({ error: e.message }, { status: 400 });
             if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });

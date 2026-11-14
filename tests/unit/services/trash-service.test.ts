@@ -109,7 +109,7 @@ describe("a restore from Recently deleted", () => {
 
         const result = await restoreFromTrash(["t-key"]);
 
-        expect(mocks.restoreSnapshot).toHaveBeenCalledWith(prismaMock, "encryptionKey", { record: {} }, undefined);
+        expect(mocks.restoreSnapshot).toHaveBeenCalledWith(prismaMock, "encryptionKey", { record: {} }, undefined, undefined);
         expect(prismaMock.deletedRecord.delete).toHaveBeenCalledWith({ where: { id: "t-key" } });
         expect(result).toEqual({ restored: [{ id: "t-key", recordId: "key-1", kind: "encryptionKey", name: "Offsite 2025", notes: [] }], conflicts: [], failed: [] });
         expect(mocks.refresh).not.toHaveBeenCalled();

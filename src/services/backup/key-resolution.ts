@@ -25,7 +25,8 @@
 
 import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { parseIndex } from "@/lib/archive/index-file";
-import { EncryptionKeyRequiredError, ValidationError, getErrorMessage } from "@/lib/logging/errors";
+import { EncryptionKeyRequiredError, PermissionError, ValidationError, getErrorMessage } from "@/lib/logging/errors";
+import { CONFIG_BACKUP_KEY_USE_LOCKED } from "@/lib/core/config-backup-locks";
 import { getEncryptionProfiles, getProfileMasterKey } from "./encryption-service";
 import { rememberKeyFor } from "@/services/vault/key-aliases";
 
@@ -64,6 +65,20 @@ export interface KeyResolutionRequest {
     /** Omit only when the format offers no way to test a key - Smart Recovery is then skipped. */
     verify?: KeyVerifier;
     log?: KeyResolutionLog;
+    /**
+     * Whether a profile of the Vault may not open this backup for its caller, see
+     * `wholeFileKeyRefusal` in `config-key-lock.ts`. A profile the request or the backup names is
+     * then refused with a `PermissionError`, and Smart Recovery leaves it out.
+     */
+    refuse?: KeyRefusal;
+}
+
+/** Answers true for a profile whose key the caller may not use on this backup. */
+export type KeyRefusal = (profileId: string) => Promise<boolean>;
+
+/** @throws PermissionError when the profile is one the caller may not use on this backup. */
+async function assertKeyAllowed(profileId: string, refuse: KeyRefusal | undefined): Promise<void> {
+    if (refuse && (await refuse(profileId))) throw new PermissionError("platform admin", { message: CONFIG_BACKUP_KEY_USE_LOCKED });
 }
 
 const MASTER_KEY_HEX = /^[0-9a-fA-F]{64}$/;
@@ -74,11 +89,13 @@ export async function resolveBackupKey({
     override,
     verify,
     log,
+    refuse,
 }: KeyResolutionRequest): Promise<Buffer> {
     const say: KeyResolutionLog = log ?? (() => { });
 
     // ── 1. The user's explicit choice ─────────────────────────────────────
     if (override?.rawKeyHex || override?.profileId) {
+        if (!override.rawKeyHex) await assertKeyAllowed(override.profileId!, refuse);
         const key = override.rawKeyHex
             ? parseRawKey(override.rawKeyHex)
             : await pickedProfileKey(override.profileId!, profileId);
@@ -98,6 +115,7 @@ export async function resolveBackupKey({
 
     // ── 2. The profile the backup names ───────────────────────────────────
     if (profileId) {
+        await assertKeyAllowed(profileId, refuse);
         try {
             return await getProfileMasterKey(profileId);
         } catch {
@@ -117,6 +135,8 @@ export async function resolveBackupKey({
     say(`Smart Recovery: Found ${profiles.length} candidate profile(s).`, "info");
 
     for (const profile of profiles) {
+        // Never a candidate, so a renamed copy of what the key encrypts does not open by trying it.
+        if (refuse && (await refuse(profile.id))) continue;
         say(`Smart Recovery: Testing profile '${profile.name}' (${profile.id})...`, "info");
         try {
             const candidate = await getProfileMasterKey(profile.id);

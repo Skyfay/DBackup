@@ -10,9 +10,12 @@ import { explicitScope, runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { hostLocalReason } from "@/lib/adapters/host-local";
 import { assertOffOwnData } from "@/lib/adapters/own-data";
+import { assertFormConfigTypes } from "@/lib/adapters/config-check";
 import { requestHeaders } from "@/lib/server/request-headers";
 import { assertReachFromHere, assertTenantReach, tenantReach } from "@/services/tenant/tenant-network";
 import { markLocalNetwork } from "@/lib/adapters/network-fact";
+import { markHostKey } from "@/lib/transport/host-key";
+import { storedHostKeyPolicy } from "@/services/adapters/ssh-host-key-service";
 import { currentTenantId } from "@/lib/tenant/current";
 import type {
     CredentialData,
@@ -57,6 +60,8 @@ export interface AdapterConfigInput {
  *    adapter's declared `credentials` requirements
  * 4. Marking it with whether the tenant of the row blocks the local network,
  *    see `network-fact.ts`
+ * 5. Marking it with the pinned SSH host key of the connection, which its SSH
+ *    clients check before they log in, see `src/lib/transport/host-key.ts`
  *
  * Throws `ConfigurationError` if the adapter declares a required primary
  * credential but no profile is assigned. The structural config is still
@@ -84,7 +89,10 @@ export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise
     // The ranges it reaches anyway go along, for the clients that check their addresses again at
     // connect time, see `reach-policy.ts`.
     const reach = await tenantReach(adapter.tenantId);
-    return markLocalNetwork(resolved, reach.blocks, reach.policy);
+    markLocalNetwork(resolved, reach.blocks, reach.policy);
+    // The host key its SSH server has to present, pinned on the first successful login. Never a
+    // field of the stored config either, see `host-key.ts`.
+    return markHostKey(resolved, await storedHostKeyPolicy(adapter, resolved));
 }
 
 async function resolveConfig(adapter: AdapterConfigInput): Promise<Record<string, unknown>> {
@@ -177,13 +185,16 @@ export async function mayReachHost(): Promise<boolean> {
 }
 
 /**
- * Refuses a config of a form that reaches the server DBackup runs on, unless a platform admin runs
+ * Refuses a config of a form with a field of another type than its adapter gives it, see
+ * `formConfigProblems`, one that reaches the server DBackup runs on, unless a platform admin runs
  * it, see `mayReachHost`, one that reaches the own data of DBackup, unless a platform admin runs it, see
  * `own-data.ts`, and one whose hosts lie in the local network while the tenant that runs now
  * blocks it, see `tenant-network.ts`. Every way to try a config before it is saved, like a test or
  * a read of its databases, goes through `overlayCredentialsOnConfig` or calls this.
  */
 export async function assertConfigOffHost(adapterId: string, config: Record<string, unknown>): Promise<void> {
+    // First, since the checks below read a field as text and a list or an object names nothing to them.
+    assertFormConfigTypes(adapterId, config);
     const reason = hostLocalReason(adapterId, config);
     if (reason && !(await mayReachHost())) throw new ValidationError(reason, { field: "config" });
     await assertOffOwnData(adapterId, config);

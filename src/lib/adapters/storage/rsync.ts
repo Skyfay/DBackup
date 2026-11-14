@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadOptions, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry, ListTreeResult, StorageReadOptions } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadOptions, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry, ListTreeResult, StorageReadOptions, UploadOptions } from "@/lib/core/interfaces";
 import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
 import { assertReadSize, FileTooLargeError, isFileTooLarge, readLimitOf, textOf } from "@/lib/adapters/storage/common/read-limit";
 import { createListingGuard } from "@/lib/adapters/storage/common/listing-limits";
@@ -20,16 +20,21 @@ import { refuseListedNames, toRelativePath } from "./common/download-directory";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import { formatExcludeSummary, summariseExcluded } from "@/lib/exclude-summary";
 import { runRsync, sanitizeCommand, type RsyncCommand } from "./rsync-process";
+import { assertRestoreDirAnswer, restoreDirCommand, writesInPlace } from "./rsync-restore-dir";
+import { restoreFolderOf } from "./common/restore-folder";
 import { rsyncUsernameProblem } from "./rsync-user";
 import type { DialAddress } from "./rsync-pin";
+import type { KnownHosts } from "./rsync-host-key";
 import { plainHost, validPort } from "@/lib/adapters/command-values";
+import { assertKeyCost } from "@/lib/transport/key-cost";
+import { opensshHostKeyOptions, opensshRefusal } from "@/lib/transport/host-key-openssh";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 const log = logger.child({ adapter: "rsync" });
 
-interface RsyncConfig extends DialAddress {
+interface RsyncConfig extends DialAddress, KnownHosts {
     host: string;
     port: number;
     username: string;
@@ -63,6 +68,8 @@ function sanitizeError(error: unknown): string {
  * Returns the path to the temp file. Caller must delete it after use.
  */
 async function writeTempKey(privateKey: string): Promise<string> {
+    // The same limits as every other SSH client, so a key is refused alike wherever it is used.
+    assertKeyCost(privateKey);
     // A random name and an exclusive create, so a link planted in the shared temp folder never
     // receives the key.
     const tmpFile = path.join(getTempDir(), `rsync-key-${randomUUID()}`);
@@ -82,17 +89,19 @@ async function writeFileList(relativePaths: string[]): Promise<string> {
 }
 
 /**
- * How every SSH call of this adapter treats the server's host key: accepted without a check,
- * like the SFTP adapter does, and never remembered.
- *
- * Remembering it in ~/.ssh/known_hosts gains nothing while the check is off, and costs twice.
- * The Docker image's user has no home directory, so ssh warned on every run that it could not
- * write the file (#178). Where it can write it, a server that gets a new host key afterwards,
- * say after a reinstall, makes ssh turn password login off "to avoid man-in-the-middle
- * attacks", and every backup to it fails. LogLevel=ERROR hides the "Permanently added" notice
- * the /dev/null file prints instead, while a refused login or an unreachable host still shows.
+ * How every SSH call of this adapter treats the server's host key, decided in `host-key-openssh.ts`:
+ * checked against the `known_hosts` file `rsync-host-key.ts` wrote for the call, or accepted
+ * unchecked for a connection with the check switched off, which gets no file.
  */
-const SSH_HOST_KEY_OPTIONS = ["StrictHostKeyChecking=no", "UserKnownHostsFile=/dev/null", "LogLevel=ERROR"];
+const sshHostKeyOptions = (config: RsyncConfig): string[] =>
+    opensshHostKeyOptions(config.knownHostsFile ? { file: config.knownHostsFile, pinned: config.strictHostKey === true } : undefined);
+
+/** Tells the check of the call when ssh refused the host key of the server, see `rsync-host-key.ts`. */
+function noteHostKeyRefusal(config: RsyncConfig, error: unknown): void {
+    const failure = error as { message?: unknown; stderr?: unknown } | null;
+    const refusal = opensshRefusal(`${String(failure?.message ?? "")}\n${String(failure?.stderr ?? "")}`);
+    if (refusal) config.onHostKeyRefused?.(refusal.presented);
+}
 
 /**
  * The SSH port of the connection as a whole number from 1 to 65535. rsync splits the `-e` command
@@ -108,7 +117,7 @@ function sshPortOf(config: RsyncConfig): number {
  * Builds the SSH command string for rsync's -e flag (never contains passwords).
  */
 function buildSshCommand(config: RsyncConfig, keyFile?: string, controlPath?: string): string {
-    const parts = ["ssh", `-p ${sshPortOf(config)}`, ...SSH_HOST_KEY_OPTIONS.map((option) => `-o ${option}`)];
+    const parts = ["ssh", `-p ${sshPortOf(config)}`, ...sshHostKeyOptions(config).map((option) => `-o ${option}`)];
 
     // Every rsync invocation is its own SSH login. Multiplexing over one shared connection turns
     // a 129-file restore from 129 logins into one - see openSession() for why that matters.
@@ -142,7 +151,7 @@ function buildSshCommand(config: RsyncConfig, keyFile?: string, controlPath?: st
  * This is the safe equivalent of buildSshCommand for non-shell execution.
  */
 function buildSshArgArray(config: RsyncConfig, keyFile?: string, controlPath?: string): string[] {
-    const args = ["-p", String(sshPortOf(config)), ...SSH_HOST_KEY_OPTIONS.flatMap((option) => ["-o", option])];
+    const args = ["-p", String(sshPortOf(config)), ...sshHostKeyOptions(config).flatMap((option) => ["-o", option])];
 
     // See buildSshCommand() - the remote `mkdir` shares the session's connection too.
     if (controlPath) {
@@ -380,6 +389,7 @@ async function execSSHBytes(config: RsyncConfig, command: string, keyFile?: stri
             throw new Error(`The server answered with more than ${limit} MB. Back up its subfolders as separate sources.`);
         }
         if (failure?.killed) throw new Error(`The server did not finish within ${Math.round(timeout / 1000)} seconds.`);
+        noteHostKeyRefusal(config, error);
         // Re-throw with sanitized message (strips raw command from exec errors)
         throw new Error(sanitizeError(error));
     }
@@ -531,7 +541,47 @@ async function buildRsyncArgs(config: RsyncConfig, keyFile?: string, controlPath
     // combined `-avz` into the option `--avz`, which rsync refuses.
     if (config.options) args.push(...config.options.split(/\s+/).filter(Boolean));
 
-    return { args, ...(env ? { env } : {}) };
+    return { args, ...(env ? { env } : {}), ...(config.onHostKeyRefused ? { onHostKeyRefused: config.onHostKeyRefused } : {}) };
+}
+
+/**
+ * Creates the folders of a write of a restore on the server and refuses one below the folder of
+ * the restore that leads out of it, see `rsync-restore-dir.ts`. Unlike the `mkdir -p` of a backup
+ * it has to succeed: a server that runs no command leaves the folders unchecked, so the write is
+ * refused. Each folder is checked once per session, unless the options of the connection write in
+ * place, where a link at the name of each file is removed first.
+ */
+async function ensureRestoreDir(
+    config: RsyncConfig,
+    keyFile: string | undefined,
+    remotePath: string,
+    relativePath: string,
+    dirCache: Set<string>,
+    controlPath: string | undefined,
+    onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined
+): Promise<void> {
+    const below = relativePath.replace(/\\/g, "/");
+    const folder = path.posix.join(config.pathPrefix, restoreFolderOf(remotePath, relativePath)) || ".";
+    const remoteDir = path.posix.dirname(path.posix.join(config.pathPrefix, remotePath));
+    const inPlace = writesInPlace(config.options);
+    const checked = `restore:${remoteDir}`;
+    if (dirCache.has(checked) && !inPlace) return;
+
+    if (onLog && !dirCache.has(checked)) onLog(`Ensuring remote directory: ${remoteDir}`, "info", "storage");
+    const command = restoreDirCommand({
+        folder: remoteArgument(folder),
+        parts: path.posix.dirname(below).split("/").filter((part) => part !== "" && part !== "."),
+        ...(inPlace ? { removeLeafLink: path.posix.basename(below) } : {}),
+    });
+    let answer: string;
+    try {
+        answer = await execSSH(config, command, keyFile, controlPath);
+    } catch (error) {
+        log.warn("Could not check the folders of a restore via SSH", { host: config.host }, wrapError(error));
+        answer = "";
+    }
+    assertRestoreDirAnswer(answer, remoteDir);
+    dirCache.add(checked);
 }
 
 /**
@@ -552,13 +602,17 @@ async function performRsyncUpload(
     onProgress: ((percent: number) => void) | undefined,
     onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
     dirCache: Set<string>,
-    controlPath?: string
+    controlPath?: string,
+    options?: UploadOptions
 ): Promise<boolean> {
     try {
         const destination = buildRemotePath(config, remotePath);
         const remoteDir = path.posix.dirname(path.posix.join(config.pathPrefix, remotePath));
 
-        if (!dirCache.has(remoteDir)) {
+        if (options?.restoreRelativePath !== undefined) {
+            // A write of a restore never follows a link out of the folder of the restore, see `rsync-restore-dir.ts`.
+            await ensureRestoreDir(config, keyFile, remotePath, options.restoreRelativePath, dirCache, controlPath, onLog);
+        } else if (!dirCache.has(remoteDir)) {
             if (onLog) onLog(`Ensuring remote directory: ${remoteDir}`, "info", "storage");
             try {
                 await execSSH(config, `mkdir -p '${shellEscapeSingleQuote(remoteArgument(remoteDir))}'`, keyFile, controlPath);
@@ -698,22 +752,22 @@ export const RsyncAdapter: StorageAdapter = {
             log.warn("Could not establish a shared SSH connection, falling back to one per transfer", { host: config.host }, wrapError(error));
             if (keyFile) {
                 return {
-                    upload: (localPath, remotePath, onProgress, uploadLog) =>
-                        performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, uploadLog ?? onLog, new Set()),
+                    upload: (localPath, remotePath, onProgress, uploadLog, options) =>
+                        performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, uploadLog ?? onLog, new Set(), undefined, options),
                     close: async () => { await fs.unlink(keyFile!).catch(() => { }); },
                 };
             }
             return {
-                upload: (localPath, remotePath, onProgress, uploadLog) =>
-                    performRsyncUpload(config, undefined, localPath, remotePath, onProgress, uploadLog ?? onLog, new Set()),
+                upload: (localPath, remotePath, onProgress, uploadLog, options) =>
+                    performRsyncUpload(config, undefined, localPath, remotePath, onProgress, uploadLog ?? onLog, new Set(), undefined, options),
                 close: async () => { },
             };
         }
 
         const dirCache = new Set<string>();
         return {
-            upload: (localPath, remotePath, onProgress, uploadLog) =>
-                performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache, controlPath),
+            upload: (localPath, remotePath, onProgress, uploadLog, options) =>
+                performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache, controlPath, options),
             close: async () => {
                 // Tell the master to exit rather than waiting out ControlPersist, so the run does
                 // not leave an authenticated connection open behind it.
@@ -724,13 +778,13 @@ export const RsyncAdapter: StorageAdapter = {
         };
     },
 
-    async upload(config: RsyncConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+    async upload(config: RsyncConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, options?: UploadOptions): Promise<boolean> {
         let keyFile: string | undefined;
         try {
             if (config.authType === "privateKey" && config.privateKey) {
                 keyFile = await writeTempKey(config.privateKey);
             }
-            return await performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, onLog, new Set());
+            return await performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, onLog, new Set(), undefined, options);
         } finally {
             if (keyFile) await fs.unlink(keyFile).catch(() => { });
         }

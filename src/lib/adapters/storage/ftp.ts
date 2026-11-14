@@ -1,4 +1,6 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, ListTreeResult, StorageReadOptions } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, ListTreeResult, StorageReadOptions, UploadOptions } from "@/lib/core/interfaces";
+import { ensureFtpRestoreDir } from "./ftp-restore-dir";
+import { restoreFolderOf } from "@/lib/adapters/storage/common/restore-folder";
 import { FTPSchema } from "@/lib/adapters/definitions";
 import { createConnectionPool } from "@/lib/adapters/storage/common/connection-pool";
 import { relativeToPrefix } from "@/lib/adapters/storage/common/prefix";
@@ -151,13 +153,18 @@ async function performFtpUpload(
     remotePath: string,
     onProgress: ((percent: number) => void) | undefined,
     onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
-    dirCache: Set<string>
+    dirCache: Set<string>,
+    options?: UploadOptions
 ): Promise<boolean> {
     try {
         const destination = resolvePath(config, remotePath);
         const dir = path.posix.dirname(destination);
 
-        if (!dirCache.has(dir)) {
+        if (options?.restoreRelativePath !== undefined) {
+            // A write of a restore enters no link below the folder of the restore, see `ftp-restore-dir.ts`.
+            const folder = restoreFolderOf(remotePath, options.restoreRelativePath);
+            await ensureFtpRestoreDir(client, folder === "" ? (config.pathPrefix ?? "") : resolvePath(config, folder), options.restoreRelativePath, dirCache);
+        } else if (!dirCache.has(dir)) {
             await ensureDir(client, destination);
             await client.cd("/");
             dirCache.add(dir);
@@ -396,21 +403,21 @@ export const FTPAdapter: StorageAdapter = {
         const dirCache = new Set<string>();
 
         return {
-            upload: (localPath, remotePath, onProgress, uploadLog) =>
+            upload: (localPath, remotePath, onProgress, uploadLog, options) =>
                 pool.withConnection((client) =>
-                    performFtpUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache)),
+                    performFtpUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache, options)),
             download: (remotePath, localPath, onProgress) =>
                 pool.withConnection((client) => performFtpDownload(client, config, remotePath, localPath, onProgress)),
             close: () => pool.close(),
         };
     },
 
-    async upload(config: FTPConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+    async upload(config: FTPConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, options?: UploadOptions): Promise<boolean> {
         let client: Client | null = null;
         try {
             client = await connectFTP(config);
             if (onLog) onLog(`Connected to FTP ${config.host}:${config.port}`, "info", "storage");
-            return await performFtpUpload(client, config, localPath, remotePath, onProgress, onLog, new Set());
+            return await performFtpUpload(client, config, localPath, remotePath, onProgress, onLog, new Set(), options);
         } catch (error: unknown) {
             log.error("FTP upload failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog && error instanceof Error) onLog(`FTP upload failed: ${error.message}`, "error", "storage", error.stack);

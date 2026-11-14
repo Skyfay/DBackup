@@ -1,7 +1,8 @@
 import prisma from "@/lib/prisma";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
-import { NotFoundError, ServiceError } from "@/lib/logging/errors";
+import { NotFoundError, ServiceError, ValidationError } from "@/lib/logging/errors";
+import { excludePatternsProblem } from "@/lib/exclude-pattern-rules";
 
 const log = logger.child({ service: "ExcludePatternPresetService" });
 
@@ -15,6 +16,15 @@ export async function getExcludePatternPreset(id: string) {
   return preset;
 }
 
+/**
+ * Refuses patterns that would be slow to match. They are matched in the one server process, against
+ * names a source server lists, so a preset holds only patterns of a cheap shape.
+ */
+function assertPatterns(patterns: string[] | undefined) {
+  const problem = patterns ? excludePatternsProblem(patterns) : null;
+  if (problem) throw new ValidationError(problem);
+}
+
 export async function createExcludePatternPreset(input: {
   name: string;
   description?: string;
@@ -22,6 +32,7 @@ export async function createExcludePatternPreset(input: {
   groups?: string[];
   excludedGroupPatterns?: string[];
 }) {
+  assertPatterns(input.patterns);
   const existing = await prisma.excludePatternPreset.findFirst({
     where: { name: input.name },
   });
@@ -56,6 +67,7 @@ export async function updateExcludePatternPreset(
 ) {
   const preset = await prisma.excludePatternPreset.findUnique({ where: { id } });
   if (!preset) throw new NotFoundError("ExcludePatternPreset", id);
+  assertPatterns(input.patterns);
 
   if (input.name && input.name !== preset.name) {
     const existing = await prisma.excludePatternPreset.findFirst({

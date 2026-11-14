@@ -3,6 +3,7 @@ import { unauthorized } from "@/lib/server/unauthorized";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { idList, parseJobBody, textList } from "@/lib/core/job-body";
 import { jobService } from "@/services/jobs/job-service";
 import { logger } from "@/lib/logging/logger";
 import { serviceRefusal } from "@/lib/server/permission-refusal";
@@ -40,10 +41,11 @@ export async function POST(req: NextRequest) {
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
 
-        const body = await req.json();
+        // Checked before anything reads it: an object where an id belongs is a write of its own for Prisma.
+        const body = parseJobBody(await req.json());
         const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification, backupMode, fullEveryDays, verifyByHash } = body;
 
-        if (!name || !schedule || !destinations || !Array.isArray(destinations) || destinations.length === 0) {
+        if (!name || !schedule || !destinations || destinations.length === 0) {
             return NextResponse.json({ error: "Missing required fields (name, schedule, destinations)" }, { status: 400 });
         }
 
@@ -52,27 +54,27 @@ export async function POST(req: NextRequest) {
             schedule,
             sourceId: sourceId || undefined,
             databases: Array.isArray(databases) ? databases : [],
-            destinations: destinations.map((d: { configId: string; priority?: number; retention?: any; retentionPolicyId?: string | null }, i: number) => ({
+            destinations: destinations.map((d, i) => ({
                 configId: d.configId,
                 priority: d.priority ?? i,
                 retention: d.retention ? JSON.stringify(d.retention) : "{}",
                 retentionPolicyId: d.retentionPolicyId ?? null,
             })),
-            sources: Array.isArray(sources) ? sources.map((s: { configId: string; priority?: number; path: string; excludePatterns?: string[]; excludePatternPresetIds?: string[]; stopContainers?: boolean }, i: number) => ({
+            sources: Array.isArray(sources) ? sources.map((s, i) => ({
                 configId: s.configId,
                 priority: s.priority ?? i,
                 path: s.path,
-                excludePatterns: Array.isArray(s.excludePatterns) ? s.excludePatterns : [],
-                excludePatternPresetIds: Array.isArray(s.excludePatternPresetIds) ? s.excludePatternPresetIds : [],
+                excludePatterns: textList(s.excludePatterns),
+                excludePatternPresetIds: idList(s.excludePatternPresetIds) ?? [],
                 // Only forwarded when it really is a boolean, so a client that omits it or
                 // sends something else falls through to the column default rather than
                 // turning an unrelated value into "do not stop anything".
                 ...(typeof s.stopContainers === "boolean" ? { stopContainers: s.stopContainers } : {}),
             })) : undefined,
             notificationIds,
-            notificationTemplateIds: Array.isArray(notificationTemplateIds) ? notificationTemplateIds : undefined,
+            notificationTemplateIds: idList(notificationTemplateIds),
             enabled,
-            encryptionProfileId,
+            encryptionProfileId: encryptionProfileId ?? undefined,
             compression,
             pgCompression,
             notificationEvents,

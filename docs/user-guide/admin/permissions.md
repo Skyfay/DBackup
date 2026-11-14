@@ -92,7 +92,7 @@ Not every area has every level. A group whose permissions match no level of an a
 
 `dashboard:read` belongs to History but stands beside its levels. It lets an API key read the totals of the overview through `GET /api/dashboard/stats` without access to jobs, history or storage. The overview page itself needs no permission.
 
-`sources:read` browses the tables and rows of a database in the Database Explorer, `credentials:reveal` shows the secret of a saved login and is written to the audit log.
+`sources:read` browses the tables and rows of a database in the Database Explorer. For a connection that reaches the server DBackup runs on, like SQLite in local mode, only a platform admin browses them. `credentials:reveal` shows the secret of a saved login and is written to the audit log.
 
 `vault:read` opens the Vault page, so its **Credentials** tab and the saved logins in the search of the header need `credentials:read` as well. The saved login a connection form offers needs `credentials:read` alone.
 

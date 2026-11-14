@@ -27,6 +27,7 @@ import { registerExecution, unregisterExecution } from "@/lib/execution/abort";
 import { processQueue } from "@/lib/execution/queue-manager";
 import type { RestoreInput } from "./types";
 import { resolveDecryptionKey } from "./smart-recovery";
+import { wholeFileKeyRefusal } from "@/services/backup/config-key-lock";
 import { reserveTempSpace, reserveTempSpaceUpTo, tempSpaceRefusal, type TempSpaceReservation } from "./temp-space";
 import { assertEncryptionKept } from "./recorded-encryption";
 import { restoreArchiveSnapshot } from "./archive-restore";
@@ -444,6 +445,9 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                 tempFile,
                 compressionMeta,
                 (msg, level) => log(msg, (level ?? 'info') as LogLevel),
+                undefined,
+                // Never the key of the configuration backup, unless a platform admin restores, see `config-key-lock.ts`.
+                wholeFileKeyRefusal(input.caller),
             );
 
             // The decrypted copy is the size of the download and lies beside it, see `reserveTempSpace`.

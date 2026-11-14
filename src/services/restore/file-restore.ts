@@ -47,7 +47,7 @@ import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import { ENTRY_THROUGH_LINK, LINK_LEAVES_TARGET, linkLeavesTarget, throughLinkOf } from "@/lib/archive/link-target";
 import { assertRestoreFolder } from "@/lib/archive/remote-paths";
-import { assertWriteTargets, isOrigin, restoredFileRefusal, type RestoreCaller } from "./restore-targets";
+import { assertWriteTargets, originOfBackup, restoredFileRefusal, type RestoreCaller } from "./restore-targets";
 import { reserveTempSpace, type TempSpaceReservation } from "./temp-space";
 import { parseWithinBudget } from "@/services/backup/index-parse-budget";
 import { assertEncryptionKept } from "./recorded-encryption";
@@ -414,7 +414,9 @@ interface RestoreTarget {
  * Only a source the request names in its selection counts as the origin of its files. The ids of
  * the index come from the destination, so a backup could name the source of another job, whose
  * folder the restore would then write as its origin, without the right to change that connection,
- * see `writeTargetRefusal`. A whole snapshot restored without a selection writes as anywhere else.
+ * see `writeTargetRefusal`. A whole snapshot restored without a selection writes as anywhere else,
+ * and so does a backup no recorded run of the job of that source wrote, since the selection comes
+ * from the request as well, see `originOfBackup`.
  */
 async function resolveTargets(
     input: FileRestoreInput,
@@ -439,7 +441,7 @@ async function resolveTargets(
                 tenantId: found.row.tenantId,
                 basePath: input.target.basePath,
                 label: `${found.row.name}:${input.target.basePath}`,
-                origin: named.has(src) && isOrigin(source, input.target.configId, input.target.basePath, found.row.adapterId),
+                origin: named.has(src) && await originOfBackup(input, src, source, input.target.configId, input.target.basePath, found.row.adapterId),
                 destination: found.row.storageRole === STORAGE_ROLES.DESTINATION,
             });
         }
@@ -468,7 +470,8 @@ async function resolveTargets(
             tenantId: origin.row.tenantId,
             basePath: jobSource.path,
             label: `${jobSource.config.name}:${jobSource.path}`,
-            origin: named.has(src),
+            // Only out of a backup a run of the job of this source wrote, see `originOfBackup`.
+            origin: named.has(src) && await originOfBackup(input, src, jobSource, jobSource.configId, jobSource.path, origin.row.adapterId),
             destination: origin.row.storageRole === STORAGE_ROLES.DESTINATION,
         });
     }

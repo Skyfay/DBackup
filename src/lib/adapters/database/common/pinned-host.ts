@@ -1,6 +1,7 @@
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import type { ExecOptions, ExecutionHost, SpawnOptions } from "@/lib/transport";
 import { hostOf } from "@/lib/adapters/dialed-hosts";
+import { parseMongoTarget } from "@/lib/adapters/database/mongodb/args";
 import { reachableAddress } from "@/lib/network/checked-socket";
 import { isAddressLiteral } from "@/lib/network/local-network";
 import { reachOf, type ReachPolicy } from "@/lib/network/reach-policy";
@@ -33,7 +34,15 @@ type Config = Record<string, unknown>;
 type Pinned = { config: Config; env?: Record<string, string> };
 type Pin = (config: Config, reach: ReachPolicy) => Promise<Pinned>;
 
-const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+/**
+ * A field as text. A host or an option that is there and no text is refused, since the tool would
+ * read the text of a list like `["127.0.0.1"]` where the pin sees an empty field and pins nothing.
+ */
+function text(value: unknown): string {
+    if (value === undefined || value === null) return "";
+    if (typeof value !== "string") throw new Error("A host of the connection is no text, so its address cannot be checked.");
+    return value.trim();
+}
 
 const portOf = (config: Config, fallback: number) => Number(config.port) || fallback;
 
@@ -77,20 +86,25 @@ const firebird: Pin = async (config, reach) => {
     return { config: { ...config, host: `${bracketed(await reachableAddress(bare, port, reach.allowed))}${typed ? `/${typed[2]}` : ""}` } };
 };
 
-/** TLS turned on by the additional options of the MongoDB tools or by a query in the host field. */
+/**
+ * TLS turned on by the additional options of the MongoDB tools. A query in the host field turns
+ * nothing on, `parseMongoTarget` cuts it off before the tools and the driver get the host.
+ */
 const MONGO_TLS = /--tls\b|--ssl\b|\b(?:tls|ssl)=true\b/i;
 
-/** The tools and the driver: one host by its address, with its port, see `parseMongoTarget`. */
+/**
+ * The tools and the driver: one host by its address, with its port. The field is read by
+ * `parseMongoTarget`, the parser of the adapter itself, so every spelling the adapter takes for one
+ * host, like `name/`, `user@name` or `mongodb://name`, is pinned and none of them dials the name.
+ */
 const mongodb: Pin = async (config, reach) => {
-    const host = text(config.host);
-    if (MONGO_TLS.test(text(config.options)) || MONGO_TLS.test(host)) return { config };
-    if (config.uri || !host || /^mongodb(\+srv)?:\/\//i.test(host) || host.includes(",") || host.includes("@")) return { config };
-    const withPort = /^(\[[^\]]+\]|[^:/?]+)(?::(\d+))?$/.exec(host);
-    if (!withPort) return { config };
-    const bare = withPort[1].replace(/^\[|\]$/g, "");
-    if (isAddressLiteral(bare)) return { config };
-    const port = withPort[2] ? Number(withPort[2]) : portOf(config, 27017);
-    return { config: { ...config, host: `${bracketed(await reachableAddress(bare, port, reach.allowed))}${withPort[2] ? `:${withPort[2]}` : ""}` } };
+    if (config.uri || MONGO_TLS.test(text(config.options))) return { config };
+    const target = parseMongoTarget({ host: text(config.host), port: portOf(config, 27017) } as Parameters<typeof parseMongoTarget>[0]);
+    // A seed list and an SRV name are refused for such a tenant, see `announcedHostsReason`.
+    if (target.srv || target.multiHost) return { config };
+    const bare = target.host.replace(/^\[|\]$/g, "");
+    const address = isAddressLiteral(bare) ? bare : await reachableAddress(bare, target.port, reach.allowed);
+    return { config: { ...config, host: `${bracketed(address)}:${target.port}` } };
 };
 
 /** The MySQL and MariaDB tools with TLS off, see the top of this module. */

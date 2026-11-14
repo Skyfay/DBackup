@@ -9,6 +9,9 @@ import { logger } from "@/lib/logging/logger";
 import { currentTenantId } from "@/lib/tenant/current";
 import { assertHostsReachable, tenantReach } from "@/services/tenant/tenant-network";
 import { reachableAddress } from "@/lib/network/checked-socket";
+import { assertKeyCost } from "@/lib/transport/key-cost";
+import { hostKeyOf, sshHostKeyCheck } from "@/lib/transport/host-key";
+import { assertOffSharedLogins } from "@/services/adapters/shared-login";
 
 const log = logger.child({ service: "FilesystemService" });
 
@@ -125,12 +128,16 @@ export interface RemoteListingInput {
 /**
  * Lists a directory on a server over SFTP, for a path field whose file lives there, like an
  * SQLite database in SSH mode. The login comes from the SSH credential profile when one is set.
+ *
+ * @throws ValidationError for the saved login of a destination shared with customers, which would
+ *   list their backups on its server, see `shared-login.ts`.
  */
 export async function listRemoteDirectory({ config, path: requestedPath = "/", adapterId, sshCredentialId }: RemoteListingInput): Promise<DirectoryListing> {
     if (!config || !config.host) throw new ValidationError("Missing SSH configuration");
 
     let resolved: Record<string, unknown> = { ...config };
     if (adapterId && sshCredentialId) {
+        await assertOffSharedLogins({ sshCredentialId });
         try {
             resolved = (await overlayCredentialsOnConfig(adapterId, resolved, null, sshCredentialId)) as Record<string, unknown>;
         } catch (error: unknown) {
@@ -142,30 +149,46 @@ export async function listRemoteDirectory({ config, path: requestedPath = "/", a
     }
     // The browse dials this host whatever mode the form holds, so its tenant's network rule counts for it.
     const tenantId = await currentTenantId();
-    await assertHostsReachable(tenantId, hostsIn(resolved.host));
+    await assertHostsReachable(tenantId, () => hostsIn(resolved.host));
     // And at the address checked at connect time, see `reach-check.ts`.
     const { policy } = await tenantReach(tenantId);
 
     // What the server says, like a refused login or a missing folder, goes back to the picker.
     return answerOf("sftp", "list folder", async () => {
         const host = policy ? await reachableAddress(String(resolved.host), Number(resolved.port) || 22, policy.allowed) : resolved.host as string;
-        return listOverSftp({ ...resolved, host }, requestedPath);
+        return listOverSftp({ ...resolved, host }, requestedPath, { host: String(resolved.host), port: Number(resolved.port) || 22 });
     });
 }
 
-/** Lists one folder over SFTP with a config that already holds its login. */
-async function listOverSftp(resolved: Record<string, unknown>, requestedPath: string): Promise<DirectoryListing> {
+/**
+ * Lists one folder over SFTP with a config that already holds its login. `named` is the server as
+ * the form names it, while the config may dial a checked address of it.
+ */
+async function listOverSftp(resolved: Record<string, unknown>, requestedPath: string, named: { host: string; port: number }): Promise<DirectoryListing> {
     const sftp = new Client();
+    // The host key of the server is checked against the pin the config carries, see `host-key.ts`.
+    const check = sshHostKeyCheck(hostKeyOf(resolved), named);
     try {
-        await sftp.connect({
+        // ssh2 derives the key of an encrypted file on the event loop, so its cost is bounded first.
+        assertKeyCost(resolved.privateKey);
+        const login = {
             host: resolved.host as string,
             port: (resolved.port as number) || 22,
             username: resolved.username as string,
             password: resolved.password as string | undefined,
             privateKey: resolved.privateKey as string | undefined,
             passphrase: resolved.passphrase as string | undefined,
+            hostVerifier: check.verifier,
+            ...(check.algorithms ? { algorithms: check.algorithms } : {}),
             readyTimeout: 10000,
-        });
+        };
+        try {
+            await sftp.connect(login);
+        } catch (error: unknown) {
+            // A refused host key reaches here as a plain handshake error, the check knows why.
+            throw check.failure(error);
+        }
+        await check.loggedIn();
 
         // An empty path lists the home directory of the SSH user.
         const targetPath = requestedPath === "" ? "." : requestedPath;

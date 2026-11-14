@@ -337,7 +337,11 @@ export async function stepRetention(ctx: RunnerContext): Promise<void> {
 
 ## Queue Manager
 
-Controls concurrent backup execution:
+Controls concurrent backup execution. The queue is one for every tenant. A free slot goes to the
+tenant with the fewest running runs, then to the tenant that got a slot longest ago, and inside a
+tenant to its oldest waiting run (`pickFairly` in `src/lib/core/queue-fairness.ts`). The plan of
+the queue the Timeline draws (`planQueue`) follows the same rule. The sketch below shows only the
+slots:
 
 ```typescript
 // src/lib/execution/queue-manager.ts

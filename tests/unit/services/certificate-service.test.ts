@@ -46,6 +46,10 @@ vi.mock("@/lib/logging/errors", async (importOriginal) => ({
   wrapError: (e: unknown) => e,
 }));
 
+// The check of the real PEM content has its own test, certificate-upload-check.test.ts. The texts
+// here are placeholders, so it is switched off.
+vi.mock("@/services/system/certificate-check", () => ({ assertServableCertificate: vi.fn() }));
+
 import {
   isHttpsEnabled,
   certificateExists,

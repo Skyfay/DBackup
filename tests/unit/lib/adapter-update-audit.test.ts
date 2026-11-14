@@ -35,6 +35,8 @@ vi.mock("@/lib/prisma", () => ({
             update: (...args: unknown[]) => mocks.update(...args),
         },
         credentialProfile: { findMany: (...args: unknown[]) => mocks.profiles(...args) },
+        // No destination shared with customers signs in with the login, see `shared-login.ts`.
+        connectionShare: { findFirst: vi.fn().mockResolvedValue(null) },
     },
 }));
 

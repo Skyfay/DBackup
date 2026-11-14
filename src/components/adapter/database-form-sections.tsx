@@ -10,6 +10,7 @@ import { FirebirdAliasFields } from "./firebird-alias-fields";
 import { RedisDatabaseSelect } from "./redis-database-select";
 import { SwitchList, SwitchRow } from "./setting-switches";
 import { SshTestButton } from "./ssh-test-button";
+import { HostKeySwitch } from "./ssh-host-key";
 import { PLATFORM_ADMIN_ONLY, useMayReachServer } from "./host-local-access";
 import type { ConnectionSectionProps } from "./use-connection-form";
 
@@ -125,6 +126,7 @@ function TransferPart(props: ConnectionSectionProps) {
                 <>
                     <HostPortFields adapter={adapter} hostKey="sshHost" portKey="sshPort" hostLabel="SSH host" hostDescription="Leave it empty to use the database host." />
                     <SshLogin {...props} />
+                    <HostKeySwitch />
                 </>
             )}
         </>
@@ -183,6 +185,7 @@ export function DatabaseSection({ id, keys, ...props }: ConnectionSectionProps &
                 <>
                     <HostPortFields adapter={adapter} hostKey={isSqlite ? "host" : "sshHost"} portKey={isSqlite ? "port" : "sshPort"} hostLabel="SSH host" />
                     <SshLogin {...props} />
+                    <HostKeySwitch />
                 </>
             );
         case "database":

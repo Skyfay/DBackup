@@ -18,7 +18,8 @@ import type { ReachPolicy } from "@/lib/network/reach-policy";
  *
  * Not covered: the lookup of a named instance (`host\INSTANCE` without a port), which tedious sends
  * as a UDP datagram to port 1434 of the name it resolves itself, before the connector runs.
- * Any other tenant gets no connector, so tedious dials as before.
+ * Any other tenant gets no connector for a direct pool, so tedious dials as before. Through the SSH
+ * tunnel every tenant gets one, since the forward carries only the sockets its own `dial` opens.
  */
 
 type Connector = (options: { host: string; port: number; localAddress?: string }, lookup: unknown, signal: AbortSignal) => Promise<net.Socket>;
@@ -48,19 +49,24 @@ function dial(address: string, port: number, localAddress: string | undefined, s
 }
 
 /**
- * The connector for a pool that dials `dialed`, or undefined for a tenant that blocks nothing.
- * `tunnelled` says that `dialed` is the local end of an SSH forward.
+ * The connector for a pool that dials `dialed`, or undefined for a direct pool of a tenant that
+ * blocks nothing. `tunnelled` says that `dialed` is the local end of an SSH forward, and
+ * `dialTunnel` opens a socket to it, `dial` of the forward: its listener carries no other peer, see
+ * `port-forward.ts`, so a tunnelled pool goes through the connector for every tenant.
  */
-export function tdsConnector(dialed: string, tunnelled: boolean, reach: ReachPolicy | null): Connector | undefined {
-    if (!reach) return undefined;
+export function tdsConnector(dialed: string, tunnelled: boolean, reach: ReachPolicy | null, dialTunnel?: (signal: AbortSignal) => Promise<net.Socket>): Connector | undefined {
+    if (!reach && !(tunnelled && dialTunnel)) return undefined;
     return async ({ host, port, localAddress }, _lookup, signal) => {
         const redirected = plain(host) !== plain(dialed);
         if (tunnelled) {
-            if (redirected) {
+            if (redirected && reach) {
                 throw new Error(`SQL Server redirected the connection to ${host}:${port}, which lies outside the SSH tunnel, so DBackup does not follow it. Connect to the server the redirect names instead.`);
             }
-            return dial(host, port, localAddress, signal);
+            // A tenant that blocks nothing follows a redirect as tedious does on its own.
+            if (redirected || !dialTunnel) return dial(host, port, localAddress, signal);
+            return dialTunnel(signal);
         }
+        if (!reach) return dial(host, port, localAddress, signal);
         const addresses = await checkedAddresses(host, reach.allowed);
         let last: unknown;
         for (const { address } of addresses) {

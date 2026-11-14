@@ -24,7 +24,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import next from "next";
 
-import { CLIENT_ADDRESS_HEADER, CUSTOM_SERVER_MARK, clientAddressOf, proxyHeaderFrom, trustedProxiesFrom, type ProxyHeader } from "./server/client-address";
+import { CLIENT_ADDRESS_HEADER, CUSTOM_SERVER_MARK, clientAddressOf, defaultTrustNotice, proxyHeaderFrom, trustedProxiesFrom, type ProxyHeader } from "./server/client-address";
 
 // ── Configuration ──────────────────────────────────────────────
 (process.env as Record<string, string | undefined>).NODE_ENV = "production";
@@ -42,9 +42,12 @@ const keyPath = path.join(certsDir, "tls.key");
 // Checked before anything starts, so an entry with a typo stops the server instead of trusting the wrong proxies.
 let trustedProxies: BlockList;
 let proxyHeader: ProxyHeader;
+// The line of the first forwarded header that counts by the default alone, see defaultTrustNotice.
+let trustNotice: ReturnType<typeof defaultTrustNotice>;
 try {
   trustedProxies = trustedProxiesFrom(process.env.TRUSTED_PROXIES);
   proxyHeader = proxyHeaderFrom(process.env.TRUSTED_PROXY_HEADER);
+  trustNotice = defaultTrustNotice(process.env.TRUSTED_PROXIES, trustedProxies, proxyHeader);
   console.log(`[Server] ${proxyHeader === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For"} counts from: ${process.env.TRUSTED_PROXIES?.trim() || "private (the default)"}`);
 } catch (err: unknown) {
   console.error(`[Server] ${err instanceof Error ? err.message : String(err)}`);
@@ -218,6 +221,8 @@ app.prepare().then(() => {
 
   const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     try {
+      const notice = trustNotice(req.socket.remoteAddress, req.headers["x-forwarded-for"], req.headers["x-real-ip"]);
+      if (notice) console.warn(`[Server] ${notice}`);
       // The app reads the address of the client from here only. A value the client sent is replaced.
       req.headers[CLIENT_ADDRESS_HEADER] = clientAddressOf(
         req.socket.remoteAddress,
@@ -244,7 +249,17 @@ app.prepare().then(() => {
       cert: fs.readFileSync(certPath),
       key: fs.readFileSync(keyPath),
     };
-    server = createHttpsServer(tlsOptions, requestHandler);
+    try {
+      server = createHttpsServer(tlsOptions, requestHandler);
+    } catch (err: unknown) {
+      // A clear stop instead of a process that stays up without a listener.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[TLS] The certificate or key in the configured CERTS_DIR cannot be loaded:", message);
+      console.error(
+        "[TLS] Replace tls.crt and tls.key there, or remove both to get a new self-signed certificate at the next start."
+      );
+      process.exit(1);
+    }
     console.log("[Server] HTTPS enabled with certificate from configured CERTS_DIR");
   } else {
     protocol = "http";
@@ -272,4 +287,7 @@ app.prepare().then(() => {
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
+}).catch((err: unknown) => {
+  console.error("[Server] Failed to start:", err);
+  process.exit(1);
 });

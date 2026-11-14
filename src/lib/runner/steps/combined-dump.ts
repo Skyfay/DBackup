@@ -1,5 +1,6 @@
 import os from "os";
 import fs from "fs/promises";
+import { createHash } from "crypto";
 import { RunnerContext } from "../types";
 import { createTempDir, cleanupTempDir } from "@/lib/adapters/database/common/tar-utils";
 import { createArchive } from "@/lib/archive/writer";
@@ -245,6 +246,9 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                 ? { combined: { databases: dbNames.length, directorySources: ctx.sources.length } }
                 : {}),
             logicalSize,
+            // Kept in the record of the run alone, which nobody who writes a destination reaches.
+            // The next incremental builds on the index only when its bytes still match, see `chain-planner.ts`.
+            indexSha256: createHash("sha256").update(indexBytes).digest("hex"),
             archive: {
                 formatVersion: 2 as const,
                 indexFile: INDEX_SIDECAR_SUFFIX,

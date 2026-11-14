@@ -5,7 +5,7 @@ import { refuseWeakPassword } from "@/lib/auth/password-guard";
 import { claimFirstSignUp, refuseLateSignUp } from "@/lib/auth/sign-up-guard";
 import { keepPasskeyFactor } from "@/lib/auth/passkey-factor-guard";
 import { refusePasskeyFirstFactor } from "@/lib/auth/passkey-login-guard";
-import { refuseWithoutReauth } from "@/lib/auth/reauth-guard";
+import { keptSessionAge, refuseWithoutReauth } from "@/lib/auth/reauth-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "@/lib/prisma";
 import { twoFactor } from "better-auth/plugins";
@@ -305,6 +305,8 @@ export const auth = betterAuth({
                         data: {
                             ...session,
                             expiresAt,
+                            // A session that a code of the second factor replaces keeps its age, see reauth-guard.ts.
+                            ...keptSessionAge(context),
                         },
                     };
                 },

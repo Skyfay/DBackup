@@ -38,6 +38,8 @@ const REDIS_IDS = new Set(["redis", "valkey"]);
 const NOT_OPTIONS = new Set([
     "host", "port", "connectionMode", "sshHost", "sshPort", ...PREFIXED_SSH_KEYS,
     "databases", "database", "uri", "backupPath", "fileTransferMode", "localBackupPath",
+    // The host key check of the SSH login, shown beside it, see `HostKeySwitch`.
+    "verifyHostKey",
 ]);
 
 /**

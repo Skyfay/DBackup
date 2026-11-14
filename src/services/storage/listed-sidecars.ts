@@ -37,7 +37,7 @@ function pick(value: unknown, keys: readonly string[]): Record<string, unknown> 
 
 /** The plain fields of a sidecar `describeBackupFromMetadata` reads. */
 const LISTED_FIELDS = [
-    "sourceType", "jobId", "jobName", "timestamp", "sourceId", "sourceName", "engineVersion", "engineEdition",
+    "sourceType", "jobId", "jobName", "timestamp", "dumpsStartedAt", "sourceId", "sourceName", "engineVersion", "engineEdition",
     "compression", "locked", "checksum", "checksumMd5", "backupType", "onlyDatabases", "logicalSize",
 ] as const;
 

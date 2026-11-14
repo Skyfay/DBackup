@@ -109,13 +109,15 @@ interface PasskeysSectionProps {
     canEndFactor: boolean;
     /** A passkey counts as the second factor, which ends with the last passkey. */
     passkeyFactor: boolean;
+    /** The account signs in with a password, which deleting a passkey of the second factor asks for. */
+    hasPassword: boolean;
     passkeys: PasskeyRow[] | null;
     reload: () => Promise<PasskeyRow[]>;
     onFactorChanged: () => void;
 }
 
 /** The passkeys of the viewer with Add a passkey, and Rename and Delete on each. */
-export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor, passkeys, reload, onFactorChanged }: PasskeysSectionProps) {
+export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor, hasPassword, passkeys, reload, onFactorChanged }: PasskeysSectionProps) {
     const [adding, setAdding] = useState(false);
     const [renaming, setRenaming] = useState<PasskeyRow | null>(null);
     const [removing, setRemoving] = useState<PasskeyRow | null>(null);
@@ -125,6 +127,8 @@ export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor
     const keepsLast = passkeyFactor && passkeys?.length === 1 && !canEndFactor;
     // Deleting it ends the second factor, which asks for the password like turning it off.
     const endsFactor = passkeyFactor && passkeys?.length === 1;
+    // Every passkey of the second factor goes only with the password, not the last one alone.
+    const asksPassword = passkeyFactor && hasPassword;
 
     const add = async (name: string) => {
         try {
@@ -164,7 +168,7 @@ export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor
         if (!removing) return;
         setBusy(true);
         try {
-            const result = await authClient.passkey.deletePasskey({ id: removing.id, ...(endsFactor ? { password } : {}) });
+            const result = await authClient.passkey.deletePasskey({ id: removing.id, ...(asksPassword ? { password } : {}) });
             if (result?.error) {
                 toast.error(result.error.message || "The passkey could not be deleted.");
                 return;
@@ -173,7 +177,7 @@ export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor
             const rest = await reload();
             // Without a passkey none can count as the second factor any more.
             if (rest.length === 0 && passkeyFactor) {
-                const toggled = await togglePasskeyTwoFactor(userId, false);
+                const toggled = await togglePasskeyTwoFactor(userId, false, asksPassword ? password : undefined);
                 if (toggled.success) {
                     toast.info("A passkey no longer counts as the second factor, the last one is gone.");
                     onFactorChanged();
@@ -251,11 +255,11 @@ export function PasskeysSection({ userId, canManage, canEndFactor, passkeyFactor
                 description={endsFactor ? "It is your last one, so a passkey no longer counts as the second factor." : undefined}
                 confirmLabel="Delete passkey"
                 isPending={busy}
-                disabled={endsFactor && !password}
+                disabled={asksPassword && !password}
                 onConfirm={() => void remove()}
             >
                 {removing && <DialogItemList items={[{ name: removing.name || "Unnamed passkey", icon: Fingerprint }]} />}
-                {endsFactor && <SecretField label="Your password" value={password} onChange={setPassword} autoFocus />}
+                {asksPassword && <SecretField label="Your password" value={password} onChange={setPassword} autoFocus />}
             </ConfirmDialog>
         </div>
     );

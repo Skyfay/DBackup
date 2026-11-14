@@ -13,6 +13,7 @@ import { assertSourceFolder } from "@/lib/archive/remote-paths";
 import { storageView } from "@/lib/tenant/storage-view";
 import { isShared, viewerOf, viewModeOf } from "@/services/sharing/destination-access";
 import { assertMayReachHost } from "./adapter-create";
+import { assertOffSharedLogins } from "./shared-login";
 
 /** A server that has not answered by then will not, and the dialog should say so rather than spin. */
 const BROWSE_TIMEOUT_MS = 15_000;
@@ -37,7 +38,7 @@ export interface BrowseLocationInput {
  * adapter lists from the top of its storage instead of from the folder the form holds.
  *
  * @throws ValidationError for an adapter that cannot browse, a saved destination shared with other
- *   tenants, whose top holds the folders of its customers, a config that reaches the server
+ *   tenants, whose top holds the folders of its customers, or its saved login, a config that reaches the server
  *   DBackup runs on for anyone but a platform admin, or a path that leaves the top by a `..`.
  */
 export async function browseLocation(input: BrowseLocationInput): Promise<DirectoryBrowseEntry[]> {
@@ -53,6 +54,9 @@ export async function browseLocation(input: BrowseLocationInput): Promise<Direct
     if (input.storedConfigId && (await isShared(input.storedConfigId))) {
         throw new ValidationError(SHARED_FOLDER_STAYS, { field: "configId" });
     }
+    // The same holds for its saved login without its id: it would list the top of that storage, the
+    // folder of the customers included, at whatever spelling of the address the form holds.
+    await assertOffSharedLogins({ primaryCredentialId: input.primaryCredentialId });
 
     const submitted = input.storedConfigId
         ? await applyStoredSecrets(input.adapterId, input.storedConfigId, { ...input.config }, { primaryCredentialId: input.primaryCredentialId })

@@ -9,6 +9,8 @@ vi.mock("@/lib/auth/access-control", () => ({ checkPermission: (...args: unknown
 vi.mock("@/services/auth/credential-service", () => ({
     getDecryptedCredentialData: vi.fn(async () => ({ clientId: "id", clientSecret: "secret", refreshToken: "token" })),
 }));
+// The drive of these tests is no destination shared with customers, which a test of its own covers.
+vi.mock("@/services/adapters/shared-login", () => ({ assertOffSharedLogins: vi.fn(async () => undefined) }));
 vi.mock("googleapis", () => ({
     google: {
         auth: { OAuth2: class { setCredentials() {} } },

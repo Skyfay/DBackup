@@ -19,7 +19,7 @@ vi.mock("@/lib/logging/logger", () => ({
 
 const { openCopy } = await import("@/services/config/database-copy");
 const { createImportContext } = await import("@/services/config/import-context");
-const { importUsers } = await import("@/services/config/import-users");
+const { importUsers, isPlatformsOwn } = await import("@/services/config/import-users");
 const { tenantScopeExtension } = await import("@/lib/tenant/prisma-scope");
 const { runAsTenant } = await import("@/lib/tenant/context");
 const { HOME_TENANT_ID } = await import("@/lib/tenant/home");
@@ -131,7 +131,7 @@ describe("a legacy configuration file restored into a DBackup with customer tena
             memberships: [{ tenantId: "tenant-b", groupId: "b-member" }],
             accounts: [{ id: "acc-u-attacker" }],
         });
-        expect(notes).toContain("2 users were left out, since an account of the same email or id here also works in another tenant: old-admin@example.test and old-ops@example.test.");
+        expect(notes).toContain("2 users were left out, since an account of the same email or id here works in another tenant or in none: old-admin@example.test and old-ops@example.test. Give the account here a group of the home tenant and restore again to merge one.");
     });
 
     it("leaves out a user whose id a customer's account holds, with its sign-in and its API key", async () => {
@@ -152,5 +152,36 @@ describe("a legacy configuration file restored into a DBackup with customer tena
         expect(manu.memberships).toHaveLength(1);
         expect(manu.memberships[0].tenantId).toBe(HOME_TENANT_ID);
         expect(manu.accounts.map((account) => account.id).sort()).toEqual(["acc-file-u-manu-file"]);
+    });
+});
+
+describe("a legacy configuration file and an account of no tenant a customer left behind", () => {
+    it("never merges the SuperAdmin of the file into an account whose tenant was deleted, which keeps the password its maker chose", async () => {
+        // What the delete of a tenant leaves: the account and its credential, without a membership.
+        await db.tenantMembership.deleteMany({ where: { userId: "u-attacker" } });
+
+        const notes = await importFile();
+
+        expect(await accountOf("u-attacker")).toEqual({ name: "Customer", emailVerified: false, platformRole: null, memberships: [], accounts: [{ id: "acc-u-attacker" }] });
+        expect(await db.account.findUnique({ where: { id: "acc-file-u-old" } })).toBeNull();
+        expect(notes.some((note) => note.includes("old-admin@example.test") && note.includes("left out"))).toBe(true);
+    });
+
+    it("never merges a user of the file into an account of no tenant by its id either", async () => {
+        await db.tenantMembership.deleteMany({ where: { userId: "u-old-ops" } });
+
+        await importFile();
+
+        expect(await accountOf("u-old-ops")).toMatchObject({ name: "Customer", platformRole: null, memberships: [], accounts: [{ id: "acc-u-old-ops" }] });
+    });
+
+    it("counts as the platform's own only an account of the home tenant alone or one a platform role or group holds", () => {
+        const none = { platformRole: null, platformGroupId: null, memberships: [] };
+        expect(isPlatformsOwn(none)).toBe(false);
+        expect(isPlatformsOwn({ ...none, memberships: [{ tenantId: HOME_TENANT_ID }] })).toBe(true);
+        expect(isPlatformsOwn({ ...none, platformRole: "ADMIN" })).toBe(true);
+        expect(isPlatformsOwn({ ...none, platformGroupId: "pg-1" })).toBe(true);
+        expect(isPlatformsOwn({ ...none, platformRole: "ADMIN", memberships: [{ tenantId: "tenant-b" }] })).toBe(false);
+        expect(isPlatformsOwn({ ...none, memberships: [{ tenantId: HOME_TENANT_ID }, { tenantId: "tenant-b" }] })).toBe(false);
     });
 });

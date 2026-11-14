@@ -28,6 +28,7 @@ services:
     environment:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - TRUSTED_PROXIES=none # No reverse proxy in front. Behind one, set its address here or remove the line
       - BETTER_AUTH_URL=https://localhost:3000
       # - DISABLE_HTTPS=true  # Use plain HTTP - required behind a reverse proxy
       # - TZ=Europe/Zurich  # Optional: Server timezone
@@ -359,7 +360,7 @@ An entry that is no address, range or keyword stops DBackup at the start, with a
 DBackup reads one header of the proxy, `X-Forwarded-For` by default, and ignores the other one. A proxy passes on whatever a client sent in a header it does not write itself, so reading both would let a client name its own address. The Nginx example below, Traefik and Caddy all write `X-Forwarded-For`. For a proxy that sets only `X-Real-IP`, set `TRUSTED_PROXY_HEADER=x-real-ip`, which then ignores `X-Forwarded-For`. Without that setting, such a proxy shows its own address for every request. Any other value stops DBackup at the start.
 
 ::: tip Devices in the same network
-With the default, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out.
+With the default, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out, or to `none` when no proxy is in front of DBackup. While `TRUSTED_PROXIES` is unset, DBackup logs a warning the first time such a header counts, with the address it came from and both settings.
 :::
 
 ### Nginx

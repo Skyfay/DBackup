@@ -228,6 +228,25 @@ describe("Share with customers in a platform group of some tenants", () => {
         expect(await holders()).toEqual({ ...BEFORE, crm_acme: "globex" });
     });
 
+    it("ends no rule above a lower rule of a tenant it does not reach for a database the server made since its list was read, and adds none above one", async () => {
+        // Neither pattern matches a name of the stored list, so only the rules tell.
+        await base.databaseAssignmentRule.create({ data: { id: "r-new-globex", sourceId: "shared-mysql", pattern: "fresh_*", tenantId: "globex", priority: 0, validFrom: day("2026-01-01"), createdAt: day("2026-01-01") } });
+        await base.databaseAssignmentRule.create({ data: { id: "r-new-acme", sourceId: "shared-mysql", pattern: "fresh_*", tenantId: "acme", priority: 10, validFrom: day("2026-01-01"), createdAt: day("2026-01-02") } });
+        const reach = await reachOf("u-desk");
+
+        await expect(asHome(() => databaseAssignmentService.removeRule("shared-mysql", "r-new-acme", NOW, reach)))
+            .rejects.toThrow("Ending the rule fresh_* would leave its databases to a rule of a tenant your platform group does not reach, so you cannot end it.");
+        expect(await base.databaseAssignmentRule.findUnique({ where: { id: "r-new-acme" } })).toMatchObject({ validUntil: null });
+        await expect(asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "fresh_eu_*", tenantId: "acme", priority: 20 }, NOW, reach)))
+            .rejects.toThrow("The rule would rank above a rule of a tenant your platform group does not reach that can match the same databases.");
+        // A pattern that shares no name with the rule of Globex is theirs to add and to end.
+        await asHome(() => databaseAssignmentService.addRule("shared-mysql", { pattern: "stale_*", tenantId: "acme", priority: 20 }, NOW, reach));
+
+        // Someone who reaches every tenant ends it.
+        await asHome(async () => databaseAssignmentService.removeRule("shared-mysql", "r-new-acme", NOW, await reachOf("u-msp")));
+        await base.databaseAssignmentRule.deleteMany({ where: { OR: [{ id: { in: ["r-new-globex", "r-new-acme"] } }, { pattern: "stale_*" }] } });
+    });
+
     it("changes neither the backups on demand nor the server of a database a tenant it does not reach holds", async () => {
         const reach = await reachOf("u-desk");
         const words = "shop_globex belongs to a tenant your platform group does not reach, so you cannot change it.";

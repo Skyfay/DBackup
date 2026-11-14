@@ -15,6 +15,7 @@ import { sharedKindOf, providedTo } from "@/services/sharing/provided";
 import { deleteTenantBackups, forgetConnection, sweepCustomerFolder } from "@/services/sharing/share-cleanup";
 import type { Tx } from "@/lib/prisma-tx";
 import { sharingChanged } from "./shared-servers";
+import { disarmAccountsOnlyOf } from "./tenant-leftover-accounts";
 
 const log = logger.child({ service: "TenantService" });
 import { seedTenantGroups, seedTenantTemplates } from "./tenant-seed";
@@ -351,7 +352,8 @@ export const tenantService = {
     /**
      * Deletes a tenant with everything it holds: its connections, jobs, runs, keys, logins,
      * templates, API keys and logs, and the memberships in it. The backups at its destinations stay
-     * where they are, and an account that worked only there stays without a tenant. The home
+     * where they are, and an account that worked only there stays without a tenant and without a
+     * way to sign in, see `disarmAccountsOnlyOf`. The home
      * tenant is never deleted, and no tenant while a run of it waits or runs.
      *
      * The databases of shared servers it held end with it, but its assignments and rules stay with
@@ -442,6 +444,8 @@ export const tenantService = {
             const providers = await tx.ssoProvider.findMany({ where, select: { providerId: true } });
             if (providers.length > 0) await tx.account.deleteMany({ where: { providerId: { in: providers.map((provider) => provider.providerId) } } });
             await tx.ssoProvider.deleteMany({ where });
+            // An account that worked here alone comes to the home tenant unable to sign in, see `disarmAccountsOnlyOf`.
+            await disarmAccountsOnlyOf(tx, id);
             // The memberships and invitations go with the tenant, its groups after them.
             await tx.tenant.delete({ where: { id } });
             await tx.group.deleteMany({ where });

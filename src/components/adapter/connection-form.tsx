@@ -26,6 +26,7 @@ import { notificationLayout } from "./notification-form-layout";
 import { NotificationSection, NotificationSectionAction } from "./notification-form-sections";
 import { formHostLocalReason, useMayReachServer } from "./host-local-access";
 import { SecretStatusProvider } from "./secret-status-context";
+import { HostKeyStrip } from "./ssh-host-key";
 import { storageLayout } from "./storage-form-layout";
 import { StorageSection, StorageSectionAction } from "./storage-form-sections";
 import type { AdapterConfig } from "./types";
@@ -232,6 +233,8 @@ export function ConnectionForm({
                                 </fieldset>
                             </ScrollArea>
                         </Tabs>
+
+                        <HostKeyStrip adapterId={adapter.id} config={config} saved={initialData} test={connection.test} readOnly={!!lockedReason} onTrusted={connection.resetTest} />
 
                         {hostLocalNote && (
                             <div className="flex shrink-0 gap-3 border-t border-warning/30 bg-warning/5 px-5 py-3 text-sm" role="note">

@@ -28,6 +28,9 @@ const prismaMock = {
     execution: { findMany: vi.fn().mockResolvedValue([]) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
+// Whether a recorded run of the job of a source wrote the backup, see `recorded-origin.ts`.
+const recorded = vi.hoisted(() => ({ byRun: true }));
+vi.mock("@/services/restore/recorded-origin", () => ({ archiveReadSource: async () => recorded.byRun }));
 
 const registryGet = vi.fn();
 vi.mock("@/lib/core/registry", () => ({ registry: { get: (...a: unknown[]) => registryGet(...a) } }));

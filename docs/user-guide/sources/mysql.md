@@ -6,7 +6,7 @@ Back up MySQL or MariaDB databases with `mariadb-dump` or `mysqldump`, one datab
 
 | Engine | Versions |
 | :--- | :--- |
-| **MySQL** | 5.7, 8.0, 8.4, 9.0 |
+| **MySQL** | 5.7, 8.0, 8.4, 9.x, 26 |
 | **MariaDB** | 10.x, 11.x |
 
 ::: tip Older MySQL servers
@@ -27,7 +27,7 @@ DBackup needs three client tools, on its own server in direct mode and on the SS
 | Tool | Used for |
 | :--- | :--- |
 | `mariadb-dump` or `mysqldump` | Backups |
-| `mariadb` or `mysql` | Restores, listing the databases (also for **All databases** in a job) and the check of events and routines before each dump |
+| `mariadb` or `mysql` | Restores, listing the databases (also for **All databases** in a job), the check of events and routines before each dump, and reading the routines of MySQL 26 and later |
 | `mariadb-admin` or `mysqladmin` | Test connection, health checks and detecting the server version |
 
 **Docker**: The image ships Debian's `mariadb-client`, so it runs the MariaDB tools against MySQL servers as well.
@@ -156,6 +156,8 @@ The snapshot only covers transactional tables. MyISAM and Aria tables are read w
 :::
 
 Before it dumps a database, DBackup checks whether the login may read its events and the code of its routines. The dump tools give up on either instead of skipping it, even for a database without any events. So DBackup leaves the part out for that database and writes a warning to the run with the right to grant, and the backup of everything else goes ahead.
+
+MySQL counts its versions by the year from 26 on. `mariadb-dump`, which the Docker image ships, takes every server from version 10.3 on for MariaDB and asks it for MariaDB packages when it dumps routines, which MySQL refuses. So when the tool is `mariadb-dump` and the server is MySQL 26 or later, DBackup dumps without `--routines`, reads the stored procedures and functions itself with `SHOW CREATE` and writes them at the end of the dump, in the form `mysqldump` uses. The run log says how many it wrote. MySQL's own `mysqldump` dumps them as usual.
 
 Over SSH, DBackup first checks that `mariadb-dump` or `mysqldump` exists on the SSH server, runs it there with the same flags and streams the output back over the connection.
 

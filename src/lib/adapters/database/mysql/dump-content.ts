@@ -67,6 +67,8 @@ export function plannedContent(config: ContentConfig): DumpContent {
 
 /** The client tool that runs, the dump tool or the mysql client. MariaDB's and MySQL's own know different flags. */
 export interface DumpClient {
+    /** MariaDB's tool, which takes a server from version 10.3 on for MariaDB, see `routines.ts`. */
+    mariadb: boolean;
     /** MySQL's own mysqldump from 5.6.9 on, which knows `--set-gtid-purged`. MariaDB's refuses it. */
     setsGtidPurged: boolean;
     /**
@@ -77,7 +79,7 @@ export interface DumpClient {
     sslOff: "--skip-ssl" | "--ssl-mode=DISABLED";
 }
 
-const MARIADB_CLIENT: DumpClient = { setsGtidPurged: false, sslOff: "--skip-ssl" };
+const MARIADB_CLIENT: DumpClient = { mariadb: true, setsGtidPurged: false, sslOff: "--skip-ssl" };
 
 /** The flags for what the dump holds, which go before the extra options. */
 export function contentArgs(config: ContentConfig, client?: DumpClient): string[] {
@@ -100,6 +102,7 @@ export function clientFromVersion(output: string): DumpClient {
     if (!output.trim() || /mariadb/i.test(output)) return MARIADB_CLIENT;
     const version = output.match(/Distrib (\d+\.\d+\.\d+)/)?.[1] ?? output.match(/Ver (\d+\.\d+\.\d+)/)?.[1];
     return {
+        mariadb: false,
         setsGtidPurged: version !== undefined && compareVersions(version, "5.6.9") >= 0,
         sslOff: version !== undefined && compareVersions(version, "5.7.11") < 0 ? "--skip-ssl" : "--ssl-mode=DISABLED",
     };

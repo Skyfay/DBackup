@@ -34,8 +34,8 @@ const baseMariaDBConfig: MariaDBConfig = {
 // --- getDialect ---
 
 /** The client tools as dumpClientOf tells them apart. */
-const MYSQL_TOOL = { setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" } as const;
-const MARIADB_TOOL = { setsGtidPurged: false, sslOff: "--skip-ssl" } as const;
+const MYSQL_TOOL = { mariadb: false, setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" } as const;
+const MARIADB_TOOL = { mariadb: true, setsGtidPurged: false, sslOff: "--skip-ssl" } as const;
 
 describe("getDialect", () => {
     it("returns MariaDBDialect for adapterId 'mariadb' without version", () => {

@@ -45,6 +45,8 @@ export const MYSQL: EngineSpec = {
         { version: "8.0", service: "mysql-80", port: 33380, profile: "full" },
         { version: "8.4", service: "mysql-84", port: 33384, profile: "full" },
         { version: "9", service: "mysql-9", port: 33390, profile: "core" },
+        // Counts by the year, which MariaDB's dump tool takes for a MariaDB when it dumps routines (#203).
+        { version: "26", service: "mysql-26", port: 33326, profile: "core" },
     ],
     // localhost makes the client take the socket, as root it needs no password there.
     native: { host: "localhost", clients: () => ({ cli: "mysql --default-character-set=utf8mb4", dump: "mysqldump --default-character-set=utf8mb4" }) },

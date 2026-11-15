@@ -91,6 +91,14 @@ services:
     ports: ["33390:3306"]
     volumes: [mysql-9:/var/lib/mysql]
     healthcheck: *mysql-health
+  mysql-26:
+    image: mysql:26
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *mysql-env
+    ports: ["33326:3306"]
+    volumes: [mysql-26:/var/lib/mysql]
+    healthcheck: *mysql-health
 
   # ── MariaDB ─────────────────────────────────────────────
   mariadb-104:
@@ -349,6 +357,7 @@ volumes:
   mysql-80:
   mysql-84:
   mysql-9:
+  mysql-26:
   mariadb-104:
   mariadb-1011:
   mariadb-114:

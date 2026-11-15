@@ -101,6 +101,13 @@ describe("compareVersions", () => {
     expect(compareVersions("5.7", "8.0.4")).toBe(-1);
   });
 
+  it("orders the MySQL versions by the year after the old ones, part by part", () => {
+    expect(compareVersions("26.10.0", "9.7.4")).toBe(1);
+    expect(compareVersions("9.7.4", "26.10.0")).toBe(-1);
+    expect(compareVersions("26.10.0", "26.9.0")).toBe(1);
+    expect(compareVersions("26.9.0", "26.10.0")).toBe(-1);
+  });
+
   it("returns 0 for equal versions", () => {
     expect(compareVersions("8.0.4", "8.0.4")).toBe(0);
   });

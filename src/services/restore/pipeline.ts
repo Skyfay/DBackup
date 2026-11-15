@@ -5,7 +5,7 @@ import { withHost } from "@/lib/transport";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { formatDuration, formatBytes } from "@/lib/utils";
+import { compareVersions, formatDuration, formatBytes } from "@/lib/utils";
 import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 import path from "path";
 import fs from "fs";
@@ -286,7 +286,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                                 `Compatibility Check: Backup Version [${metadata.engineVersion}] vs Target [${test.version}]`,
                                 'info'
                             );
-                            if (parseFloat(metadata.engineVersion) > parseFloat(test.version)) {
+                            if (compareVersions(metadata.engineVersion, test.version) > 0) {
                                 logs.split(
                                     `WARNING: You are restoring a newer version backup (${backupShown}) to an older database (${targetShown}). This might fail.`,
                                     `WARNING: You are restoring a newer version backup (${metadata.engineVersion}) to an older database (${test.version}). This might fail.`,

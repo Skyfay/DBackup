@@ -303,6 +303,23 @@ describe('RestoreService', () => {
 
            expect(result.success).toBe(true);
        });
+
+        it('reads the MySQL versions by the year as newer than 9, part by part', async () => {
+            prismaMock.execution.create.mockResolvedValue({ id: 'exec-success' } as any);
+            const input = { storageConfigId: 'storage-1', file: 'backup.sql', targetSourceId: 'source-1' };
+
+            mockStorage.read.mockResolvedValue(JSON.stringify({ engineVersion: '26.10.0', dbs: ['mydb'] }));
+            mockDb.test.mockResolvedValue({ success: true, version: '9.7.4' });
+            await expect(service.restore(input, PLATFORM_ADMIN)).rejects.toThrow('newer database version (26.10.0) on an older server (9.7.4)');
+
+            mockStorage.read.mockResolvedValue(JSON.stringify({ engineVersion: '9.7.4', dbs: ['mydb'] }));
+            mockDb.test.mockResolvedValue({ success: true, version: '26.10.0' });
+            expect((await service.restore(input, PLATFORM_ADMIN)).success).toBe(true);
+
+            mockStorage.read.mockResolvedValue(JSON.stringify({ engineVersion: '26.9.0', dbs: ['mydb'] }));
+            mockDb.test.mockResolvedValue({ success: true, version: '26.10.0' });
+            expect((await service.restore(input, PLATFORM_ADMIN)).success).toBe(true);
+        });
     });
 
     it('should use Smart Recovery when original profile is missing', async () => {

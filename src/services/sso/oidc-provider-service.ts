@@ -3,6 +3,7 @@ import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { encrypt } from "@/lib/crypto";
 import { NotFoundError } from "@/lib/logging/errors";
+import { OIDC_SCOPES, scopesOf } from "@/lib/auth/oidc-scopes";
 
 export interface CreateSsoProviderInput {
     name: string;
@@ -34,7 +35,6 @@ export interface CreateSsoProviderInput {
      * This should come from the adapter as different providers have different paths.
      */
     discoveryEndpoint?: string;
-    scope?: string;
 }
 
 export interface UpdateSsoProviderInput extends Partial<CreateSsoProviderInput> {
@@ -94,7 +94,8 @@ export class OidcProviderService {
             tokenEndpoint: data.tokenEndpoint,
             userInfoEndpoint: data.userInfoEndpoint,
             jwksEndpoint: data.jwksEndpoint,
-            scope: data.scope || "openid profile email", // Ensure openid scope is present
+            // The list the SSO plugin reads. A string under `scope` it ignores and asks for offline_access (#198).
+            scopes: [...OIDC_SCOPES],
             // discoveryEndpoint is required by better-auth even with skipDiscovery
             // It's called in the callback handler regardless of skipDiscovery setting
             discoveryEndpoint,
@@ -171,7 +172,7 @@ export class OidcProviderService {
                     ...merged,
                     clientId: encrypt(merged.clientId ?? ""),
                     clientSecret: encrypt(merged.clientSecret ?? ""),
-                    scope: data.scope || "openid profile email",
+                    scopes: scopesOf(existing.oidcConfig),
                     discoveryEndpoint: discEndpoint,
                     skipDiscovery: true,
                 });

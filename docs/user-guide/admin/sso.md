@@ -121,6 +121,8 @@ Create an OpenID Connect client with **Client authentication** on, and copy its 
 
 It asks for the issuer, the authorization, token and user info endpoints, and the JWKS endpoint if the provider has one. The discovery document of the provider, at `{issuer}/.well-known/openid-configuration`, lists all of them.
 
+DBackup trusts the host of the issuer by itself. When the discovery document names endpoints on other hosts, sign-in stops with `Untrusted OIDC discovery URL` until their origins are in `TRUSTED_ORIGINS`, see [Installation](/user-guide/installation). Google is such a provider: with the issuer `https://accounts.google.com` it needs `https://oauth2.googleapis.com,https://openidconnect.googleapis.com,https://www.googleapis.com`.
+
 ## Login Page
 
 Every provider of the platform that is on shows as a button with its logo on the login page. With an **Email domain**, the login page asks for the email first, says under it which provider an email of that domain signs in with, and its button goes there. A provider takes one domain. A provider of a tenant is reached by its domain only, see [Providers of a Tenant](#providers-of-a-tenant).

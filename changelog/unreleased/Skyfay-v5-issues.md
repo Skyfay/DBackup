@@ -1,6 +1,7 @@
 ### 🐛 Bug Fixes
 
 - **MySQL**: Backups of MySQL 26 and later with stored procedures and functions no longer fail on `SHOW PACKAGE STATUS`. DBackup now writes the routines of these servers itself, since the bundled `mariadb-dump` takes them for MariaDB. ([#203](https://github.com/Skyfay/DBackup/issues/203))
+- **storage**: A backup that a later run overwrites at the same path now shows the time, size and checks of the newest run on the Backups page. ([#201](https://github.com/Skyfay/DBackup/issues/201))
 - **restore**: The warning about restoring a backup of a newer server version compares the versions part by part, so a backup of 26.9 restored onto 26.10 no longer gets it.
 
 ### 🔄 Changed

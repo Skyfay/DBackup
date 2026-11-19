@@ -596,12 +596,12 @@ async function walkSftpTree(
         const exists = await pool.withConnection(({ client }) => client.exists(startDir));
         if (exists !== 'd') return { files, pruned };
 
-        /** Path relative to the adapter's configured root, the convention `list()` also uses. */
-        const toAdapterPath = (fullPath: string): string => {
-            let relativePath = fullPath;
-            if (prefix && fullPath.startsWith(prefix)) relativePath = fullPath.substring(prefix.length);
-            return relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
-        };
+        /**
+         * Path relative to the adapter's configured root, the same way `list()` derives it. Cut as
+         * text, a prefix of `.` took the dot off `.htaccess` in the root, so the exclude patterns
+         * never matched it and its download asked for a file that does not exist (#214).
+         */
+        const toAdapterPath = (fullPath: string): string => relativeToPrefix(fullPath, prefix);
 
         // One level at a time. Every directory of a level is read concurrently, and the
         // directories they reveal become the next level. Every entry passes the guard first, so a

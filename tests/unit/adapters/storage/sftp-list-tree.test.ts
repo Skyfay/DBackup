@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SFTPAdapter, endSftpClient, connectSFTP } from "@/lib/adapters/storage/sftp";
 import { toRelativePath } from "@/lib/adapters/storage/common/download-directory";
 import { resolveExcludePatterns } from "@/lib/exclude-groups";
+import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 
 const { mockSftpConnect, mockSftpEnd, mockSftpList, mockSftpExists, mockDestroy, rawSftpChannel } = vi.hoisted(() => ({
     mockSftpConnect: vi.fn().mockResolvedValue(undefined),
@@ -144,6 +145,30 @@ describe("SFTPAdapter.listTree", () => {
         // pattern was matched against.
         const relative = toRelativePath(result.files[0].path, "docker");
         expect(relative).toBe("compose.yml");
+    });
+
+    it("keeps the dot of a hidden file in the root when the connection's folder is . (#214)", async () => {
+        serveTree({
+            ".": [file(".htaccess"), file(".bash_history"), file("index.php"), dir(".well-known")],
+            ".well-known": [file("security.txt")],
+        });
+
+        const result = await SFTPAdapter.listTree!({ ...config, pathPrefix: "." }, ".");
+
+        expect(result.files.map((f) => f.path).sort()).toEqual([".bash_history", ".htaccess", ".well-known/security.txt", "index.php"]);
+        // So the exclude patterns of the source match them, as Check a path says they do.
+        const relative = result.files.map((f) => toRelativePath(f.path, "."));
+        expect(relative.filter((p) => matchesAnyExcludePattern(p, ["**/.htaccess", "**/.bash_history"])).sort()).toEqual([".bash_history", ".htaccess"]);
+    });
+
+    it("keeps the dot of a hidden file below a folder prefix and strips only whole folders", async () => {
+        serveTree({
+            "/home/u/site/": [file(".htaccess"), file("index.php")],
+        });
+
+        const result = await SFTPAdapter.listTree!({ ...config, pathPrefix: "/home/u/site/" }, "");
+
+        expect(result.files.map((f) => f.path).sort()).toEqual([".htaccess", "index.php"]);
     });
 
     it("reports progress while it walks", async () => {

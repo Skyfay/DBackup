@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { currentTenantId } from "@/lib/tenant/current";
-import { AUDIT_AREAS, areaOfResource, QUICK_ACTIONS, type AuditQuick } from "@/lib/core/audit-areas";
+import { areaOfResource, QUICK_ACTIONS, type AuditQuick } from "@/lib/core/audit-areas";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getDataRetentionValues } from "@/services/system/data-retention-service";
 import { buildAuditWhere, type AuditFilter, type AuditQuery } from "./audit-query";
@@ -153,6 +153,3 @@ export async function getAuditStats(now = new Date(), view: LogView = FULL_VIEW)
         },
     };
 }
-
-/** The ids of the areas in the order of the Area filter. */
-export const AUDIT_AREA_IDS = AUDIT_AREAS.map((area) => area.id);

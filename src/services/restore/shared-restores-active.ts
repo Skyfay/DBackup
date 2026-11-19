@@ -65,8 +65,3 @@ export function assertNoSharedRestore(sourceId: string, change: HoldingChange, k
     if (!restore) return;
     throw new ValidationError(`A customer restores ${restore.databaseName} right now. Try again once the restore ended.`);
 }
-
-/** Forgets every restore, for tests. */
-export function resetSharedRestores(): void {
-    active.clear();
-}

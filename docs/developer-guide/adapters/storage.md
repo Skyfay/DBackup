@@ -568,11 +568,9 @@ export const WebDAVSchema = z.object({
 export type WebDAVConfig = z.infer<typeof WebDAVSchema>;
 ```
 
-Then update the `StorageConfig` union type and add an entry to the `ADAPTER_DEFINITIONS` array:
+Then add an entry to the `ADAPTER_DEFINITIONS` array:
 
 ```typescript
-export type StorageConfig = LocalStorageConfig | S3GenericConfig | ... | WebDAVConfig;
-
 // In ADAPTER_DEFINITIONS:
 { id: "webdav", type: "storage", name: "WebDAV", configSchema: WebDAVSchema },
 ```
@@ -731,7 +729,7 @@ brew install your-package
 | # | File | What to do |
 | :--- | :--- | :--- |
 | 1 | `package.json` | Install npm dependency |
-| 2 | `src/lib/adapters/definitions.ts` | Zod schema, config type, `StorageConfig` union, `ADAPTER_DEFINITIONS` |
+| 2 | `src/lib/adapters/definitions/storage.ts`, `definitions/index.ts` | Zod schema and config type, entry in `ADAPTER_DEFINITIONS` |
 | 3 | `src/lib/adapters/storage/<name>.ts` | Full adapter implementation (6 methods) |
 | 4 | `src/lib/adapters/index.ts` | Import + `registry.register()` |
 | 5 | `src/components/adapter/form-constants.ts` | `STORAGE_CONNECTION_KEYS`, `STORAGE_CONFIG_KEYS`, `STORAGE_LOCATION_KEYS`, `PLACEHOLDERS` |

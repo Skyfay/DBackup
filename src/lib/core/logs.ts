@@ -64,8 +64,6 @@ export const RESTORE_STAGES = {
   CANCELLED: "Cancelled",
 } as const;
 
-export type RestoreStage = typeof RESTORE_STAGES[keyof typeof RESTORE_STAGES];
-
 /** Ordered list of backup stages for frontend rendering */
 export const BACKUP_STAGE_ORDER: string[] = [
   PIPELINE_STAGES.QUEUED,
@@ -122,9 +120,6 @@ export const INTEGRITY_CHECK_STAGE_PROGRESS_MAP: Record<string, [number, number]
   "Completed":           [100, 100],
   "Failed":              [100, 100],
 };
-
-/** @deprecated Use BACKUP_STAGE_ORDER instead */
-export const STAGE_ORDER: PipelineStage[] = BACKUP_STAGE_ORDER as PipelineStage[];
 
 /** Progress ranges [min, max] for each stage, forming a continuous 0→100 scale */
 export const STAGE_PROGRESS_MAP: Record<PipelineStage, [number, number]> = {

@@ -130,10 +130,6 @@ const SECOND_FACTOR: Record<SecondFactor, { label: string; title: string }> = {
     "no-password": { label: "No password", title: "Signs in without a password" },
 };
 
-export function secondFactorLabel(value: SecondFactor): string {
-    return SECOND_FACTOR[value].label;
-}
-
 /** Green for a second factor DBackup asks for, gray for the rest. */
 export function SecondFactorCell({ value }: { value: SecondFactor }) {
     const Icon = value === "passkey" || value === "app" ? ShieldCheck : value === "none" ? ShieldOff : Shield;

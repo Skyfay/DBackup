@@ -14,8 +14,6 @@ import {
 
 const log = logger.child({ adapter: "docker-volume" });
 
-export type DockerVolumeConfig = Record<string, unknown>;
-
 /**
  * Docker volumes as a backup source.
  *

@@ -30,7 +30,7 @@ import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { DeleteModeSchema, PERMANENT_DELETE_REFUSED, type DeleteMode } from "@/lib/core/delete-mode";
-import { getAutoRedirectOnJobStart, setAutoRedirectOnJobStart } from "@/services/user/preference-service";
+import { setAutoRedirectOnJobStart } from "@/services/user/preference-service";
 import { accountTrashPlaceOf } from "@/services/trash/account-place";
 import { runAsTenant } from "@/lib/tenant/context";
 import { z } from "zod";
@@ -474,22 +474,6 @@ export async function updateUserPreferences(userId: string, input: { autoRedirec
         log.error("Failed to update preferences", { userId }, wrapError(error));
         return { success: false, error: "The preferences could not be saved." };
     }
-}
-
-/**
- * Get user preference value (self-service)
- * Users can only read their own preferences - no admin permission required
- * @no-permission-required
- */
-export async function getUserPreference(key: 'autoRedirectOnJobStart'): Promise<boolean> {
-    const currentUser = await getViewer();
-    if (!currentUser) return true; // Default to true if not logged in
-
-    if (key === 'autoRedirectOnJobStart') {
-        return getAutoRedirectOnJobStart(currentUser.id);
-    }
-
-    return true;
 }
 
 /**

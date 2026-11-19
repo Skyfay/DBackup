@@ -77,5 +77,3 @@ export type NtfyConfig = z.infer<typeof NtfySchema>;
 export type TelegramConfig = z.infer<typeof TelegramSchema>;
 export type TwilioSmsConfig = z.infer<typeof TwilioSmsSchema>;
 export type EmailConfig = z.infer<typeof EmailSchema>;
-
-export type NotificationConfig = DiscordConfig | SlackConfig | TeamsConfig | GenericWebhookConfig | GotifyConfig | NtfyConfig | TelegramConfig | TwilioSmsConfig | EmailConfig;

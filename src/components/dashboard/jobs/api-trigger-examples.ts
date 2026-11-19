@@ -48,14 +48,6 @@ export const triggerUrl = ({ baseUrl, jobId }: Pick<TriggerTarget, "baseUrl" | "
 
 export const statusUrl = (baseUrl: string, executionId = "{executionId}") => `${baseUrl}/api/executions/${executionId}`;
 
-/** How a run ends, and the exit code every script gives for it. */
-export const OUTCOMES = [
-    { status: "Success", exit: 0 },
-    { status: "Partial", exit: 2 },
-    { status: "Failed", exit: 1 },
-    { status: "Cancelled", exit: 1 },
-] as const;
-
 export function curlTrigger(target: TriggerTarget): string {
     return `curl -X POST "${triggerUrl(target)}" \\
   -H "Authorization: Bearer ${target.apiKey}"`;

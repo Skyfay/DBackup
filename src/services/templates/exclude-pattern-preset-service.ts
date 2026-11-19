@@ -10,12 +10,6 @@ export async function getExcludePatternPresets() {
   return prisma.excludePatternPreset.findMany({ orderBy: { name: "asc" } });
 }
 
-export async function getExcludePatternPreset(id: string) {
-  const preset = await prisma.excludePatternPreset.findUnique({ where: { id } });
-  if (!preset) throw new NotFoundError("ExcludePatternPreset", id);
-  return preset;
-}
-
 /**
  * Refuses patterns that would be slow to match. They are matched in the one server process, against
  * names a source server lists, so a preset holds only patterns of a cheap shape.
@@ -125,15 +119,6 @@ export async function deleteExcludePatternPreset(id: string): Promise<{ name: st
   await prisma.excludePatternPreset.delete({ where: { id } });
   log.info("Exclude pattern preset deleted", { id });
   return { name: preset.name };
-}
-
-export function parseExcludePatternPresetPatterns(patterns: string): string[] {
-  try {
-    const parsed = JSON.parse(patterns);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
 }
 
 /**

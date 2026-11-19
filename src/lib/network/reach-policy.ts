@@ -35,8 +35,3 @@ export function reachOf(config: unknown): ReachPolicy | null {
     const policy = (config as Record<symbol, unknown>)[REACH_POLICY];
     return policy && typeof policy === "object" ? (policy as ReachPolicy) : null;
 }
-
-/** Copies the policy of one config onto another, for an adapter that rebuilds its config through a schema, which drops symbols. */
-export function keepReach<T>(from: unknown, to: T): T {
-    return markReach(to, reachOf(from));
-}

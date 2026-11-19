@@ -41,9 +41,9 @@ import { isPlainClick, toggleOnClick } from "./row-click";
 import { Skeleton } from "./skeleton";
 import { JOIN_END } from "./page-head";
 import { cn } from "@/lib/utils";
-import type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
+import type { BulkAction, BulkTrash, DataTableFilterableColumn, RowMenuBulk } from "./data-table-types";
 
-export type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk };
+export type { BulkAction, BulkTrash, DataTableFilterableColumn, RowMenuBulk };
 
 /** Rows of skeletons while the first rows load, see `loadingRows`. */
 const LOADING_ROWS = 5;

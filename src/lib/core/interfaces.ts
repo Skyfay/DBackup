@@ -13,13 +13,6 @@ import type { NotificationBrand } from "@/lib/notifications/brand";
  */
 export type AdapterConfig = any;
 
-export interface AdapterConfigSchema {
-    name: string;
-    label: string;
-    description?: string;
-    input: z.ZodObject<z.ZodRawShape>;
-}
-
 export interface BackupMetadata {
     version: 1;
     jobId: string;

@@ -34,7 +34,7 @@ Then add the two lines the script prints to `~/.zshrc`. They are easy to skip pa
 
 ```bash
 eval "$(fnm env --use-on-cd)"
-export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"
+export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@19/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"
 ```
 
 SqlPackage needs no entry of its own. The script installs it into `$(brew --prefix)/bin`, which is already on `PATH`, and wraps it so it finds the .NET runtime without a `DOTNET_ROOT` variable.

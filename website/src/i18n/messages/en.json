@@ -612,7 +612,7 @@
     },
     "cards": {
       "postgres": {
-        "versions": "Versions 12 to 18",
+        "versions": "Versions 12 to 19",
         "text": "Custom-format dumps with pg_dump, compressed with Gzip, LZ4 or Zstd."
       },
       "mysql": {
@@ -771,7 +771,7 @@
         "description": "Self-hosted PostgreSQL backups with pg_dump. Scheduled, compressed with Gzip, LZ4 or Zstd, with AES-256-GCM encryption and kept on S3, SFTP, a NAS or a cloud drive. Open source.",
         "heroTitle": "PostgreSQL backups, <shine>self-hosted and encrypted.</shine>",
         "lead": "DBackup runs <code>pg_dump</code> on a schedule, encrypts the dumps with AES-256-GCM when the job has a key and keeps them on the storage you choose. Directly or over SSH, with the restore in the same app.",
-        "fact1Value": "PostgreSQL 12 to 18",
+        "fact1Value": "PostgreSQL 12 to 19",
         "fact1Label": "pg_dump 18 ships in the image",
         "fact2Value": "Custom format",
         "fact2Label": "Restored with pg_restore",
@@ -793,7 +793,7 @@
         "userTitle": "Create a backup user",
         "userText": "Reading is enough for the backup. When a restore needs more, the app asks for an admin login once.",
         "q1": "Which PostgreSQL versions does DBackup support?",
-        "a1": "PostgreSQL 12 to 18. The image ships pg_dump from PostgreSQL 18, which reads every older server in that range. Over SSH, the pg_dump on your server does the work.",
+        "a1": "PostgreSQL 12 to 19. The image ships pg_dump from PostgreSQL 19, which reads every older server in that range. Over SSH, the pg_dump on your server does the work.",
         "q2": "Does the backup include roles and tablespaces?",
         "a2": "No. DBackup runs pg_dump for each database and never pg_dumpall, so roles and tablespaces are not in the backup. A restore leaves out owners and grants, so the restored objects belong to the login that restores them.",
         "q3": "Can DBackup back up a server it cannot reach directly?",

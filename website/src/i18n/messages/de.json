@@ -612,7 +612,7 @@
     },
     "cards": {
       "postgres": {
-        "versions": "Versionen 12 bis 18",
+        "versions": "Versionen 12 bis 19",
         "text": "Dumps im Custom-Format mit pg_dump, komprimiert mit Gzip, LZ4 oder Zstd."
       },
       "mysql": {
@@ -771,7 +771,7 @@
         "description": "Selbst gehostete PostgreSQL-Backups mit pg_dump. Nach Zeitplan, komprimiert mit Gzip, LZ4 oder Zstd, mit AES-256-GCM-Verschlüsselung und abgelegt auf S3, SFTP, einem NAS oder in der Cloud. Open Source.",
         "heroTitle": "PostgreSQL-Backups, <shine>selbst gehostet und verschlüsselt.</shine>",
         "lead": "DBackup führt <code>pg_dump</code> nach Zeitplan aus, verschlüsselt die Dumps mit AES-256-GCM, wenn der Job einen Schlüssel hat, und legt sie auf dem Speicher Ihrer Wahl ab. Direkt oder über SSH, mit der Wiederherstellung in derselben App.",
-        "fact1Value": "PostgreSQL 12 bis 18",
+        "fact1Value": "PostgreSQL 12 bis 19",
         "fact1Label": "pg_dump 18 ist im Image enthalten",
         "fact2Value": "Custom-Format",
         "fact2Label": "Wiederhergestellt mit pg_restore",
@@ -793,7 +793,7 @@
         "userTitle": "Backup-Benutzer anlegen",
         "userText": "Für das Backup reicht Lesen. Braucht eine Wiederherstellung mehr, fragt die App einmalig nach einem Admin-Login.",
         "q1": "Welche PostgreSQL-Versionen unterstützt DBackup?",
-        "a1": "PostgreSQL 12 bis 18. Das Image bringt pg_dump aus PostgreSQL 18 mit, das jeden älteren Server in diesem Bereich liest. Über SSH arbeitet das pg_dump auf Ihrem Server.",
+        "a1": "PostgreSQL 12 bis 19. Das Image bringt pg_dump aus PostgreSQL 19 mit, das jeden älteren Server in diesem Bereich liest. Über SSH arbeitet das pg_dump auf Ihrem Server.",
         "q2": "Enthält das Backup Rollen und Tablespaces?",
         "a2": "Nein. DBackup führt pg_dump für jede Datenbank aus und nie pg_dumpall, also sind Rollen und Tablespaces nicht im Backup. Eine Wiederherstellung lässt Besitzer und Rechte weg, die wiederhergestellten Objekte gehören also dem Login, der sie wiederherstellt.",
         "q3": "Kann DBackup einen Server sichern, den es nicht direkt erreicht?",

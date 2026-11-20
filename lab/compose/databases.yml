@@ -184,6 +184,14 @@ services:
     # PostgreSQL 18 keeps its data one level deeper, in a folder named after the major version.
     volumes: [postgres-18:/var/lib/postgresql]
     healthcheck: *postgres-health
+  postgres-19:
+    image: postgres:19-alpine
+    restart: unless-stopped
+    profiles: ["core"]
+    environment: *postgres-env
+    ports: ["54419:5432"]
+    volumes: [postgres-19:/var/lib/postgresql]
+    healthcheck: *postgres-health
 
   # ── MongoDB ─────────────────────────────────────────────
   mongo-44:
@@ -360,6 +368,7 @@ volumes:
   postgres-16:
   postgres-17:
   postgres-18:
+  postgres-19:
   mongo-44:
   mongo-60:
   mongo-70:

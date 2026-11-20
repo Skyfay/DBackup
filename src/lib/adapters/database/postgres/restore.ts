@@ -145,7 +145,7 @@ async function restoreSingleDatabase(
             }
             if (result.stderr.includes("transaction_timeout")) {
                 log(
-                    "Restore completed - pg_restore 18 sent SET transaction_timeout which is unsupported on PostgreSQL < 17. This is cosmetic and does not affect the restore.",
+                    "Restore completed - pg_restore 18 and newer send SET transaction_timeout, which PostgreSQL before 17 does not know. This is cosmetic and does not affect the restore.",
                     'warning',
                 );
             } else {

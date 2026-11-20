@@ -13,13 +13,6 @@ import type { NotificationBrand } from "@/lib/notifications/brand";
  */
 export type AdapterConfig = any;
 
-export interface AdapterConfigSchema {
-    name: string;
-    label: string;
-    description?: string;
-    input: z.ZodObject<z.ZodRawShape>;
-}
-
 export interface BackupMetadata {
     version: 1;
     jobId: string;
@@ -961,6 +954,8 @@ export interface NotificationContext {
     eventType?: string;
     /** Short title used as email subject / embed title */
     title?: string;
+    /** The heading of the banner in a mail when it differs from the title */
+    heading?: string;
     /** Structured key-value fields for rich rendering */
     fields?: Array<{ name: string; value: string; inline?: boolean }>;
     /** Hex colour for embeds / status indicators */

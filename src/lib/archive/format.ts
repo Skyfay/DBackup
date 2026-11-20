@@ -80,20 +80,6 @@ export function opaqueMemberName(ordinal: number): string {
     return `${OPAQUE_MEMBER_PREFIX}${String(ordinal).padStart(6, "0")}`;
 }
 
-/**
- * Byte offset of a tar member's payload, given the total bytes written once the member
- * (including its trailing padding) is complete.
- *
- * Deriving the offset by subtracting the padded payload length is deliberate: computing it
- * forwards from a header would require knowing the header size, which is not constant -
- * tar-stream emits an extra PAX header for names that do not fit the ustar layout. Working
- * backwards from the end is correct for plain, ustar-prefixed and PAX-prefixed members
- * alike, which the unit tests assert directly.
- */
-export function payloadOffsetFromEnd(bytesWrittenAfterMember: number, storedSize: number): number {
-    return bytesWrittenAfterMember - paddedSize(storedSize);
-}
-
 /** Payload size rounded up to the next tar block boundary. */
 export function paddedSize(size: number): number {
     return Math.ceil(size / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;

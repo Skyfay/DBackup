@@ -10,8 +10,6 @@ export const AUDIT_ACTIONS = {
   EXPORT: "EXPORT", // For sensitive data exports (e.g., recovery kit)
 } as const;
 
-export type AuditAction = typeof AUDIT_ACTIONS[keyof typeof AUDIT_ACTIONS];
-
 export const AUDIT_RESOURCES = {
   AUTH: "AUTH",
   USER: "USER",

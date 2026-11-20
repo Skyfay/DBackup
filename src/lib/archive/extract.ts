@@ -14,7 +14,7 @@ import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import { DATABASE_MEMBER_PREFIX, SOURCE_MEMBER_PREFIX } from "./format";
 import { databaseDumpFileName, plainFileNameProblem } from "./dump-names";
-import { assertSingleReferences, bundleSlices, groupFilesByEntry, openArchiveEntry, openArchiveFile, readArchiveIndex, readArchiveManifest } from "./reader";
+import { assertSingleReferences, bundleSlices, groupFilesByEntry, openArchiveEntry, readArchiveIndex, readArchiveManifest } from "./reader";
 import { groupFilesByArchive, OpenedChainArchive } from "./chain-source";
 import { localFileSource, readAll } from "./sources";
 import { BUNDLE_READ_LIMIT } from "./limits";
@@ -278,15 +278,4 @@ export async function extractArchive(
     options?: ExtractOptions
 ): Promise<ExtractResult> {
     return extractArchiveFrom(await localFileSource(archivePath), extractDir, options);
-}
-
-/** Reads a single file out of an archive without touching disk. */
-export async function readSingleFile(
-    source: ArchiveByteSource,
-    manifest: ArchiveManifest,
-    index: ArchiveIndex,
-    file: IndexFileLine,
-    masterKey?: Buffer
-): Promise<NodeJS.ReadableStream> {
-    return openArchiveFile(source, manifest, index, file, masterKey);
 }

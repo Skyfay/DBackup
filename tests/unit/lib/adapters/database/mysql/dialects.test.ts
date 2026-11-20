@@ -34,8 +34,8 @@ const baseMariaDBConfig: MariaDBConfig = {
 // --- getDialect ---
 
 /** The client tools as dumpClientOf tells them apart. */
-const MYSQL_TOOL = { setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" } as const;
-const MARIADB_TOOL = { setsGtidPurged: false, sslOff: "--skip-ssl" } as const;
+const MYSQL_TOOL = { mariadb: false, setsGtidPurged: true, sslOff: "--ssl-mode=DISABLED" } as const;
+const MARIADB_TOOL = { mariadb: true, setsGtidPurged: false, sslOff: "--skip-ssl" } as const;
 
 describe("getDialect", () => {
     it("returns MariaDBDialect for adapterId 'mariadb' without version", () => {
@@ -60,6 +60,13 @@ describe("getDialect", () => {
 
     it("returns MySQL80Dialect for 'mysql' with an 8.x version string", () => {
         expect(getDialect("mysql", "8.0.33")).toBeInstanceOf(MySQL80Dialect);
+    });
+
+    it("gives MySQL 26 and later, which count by the year, the flags of MySQL 8", () => {
+        expect(getDialect("mysql", "26.10.0")).toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "25.7.1")).toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "35.7.0")).toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "5.7")).toBeInstanceOf(MySQL57Dialect);
     });
 
     it("returns MySQL80Dialect for unknown adapterId without version", () => {

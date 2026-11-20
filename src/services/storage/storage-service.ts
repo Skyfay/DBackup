@@ -33,6 +33,7 @@ registerAdapters();
 
 import { describeBackupFromMetadata } from "./backup-file-fields";
 import { readListedSidecars } from "./listed-sidecars";
+import { wasRewritten } from "./listing-changes";
 import { readSidecarText } from "@/lib/adapters/storage/common/read-sidecar";
 
 export { describeBackupFromMetadata } from "./backup-file-fields";
@@ -381,8 +382,10 @@ export class StorageService {
             this.refreshInBackground(adapterConfigId, tenant, "rebuild");
             return;
         }
+        // A run that writes to the path of an earlier backup replaces it, so its row describes the
+        // new backup, never the time, size and checks of the one it overwrote (#201).
         await this.mutateStorageListCache(adapterConfigId, (files) =>
-            files.some(f => f.path === entry.path) ? null : [...files, entry]
+            [...files.filter(f => f.path !== entry.path), entry]
         , tenantId);
     }
 
@@ -555,6 +558,7 @@ export class StorageService {
             ({ adapter, config } = await openDestination(adapterConfigId, tenantId));
         } catch { return; }
 
+        const listingStartedAt = Date.now();
         const allRemoteFiles = (await adapter.list(config, "")).filter(f => {
             const p = f.path.replace(/\\/g, '/');
             return !p.startsWith('.dbackup/') && !p.startsWith('/.dbackup/');
@@ -574,14 +578,21 @@ export class StorageService {
         const cachedPathSet = new Set(cachedFiles.map(f => f.path));
 
         const removedPaths = new Set([...cachedPathSet].filter(p => !remotePathSet.has(p)));
-        const newFiles = remoteBackups.filter(f => !cachedPathSet.has(f.path));
+        // A backup written again at the same path is read like a new one, see `listing-changes.ts`.
+        const cachedByPath = new Map(cachedFiles.map(f => [f.path, f]));
+        const rewritten = remoteBackups.filter(f => {
+            const row = cachedByPath.get(f.path);
+            return row !== undefined && wasRewritten(row, f, listingStartedAt);
+        });
+        const rewrittenPaths = new Set(rewritten.map(f => f.path));
+        const newFiles = [...remoteBackups.filter(f => !cachedPathSet.has(f.path)), ...rewritten];
 
         if (removedPaths.size === 0 && newFiles.length === 0) {
             await this.writeListingRow(adapterConfigId, tenantId, { cachedAt: new Date() });
             return;
         }
 
-        let updatedFiles = cachedFiles.filter(f => !removedPaths.has(f.path));
+        let updatedFiles = cachedFiles.filter(f => !removedPaths.has(f.path) && !rewrittenPaths.has(f.path));
 
         if (newFiles.length > 0) {
             const newFileNames = new Set(newFiles.map(f => f.name));
@@ -614,7 +625,7 @@ export class StorageService {
         }
 
         await this.writeListingRow(adapterConfigId, tenantId, { filesJson: serializeCachedListing(updatedFiles), cachedAt: new Date() });
-        log.debug("Reconciled storage cache", { adapterConfigId, tenantId, removed: removedPaths.size, added: newFiles.length });
+        log.debug("Reconciled storage cache", { adapterConfigId, tenantId, removed: removedPaths.size, added: newFiles.length - rewritten.length, rewritten: rewritten.length });
     }
 
     /**

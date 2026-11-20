@@ -64,8 +64,6 @@ const jobListSelect = {
 
 type JobRow = Prisma.JobGetPayload<{ select: typeof jobListSelect }>;
 
-export type JobListConnection = Prisma.AdapterConfigGetPayload<{ select: typeof connectionFields }>;
-
 export type JobListItem = Omit<JobRow, "sources" | "createdAt"> & {
     createdAt: string;
     sources: (Omit<JobRow["sources"][number], "excludePatterns" | "excludePatternPresets"> & {

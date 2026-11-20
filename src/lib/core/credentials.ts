@@ -48,8 +48,6 @@ export const SshKeyGenerateSchema = z.object({
     passphrase: z.string().optional(),
 });
 
-export type SshKeyGenerateRequest = z.infer<typeof SshKeyGenerateSchema>;
-
 export const SshKeySchema = z
     .object({
         username: z.string().min(1, "Username is required"),

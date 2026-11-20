@@ -102,6 +102,8 @@ export interface NotificationProblem {
 export interface NotificationPayload {
   /** Short title (email subject, embed title, etc.) */
   title: string;
+  /** The heading of the banner in a mail when it reads better than the title, which stays the subject. */
+  heading?: string;
   /** Plain text message body */
   message: string;
   /** Structured fields for rich display (embeds, tables) */

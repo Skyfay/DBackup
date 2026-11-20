@@ -98,5 +98,3 @@ export function useJobForm({ sources, initialData, onSaved }: Options) {
 
     return { form, save, source, isPostgres, pgMajorVersion, nativeCompression, defaultExcludePresetIds };
 }
-
-export type JobFormState = ReturnType<typeof useJobForm>;

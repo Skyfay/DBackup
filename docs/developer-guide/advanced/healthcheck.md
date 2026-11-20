@@ -131,7 +131,7 @@ interface DatabaseAdapter {
 }
 
 interface StorageAdapter {
-  test(config: StorageConfig): Promise<TestResult>;
+  test(config: AdapterConfig): Promise<TestResult>;
   // ...
 }
 ```

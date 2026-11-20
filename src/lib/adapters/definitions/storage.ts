@@ -183,5 +183,3 @@ export type RsyncConfig = z.infer<typeof RsyncSchema>;
 export type GoogleDriveConfig = z.infer<typeof GoogleDriveSchema>;
 export type DropboxConfig = z.infer<typeof DropboxSchema>;
 export type OneDriveConfig = z.infer<typeof OneDriveSchema>;
-
-export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig | GoogleDriveConfig | DropboxConfig | OneDriveConfig;

@@ -52,7 +52,7 @@ It ends with the commands that fix what it found. It is a report, so it exits wi
 
 | Part | Services |
 | :--- | :--- |
-| Databases | MySQL 5.7 and 9, MariaDB 10.4 and 11.8, PostgreSQL 12 and 18, MongoDB 4.4 and 8.0, SQL Server 2017 and 2022, Redis 6 and 8, Valkey 7.2 and 8, Firebird 3 and 5. `--full` adds the versions between |
+| Databases | MySQL 5.7 and 9, MariaDB 10.4 and 11.8, PostgreSQL 12, 18 and 19, MongoDB 4.4 and 8.0, SQL Server 2017 and 2022, Redis 6 and 8, Valkey 7.2 and 8, Firebird 3 and 5. `--full` adds the versions between |
 | Storage | S3 (SeaweedFS), an OpenSSH host for SFTP and rsync, WebDAV, Samba and FTP |
 | Notifications | Mailpit, ntfy, Gotify and a webhook echo |
 

@@ -1,4 +1,4 @@
-/** PostgreSQL, from 12 to 18. */
+/** PostgreSQL, from 12 to 19. */
 
 import { shopCopy, type Clients, type EngineSpec, type Run } from "./types";
 
@@ -28,6 +28,7 @@ export const POSTGRES: EngineSpec = {
         { version: "16", service: "postgres-16", port: 54416, profile: "full" },
         { version: "17", service: "postgres-17", port: 54417, profile: "full" },
         { version: "18", service: "postgres-18", port: 54418, profile: "core" },
+        { version: "19", service: "postgres-19", port: 54419, profile: "core" },
     ],
     innerPort: 5432,
     login,

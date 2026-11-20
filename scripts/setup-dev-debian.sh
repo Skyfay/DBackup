@@ -4,7 +4,7 @@
 #
 # Supported databases:
 #   MySQL / MariaDB  → mysqldump, mysql
-#   PostgreSQL 14-17 → pg_dump, pg_restore (versioned, like Docker image)
+#   PostgreSQL 14-19 → pg_dump, pg_restore (versioned, like Docker image)
 #   MongoDB          → mongodump, mongorestore, mongosh
 #   SQLite           → sqlite3
 #   Redis            → redis-cli
@@ -64,7 +64,7 @@ apt-get install -y -qq default-mysql-client > /dev/null
 mysql --version && info "MySQL client installed ✓" || warn "MySQL client check failed"
 
 # -------------------------------------------------------------------
-# 3. PostgreSQL clients — versioned (14, 16, 17, 18)
+# 3. PostgreSQL clients — versioned (14, 16, 17, 18, 19)
 #    Mirrors the Docker image strategy with /opt/pgXX/bin symlinks
 # -------------------------------------------------------------------
 info "Adding PostgreSQL APT repository..."
@@ -72,7 +72,7 @@ curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --
 echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] https://apt.postgresql.org/pub/repos/apt ${CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 apt-get update -qq
 
-PG_VERSIONS=(14 16 17 18)
+PG_VERSIONS=(14 16 17 18 19)
 for ver in "${PG_VERSIONS[@]}"; do
     info "Installing PostgreSQL $ver client..."
     apt-get install -y -qq "postgresql-client-${ver}" > /dev/null 2>&1 || {

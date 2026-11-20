@@ -6,9 +6,9 @@ Back up PostgreSQL databases with `pg_dump`, one database at a time.
 
 | Versions |
 | :--- |
-| 12, 13, 14, 15, 16, 17, 18 |
+| 12, 13, 14, 15, 16, 17, 18, 19 |
 
-The DBackup image ships `pg_dump` 18, which can dump older servers. Over SSH the `pg_dump` installed on the SSH server is used instead.
+The DBackup image ships `pg_dump` 19, which can dump older servers. Over SSH the `pg_dump` installed on the SSH server is used instead.
 
 ## Connection Modes
 

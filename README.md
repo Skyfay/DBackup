@@ -60,7 +60,7 @@ Nothing locks you in. Every database backup is a standard dump and every file ba
 
 | Database | Versions | Connection | Restore |
 | :--- | :--- | :--- | :--- |
-| PostgreSQL | 12 to 18 | Direct, SSH | Yes |
+| PostgreSQL | 12 to 19 | Direct, SSH | Yes |
 | MySQL | 5.7, 8.x, 9.x | Direct, SSH | Yes |
 | MariaDB | 10.x, 11.x | Direct, SSH | Yes |
 | MongoDB | 4.x to 8.x | Direct, SSH | Yes |

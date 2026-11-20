@@ -8,7 +8,7 @@ DBackup supports a wide variety of database engines.
 | :--- | :--- | :--- | :--- |
 | [MySQL](/user-guide/sources/mysql) | 5.7, 8.0, 8.4, 9.0 | `mariadb-dump` or `mysqldump` | ✅ |
 | [MariaDB](/user-guide/sources/mysql) | 10.x, 11.x | `mariadb-dump` or `mysqldump` | ✅ |
-| [PostgreSQL](/user-guide/sources/postgresql) | 12 to 18 | `pg_dump` | ✅ |
+| [PostgreSQL](/user-guide/sources/postgresql) | 12 to 19 | `pg_dump` | ✅ |
 | [MongoDB](/user-guide/sources/mongodb) | 4.x to 8.x | `mongodump` | ✅ |
 | [Redis](/user-guide/sources/redis) | 2.8+ | `redis-cli --rdb` | Manual |
 | [Valkey](/user-guide/sources/valkey) | 7.2+ | `redis-cli --rdb` | Manual |

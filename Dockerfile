@@ -19,7 +19,7 @@ FROM node:24-slim AS base
 
 # Install system tools for database backups
 # mariadb-client (Debian 12)       -> mysql, mysqldump, mariadb, mariadb-dump (libmariadb3 3.3.x supports caching_sha2_password)
-# postgresql-client-18 (PGDG)      -> pg_dump, pg_restore, psql (backward compatible with PG 12-18)
+# postgresql-client-19 (PGDG)      -> pg_dump, pg_restore, psql (backward compatible with PG 12-19)
 # mongodb-database-tools (CDN)     -> mongodump, mongorestore (direct download - APT repo has no arm64 builds for Debian 12;
 #                                    MongoDB only ships debian12 x86_64 packages; arm64 uses ubuntu2204 package)
 # redis-tools                      -> redis-cli (for Redis backups)
@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Step 2: Configure external APT repositories
 RUN \
-    # PGDG: PostgreSQL 18 client. The key goes to a file first, so a retried download never hands gpg
+    # PGDG: PostgreSQL 19 client. The key goes to a file first, so a retried download never hands gpg
     # half a key followed by a whole one. Every download retries, a mirror drops a stream now and then.
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.asc && \
     gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg /tmp/pgdg.asc && \
@@ -49,7 +49,7 @@ RUN \
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
     mariadb-client \
-    postgresql-client-18 \
+    postgresql-client-19 \
     redis-tools \
     smbclient \
     lz4 \
@@ -137,16 +137,16 @@ RUN printf '#!/bin/sh\nexec /usr/share/dotnet/dotnet /opt/sqlpackage/sqlpackage.
     chmod +x /usr/local/bin/sqlpackage && \
     sqlpackage /version
 
-# Enable corepack for pnpm support and symlink PostgreSQL 18 binaries
-# On Debian with PGDG, pg binaries live under /usr/lib/postgresql/18/bin/
+# Enable corepack for pnpm support and symlink PostgreSQL 19 binaries
+# On Debian with PGDG, pg binaries live under /usr/lib/postgresql/19/bin/
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate && \
-    ln -sf /usr/lib/postgresql/18/bin/pg_dump /usr/local/bin/pg_dump && \
-    ln -sf /usr/lib/postgresql/18/bin/pg_restore /usr/local/bin/pg_restore && \
-    ln -sf /usr/lib/postgresql/18/bin/psql /usr/local/bin/psql
+    ln -sf /usr/lib/postgresql/19/bin/pg_dump /usr/local/bin/pg_dump && \
+    ln -sf /usr/lib/postgresql/19/bin/pg_restore /usr/local/bin/pg_restore && \
+    ln -sf /usr/lib/postgresql/19/bin/psql /usr/local/bin/psql
 
 # Validate pg_dump version resolves correctly (fail-fast on broken symlinks/packages)
-RUN pg_dump --version | grep -q 'PostgreSQL) 18\.' || \
-    (echo "ERROR: pg_dump version validation failed! Check PostgreSQL 18 client package." && exit 1)
+RUN pg_dump --version | grep -q 'PostgreSQL) 19\.' || \
+    (echo "ERROR: pg_dump version validation failed! Check PostgreSQL 19 client package." && exit 1)
 
 # 1. Install Dependencies
 FROM base AS deps

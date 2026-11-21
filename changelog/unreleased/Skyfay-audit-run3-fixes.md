@@ -25,6 +25,7 @@
 - **PostgreSQL**: Queries of the catalog inside a database run with the catalog alone on the search path, so the owner of a database cannot hand functions of their own to the login of the provider.
 - **audit**: The CSV export quotes a cell with a semicolon or a tab, so no spreadsheet starts a formula from it.
 - **storage**: The PowerShell command of a download link escapes typographic quotes in the file name.
+- **storage**: At most two checks of a backup download it at once, and a check of a known size first makes sure the temporary folder has the space free.
 - **restore**: Trying a key on a backup waits for its share of memory like every other read of the index, so many tries at once no longer fill the memory of the server.
 - **Docker Volumes**: A run without SSH reads no volume that holds the folder of a Local Filesystem destination shared with customers.
 - **tenants**: A customer gets only the backups of a shared server that a run in the History of its tenant wrote, never a file at the destination by its sidecar alone.

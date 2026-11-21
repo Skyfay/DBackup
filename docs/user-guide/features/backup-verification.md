@@ -42,7 +42,7 @@ When a verification is triggered, DBackup uses the best available method for eac
 | Dropbox | Download + compute SHA-256 | No |
 | Rsync | Download + compute SHA-256 | No |
 
-For adapters without native checksum APIs, DBackup downloads the full file, recomputes the hash, and compares it against the stored value.
+For adapters without native checksum APIs, DBackup downloads the full file, recomputes the hash, and compares it against the stored value. At most two such downloads run at once on the server, the others wait their turn, and a check whose size DBackup knows, like one of the integrity check or right after the upload, is refused when the temporary folder has not the space free.
 
 The result is written back into the `.meta.json` sidecar so it persists across sessions and appears immediately on the Backups page without re-verifying.
 

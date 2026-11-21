@@ -438,7 +438,7 @@ export async function stepUpload(ctx: RunnerContext) {
             const destLabel = `[${dest.configName}]`;
             try {
                 ctx.log(`${destLabel} Verifying upload integrity...`);
-                const verifyResult = await verificationService.verifyFile(dest.configId, remotePath, 'post-upload');
+                const verifyResult = await verificationService.verifyFile(dest.configId, remotePath, 'post-upload', { size: ctx.dumpSize });
                 if (verifyResult.status === 'passed') {
                     ctx.log(`${destLabel} Integrity check passed`, 'success');
                 } else if (verifyResult.status === 'failed') {

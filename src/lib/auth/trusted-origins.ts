@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { issuerProblem } from "./issuer-shape";
 import { rangesOfColumn, toRanges } from "@/lib/network/local-network";
 import { firstBlockedAddress } from "@/lib/network/reach-check";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
@@ -83,7 +84,8 @@ const hostOf = (issuer: string): string | null => {
 async function endpointIssuers(request: Request): Promise<string[]> {
     try {
         const providers = (await prisma.ssoProvider.findMany({ where: { enabled: true }, select: { providerId: true, issuer: true, tenantId: true } }))
-            .filter((provider): provider is typeof provider & { issuer: string } => !!provider.issuer);
+            // An issuer saved before its shape was checked, with a * or a ?, is never trusted, see `issuer-shape.ts`.
+            .filter((provider): provider is typeof provider & { issuer: string } => !!provider.issuer && issuerProblem(provider.issuer) === null);
         const tenantIds = [...new Set(providers.map((provider) => provider.tenantId).filter((id): id is string => !!id && id !== HOME_TENANT_ID))];
         const blocking = tenantIds.length === 0
             ? []

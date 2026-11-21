@@ -44,9 +44,17 @@ export function proxyHeaderFrom(value: string | undefined): ProxyHeader {
 
 /**
  * The networks a reverse proxy in front of DBackup usually sits in: loopback, the private ranges of
- * a Docker network or a LAN, and link-local. The default of TRUSTED_PROXIES, and its keyword `private`.
+ * a Docker network or a LAN, and link-local. The keyword `private` of TRUSTED_PROXIES.
  */
-export const DEFAULT_TRUSTED_PROXIES = ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"];
+export const PRIVATE_NETWORKS = ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"];
+
+/**
+ * The default of TRUSTED_PROXIES, and its keyword `loopback`: a reverse proxy on the same machine
+ * alone. Every device of a private network could otherwise connect directly and name its own
+ * address in the header, for the rate limits and the audit log. A proxy in a Docker network or the
+ * LAN is named, by its address or with `private`.
+ */
+export const DEFAULT_TRUSTED_PROXIES = ["127.0.0.0/8", "::1/128"];
 
 /**
  * The ranges the edge servers of Cloudflare connect from, the keyword `cloudflare` of
@@ -63,7 +71,8 @@ export const CLOUDFLARE_RANGES = [
 
 /** The names TRUSTED_PROXIES takes in place of addresses, each for a list of ranges. */
 export const PROXY_KEYWORDS = new Map<string, readonly string[]>([
-    ["private", DEFAULT_TRUSTED_PROXIES],
+    ["loopback", DEFAULT_TRUSTED_PROXIES],
+    ["private", PRIVATE_NETWORKS],
     ["cloudflare", CLOUDFLARE_RANGES],
 ]);
 
@@ -75,7 +84,7 @@ export function normalizeAddress(address: string): string {
 }
 
 /**
- * The proxies to trust, from the value of TRUSTED_PROXIES: unset for the private ranges, `none` to
+ * The proxies to trust, from the value of TRUSTED_PROXIES: unset for the loopback, `none` to
  * never read a forwarded header, or a comma list of addresses, CIDR ranges and the keywords of
  * PROXY_KEYWORDS. A list replaces the default, so a proxy in a private network behind Cloudflare
  * needs `private,cloudflare`. Throws on an entry that is none of them, so a typo does not silently
@@ -85,7 +94,7 @@ export function trustedProxiesFrom(value: string | undefined): BlockList {
     const list = new BlockList();
     const setting = value?.trim();
     if (setting?.toLowerCase() === "none") return list;
-    const entries = setting ? setting.split(",").map((entry) => entry.trim()).filter(Boolean) : ["private"];
+    const entries = setting ? setting.split(",").map((entry) => entry.trim()).filter(Boolean) : ["loopback"];
     for (const entry of entries.flatMap((entry) => PROXY_KEYWORDS.get(entry.toLowerCase()) ?? [entry])) {
         const [address, prefix, ...rest] = entry.split("/");
         const family = isIP(address);
@@ -137,27 +146,27 @@ export function clientAddressOf(peer: string | undefined, forwarded: HeaderValue
 }
 
 /**
- * What the server logs the first time a forwarded header counts by the default alone, null any
- * other time. With TRUSTED_PROXIES unset every peer of a private network counts as a reverse proxy,
- * and the server cannot tell a proxy from a device of that network that connects directly and names
- * its own address in the header. So the first such request names the peer and the setting that
- * pins it. A value someone set, also `private`, is a decision and gets no line.
+ * What the server logs the first time it ignores a forwarded header by the default alone, null any
+ * other time. With TRUSTED_PROXIES unset only the loopback counts as a reverse proxy, so a proxy in a
+ * Docker network or the LAN makes every request read as its own address, and every client shares
+ * the rate limits of that address. The first header from a private network names the peer and the
+ * setting that trusts it. A value someone set is a decision and gets no line.
  *
  * @param setting  TRUSTED_PROXIES as it is set.
  * @returns A function for every request, which answers the line once and null from then on.
  */
 export function defaultTrustNotice(setting: string | undefined, trusted: BlockList, header: ProxyHeader = "x-forwarded-for"): (peer: string | undefined, forwarded: HeaderValue, realIp: HeaderValue) => string | null {
     let pending = !setting?.trim();
+    const privateNetworks = trustedProxiesFrom("private");
     return (peer, forwarded, realIp) => {
         if (!pending || !peer) return null;
         if (!joined(header === "x-real-ip" ? realIp : forwarded).trim()) return null;
         const remote = normalizeAddress(peer);
-        if (!isTrusted(remote, trusted)) return null;
+        if (isTrusted(remote, trusted) || !isTrusted(remote, privateNetworks)) return null;
         pending = false;
         const name = header === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For";
-        return `${name} of ${remote} counts as the address of the client, because TRUSTED_PROXIES is unset and every private network is trusted. `
-            + `If ${remote} is your reverse proxy, set TRUSTED_PROXIES=${remote} to trust it alone. `
-            + "If DBackup is reached without a reverse proxy, set TRUSTED_PROXIES=none. "
-            + "Until then any device of a private network that connects directly names its own address for the rate limits and the audit log.";
+        return `${name} of ${remote} is ignored, because TRUSTED_PROXIES is unset and only a reverse proxy on this machine is trusted. `
+            + `If ${remote} is your reverse proxy, set TRUSTED_PROXIES=${remote}, or private for every private network, so the rate limits and the audit log see the address of each client. `
+            + "Until then every request through it counts as one from its address.";
     };
 }

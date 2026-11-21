@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { withSsoFetchReach } from "@/lib/auth/sso-fetch-reach";
 import { toNextJsHandler } from "better-auth/next-js";
 
 /**
@@ -10,4 +11,8 @@ import { toNextJsHandler } from "better-auth/next-js";
  * password that breaks the rules (`password-guard.ts`). The `after` hook writes the sign-ins to
  * the audit log.
  */
-export const { GET, POST } = toNextJsHandler(auth);
+const handler = toNextJsHandler(auth);
+
+// The fetches of a sign-in through a provider keep to the reach of its tenant, see `sso-fetch-reach.ts`.
+export const GET = (request: Request) => withSsoFetchReach(request, () => handler.GET(request));
+export const POST = (request: Request) => withSsoFetchReach(request, () => handler.POST(request));

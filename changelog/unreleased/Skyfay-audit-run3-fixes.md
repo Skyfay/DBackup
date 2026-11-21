@@ -1,3 +1,5 @@
+> ⚠️ **Before updating:** `TRUSTED_PROXIES` trusts only a reverse proxy on the same machine by default. A proxy in a Docker network or the LAN needs its address or `private` in `TRUSTED_PROXIES`, or every request counts as one from the address of the proxy.
+
 ### 🔒 Security
 
 - **rsync**: A connection config can no longer set the address ssh dials or the options of the host key check itself, which could run a command on the DBackup server. Fields of that kind are refused when a connection is saved or tried.
@@ -14,6 +16,8 @@
 - **Recovery Kit**: The recovery script reads link paths with backslashes the way Linux and macOS do, and removes a link it laid that points out of the output folder.
 - **file backups**: Exclude patterns with braces count every pattern they expand to, and one list stands for at most 256 patterns with a slash, brackets or braces. A restore takes only exclude patterns a save would take.
 - **backup**: A run that takes longer than the longest a run may take fails, also while it still reports progress, so one slow source cannot hold the runs of every tenant. The time is one day by default and set in Settings > General.
+- **server**: Without `TRUSTED_PROXIES` only a reverse proxy on the same machine is trusted, so a device of the local network can no longer name its own address for the rate limits and the audit log.
+- **SSO**: The fetches of a sign-in through the provider of a tenant that blocks the local network dial only checked addresses. An issuer with a wildcard or a user part is refused and never trusted.
 - **SSH**: A private key with a passphrase is unlocked once per process instead of at every connect, so a key that is slow to unlock no longer holds up the server at every health check.
 
 ### 🔄 Changed

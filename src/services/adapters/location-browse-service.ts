@@ -14,6 +14,7 @@ import { storageView } from "@/lib/tenant/storage-view";
 import { isShared, viewerOf, viewModeOf } from "@/services/sharing/destination-access";
 import { assertMayReachHost } from "./adapter-create";
 import { assertOffSharedLogins } from "./shared-login";
+import { markFormHostKey } from "./ssh-host-key-service";
 
 /** A server that has not answered by then will not, and the dialog should say so rather than spin. */
 const BROWSE_TIMEOUT_MS = 15_000;
@@ -64,6 +65,8 @@ export async function browseLocation(input: BrowseLocationInput): Promise<Direct
     const config = await overlayCredentialsOnConfig(input.adapterId, submitted, input.primaryCredentialId ?? null, null);
     // A browse runs the connection like a save would store it, rsync with its options among others.
     await assertMayReachHost(input.adapterId, config);
+    // The saved login goes only to the server whose key the connection pinned, like on a run.
+    await markFormHostKey(input.adapterId, config, input.storedConfigId);
 
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => {

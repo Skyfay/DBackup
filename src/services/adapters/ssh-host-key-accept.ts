@@ -10,18 +10,17 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { sshEndpointOf } from "@/lib/transport/ssh-endpoint";
-import { CHANGED_KEY, pinFor, storedPin, withoutPin, withPin, type StoredHostKey } from "@/lib/adapters/ssh-host-key-pins";
+import { CHANGED_KEY, parseMetadata, pinFor, storedPin, withoutPin, withPin, type StoredHostKey } from "@/lib/adapters/ssh-host-key-pins";
 import { decryptConfig } from "@/lib/crypto";
 import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { runConnectivityCheck } from "@/lib/transport/adapter-invoke";
-import { markHostKey, type SeenHostKey } from "@/lib/transport/host-key";
+import { reachOf } from "@/lib/network/reach-policy";
+import { type SeenHostKey } from "@/lib/transport/host-key";
+import { findHostKey } from "@/lib/transport/host-key-probe";
 import { assertMayManageHostLocal } from "./adapter-create";
 import { asPin, auditHostKey, HOST_KEY_AUDIT, writePinMetadata, type HostKeyActor } from "./ssh-host-key-service";
 
 const log = logger.child({ service: "SshHostKeyAccept" });
-
-const ACCEPT_TIMEOUT_MS = 20_000;
 
 /** A fingerprint as ssh prints it, `SHA256:` and 43 characters of base64. */
 export const FINGERPRINT_PATTERN = /^SHA256:[A-Za-z0-9+/]{43}$/;
@@ -54,34 +53,31 @@ async function loadForChange(id: string) {
 
 /**
  * Trusts the key the SSH server of a connection presents now, when it is the one the person was
- * shown. Logs in once without a pin, compares the key of that login with `fingerprint` and stores
- * it only on a match, so nobody accepts whatever answers a moment later.
+ * shown. Reads the key in a handshake that ends before any login (`host-key-probe.ts`) and stores
+ * it only when its fingerprint is `fingerprint`, so a server that answers in place of the real one
+ * by then gets neither the saved login nor the pin.
  *
  * @throws NotFoundError for a connection that does not exist.
  * @throws ValidationError for a connection without an SSH login, one that reaches the server
- *   DBackup runs on for anyone but a platform admin, a login that failed, or another key.
+ *   DBackup runs on for anyone but a platform admin, a server that cannot be reached, or another key.
  */
 export async function acceptHostKey(id: string, fingerprint: string, by: HostKeyActor): Promise<HostKeyChange> {
     registerAdapters();
     const row = await loadForChange(id);
     const resolved = (await resolveAdapterConfig(row)) as Record<string, unknown>;
     const endpoint = sshEndpointOf(row.adapterId, resolved);
-    const adapter = registry.get(row.adapterId);
-    if (!endpoint || !adapter) throw new ValidationError("This connection opens no SSH login, so it has no host key to trust.");
+    if (!endpoint || !registry.get(row.adapterId)) throw new ValidationError("This connection opens no SSH login, so it has no host key to trust.");
 
-    // This one login accepts whatever key the server presents and only reports it. Nothing is
-    // stored unless it is the key the person was shown.
-    let seen: SeenHostKey | null = null;
-    markHostKey(resolved, { ...endpoint, onFirstKey: (key) => { seen = key; } });
+    const before = await prisma.adapterConfig.findUnique({ where: { id }, select: { metadata: true } });
+    const pinnedType = pinFor(parseMetadata(before?.metadata), endpoint)?.type;
+    let presented: SeenHostKey | null = null;
     try {
-        await runConnectivityCheck(adapter, resolved, { timeoutMs: ACCEPT_TIMEOUT_MS, label: row.name });
+        presented = await findHostKey(endpoint, reachOf(resolved), fingerprint, pinnedType);
     } catch (error: unknown) {
-        log.warn("The login that reads a new SSH host key failed", { configId: id }, wrapError(error));
+        log.warn("Reading the SSH host key of a server failed", { configId: id }, wrapError(error));
     }
-    const presented = seen as SeenHostKey | null;
-    if (!presented) throw new ValidationError("DBackup could not log in to the server, so its key was not trusted. Test the connection and try again.");
-    if (presented.fingerprint !== fingerprint) {
-        throw new ValidationError(`The server now presents another key (${presented.fingerprint}) than the one shown to you. Nothing was changed. Test the connection again.`);
+    if (!presented) {
+        throw new ValidationError("The server does not present the key shown to you, or it could not be reached. Nothing was changed. Test the connection again.");
     }
     const pin = asPin(endpoint, presented, "accepted");
     if (!pin) throw new ValidationError("The key of the server does not read as a host key.");

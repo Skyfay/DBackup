@@ -127,7 +127,7 @@ export function hostKeyMismatch(policy: SshHostKeyPolicy, presented: string | nu
 const SERVER_HOST_KEY_ALGORITHMS: ServerHostKeyAlgorithm[] = ["ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"];
 
 /** The signature algorithms a key of a type is offered under. An RSA key signs under three names. */
-function algorithmsOfType(type: string): ServerHostKeyAlgorithm[] {
+export function algorithmsOfType(type: string): ServerHostKeyAlgorithm[] {
     if (type === "ssh-rsa") return ["rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"];
     return SERVER_HOST_KEY_ALGORITHMS.filter((name) => name === type);
 }

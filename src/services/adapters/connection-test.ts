@@ -13,7 +13,7 @@ import { decryptConfig } from "@/lib/crypto";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { markHostKey } from "@/lib/transport/host-key";
 import { hostKeyMismatchMessage } from "@/lib/logging/errors";
-import { formHostKeyProbe } from "./ssh-host-key-service";
+import { formHostKeyProbe, mergeAdapterMetadata } from "./ssh-host-key-service";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -137,14 +137,8 @@ async function recordVersion(configId: string, adapterId: string, tested: Record
         }
         if (!sameAddress(adapterId, stored, tested)) return;
         if ((hostLocalReason(adapterId, stored) || hostLocalReason(adapterId, tested)) && !(await mayReachHost())) return;
-        const currentMeta = existing.metadata ? JSON.parse(existing.metadata) : {};
-        const metadata = {
-            ...currentMeta,
-            engineVersion: version,
-            lastCheck: new Date().toISOString(),
-            status: "Online",
-        };
-        await prisma.adapterConfig.update({ where: { id: configId }, data: { metadata: JSON.stringify(metadata) } });
+        // Over the metadata as it is now, which the test may have given a pinned host key meanwhile.
+        await mergeAdapterMetadata({ id: configId }, { engineVersion: version, lastCheck: new Date().toISOString(), status: "Online" });
     } catch (metaError: unknown) {
         log.error("Failed to update metadata", { configId }, wrapError(metaError));
     }

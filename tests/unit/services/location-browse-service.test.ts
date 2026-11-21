@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     isShared: vi.fn(),
     viewModeOf: vi.fn(),
     assertOffSharedLogins: vi.fn(),
+    markFormHostKey: vi.fn(),
 }));
 
 vi.mock("@/lib/core/registry", () => ({ registry: { get: (...args: unknown[]) => mocks.get(...args) } }));
@@ -24,6 +25,7 @@ vi.mock("@/lib/adapters/config-resolver", () => ({
     resolveAdapterConfig: (...args: unknown[]) => mocks.resolveAdapterConfig(...args),
     mayReachHost: () => mocks.mayReachHost(),
 }));
+vi.mock("@/services/adapters/ssh-host-key-service", () => ({ markFormHostKey: (...args: unknown[]) => mocks.markFormHostKey(...args) }));
 vi.mock("@/services/adapters/shared-login", () => ({ assertOffSharedLogins: (...args: unknown[]) => mocks.assertOffSharedLogins(...args) }));
 vi.mock("@/services/sharing/destination-access", () => ({
     isShared: (...args: unknown[]) => mocks.isShared(...args),
@@ -43,6 +45,7 @@ describe("browseLocation", () => {
         mocks.isShared.mockResolvedValue(false);
         mocks.mayReachHost.mockResolvedValue(true);
         mocks.assertOffSharedLogins.mockResolvedValue(undefined);
+        mocks.markFormHostKey.mockImplementation(async (_id: string, config: object) => config);
     });
 
     it("refuses the folder of a saved destination shared with other tenants, whose top holds the folders of its customers", async () => {
@@ -97,6 +100,16 @@ describe("browseLocation", () => {
         // With the login of the form, which signs in at a new address in place of the stored secrets.
         expect(mocks.applyStoredSecrets).toHaveBeenCalledWith("smb", "saved", { address: "//nas/backup" }, { primaryCredentialId: undefined });
         expect(mocks.browseDirectories.mock.calls[0][0]).toMatchObject({ password: "stored" });
+    });
+
+    it("signs in with the saved login only under the host key pin of the connection being edited", async () => {
+        const marked = Symbol("pinned");
+        mocks.markFormHostKey.mockImplementation(async (_id: string, config: Record<symbol, unknown>) => Object.assign(config, { [marked]: true }));
+
+        await browseLocation({ adapterId: "sftp", config: { host: "sftp.example.test" }, storedConfigId: "saved", path: "" });
+
+        expect(mocks.markFormHostKey).toHaveBeenCalledWith("sftp", expect.objectContaining({ password: "stored" }), "saved");
+        expect((mocks.browseDirectories.mock.calls[0][0] as Record<symbol, unknown>)[marked]).toBe(true);
     });
 
     it.each(["..", "../..", "srv/../../etc", "%2e%2e", "%2e%2e%2f%2e%2e", "srv\\..\\..", ".. "])("refuses the path %s, which would list the folders above the top of the storage", async (path) => {

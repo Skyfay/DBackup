@@ -16,6 +16,7 @@ import { logger } from "@/lib/logging/logger";
 import { AdapterError, wrapError } from "@/lib/logging/errors";
 import { savedLoginRefusal, storedSecretsRefusal } from "@/lib/server/config-backup-target-guard";
 import { auditedDatabasesRead } from "@/services/databases/databases-read-audit";
+import { markFormHostKey } from "@/services/adapters/ssh-host-key-service";
 
 // Ensure adapters are registered
 registerAdapters();
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
             primaryCredentialId ?? null,
             sshCredentialId ?? null
         );
+        // The saved login goes only to the SSH server whose key the connection pinned, like on a run.
+        await markFormHostKey(adapterId, mergedConfig, typeof configId === "string" ? configId : null);
 
         // Written once the read ran, whether the server answered or not, like the test of a connection.
         const databases = await auditedDatabasesRead(ctx, { sourceId: configId, adapterId }, () =>

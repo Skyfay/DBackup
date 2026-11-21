@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     findSource: vi.fn(),
     storedConfig: vi.fn(),
     mayReachHost: vi.fn(),
+    reach: null as { allowed: never[] } | null,
 }));
 
 vi.mock("@/lib/prisma", () => ({ default: { adapterConfig: { findUnique: (...args: unknown[]) => mocks.findSource(...args) } } }));
@@ -21,6 +22,12 @@ vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
 vi.mock("@/lib/adapters/config-resolver", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/lib/adapters/config-resolver")>()),
     assertConfigOffHost: (...args: unknown[]) => mocks.offHost(...args),
+    // The real one checks the config off the server and marks it with the reach of the tenant.
+    overlayCredentialsOnConfig: async (adapterId: string, config: Record<string, unknown>) => {
+        await mocks.offHost(adapterId, config);
+        const { markReach } = await import("@/lib/network/reach-policy");
+        return markReach(config, mocks.reach);
+    },
     resolveAdapterConfig: (...args: unknown[]) => mocks.storedConfig(...args),
     mayReachHost: () => mocks.mayReachHost(),
 }));
@@ -60,6 +67,20 @@ describe("a read by the config of a form", () => {
 
         await readDatabaseStats({ adapterId: "sqlite", config: FORM });
         expect(mocks.getDatabases).toHaveBeenCalledWith(WITHOUT_PROGRAM, {});
+    });
+
+    it("hands the tools the reach policy of a tenant that blocks the local network", async () => {
+        mocks.reach = { allowed: [] };
+        const { reachOf } = await import("@/lib/network/reach-policy");
+
+        await listTables({ adapterId: "sqlite", config: FORM }, "app");
+        await readTableData({ adapterId: "sqlite", config: FORM }, { database: "app", table: "user", page: 1, pageSize: 50 });
+        await readDatabaseStats({ adapterId: "sqlite", config: FORM });
+
+        expect(reachOf(mocks.getTables.mock.calls[0][0])).toEqual({ allowed: [] });
+        expect(reachOf(mocks.getTableData.mock.calls[0][0])).toEqual({ allowed: [] });
+        expect(reachOf(mocks.getDatabases.mock.calls[0][0])).toEqual({ allowed: [] });
+        mocks.reach = null;
     });
 
     it("never reaches the server when the check refuses the config", async () => {

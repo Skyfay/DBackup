@@ -17,7 +17,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { HostKeyMismatchError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { runAsTenant } from "@/lib/tenant/context";
-import { pinnedFingerprint, type HostKeyMismatch, type SeenHostKey, type SshHostKeyPolicy } from "@/lib/transport/host-key";
+import { markHostKey, pinnedFingerprint, type HostKeyMismatch, type SeenHostKey, type SshHostKeyPolicy } from "@/lib/transport/host-key";
 import { isHostKey } from "@/lib/transport/host-key-openssh";
 import { auditService } from "@/services/audit-service";
 
@@ -191,4 +191,25 @@ export async function formHostKeyProbe(adapterId: string, config: Record<string,
             if (connection && seen) await pinFirstKey(connection, endpoint, seen, "first-connect");
         },
     };
+}
+
+/**
+ * Marks a config of a form with the host key policy of the saved connection it edits, for a helper
+ * of the form that logs in with the secrets or the login of that connection, like the folder browse
+ * or the list of databases. A changed key then fails the helper like it fails a run, before the
+ * login is sent. A first key is only read, never pinned: that is left to the test of the form.
+ */
+export async function markFormHostKey<T extends Record<string, unknown>>(adapterId: string, config: T, configId?: string | null): Promise<T> {
+    const probe = await formHostKeyProbe(adapterId, config, configId ?? undefined);
+    return markHostKey(config, probe.policy);
+}
+
+/**
+ * Lays `patch` over the metadata of a connection as it is now, with the compare-and-set of
+ * `writePinMetadata`. For a writer that changes keys of its own, like the detected version or a
+ * switch, after slow work: a copy of the metadata read before that work would write back a pin
+ * that was dropped meanwhile, or drop one that was taken meanwhile.
+ */
+export async function mergeAdapterMetadata(connection: PinnedConnection, patch: Record<string, unknown>): Promise<void> {
+    await writePinMetadata(connection, (metadata) => ({ ...metadata, ...patch }));
 }

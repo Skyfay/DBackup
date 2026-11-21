@@ -74,7 +74,8 @@ export function HostKeyStrip({ adapterId, config, saved, test, readOnly, onTrust
 
     const stored = saved ? pinFor(parseMetadata(saved.metadata), endpoint) : null;
     // A passing test of a saved connection without a pin pinned the key it saw.
-    const tested = test.status === "passed" ? test.hostKey : undefined;
+    // A test that ran while the host or port changed tried another server, so its key is not this one's.
+    const tested = test.status === "passed" && test.endpoint === JSON.stringify(endpoint) ? test.hostKey : undefined;
     const pinned = local !== undefined
         ? local
         : stored ? { fingerprint: stored.fingerprint, pinnedAt: stored.pinnedAt || null }

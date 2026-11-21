@@ -85,7 +85,7 @@ const SHARED_ROLE_STAYS = "It is shared with other tenants, so it stays a destin
  */
 function metadataAfterEdit(adapterId: string, stored: string | null, incoming: unknown, config: Record<string, unknown> | undefined, sshHostKey: unknown): string | undefined {
     const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-    if (incoming !== undefined && !isObject(incoming)) return JSON.stringify(incoming);
+    // Metadata that is no object would replace the pinned host key with it, so it changes nothing.
     const before = parseMetadata(stored);
     let next = isObject(incoming) ? keepPinKeys(incoming, before) : before;
     if (config !== undefined) {
@@ -95,7 +95,7 @@ function metadataAfterEdit(adapterId: string, stored: string | null, incoming: u
         if (pin) next = withPin(next, pin);
     }
     const text = JSON.stringify(next);
-    return incoming === undefined && text === JSON.stringify(before) ? undefined : text;
+    return !isObject(incoming) && text === JSON.stringify(before) ? undefined : text;
 }
 
 /** What the edit compares with, read before anything changes. */
@@ -239,7 +239,10 @@ export async function updateAdapter(id: string, input: UpdateAdapterInput): Prom
 
     // The pinned SSH host key stays with the server it was taken at: an edit to another host or
     // port drops it, and the metadata of a request never sets one, see `ssh-host-key-pins.ts`.
-    const nextMetadata = metadataAfterEdit(existing.adapterId, existing.metadata, metadata, mergedConfig ?? (config === undefined ? undefined : readExisting()), input.sshHostKey);
+    // From the metadata as it is now: the checks above wait on the network, and a test or a run may
+    // have pinned the host key meanwhile, or a person trusted or forgot one.
+    const current = await prisma.adapterConfig.findUnique({ where: { id }, select: { metadata: true } });
+    const nextMetadata = metadataAfterEdit(existing.adapterId, current ? current.metadata : existing.metadata, metadata, mergedConfig ?? (config === undefined ? undefined : readExisting()), input.sshHostKey);
 
     const adapter = await prisma.adapterConfig.update({
         where: { id },

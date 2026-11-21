@@ -139,7 +139,10 @@ describe("a pasted SSH key cannot stall the server with the derivation cost it n
     it("still reads a passphrase-protected key DBackup generated", async () => {
         const key = await generateSshKeyPair("ed25519", "test", "correct horse");
         expect(readPublicKey(key.privateKey, "correct horse")?.fingerprint).toBe(key.fingerprint);
-        expect(buildConnectConfig(ssh(key.privateKey, "correct horse")).privateKey).toBe(key.privateKey);
+        // Unlocked once and handed to ssh2 without the passphrase, see `unlocked-key.ts`.
+        const built = buildConnectConfig(ssh(key.privateKey, "correct horse"));
+        expect(built.passphrase).toBeUndefined();
+        expect(readPublicKey(String(built.privateKey))?.fingerprint).toBe(key.fingerprint);
     });
 
     it("refuses a key longer than any real key", () => {

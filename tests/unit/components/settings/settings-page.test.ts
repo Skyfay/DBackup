@@ -42,7 +42,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
         canManage: true,
         isPlatformAdmin: true,
         allTenants: false,
-        general: { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, checkForUpdates: true, showQuickSetup: false },
+        general: { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, maxRunMinutes: 1440, checkForUpdates: true, showQuickSetup: false },
         signIn: { sessionDuration: 604800, passkeyLogin: true, loginLook: "logos", emailLoginDisabledByEnv: false, providers: [], passkeyIsLastWayIn: false, loginImage: null },
         passwords: policyOf("standard"),
         privacy: { includeActorInMetadata: true },

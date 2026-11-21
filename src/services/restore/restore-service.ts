@@ -4,7 +4,8 @@ import { LogEntry } from "@/lib/core/logs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
+import { excludePatternsProblem } from "@/lib/exclude-pattern-rules";
 import { registerAdapters } from "@/lib/adapters";
 import type { RestoreInput } from "./types";
 import { preflightRestore } from "./preflight";
@@ -80,6 +81,9 @@ export class RestoreService {
         };
         const normalized: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping), confirmedCustomerDatabases: undefined, caller: writer };
         assertDatabaseTarget(normalized.targetDatabaseName);
+        // Matched against every file of the archive in the one server process, so in the shapes a save takes, before anything is restored.
+        const patternProblem = excludePatternsProblem((normalized.excludePatterns ?? []).filter((pattern) => pattern.trim().length > 0));
+        if (patternProblem) throw new ValidationError(patternProblem, { field: "excludePatterns" });
         // Every restore passes here, before anything reads a target or the archive.
         await assertRestoreTargetsAllowed(normalized, caller);
         const { file } = normalized;

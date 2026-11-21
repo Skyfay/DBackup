@@ -6,6 +6,8 @@ import {
     sweepStuckExecutions,
     STUCK_TIMEOUT_SETTING,
     DEFAULT_STUCK_TIMEOUT_MINUTES,
+    MAX_RUN_SETTING,
+    DEFAULT_MAX_RUN_MINUTES,
 } from '@/services/system/stuck-execution-service';
 import { HEARTBEAT_KEY } from '@/lib/execution/log-flusher';
 import { LogEntry } from '@/lib/core/logs';
@@ -135,6 +137,28 @@ describe('sweepStuckExecutions', () => {
         const result = await sweepStuckExecutions();
 
         expect(result.cancelled).toBe(1);
+    });
+
+    it('cancels a run that keeps reporting but holds its slot longer than a run may take', async () => {
+        // A source that trickles a byte now and then: fresh heartbeat, more than a day old.
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES + 10 })]);
+
+        const result = await sweepStuckExecutions();
+
+        expect(result.cancelled).toBe(1);
+        expect(abortExecution).toHaveBeenCalledWith('exec-1');
+        const logs = JSON.parse(updateMany.mock.calls[0][0].data.logs) as LogEntry[];
+        expect(logs.at(-1)?.message).toContain('the longest a run may take');
+    });
+
+    it('leaves a long run alone when the longest run is set to no limit, and still ends one with the stuck time off', async () => {
+        findSetting.mockImplementation(async ({ where }: { where: { key: string } }) => (where.key === MAX_RUN_SETTING ? { key: MAX_RUN_SETTING, value: '0' } : null));
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES * 3 })]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(0);
+
+        findSetting.mockImplementation(async ({ where }: { where: { key: string } }) => (where.key === STUCK_TIMEOUT_SETTING ? { key: STUCK_TIMEOUT_SETTING, value: '0' } : null));
+        findMany.mockResolvedValue([execution({ heartbeatMinutesAgo: 1, startedMinutesAgo: DEFAULT_MAX_RUN_MINUTES + 10 })]);
+        expect((await sweepStuckExecutions()).cancelled).toBe(1);
     });
 
     it('does nothing at all when the watchdog is switched off', async () => {

@@ -288,7 +288,7 @@ describe('stepInitialize', () => {
             });
         });
 
-        it('fails the run of a job stored with an exclude pattern that is slow to match, before the source is read', async () => {
+        it('leaves out an exclude pattern a job stored before it was refused, with a warning, and still runs', async () => {
             // Saved before a save refused it. Matching it would hold the server of every tenant.
             const prisma = (await import('@/lib/prisma')).default;
             const { registry } = await import('@/lib/core/registry');
@@ -308,7 +308,11 @@ describe('stepInitialize', () => {
                 return null;
             });
 
-            await expect(stepInitialize(makeCtx({ execution: { id: 'exec-1' } as any }))).rejects.toThrow(/exclude pattern "logs\/\*a\*a\*a\*a\*a\*a\*a\*b".*Edit the job/);
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await stepInitialize(ctx);
+
+            expect(ctx.sources[0].excludePatterns).toEqual(['*.tmp']);
+            expect(ctx.log).toHaveBeenCalledWith(expect.stringMatching(/exclude pattern "logs\/\*a\*a\*a\*a\*a\*a\*a\*b" is left out.*Edit the job/), 'warning');
         });
 
         it('carries the per-source stop choice through to the runner', async () => {

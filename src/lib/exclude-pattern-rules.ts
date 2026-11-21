@@ -8,6 +8,8 @@
  * library, and a richer one only in a shape whose cost stays small.
  */
 
+import { braceExpand } from "minimatch";
+
 /** The most patterns one source or one preset holds. */
 export const MAX_EXCLUDE_PATTERNS = 500;
 /** The longest pattern. */
@@ -16,6 +18,18 @@ export const MAX_EXCLUDE_PATTERN_LENGTH = 1000;
 const MAX_STARS = 2;
 const MAX_BRACE_GROUPS = 4;
 const MAX_BRACE_COMMAS = 16;
+/**
+ * The most patterns one with braces stands for, counted the way the glob library expands it, so
+ * nested braces count fully: `{a,b}{c,d}` is four. Each becomes a regular expression of its own.
+ */
+const MAX_ALTERNATIVES = 16;
+/** The most patterns all the patterns of one list that are not plain stand for together. */
+export const MAX_LIST_ALTERNATIVES = 256;
+
+/** The patterns a pattern with braces stands for, the pattern itself without braces. */
+function alternativesOf(pattern: string): string[] {
+    return pattern.includes("{") ? braceExpand(pattern) : [pattern];
+}
 
 /**
  * Whether a pattern is plain: one name of literal characters, `*` and `?`, with no `/`, class,
@@ -52,13 +66,18 @@ export function matchPlainPattern(name: string, pattern: string): boolean {
     return p === pattern.length;
 }
 
-/** The most runs of `*` in one part of the pattern, where a part that is `**` alone counts for none. */
-function mostStars(pattern: string): number {
-    const parts = pattern.split("/").filter((part) => part !== "**");
-    // A brace can hold a `/`, so the parts of such a pattern are only known once it is expanded.
-    const counted = pattern.includes("{") ? [parts.join("/")] : parts;
+/**
+ * The most runs of `*` in one part of a path of any pattern the pattern stands for, where a part
+ * that is `**` alone counts for none. A brace can hold a `/`, so the parts are read after expanding.
+ */
+function mostStars(alternatives: readonly string[]): number {
     let most = 0;
-    for (const part of counted) most = Math.max(most, part.match(/\*+/g)?.length ?? 0);
+    for (const alternative of alternatives) {
+        for (const part of alternative.split("/")) {
+            if (part === "**") continue;
+            most = Math.max(most, part.match(/\*+/g)?.length ?? 0);
+        }
+    }
     return most;
 }
 
@@ -75,19 +94,55 @@ export function excludePatternProblem(pattern: string): string | null {
     if ((pattern.match(/\{/g)?.length ?? 0) > MAX_BRACE_GROUPS || (pattern.match(/,/g)?.length ?? 0) > MAX_BRACE_COMMAS) {
         return `The exclude pattern "${shown}" has too many alternatives in braces.`;
     }
-    if (mostStars(pattern) > MAX_STARS) {
+    const alternatives = alternativesOf(pattern);
+    if (alternatives.length > MAX_ALTERNATIVES) return `The exclude pattern "${shown}" has too many alternatives in braces.`;
+    if (mostStars(alternatives) > MAX_STARS) {
         return `The exclude pattern "${shown}" has more than ${MAX_STARS} "*" in one part of its path. Only a pattern without "/", brackets and braces takes more.`;
     }
     return null;
 }
 
+/** How many patterns a pattern that is not plain stands for, none for a plain one, which never becomes a regular expression. */
+function costOf(pattern: string): number {
+    return isPlainPattern(pattern) ? 0 : alternativesOf(pattern).length;
+}
+
 /** Why a list of patterns is refused, or null. */
 export function excludePatternsProblem(patterns: readonly unknown[]): string | null {
     if (patterns.length > MAX_EXCLUDE_PATTERNS) return `A list holds at most ${MAX_EXCLUDE_PATTERNS} exclude patterns.`;
+    let cost = 0;
     for (const pattern of patterns) {
         if (typeof pattern !== "string") return "An exclude pattern is text.";
         const problem = excludePatternProblem(pattern);
         if (problem) return problem;
+        cost += costOf(pattern);
     }
+    if (cost > MAX_LIST_ALTERNATIVES) return `The exclude patterns of a list stand for more than ${MAX_LIST_ALTERNATIVES} patterns with "/", brackets or braces together. Keep fewer of them, or use plain ones like "*.tmp".`;
     return null;
+}
+
+/**
+ * The patterns of a list a run uses, and those it leaves out with why. A pattern saved before the
+ * rules of today is left out rather than failing the whole backup, and so is what lies past the
+ * bound of a list, since the patterns of a source and its presets come together only at the run.
+ */
+export function usableExcludePatterns(patterns: readonly unknown[]): { usable: string[]; skipped: { pattern: string; reason: string }[] } {
+    const usable: string[] = [];
+    const skipped: { pattern: string; reason: string }[] = [];
+    let cost = 0;
+    for (const pattern of patterns) {
+        if (typeof pattern !== "string") {
+            skipped.push({ pattern: String(pattern), reason: "An exclude pattern is text." });
+            continue;
+        }
+        const problem = usable.length >= MAX_EXCLUDE_PATTERNS ? `A list holds at most ${MAX_EXCLUDE_PATTERNS} exclude patterns.` : excludePatternProblem(pattern);
+        const next = cost + costOf(pattern);
+        if (problem || next > MAX_LIST_ALTERNATIVES) {
+            skipped.push({ pattern, reason: problem ?? `The exclude patterns stand for more than ${MAX_LIST_ALTERNATIVES} patterns with "/", brackets or braces together.` });
+            continue;
+        }
+        cost = next;
+        usable.push(pattern);
+    }
+    return { usable, skipped };
 }

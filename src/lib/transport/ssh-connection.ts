@@ -5,6 +5,7 @@ import { checkedSocket } from "@/lib/network/checked-socket";
 import { sshHostKeyCheck, type SshHostKeyCheck } from "./host-key";
 import { assertKeyCost } from "./key-cost";
 import { normalizeSshPrivateKey } from "./pkcs8-compat";
+import { unlockedPrivateKey, unlockOnce } from "./unlocked-key";
 import type { SshConnectionConfig } from "./types";
 
 /** Handshake budget. Matches the previous SshClient so behaviour does not shift. */
@@ -38,12 +39,15 @@ export function buildConnectConfig(config: SshConnectionConfig, check: SshHostKe
             if (!config.passphrase) {
                 throw new Error("This private key is passphrase-protected. Please provide the passphrase.");
             }
-            connectConfig.privateKey = normalizeSshPrivateKey(config.privateKey, config.passphrase);
+            const { privateKey, passphrase } = { privateKey: config.privateKey, passphrase: config.passphrase };
+            connectConfig.privateKey = unlockOnce(privateKey, passphrase, () => normalizeSshPrivateKey(privateKey, passphrase)) ?? privateKey;
+        } else if (config.privateKey && config.passphrase) {
+            // Unlocked once per process, so the cost the key names is not paid on every connect, see `unlocked-key.ts`.
+            const unlocked = unlockedPrivateKey(config.privateKey, config.passphrase);
+            connectConfig.privateKey = unlocked ?? config.privateKey;
+            if (!unlocked) connectConfig.passphrase = config.passphrase;
         } else {
             connectConfig.privateKey = config.privateKey;
-            if (config.passphrase) {
-                connectConfig.passphrase = config.passphrase;
-            }
         }
     } else if (config.authType === "agent") {
         connectConfig.agent = process.env.SSH_AUTH_SOCK;

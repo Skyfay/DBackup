@@ -73,8 +73,9 @@ export class SystemTaskService {
             return (await readSetting(CHECK_FOR_UPDATES)) !== "false";
         }
         if (taskId === SYSTEM_TASKS.STUCK_EXECUTION_CHECK) {
-            const { STUCK_TIMEOUT_SETTING } = await stuckTimeout();
-            return (await readSetting(STUCK_TIMEOUT_SETTING)) !== "0";
+            // On while it ends either kind of run: one that stopped reporting, or one that runs too long.
+            const { STUCK_TIMEOUT_SETTING, MAX_RUN_SETTING } = await stuckTimeout();
+            return (await readSetting(STUCK_TIMEOUT_SETTING)) !== "0" || (await readSetting(MAX_RUN_SETTING)) !== "0";
         }
 
         const value = await readSetting(`task.${taskId}.enabled`);
@@ -94,11 +95,17 @@ export class SystemTaskService {
             return;
         }
         if (taskId === SYSTEM_TASKS.STUCK_EXECUTION_CHECK) {
-            // Off is the timeout Never. On again brings back the default, unless a time is set.
-            const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES } = await stuckTimeout();
+            // Off is the timeout Never and the longest run No limit. On again brings back the defaults, unless a time is set.
+            const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES, MAX_RUN_SETTING, DEFAULT_MAX_RUN_MINUTES } = await stuckTimeout();
             const current = await readSetting(STUCK_TIMEOUT_SETTING);
-            if (!enabled) await writeSetting(STUCK_TIMEOUT_SETTING, "0");
-            else if (current === "0") await writeSetting(STUCK_TIMEOUT_SETTING, String(DEFAULT_STUCK_TIMEOUT_MINUTES));
+            const longest = await readSetting(MAX_RUN_SETTING);
+            if (!enabled) {
+                await writeSetting(STUCK_TIMEOUT_SETTING, "0");
+                await writeSetting(MAX_RUN_SETTING, "0");
+            } else if (current === "0" && longest === "0") {
+                await writeSetting(STUCK_TIMEOUT_SETTING, String(DEFAULT_STUCK_TIMEOUT_MINUTES));
+                await writeSetting(MAX_RUN_SETTING, String(DEFAULT_MAX_RUN_MINUTES));
+            }
             return;
         }
 

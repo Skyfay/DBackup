@@ -12,6 +12,13 @@
 - **restore**: A restore to the original folder counts only when the index of the backup is the one its run recorded. A backup made before this record goes back there for a platform admin alone.
 - **setup**: A configuration backup uploaded at the first start unpacks to at most 2 GB, and only the last one checked is held.
 - **Recovery Kit**: The recovery script reads link paths with backslashes the way Linux and macOS do, and removes a link it laid that points out of the output folder.
+- **file backups**: Exclude patterns with braces count every pattern they expand to, and one list stands for at most 256 patterns with a slash, brackets or braces. A restore takes only exclude patterns a save would take.
+- **backup**: A run that takes longer than the longest a run may take fails, also while it still reports progress, so one slow source cannot hold the runs of every tenant. The time is one day by default and set in Settings > General.
+- **SSH**: A private key with a passphrase is unlocked once per process instead of at every connect, so a key that is slow to unlock no longer holds up the server at every health check.
+
+### 🔄 Changed
+
+- **file backups**: A run leaves out an exclude pattern that is too slow to match, saved before this version, with a warning in its log instead of failing the backup.
 
 ### 🐛 Bug Fixes
 

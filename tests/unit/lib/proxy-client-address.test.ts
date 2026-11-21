@@ -10,8 +10,10 @@ import { CLIENT_ADDRESS_HEADER } from "@/lib/core/client-address";
 
 beforeEach(() => {
     vi.resetModules();
-    // The rate limits of the instance cannot be fetched here, the defaults stay.
-    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+    // The limiters live on the process, so every test starts with fresh counters and the defaults.
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for("dbackup.rateLimiters")];
+    // The proxy reads its limits in the process and never asks the server over the network.
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("the proxy fetched"); }));
 });
 
 afterEach(() => {
@@ -20,8 +22,8 @@ afterEach(() => {
 });
 
 async function send(path: string, address: string, method = "GET") {
-    const { middleware } = await import("@/middleware");
-    return middleware(new NextRequest(`http://localhost:3000${path}`, { method, headers: { [CLIENT_ADDRESS_HEADER]: address } }));
+    const { proxy } = await import("@/proxy");
+    return proxy(new NextRequest(`http://localhost:3000${path}`, { method, headers: { [CLIENT_ADDRESS_HEADER]: address } }));
 }
 
 describe("the header of the address a client sends itself", () => {

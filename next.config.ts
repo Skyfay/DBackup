@@ -22,7 +22,7 @@ function devOrigins(): string[] {
 }
 
 /**
- * How much of a body the middleware holds for itself before it hands the rest on cut off. Next.js
+ * How much of a body `src/proxy.ts` holds for itself before it hands the rest on cut off. Next.js
  * neither refuses nor marks such a body, so the upload routes count their bodies themselves
  * (`readFormWithin`). Set a megabyte above the largest upload, the 10 MB of a configuration
  * backup, so a body too large still reaches the route past its limit and is answered 413 there

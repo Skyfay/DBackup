@@ -31,3 +31,4 @@
 ### 🐛 Bug Fixes
 
 - **storage**: A backup takes the job, server and lock of the sidecar beside it, also when a backup of the same name lies in another folder.
+- **rate limits**: The limits saved in Settings count from the next request on, also when DBackup serves HTTPS with its own certificate, where the defaults applied before.

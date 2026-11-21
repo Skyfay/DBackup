@@ -48,10 +48,12 @@ describe("a change through an API route signed in by the session cookie", () => 
     });
 });
 
-describe("the middleware", () => {
+describe("the proxy", () => {
     beforeEach(() => {
-        // The rate limits of the instance cannot be fetched here, the defaults stay.
-        vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+        // The limiters live on the process, so every test starts with fresh counters and the defaults.
+        delete (globalThis as Record<symbol, unknown>)[Symbol.for("dbackup.rateLimiters")];
+        // The proxy reads its limits in the process and never asks the server over the network.
+        vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("the proxy fetched"); }));
     });
 
     afterEach(() => {
@@ -59,15 +61,15 @@ describe("the middleware", () => {
     });
 
     it("answers a cross-site change with 403 and lets the same request from DBackup through", async () => {
-        const { middleware } = await import("@/middleware");
-        const refused = await middleware(new NextRequest("http://localhost:3000/api/jobs/j1/run", {
+        const { proxy } = await import("@/proxy");
+        const refused = await proxy(new NextRequest("http://localhost:3000/api/jobs/j1/run", {
             method: "POST",
             headers: { cookie: SESSION, "sec-fetch-site": "cross-site", origin: "https://evil.example" },
         }));
         expect(refused.status).toBe(403);
         expect(await refused.json()).toEqual({ success: false, error: "Cross-site request refused" });
 
-        const passed = await middleware(new NextRequest("http://localhost:3000/api/jobs/j1/run", {
+        const passed = await proxy(new NextRequest("http://localhost:3000/api/jobs/j1/run", {
             method: "POST",
             headers: { cookie: SESSION, "sec-fetch-site": "same-origin", origin: "http://localhost:3000" },
         }));

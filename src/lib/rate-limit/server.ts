@@ -3,7 +3,7 @@ import { logger } from '@/lib/logging/logger';
 import {
     RATE_LIMIT_KEYS,
     RATE_LIMIT_DEFAULTS,
-    applyExternalConfig,
+    applyRateLimitConfig,
     type RateLimitConfig,
 } from '.';
 
@@ -47,7 +47,7 @@ export async function reloadRateLimits(): Promise<void> {
             },
         };
 
-        applyExternalConfig(config);
+        applyRateLimitConfig(config);
 
         log.info("Rate limiters reloaded from DB", {
             auth: `${config.auth.points}/${config.auth.duration}s`,

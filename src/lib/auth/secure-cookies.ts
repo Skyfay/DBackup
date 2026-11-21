@@ -2,7 +2,7 @@
  * Whether the cookies of better-auth carry `Secure` and the `__Secure-` prefix. Left to itself
  * better-auth sets them only when its base URL starts with https://, so behind a proxy that
  * encrypts the way to the browser, with BETTER_AUTH_URL unset or http://, the session cookie went
- * out without them. The middleware and `getSessionCookie` read both names, so either works.
+ * out without them. The proxy and `getSessionCookie` read both names, so either works.
  */
 
 /** The variables this reads, `process.env` in the app. */

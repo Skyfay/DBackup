@@ -5,9 +5,9 @@
  * never X-Forwarded-For itself, whose first entry a client can set to anything.
  *
  * Only the custom server replaces the header. Without it, under `pnpm dev` or `next start`, a value
- * there came from the client, so the address is unknown and the middleware drops the header before
+ * there came from the client, so the address is unknown and `src/proxy.ts` drops the header before
  * the app and better-auth see it. The custom server says it runs in `DBACKUP_CUSTOM_SERVER`, which
- * it sets before it creates the app, so the Edge sandbox of the middleware copies it as well.
+ * it sets before it creates the app.
  */
 
 /** Set by server/client-address.ts, which keeps the same name. */
@@ -25,7 +25,7 @@ export function clientAddress(headers: Pick<Headers, "get">): string | null {
 
 /**
  * The headers of a request without the header of the address, null when nothing is to drop. For
- * the middleware, so a value the client sent never reaches the app while no custom server set it.
+ * `src/proxy.ts`, so a value the client sent never reaches the app while no custom server set it.
  */
 export function withoutClientAddress(headers: Headers): Headers | null {
     if (addressHeaderSet() || !headers.has(CLIENT_ADDRESS_HEADER)) return null;

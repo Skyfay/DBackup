@@ -5,3 +5,7 @@
 ### 🎨 Improvements
 
 - **deps**: React, Tailwind CSS, the AWS SDK, the Dropbox SDK and the development tools move to their latest patch releases.
+
+### 🧪 Tests
+
+- **e2e**: A lab service whose start failed on a host port that was taken gets a new container, so DBackup finds it by name again instead of failing every test that uses it.

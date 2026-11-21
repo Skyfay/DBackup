@@ -117,6 +117,7 @@ A backup belongs to whoever had its database when the backup was made, never to 
 - **A backup made while the database changed hands**, whose run started to dump while one customer held it and stored the backup once another one did, belongs to nobody. A database given away and back again during the run counts as well. Backups made before DBackup recorded when the dumps started are judged by the time they were stored.
 - **A name used again**, after another customer had it, stays with whoever had it at the time of each backup.
 - **A renamed database** has a new name, which belongs to nobody until it is given away again or a rule matches it.
+- **A backup no run of the server made**, imported from elsewhere or whose run was cleaned up from History, belongs to nobody. A customer only gets backups whose runs the History of the tenant of the server still holds.
 - **A deleted tenant** keeps its assignments and rules as ended ones. The backups of its time belong to nobody from then on and never fall to another tenant's rule. A database it held by name goes back to the tenant of the server, like with **Nobody else**, so no rule gives it away until it is given by name again.
 
 ### Who Held Each Database
@@ -240,7 +241,7 @@ Only an archive with an index lets one database out without the others. That is 
 
 ### A Database Shows No Backups
 
-The backups are older than its start, or older than DBackup 3.4, or the job of the server leaves the database out. A backdated start shows older backups, as far back as the previous assignment of the name allows.
+The backups are older than its start, or older than DBackup 3.4, or the job of the server leaves the database out, or their runs were cleaned up from the History of the tenant of the server. A backdated start shows older backups, as far back as the previous assignment of the name allows.
 
 ### The Server Shows No Databases and Tenants
 

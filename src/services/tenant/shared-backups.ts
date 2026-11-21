@@ -6,6 +6,7 @@ import { normalizePath } from "@/services/storage/explorer-model";
 import { storageService, type RichFileInfo } from "@/services/storage/storage-service";
 import { providedTo } from "@/services/sharing/provided";
 import type { OwnerFacts } from "./owner-facts";
+import { copyKey, recordedCopies } from "./recorded-backups";
 
 /**
  * The backups of a shared server as plain records: every backup of the server at the destinations
@@ -36,6 +37,8 @@ function fromServer(file: RichFileInfo, sourceId: string): boolean {
  * server's tenant and every destination another tenant shares with it, so a backup of a job deleted
  * since still counts. An archive of earlier versions holds the whole server in one file and is left
  * out. A deleted server that shared databases still has its backups, found by the server they name.
+ * Only a copy a backup run of the server's tenant recorded counts, see `recorded-backups.ts`, since
+ * a customer restores it with the login of the provider.
  */
 export async function serverBackupFiles(sourceId: string): Promise<ServerBackupFile[]> {
     const source = (await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { tenantId: true } }))
@@ -61,7 +64,8 @@ export async function serverBackupFiles(sourceId: string): Promise<ServerBackupF
             found.push({ destinationId: destination.id, file: { ...file, createdAt: file.createdAt } });
         }
     }
-    return found;
+    const recorded = await recordedCopies(source.tenantId, found.map(({ destinationId, file }) => ({ destinationId, path: file.path })));
+    return found.filter(({ destinationId, file }) => recorded.has(copyKey(destinationId, file.path)));
 }
 
 /** The key of a backup however many destinations hold it, the same at each of them. */

@@ -23,6 +23,7 @@
 - **PostgreSQL**: Queries of the catalog inside a database run with the catalog alone on the search path, so the owner of a database cannot hand functions of their own to the login of the provider.
 - **audit**: The CSV export quotes a cell with a semicolon or a tab, so no spreadsheet starts a formula from it.
 - **storage**: The PowerShell command of a download link escapes typographic quotes in the file name.
+- **tenants**: A customer gets only the backups of a shared server that a run in the History of its tenant wrote, never a file at the destination by its sidecar alone.
 
 ### 🔄 Changed
 

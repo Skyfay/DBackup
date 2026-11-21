@@ -23,7 +23,7 @@ const prismaMock = {
     // getMaxConcurrentFiles reads this; unset means the code's default (4) is used.
     systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
     // Whether the tenant of the destination shares it with customers.
-    connectionShare: { count: vi.fn().mockResolvedValue(0) },
+    connectionShare: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
     // No run of History wrote these backups, see `recorded-encryption.ts`.
     execution: { findMany: vi.fn().mockResolvedValue([]) },
 };

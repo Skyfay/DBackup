@@ -3,7 +3,8 @@
  * Docker Volumes without SSH reach the Docker of the server DBackup runs on, and a member of the
  * home tenant may use such a connection in a job. No run reads the volume DBackup's own container
  * keeps its database, its certificates or its temporary files in, and a run that cannot tell which
- * container is its own reads no volume that way.
+ * container is its own reads no volume that way. Nor does one read the volume that holds the folder
+ * of a destination shared with customers, which keeps their backups.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
@@ -28,7 +29,7 @@ vi.mock("@/lib/adapters/storage/docker/own-container", async (importOriginal) =>
     ownContainerHints: async () => mocks.hints,
 }));
 
-const { ownVolumeRefusal, OWN_VOLUME_REFUSED, OWN_VOLUME_UNKNOWN } = await import("@/lib/adapters/own-data");
+const { ownVolumeRefusal, OWN_VOLUME_REFUSED, OWN_VOLUME_UNKNOWN, SHARED_VOLUME_REFUSED } = await import("@/lib/adapters/own-data");
 const { containerIdsIn, findOwnContainer } = await import("@/lib/adapters/storage/docker/own-container");
 
 const OWN_ID = "a".repeat(64);
@@ -45,6 +46,7 @@ const DBACKUP = container(OWN_ID, [
     { type: "volume", volume: "dbackup_certs", destination: "/app/data/certs" },
     { type: "bind", destination: "/tmp/dbackup" },
     { type: "volume", volume: "dbackup_cache", destination: "/app/cache" },
+    { type: "volume", volume: "dbackup_backups", destination: "/backups" },
 ]);
 /** Another app on the same host, with a volume at the same folder inside its own container. */
 const SHOP = container(OTHER_ID, [{ type: "volume", volume: "shop_data", destination: "/app/data" }]);
@@ -67,7 +69,13 @@ beforeEach(() => {
     mocks.hints = { inContainer: true, ids: [OWN_ID], hostname: "dbackup" };
     mocks.containers.mockResolvedValue([SHOP, DBACKUP]);
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+    prismaMock.connectionShare.findMany.mockResolvedValue([]);
 });
+
+/** A Local Filesystem destination at this folder, shared with customers. */
+function sharedDestinationAt(basePath: string) {
+    prismaMock.connectionShare.findMany.mockResolvedValue([{ config: { adapterId: "local-filesystem", config: JSON.stringify({ basePath }) } }] as never);
+}
 
 describe("a Docker volume that holds DBackup's own data", () => {
     it("is refused when DBackup's own container keeps its database or its certificates in it", async () => {
@@ -103,6 +111,30 @@ describe("a Docker volume that holds DBackup's own data", () => {
         expect(await ownVolumeRefusal("docker-volume", {}, "v")).toBe(OWN_VOLUME_REFUSED);
         expect(await ownVolumeRefusal("docker-volume", {}, "v")).toBeNull();
         expect(await ownVolumeRefusal("docker-volume", {}, "v")).toBeNull();
+    });
+
+    it("is refused when it holds the folder of a destination shared with customers, or lies inside it", async () => {
+        expect(await ownVolumeRefusal("docker-volume", {}, "dbackup_backups")).toBeNull();
+
+        sharedDestinationAt("/backups/customers");
+        expect(await ownVolumeRefusal("docker-volume", {}, "dbackup_backups")).toBe(SHARED_VOLUME_REFUSED);
+        // Every volume, when the source names none.
+        expect(await ownVolumeRefusal("docker-volume", {}, "")).toBe(OWN_VOLUME_REFUSED);
+
+        sharedDestinationAt("/");
+        expect(await ownVolumeRefusal("docker-volume", {}, "dbackup_backups")).toBe(SHARED_VOLUME_REFUSED);
+
+        // A shared destination elsewhere leaves the volume alone.
+        sharedDestinationAt("/srv/shared");
+        expect(await ownVolumeRefusal("docker-volume", {}, "dbackup_backups")).toBeNull();
+        expect(await ownVolumeRefusal("docker-volume", {}, "shop_data")).toBeNull();
+    });
+
+    it("compares the folder of a volume on the server with the folders of shared destinations when it runs in no container", async () => {
+        mocks.hints = { inContainer: false, ids: [], hostname: "skydev" };
+        sharedDestinationAt("/var/lib/docker/volumes/backups/_data");
+        mocks.volume.mockResolvedValue({ name: "backups", driver: "local", labels: {}, mountpoint: "/var/lib/docker/volumes/backups/_data" });
+        expect(await ownVolumeRefusal("docker-volume", {}, "backups")).toBe(SHARED_VOLUME_REFUSED);
     });
 
     it("leaves Docker over SSH and every other adapter to their own checks", async () => {

@@ -19,6 +19,10 @@
 - **server**: Without `TRUSTED_PROXIES` only a reverse proxy on the same machine is trusted, so a device of the local network can no longer name its own address for the rate limits and the audit log.
 - **SSO**: The fetches of a sign-in through the provider of a tenant that blocks the local network dial only checked addresses. An issuer with a wildcard or a user part is refused and never trusted.
 - **SSH**: A private key with a passphrase is unlocked once per process instead of at every connect, so a key that is slow to unlock no longer holds up the server at every health check.
+- **Firebird**: Backups and reads attach without the triggers of the database where the login may skip them, so a trigger a customer writes on a shared server never runs with the login of the provider.
+- **PostgreSQL**: Queries of the catalog inside a database run with the catalog alone on the search path, so the owner of a database cannot hand functions of their own to the login of the provider.
+- **audit**: The CSV export quotes a cell with a semicolon or a tab, so no spreadsheet starts a formula from it.
+- **storage**: The PowerShell command of a download link escapes typographic quotes in the file name.
 
 ### 🔄 Changed
 

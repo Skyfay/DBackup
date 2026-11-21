@@ -75,6 +75,8 @@ describe("the command for another host", () => {
 
     it("tells PowerShell the file name, quoted for it", () => {
         expect(commandFor("powershell", url, "Shop's dump.sql")).toBe(`Invoke-WebRequest -UseBasicParsing -Uri '${url}' -OutFile 'Shop''s dump.sql'`);
+        // PowerShell ends a single-quoted string at a typographic quote too.
+        expect(commandFor("powershell", url, "Shop\u2019s; calc.sql")).toBe(`Invoke-WebRequest -UseBasicParsing -Uri '${url}' -OutFile 'Shop\u2019\u2019s; calc.sql'`);
     });
 
     it("marks the link amber until it works, and green while it does", () => {

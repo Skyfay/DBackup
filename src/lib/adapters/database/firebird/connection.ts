@@ -115,10 +115,27 @@ async function runIsql(
     sql: string,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
     const isql = await getIsqlCommand(host);
-    return host.exec(
-        [isql, "-q", connStr, "-user", config.user],
+    const run = (switches: string[]) => host.exec(
+        [isql, "-q", ...switches, connStr, "-user", config.user],
         { stdin: sql + "\n", env: { ISC_PASSWORD: config.password } },
     );
+    // Without the triggers of the database, which whoever holds it writes, see `skipsDbTriggers`.
+    const result = await run(NO_DB_TRIGGERS);
+    return result.code !== 0 && refusedTriggerSwitch(`${result.stdout}\n${result.stderr}`) ? run([]) : result;
+}
+
+/**
+ * The switch of gbak and isql that attaches without running the triggers of the database. A
+ * database on a server shared with customers is held by a customer, who writes its triggers, while
+ * DBackup attaches with the login of the provider, so a trigger on connect would run with that
+ * login. SYSDBA and the owner of a database may skip them, and a login with the system privilege
+ * IGNORE_DB_TRIGGERS. Any other login is refused the switch, and then attaches without it, as before.
+ */
+export const NO_DB_TRIGGERS = ["-nodbtriggers"];
+
+/** Whether gbak or isql refused the switch of `NO_DB_TRIGGERS` for the login, rather than failing for another reason. */
+export function refusedTriggerSwitch(output: string): boolean {
+    return /IGNORE_DB_TRIGGERS|nodbtriggers|database triggers/i.test(output);
 }
 
 /** Runs a single SQL statement against a database alias via isql, returning raw stdout. */

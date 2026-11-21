@@ -55,6 +55,24 @@ describe.each<HostKind>(["direct", "ssh"])("A customer's restore of a shared Pos
         expect(lookupCall(host)![lookupCall(host)!.indexOf("-d") + 1]).toBe("dbname='shop_acme'");
     });
 
+    it("reads the owner with the catalog alone on the search path, which the customer cannot change", async () => {
+        let lookupEnv: Record<string, string | undefined> | undefined;
+        const host = createFakeHost({
+            kind,
+            onExec: (argv, options) => {
+                if (argv[0] === "psql" && queryOf(argv)?.includes("pg_database")) {
+                    lookupEnv = options?.env;
+                    return { stdout: "f|f|f|0|shop_acme_owner\n" };
+                }
+                return undefined;
+            },
+        });
+
+        await restoreOne({ ...provider, sharedRestore: true } as never, "/tmp/a.dump", "shop_acme", host);
+
+        expect(lookupEnv?.PGOPTIONS).toBe("-c search_path=pg_catalog,pg_temp");
+    });
+
     it("keeps a role name with a pipe in it whole", async () => {
         const host = server(kind, { stdout: "f|f|f|0|odd|name\n" });
 

@@ -186,4 +186,9 @@ describe("the audit log as CSV", () => {
         expect(csvCell("=HYPERLINK(\"x\")")).toBe("\"'=HYPERLINK(\"\"x\"\")\"");
         expect(csvCell(null)).toBe("");
     });
+
+    it("keeps a name with a semicolon one cell, so a spreadsheet that splits at it starts no formula", () => {
+        expect(csvCell("Bob;=1+1;")).toBe('"Bob;=1+1;"');
+        expect(csvCell("Bob\t=1+1")).toBe('"Bob\t=1+1"');
+    });
 });

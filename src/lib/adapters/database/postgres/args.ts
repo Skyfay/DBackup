@@ -52,6 +52,18 @@ export function pgEnv(password?: string): Record<string, string | undefined> {
 }
 
 /**
+ * The environment of a query of the catalog that runs inside a database someone else may own, like
+ * the database of a customer on a server shared with customers, with the login of the provider.
+ * Its owner sets the search_path of the database and makes functions and operators of their own,
+ * which an unqualified name in the query would pick and run as that login. The options of the
+ * connection outrank the settings of the database, so the search path holds the catalog alone,
+ * with the temporary schema last.
+ */
+export function catalogEnv(password?: string): Record<string, string | undefined> {
+    return { ...pgEnv(password), PGOPTIONS: "-c search_path=pg_catalog,pg_temp" };
+}
+
+/**
  * psql refuses to connect without a database, and the one the user configured
  * may not exist yet or may be unreadable. These are tried in order.
  */

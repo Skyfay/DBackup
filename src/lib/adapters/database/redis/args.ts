@@ -10,7 +10,14 @@ import type { ExecOptions } from "@/lib/transport";
  * Escaping here would double-escape over SSH.
  */
 
-type AnyRedisConfig = RedisConfig & { username?: string; password?: string; tls?: boolean; tlsServerName?: string };
+/**
+ * The key of the name of a server that `-h` reaches by its checked address, for the server name of
+ * TLS, set by `pinned-host.ts` for a tenant that blocks the local network. A symbol, so a config of
+ * a request or a stored row, which is JSON, cannot bring one of its own.
+ */
+export const TLS_SERVER_NAME: unique symbol = Symbol("dbackup.redis.tlsServerName");
+
+type AnyRedisConfig = RedisConfig & { username?: string; password?: string; tls?: boolean; [TLS_SERVER_NAME]?: string };
 
 export function buildConnectionArgs(config: AnyRedisConfig): string[] {
     // A host that is no text, like a list from a request, would reach redis-cli as the text of
@@ -25,7 +32,8 @@ export function buildConnectionArgs(config: AnyRedisConfig): string[] {
         args.push("--tls");
         // `-h` holds the checked address of the name for a tenant that blocks the local network,
         // see `pinned-host.ts`, and the name goes along for the server name of TLS.
-        if (config.tlsServerName) args.push("--sni", config.tlsServerName);
+        const serverName = config[TLS_SERVER_NAME];
+        if (serverName) args.push("--sni", serverName);
     }
     if (config.database !== undefined && config.database !== 0) {
         // The index of a database is a whole number. A restore target or a stored value of

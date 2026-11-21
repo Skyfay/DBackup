@@ -9,7 +9,7 @@ vi.mock("@/lib/temp-dir", () => ({ getTempDir: () => tempRoot }));
 
 import type { StorageAdapter } from "@/lib/core/interfaces";
 import { HostKeyMismatchError } from "@/lib/logging/errors";
-import { withRsyncHostKey, type KnownHosts } from "@/lib/adapters/storage/rsync-host-key";
+import { KNOWN_HOSTS, withRsyncHostKey, type KnownHosts } from "@/lib/adapters/storage/rsync-host-key";
 import { HOST_KEY_ALIAS, opensshHostKeyOptions } from "@/lib/transport/host-key-openssh";
 import { hostKeyFingerprint, markHostKey, type SshHostKeyPolicy } from "@/lib/transport/host-key";
 
@@ -31,10 +31,11 @@ interface Seen {
 function adapterThat(run: (config: Config, seen: Seen) => Promise<unknown> | unknown) {
     const calls: Seen[] = [];
     const method = async (config: Config) => {
+        const check = config[KNOWN_HOSTS];
         const seen: Seen = {
-            options: opensshHostKeyOptions(config.knownHostsFile ? { file: config.knownHostsFile, pinned: config.strictHostKey === true } : undefined),
-            file: config.knownHostsFile,
-            content: config.knownHostsFile ? await fs.readFile(config.knownHostsFile, "utf8") : null,
+            options: opensshHostKeyOptions(check ? { file: check.file, pinned: check.strict } : undefined),
+            file: check?.file,
+            content: check ? await fs.readFile(check.file, "utf8") : null,
         };
         calls.push(seen);
         return run(config, seen);
@@ -77,7 +78,7 @@ describe("the host key check of an rsync connection", () => {
         const onFirstKey = vi.fn();
         const { adapter, calls } = adapterThat(async (config) => {
             // What ssh does with accept-new: it adds the key of the server it logged in to.
-            await fs.appendFile(config.knownHostsFile!, `${HOST_KEY_ALIAS} ssh-ed25519 ${key}\n`);
+            await fs.appendFile(config[KNOWN_HOSTS]!.file, `${HOST_KEY_ALIAS} ssh-ed25519 ${key}\n`);
             return { success: true, message: "ok" };
         });
 
@@ -91,7 +92,7 @@ describe("the host key check of an rsync connection", () => {
     it("pins nothing when the first login failed, although ssh already wrote the key", async () => {
         const onFirstKey = vi.fn();
         const { adapter } = adapterThat(async (config) => {
-            await fs.appendFile(config.knownHostsFile!, `${HOST_KEY_ALIAS} ssh-ed25519 ${key}\n`);
+            await fs.appendFile(config[KNOWN_HOSTS]!.file, `${HOST_KEY_ALIAS} ssh-ed25519 ${key}\n`);
             return { success: false, message: "Permission denied (password)." };
         });
 
@@ -103,7 +104,7 @@ describe("the host key check of an rsync connection", () => {
     it("fails a test with the sentence of the mismatch when ssh refused the key", async () => {
         const onMismatch = vi.fn();
         const { adapter } = adapterThat((config) => {
-            config.onHostKeyRefused?.(presented);
+            config[KNOWN_HOSTS]?.onRefused(presented);
             return { success: false, message: "Rsync connection failed: Host key verification failed." };
         });
 
@@ -118,7 +119,7 @@ describe("the host key check of an rsync connection", () => {
 
     it("throws the mismatch from an upload that only logged the output of ssh and answered false", async () => {
         const { adapter, calls } = adapterThat((config) => {
-            config.onHostKeyRefused?.(null);
+            config[KNOWN_HOSTS]?.onRefused(null);
             return false;
         });
 
@@ -141,7 +142,7 @@ describe("the host key check of an rsync connection", () => {
         let refuse: ((presented: string | null) => void) | undefined;
         const close = vi.fn(async () => {});
         const { adapter, calls } = adapterThat((config) => {
-            refuse = config.onHostKeyRefused;
+            refuse = config[KNOWN_HOSTS]?.onRefused;
             return { upload: async () => { if (calls.length > 1) refuse?.(presented); return true; }, close };
         });
 

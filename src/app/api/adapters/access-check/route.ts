@@ -17,6 +17,7 @@ import { AdapterError, wrapError } from "@/lib/logging/errors";
 import { savedLoginRefusal, storedSecretsRefusal } from "@/lib/server/config-backup-target-guard";
 import { auditedDatabasesRead } from "@/services/databases/databases-read-audit";
 import { markFormHostKey } from "@/services/adapters/ssh-host-key-service";
+import { assertOffSharedLoginsOfForm } from "@/services/adapters/shared-login";
 
 // Ensure adapters are registered
 registerAdapters();
@@ -51,6 +52,8 @@ export async function POST(req: NextRequest) {
         // The secrets of the destination of the configuration backup never go to a host of the form.
         const locked = await storedSecretsRefusal(ctx, configId) ?? await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
         if (locked) return locked;
+        // The login of a destination shared with customers never signs in at a host of a form.
+        await assertOffSharedLoginsOfForm({ primaryCredentialId, sshCredentialId }, { adapterId, config, configId });
 
         const adapter = registry.get(adapterId) as DatabaseAdapter | undefined;
 

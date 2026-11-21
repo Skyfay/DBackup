@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
         revokeSession: vi.fn(async () => true),
         revokeSessions: vi.fn(async () => 2),
         namesOf: vi.fn(async () => []),
+        // The tenants an account works in, from the people of each tenant.
+        tenantsOfAccounts: vi.fn(async (ids: string[]) => [...mocks.people].filter(([, people]) => ids.some((id) => people.has(id))).map(([tenantId]) => tenantId)),
         emailOf: vi.fn(async (id: string) => `${id}@example.ch`),
         emailTenantsOf: vi.fn(async () => ["default"]),
         ownEmailRefusal: vi.fn(async () => null),
@@ -162,6 +164,12 @@ describe("the log of a change of an account", () => {
 
         await bulkDeleteUsers(["anna", "bob"]);
         expect(lastOrigin()).toEqual(PLATFORM_LOG);
+    });
+
+    it("names the tenants of the deleted accounts, so a view that reaches only some of them never reads the names", async () => {
+        await bulkDeleteUsers(["anna", "bob"]);
+
+        expect(mocks.audit.mock.calls.at(-1)?.[3]).toMatchObject({ bulk: true, tenantIds: ["acme", "globex"] });
     });
 
     it("is the log of the platform for every change made from All tenants", async () => {

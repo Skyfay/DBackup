@@ -2,9 +2,9 @@ import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import type { AdapterConfig as ResolvedConfig, StorageAdapter } from "@/lib/core/interfaces";
+import type { AdapterConfig as ResolvedConfig, StorageAdapter, StorageSession } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { NotFoundError, wrapError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import { STORAGE_ROLES, STORAGE_ROLE_VALUES, type StorageRole } from "@/lib/core/storage-roles";
 import { logger } from "@/lib/logging/logger";
 import { runAsSystem } from "@/lib/tenant/context";
@@ -119,12 +119,50 @@ export async function openRow(row: AdapterConfig, mode: StorageViewMode): Promis
         if (!registry.get(row.adapterId)) registerAdapters();
         const adapter = registry.get(row.adapterId) as StorageAdapter | undefined;
         if (!adapter) throw new NotFoundError("Storage adapter implementation", row.adapterId);
-        return { adapter: storageView(adapter, mode), config: (await resolveAdapterConfig(row)) as ResolvedConfig };
+        const view = storageView(adapter, mode);
+        return { adapter: mode.kind === "customer" ? whileProvided(view, row.id, mode.tenantId) : view, config: (await resolveAdapterConfig(row)) as ResolvedConfig };
     } catch (error: unknown) {
         if (mode.kind !== "customer") throw error;
         log.warn("The settings of a destination shared with a tenant could not be used", { configId: row.id, tenantId: mode.tenantId }, wrapError(error));
         throw new Error(SHARED_STORAGE_FAILURE);
     }
+}
+
+/** What a write through the view of a customer answers once the destination is no longer shared with it. */
+export const SHARE_ENDED = "This destination is no longer shared with this tenant.";
+
+/**
+ * The view of a customer with every write asking first whether the destination is still shared with
+ * it. A view lives as long as the work that opened it, like a restore of many files, and stopping the
+ * share meanwhile empties the folder of the customer and gives the provider its plain view again,
+ * where whatever the customer wrote afterwards would lie in the open.
+ */
+function whileProvided(view: StorageAdapter, configId: string, tenantId: string): StorageAdapter {
+    const assertProvided = async () => {
+        if (!(await providedConnection(configId, tenantId))) throw new ValidationError(SHARE_ENDED);
+    };
+    const session = (opened: StorageSession): StorageSession => ({
+        ...opened,
+        upload: async (...args) => {
+            await assertProvided();
+            return opened.upload(...args);
+        },
+    });
+    return {
+        ...view,
+        upload: async (...args) => {
+            await assertProvided();
+            return view.upload(...args);
+        },
+        ...(view.openSession
+            ? {
+                  openSession: async (...args: Parameters<NonNullable<StorageAdapter["openSession"]>>) => {
+                      await assertProvided();
+                      return session(await view.openSession!(...args));
+                  },
+              }
+            : {}),
+    };
 }
 
 /**

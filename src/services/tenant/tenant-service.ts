@@ -438,14 +438,16 @@ export const tenantService = {
             });
             // A session that worked in it picks another tenant on its next request.
             await tx.session.updateMany({ where: { activeTenantId: id }, data: { activeTenantId: null } });
+            // An account that worked here alone, or one of no tenant its providers claim by the email,
+            // comes to the home tenant unable to sign in, see `disarmAccountsOnlyOf`. Before the
+            // providers go, whose domains say which accounts of no tenant are its own.
+            await disarmAccountsOnlyOf(tx, id);
             // Its sign-in providers go with it, the accounts they made stay. Their links go too, like
             // when one provider is deleted, so a new provider under an old ID never signs anyone in
             // through a link nobody made with it.
             const providers = await tx.ssoProvider.findMany({ where, select: { providerId: true } });
             if (providers.length > 0) await tx.account.deleteMany({ where: { providerId: { in: providers.map((provider) => provider.providerId) } } });
             await tx.ssoProvider.deleteMany({ where });
-            // An account that worked here alone comes to the home tenant unable to sign in, see `disarmAccountsOnlyOf`.
-            await disarmAccountsOnlyOf(tx, id);
             // The memberships and invitations go with the tenant, its groups after them.
             await tx.tenant.delete({ where: { id } });
             await tx.group.deleteMany({ where });

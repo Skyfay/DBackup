@@ -12,6 +12,7 @@ import { assertConfigOffHost, overlayCredentialsOnConfig } from "@/lib/adapters/
 import { registerAdapters } from "@/lib/adapters";
 import { assertMayApplySavedLogin } from "@/lib/auth/saved-login-access";
 import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { assertOffSharedLoginsOfForm } from "@/services/adapters/shared-login";
 import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
 import { hasSshMode } from "@/lib/adapters/ssh-mode";
 import { hostOf } from "@/lib/adapters/dialed-hosts";
@@ -85,6 +86,13 @@ export async function POST(req: NextRequest) {
             // The logins of the destination of the configuration backup never sign in to a host of the form.
             const locked = await savedLoginRefusal(ctx, sshCredentialId);
             if (locked) return locked;
+            // The login of a destination shared with customers never signs in at a host of a form.
+            try {
+                await assertOffSharedLoginsOfForm({ sshCredentialId }, { adapterId, config });
+            } catch (refusal: unknown) {
+                if (refusal instanceof ValidationError) return NextResponse.json({ success: false, message: refusal.message }, { status: 400 });
+                throw refusal;
+            }
             try {
                 resolvedConfig = await overlayCredentialsOnConfig(
                     adapterId,

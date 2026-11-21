@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
     prisma: {
         group: { findUnique: vi.fn() },
         tenant: { findUnique: vi.fn() },
-        user: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+        user: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
         ssoProvider: { findMany: vi.fn(async () => [] as { domain: string; tenantId: string | null }[]) },
         session: { deleteMany: vi.fn() },
         tenantMembership: { create: vi.fn() },
@@ -59,6 +59,15 @@ describe("creating a user and ending their sessions", () => {
         await expect(userService.createUser({ name: "Sara Nguyen", email: "sara@example.ch", password: "correct horse", groupId: "g-view", tenantId: "tenant-gone" }))
             .rejects.toThrow("The tenant no longer exists.");
         expect(mocks.createUser).not.toHaveBeenCalled();
+    });
+
+    it("deletes the new account again when its group goes while it is made, so none stays without its tenant", async () => {
+        mocks.prisma.group.findUnique.mockResolvedValue({ id: "g-view" });
+        mocks.prisma.tenantMembership.create.mockRejectedValue(new Error("Foreign key constraint failed"));
+
+        await expect(userService.createUser({ name: "Sara Nguyen", email: "sara@example.ch", password: "correct horse", groupId: "g-view", tenantId: "tenant-a" }))
+            .rejects.toThrow("The group no longer exists.");
+        expect(mocks.prisma.user.deleteMany).toHaveBeenCalledWith({ where: { id: "u-new" } });
     });
 
     it("refuses a group that no longer exists before creating anyone", async () => {

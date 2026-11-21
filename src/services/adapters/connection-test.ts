@@ -14,6 +14,7 @@ import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { markHostKey } from "@/lib/transport/host-key";
 import { hostKeyMismatchMessage } from "@/lib/logging/errors";
 import { formHostKeyProbe, mergeAdapterMetadata } from "./ssh-host-key-service";
+import { assertOffSharedLoginsOfForm } from "./shared-login";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -58,6 +59,9 @@ export async function testConnection(input: ConnectionTestInput): Promise<Connec
     const adapter = registry.get(adapterId);
     if (!adapter) return { ok: false, reason: "adapter-missing" };
     if (!adapter.test) return { ok: false, reason: "unsupported" };
+    // The login of a destination shared with customers signs in on that destination alone, at its
+    // stored address, never at a host of the form.
+    await assertOffSharedLoginsOfForm({ primaryCredentialId: input.primaryCredentialId, sshCredentialId: input.sshCredentialId }, { adapterId, config: input.config, configId });
 
     // Secrets held in the config itself reach the browser redacted, so an edit of a saved
     // connection submits them missing. They are filled back in, or the test would try a config

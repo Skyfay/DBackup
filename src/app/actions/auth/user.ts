@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache";
+import { namedTenants } from "@/lib/core/audit-tenants";
 import { checkPermission, currentSessionId, getViewer, hasPermission, hasPermissionWithContext, type Viewer } from "@/lib/auth/access-control";
 import { ACCOUNT_CHANGE, emailClaimScope, roleRefusal } from "@/lib/auth/account-access";
 import { reachCovers } from "@/lib/auth/platform-group-caps";
@@ -513,6 +514,8 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
         // Read before the delete, which ends the memberships, and the names, which go with the accounts.
         const origin = await accountLogOrigin(currentUser, deletable);
         const deletedNames = new Map((await userService.namesOf(deletable)).map((user) => [user.id, user.name]));
+        // The tenants of the accounts, so the log shows their names only to whoever reaches every one of them.
+        const deletedTenants = await userService.tenantsOfAccounts(deletable);
         const result = await userService.deleteUsers(deletable, { permanently, by: currentUser.id });
 
         if (currentUser && parsed.data.includes(currentUser.id)) {
@@ -539,6 +542,7 @@ export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
             {
                 bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length,
                 names: result.succeeded.flatMap((id) => deletedNames.get(id) ?? []),
+                ...namedTenants(deletedTenants),
                 ...(permanently ? { permanently: true } : {}),
             },
             undefined,

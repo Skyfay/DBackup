@@ -10,6 +10,8 @@
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { ValidationError } from "@/lib/logging/errors";
+import { decryptConfig } from "@/lib/crypto";
+import { sameAddress } from "@/lib/adapters/stored-secrets";
 
 /** The saved logins a connection or a form is used with. */
 export interface NamedLogins {
@@ -53,6 +55,31 @@ export async function assertOffSharedLogins(logins: NamedLogins, heldBy?: string
         select: { id: true },
     });
     if (share) throw new ValidationError(SHARED_LOGIN_REFUSAL, { field: "credential" });
+}
+
+/**
+ * Refuses the saved logins of a destination shared with customers on a form that tries a config,
+ * like the connection test, the SSH test, the list of databases or the check of a snapshot. The
+ * form names the host, so the login would sign in wherever the caller points it. The one exception
+ * is the form of the shared destination itself at the address it has stored: `configId` names it,
+ * and the config still dials the same hosts and ports, see `sameAddress`. Naming it alone is not
+ * enough, since its form could hold another host.
+ *
+ * @throws ValidationError without the name of the destination.
+ */
+export async function assertOffSharedLoginsOfForm(logins: NamedLogins, form: { adapterId: string; config: unknown; configId?: unknown }): Promise<void> {
+    if (idsOf(logins).length === 0) return;
+    const configId = typeof form.configId === "string" && form.configId ? form.configId : null;
+    const own = configId ? await prisma.adapterConfig.findUnique({ where: { id: configId }, select: { adapterId: true, config: true } }) : null;
+    let atItsAddress = false;
+    if (own && own.adapterId === form.adapterId && form.config && typeof form.config === "object") {
+        try {
+            atItsAddress = sameAddress(form.adapterId, decryptConfig(JSON.parse(own.config)) as Record<string, unknown>, form.config as Record<string, unknown>);
+        } catch {
+            atItsAddress = false;
+        }
+    }
+    await assertOffSharedLogins(logins, atItsAddress && configId ? configId : undefined);
 }
 
 /**

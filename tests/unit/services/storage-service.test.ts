@@ -171,6 +171,8 @@ describe('StorageService', () => {
         );
         // storageListCache.upsert is a fire-and-forget cache write - must return a Promise
         prismaMock.storageListCache.upsert.mockResolvedValue({} as any);
+        // No configuration backup is set up, so no key of it is locked.
+        prismaMock.systemSetting.findMany.mockResolvedValue([]);
         // Reset fs mocks to success
         fsMocks.writeFile.mockResolvedValue(undefined);
         fsMocks.unlink.mockResolvedValue(undefined);

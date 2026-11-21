@@ -29,7 +29,9 @@ export async function configBackupTargetRefusal(caller: Caller, query: ConfigBac
     const targets = await getConfigBackupTargets();
     if (targets.storageId && connectionIds.includes(targets.storageId)) return CONFIG_BACKUP_DESTINATION_LOCKED;
     if (credentialIds.some((id) => targets.credentialIds.includes(id))) return CONFIG_BACKUP_LOGIN_LOCKED;
-    if (targets.profileId && profileIds.includes(targets.profileId)) return CONFIG_BACKUP_KEY_LOCKED;
+    // The key picked now and the keys before it, whose files may still lie at a destination.
+    const keys = [...(targets.profileId ? [targets.profileId] : []), ...(targets.formerProfileIds ?? [])];
+    if (profileIds.some((id) => keys.includes(id))) return CONFIG_BACKUP_KEY_LOCKED;
     return null;
 }
 

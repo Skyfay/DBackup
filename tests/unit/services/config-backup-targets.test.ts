@@ -52,14 +52,14 @@ beforeEach(() => {
 
 describe("what the configuration backup goes through", () => {
     it("is its destination with both logins of it and its key", async () => {
-        expect(await getConfigBackupTargets()).toEqual({ storageId: "nas", profileId: "config-key", credentialIds: ["nas-login", "nas-ssh"] });
+        expect(await getConfigBackupTargets()).toEqual({ storageId: "nas", profileId: "config-key", formerProfileIds: [], credentialIds: ["nas-login", "nas-ssh"] });
         expect(prismaMock.adapterConfig.findUnique).toHaveBeenCalledWith({ where: { id: "nas" }, select: { primaryCredentialId: true, sshCredentialId: true } });
     });
 
     it("is nothing while no destination and no key are picked", async () => {
         prismaMock.systemSetting.findMany.mockResolvedValue(settings("", "") as never);
 
-        expect(await getConfigBackupTargets()).toEqual({ storageId: null, profileId: null, credentialIds: [] });
+        expect(await getConfigBackupTargets()).toEqual({ storageId: null, profileId: null, formerProfileIds: [], credentialIds: [] });
         expect(prismaMock.adapterConfig.findUnique).not.toHaveBeenCalled();
     });
 });

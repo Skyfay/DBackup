@@ -111,6 +111,15 @@ function isAbsoluteLinkTarget(target) {
 }
 
 /**
+ * The parts of a path as this file system reads it: Windows splits at both `/` and `\`, every other
+ * system at `/` alone, where a backslash is a character of a name. A check that split at both on
+ * Linux would measure `a\b\c` three folders deep, while the link lies at one name in the top folder.
+ */
+function pathParts(entryPath) {
+    return process.platform === "win32" ? entryPath.split(/[\\/]/) : entryPath.split("/");
+}
+
+/**
  * Whether the link at `linkPath`, relative to the folder of its source, points outside of that
  * folder: absolute, empty, climbing above it, climbing back after a folder (`up/../x`), or running
  * through a link of the same backup. Mirrors linkLeavesTarget in src/lib/archive/link-target.ts,
@@ -118,10 +127,10 @@ function isAbsoluteLinkTarget(target) {
  */
 function linkLeavesTarget(linkPath, target, isLinkFolder) {
     if (target.trim() === "" || isAbsoluteLinkTarget(target)) return true;
-    const parts = linkPath.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".");
+    const parts = pathParts(linkPath).filter((part) => part !== "" && part !== ".");
     const at = parts.slice(0, -1);
     let afterFolder = false;
-    for (const part of target.replace(/\\/g, "/").split("/")) {
+    for (const part of pathParts(target)) {
         if (part === "" || part === ".") continue;
         if (part === "..") {
             if (afterFolder || at.length === 0) return true;
@@ -136,7 +145,7 @@ function linkLeavesTarget(linkPath, target, isLinkFolder) {
 
 /** The folders of a path, without empty and `.` parts, compared without case. */
 function linkPathParts(entryPath) {
-    return entryPath.replace(/\\/g, "/").split("/").filter((part) => part !== "" && part !== ".").map((part) => part.toLowerCase());
+    return pathParts(entryPath).filter((part) => part !== "" && part !== ".").map((part) => part.toLowerCase());
 }
 
 /**
@@ -1853,6 +1862,16 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
             // An earlier link is replaced. unlink takes the link itself, never what it points at.
             if (existing) fs.unlinkSync(link.target);
             fs.symlinkSync(link.linkTarget, link.target);
+            // A second line beside the checks of the strings: where the link now points, resolved from
+            // the real folder it lies in, has to stay inside the output folder.
+            const realRoot = fs.realpathSync(path.resolve(outputDir));
+            const pointsAt = path.resolve(fs.realpathSync(path.dirname(link.target)), link.linkTarget);
+            const fromRoot = path.relative(realRoot, pointsAt);
+            if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+                fs.unlinkSync(link.target);
+                console.error(`SKIPPED (link leads out of the output folder): ${link.p} -> ${link.linkTarget}`);
+                continue;
+            }
             extracted++;
             reportProgress(extracted, total);
         }

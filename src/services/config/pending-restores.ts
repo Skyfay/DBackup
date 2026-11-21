@@ -38,6 +38,15 @@ async function sweep(now = Date.now()): Promise<void> {
 /** Holds a checked backup until its restore is confirmed, and answers with the token that confirms it. */
 export async function holdRestore(entry: Omit<PendingRestore, "expiresAt">): Promise<string> {
     await sweep();
+    // The setup holds one backup at a time. Anyone may check one while no account exists, so a new
+    // check replaces the one before, which would otherwise wait half an hour in the temp folder.
+    if (entry.owner === "setup") {
+        for (const [token, held] of pending) {
+            if (held.owner !== "setup") continue;
+            pending.delete(token);
+            await fs.unlink(held.file).catch(() => undefined);
+        }
+    }
     const token = randomUUID();
     pending.set(token, { ...entry, expiresAt: Date.now() + WAIT_MS });
     return token;

@@ -253,7 +253,7 @@ export async function restoreArchiveSnapshot(
                         config: target.config,
                         basePath,
                         label: `${target.row.name}:${basePath}`,
-                        origin: await originOfBackup(input, mappingEntry.entryId, source, mappingEntry.targetConfigId, basePath, target.row.adapterId),
+                        origin: await originOfBackup({ ...input, indexSha256: archive.indexSha256 }, mappingEntry.entryId, source, mappingEntry.targetConfigId, basePath, target.row.adapterId),
                     });
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : String(e);

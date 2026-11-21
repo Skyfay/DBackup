@@ -11,6 +11,7 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { includesHistory } from "@/services/config/database-copy";
+import { FORMER_PROFILES_SETTING, formerProfileIdsOf } from "@/services/config/config-backup-targets";
 import { SYSTEM_TASKS } from "@/services/system/system-task-definitions";
 import { systemTaskService } from "@/services/system/system-task-service";
 
@@ -84,9 +85,15 @@ export async function saveConfigBackupSettings(next: ConfigBackupSettings): Prom
 
     const upsert = (key: string, value: string) =>
         prisma.systemSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+    // The key picked before stays locked while files it sealed may lie at a destination, see `FORMER_PROFILES_SETTING`.
+    const before = await prisma.systemSetting.findMany({ where: { key: { in: [KEYS.profileId, FORMER_PROFILES_SETTING] } }, select: { key: true, value: true } });
+    const previous = before.find((row) => row.key === KEYS.profileId)?.value || "";
+    const former = formerProfileIdsOf(before.find((row) => row.key === FORMER_PROFILES_SETTING)?.value);
+    const formerNext = previous && previous !== next.profileId && !former.includes(previous) ? [...former, previous] : former;
     await prisma.$transaction([
         upsert(KEYS.storageId, next.storageId),
         upsert(KEYS.profileId, next.profileId),
+        ...(formerNext !== former ? [upsert(FORMER_PROFILES_SETTING, JSON.stringify(formerNext))] : []),
         upsert(KEYS.includeStatistics, String(next.includeStatistics)),
         upsert(KEYS.retention, String(next.retention)),
     ]);

@@ -23,7 +23,7 @@ const KEYS: Record<string, Buffer> = { [CONFIG_KEY_ID]: Buffer.alloc(32, 0x11), 
 const PLAIN = "DUMMY-CONFIG-COPY ENCRYPTION_KEY=dummy\n".repeat(40);
 
 const prismaMock = vi.hoisted(() => ({
-    systemSetting: { findUnique: vi.fn() },
+    systemSetting: { findUnique: vi.fn(), findMany: vi.fn() },
     execution: { findMany: vi.fn() },
     job: { findUnique: vi.fn() },
 }));
@@ -72,6 +72,7 @@ beforeEach(async () => {
     vi.clearAllMocks();
     workDir = await fs.mkdtemp(path.join(os.tmpdir(), "config-key-use-"));
     prismaMock.systemSetting.findUnique.mockResolvedValue({ value: CONFIG_KEY_ID });
+    prismaMock.systemSetting.findMany.mockResolvedValue([{ key: "config.backup.profileId", value: CONFIG_KEY_ID }]);
     prismaMock.execution.findMany.mockResolvedValue([]);
     prismaMock.job.findUnique.mockResolvedValue(null);
     destination.adapter = {
@@ -81,6 +82,19 @@ beforeEach(async () => {
     };
 });
 afterEach(async () => { await fs.rm(workDir, { recursive: true, force: true }); });
+
+describe("a key the configuration backup was encrypted with before", () => {
+    it("stays locked for a member after the admin picked another key", async () => {
+        const { wholeFileKeyRefusal } = await import("@/services/backup/config-key-lock");
+        prismaMock.systemSetting.findMany.mockResolvedValue([
+            { key: "config.backup.profileId", value: JOB_KEY_ID },
+            { key: "config.backup.formerProfileIds", value: JSON.stringify([CONFIG_KEY_ID]) },
+        ]);
+
+        expect(await wholeFileKeyRefusal({ isPlatformAdmin: false, authMethod: "session" })(CONFIG_KEY_ID)).toBe(true);
+        expect(await wholeFileKeyRefusal({ isPlatformAdmin: true, authMethod: "session" })(CONFIG_KEY_ID)).toBe(false);
+    });
+});
 
 describe("a decrypted download of a copy of the configuration backup under the name of a job", () => {
     const download = (file: string, options: Record<string, unknown>) =>

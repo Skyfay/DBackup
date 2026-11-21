@@ -8,6 +8,10 @@
 - **tenants**: Deleting a tenant also locks the accounts of no tenant whose email its sign-in provider claims. A new user whose group is deleted while it is made is removed again.
 - **audit**: The entry of a bulk delete of users names the tenants of the accounts, so a view that does not reach them hides it.
 - **config restore**: A configuration file from before the tenants no longer makes an existing account that is no platform admin one, and leaves it out with a note instead.
+- **config backup**: A key the configuration backup was encrypted with before stays locked like the current one once another key is picked.
+- **restore**: A restore to the original folder counts only when the index of the backup is the one its run recorded. A backup made before this record goes back there for a platform admin alone.
+- **setup**: A configuration backup uploaded at the first start unpacks to at most 2 GB, and only the last one checked is held.
+- **Recovery Kit**: The recovery script reads link paths with backslashes the way Linux and macOS do, and removes a link it laid that points out of the output folder.
 
 ### 🐛 Bug Fixes
 

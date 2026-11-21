@@ -2,7 +2,7 @@ import { createReadStream, createWriteStream, promises as fs } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
-import type { Readable, Transform } from "stream";
+import { Transform, type Readable } from "stream";
 import { createGunzip } from "zlib";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { privateTempPath, PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
@@ -77,6 +77,24 @@ export async function resolveStoredBackupKey(request: KeyResolutionRequest & { v
  * the key of a file read from a destination one `resolveStoredBackupKey` takes. A missing key
  * throws EncryptionKeyRequiredError, which asks the person for one.
  */
+/** The most an uploaded configuration backup unpacks to. A copy of the database with its whole history stays far below. */
+export const UPLOAD_UNPACKED_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+
+/** Passes bytes on until `max`, then fails the stream, so nothing past the bound is written. */
+export function byteLimit(max: number): Transform {
+    let seen = 0;
+    return new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+            seen += chunk.length;
+            if (seen > max) {
+                done(new Error(`it unpacks to more than ${Math.round(max / 1024 / 1024 / 1024)} GB`));
+                return;
+            }
+            done(null, chunk);
+        },
+    });
+}
+
 export async function openBackupFile(file: string, meta: Record<string, unknown> | null, override?: KeyOverride, from: "upload" | "destination" = "upload"): Promise<string> {
     const how = storedAs(path.basename(file), meta);
     // Opened once the key is known, so a file whose key is refused leaves no stream open on it.
@@ -98,6 +116,9 @@ export async function openBackupFile(file: string, meta: Record<string, unknown>
         steps.push(createDecryptionStream(key, Buffer.from(how.iv, "hex"), Buffer.from(how.authTag, "hex")));
     }
     if (how.compressed) steps.push(createGunzip());
+    // An upload may come from anyone while no account exists, and gzip packs a long run of the same
+    // byte a thousand times over, so what it unpacks to is bounded.
+    if (from === "upload") steps.push(byteLimit(UPLOAD_UNPACKED_MAX_BYTES));
     const streams: (Readable | Transform)[] = [createReadStream(file), ...steps];
 
     // Decrypted, it holds every secret of the instance, so only DBackup reads it.

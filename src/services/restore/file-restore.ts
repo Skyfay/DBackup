@@ -109,6 +109,8 @@ export interface FileRestoreInput {
 export interface OpenedArchive extends ManagedArchiveSource {
     manifest: ArchiveManifest;
     index: ArchiveIndex;
+    /** The SHA-256 of the bytes of the index that was parsed, see `archiveReadSource`. */
+    indexSha256: string;
     masterKey?: Buffer;
     /** Lets sibling archives of the same chain be opened on demand. */
     chain: ChainReaderOptions;
@@ -230,7 +232,7 @@ export async function openArchiveForRestore(
                     : resolveBackupKey({ profileId: siblingProfileId, override }),
         };
 
-        return { ...managed, manifest, index, masterKey, chain };
+        return { ...managed, manifest, index, indexSha256: crypto.createHash("sha256").update(indexBytes).digest("hex"), masterKey, chain };
     } catch (e: unknown) {
         await managed.dispose();
         throw e;
@@ -419,7 +421,7 @@ interface RestoreTarget {
  * from the request as well, see `originOfBackup`.
  */
 async function resolveTargets(
-    input: FileRestoreInput,
+    input: FileRestoreInput & { indexSha256: string },
     sourceIds: string[]
 ): Promise<Map<string, RestoreTarget>> {
     const targets = new Map<string, RestoreTarget>();
@@ -521,7 +523,7 @@ export async function restoreFilesToStorage(
     let targets: Map<string, RestoreTarget>;
     try {
         files = resolveContents(archive.index, input).files;
-        targets = await resolveTargets(input, [...new Set(files.map((f) => f.src))]);
+        targets = await resolveTargets({ ...input, indexSha256: archive.indexSha256 }, [...new Set(files.map((f) => f.src))]);
         // Before anything is written, with the connections of an origin known only now.
         await input.checkTargets?.([...new Set([...targets.values()].map((t) => t.connectionId))]);
         await assertWriteTargets([...targets.values()].map((t) => ({ ...t, config: t.config as Record<string, unknown> })), input.caller ?? NO_CALLER);

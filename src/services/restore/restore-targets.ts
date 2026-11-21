@@ -83,7 +83,7 @@ export async function assertRestoreTargetsAllowed(
     await assertTargetsInTenant(input, caller);
     const message = await configBackupTargetRefusal(caller, { connectionIds: restoreTargetIds(input) });
     if (message) throw new PermissionError("platform admin", { message });
-    await assertWriteTargets(await mappingTargets(input.directoryMapping ?? [], { storageConfigId: input.storageConfigId, file: input.file }), caller);
+    await assertWriteTargets(await mappingTargets(input.directoryMapping ?? [], { storageConfigId: input.storageConfigId, file: input.file, caller }), caller);
 }
 
 /** Where the files of one directory source go, as far as who may write there depends on it. */
@@ -217,6 +217,10 @@ export function isOrigin(source: { configId: string; path: string } | null, conn
 export interface RestoredBackup {
     storageConfigId?: string;
     file?: string;
+    /** The SHA-256 of the index the restore parses, once it read it, see `archiveReadSource`. */
+    indexSha256?: string | null;
+    /** Who restores, since a backup of a run that recorded no digest counts as the origin for a platform admin alone. */
+    caller?: RestoreCaller;
 }
 
 /**
@@ -236,7 +240,10 @@ export async function originOfBackup(
 ): Promise<boolean> {
     if (!isOrigin(source, connectionId, basePath, adapterId)) return false;
     if (!backup.storageConfigId || !backup.file) return false;
-    return archiveReadSource(backup.storageConfigId, backup.file, jobSourceId);
+    return archiveReadSource(backup.storageConfigId, backup.file, jobSourceId, {
+        ...(backup.indexSha256 !== undefined ? { indexSha256: backup.indexSha256 } : {}),
+        trustsUnhashed: !!backup.caller?.isPlatformAdmin && backup.caller.authMethod === "session",
+    });
 }
 
 /** What someone reads whose full restore names no folder for a directory source it restores. */

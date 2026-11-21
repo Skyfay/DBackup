@@ -62,6 +62,7 @@ const { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUs
 const { TENANT_DOMAIN_SIGN_UP_REFUSED } = await import("@/lib/auth/sso-guard");
 const { NOT_LINKED_URL, TENANT_NOT_MEMBER_URL, refuseSsoSession } = await import("@/lib/auth/sso-tenant-guard");
 const { accountLinkingOptions } = await import("@/lib/auth/account-linking");
+const { beforeUserUpdate } = await import("@/lib/auth/user-update-guard");
 
 const ACME = { providerId: "entra-acme", name: "Acme Entra ID", tenantId: "acme", domain: "acme.ch", enabled: true, allowProvisioning: true, defaultGroupId: "g-acme" };
 const AUTHENTIK = { providerId: "authentik", name: "Authentik", tenantId: null, domain: null, enabled: true, allowProvisioning: true, defaultGroupId: "g-ops" };
@@ -108,6 +109,7 @@ const auth = betterAuth({
                 },
                 after: afterSsoUser,
             },
+            update: { before: beforeUserUpdate },
         },
         account: { create: { before: beforeSsoLink, after: afterSsoLink } },
         session: { create: { before: async (session, context) => void (await beforeSsoSession(session, context)) } },
@@ -231,6 +233,21 @@ describe("a callback of a provider, through the hooks of DBackup", () => {
         expect(sessionsOf("eve")).toHaveLength(0);
         // Her own identity still signs her in.
         expect((await callback("entra-acme", "anna@acme.ch", "idp-eve")).status).toBe(200);
+        expect(sessionsOf("eve")).toHaveLength(1);
+    });
+
+    it("keeps an email its owner set themselves unverified when their own identity signs in reporting it verified", async () => {
+        // Eve linked her own identity, set Anna's email on her account and made her provider report it as verified.
+        seedUser("eve", "anna@acme.ch", ["acme"], { emailVerified: false });
+        seedLink("eve", "entra-acme", "idp-eve");
+
+        expect((await callback("entra-acme", "anna@acme.ch", "idp-eve")).status).toBe(200);
+        expect(state.db.user.find((user) => user.id === "eve")?.emailVerified).toBe(false);
+
+        // Anna's first sign-in is not linked to the account Eve holds.
+        const response = await callback("entra-acme", "anna@acme.ch", "idp-anna");
+        expect(response.headers.get("location")).toContain(NOT_LINKED_URL);
+        expect(state.db.account).toEqual([expect.objectContaining({ userId: "eve", accountId: "idp-eve" })]);
         expect(sessionsOf("eve")).toHaveLength(1);
     });
 

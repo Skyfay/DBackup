@@ -5,7 +5,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { PROFILE_CHANGE_REFUSED, SERVER_ONLY_ENDPOINT_REFUSED, TRUSTED_DEVICE_REFUSED, asksTrustedDevice, profileChangeRefused, refusedFromBrowser } from "@/lib/auth/profile-guard";
 import { refuseWeakPassword } from "@/lib/auth/password-guard";
 import { claimFirstSignUp, refuseLateSignUp } from "@/lib/auth/sign-up-guard";
-import { keepPasskeyFactor } from "@/lib/auth/passkey-factor-guard";
+import { beforeUserUpdate } from "@/lib/auth/user-update-guard";
 import { refusePasskeyFirstFactor } from "@/lib/auth/passkey-login-guard";
 import { keptSessionAge, refuseWithoutReauth } from "@/lib/auth/reauth-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -297,8 +297,9 @@ export const auth = betterAuth({
                 after: afterSsoUser,
             },
             update: {
-                // Turning off the authenticator app leaves a passkey as the second factor on.
-                before: keepPasskeyFactor,
+                // Turning off the authenticator app leaves a passkey as the second factor on, and
+                // only DBackup marks an email as set by an admin or a provider.
+                before: beforeUserUpdate,
             },
         },
         account: {

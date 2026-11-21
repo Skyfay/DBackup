@@ -168,9 +168,11 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         setTest({ status: "running" });
         try {
             const values = form.getValues();
+            // Before the test runs: the form hands out its values themselves, which a change meanwhile changes too.
+            const endpoint = endpointOf(values.config);
             const result = await requestTest(values);
             if (result.success) {
-                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint: endpointOf(values.config) });
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint });
             } else {
                 const message = result.message || "Connection failed";
                 setTest({ status: "failed", message, hostKeyMismatch: result.hostKeyMismatch });
@@ -240,9 +242,10 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
 
         setTest({ status: "running" });
         try {
+            const endpoint = endpointOf(values.config);
             const result = await requestTest(values);
             if (result.success) {
-                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint: endpointOf(values.config) });
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint });
                 await save(values, result.hostKey);
                 return;
             }

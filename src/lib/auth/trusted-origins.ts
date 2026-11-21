@@ -102,7 +102,10 @@ async function endpointIssuers(request: Request): Promise<string[]> {
                 return false;
             }
         }));
-        return providers.filter((_, index) => trusted[index]).map((provider) => provider.issuer);
+        // better-auth compares each entry with the origin of an endpoint, so an issuer with a path, like
+        // Authentik's /application/o/<slug>/ or a Keycloak realm, has to go in as its origin or it never matches.
+        const origins = providers.filter((_, index) => trusted[index]).map((provider) => originOf(provider.issuer));
+        return [...new Set(origins.filter((origin): origin is string => !!origin))];
     } catch {
         // During initial setup, DB might not be ready
         return [];

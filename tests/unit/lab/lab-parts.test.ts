@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "fs";
 import path from "path";
 import { REPO_ROOT } from "../../../lab/src/config";
-import { DATABASES, NOTIFY, STORAGE } from "../../../lab/src/catalog";
+import { DATABASES, DEX, NOTIFY, STORAGE, dexPerson, dexProviderId } from "../../../lab/src/catalog";
 import { generatePassword } from "../../../lab/src/password";
 import { folderName, workspaceNameFrom } from "../../../lab/src/workspace";
 
@@ -50,8 +50,23 @@ describe("the services of the dev lab", () => {
         for (const entry of [NOTIFY.ntfy, NOTIFY.gotify, NOTIFY.webhook]) expect(notify.get(entry.service)?.ports, entry.service).toEqual([entry.port]);
     });
 
+    it("publish Dex on the port of its issuer, with the client and the people the SSO tests sign in with", () => {
+        expect(composeServices("e2e").get(DEX.service)?.ports).toEqual([DEX.port]);
+        const text = readFileSync(path.join(REPO_ROOT, "lab", "compose", "e2e.yml"), "utf8");
+        // DBackup and the browser reach it by one name, so it listens on the same port inside.
+        expect(text).toContain(`ports: ["${DEX.port}:${DEX.port}"]`);
+        expect(new URL(DEX.issuer)).toMatchObject({ hostname: DEX.service, port: String(DEX.port) });
+        expect(text).toContain(`issuer: ${DEX.issuer}\n`);
+        expect(text).toContain(`id: ${DEX.clientId}\n`);
+        expect(text).toContain(`secret: ${DEX.clientSecret}\n`);
+        for (let attempt = 0; attempt < DEX.attempts; attempt++) {
+            expect(text).toContain(`- http://localhost:3300/api/auth/sso/callback/${dexProviderId(attempt)}\n`);
+            for (const kind of ["newcomer", "member"] as const) expect(text).toContain(`- email: ${dexPerson(kind, attempt).email}\n`);
+        }
+    });
+
     it("give every published port to one service only", () => {
-        const ports = ["databases", "storage", "notify"].flatMap((group) => [...composeServices(group).values()].flatMap((service) => service.ports));
+        const ports = ["databases", "storage", "notify", "e2e"].flatMap((group) => [...composeServices(group).values()].flatMap((service) => service.ports));
         expect(ports.length).toBe(new Set(ports).size);
     });
 });

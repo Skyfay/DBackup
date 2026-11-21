@@ -43,6 +43,19 @@ describe("the origins better-auth trusts", () => {
         expect(await trustedOriginsFor(request("/sso/callback/pocket-acme?code=1&state=2", "GET"))).toContain("https://id.acme.ch");
     });
 
+    it("adds the origin of an issuer with a path, which better-auth compares with the origin of each endpoint", async () => {
+        mocks.providers.mockResolvedValue([
+            { providerId: "authentik", issuer: "http://auth.home.lan:9000/application/o/dbackup/", tenantId: null },
+            { providerId: "keycloak", issuer: "https://kc.home.lan/realms/home", tenantId: null },
+            { providerId: "keycloak-2", issuer: "https://kc.home.lan/realms/lab", tenantId: null },
+        ]);
+        const origins = await trustedOriginsFor(request("/sign-in/sso"));
+
+        expect(origins).toEqual(expect.arrayContaining(["http://auth.home.lan:9000", "https://kc.home.lan"]));
+        expect(origins.filter((origin) => origin === "https://kc.home.lan")).toHaveLength(1);
+        expect(origins.some((origin) => origin.includes("/application/") || origin.includes("/realms/"))).toBe(false);
+    });
+
     describe("for the provider of a customer whose tenant reaches no local network", () => {
         const sso = () => trustedOriginsFor(request("/sign-in/sso"));
 

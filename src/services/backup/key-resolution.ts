@@ -28,6 +28,7 @@ import { parseIndex } from "@/lib/archive/index-file";
 import { EncryptionKeyRequiredError, PermissionError, ValidationError, getErrorMessage } from "@/lib/logging/errors";
 import { CONFIG_BACKUP_KEY_USE_LOCKED } from "@/lib/core/config-backup-locks";
 import { getEncryptionProfiles, getProfileMasterKey } from "./encryption-service";
+import { parseWithinBudget, type ParseBudget } from "./index-parse-budget";
 import { rememberKeyFor } from "@/services/vault/key-aliases";
 
 /**
@@ -197,17 +198,21 @@ export interface ArchiveKeyParams {
  * authentication tag and can never parse. It is also cheap - the index is already in hand
  * when this runs, so testing the whole vault costs no further I/O.
  *
+ * The key that fits parses the whole index, so each candidate waits for its share of the heap like
+ * every other parse, see `index-parse-budget.ts`. A wrong key fails on the first sealed chunk.
+ *
  * @param indexBytes - The sealed index, from the sidecar or the archive's index member
  * @param params - The archive's `kdfSalt` and `noncePrefix`, both cleartext by design
+ * @param budget - The budget of the parses of this process, `parseWithinBudget` unless a test sets one
  */
-export function archiveIndexVerifier(indexBytes: Buffer, params: ArchiveKeyParams): KeyVerifier {
+export function archiveIndexVerifier(indexBytes: Buffer, params: ArchiveKeyParams, budget: ParseBudget = parseWithinBudget): KeyVerifier {
     const noncePrefix = Buffer.from(params.noncePrefix, "hex");
     const kdfSalt = Buffer.from(params.kdfSalt, "hex");
 
     return async (candidate: Buffer) => {
         try {
             const { indexKey } = deriveArchiveKeys(candidate, kdfSalt);
-            await parseIndex(indexBytes, { indexKey, noncePrefix });
+            await budget(indexBytes.length, () => parseIndex(indexBytes, { indexKey, noncePrefix }));
             return true;
         } catch {
             return false;

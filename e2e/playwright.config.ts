@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { ADMIN_STATE, BASE_URL } from "./support/environment";
+import { ADMIN_STATE, BASE_URL, DEX_HOST_RULE } from "./support/environment";
 import { selectedFamilies, uiSelected } from "./support/targets";
 
 // The end-to-end tests, `pnpm test:e2e`. The global setup builds the image of this checkout and
@@ -32,7 +32,8 @@ export default defineConfig({
     },
     projects: [
         { name: "setup", testMatch: /first-start\.setup\.ts/, use: { ...devices["Desktop Chrome"] } },
-        ...(uiSelected() ? [{ name: "ui", testMatch: /ui\/.*\.spec\.ts/, dependencies: ["setup"], use: { ...devices["Desktop Chrome"], ...signedIn } }] : []),
+        // The SSO specs reach Dex by the name DBackup knows it under, see DEX_HOST_RULE.
+        ...(uiSelected() ? [{ name: "ui", testMatch: /ui\/.*\.spec\.ts/, dependencies: ["setup"], use: { ...devices["Desktop Chrome"], ...signedIn, launchOptions: { args: [DEX_HOST_RULE] } } }] : []),
         ...selectedFamilies().map((family) => ({
             name: family.name,
             testMatch: /[\\/]tests[\\/][^\\/]+\.spec\.ts$/,

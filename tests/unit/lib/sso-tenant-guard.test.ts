@@ -105,6 +105,32 @@ describe("sign-ins through the provider of a tenant", () => {
         expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
     });
 
+    it("links a provider of the platform to an account of no tenant whose email a customer's provider claims only for whoever signs in to it already", async () => {
+        // The admin of Acme took Lena out of Acme, her last tenant, and still sets her password.
+        mocks.provider.mockResolvedValue(AUTHENTIK);
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [] });
+        mocks.providers.mockResolvedValue([{ domain: "acme.ch", tenantId: "acme" }]);
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(false);
+
+        mocks.session.mockResolvedValue({ userId: "lena", expiresAt: new Date(Date.now() + 60_000) });
+        const signedIn = { ...CALLBACK, headers: new Headers({ cookie: "better-auth.session_token=tok-lena.sig" }) };
+        expect(await allowTenantSsoLink({ userId: "lena" }, signedIn)).toBe(true);
+    });
+
+    it("links a provider of the platform to an account of no tenant whose email no customer claims, one of the home tenant", async () => {
+        mocks.provider.mockResolvedValue(AUTHENTIK);
+        mocks.user.mockResolvedValue({ ...LENA, memberships: [] });
+        // Free, or claimed by a provider of the platform or of the home tenant.
+        for (const claims of [[], [{ domain: "acme.ch", tenantId: null }], [{ domain: "acme.ch", tenantId: "default" }]]) {
+            mocks.providers.mockResolvedValue(claims);
+            expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
+        }
+        // A platform group holds the account, whatever the email.
+        mocks.providers.mockResolvedValue([{ domain: "acme.ch", tenantId: "acme" }]);
+        mocks.user.mockResolvedValue({ ...LENA, platformGroupId: "pg-ops", memberships: [] });
+        expect(await allowTenantSsoLink({ userId: "lena" }, CALLBACK)).toBe(true);
+    });
+
     it("links no account by an email the person picked themselves, only from the own profile while signed in", async () => {
         const signedIn = { ...CALLBACK, headers: new Headers({ cookie: "better-auth.session_token=tok-lena.sig" }) };
         mocks.session.mockResolvedValue({ userId: "lena", expiresAt: new Date(Date.now() + 60_000) });

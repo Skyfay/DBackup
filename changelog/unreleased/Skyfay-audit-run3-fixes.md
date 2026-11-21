@@ -17,6 +17,7 @@
 - **file backups**: Exclude patterns with braces count every pattern they expand to, and one list stands for at most 256 patterns with a slash, brackets or braces. A restore takes only exclude patterns a save would take.
 - **backup**: A run that takes longer than the longest a run may take fails, also while it still reports progress, so one slow source cannot hold the runs of every tenant. The time is one day by default and set in Settings > General.
 - **server**: Without `TRUSTED_PROXIES` only a reverse proxy on the same machine is trusted, so a device of the local network can no longer name its own address for the rate limits and the audit log.
+- **SSO**: A provider of the platform links an account of no tenant whose email the provider of a customer claims only from the profile of that account.
 - **SSO**: A sign-in through a provider no longer marks an email the owner of the account set themselves as verified, so the provider links no other identity to that account by its email.
 - **SSO**: The fetches of a sign-in through the provider of a tenant that blocks the local network dial only checked addresses. An issuer with a wildcard or a user part is refused and never trusted.
 - **SSH**: A private key with a passphrase is unlocked once per process instead of at every connect, so a key that is slow to unlock no longer holds up the server at every health check.

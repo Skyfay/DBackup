@@ -1,4 +1,5 @@
 import { APIError } from "better-auth/api";
+import prisma from "@/lib/prisma";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { isSsoCallback, placeSsoUser, refuseClaimedSsoSignUp, refuseSsoSignUp, type SsoHookContext } from "./sso-guard";
@@ -23,14 +24,42 @@ export type SsoDatabaseHookContext = (SsoHookContext & { request?: Request; redi
  */
 const callbackLinks = new WeakMap<Request, { accountId?: string; refusedUrl?: string }>();
 
+/**
+ * The email of the user a callback adds, by its request. better-auth adds the user and links it in
+ * one transaction and runs the after hook of the user only once both are done, so the link hook
+ * meets someone new before `afterSsoUser` put them into their tenant, see `placeNewUser`.
+ */
+const addedUsers = new WeakMap<Request, { email: string; placed?: string }>();
+
 /** Before a user is added: the provider decides whether it adds them, never the browser. */
 export async function beforeSsoUser(user: { email?: string | null }, context: SsoDatabaseHookContext): Promise<void> {
     await refuseSsoSignUp(context, user);
     await refuseClaimedSsoSignUp(context, user);
+    if (context?.request && user.email) addedUsers.set(context.request, { email: user.email.toLowerCase() });
 }
 
-/** After a user was added: someone a provider added starts in its group. */
+/** After a user was added: someone a provider added starts in its group, unless the link hook placed them already. */
 export async function afterSsoUser(user: { id: string; name: string; email: string }, context: SsoDatabaseHookContext): Promise<void> {
+    if (context?.request && addedUsers.get(context.request)?.placed === user.id) return;
+    try {
+        await placeSsoUser(user, context);
+    } catch (error) {
+        log.warn("Putting a new user of a sign-in provider into its group failed", { userId: user.id }, wrapError(error));
+    }
+}
+
+/**
+ * Puts the user this callback just added into the group of its provider before the link is
+ * checked, so the provider of a tenant links the person it added as a member of that tenant. Only
+ * the account of the email `beforeSsoUser` saw and only while it works in no tenant, so an
+ * account found by its email is never placed here.
+ */
+async function placeNewUser(userId: string, context: SsoDatabaseHookContext): Promise<void> {
+    const added = context?.request ? addedUsers.get(context.request) : undefined;
+    if (!added || added.placed) return;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, memberships: { select: { tenantId: true } } } });
+    if (!user || user.email.toLowerCase() !== added.email || user.memberships.length > 0) return;
+    added.placed = user.id;
     try {
         await placeSsoUser(user, context);
     } catch (error) {
@@ -46,6 +75,7 @@ export async function afterSsoUser(user: { id: string; name: string; email: stri
  */
 export async function beforeSsoLink(account: { userId: string; accountId?: string }, context: SsoDatabaseHookContext): Promise<false | undefined> {
     const callback = isSsoCallback(context?.path);
+    if (callback) await placeNewUser(account.userId, context);
     const allowed = await allowTenantSsoLink(account, context);
     if (!callback) return allowed ? undefined : false;
     const refusedUrl = allowed ? undefined : ((await tenantRefusalUrl(account.userId, context)) ?? NOT_LINKED_URL);

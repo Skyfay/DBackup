@@ -28,7 +28,7 @@
 - **storage**: At most two checks of a backup download it at once, and a check of a known size first makes sure the temporary folder has the space free.
 - **restore**: Trying a key on a backup waits for its share of memory like every other read of the index, so many tries at once no longer fill the memory of the server.
 - **Docker Volumes**: A run without SSH reads no volume that holds the folder of a Local Filesystem destination shared with customers.
-- **tenants**: A customer gets only the backups of a shared server that a run in the History of its tenant wrote, never a file at the destination by its sidecar alone.
+- **tenants**: A customer gets a backup of a shared server only when DBackup proves it made it, by the key of the server's tenant or by its run in History, never by its sidecar alone. Backups moved to a new storage keep that proof.
 
 ### 🔄 Changed
 

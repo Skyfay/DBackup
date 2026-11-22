@@ -48,6 +48,11 @@ export interface SharedRestore {
      * A copy on a destination another tenant provides to it lies in that tenant's folder there.
      */
     copyTenantId?: string;
+    /**
+     * The SHA-256 of the index whose proof the customer's restore checked, see `shared-copy-proof.ts`.
+     * The restore reads that index alone, so nobody swaps the archive between the check and the read.
+     */
+    indexSha256?: string;
 }
 
 export interface RestoreInput {

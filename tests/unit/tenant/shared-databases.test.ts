@@ -29,10 +29,18 @@ vi.mock("@/lib/logging/logger", () => ({
 }));
 // The services use the client of the app, here the one of the test database with its tenant filter.
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
-// Every backup of these listings was written by a run of the server's tenant, which `recorded-backups` asks. Its own test is shared-backup-listing.test.ts.
-vi.mock("@/services/tenant/recorded-backups", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("@/services/tenant/recorded-backups")>();
-    return { ...actual, recordedCopies: async (_tenantId: string, copies: { destinationId: string; path: string }[]) => new Set(copies.map((copy) => actual.copyKey(copy.destinationId, copy.path))) };
+// Every backup of these listings was written by a run of the server's tenant with the times of its
+// sidecar, which the proof of a copy asks. Its own tests are shared-backup-listing.test.ts and shared-copy-proof.test.ts.
+vi.mock("@/services/tenant/shared-copy-proof", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/services/tenant/shared-copy-proof")>();
+    return {
+        ...actual,
+        proofOf: (_destinationId: string, listed: { createdAt: string; dumpsStartedAt?: string }) => ({
+            proof: { kind: "recorded", digests: [] },
+            createdAt: listed.createdAt,
+            ...(listed.dumpsStartedAt ? { dumpsStartedAt: listed.dumpsStartedAt } : {}),
+        }),
+    };
 });
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: mocks.listing } }));
 vi.mock("@/services/restore/archive-download", () => ({ writeDatabaseDump: mocks.writeDump }));
@@ -131,7 +139,7 @@ beforeEach(() => {
         return null;
     });
     mocks.writeDump.mockResolvedValue({ fileName: "feb_shop.sql" });
-    mocks.openArchive.mockResolvedValue({ masterKey: undefined, dispose: vi.fn() });
+    mocks.openArchive.mockResolvedValue({ masterKey: undefined, indexSha256: "index-of-the-copy", dispose: vi.fn() });
     mocks.dumpSizes.mockImplementation(async (records: { id: string }[]) => new Map(records.map((record) => [record.id, { stored: 100, unpacked: 400 }])));
     mocks.restoreShared.mockResolvedValue({ success: true, executionId: "run-1", providerExecutionId: "msp-run-1" });
 });
@@ -238,7 +246,8 @@ describe("what a customer does with a backup", () => {
         const prepared = await prepareSharedDownload("acme", "u-acme", ref);
         // The copy whose check passed comes first.
         expect(mocks.writeDump).toHaveBeenCalledWith(
-            { storageConfigId: "msp-s3", file: "Shared/feb.tar", database: "shop", keyOverride: { profileId: "msp-key" } },
+            // `accept` checks the proof of the copy on the archive the dump is read from, see shared-copy-proof.test.ts.
+            { storageConfigId: "msp-s3", file: "Shared/feb.tar", database: "shop", keyOverride: { profileId: "msp-key" }, accept: expect.any(Function) },
             expect.any(String)
         );
         // The name of the archive starts with the job of the server's tenant, the time takes its place.
@@ -263,7 +272,7 @@ describe("what a customer does with a backup", () => {
             return { fileName: "feb_shop.sql" };
         });
         await prepareSharedDownload("acme", "u-acme", await refOf("acme", "shop", "2026-02-10"));
-        expect(mocks.writeDump).toHaveBeenCalledWith({ storageConfigId: "msp-nas", file: "Shared/feb.tar", database: "shop" }, expect.any(String));
+        expect(mocks.writeDump).toHaveBeenCalledWith({ storageConfigId: "msp-nas", file: "Shared/feb.tar", database: "shop", accept: expect.any(Function) }, expect.any(String));
         expect(scope).toEqual({ kind: "tenant", tenantId: "default" });
     });
 
@@ -295,7 +304,8 @@ describe("what a customer does with a backup", () => {
                 keyOverride: { profileId: "msp-key" },
                 triggerInfo: { type: "Manual", label: "Ana" },
                 // The run in the customer's History names the database, never the archive of the server.
-                shared: { databaseName: "shop_acme", provider: { tenantId: "default", name: "Default", customer: "Acme" }, copyTenantId: "default" },
+                // The restore reads the index whose proof was checked, nothing laid there meanwhile.
+                shared: { databaseName: "shop_acme", provider: { tenantId: "default", name: "Default", customer: "Acme" }, copyTenantId: "default", indexSha256: "index-of-the-copy" },
             },
             "acme"
         );

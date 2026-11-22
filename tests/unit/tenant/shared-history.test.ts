@@ -25,10 +25,18 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
-// Every backup of these listings was written by a run of the server's tenant, which `recorded-backups` asks. Its own test is shared-backup-listing.test.ts.
-vi.mock("@/services/tenant/recorded-backups", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("@/services/tenant/recorded-backups")>();
-    return { ...actual, recordedCopies: async (_tenantId: string, copies: { destinationId: string; path: string }[]) => new Set(copies.map((copy) => actual.copyKey(copy.destinationId, copy.path))) };
+// Every backup of these listings was written by a run of the server's tenant with the times of its
+// sidecar, which the proof of a copy asks. Its own tests are shared-backup-listing.test.ts and shared-copy-proof.test.ts.
+vi.mock("@/services/tenant/shared-copy-proof", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/services/tenant/shared-copy-proof")>();
+    return {
+        ...actual,
+        proofOf: (_destinationId: string, listed: { createdAt: string; dumpsStartedAt?: string }) => ({
+            proof: { kind: "recorded", digests: [] },
+            createdAt: listed.createdAt,
+            ...(listed.dumpsStartedAt ? { dumpsStartedAt: listed.dumpsStartedAt } : {}),
+        }),
+    };
 });
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: mocks.listing } }));
 vi.mock("@/services/restore/archive-download", () => ({ writeDatabaseDump: mocks.writeDump }));

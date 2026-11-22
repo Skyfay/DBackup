@@ -6,7 +6,8 @@ import { normalizePath } from "@/services/storage/explorer-model";
 import { storageService, type RichFileInfo } from "@/services/storage/storage-service";
 import { providedTo } from "@/services/sharing/provided";
 import type { OwnerFacts } from "./owner-facts";
-import { copyKey, recordedCopies } from "./recorded-backups";
+import { recordedRunsOf } from "./recorded-backups";
+import { proofOf, type CopyProof } from "./shared-copy-proof";
 
 /**
  * The backups of a shared server as plain records: every backup of the server at the destinations
@@ -17,10 +18,12 @@ import { copyKey, recordedCopies } from "./recorded-backups";
 
 export { factsOf, type OwnerFacts } from "./owner-facts";
 
-/** One backup of the server as one destination lists it. */
+/** One backup of the server as one destination lists it, with the times its proof gives. */
 export interface ServerBackupFile {
     destinationId: string;
     file: RichFileInfo & { createdAt: string };
+    /** What proves that DBackup made this copy, which the download and the restore check, see `shared-copy-proof.ts`. */
+    proof: CopyProof;
 }
 
 /**
@@ -37,8 +40,9 @@ function fromServer(file: RichFileInfo, sourceId: string): boolean {
  * server's tenant and every destination another tenant shares with it, so a backup of a job deleted
  * since still counts. An archive of earlier versions holds the whole server in one file and is left
  * out. A deleted server that shared databases still has its backups, found by the server they name.
- * Only a copy a backup run of the server's tenant recorded counts, see `recorded-backups.ts`, since
- * a customer restores it with the login of the provider.
+ * Only a copy that can carry a proof that DBackup made it counts, a run of the server's tenant or
+ * the seal of its key, see `shared-copy-proof.ts`, since a customer restores it with the login of
+ * the provider.
  */
 export async function serverBackupFiles(sourceId: string): Promise<ServerBackupFile[]> {
     const source = (await prisma.adapterConfig.findFirst({ where: { id: sourceId, type: "database" }, select: { tenantId: true } }))
@@ -50,7 +54,7 @@ export async function serverBackupFiles(sourceId: string): Promise<ServerBackupF
     ]);
     const destinations = [...own, ...provided.map((destination) => ({ id: destination.id }))];
 
-    const found: ServerBackupFile[] = [];
+    const found: Omit<ServerBackupFile, "proof">[] = [];
     for (const destination of destinations) {
         // The listing of the server's tenant, never one of a customer the destination is shared
         // with. On a destination another tenant shares, it holds the folder of the server's tenant.
@@ -64,8 +68,13 @@ export async function serverBackupFiles(sourceId: string): Promise<ServerBackupF
             found.push({ destinationId: destination.id, file: { ...file, createdAt: file.createdAt } });
         }
     }
-    const recorded = await recordedCopies(source.tenantId, found.map(({ destinationId, file }) => ({ destinationId, path: file.path })));
-    return found.filter(({ destinationId, file }) => recorded.has(copyKey(destinationId, file.path)));
+    const runs = await recordedRunsOf(source.tenantId, found.map(({ file }) => file.path));
+    return found.flatMap(({ destinationId, file }) => {
+        const proven = proofOf(destinationId, file, runs);
+        if (!proven) return [];
+        const { proof, createdAt, dumpsStartedAt } = proven;
+        return [{ destinationId, file: { ...file, createdAt, dumpsStartedAt }, proof }];
+    });
 }
 
 /** The key of a backup however many destinations hold it, the same at each of them. */
@@ -94,6 +103,8 @@ export interface SharedCopy {
     destinationId: string;
     file: string;
     profileId: string | null;
+    /** What the read checks before it hands anything out, see `shared-copy-proof.ts`. */
+    proof: CopyProof;
 }
 
 /** One backup of one database from the time a customer held it, with the copies it lies in. */
@@ -142,6 +153,14 @@ function heldWhileMade(facts: OwnerFacts, boundaries: readonly number[], tenantI
     const times = [from, madeAt];
     for (let i = firstAfter(boundaries, from); i < boundaries.length && boundaries[i] < madeAt; i++) times.push(boundaries[i]);
     return times.every((time) => ownerAt(facts.assignments, facts.rules, databaseName, new Date(time)) === tenantId);
+}
+
+/**
+ * Whether the customer held the database at the time sealed in the index of a backup, which the
+ * read of a copy proven by its seal asks, see `shared-copy-proof.ts`.
+ */
+export function heldAtSealedTime(facts: OwnerFacts, tenantId: string, databaseName: string, sealedAt: string): boolean {
+    return heldWhileMade(facts, boundariesOf(facts), tenantId, databaseName, { createdAt: sealedAt } as ServerBackupFile["file"]);
 }
 
 /** Every time a fact of the server starts, ends or was made, sorted. */
@@ -193,7 +212,7 @@ export function sharedBackupsOf(tenantId: string, sourceId: string, databaseName
                 createdAt: first.file.createdAt,
                 encrypted: copies.some(({ file }) => !!file.isEncrypted),
                 verification: verificationOf(copies),
-                copies: ordered.map(({ destinationId, file }) => ({ destinationId, file: file.path, profileId: file.encryptionProfileId ?? null })),
+                copies: ordered.map(({ destinationId, file, proof }) => ({ destinationId, file: file.path, profileId: file.encryptionProfileId ?? null, proof })),
             };
         })
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));

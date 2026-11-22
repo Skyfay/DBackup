@@ -30,7 +30,7 @@ function index() {
     return { databases, entries: new Map([["#1", { k: "e", n: 1, member: "d/000001", off: 0, size: 1000 }], ["#2", { k: "e", n: 2, member: "d/000002", off: 0, size: 2000 }]]) };
 }
 
-const copy = (destinationId: string, file = "Shared/feb.tar", profileId: string | null = "msp-key") => ({ destinationId, file, profileId });
+const copy = (destinationId: string, file = "Shared/feb.tar", profileId: string | null = "msp-key") => ({ destinationId, file, profileId, proof: { kind: "recorded" as const, digests: [] } });
 const request = (id: string, databaseName = "shop", copies = [copy("nas")]) => ({ id, databaseName, copies });
 
 beforeEach(() => {

@@ -20,7 +20,7 @@ import { entryKey, type IndexDatabaseLine } from "@/lib/archive/types";
 import { ValidationError } from "@/lib/logging/errors";
 import type { KeyOverride } from "@/services/backup/key-resolution";
 import { downloadShape, resolveContents } from "./archive-selection";
-import { describeSelection, openArchiveForRestore, streamFileRestore, type FileRestoreInput, type FileRestorePlan } from "./file-restore";
+import { describeSelection, openArchiveForRestore, streamFileRestore, type FileRestoreInput, type FileRestorePlan, type OpenedArchive } from "./file-restore";
 import { reserveTempSpace } from "./temp-space";
 import { PRIVATE_FILE_MODE } from "@/lib/private-temp-dir";
 
@@ -173,11 +173,19 @@ function pickDatabase(databases: IndexDatabaseLine[], hasDirectories: boolean, n
  * the private folder, see `privateTempPath`, since the dump is the data of the database, decrypted.
  */
 export async function writeDatabaseDump(
-    params: { storageConfigId: string; file: string; database?: string; keyOverride?: KeyOverride },
+    params: {
+        storageConfigId: string;
+        file: string;
+        database?: string;
+        keyOverride?: KeyOverride;
+        /** Throws for an archive the caller does not take, before anything is read out of it. */
+        accept?: (archive: OpenedArchive) => void;
+    },
     localPath: string
 ): Promise<{ fileName: string }> {
     const archive = await openArchiveForRestore(params.storageConfigId, params.file, params.keyOverride);
     try {
+        params.accept?.(archive);
         const database = pickDatabase(archive.index.databases, archive.index.directories.length > 0, params.database);
         const entry = archive.index.entries.get(entryKey(undefined, database.n));
         if (!entry) throw new Error(`Archive index is inconsistent: database '${database.name}' has no entry`);

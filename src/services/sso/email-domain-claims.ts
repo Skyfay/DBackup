@@ -11,12 +11,13 @@ import { HOME_TENANT_ID } from "@/lib/tenant/home";
 
 export const CLAIMED_EMAIL = "The domain of this email signs in through the provider of another tenant. Only someone who manages the accounts of the platform can use it here.";
 
-type Claim = { domain: string | null; tenantId: string | null };
+export type Claim = { domain: string | null; tenantId: string | null };
 
 /** The providers that claim a domain. Few do, and one saved before domains were kept in lowercase still counts. */
 const claims = (): Promise<Claim[]> => prisma.ssoProvider.findMany({ where: { domain: { not: null } }, select: { domain: true, tenantId: true } });
 
-function claimOf(email: string, providers: readonly Claim[]): string | null {
+/** The tenant whose provider claims the domain of an email, first match like every other reader, null when none does. */
+export function claimOf(email: string, providers: readonly Claim[]): string | null {
     const domain = domainOfEmail(email);
     if (!domain) return null;
     const claim = providers.find((provider) => normalizeDomain(provider.domain) === domain);

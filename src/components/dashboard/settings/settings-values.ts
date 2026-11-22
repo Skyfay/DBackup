@@ -8,6 +8,9 @@ import type { PartChange } from "./settings-frame";
 /** The times after which a run that stops reporting fails. 0 turns the watchdog off. */
 export const STUCK_CHOICES = [0, 30, 60, 180, 360, 720, 1440] as const;
 
+/** The longest a run may take. 0 sets no limit. */
+export const MAX_RUN_CHOICES = [0, 360, 720, 1440, 2880, 4320, 10080] as const;
+
 /** How long a session lasts, in seconds. */
 export const SESSION_CHOICES = [3600, 28800, 86400, 259200, 604800, 1209600, 2592000, 7776000] as const;
 

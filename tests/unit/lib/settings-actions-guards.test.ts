@@ -64,7 +64,7 @@ const { updateRateLimitSettings } = await import("@/app/actions/settings/rate-li
 const { saveConfigBackupSettingsAction } = await import("@/app/actions/backup/config-backup-settings");
 const { saveSystemTaskAction, runSystemTaskAction } = await import("@/app/actions/settings/system-tasks");
 
-const GENERAL = { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, checkForUpdates: true, showQuickSetup: false };
+const GENERAL = { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, maxRunMinutes: 1440, checkForUpdates: true, showQuickSetup: false };
 const LIMIT = { points: 5, duration: 60 };
 const CONFIG = { enabled: false, storageId: "", profileId: "", schedule: "0 3 * * *", includeStatistics: false, retention: 10 };
 

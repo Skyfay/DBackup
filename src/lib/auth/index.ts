@@ -1,9 +1,11 @@
 import { betterAuth } from "better-auth";
+import { pinnedFetch } from "@/lib/network/pinned-http";
+import { ssoFetchReach } from "./sso-fetch-reach";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { PROFILE_CHANGE_REFUSED, SERVER_ONLY_ENDPOINT_REFUSED, TRUSTED_DEVICE_REFUSED, asksTrustedDevice, profileChangeRefused, refusedFromBrowser } from "@/lib/auth/profile-guard";
 import { refuseWeakPassword } from "@/lib/auth/password-guard";
 import { claimFirstSignUp, refuseLateSignUp } from "@/lib/auth/sign-up-guard";
-import { keepPasskeyFactor } from "@/lib/auth/passkey-factor-guard";
+import { beforeUserUpdate } from "@/lib/auth/user-update-guard";
 import { refusePasskeyFirstFactor } from "@/lib/auth/passkey-login-guard";
 import { keptSessionAge, refuseWithoutReauth } from "@/lib/auth/reauth-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -42,6 +44,18 @@ async function getSessionDuration(): Promise<number> {
 const originalFetch = global.fetch;
 global.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input instanceof Request ? input.url : "";
+
+    // A fetch of the SSO plugin for the provider of a tenant that blocks the local network dials
+    // only checked addresses, so a name of the provider cannot lead elsewhere at connect time.
+    const reach = ssoFetchReach();
+    if (reach && url.startsWith("http")) {
+        const request = input instanceof Request ? input : null;
+        const headers = new Headers(request?.headers ?? undefined);
+        new Headers(init?.headers ?? undefined).forEach((value, name) => headers.set(name, value));
+        if (!headers.has("User-Agent")) headers.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36");
+        const body = init?.body ?? (request && request.method !== "GET" && request.method !== "HEAD" ? await request.arrayBuffer() : undefined);
+        return pinnedFetch(url, { method: init?.method ?? request?.method ?? "GET", headers, ...(body !== undefined ? { body } : {}), ...(init?.signal ? { signal: init.signal } : {}) }, reach);
+    }
 
     // Only patch external requests (http/https) to avoid messing with internal calls
     // And specifically target potential OIDC endpoints if possible, or just apply conservatively
@@ -283,8 +297,9 @@ export const auth = betterAuth({
                 after: afterSsoUser,
             },
             update: {
-                // Turning off the authenticator app leaves a passkey as the second factor on.
-                before: keepPasskeyFactor,
+                // Turning off the authenticator app leaves a passkey as the second factor on, and
+                // only DBackup marks an email as set by an admin or a provider.
+                before: beforeUserUpdate,
             },
         },
         account: {

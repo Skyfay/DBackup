@@ -93,6 +93,13 @@ describe('OidcProviderService', () => {
             );
         });
 
+        it('refuses an issuer with a wildcard, a question mark or a user part before anything is stored', async () => {
+            for (const issuer of ['https://*.acme.ch', 'http://172.16?5.9*', 'https://someone@id.acme.ch', 'ftp://id.acme.ch']) {
+                await expect(OidcProviderService.createProvider({ ...baseInput, issuer })).rejects.toThrow(/issuer/);
+            }
+            expect(prismaMock.ssoProvider.create).not.toHaveBeenCalled();
+        });
+
         it('uses issuer to build discoveryEndpoint fallback', async () => {
             prismaMock.ssoProvider.create.mockResolvedValue(mockProvider as any);
 

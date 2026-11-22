@@ -8,7 +8,7 @@
  * Left alone: the reads, a request with an API key (a page of another site cannot set the
  * `Authorization` header without a preflight DBackup never allows), a request without the session
  * cookie, the routes of better-auth under `/api/auth`, which check the origin themselves, and a
- * client that sends neither header, which is no browser. Runs in the middleware, so it imports
+ * client that sends neither header, which is no browser. Runs in the proxy, so it imports
  * nothing of the server.
  */
 

@@ -14,7 +14,7 @@ const bodySchema = z.object({ domain: z.string().trim().min(1).max(253) });
  * Public on purpose: nobody is signed in on the login page. It answers for one domain at a time
  * with the name and logo of the provider and never a tenant, so the page does not list every
  * customer's domain to whoever opens it. The domain comes in the body, kept out of logs of
- * addresses, and the mutation rate limit of the middleware slows down anyone guessing domains.
+ * addresses, and the mutation rate limit of the proxy slows down anyone guessing domains.
  * better-auth's own sign-in answers the same question for an email.
  */
 export async function POST(request: NextRequest) {

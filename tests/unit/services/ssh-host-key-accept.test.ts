@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 
 const mocks = vi.hoisted(() => ({
-    /** The key the server presents at the one login of an accept, null for a server that does not let DBackup in. */
+    /** The key the server presents in the handshake of an accept, null for a server that cannot be reached. */
     presents: null as { type: string; key: string; fingerprint: string } | null,
     hostLocal: vi.fn(),
     check: vi.fn(),
+    find: vi.fn(),
 }));
 
 vi.mock("@/lib/logging/logger", () => {
@@ -20,10 +21,11 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn().mockRe
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: vi.fn(async (row: { config: string }) => JSON.parse(row.config)) }));
 vi.mock("@/services/adapters/adapter-create", () => ({ assertMayManageHostLocal: mocks.hostLocal }));
 vi.mock("@/lib/transport/adapter-invoke", () => ({ runConnectivityCheck: mocks.check }));
+vi.mock("@/lib/transport/host-key-probe", () => ({ findHostKey: mocks.find }));
 
 import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { parseMetadata, storedPin, withPin } from "@/lib/adapters/ssh-host-key-pins";
-import { hostKeyFingerprint, hostKeyOf } from "@/lib/transport/host-key";
+import { hostKeyFingerprint } from "@/lib/transport/host-key";
 import { auditService } from "@/services/audit-service";
 import { acceptHostKey, forgetHostKey } from "@/services/adapters/ssh-host-key-accept";
 import { HOST_KEY_AUDIT } from "@/services/adapters/ssh-host-key-service";
@@ -45,12 +47,9 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.presents = newKey;
     mocks.hostLocal.mockResolvedValue(undefined);
-    // The login of the accept: the SSH client reports the key it saw once it is in.
-    mocks.check.mockImplementation(async (_adapter: unknown, config: unknown) => {
-        if (!mocks.presents) return { success: false, message: "Permission denied" };
-        await hostKeyOf(config)?.onFirstKey?.(mocks.presents);
-        return { success: true, message: "ok" };
-    });
+    // The handshake of the accept: the server presents its key, which counts only with the fingerprint asked for.
+    mocks.find.mockImplementation(async (_endpoint: unknown, _reach: unknown, fingerprint: string) =>
+        (mocks.presents?.fingerprint === fingerprint ? mocks.presents : null));
     row = {
         id: "conn-1", name: "Offsite", type: "storage", adapterId: "sftp", tenantId: "tenant-a",
         primaryCredentialId: null, sshCredentialId: null,
@@ -77,11 +76,11 @@ describe("trusting the new host key of a server", () => {
         expect(auditService.log).toHaveBeenCalledWith("u-lena", "UPDATE", "ADAPTER", expect.objectContaining({ action: HOST_KEY_AUDIT.accept, name: "Offsite", previous: oldKey.fingerprint, fingerprint: newKey.fingerprint }), "conn-1", { tenantId: "tenant-a" });
     });
 
-    it("logs in without the old pin, which would refuse the very key it is to read", async () => {
+    it("reads the key without logging in, the type of the old pin first", async () => {
         await acceptHostKey("conn-1", newKey.fingerprint, lena);
-        const policy = hostKeyOf(mocks.check.mock.calls[0][1]);
-        expect(policy).toMatchObject(endpoint);
-        expect(policy?.pinned).toBeUndefined();
+
+        expect(mocks.check).not.toHaveBeenCalled();
+        expect(mocks.find).toHaveBeenCalledWith(endpoint, null, newKey.fingerprint, "ssh-ed25519");
     });
 
     it("stores nothing when the server presents another key than the one shown", async () => {
@@ -94,11 +93,11 @@ describe("trusting the new host key of a server", () => {
         expect(auditService.log).not.toHaveBeenCalled();
     });
 
-    it("stores nothing when the login fails, so a server that merely answers the port is not trusted", async () => {
+    it("stores nothing when the server cannot be reached", async () => {
         mocks.presents = null;
         const before = row!.metadata;
 
-        await expect(acceptHostKey("conn-1", newKey.fingerprint, lena)).rejects.toThrow("could not log in");
+        await expect(acceptHostKey("conn-1", newKey.fingerprint, lena)).rejects.toThrow("could not be reached");
 
         expect(row!.metadata).toBe(before);
     });
@@ -109,7 +108,7 @@ describe("trusting the new host key of a server", () => {
         await expect(acceptHostKey("conn-1", newKey.fingerprint, lena)).rejects.toBeInstanceOf(ValidationError);
         await expect(forgetHostKey("conn-1", lena)).rejects.toBeInstanceOf(ValidationError);
 
-        expect(mocks.check).not.toHaveBeenCalled();
+        expect(mocks.find).not.toHaveBeenCalled();
         expect(prismaMock.adapterConfig.updateMany).not.toHaveBeenCalled();
     });
 

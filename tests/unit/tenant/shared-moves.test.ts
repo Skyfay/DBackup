@@ -29,6 +29,19 @@ vi.mock("@/lib/logging/logger", () => ({
 }));
 // The services use the client of the app, here the one of the test database with its tenant filter.
 vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
+// Every backup of these listings was written by a run of the server's tenant with the times of its
+// sidecar, which the proof of a copy asks. Its own tests are shared-backup-listing.test.ts and shared-copy-proof.test.ts.
+vi.mock("@/services/tenant/shared-copy-proof", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/services/tenant/shared-copy-proof")>();
+    return {
+        ...actual,
+        proofOf: (_destinationId: string, listed: { createdAt: string; dumpsStartedAt?: string }) => ({
+            proof: { kind: "recorded", digests: [] },
+            createdAt: listed.createdAt,
+            ...(listed.dumpsStartedAt ? { dumpsStartedAt: listed.dumpsStartedAt } : {}),
+        }),
+    };
+});
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { readCachedListing: mocks.listing } }));
 vi.mock("@/services/restore/archive-download", () => ({ writeDatabaseDump: mocks.writeDump }));
 // A restore opens the copy first, to know it answers and to find its key.

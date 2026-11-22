@@ -52,7 +52,7 @@ A new table needs nothing here. A table that can never hold a secret may join th
 
 | Route | Who | What |
 |-------|-----|------|
-| `POST /api/settings/config-backup/restore` | Platform admin session | Checks an uploaded file, up to the 10 MB the middleware passes |
+| `POST /api/settings/config-backup/restore` | Platform admin session | Checks an uploaded file, up to the 10 MB the proxy passes |
 | `POST /api/settings/config-backup/restore/destination` | Platform admin session | Checks a backup at a destination, read on the server |
 | `POST /api/settings/config-backup/restore/apply` | Platform admin session | Restores a checked backup by its token |
 | `POST /api/setup/restore`, `/api/setup/restore/apply` | Anyone while no account exists | The same on the sign-up page of a new instance |

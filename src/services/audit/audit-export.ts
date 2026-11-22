@@ -10,13 +10,14 @@ export const AUDIT_EXPORT_LIMIT = 50_000;
 const HEADER = ["Time (UTC)", "Who", "API key", "Action", "Area", "What", "Record ID", "Address", "Browser", "Details"];
 
 /**
- * A cell as CSV: quoted when it holds a comma, a quote or a line break. A cell that starts like a
- * formula gets a quote in front, so a spreadsheet shows it instead of running it.
+ * A cell as CSV: quoted when it holds a comma, a semicolon, a tab, a quote or a line break, so a
+ * spreadsheet that splits at any of them keeps it one cell. A cell that starts like a formula gets
+ * a quote in front, so a spreadsheet shows it instead of running it.
  */
 export function csvCell(value: string | null | undefined): string {
     let text = value ?? "";
     if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    return /[",;\t\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 /** The entries a filter keeps of those the view sees, as a CSV file, one line each, with the sentence the list shows. */

@@ -32,6 +32,7 @@ describe("the version a connection test keeps with the saved connection", () => 
         vi.clearAllMocks();
         mocks.run.mockResolvedValue({ success: true, message: "Connected", version: "8.0.36" });
         mocks.mayReachHost.mockResolvedValue(false);
+        prismaMock.adapterConfig.updateMany.mockResolvedValue({ count: 1 } as never);
     });
 
     it("is kept when the test tried the saved connection", async () => {
@@ -39,7 +40,7 @@ describe("the version a connection test keeps with the saved connection", () => 
 
         await testConnection({ adapterId: "mysql", config: { host: "db.internal", port: 3306 }, configId: "shop", storedConfigId: "shop" });
 
-        expect(prismaMock.adapterConfig.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "shop" } }));
+        expect(prismaMock.adapterConfig.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "shop" }), data: { metadata: expect.stringContaining("8.0.36") } }));
     });
 
     it("is not kept for another server, another adapter or a connection that is gone", async () => {
@@ -50,7 +51,7 @@ describe("the version a connection test keeps with the saved connection", () => 
         prismaMock.adapterConfig.findUnique.mockResolvedValue(null);
         await testConnection({ adapterId: "mysql", config: { host: "db.internal", port: 3306 }, configId: "shop" });
 
-        expect(prismaMock.adapterConfig.update).not.toHaveBeenCalled();
+        expect(prismaMock.adapterConfig.updateMany).not.toHaveBeenCalled();
     });
 
     it("is kept for a connection to the server DBackup runs on only from whoever may test one", async () => {
@@ -58,10 +59,10 @@ describe("the version a connection test keeps with the saved connection", () => 
         saved("docker-volume", local);
 
         await testConnection({ adapterId: "docker-volume", config: local, configId: "docker" });
-        expect(prismaMock.adapterConfig.update).not.toHaveBeenCalled();
+        expect(prismaMock.adapterConfig.updateMany).not.toHaveBeenCalled();
 
         mocks.mayReachHost.mockResolvedValue(true);
         await testConnection({ adapterId: "docker-volume", config: local, configId: "docker" });
-        expect(prismaMock.adapterConfig.update).toHaveBeenCalledTimes(1);
+        expect(prismaMock.adapterConfig.updateMany).toHaveBeenCalledTimes(1);
     });
 });

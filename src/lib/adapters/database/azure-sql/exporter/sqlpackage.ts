@@ -18,7 +18,8 @@ import type { BacpacExporter, ExporterLog } from "./types";
  * The exception holds because of why the rule exists: `SshHost` renders env into
  * an `export` prefix so secrets stay out of the *remote* process table. This
  * adapter has no SSH mode at all, by construction - the schema carries no
- * `connectionMode`, so `standardTransport` always returns a DirectHost. The argv
+ * `connectionMode`, and the `transport` resolver of the adapter answers a DirectHost
+ * whatever a stored config holds beside its schema. The argv
  * array therefore never touches a shell, and the exposure is the process table of
  * the very container that already holds the password in memory.
  *

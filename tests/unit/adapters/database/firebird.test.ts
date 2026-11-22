@@ -105,6 +105,17 @@ describe.each<HostKind>(["direct", "ssh"])("Firebird over a %s host", (kind) => 
             ]);
         });
 
+        it("reads without the triggers of the database, and with them for a login that may not skip them", async () => {
+            const host = firebirdHost(kind, {
+                onExec: (argv) => (argv.includes("-nodbtriggers") ? { code: 1, stderr: "System privilege IGNORE_DB_TRIGGERS is missing" } : { stdout: "  12  \n" }),
+            });
+
+            expect(await getDatabasesWithStats(baseConfig as never, host)).toEqual([
+                { name: "shop", path: "/var/lib/firebird/shop.fdb", tableCount: 12 },
+            ]);
+            expect(host.calls.exec.map((argv) => argv.includes("-nodbtriggers"))).toEqual([true, false]);
+        });
+
         it("falls back to a path-only entry when the query fails", async () => {
             const host = firebirdHost(kind, { onExec: () => ({ code: 1, stderr: "unavailable database" }) });
 
@@ -203,6 +214,35 @@ describe.each<HostKind>(["direct", "ssh"])("Firebird over a %s host", (kind) => 
             expect(gbakCall).toContain("SYSDBA");
             expect(gbakCall.join(" ")).not.toContain("masterkey");
             expect(seenEnv?.ISC_PASSWORD).toBe("masterkey");
+        });
+
+        it("attaches without the triggers of the database, which whoever holds it writes", async () => {
+            const host = createFakeHost({ kind, onSpawn: (argv) => (argv.includes("-z") ? { stdout: "gbak: Firebird 5.0" } : { code: 0 }) });
+
+            await dump({ ...baseConfig, database: "shop" } as never, "/tmp/out.fbk", host);
+
+            const backups = host.calls.spawn.filter((argv) => argv.includes("-b"));
+            expect(backups).toHaveLength(1);
+            expect(backups[0]).toContain("-nodbtriggers");
+        });
+
+        it("attaches with the triggers once more when the login may not skip them", async () => {
+            const host = createFakeHost({
+                kind,
+                onSpawn: (argv) => {
+                    if (argv.includes("-z")) return { stdout: "gbak: Firebird 5.0" };
+                    return argv.includes("-nodbtriggers") ? { code: 1, stderr: "System privilege IGNORE_DB_TRIGGERS is missing" } : { code: 0 };
+                },
+            });
+            const logs: string[] = [];
+
+            const result = await dump({ ...baseConfig, database: "shop" } as never, "/tmp/out.fbk", host, (message) => logs.push(message));
+
+            expect(result.error).toBeUndefined();
+            expect(result.success).toBe(true);
+            const backups = host.calls.spawn.filter((argv) => argv.includes("-b"));
+            expect(backups.map((argv) => argv.includes("-nodbtriggers"))).toEqual([true, false]);
+            expect(logs.some((line) => line.includes("IGNORE_DB_TRIGGERS"))).toBe(true);
         });
 
         it("fails with a clear error for an unknown alias", async () => {

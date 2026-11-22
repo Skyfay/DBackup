@@ -15,6 +15,7 @@ import { backupKeyOf, factsOf, serverBackupFiles, sharedBackupsOf, sharedDumpNam
 import { dumpSizes, type DumpSize } from "./shared-dump-sizes";
 import { onDemandStates, requestersByBackup, type SharedOnDemand } from "./shared-on-demand";
 import { groupOfBackup, placeKey, restoreTarget, sharesSingleDatabasesOf, tenantPlaces, type HeldPlace, type TenantPlaces } from "./shared-places";
+import { assertCopyProven, type CopyReader } from "./shared-copy-read";
 import { randomUUID } from "crypto";
 
 /**
@@ -273,6 +274,7 @@ export function prepareSharedDownload(tenantId: string, userId: string, ref: Sha
         const backup = await checkedBackup(tenantId, ref);
         const serverTenantId = await serverTenantOf(ref.sourceId);
         const names = await restoreNames(tenantId, serverTenantId, ref.sourceId);
+        const reader: CopyReader = { tenantId, databaseName: ref.databaseName, facts: await factsOf(ref.sourceId) };
         const provider = { tenantId: serverTenantId, serverName: names.serverName, customerName: names.customerName };
         let failure: unknown = null;
         for (const copy of backup.copies) {
@@ -283,8 +285,9 @@ export function prepareSharedDownload(tenantId: string, userId: string, ref: Sha
             try {
                 // Read in the tenant of the server, whose backup it is: with the key the backup
                 // names, or without one by Smart Recovery through the keys of that tenant alone.
+                // The proof of the copy is checked on the archive the dump is read from, before a byte of it.
                 const written = await runAsTenant(serverTenantId, () => writeDatabaseDump(
-                    { storageConfigId: copy.destinationId, file: copy.file, database: ref.databaseName, ...(keyOverride ? { keyOverride } : {}) },
+                    { storageConfigId: copy.destinationId, file: copy.file, database: ref.databaseName, ...(keyOverride ? { keyOverride } : {}), accept: (archive) => assertCopyProven(copy, archive, reader) },
                     tempFile
                 ));
                 const fileName = sharedDumpName(copy.file, written.fileName, backup.createdAt);
@@ -306,14 +309,16 @@ export function prepareSharedDownload(tenantId: string, userId: string, ref: Sha
  * The copy is opened in the tenant of the server, so a backup whose listing names no key is
  * matched against that tenant's keys alone, and the restore gets the key that was found there.
  */
-async function readableCopy(backup: SharedBackupRecord, serverTenantId: string): Promise<{ copy: SharedCopy; keyOverride?: KeyOverride }> {
+async function readableCopy(backup: SharedBackupRecord, serverTenantId: string, reader: CopyReader): Promise<{ copy: SharedCopy; keyOverride?: KeyOverride; indexSha256: string }> {
     for (const copy of backup.copies) {
         const named = namedKey(copy);
         try {
             const archive = await runAsTenant(serverTenantId, () => openArchiveForRestore(copy.destinationId, copy.file, named));
             try {
+                assertCopyProven(copy, archive, reader);
                 const found = archive.masterKey ? { rawKeyHex: archive.masterKey.toString("hex") } : undefined;
-                return { copy, keyOverride: named ?? found };
+                // The restore reads the index whose proof was checked here, see `SharedRestore.indexSha256`.
+                return { copy, keyOverride: named ?? found, indexSha256: archive.indexSha256 };
             } finally {
                 await archive.dispose();
             }
@@ -358,7 +363,7 @@ async function restoreNames(tenantId: string, providerTenantId: string, sourceId
  * that belongs to someone else since. It reads the first copy of the backup that opens.
  */
 export async function restoreSharedBackup(tenantId: string, ref: SharedBackupRef, triggerLabel: string, now = new Date()): Promise<SharedRestoreStarted> {
-    const { backup, target, serverTenantId, providerTenantId, names } = await runAsSystem(async () => {
+    const { backup, target, serverTenantId, providerTenantId, names, facts } = await runAsSystem(async () => {
         const checked = await checkedBackup(tenantId, ref);
         const found = await restoreTarget(tenantId, ref, checked.createdAt, now);
         if (!found.target) throw new ValidationError(found.reason ?? "This backup can only be downloaded.");
@@ -366,12 +371,12 @@ export async function restoreSharedBackup(tenantId: string, ref: SharedBackupRef
         if (checked.copies.length === 0) throw new ValidationError("This backup can only be downloaded.");
         // A database that moved is restored into the server of now, whose tenant sees the run.
         const providerTenantId = found.target.sourceId === ref.sourceId ? serverTenantId : await serverTenantOf(found.target.sourceId);
-        return { backup: checked, target: found.target, serverTenantId, providerTenantId, names: await restoreNames(tenantId, providerTenantId, found.target.sourceId) };
+        return { backup: checked, target: found.target, serverTenantId, providerTenantId, names: await restoreNames(tenantId, providerTenantId, found.target.sourceId), facts: await factsOf(ref.sourceId) };
     });
     // From here on nobody gives the database away, takes it back or moves it, until the run ended.
     const release = holdSharedRestore({ sourceId: target.sourceId, databaseName: target.databaseName, tenantId });
     try {
-        const { copy, keyOverride } = await readableCopy(backup, serverTenantId);
+        const { copy, keyOverride, indexSha256 } = await readableCopy(backup, serverTenantId, { tenantId, databaseName: ref.databaseName, facts });
         const result = await restoreService.restoreShared(
             {
                 storageConfigId: copy.destinationId,
@@ -382,7 +387,7 @@ export async function restoreSharedBackup(tenantId: string, ref: SharedBackupRef
                 ...(keyOverride ? { keyOverride } : {}),
                 triggerInfo: { type: "Manual", label: triggerLabel },
                 // The path of the copy is in the view of the server's tenant, also on a destination another tenant provides to it.
-                shared: { databaseName: target.databaseName, provider: { tenantId: providerTenantId, name: names.providerName, customer: names.customerName }, copyTenantId: serverTenantId },
+                shared: { databaseName: target.databaseName, provider: { tenantId: providerTenantId, name: names.providerName, customer: names.customerName }, copyTenantId: serverTenantId, indexSha256 },
             },
             tenantId
         );

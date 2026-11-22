@@ -12,13 +12,13 @@ We strictly separate **Server-Side Auth** and **Client-Side Auth**.
 |-----------|----------|---------|
 | Server Auth | `src/lib/auth.ts` | Better-Auth instance with Prisma adapter |
 | Client Auth | `src/lib/auth-client.ts` | React hooks (`useSession`) |
-| Middleware | `src/middleware.ts` | Route protection (Edge) |
+| Proxy | `src/proxy.ts` | Route protection |
 | Session Utils | `src/lib/session.ts` | Server-side session helpers |
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Client         │────▶│  Middleware      │────▶│  Server Action  │
-│  (React)        │     │  (Edge Runtime)  │     │  or API Route   │
+│  Client         │────▶│  Proxy           │────▶│  Server Action  │
+│  (React)        │     │  (Node.js)       │     │  or API Route   │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
         │                       │                        │
         │                       │                        │
@@ -28,11 +28,11 @@ We strictly separate **Server-Side Auth** and **Client-Side Auth**.
 
 ## Protection Layers
 
-### Layer 1: Middleware (Edge)
+### Layer 1: Proxy
 
-The middleware runs before any component rendering.
+The proxy runs before any component rendering.
 
-**Location**: `src/middleware.ts`
+**Location**: `src/proxy.ts`
 
 ```typescript
 // Only whether a session cookie is there, the layout of the dashboard checks the session itself.
@@ -48,7 +48,7 @@ if (request.nextUrl.pathname.startsWith("/dashboard")) {
 ```
 
 ::: warning
-Middleware does NOT check fine-grained permissions (RBAC), only authentication status.
+The proxy does NOT check fine-grained permissions (RBAC), only authentication status.
 :::
 
 The login page is `/`. Its `next` parameter names the page a sign-in leads to, like `/?next=%2Finvite%3Ftoken%3D...` from the Sign in of an invitation. `safeNextPath` in `src/lib/auth/sign-in-target.ts` takes only a path of this site: one slash at its start, never two, no backslash and no control character. The login page itself, the bare Overview and `/api` lead nowhere, and anything it refuses falls back to `AFTER_SIGN_IN`, the Overview with its marker for the Quick Setup. The login page checks `next` on the server and hands the form the path, which every way of signing in uses as its target: the password with its second factor, a passkey and a sign-in provider as its `callbackURL`. A provider that refuses comes back with its error alone, so the form keeps the path in the storage of the tab for that (`sign-in-next.ts`) and checks it again.

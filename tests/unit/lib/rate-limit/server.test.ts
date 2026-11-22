@@ -19,17 +19,17 @@ vi.mock("@/lib/prisma", () => ({
     },
 }));
 
-// applyExternalConfig must be mockable to verify it is called with the right config
+// applyRateLimitConfig must be mockable to verify it is called with the right config
 vi.mock("@/lib/rate-limit", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/lib/rate-limit")>();
     return {
         ...actual,
-        applyExternalConfig: vi.fn(),
+        applyRateLimitConfig: vi.fn(),
     };
 });
 
 import prisma from "@/lib/prisma";
-import { applyExternalConfig, RATE_LIMIT_DEFAULTS, RATE_LIMIT_KEYS } from "@/lib/rate-limit";
+import { applyRateLimitConfig, RATE_LIMIT_DEFAULTS, RATE_LIMIT_KEYS } from "@/lib/rate-limit";
 import { reloadRateLimits, getRateLimitConfig } from "@/lib/rate-limit/server";
 
 function makeSettings(overrides: Record<string, string> = {}) {
@@ -50,7 +50,7 @@ describe("reloadRateLimits", () => {
         vi.clearAllMocks();
     });
 
-    it("calls applyExternalConfig with values from DB", async () => {
+    it("calls applyRateLimitConfig with values from DB", async () => {
         vi.mocked(prisma.systemSetting.findMany).mockResolvedValue(
             makeSettings({
                 [RATE_LIMIT_KEYS.authPoints]: "10",
@@ -60,7 +60,7 @@ describe("reloadRateLimits", () => {
 
         await reloadRateLimits();
 
-        expect(applyExternalConfig).toHaveBeenCalledWith(
+        expect(applyRateLimitConfig).toHaveBeenCalledWith(
             expect.objectContaining({
                 auth: { points: 10, duration: 120 },
             })
@@ -73,7 +73,7 @@ describe("reloadRateLimits", () => {
 
         await reloadRateLimits();
 
-        expect(applyExternalConfig).toHaveBeenCalledWith({
+        expect(applyRateLimitConfig).toHaveBeenCalledWith({
             auth: RATE_LIMIT_DEFAULTS.auth,
             api: RATE_LIMIT_DEFAULTS.api,
             mutation: RATE_LIMIT_DEFAULTS.mutation,
@@ -87,7 +87,7 @@ describe("reloadRateLimits", () => {
 
         await reloadRateLimits();
 
-        expect(applyExternalConfig).toHaveBeenCalledWith(
+        expect(applyRateLimitConfig).toHaveBeenCalledWith(
             expect.objectContaining({
                 api: expect.objectContaining({ points: RATE_LIMIT_DEFAULTS.api.points }),
             })
@@ -101,7 +101,7 @@ describe("reloadRateLimits", () => {
 
         await reloadRateLimits();
 
-        expect(applyExternalConfig).toHaveBeenCalledWith(
+        expect(applyRateLimitConfig).toHaveBeenCalledWith(
             expect.objectContaining({
                 mutation: expect.objectContaining({ points: RATE_LIMIT_DEFAULTS.mutation.points }),
             })
@@ -112,7 +112,7 @@ describe("reloadRateLimits", () => {
         vi.mocked(prisma.systemSetting.findMany).mockRejectedValue(new Error("DB error"));
 
         await expect(reloadRateLimits()).resolves.toBeUndefined();
-        expect(applyExternalConfig).not.toHaveBeenCalled();
+        expect(applyRateLimitConfig).not.toHaveBeenCalled();
     });
 });
 

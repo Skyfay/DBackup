@@ -116,6 +116,7 @@ describe("the hook on other updates of a user", () => {
 describe("the configuration of better-auth", () => {
     it("runs the hook on every update of a user", async () => {
         const { auth: configured } = await import("@/lib/auth");
-        expect(configured.options.databaseHooks?.user?.update?.before).toBe(keepPasskeyFactor);
+        const { beforeUserUpdate } = await import("@/lib/auth/user-update-guard");
+        expect(configured.options.databaseHooks?.user?.update?.before).toBe(beforeUserUpdate);
     });
 });

@@ -1,7 +1,7 @@
 import { transportSuffix, type ExecutionHost } from "@/lib/transport";
 import { PostgresConfig } from "@/lib/adapters/definitions";
 import { DatabaseInfo } from "@/lib/core/interfaces";
-import { PSQL, buildConnectionArgs, firstReachableDatabase, pgEnv, dbArg } from "./args";
+import { PSQL, buildConnectionArgs, firstReachableDatabase, catalogEnv, dbArg } from "./args";
 
 /**
  * A database adapter cannot fall back to a default transport: guessing "direct"
@@ -107,7 +107,8 @@ async function countTables(
 ): Promise<number | undefined> {
     const result = await host.exec(
         [psql, ...buildConnectionArgs(config), "-d", dbArg(dbName), "-t", "-A", "-c", pgTableCountQuery],
-        { env: pgEnv(config.password) },
+        // Inside a database its owner may have filled with functions of their own, see `catalogEnv`.
+        { env: catalogEnv(config.password) },
     );
     if (result.code !== 0) return undefined;
     const count = parseInt(result.stdout.trim(), 10);

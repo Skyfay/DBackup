@@ -28,7 +28,7 @@ services:
     environment:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
-      - TRUSTED_PROXIES=none # No reverse proxy in front. Behind one, set its address here or remove the line
+      - TRUSTED_PROXIES=none # No reverse proxy in front. Behind one, set its address here
       - BETTER_AUTH_URL=https://localhost:3000
       # - DISABLE_HTTPS=true  # Use plain HTTP - required behind a reverse proxy
       # - TZ=Europe/Zurich  # Optional: Server timezone
@@ -103,7 +103,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | `TMPDIR` | ❌ | Temp directory for large backups, see [Volume Mounts](#volume-mounts). Default: `/tmp` |
 | `LOG_LEVEL` | ❌ | Logging verbosity: `debug`, `info`, `warn`, `error`. Default: `info` |
 | `DISABLE_HTTPS` | ❌ | Set to `true` to use plain HTTP. Default: `false` (HTTPS). **Set this when running behind a reverse proxy** - see [Reverse Proxy Setup](#reverse-proxy-setup) |
-| `TRUSTED_PROXIES` | ❌ | The reverse proxies whose `X-Forwarded-For` counts: addresses, CIDR ranges and the keywords `private` and `cloudflare`, comma-separated, or `none`. Default: `private`, the loopback and private networks, see [The Address of a Client](#the-address-of-a-client) |
+| `TRUSTED_PROXIES` | ❌ | The reverse proxies whose `X-Forwarded-For` counts: addresses, CIDR ranges and the keywords `loopback`, `private` and `cloudflare`, comma-separated, or `none`. Default: `loopback`, a proxy on the same machine, see [The Address of a Client](#the-address-of-a-client) |
 | `TRUSTED_PROXY_HEADER` | ❌ | The header these proxies write the client into: `x-forwarded-for` or `x-real-ip`. Default: `x-forwarded-for` |
 | `PUID` | ❌ | User ID the container runs as. Default: `1001` |
 | `PGID` | ❌ | Group ID the container runs as. Set it to the host's `docker` group to reach the [Docker socket](/user-guide/sources/docker-volumes). Default: `1001` |
@@ -337,11 +337,12 @@ A change of the cookie name signs everyone out once, for example after `BETTER_A
 
 DBackup counts its [rate limits](/user-guide/features/rate-limits) per client address and writes it into the audit log and the sessions. It reads `X-Forwarded-For` only on a connection from a trusted proxy, and walks it from the right, the end each proxy appends to, up to the first address that is no trusted proxy. A client can put any address at the left end, so that one never counts on its own.
 
-By default every proxy in a loopback, private or link-local network is trusted: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7` and `fe80::/10`. That covers a proxy in the same Docker network or on the same host, and Cloudflare Tunnel, whose `cloudflared` runs in your network. `TRUSTED_PROXIES` replaces the list. Besides addresses and ranges it takes two keywords: `private` for the networks above and `cloudflare` for the ranges the edge servers of [Cloudflare](https://www.cloudflare.com/ips/) connect from.
+By default only a proxy on the same machine is trusted, `127.0.0.0/8` and `::1`. A proxy in a Docker network or the LAN, and Cloudflare Tunnel, whose `cloudflared` runs in your network, is named with `TRUSTED_PROXIES`, which replaces the default. Besides addresses and ranges it takes three keywords: `loopback` for the default, `private` for every loopback, private and link-local network (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7` and `fe80::/10`) and `cloudflare` for the ranges the edge servers of [Cloudflare](https://www.cloudflare.com/ips/) connect from.
 
 | Setup | `TRUSTED_PROXIES` |
 | :--- | :--- |
-| A proxy in a Docker network or on the same host, also Cloudflare Tunnel | Leave it unset |
+| A proxy on the same host, outside Docker | Leave it unset |
+| A proxy in a Docker network or the LAN, also Cloudflare Tunnel | Its address, like `172.18.0.2`, or `private` |
 | Cloudflare in front of a proxy on your host, without Tunnel | `private,cloudflare` |
 | Cloudflare in front of DBackup itself, without a proxy | `cloudflare` |
 | DBackup reached directly, without a proxy | `none` |
@@ -360,7 +361,7 @@ An entry that is no address, range or keyword stops DBackup at the start, with a
 DBackup reads one header of the proxy, `X-Forwarded-For` by default, and ignores the other one. A proxy passes on whatever a client sent in a header it does not write itself, so reading both would let a client name its own address. The Nginx example below, Traefik and Caddy all write `X-Forwarded-For`. For a proxy that sets only `X-Real-IP`, set `TRUSTED_PROXY_HEADER=x-real-ip`, which then ignores `X-Forwarded-For`. Without that setting, such a proxy shows its own address for every request. Any other value stops DBackup at the start.
 
 ::: tip Devices in the same network
-With the default, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out, or to `none` when no proxy is in front of DBackup. While `TRUSTED_PROXIES` is unset, DBackup logs a warning the first time such a header counts, with the address it came from and both settings.
+With `private`, a device in one of the private networks that connects to DBackup directly, past the proxy, can still name an address in `X-Forwarded-For`. Set `TRUSTED_PROXIES` to the address of the proxy to rule that out. While `TRUSTED_PROXIES` is unset, DBackup logs a warning the first time it ignores such a header from a private network, with the address it came from and the setting that trusts it.
 :::
 
 ### Nginx

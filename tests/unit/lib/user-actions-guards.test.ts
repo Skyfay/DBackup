@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
         createUser: vi.fn(),
         accountOf: vi.fn(),
         namesOf: vi.fn(),
+        tenantsOfAccounts: vi.fn(async () => []),
         deleteUser: vi.fn(),
         deleteUsers: vi.fn(),
         resetTwoFactor: vi.fn(),

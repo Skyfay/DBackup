@@ -95,6 +95,7 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
 
     const withoutSecondFactor: string[] = [];
     const leftOut = new Set<string>();
+    const notPromoted = new Set<string>();
     for (const user of data.users) {
         const { accounts, groupId: fileGroupId, ...userFields } = user as typeof user & { groupId?: string | null };
         const groupId = fileGroupId ? idHere(ids.groups, fileGroupId) : null;
@@ -113,6 +114,14 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
         });
         if (matchedAccounts.some((account) => !isPlatformsOwn(account))) {
             leftOut.add(user.id);
+            continue;
+        }
+        // A user of the SuperAdmin group of the file becomes a platform admin. An account here that
+        // is none, like one a home admin made under that email with a password of their choosing,
+        // never becomes one by a restore: a platform admin decides that by hand.
+        const promotes = !!groupId && fullAccessIds.has(groupId);
+        if (promotes && matchedAccounts.some((account) => account.platformRole !== PLATFORM_ADMIN_ROLE)) {
+            notPromoted.add(user.id);
             continue;
         }
         // An account that was here keeps whether its email is verified, a sign-in provider links by it.
@@ -163,7 +172,7 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
         // A file without the logins holds the key without its hash.
         if (!key.hashedKey) continue;
         const remappedKey = { ...key, userId: idHere(ids.users, key.userId) };
-        if (leftOut.has(key.userId) || !(await exists(known.users, remappedKey.userId, () => tx.user.findUnique({ where: { id: remappedKey.userId }, select: { id: true } })))) {
+        if (leftOut.has(key.userId) || notPromoted.has(key.userId) || !(await exists(known.users, remappedKey.userId, () => tx.user.findUnique({ where: { id: remappedKey.userId }, select: { id: true } })))) {
             keysLeftOut++;
             continue;
         }
@@ -176,6 +185,10 @@ export async function importUsers({ tx, data, ids, known, notes }: ImportContext
     if (leftOut.size > 0) {
         const emails = data.users.filter((user) => leftOut.has(user.id)).map((user) => user.email);
         notes.push(`${counted(emails.length, "user was", "users were")} left out, since an account of the same email or id here works in another tenant or in none: ${listed(emails)}. Give the account here a group of the home tenant and restore again to merge one.`);
+    }
+    if (notPromoted.size > 0) {
+        const emails = data.users.filter((user) => notPromoted.has(user.id)).map((user) => user.email);
+        notes.push(`${counted(emails.length, "platform admin of the file was", "platform admins of the file were")} left out, since an account of the same email or id here is no platform admin: ${listed(emails)}. Make that account a platform admin by hand if it is the same person, and restore again.`);
     }
     if (keysLeftOut > 0) notes.push(`${counted(keysLeftOut, "API key was", "API keys were")} left out, since the user it belongs to is not here.`);
 }

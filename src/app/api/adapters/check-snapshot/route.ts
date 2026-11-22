@@ -9,6 +9,7 @@ import { getManagePermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { assertMayReadFormConfig } from "@/lib/auth/form-config-access";
 import { assertMayApplySavedLogin, namesSavedLogin } from "@/lib/auth/saved-login-access";
 import { savedLoginRefusal } from "@/lib/server/config-backup-target-guard";
+import { assertOffSharedLoginsOfForm } from "@/services/adapters/shared-login";
 import { logger } from "@/lib/logging/logger";
 import { AdapterError, wrapError } from "@/lib/logging/errors";
 import { answerOf } from "@/lib/adapters/adapter-answer";
@@ -55,6 +56,8 @@ export async function POST(req: NextRequest) {
         // The logins of the destination of the configuration backup never sign in to a host of the form.
         const locked = await savedLoginRefusal(ctx, primaryCredentialId, sshCredentialId);
         if (locked) return locked;
+        // The login of a destination shared with customers never signs in at a host of a form.
+        await assertOffSharedLoginsOfForm({ primaryCredentialId, sshCredentialId }, { adapterId, config });
 
         const adapter = registry.get(adapterId) as StorageAdapter | undefined;
         if (!adapter) {

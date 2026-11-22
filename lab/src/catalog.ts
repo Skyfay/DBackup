@@ -58,6 +58,22 @@ export function dexPerson(kind: "newcomer" | "member", attempt: number): { name:
 /** The provider ID of the SSO tests for one attempt, the end of a redirect URI of the client. */
 export const dexProviderId = (attempt: number): string => `dex-${attempt % DEX.attempts}`;
 
+/**
+ * The domain the provider of a tenant claims in the SSO test of a tenant that blocks the local
+ * network. Apart from the people of `dexPerson`, since the provider of the platform adds nobody of
+ * a domain a tenant claims.
+ */
+export const DEX_TENANT_DOMAIN = "tenant.e2e.dbackup.test";
+
+/** The person of Dex of that tenant for one attempt, new to DBackup. */
+export function dexTenantPerson(attempt: number): { name: string; email: string } {
+    const name = `tenant-${attempt % DEX.attempts}`;
+    return { name, email: `${name}@${DEX_TENANT_DOMAIN}` };
+}
+
+/** The provider ID of that tenant's provider for one attempt. */
+export const dexTenantProviderId = (attempt: number): string => `dex-tenant-${attempt % DEX.attempts}`;
+
 export const NOTIFY = {
     mailpit: { service: "mailpit", smtpPort: 1025, uiPort: 8025 },
     ntfy: { service: "ntfy", port: 18081 },

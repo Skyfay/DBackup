@@ -143,7 +143,18 @@ describe("a legacy configuration file restored into a DBackup with customer tena
         expect(await db.account.findUnique({ where: { id: "acc-file-u-old" } })).toBeNull();
     });
 
-    it("still merges a user into the account of the home tenant of the same email, without taking over whether its email is verified", async () => {
+    it("never makes an account of the home tenant a platform admin, which a home admin may have made under the email of the file", async () => {
+        const notes = await importFile();
+
+        const manu = await accountOf("u-manu");
+        expect(manu).toMatchObject({ platformRole: null, memberships: [{ tenantId: HOME_TENANT_ID, groupId: "g-ops" }], accounts: [] });
+        expect(await db.account.findUnique({ where: { id: "acc-file-u-manu-file" } })).toBeNull();
+        expect(notes).toContain("1 platform admin of the file was left out, since an account of the same email or id here is no platform admin: manu@example.test. Make that account a platform admin by hand if it is the same person, and restore again.");
+    });
+
+    it("still merges the SuperAdmin of the file into a platform admin of the same email, without taking over whether its email is verified", async () => {
+        await db.user.update({ where: { id: "u-manu" }, data: { platformRole: "ADMIN" } });
+
         await importFile();
 
         const manu = await accountOf("u-manu");

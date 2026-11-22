@@ -37,6 +37,13 @@ const PORT_KEYS = ["port", "sshPort"] as const;
 /** The fields that hold a host or a login name. */
 const NAME_KEYS = ["host", "sshHost", "user", "username", "sshUsername"] as const;
 
+/**
+ * Names DBackup once gave to what it sets for a single call, like the `known_hosts` file of rsync or
+ * the checked address it dials. Those live under symbols now, which JSON cannot carry, but a config
+ * that brings one of these names is refused, so no later reader of a text key can be handed one.
+ */
+const RUNTIME_KEYS = ["knownHostsFile", "strictHostKey", "onHostKeyRefused", "dialAddress", "tlsServerName"] as const;
+
 const blank = (value: unknown) => value === undefined || value === null || (typeof value === "string" && value.trim() === "");
 
 /**
@@ -53,6 +60,9 @@ export function commandFieldProblems(config: Config): string[] {
         if (value === undefined || value === null) continue;
         if (typeof value !== "string") problems.push(`${configFieldLabel(key)}: must be text`);
         else if (hasControlCharacter(value)) problems.push(`${configFieldLabel(key)}: cannot hold a line break or another control character`);
+    }
+    for (const key of RUNTIME_KEYS) {
+        if (Object.hasOwn(config, key)) problems.push(`${configFieldLabel(key)}: is set by DBackup for each call and cannot be saved`);
     }
     return problems;
 }

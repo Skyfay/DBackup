@@ -13,7 +13,8 @@ import { decryptConfig } from "@/lib/crypto";
 import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { markHostKey } from "@/lib/transport/host-key";
 import { hostKeyMismatchMessage } from "@/lib/logging/errors";
-import { formHostKeyProbe } from "./ssh-host-key-service";
+import { formHostKeyProbe, mergeAdapterMetadata } from "./ssh-host-key-service";
+import { assertOffSharedLoginsOfForm } from "./shared-login";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -58,6 +59,9 @@ export async function testConnection(input: ConnectionTestInput): Promise<Connec
     const adapter = registry.get(adapterId);
     if (!adapter) return { ok: false, reason: "adapter-missing" };
     if (!adapter.test) return { ok: false, reason: "unsupported" };
+    // The login of a destination shared with customers signs in on that destination alone, at its
+    // stored address, never at a host of the form.
+    await assertOffSharedLoginsOfForm({ primaryCredentialId: input.primaryCredentialId, sshCredentialId: input.sshCredentialId }, { adapterId, config: input.config, configId });
 
     // Secrets held in the config itself reach the browser redacted, so an edit of a saved
     // connection submits them missing. They are filled back in, or the test would try a config
@@ -137,14 +141,8 @@ async function recordVersion(configId: string, adapterId: string, tested: Record
         }
         if (!sameAddress(adapterId, stored, tested)) return;
         if ((hostLocalReason(adapterId, stored) || hostLocalReason(adapterId, tested)) && !(await mayReachHost())) return;
-        const currentMeta = existing.metadata ? JSON.parse(existing.metadata) : {};
-        const metadata = {
-            ...currentMeta,
-            engineVersion: version,
-            lastCheck: new Date().toISOString(),
-            status: "Online",
-        };
-        await prisma.adapterConfig.update({ where: { id: configId }, data: { metadata: JSON.stringify(metadata) } });
+        // Over the metadata as it is now, which the test may have given a pinned host key meanwhile.
+        await mergeAdapterMetadata({ id: configId }, { engineVersion: version, lastCheck: new Date().toISOString(), status: "Online" });
     } catch (metaError: unknown) {
         log.error("Failed to update metadata", { configId }, wrapError(metaError));
     }

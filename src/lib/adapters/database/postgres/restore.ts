@@ -12,7 +12,7 @@ import {
     getTargetDatabaseName,
 } from "../common/tar-utils";
 import { PostgresConfig } from "@/lib/adapters/definitions";
-import { PG_RESTORE, PSQL, buildConnectionArgs, pgEnv, dbArg, sqlLiteral } from "./args";
+import { PG_RESTORE, PSQL, buildConnectionArgs, pgEnv, catalogEnv, dbArg, sqlLiteral } from "./args";
 
 /**
  * Extended PostgreSQL config for restore operations with runtime fields
@@ -229,7 +229,8 @@ async function sharedRestoreRole(
         `JOIN pg_roles r ON r.oid = d.datdba WHERE d.datname = ${sqlLiteral(targetDb)}`;
     const result = await host.exec(
         [psql, ...buildConnectionArgs(config), "-d", dbArg(targetDb), "-w", "-X", "-t", "-A", "-c", query],
-        { env: pgEnv(password) },
+        // The database is the customer's, whose functions an unqualified name would run, see `catalogEnv`.
+        { env: catalogEnv(password) },
     );
     const line = result.code === 0 ? result.stdout.replace(/\r?\n$/, "") : "";
     const [same, ownerSuper, loginPrivileged, otherRoles, ...name] = line.split("|");

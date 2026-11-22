@@ -96,6 +96,8 @@ configs:
           redirectURIs:
             - http://localhost:3300/api/auth/sso/callback/dex-0
             - http://localhost:3300/api/auth/sso/callback/dex-1
+            - http://localhost:3300/api/auth/sso/callback/dex-tenant-0
+            - http://localhost:3300/api/auth/sso/callback/dex-tenant-1
       enablePasswordDB: true
       staticPasswords:
         - email: newcomer-0@sso.e2e.dbackup.test
@@ -114,3 +116,11 @@ configs:
           hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
           username: member-1
           userID: e2e-member-1
+        - email: tenant-0@tenant.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: tenant-0
+          userID: e2e-tenant-0
+        - email: tenant-1@tenant.e2e.dbackup.test
+          hash: "$$2b$$10$$n3cc1CHKc2bTFBydb2Z9HOkiMuekQ//C07Ge6kS/JbzVcAZrTwbfK"
+          username: tenant-1
+          userID: e2e-tenant-1

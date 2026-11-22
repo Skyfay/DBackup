@@ -52,10 +52,19 @@ export const userService = {
       throw new ValidationError("The group no longer exists.");
     }
     const result = await authService.createUser(data);
-    await prisma.$transaction([
-      prisma.session.deleteMany({ where: { userId: result.user.id } }),
-      ...(data.groupId ? [prisma.tenantMembership.create({ data: { userId: result.user.id, tenantId: data.tenantId, groupId: data.groupId } })] : []),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.session.deleteMany({ where: { userId: result.user.id } }),
+        ...(data.groupId ? [prisma.tenantMembership.create({ data: { userId: result.user.id, tenantId: data.tenantId, groupId: data.groupId } })] : []),
+      ]);
+    } catch (error: unknown) {
+      // The group or the tenant went while the account was made. An account of no tenant would
+      // count as one of the home tenant, with the email and the password the admin of a customer
+      // chose, so none stays without the tenant it was made for, like with an invitation.
+      if (!data.groupId) throw error;
+      await prisma.user.deleteMany({ where: { id: result.user.id } });
+      throw new ValidationError("The group no longer exists.");
+    }
     return result.user;
   },
 
@@ -143,6 +152,23 @@ export const userService = {
       platformGroup,
       groups: user.memberships.flatMap((membership) => (membership.group ? [{ tenantId: membership.tenantId, group: membership.group }] : [])),
     };
+  },
+
+  /**
+   * The tenants a set of accounts counts as ones of, see `accountOf`, the home tenant for an account
+   * of no tenant that no provider of another tenant claims. Read before the accounts are deleted, for
+   * the entry of the audit log that names them, so a view that does not reach one of these tenants
+   * never reads its names.
+   */
+  async tenantsOfAccounts(userIds: readonly string[]): Promise<string[]> {
+    const tenants = new Set<string>();
+    for (const userId of userIds) {
+      const account = await this.accountOf(userId);
+      if (!account) continue;
+      if (account.tenantIds.length === 0) tenants.add(HOME_TENANT_ID);
+      for (const tenantId of account.tenantIds) tenants.add(tenantId);
+    }
+    return [...tenants];
   },
 
   /**

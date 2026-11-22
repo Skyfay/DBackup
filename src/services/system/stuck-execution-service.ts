@@ -15,20 +15,34 @@ export const STUCK_TIMEOUT_SETTING = "execution.stuckTimeoutMinutes";
 /** Six hours. Longer than any healthy backup that reports progress, short enough to matter. */
 export const DEFAULT_STUCK_TIMEOUT_MINUTES = 360;
 
+/**
+ * System setting holding the longest a run may hold its slot, in minutes, progress or not. `0`
+ * turns it off. A source that trickles a byte now and then reports progress and never counts as
+ * stuck, so without this a run of one tenant could hold the slot of every tenant for as long as
+ * its server keeps it alive.
+ */
+export const MAX_RUN_SETTING = "execution.maxRunMinutes";
+
+/** One day. Far longer than a healthy backup, short enough that a trickling one ends. */
+export const DEFAULT_MAX_RUN_MINUTES = 1440;
+
 export interface StuckExecutionSweep {
     checked: number;
     cancelled: number;
 }
 
-async function getTimeoutMinutes(): Promise<number> {
-    const setting = await prisma.systemSetting.findUnique({ where: { key: STUCK_TIMEOUT_SETTING } });
-    if (!setting) return DEFAULT_STUCK_TIMEOUT_MINUTES;
+async function minutesOf(key: string, fallback: number): Promise<number> {
+    const setting = await prisma.systemSetting.findUnique({ where: { key } });
+    if (!setting) return fallback;
 
     const parsed = Number.parseInt(setting.value, 10);
     // A malformed value must not silently disable the safety net it configures.
-    if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_STUCK_TIMEOUT_MINUTES;
+    if (!Number.isFinite(parsed) || parsed < 0) return fallback;
     return parsed;
 }
+
+const getTimeoutMinutes = () => minutesOf(STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES);
+const getMaxRunMinutes = () => minutesOf(MAX_RUN_SETTING, DEFAULT_MAX_RUN_MINUTES);
 
 /**
  * The moment an execution last showed a sign of life.
@@ -88,7 +102,8 @@ function withFinalLog(rawLogs: string, message: string): string {
  */
 export async function sweepStuckExecutions(): Promise<StuckExecutionSweep> {
     const timeoutMinutes = await getTimeoutMinutes();
-    if (timeoutMinutes === 0) {
+    const maxRunMinutes = await getMaxRunMinutes();
+    if (timeoutMinutes === 0 && maxRunMinutes === 0) {
         log.debug("Stuck execution watchdog disabled");
         return { checked: 0, cancelled: 0 };
     }
@@ -102,18 +117,22 @@ export async function sweepStuckExecutions(): Promise<StuckExecutionSweep> {
     });
 
     const cutoff = Date.now() - timeoutMinutes * 60_000;
+    const oldest = Date.now() - maxRunMinutes * 60_000;
     let cancelled = 0;
 
     for (const execution of running) {
         const idleSince = lastProgressAt(execution);
-        if (idleSince.getTime() > cutoff) continue;
+        const idle = timeoutMinutes > 0 && idleSince.getTime() <= cutoff;
+        const tooLong = maxRunMinutes > 0 && execution.startedAt.getTime() <= oldest;
+        if (!idle && !tooLong) continue;
 
         const idleMinutes = Math.round((Date.now() - idleSince.getTime()) / 60_000);
-        log.warn("Cancelling execution with no progress", {
+        log.warn(idle ? "Cancelling execution with no progress" : "Cancelling execution that ran longer than a run may", {
             executionId: execution.id,
             jobId: execution.jobId,
             idleMinutes,
             timeoutMinutes,
+            maxRunMinutes,
         });
 
         // Signalled first: a run that is between steps unwinds properly, closing its
@@ -122,8 +141,9 @@ export async function sweepStuckExecutions(): Promise<StuckExecutionSweep> {
         // when the run belongs to a process that is already gone.
         abortExecution(execution.id);
 
-        const message = `No progress for ${idleMinutes} minute(s) - cancelled by the stuck execution watchdog `
-            + `(threshold ${timeoutMinutes} minute(s)).`;
+        const message = idle
+            ? `No progress for ${idleMinutes} minute(s), cancelled by the stuck execution watchdog (threshold ${timeoutMinutes} minute(s)).`
+            : `Ran longer than ${maxRunMinutes} minute(s), the longest a run may take, cancelled by the stuck execution watchdog.`;
 
         // Conditional on the status so a run finishing in this exact moment is not overwritten.
         const updated = await prisma.execution.updateMany({

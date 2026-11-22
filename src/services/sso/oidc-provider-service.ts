@@ -2,7 +2,8 @@ import prisma from "@/lib/prisma";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { encrypt } from "@/lib/crypto";
-import { NotFoundError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError } from "@/lib/logging/errors";
+import { issuerProblem } from "@/lib/auth/issuer-shape";
 import { OIDC_SCOPES, scopesOf } from "@/lib/auth/oidc-scopes";
 
 export interface CreateSsoProviderInput {
@@ -41,6 +42,16 @@ export interface UpdateSsoProviderInput extends Partial<CreateSsoProviderInput> 
     id: string;
 }
 
+/**
+ * Refuses an issuer that is no plain web address, see `issuer-shape.ts`.
+ *
+ * @throws ValidationError naming what is wrong.
+ */
+export function assertPlainIssuer(issuer: string | null | undefined): void {
+    const problem = issuer ? issuerProblem(issuer) : null;
+    if (problem) throw new ValidationError(problem, { field: "issuer" });
+}
+
 export class OidcProviderService {
 
     /** A provider with its client ID and secret in plain text, for the server only. */
@@ -74,6 +85,7 @@ export class OidcProviderService {
     }
 
     static async createProvider(data: CreateSsoProviderInput) {
+        assertPlainIssuer(data.issuer);
         // Use discoveryEndpoint from adapter if provided, otherwise fallback to standard path
         // Different OIDC providers have different discovery paths (e.g., Authentik uses /application/o/{slug}/...)
         const discoveryEndpoint = data.discoveryEndpoint ?? (
@@ -131,6 +143,7 @@ export class OidcProviderService {
     }
 
     static async updateProvider(id: string, data: Partial<Omit<CreateSsoProviderInput, "providerId">>) {
+        assertPlainIssuer(data.issuer);
         let oidcConfigUpdate: string | undefined = undefined;
 
         // If we have critical OIDC params or type OIDC, let's reconstruct config

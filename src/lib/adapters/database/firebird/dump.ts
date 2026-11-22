@@ -3,7 +3,7 @@ import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { FirebirdConfig } from "@/lib/adapters/definitions";
 import { getGbakCommand } from "./tools";
-import { resolveAliasPath, buildConnectionString } from "./connection";
+import { resolveAliasPath, buildConnectionString, NO_DB_TRIGGERS, refusedTriggerSwitch } from "./connection";
 import fs from "fs/promises";
 import path from "path";
 import {
@@ -38,19 +38,38 @@ async function dumpSingleDatabase(
     const connStr = buildConnectionString(config, dbPath);
 
     await host.captureOutput(destinationPath, {}, async (hostPath) => {
-        const args = ["-b"];
-        if (config.options) args.push(...config.options.split(" ").filter((s) => s.trim().length > 0));
-        args.push("-user", config.user, connStr, hostPath);
+        const run = async (switches: string[]) => {
+            const args = ["-b", ...switches];
+            if (config.options) args.push(...config.options.split(" ").filter((s) => s.trim().length > 0));
+            args.push("-user", config.user, connStr, hostPath);
 
-        onLog(`Dumping database: ${aliasName}`, "info", "command", `${gbak} ${args.join(" ")}`);
+            onLog(`Dumping database: ${aliasName}`, "info", "command", `${gbak} ${args.join(" ")}`);
 
-        const proc = await host.spawn([gbak, ...args], { env: { ISC_PASSWORD: config.password } });
-        proc.stderr.on("data", (data: Buffer) => {
-            const msg = data.toString().trim();
-            if (msg) onLog(msg);
-        });
+            const proc = await host.spawn([gbak, ...args], { env: { ISC_PASSWORD: config.password } });
+            let output = "";
+            // What gbak said is read in full, also when its exit is reported before the last of it.
+            const said = new Promise<void>((resolve) => {
+                proc.stderr.once("end", resolve);
+                proc.stderr.once("close", resolve);
+                proc.stderr.once("error", () => resolve());
+            });
+            proc.stderr.on("data", (data: Buffer) => {
+                const msg = data.toString().trim();
+                output += `${msg}\n`;
+                if (msg) onLog(msg);
+            });
+            const exited = await proc.exit();
+            await Promise.race([said, new Promise((resolve) => setTimeout(resolve, 1000))]);
+            return { ...exited, output };
+        };
 
-        const { code, signal } = await proc.exit();
+        // Without the triggers of the database, which whoever holds it writes, see `NO_DB_TRIGGERS`.
+        let result = await run(NO_DB_TRIGGERS);
+        if (result.code !== 0 && refusedTriggerSwitch(result.output)) {
+            onLog(`The login ${config.user} may not skip the triggers of the database, so gbak attaches with them. Give it the system privilege IGNORE_DB_TRIGGERS to skip them.`, "warning");
+            result = await run([]);
+        }
+        const { code, signal } = result;
         if (code !== 0) {
             throw new Error(`gbak exited with code ${code ?? "null"}${signal ? ` (signal: ${signal})` : ""}`);
         }

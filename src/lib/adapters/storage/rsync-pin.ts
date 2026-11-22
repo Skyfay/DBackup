@@ -12,11 +12,16 @@ import { reachOf } from "@/lib/network/reach-policy";
  */
 
 /**
- * The field that carries the checked address, without brackets, read by `sshTarget` in `rsync.ts`,
- * which puts an IPv6 address in brackets only inside rsync's `user@[address]:path`.
+ * The key of the checked address, without brackets, read by `sshTarget` in `rsync.ts`, which puts
+ * an IPv6 address in brackets only inside rsync's `user@[address]:path`. A symbol, so a config of a
+ * request or a stored row, which is JSON, cannot bring an address of its own that dialing would use
+ * in place of the host every check read.
  */
+export const DIAL_ADDRESS: unique symbol = Symbol("dbackup.rsync.dialAddress");
+
+/** The field that carries the checked address. */
 export interface DialAddress {
-    dialAddress?: string;
+    [DIAL_ADDRESS]?: string;
 }
 
 /**
@@ -27,7 +32,7 @@ export async function pinRsyncHost<T extends { host: string; port?: unknown }>(c
     const reach = reachOf(config);
     if (!reach) return config;
     const host = String(config.host ?? "").trim().replace(/^\[|\]$/g, "");
-    return { ...config, dialAddress: await reachableAddress(host, Number(config.port) || 22, reach.allowed) };
+    return { ...config, [DIAL_ADDRESS]: await reachableAddress(host, Number(config.port) || 22, reach.allowed) };
 }
 
 /** The methods that answer a refusal with a result instead of throwing it. */

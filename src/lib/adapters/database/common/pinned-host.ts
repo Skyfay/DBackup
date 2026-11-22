@@ -2,6 +2,7 @@ import type { DatabaseAdapter } from "@/lib/core/interfaces";
 import type { ExecOptions, ExecutionHost, SpawnOptions } from "@/lib/transport";
 import { hostOf } from "@/lib/adapters/dialed-hosts";
 import { parseMongoTarget } from "@/lib/adapters/database/mongodb/args";
+import { TLS_SERVER_NAME } from "@/lib/adapters/database/redis/args";
 import { reachableAddress } from "@/lib/network/checked-socket";
 import { isAddressLiteral } from "@/lib/network/local-network";
 import { reachOf, type ReachPolicy } from "@/lib/network/reach-policy";
@@ -74,7 +75,7 @@ const postgres: Pin = async (config, reach) => {
 const redis: Pin = async (config, reach) => {
     const host = text(config.host);
     if (!host || isAddressLiteral(host)) return { config };
-    return { config: { ...config, host: await reachableAddress(host, portOf(config, 6379), reach.allowed), tlsServerName: host } };
+    return { config: { ...config, host: await reachableAddress(host, portOf(config, 6379), reach.allowed), [TLS_SERVER_NAME]: host } };
 };
 
 /** gbak and isql: the host of `host[/port]` by its address, see `firebirdHostProblem`. */

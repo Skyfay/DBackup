@@ -4,8 +4,10 @@ import { NextRequest } from "next/server";
 
 describe("a page of the dashboard opened without signing in", () => {
     beforeEach(() => {
-        // The rate limits of the instance cannot be fetched here, the defaults stay.
-        vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+        // The limiters live on the process, so every test starts with fresh counters and the defaults.
+        delete (globalThis as Record<symbol, unknown>)[Symbol.for("dbackup.rateLimiters")];
+        // The proxy reads its limits in the process and never asks the server over the network.
+        vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("the proxy fetched"); }));
     });
 
     afterEach(() => {
@@ -13,8 +15,8 @@ describe("a page of the dashboard opened without signing in", () => {
     });
 
     async function open(url: string, cookie?: string) {
-        const { middleware } = await import("@/middleware");
-        return middleware(new NextRequest(url, cookie ? { headers: { cookie } } : undefined));
+        const { proxy } = await import("@/proxy");
+        return proxy(new NextRequest(url, cookie ? { headers: { cookie } } : undefined));
     }
 
     it("sends the browser to the login page, which leads back to the page once signed in", async () => {

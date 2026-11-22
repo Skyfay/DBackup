@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import crypto from "crypto";
 import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { serializeIndex } from "@/lib/archive/index-file";
+import { INDEX_INFLATE_FLOOR } from "@/lib/archive/limits";
+import { createParseBudget } from "@/services/backup/index-parse-budget";
 import { EncryptionKeyRequiredError, ValidationError } from "@/lib/logging/errors";
 import {
     archiveIndexVerifier,
@@ -182,5 +184,23 @@ describe("archiveIndexVerifier", () => {
     it("rejects a key of the wrong length rather than throwing", async () => {
         const verify = archiveIndexVerifier(await sealIndex(RIGHT_KEY), params);
         await expect(verify(Buffer.alloc(16, 0x01))).resolves.toBe(false);
+    });
+
+    it("parses within the budget of the process, so checks of many keys at once wait their turn", async () => {
+        // A budget whose whole share another parse holds until it is let go.
+        let release!: () => void;
+        const holder = new Promise<void>((resolve) => { release = resolve; });
+        const budget = createParseBudget(INDEX_INFLATE_FLOOR);
+        const held = budget(1, () => holder);
+        const sealed = await sealIndex(RIGHT_KEY);
+
+        let answered = false;
+        const check = archiveIndexVerifier(sealed, params, budget)(RIGHT_KEY).then((fits) => { answered = true; return fits; });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(answered).toBe(false);
+
+        release();
+        await held;
+        await expect(check).resolves.toBe(true);
     });
 });

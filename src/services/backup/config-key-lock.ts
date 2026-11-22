@@ -15,22 +15,23 @@
  */
 
 import type { AuthContext } from "@/lib/auth/access-control";
-import { getConfigBackupKeyId } from "@/services/config/config-backup-targets";
+import { getConfigBackupTargets } from "@/services/config/config-backup-targets";
 import type { KeyRefusal } from "./key-resolution";
 
 /** Who asks for a decryption, as far as the key it may use depends on it. */
 export type KeyCaller = Pick<AuthContext, "isPlatformAdmin" | "authMethod">;
 
 /**
- * The profiles a decryption of a whole file may not use for this caller: the key of the
- * configuration backup, for anyone but a platform admin with a session, like `readsConfigBackups`.
+ * The profiles a decryption of a whole file may not use for this caller: every key of the
+ * configuration backup, the one picked now and the ones before it, for anyone but a platform admin
+ * with a session, like `readsConfigBackups`.
  * A caller nobody names, like a link without a session, counts as no platform admin.
  */
 export function wholeFileKeyRefusal(caller: KeyCaller | undefined): KeyRefusal {
-    let configKey: Promise<string | null> | undefined;
+    let configKeys: Promise<string[]> | undefined;
     return async (profileId: string) => {
         if (caller?.isPlatformAdmin && caller.authMethod === "session") return false;
-        configKey ??= getConfigBackupKeyId();
-        return profileId === (await configKey);
+        configKeys ??= getConfigBackupTargets().then((targets) => [...(targets.profileId ? [targets.profileId] : []), ...(targets.formerProfileIds ?? [])]);
+        return (await configKeys).includes(profileId);
     };
 }

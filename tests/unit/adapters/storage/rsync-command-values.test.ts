@@ -87,3 +87,30 @@ describe("the config values rsync and ssh parse themselves", () => {
         expect(RsyncSchema.safeParse({ ...base, host: "[2001:db8::1]" }).success).toBe(true);
     });
 });
+
+describe("the per-call fields of the host key check and the checked address", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockExecCb.mockImplementation((...args: unknown[]) => (args[args.length - 1] as (err: null, result: { stdout: string }) => void)(null, { stdout: "" }));
+        mockExecFileCb.mockImplementation((...args: unknown[]) => (args[args.length - 1] as (err: null, result: { stdout: string }) => void)(null, { stdout: "" }));
+        mockSpawn.mockImplementation(() => finishedRsync());
+    });
+
+    it("never takes a known_hosts file or an address to dial from the config itself", async () => {
+        const planted = {
+            ...config,
+            knownHostsFile: "/dev/null -F /dev/null -o ProxyCommand=touch /tmp/pwned",
+            strictHostKey: true,
+            dialAddress: "198.51.100.9",
+        };
+
+        const uploaded = await RsyncAdapter.upload(planted as never, "/tmp/backup.tar", "Job/backup.tar");
+
+        expect(uploaded).toBe(true);
+        const shell = shells()[0];
+        expect(shell).not.toContain("ProxyCommand");
+        expect(shell).toContain("UserKnownHostsFile=/dev/null");
+        const args = mockSpawn.mock.calls.find(([binary]) => binary === "rsync")?.[1] as string[];
+        expect(args.at(-1)).toBe("admin@backup.example.com:/backups/Job/backup.tar");
+    });
+});

@@ -104,7 +104,7 @@ describe("the reconciliation of a listing", () => {
 
     it("reads the sidecar of a backup overwritten at the same path again, so the row shows the new run", async () => {
         destinationListing({ size: 120, lastModified: new Date(SECOND_RUN) });
-        mockReadListedSidecars.mockResolvedValue(new Map([["mysql_clienti.tar", { timestamp: SECOND_RUN, jobName: "clienti" }]]));
+        mockReadListedSidecars.mockResolvedValue(new Map([[PATH, { timestamp: SECOND_RUN, jobName: "clienti" }]]));
         const write = vi.spyOn(service, "writeListingRow").mockResolvedValue(undefined);
 
         await service.runReconcile("wasabi", "default");

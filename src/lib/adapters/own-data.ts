@@ -170,16 +170,38 @@ export async function ownDataRefusal(adapterId: string, config: Record<string, u
 
 /** What someone reads whose Docker volume holds DBackup's own data. */
 export const OWN_VOLUME_REFUSED = "DBackup's own container keeps its database, its certificates, its temporary files or its configuration backups in this volume, so no run reads it through Docker Volumes without SSH.";
+/** What someone reads whose Docker volume holds the folder of a destination shared with customers. */
+export const SHARED_VOLUME_REFUSED = "This volume holds the folder of a destination shared with customers, whose backups lie there, so no run reads it through Docker Volumes without SSH.";
 /** What a run reads that could not find out whether a Docker volume holds DBackup's own data. */
 export const OWN_VOLUME_UNKNOWN = "DBackup runs in a container this Docker host does not list, so it cannot tell whether this volume holds its own data and does not read it through Docker Volumes without SSH. Connect to the Docker host over SSH instead.";
 /** What a run reads whose Docker host did not say which volumes DBackup's own container mounts. */
 const OWN_VOLUME_UNKNOWN_DOCKER = "Docker did not answer which volumes DBackup's own container holds, so this volume is not read through Docker Volumes without SSH. Try again once Docker answers.";
 
 /**
+ * The folders of the Local Filesystem destinations shared with customers, which keep the backups of
+ * every customer under `tenants/<id>/`. Another storage connection of the tenant may not reach them
+ * (`shared-place.ts`), but a Docker volume is named by a job, not by its connection, so the volume
+ * that holds one is refused at the run, see `ownVolumeRefusal`.
+ */
+async function sharedDestinationFolders(): Promise<string[][]> {
+    const shares = await runAsSystem(() => prisma.connectionShare.findMany({
+        where: { config: { type: "storage", adapterId: "local-filesystem", storageRole: "DESTINATION" } },
+        select: { config: { select: { adapterId: true, config: true } } },
+    }));
+    const folders: string[][] = [];
+    for (const { config: row } of shares) {
+        const base = localPathOf(row.adapterId, decryptConfig(JSON.parse(row.config)) as Record<string, unknown>);
+        if (base) folders.push([path.resolve(base), await realPath(base)]);
+    }
+    return folders;
+}
+
+/**
  * Why a Docker Volumes connection without SSH may not read or write a volume, or null when it may.
  * Such a connection reaches the Docker of the server DBackup runs on, so a volume that DBackup's
  * own container mounts at the folder of its database, its TLS certificate, its temporary folder or
  * the folder of the configuration backup holds the same files a Local Filesystem there would reach.
+ * A volume that holds the folder of a destination shared with customers holds their backups.
  * The container is found by its id, see `own-container.ts`. In a container this Docker host does
  * not list, nothing says a volume is safe, so it is refused. Outside of any container a volume
  * counts whose folder on the server reaches one of them. A volume Docker created with the bind
@@ -192,9 +214,13 @@ export async function ownVolumeRefusal(adapterId: string, config: Record<string,
     // Docker over SSH reaches another server, whose volumes hold nothing of DBackup.
     if (adapterId !== "docker-volume" || !hostLocalReason(adapterId, config)) return null;
     const name = volume.replace(/\\/g, "/").split("/").find((part) => part !== "" && part !== ".") ?? "";
-    let folders: OwnFolder[];
+    let guarded: { paths: string[]; refusal: string }[];
     try {
-        folders = await ownFolders();
+        const [own, shared] = await Promise.all([ownFolders(), sharedDestinationFolders()]);
+        guarded = [
+            ...own.map((folder) => ({ paths: folder.paths, refusal: OWN_VOLUME_REFUSED })),
+            ...shared.map((paths) => ({ paths, refusal: SHARED_VOLUME_REFUSED })),
+        ];
     } catch {
         return UNKNOWN_FOLDERS;
     }
@@ -207,15 +233,19 @@ export async function ownVolumeRefusal(adapterId: string, config: Record<string,
         if (hints.inContainer) {
             const own = findOwnContainer(await connection.engine.listContainers(), hints);
             if (!own) return OWN_VOLUME_UNKNOWN;
-            const held = own.mounts.filter((mount) => mount.type === "volume" && mount.volume
-                && folders.some((folder) => folder.paths.some((folderPath) => reaches(folderPath, mount.destination))));
-            return held.some((mount) => name === "" || mount.volume === name) ? OWN_VOLUME_REFUSED : null;
+            for (const mount of own.mounts) {
+                if (mount.type !== "volume" || !mount.volume || (name !== "" && mount.volume !== name)) continue;
+                const folder = guarded.find((entry) => entry.paths.some((folderPath) => reaches(folderPath, mount.destination)));
+                if (folder) return folder.refusal;
+            }
+            return null;
         }
         const volumes = name === "" ? await connection.engine.listVolumes() : [await connection.engine.inspectVolume(name)];
         for (const found of volumes) {
             if (!found?.mountpoint) continue;
             const candidates = [path.resolve(found.mountpoint), await realPath(found.mountpoint)];
-            if (candidates.some((candidate) => folders.some((folder) => folder.paths.some((own) => reaches(candidate, own))))) return OWN_VOLUME_REFUSED;
+            const folder = guarded.find((entry) => candidates.some((candidate) => entry.paths.some((own) => reaches(candidate, own))));
+            if (folder) return folder.refusal;
         }
         return null;
     } catch {

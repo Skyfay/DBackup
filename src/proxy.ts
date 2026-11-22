@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig } from "./lib/rate-limit";
-import type { RateLimitConfig } from "./lib/rate-limit";
-import { INTERNAL_TOKEN_HEADER, internalToken } from "./lib/rate-limit/internal-token";
+import { getAuthLimiter, getApiLimiter, getMutationLimiter } from "./lib/rate-limit";
 import { logger } from "./lib/logging/logger";
 import { clientAddress, rateLimitKey, withoutClientAddress } from "./lib/core/client-address";
 import { loginHref } from "./lib/auth/sign-in-target";
@@ -10,50 +8,7 @@ import { CROSS_SITE_REFUSED, isCrossSiteRequest } from "./lib/server/cross-site"
 import { CONTENT_SECURITY_POLICY } from "@/lib/server/security-headers";
 
 
-const log = logger.child({ module: "Middleware" });
-
-// ── Rate Limit Config Cache (fetched from internal API) ────────
-
-let _cachedConfig: RateLimitConfig | null = null;
-let _configFetchedAt = 0;
-const CONFIG_TTL_MS = 30_000; // 30 seconds
-let _fetchInFlight: Promise<void> | null = null;
-
-/**
- * Fetch rate limit config from the internal API endpoint (Node.js runtime).
- * Caches the result for CONFIG_TTL_MS. Deduplicates concurrent fetches.
- */
-async function syncRateLimitConfig(origin: string): Promise<void> {
-    const now = Date.now();
-    if (_cachedConfig && now - _configFetchedAt < CONFIG_TTL_MS) return;
-
-    // Deduplicate concurrent fetch calls
-    if (_fetchInFlight) return _fetchInFlight;
-
-    _fetchInFlight = (async () => {
-        try {
-            // The route answers only the token of this instance, see `internal-token.ts`.
-            const token = await internalToken();
-            if (!token) return;
-            const res = await fetch(new URL("/api/internal/rate-limit-config", origin), {
-                headers: { [INTERNAL_TOKEN_HEADER]: token },
-                signal: AbortSignal.timeout(3000),
-            });
-            if (res.ok) {
-                const config: RateLimitConfig = await res.json();
-                applyExternalConfig(config);
-                _cachedConfig = config;
-                _configFetchedAt = Date.now();
-            }
-        } catch {
-            // On error keep using current limiters (defaults or last successful fetch)
-        } finally {
-            _fetchInFlight = null;
-        }
-    })();
-
-    return _fetchInFlight;
-}
+const log = logger.child({ module: "Proxy" });
 
 // Paths that should not be logged (to reduce noise)
 const SILENT_PATHS = [
@@ -82,7 +37,11 @@ function anonymizeIp(ip: string): string {
     return ip.split(":").slice(0, 2).join(":") + ":x";
 }
 
-export async function middleware(request: NextRequest) {
+/**
+ * Runs before every request, in the Node.js runtime of the server process: rate limits, the
+ * cross-site check, security headers and the redirect of a dashboard page without a session.
+ */
+export async function proxy(request: NextRequest) {
     const startTime = Date.now();
     // Set by the custom server from the socket and a trusted proxy, never by the client itself.
     // Unknown under `pnpm dev`, where every request shares one bucket.
@@ -92,10 +51,7 @@ export async function middleware(request: NextRequest) {
     const method = request.method;
     const shouldLog = shouldLogRequest(path);
 
-    // Sync rate limiters from internal API (Node.js runtime → Edge middleware)
-    await syncRateLimitConfig(request.nextUrl.origin);
-
-    // Rate Limiting Logic
+    // The limiters of the process, which the start and a save of the limits fill from the database, see `lib/rate-limit`.
     let rateLimitType: string | null = null;
     try {
         if (path.startsWith("/api/auth/sign-in")) {
@@ -150,7 +106,7 @@ export async function middleware(request: NextRequest) {
         response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     }
 
-    // Protect dashboard routes via cookie check (middleware layer)
+    // Protect dashboard routes via cookie check (proxy layer)
     // The main protection is still in the server components (layout.tsx) via safe session verification
     if (request.nextUrl.pathname.startsWith("/dashboard")) {
         // Check both cookie names: HTTPS uses "__Secure-" prefix automatically
@@ -182,16 +138,15 @@ export const config = {
     matcher: [
         /*
          * Match all request paths except for the ones starting with:
-         * - api/internal (internal endpoints used by middleware itself)
          * - _next/static (static files)
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
          * - public assets if any
          *
-         * NOTE: api/auth is intentionally NOT excluded - the middleware must
+         * NOTE: api/auth is intentionally NOT excluded - the proxy must
          * run on auth endpoints so the auth rate limiter (5 req/min) can
          * protect /api/auth/sign-in against brute-force attacks.
          */
-        '/((?!api/internal|_next/static|_next/image|favicon.ico|uploads/).*)',
+        '/((?!_next/static|_next/image|favicon.ico|uploads/).*)',
     ],
 };

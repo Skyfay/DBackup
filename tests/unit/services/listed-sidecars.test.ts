@@ -52,13 +52,28 @@ describe("the sidecars of a destination listing", () => {
             return JSON.stringify({ jobName: path });
         });
         const map = await readListedSidecars(adapter, {}, [metaFile("a.tar"), metaFile("huge.tar"), metaFile("b.tar")], "dest-1");
-        expect([...map.keys()].sort()).toEqual(["a.tar", "b.tar"]);
+        expect([...map.keys()].sort()).toEqual(["job/a.tar", "job/b.tar"]);
     });
 
     it("leaves out a sidecar that does not parse", async () => {
         const { adapter } = slowAdapter(8, async (path) => (path.includes("bad") ? "{not json" : "{}"));
         const map = await readListedSidecars(adapter, {}, [metaFile("bad.tar"), metaFile("ok.tar")], "dest-1");
-        expect([...map.keys()]).toEqual(["ok.tar"]);
+        expect([...map.keys()]).toEqual(["job/ok.tar"]);
+    });
+});
+
+describe("backups of the same name in different folders", () => {
+    it("each keep the sidecar beside them", async () => {
+        const { adapter } = slowAdapter(8, async (path) => JSON.stringify({ jobId: path.startsWith("acme/") ? "job-acme" : "job-globex", locked: path.startsWith("acme/") }));
+        const files: FileInfo[] = [
+            { name: "db.tar.meta.json", path: "acme/db.tar.meta.json", size: 100, lastModified: new Date() },
+            { name: "db.tar.meta.json", path: "globex/db.tar.meta.json", size: 100, lastModified: new Date() },
+        ];
+
+        const map = await readListedSidecars(adapter, {}, files, "dest-1");
+
+        expect(map.get("acme/db.tar")).toMatchObject({ jobId: "job-acme", locked: true });
+        expect(map.get("globex/db.tar")).toMatchObject({ jobId: "job-globex", locked: false });
     });
 });
 
@@ -73,7 +88,7 @@ describe("what a listing keeps of a sidecar", () => {
         const { adapter } = slowAdapter(8, async () => JSON.stringify(sidecar));
         const map = await readListedSidecars(adapter, {}, [metaFile("a.tar")], "dest-1");
 
-        expect(map.get("a.tar")).toEqual({
+        expect(map.get("job/a.tar")).toEqual({
             jobName: "Nightly", sourceType: "mysql", databases: { count: 2, names: ["a", "b"] },
             archive: { formatVersion: 2, encrypted: true, profileId: "p1", compression: "GZIP" },
             verification: { verifiedAt: "2026-10-01", passed: true, trigger: "manual" },
@@ -86,8 +101,8 @@ describe("what a listing keeps of a sidecar", () => {
         const map = await readListedSidecars(adapter, {}, [metaFile("crm.tar")], "dest-1");
         const { describeBackupFromMetadata } = await import("@/services/storage/backup-file-fields");
 
-        expect(map.get("crm.tar")?.dumpsStartedAt).toBe("2026-11-02T01:00:00.000Z");
-        expect(describeBackupFromMetadata("crm.tar", map.get("crm.tar")!)).toEqual(expect.objectContaining({ createdAt: "2026-11-02T01:20:00.000Z", dumpsStartedAt: "2026-11-02T01:00:00.000Z" }));
+        expect(map.get("job/crm.tar")?.dumpsStartedAt).toBe("2026-11-02T01:00:00.000Z");
+        expect(describeBackupFromMetadata("crm.tar", map.get("job/crm.tar")!)).toEqual(expect.objectContaining({ createdAt: "2026-11-02T01:20:00.000Z", dumpsStartedAt: "2026-11-02T01:00:00.000Z" }));
     });
 
     it("leaves out a sidecar that is no object", async () => {

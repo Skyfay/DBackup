@@ -10,7 +10,7 @@
 import type { AdapterConfig } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { registerAdapters } from "@/lib/adapters";
-import { assertConfigOffHost, mayReachHost, resolveAdapterConfig, withoutBinaryPaths } from "@/lib/adapters/config-resolver";
+import { mayReachHost, overlayCredentialsOnConfig, resolveAdapterConfig, withoutBinaryPaths } from "@/lib/adapters/config-resolver";
 import { hostLocalReason } from "@/lib/adapters/host-local";
 import { ValidationError } from "@/lib/logging/errors";
 import type { DatabaseAdapter, DatabaseInfo, TableDataOptions, TableDataResult, TableInfo } from "@/lib/core/interfaces";
@@ -145,8 +145,9 @@ export async function readTableData(target: DatabaseTarget, options: TableDataOp
  */
 async function formConfig(adapterId: string, submitted: unknown): Promise<Record<string, unknown>> {
     const config = withoutBinaryPaths(submitted && typeof submitted === "object" ? (submitted as Record<string, unknown>) : {});
-    await assertConfigOffHost(adapterId, config);
-    return config;
+    // With the reach policy of the tenant on it, like every other config of a form, so the tools
+    // dial a checked address and a name that answers otherwise later reaches no blocked address.
+    return overlayCredentialsOnConfig(adapterId, config, null, null);
 }
 
 /** The adapter a target reads with and its config in plain text, with the logins of a saved source on top. */

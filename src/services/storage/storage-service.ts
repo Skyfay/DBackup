@@ -110,8 +110,10 @@ export type RichFileInfo = FileInfo & {
  * - 5: `sourceId` from the sidecar, by which a shared database finds the backups of its server.
  * - 6: `dumpsStartedAt` from the sidecar, by which a shared backup is judged over its whole dump
  *      window. A listing read from the storage dropped it, so rows cached without it are rebuilt.
+ * - 7: each backup takes the sidecar beside it, by its path. Rows cached when a backup of the
+ *      same name in another folder lent it its sidecar are rebuilt.
  */
-export const CACHE_SCHEMA_VERSION = 6;
+export const CACHE_SCHEMA_VERSION = 7;
 
 /**
  * The oldest payload that is still served, while a rebuild runs in the background.
@@ -434,7 +436,7 @@ export class StorageService {
         jobMap: Map<string, any>,
         executionMap: Map<string, any>
     ): RichFileInfo {
-        const sidecar = metadataMap.get(file.name);
+        const sidecar = metadataMap.get(file.path);
         if (sidecar) {
             return { ...file, ...describeBackupFromMetadata(file.name, sidecar) };
         }

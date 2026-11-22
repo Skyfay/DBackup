@@ -56,6 +56,19 @@ describe("the origins better-auth trusts", () => {
         expect(origins.some((origin) => origin.includes("/application/") || origin.includes("/realms/"))).toBe(false);
     });
 
+    it("never trusts an issuer with a wildcard or a user part, which better-auth would read as a pattern", async () => {
+        mocks.providers.mockResolvedValue([
+            { providerId: "glob", issuer: "https://*.acme.ch", tenantId: null },
+            { providerId: "query", issuer: "http://172.16?5.9*", tenantId: null },
+            { providerId: "user", issuer: "https://someone@id.acme.ch", tenantId: null },
+            { providerId: "plain", issuer: "https://id.acme.ch", tenantId: null },
+        ]);
+        const origins = await trustedOriginsFor(request("/sign-in/sso"));
+
+        expect(origins).toContain("https://id.acme.ch");
+        expect(origins.some((origin) => origin.includes("*") || origin.includes("172.") || origin.includes("someone"))).toBe(false);
+    });
+
     describe("for the provider of a customer whose tenant reaches no local network", () => {
         const sso = () => trustedOriginsFor(request("/sign-in/sso"));
 

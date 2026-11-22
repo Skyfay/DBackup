@@ -226,6 +226,20 @@ describe('restoreArchiveSnapshot', () => {
         expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt', undefined, expect.any(Function), { restoreRelativePath: 'a.txt' });
     });
 
+    it('restores nothing for a customer when the index at the destination is no longer the one whose proof was checked', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['db1'], {});
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter, 'local-filesystem': makeFakeStorageAdapter() });
+        const input = makeInput({
+            targetSourceId: 'target-db-1',
+            databaseMapping: [{ originalName: 'db1', targetName: 'db1', selected: true }],
+            shared: { databaseName: 'db1', indexSha256: 'f'.repeat(64) },
+        });
+
+        await expect(restoreArchiveSnapshot(input, { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })).rejects.toThrow(/changed at its destination/);
+        expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
+    });
+
     it('lays no link whose target is absolute or climbs out of the folder it restores into, and says so in the log', async () => {
         const { sourceAdapter } = await buildRemoteBackup([], { 'conf/app.ini': 'ini' }, undefined, {
             'conf/db': '/app/data/db',

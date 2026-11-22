@@ -65,7 +65,9 @@ export function listedFieldsOf(parsed: unknown): BackupMetadata | null {
 }
 
 /**
- * The `.meta.json` files of a listing, by the name of the backup they lie beside.
+ * The `.meta.json` files of a listing, by the path of the backup they lie beside. Never by its
+ * name alone: a recursive listing holds backups of the same name in several folders, and each one
+ * takes the job, server, key and lock of its own sidecar.
  *
  * Read a few at a time, since a destination may hold thousands of backups and the hourly tasks
  * list every destination. Each read stops at `SIDECAR_READ_LIMIT`, and a sidecar past it is left
@@ -95,7 +97,7 @@ export async function readListedSidecars(
         try {
             content = await adapter.read!(config, metaFile.path, { maxBytes: SIDECAR_READ_LIMIT });
             const fields = content ? listedFieldsOf(JSON.parse(content)) : null;
-            if (fields) metadataMap.set(metaFile.name.slice(0, -METADATA_SIDECAR_SUFFIX.length), fields);
+            if (fields) metadataMap.set(metaFile.path.slice(0, -METADATA_SIDECAR_SUFFIX.length), fields);
         } catch (error) {
             if (isFileTooLarge(error)) {
                 log.warn("Skipping a backup sidecar larger than any backup writes", { adapterConfigId, path: metaFile.path, limit: SIDECAR_READ_LIMIT });

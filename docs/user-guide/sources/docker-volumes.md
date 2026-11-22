@@ -86,6 +86,7 @@ Since a restore empties the volume it writes into, who may pick the target is li
 - **Without SSH** the connection reaches the Docker of the server DBackup runs on, so only a platform admin signed in with a session restores into it, back to where the backup came from as well.
 - **Over SSH** anyone who may restore writes the backup back into the volume it was read from. Another volume of that Docker host takes the right to change the connection (`destinations:write`) in its tenant.
 - **A volume DBackup's own container keeps its database, certificates, temporary files or configuration backups in** is refused to everyone without SSH, a platform admin too, the same as a backup refuses to read it.
+- **A volume that holds the folder of a Local Filesystem destination shared with customers** is refused the same way, since it holds the backups of every customer of that destination.
 
 ## Known limitations
 

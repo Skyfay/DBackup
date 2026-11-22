@@ -4,7 +4,9 @@ import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { privateTempPath } from "@/lib/private-temp-dir";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { ServiceError, wrapError } from "@/lib/logging/errors";
+import { createConcurrencyGate } from "@/lib/concurrency";
+import { reserveTempSpace } from "@/services/restore/temp-space";
 import path from "path";
 import fs from "fs/promises";
 import crypto from "crypto";
@@ -28,6 +30,8 @@ export interface FileVerificationResult {
 
 export interface VerifyOptions {
     skipIfPassed?: boolean;
+    /** The size of the backup in bytes, where the caller knows it, so a download is promised its space first. */
+    size?: number;
     /** Bytes of a download so far, for a copy that has to be downloaded to be hashed. */
     onProgress?: (processed: number, total: number) => void;
 }
@@ -39,6 +43,37 @@ export interface VerifyOptions {
 export function checksNatively(adapterId: string): boolean {
     const adapter = registry.get(adapterId) as StorageAdapter | undefined;
     return typeof adapter?.verifyChecksum === "function";
+}
+
+/** The most checks that download a whole backup at once, in the process every tenant shares. */
+export const WHOLE_DOWNLOADS_AT_ONCE = 2;
+
+/** What a check reads that needs more temporary space than the server has free. */
+export const VERIFY_SPACE_REFUSED = "This check downloads the whole backup, which needs more temporary space than the server has free. Ask the administrator of DBackup to free up space.";
+
+const wholeDownloadGate = createConcurrencyGate(WHOLE_DOWNLOADS_AT_ONCE);
+
+/**
+ * Runs a check that downloads the whole backup into the temporary folder every tenant shares. At
+ * most `WHOLE_DOWNLOADS_AT_ONCE` run at once and the others wait their turn, and a backup of a
+ * known size is promised its space first like the staged entries of a restore (`reserveTempSpace`).
+ */
+async function wholeDownload<T>(size: number | undefined, check: () => Promise<T>): Promise<T> {
+    return wholeDownloadGate(async () => {
+        let space: Awaited<ReturnType<typeof reserveTempSpace>> | undefined;
+        if (size !== undefined && Number.isFinite(size) && size > 0) {
+            try {
+                space = await reserveTempSpace([size], 1);
+            } catch {
+                throw new ServiceError("VerificationService", "tempSpace", VERIFY_SPACE_REFUSED);
+            }
+        }
+        try {
+            return await check();
+        } finally {
+            space?.release();
+        }
+    });
 }
 
 export class VerificationService {
@@ -99,19 +134,24 @@ export class VerificationService {
 
                     // Native check failed — compute actual checksum via download for diagnostics.
                     if (metadata.checksum) {
-                        // In the private folder, since a plain backup is the data of the databases.
-                        const tempFile = await privateTempPath(`verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
-                        try {
-                            const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
-                            if (downloadOk) {
-                                const actual = await calculateFileChecksum(tempFile);
-                                return { status: 'failed', expectedChecksum: metadata.checksum, actualChecksum: actual, verifiedAt, method: 'native' };
+                        const expected = metadata.checksum;
+                        const actual = await wholeDownload(options?.size, async () => {
+                            // In the private folder, since a plain backup is the data of the databases.
+                            const tempFile = await privateTempPath(`verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
+                            try {
+                                const downloadOk = await adapter.download(config, remotePath, tempFile, options?.onProgress);
+                                return downloadOk ? await calculateFileChecksum(tempFile) : null;
+                            } catch (e: unknown) {
+                                log.warn("Could not compute actual checksum after native failure", { remotePath }, wrapError(e));
+                                return null;
+                            } finally {
+                                await fs.unlink(tempFile).catch(() => {});
                             }
-                        } catch (e: unknown) {
+                        }).catch((e: unknown) => {
                             log.warn("Could not compute actual checksum after native failure", { remotePath }, wrapError(e));
-                        } finally {
-                            await fs.unlink(tempFile).catch(() => {});
-                        }
+                            return null;
+                        });
+                        if (actual) return { status: 'failed', expectedChecksum: expected, actualChecksum: actual, verifiedAt, method: 'native' };
                     }
 
                     return { status: 'failed', expectedChecksum: metadata.checksum, verifiedAt, method: 'native' };
@@ -126,6 +166,24 @@ export class VerificationService {
             return { status: 'no_checksum', verifiedAt };
         }
 
+        const read = metadata;
+        const expected = metadata.checksum;
+        return wholeDownload(options?.size, () => this.downloadAndHash(adapterConfigId, adapter, config, remotePath, metaPath, read, expected, trigger, verifiedAt, options));
+    }
+
+    /** The check by a download of the whole backup and its SHA-256, inside `wholeDownload`. */
+    private async downloadAndHash(
+        adapterConfigId: string,
+        adapter: StorageAdapter,
+        config: any,
+        remotePath: string,
+        metaPath: string,
+        metadata: BackupMetadata,
+        expected: string,
+        trigger: 'manual' | 'post-upload' | 'scheduled',
+        verifiedAt: string,
+        options?: VerifyOptions
+    ): Promise<FileVerificationResult> {
         // In the private folder, since a plain backup is the data of the databases.
         const tempFile = await privateTempPath(`verify_${crypto.randomUUID()}_${path.basename(remotePath)}`);
         try {
@@ -135,7 +193,7 @@ export class VerificationService {
             }
 
             const actual = await calculateFileChecksum(tempFile);
-            const passed = actual === metadata.checksum;
+            const passed = actual === expected;
 
             await this.writeVerificationResult(adapterConfigId, adapter, config, metaPath, metadata, {
                 verifiedAt,
@@ -147,7 +205,7 @@ export class VerificationService {
 
             return {
                 status: passed ? 'passed' : 'failed',
-                expectedChecksum: metadata.checksum,
+                expectedChecksum: expected,
                 actualChecksum: passed ? undefined : actual,
                 verifiedAt,
                 method: 'download',

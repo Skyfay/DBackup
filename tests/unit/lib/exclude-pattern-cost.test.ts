@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Minimatch } from "minimatch";
 import { EXCLUDE_GROUPS } from "@/lib/exclude-groups";
-import { excludePatternProblem, excludePatternsProblem, isPlainPattern, matchPlainPattern } from "@/lib/exclude-pattern-rules";
+import { excludePatternProblem, excludePatternsProblem, isPlainPattern, matchPlainPattern, MAX_LIST_ALTERNATIVES, usableExcludePatterns } from "@/lib/exclude-pattern-rules";
 import { canPruneDirectory, matchesAnyExcludePattern, matchesExcludePattern } from "@/lib/exclude-patterns";
 import { ValidationError } from "@/lib/logging/errors";
 
@@ -128,5 +128,28 @@ describe("the plain matcher excludes exactly what the glob library excluded", ()
         expect(matchPlainPattern("abc", "*b?")).toBe(true);
         expect(matchPlainPattern("abc", "a**c")).toBe(true);
         expect(matchPlainPattern("", "*")).toBe(true);
+    });
+});
+
+describe("patterns with braces", () => {
+    it("count every pattern nested braces stand for, not just the innermost groups", () => {
+        // Four groups by the old count, 81 patterns the glob library makes of it.
+        expect(excludePatternProblem("*a*{a,b,c,d,e,f,g,{h,i}}{a,b,c,d,e,f,g,{h,i}}")).toMatch(/too many alternatives/);
+        expect(excludePatternProblem("*.{log,tmp}")).toBeNull();
+        expect(excludePatternProblem("cache/{a,b}/*.{x,y}")).toBeNull();
+    });
+
+    it("bound what a whole list stands for, and leave plain patterns out of the count", () => {
+        const braced = Array.from({ length: MAX_LIST_ALTERNATIVES / 4 + 1 }, (_, i) => `d${i}/{a,b}{c,d}`);
+        expect(excludePatternsProblem(braced)).toMatch(/stand for more than/);
+        expect(excludePatternsProblem(braced.slice(0, -1))).toBeNull();
+        expect(excludePatternsProblem(Array.from({ length: 500 }, (_, i) => `*.ext${i}`))).toBeNull();
+    });
+
+    it("leave out at a run what a save would refuse, and keep the rest", () => {
+        const { usable, skipped } = usableExcludePatterns(["*.tmp", "logs/*.*.*", "cache/**"]);
+
+        expect(usable).toEqual(["*.tmp", "cache/**"]);
+        expect(skipped.map((entry) => entry.pattern)).toEqual(["logs/*.*.*"]);
     });
 });

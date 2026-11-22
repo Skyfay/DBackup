@@ -24,7 +24,7 @@ import crypto from "crypto";
 import { pipeline } from "stream/promises";
 import { StorageAdapter, AdapterConfig } from "@/lib/core/interfaces";
 import { LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
-import { NotFoundError } from "@/lib/logging/errors";
+import { NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { openRow, type OpenDestination } from "@/services/sharing/destination-access";
 import { findRestoreTarget } from "./restore-target";
 import { shouldRestoreDatabase } from "@/lib/adapters/database/common/tar-utils";
@@ -137,6 +137,11 @@ export async function restoreArchiveSnapshot(
     // Opens the archive remotely, reads the index (sidecar first), and verifies the chain
     // is complete - a missing sibling archive fails here, by name, before anything runs.
     const archive = await openArchiveForRestore(input.storageConfigId, input.file, input.keyOverride, input.shared?.copyTenantId);
+    // The restore of a customer reads the index whose proof was checked before, see `SharedRestore.indexSha256`.
+    if (input.shared?.indexSha256 && archive.indexSha256 !== input.shared.indexSha256) {
+        await archive.dispose();
+        throw new ValidationError("The backup changed at its destination since it was checked, so it is not restored. Try again.");
+    }
     callbacks.record?.opened(archive.ranged);
 
     try {
@@ -253,7 +258,7 @@ export async function restoreArchiveSnapshot(
                         config: target.config,
                         basePath,
                         label: `${target.row.name}:${basePath}`,
-                        origin: await originOfBackup(input, mappingEntry.entryId, source, mappingEntry.targetConfigId, basePath, target.row.adapterId),
+                        origin: await originOfBackup({ ...input, indexSha256: archive.indexSha256 }, mappingEntry.entryId, source, mappingEntry.targetConfigId, basePath, target.row.adapterId),
                     });
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : String(e);

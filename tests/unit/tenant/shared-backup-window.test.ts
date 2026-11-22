@@ -27,6 +27,7 @@ function backup(stored: string, dumped?: string): ServerBackupFile {
             databases: ["crm", "other"], sourceId: "srv-1", hasFileIndex: true,
             ...(dumped ? { dumpsStartedAt: at(dumped).toISOString() } : {}),
         },
+        proof: { kind: "recorded", digests: [] },
     };
 }
 

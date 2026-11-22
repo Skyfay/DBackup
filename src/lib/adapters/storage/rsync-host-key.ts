@@ -15,14 +15,27 @@ import { firstKnownHostKey, knownHostsLine, opensshRefusal } from "@/lib/transpo
  * policy, the one of a connection with the check switched off, runs as before.
  */
 
-/** The fields that carry the check of one call to `rsync.ts`, set here and never stored. */
-export interface KnownHosts {
-    /** The `known_hosts` file of the call. Absent: ssh accepts every key. */
-    knownHostsFile?: string;
+/**
+ * The key of the check of one call to `rsync.ts`, set here and never stored. A symbol, like the
+ * marks of `reach-policy.ts` and `host-key.ts`, since the config of a request or a stored row is
+ * JSON and cannot carry one. Under a name of text a config could bring its own file, which rsync
+ * splits into words with the rest of its `-e` command and ssh reads as options of its own.
+ */
+export const KNOWN_HOSTS: unique symbol = Symbol("dbackup.rsync.knownHosts");
+
+/** The check of one call to `rsync.ts`. */
+export interface KnownHostsCall {
+    /** The `known_hosts` file of the call, in a folder of DBackup's private temporary folder. */
+    file: string;
     /** Whether the file holds the pin of the connection, so ssh refuses any other key. */
-    strictHostKey?: boolean;
+    strict: boolean;
     /** Told when ssh refused the host key, with the fingerprint it printed, if any. */
-    onHostKeyRefused?: (presented: string | null) => void;
+    onRefused: (presented: string | null) => void;
+}
+
+/** The field that carries the check of one call. Absent: ssh accepts every key. */
+export interface KnownHosts {
+    [KNOWN_HOSTS]?: KnownHostsCall;
 }
 
 /** The methods that answer a failure with a result instead of throwing it. */
@@ -66,9 +79,7 @@ export function withRsyncHostKey(adapter: StorageAdapter): StorageAdapter {
                 await writeNewFile(file, policy.pinned ? `${knownHostsLine(policy.pinned)}\n` : "");
                 const ready: object & KnownHosts = {
                     ...config,
-                    knownHostsFile: file,
-                    strictHostKey: !!policy.pinned,
-                    onHostKeyRefused: (presented) => { refused ??= { presented }; },
+                    [KNOWN_HOSTS]: { file, strict: !!policy.pinned, onRefused: (presented) => { refused ??= { presented }; } },
                 };
 
                 let result: unknown;

@@ -28,6 +28,7 @@ Someone who may only read the settings sees every value and a line on top that s
 | **Time zone** | The clock of every schedule, of the file names and of the retention. The line below it says what 03:00 there is in UTC. | UTC |
 | **Runs at the same time** | How many backups run at once, in every tenant together. A restore, an integrity check or a check of copies runs beside them and takes none of these runs. | 1 |
 | **Fail a run that stops reporting after** | Fails a backup or restore that reports no progress for this long, so it gives its run back. **Never** turns it off. | 6 hours |
+| **Fail a run that takes longer than** | Fails a backup that runs longer than this, also while it still reports progress, so one slow source cannot hold the runs of everyone else. **No limit** turns it off. | 1 day |
 | **Look for new versions** | Asks GitHub for the newest release, marks a new version with a blue dot on the right of the header and reports it once a day. Off, DBackup never asks. | On |
 | **Show Quick Setup in the sidebar** | Keeps Quick Setup in the sidebar. It shows by itself while no database is set up. | Off |
 
@@ -40,7 +41,7 @@ What DBackup does by itself, each on its own schedule in the time zone of Genera
 | Task | Schedule | On by default | Follows |
 | :--- | :--- | :--- | :--- |
 | **Health checks** | Every minute | Yes | |
-| **Stuck run watchdog** | Every 5 minutes | Yes | **Fail a run that stops reporting after** under General |
+| **Stuck run watchdog** | Every 5 minutes | Yes | **Fail a run that stops reporting after** and **Fail a run that takes longer than** under General |
 | **Database versions** | Every hour | Yes | |
 | **Storage statistics** | Every hour | Yes | |
 | **Backups page cache** | Every hour | Yes | |
@@ -51,7 +52,7 @@ What DBackup does by itself, each on its own schedule in the time zone of Genera
 | **Integrity check** | Sundays at 04:00 | No | |
 | **Optimize the database** | The 1st of the month at 05:00 | Yes | |
 
-A task that follows a setting has one switch, the one of that setting. Switching the task off sets it off there too, and the other way round. Switching the stuck run watchdog on again brings back the timeout of 6 hours.
+A task that follows a setting has one switch, the one of that setting. Switching the task off sets it off there too, and the other way round. Switching the stuck run watchdog on again brings back the timeout of 6 hours and the longest run of 1 day.
 
 The list shows each schedule in words with the next run, and the last run with how long it took or what it did, like `2,418 removed` or `v3.4.0 is current`. A run that needs a look shows in amber, and **A problem** above the list shows only those tasks. The switch of a row turns a task on and off at once.
 

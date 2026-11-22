@@ -266,9 +266,15 @@ it would hold its slot indefinitely and every job queued behind it would silentl
 without reporting progress before it is cancelled and marked failed. The default is 6 hours, and
 `Never` switches the check off.
 
-The measure is progress, not age. A twelve-hour transfer that keeps reporting is left alone; a
-five-minute one that went quiet is not. The watchdog runs every five minutes as the system task
-**Stuck run watchdog**, which follows this setting: switching the task off sets it to `Never`.
+The measure is progress, not age. A twelve-hour transfer that keeps reporting is left alone, a
+five-minute one that went quiet is not.
+
+**Settings** → **General** → **Fail a run that takes longer than** is the one limit on age. A source
+that trickles a byte now and then keeps reporting progress, so without it one run could hold its
+slot for days. The default is one day, `No limit` switches it off.
+
+The watchdog runs every five minutes as the system task **Stuck run watchdog**, which follows both
+settings: switching the task off sets them to `Never` and `No limit`.
 
 ## Job Pipeline
 

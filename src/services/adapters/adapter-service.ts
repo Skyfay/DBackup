@@ -19,6 +19,7 @@ import type { DeleteOptions } from "@/services/trash/trash-types";
 import { isAirGapped } from "@/lib/core/air-gap";
 import { decryptConfig } from "@/lib/crypto";
 import { assertMayManageHostLocal } from "./adapter-create";
+import { mergeAdapterMetadata } from "./ssh-host-key-service";
 
 const log = logger.child({ service: "AdapterService" });
 
@@ -226,16 +227,6 @@ const FLAG_TYPES: Record<keyof AdapterFlagChange, { types: string[]; destination
     },
 };
 
-function parseMetadata(metadata: string | null): Record<string, unknown> {
-    if (!metadata) return {};
-    try {
-        const value = JSON.parse(metadata);
-        return value && typeof value === "object" ? value : {};
-    } catch {
-        return {};
-    }
-}
-
 /** The stored config of a connection in plain text, empty when it cannot be read. */
 function storedConfig(config: string): Record<string, unknown> {
     try {
@@ -271,9 +262,8 @@ export async function updateAdapterFlags(ids: string[], change: AdapterFlagChang
             }
             // A connection that reaches the server DBackup runs on is changed by a platform admin alone.
             await assertMayManageHostLocal(adapter.adapterId, storedConfig(adapter.config), adapter, true);
-            // The rest of the metadata, like the detected version, stays as it is.
-            const metadata = { ...parseMetadata(adapter.metadata), ...change };
-            await prisma.adapterConfig.update({ where: { id }, data: { metadata: JSON.stringify(metadata) } });
+            // The rest of the metadata, like the detected version and a pinned host key, stays as it is now.
+            await mergeAdapterMetadata({ id }, { ...change });
         },
         (id) => byId.get(id)?.name
     );

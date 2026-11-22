@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const ctx = await requireConfigRestorer();
     if (ctx instanceof Response) return ctx;
 
-    // The middleware cuts a bigger body off, so the file would arrive broken.
+    // The proxy cuts a bigger body off, so the file would arrive broken.
     const { form, tooLarge } = await readFormWithin(req, CONFIG_UPLOAD_MAX_BYTES);
     if (tooLarge) return NextResponse.json({ success: false, error: CONFIG_UPLOAD_TOO_BIG }, { status: 413 });
     const backup = form?.get("backupFile");

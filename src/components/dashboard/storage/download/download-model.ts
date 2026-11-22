@@ -112,7 +112,8 @@ export function commandFor(tool: Tool, url: string | null, fileName: string): st
     const link = url ?? MISSING_LINK;
     if (tool === "curl") return `curl -fOJ "${link}"`;
     if (tool === "wget") return `wget --content-disposition "${link}"`;
-    return `Invoke-WebRequest -UseBasicParsing -Uri '${link}' -OutFile '${fileName.replace(/'/g, "''")}'`;
+    // PowerShell ends a single-quoted string at the typographic single quotes too, so each is doubled like the plain one.
+    return `Invoke-WebRequest -UseBasicParsing -Uri '${link}' -OutFile '${fileName.replace(/['‘’‚‛]/g, "$&$&")}'`;
 }
 
 /** The value to mark in a command, amber while it cannot work and green once it can. */

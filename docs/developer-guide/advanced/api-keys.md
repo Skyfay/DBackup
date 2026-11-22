@@ -6,7 +6,7 @@ This document covers the API key authentication system and the webhook trigger m
 
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  External Client │     │   Middleware      │     │   API Route      │
+│  External Client │     │   Proxy           │     │   API Route      │
 │  (cURL, CI/CD)   │────▶│   (Rate Limiter)  │────▶│   Handler        │
 │                  │     │                  │     │                  │
 │  Authorization:  │     │  Passes Bearer   │     │  getAuthContext() │

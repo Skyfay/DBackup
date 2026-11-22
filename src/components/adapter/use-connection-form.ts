@@ -11,11 +11,12 @@ import type { AdapterConfig } from "./types";
 import { buildConnectionFormSchema, type ConnectionFormValues } from "./connection-form-schema";
 import { defaultConfig, fillMissingSwitches, fillRequiredText, initialRole, parseObject } from "./connection-form-defaults";
 import { serverFreeDefaults, useMayReachServer } from "./host-local-access";
+import { sshEndpointOf } from "@/lib/transport/ssh-endpoint";
 
 export type ConnectionTestState =
     | { status: "idle" }
     | { status: "running" }
-    | { status: "passed"; version?: string; hostKey?: TestedHostKey }
+    | { status: "passed"; version?: string; hostKey?: TestedHostKey; endpoint?: string }
     | { status: "failed"; message: string; hostKeyMismatch?: HostKeyMismatchSeen };
 
 /** The host key of the SSH server a passing test saw, which a save pins, see `ssh-host-key.tsx`. */
@@ -158,13 +159,20 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         return (await res.json()) as TestResponse;
     };
 
+    /** The SSH server a config logs in to, as text, so a result only counts for the server it tried. */
+    const endpointOf = (config: unknown): string =>
+        JSON.stringify(sshEndpointOf(adapter.id, config && typeof config === "object" ? (config as Record<string, unknown>) : {}));
+
     /** The test button. A failure also goes to a toast, where the whole message fits. */
     const runTest = async () => {
         setTest({ status: "running" });
         try {
-            const result = await requestTest(form.getValues());
+            const values = form.getValues();
+            // Before the test runs: the form hands out its values themselves, which a change meanwhile changes too.
+            const endpoint = endpointOf(values.config);
+            const result = await requestTest(values);
             if (result.success) {
-                setTest({ status: "passed", version: result.version, hostKey: result.hostKey });
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint });
             } else {
                 const message = result.message || "Connection failed";
                 setTest({ status: "failed", message, hostKeyMismatch: result.hostKeyMismatch });
@@ -187,8 +195,13 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         return storedMetadata;
     };
 
-    /** `hostKey` is the key the test of these values saw, which the save pins. */
-    const save = async (values: ConnectionFormValues, hostKey: TestedHostKey | undefined = test.status === "passed" ? test.hostKey : undefined) => {
+    /**
+     * `hostKey` is the key the test of these values saw, which the save pins. A test that ran while
+     * the host or port was changed tried another server, so its key is left out.
+     */
+    const testedKey = (values: ConnectionFormValues): TestedHostKey | undefined =>
+        test.status === "passed" && test.endpoint === endpointOf(values.config) ? test.hostKey : undefined;
+    const save = async (values: ConnectionFormValues, hostKey: TestedHostKey | undefined = testedKey(values)) => {
         setSaving(true);
         try {
             const res = await fetch(initialData ? `/api/adapters/${initialData.id}` : "/api/adapters", {
@@ -229,9 +242,10 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
 
         setTest({ status: "running" });
         try {
+            const endpoint = endpointOf(values.config);
             const result = await requestTest(values);
             if (result.success) {
-                setTest({ status: "passed", version: result.version, hostKey: result.hostKey });
+                setTest({ status: "passed", version: result.version, hostKey: result.hostKey, endpoint });
                 await save(values, result.hostKey);
                 return;
             }

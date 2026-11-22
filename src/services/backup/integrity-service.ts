@@ -241,6 +241,7 @@ export class IntegrityService {
           "scheduled",
           {
             skipIfPassed: filters.skipPassed,
+            size: item.size ?? undefined,
             onProgress: (processed, total) => callbacks?.onCopy?.({ ...copy, state: "checking", method: "download", processed, total }),
           }
         );

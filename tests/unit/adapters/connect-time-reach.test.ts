@@ -55,7 +55,7 @@ const { pinDatabaseHost, withPinnedDatabaseHost } = await import("@/lib/adapters
 const { createFakeHost } = await import("@/lib/testing/fake-host");
 const { buildConnectionArgs: redisArgs } = await import("@/lib/adapters/database/redis/args");
 const { tdsConnector } = await import("@/lib/adapters/database/mssql/connector");
-const { pinRsyncHost, withPinnedRsyncHost } = await import("@/lib/adapters/storage/rsync-pin");
+const { DIAL_ADDRESS, pinRsyncHost, withPinnedRsyncHost } = await import("@/lib/adapters/storage/rsync-pin");
 const { smbAddressOptions } = await import("@/lib/adapters/storage/smb-pin");
 const { sshTarget } = await import("@/lib/adapters/storage/rsync");
 const { EmailAdapter } = await import("@/lib/adapters/notification/email");
@@ -223,9 +223,9 @@ describe("the connector of SQL Server", () => {
 
 describe("the storage and channel clients", () => {
     it("let ssh dial the checked address bare, and rsync's path put an IPv6 address in brackets", async () => {
-        await expect(pinRsyncHost(marked({ host: "db.example.com" }))).resolves.toEqual(expect.objectContaining({ dialAddress: "93.184.216.34" }));
-        await expect(pinRsyncHost(marked({ host: "v6.example.com" }))).resolves.toEqual(expect.objectContaining({ dialAddress: "2606:4700::1111" }));
-        const v6 = { host: "v6.example.com", username: "backup", dialAddress: "2606:4700::1111" } as never;
+        await expect(pinRsyncHost(marked({ host: "db.example.com" }))).resolves.toEqual(expect.objectContaining({ [DIAL_ADDRESS]: "93.184.216.34" }));
+        await expect(pinRsyncHost(marked({ host: "v6.example.com" }))).resolves.toEqual(expect.objectContaining({ [DIAL_ADDRESS]: "2606:4700::1111" }));
+        const v6 = { host: "v6.example.com", username: "backup", [DIAL_ADDRESS]: "2606:4700::1111" } as never;
         expect(sshTarget(v6)).toBe("backup@2606:4700::1111");
         expect(sshTarget(v6, true)).toBe("backup@[2606:4700::1111]");
         const plain = { host: "db.internal" };
@@ -235,7 +235,7 @@ describe("the storage and channel clients", () => {
     });
 
     it("fall back to the next checked address of a name when the first does not answer", async () => {
-        await expect(pinRsyncHost(marked({ host: "multi.example.com", port }, loopback))).resolves.toEqual(expect.objectContaining({ dialAddress: "127.0.0.1" }));
+        await expect(pinRsyncHost(marked({ host: "multi.example.com", port }, loopback))).resolves.toEqual(expect.objectContaining({ [DIAL_ADDRESS]: "127.0.0.1" }));
         const pinned = await pinDatabaseHost(adapter("postgres"), marked({ host: "multi.example.com", port }, loopback));
         expect(pinned.env).toEqual({ PGHOSTADDR: "127.0.0.1" });
     });

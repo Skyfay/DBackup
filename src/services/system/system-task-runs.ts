@@ -24,6 +24,7 @@ import type { SystemTaskRunner } from "@/lib/runner/system-task-runner";
 import { isAirGapped, isNotConnected } from "@/lib/core/air-gap";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { mergeAdapterMetadata } from "@/services/adapters/ssh-host-key-service";
 
 const log = logger.child({ service: "SystemTaskService" });
 
@@ -204,18 +205,12 @@ export async function updateDbVersions(): Promise<TaskOutcome> {
 
             if (result.success && result.version) {
                 answered++;
-                // Update Metadata
-                const currentMeta = source.metadata ? JSON.parse(source.metadata) : {};
-                const newMeta = {
-                    ...currentMeta,
+                // Over the metadata as it is now: the test may have pinned the SSH host key, and a
+                // person may have trusted or forgotten one while other sources were tested.
+                await mergeAdapterMetadata(source, {
                     engineVersion: result.version,
                     lastCheck: new Date().toISOString(),
                     status: 'Online'
-                };
-
-                await prisma.adapterConfig.update({
-                    where: { id: source.id },
-                    data: { metadata: JSON.stringify(newMeta) }
                 });
                 log.info("Updated database version", { sourceName: source.name, version: result.version });
 
@@ -247,17 +242,7 @@ export async function updateDbVersions(): Promise<TaskOutcome> {
                     log.error("Failed to record/notify version change", { sourceName: source.name }, wrapError(e));
                 }
             } else {
-                // Mark as offline or warning?
-                 const currentMeta = source.metadata ? JSON.parse(source.metadata) : {};
-                 const newMeta = {
-                    ...currentMeta,
-                    status: 'Unreachable',
-                    lastError: result.message
-                 };
-                 await prisma.adapterConfig.update({
-                    where: { id: source.id },
-                    data: { metadata: JSON.stringify(newMeta) }
-                });
+                await mergeAdapterMetadata(source, { status: 'Unreachable', lastError: result.message });
             }
 
         } catch (e: unknown) {

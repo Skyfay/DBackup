@@ -122,6 +122,20 @@ describe("recovering a backup whose index was edited on the destination", () => 
         expect((await fs.readdir(kit)).sort()).toEqual(["restored"]);
     });
 
+    it.skipIf(process.platform === "win32")("lays no link whose path holds backslashes, which Linux reads as one name in the top folder", async () => {
+        const kit = path.join(workDir, "kit");
+        await fs.mkdir(kit);
+        // Measured three folders deep it would stay inside, laid at one name it climbs out of the output folder.
+        const archive = await tamperedArchive("c.tar", [
+            { k: "f", src: "s", p: "a\\b\\c", s: 0, m: MTIME, lnk: "../../outside" },
+        ]);
+
+        const { stderr } = await runScript(["--extract", archive, "restored"], kit);
+
+        expect(stderr).toContain("SKIPPED (link leads out of the output folder)");
+        expect(fsSync.existsSync(path.join(kit, "restored/s/a\\b\\c"))).toBe(false);
+    });
+
     it("still extracts a backup with a plain source id into the folder of that source", async () => {
         const kit = path.join(workDir, "kit");
         await fs.mkdir(kit);

@@ -37,7 +37,7 @@ vi.mock("ssh2-sftp-client", () => ({
 const overlay = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/adapters/config-resolver", () => ({ overlayCredentialsOnConfig: overlay }));
 
-const { assertOffSharedLogins, assertSharedLoginsAlone } = await import("@/services/adapters/shared-login");
+const { assertOffSharedLogins, assertOffSharedLoginsOfForm, assertSharedLoginsAlone } = await import("@/services/adapters/shared-login");
 const { listRemoteDirectory } = await import("@/services/system/filesystem-service");
 const { placesOverlap, storagePlaceOf } = await import("@/lib/adapters/storage-place");
 
@@ -96,6 +96,33 @@ describe("the saved login of a destination shared with customers", () => {
             .rejects.toThrow("signs in to a destination shared with customers");
         expect(overlay).not.toHaveBeenCalled();
         expect(sftp.connect).not.toHaveBeenCalled();
+    });
+});
+
+describe("the saved login of a shared destination in a form that tries a config", () => {
+    const stored = { adapterId: "sftp", config: JSON.stringify({ host: "nas.example.test", port: 22 }) };
+
+    it("is refused at a host the caller names, with or without the id of the destination", async () => {
+        db.configFindUnique.mockImplementation(async ({ select }: { select: Record<string, true> }) => (select.config ? stored : { primaryCredentialId: "nas-key", sshCredentialId: null }));
+
+        await expect(assertOffSharedLoginsOfForm({ primaryCredentialId: "nas-key" }, { adapterId: "sftp", config: { host: "127.0.0.1", port: 2421 } }))
+            .rejects.toBeInstanceOf(ValidationError);
+        await expect(assertOffSharedLoginsOfForm({ primaryCredentialId: "nas-key" }, { adapterId: "sftp", config: { host: "127.0.0.1", port: 2421 }, configId: "nas" }))
+            .rejects.toBeInstanceOf(ValidationError);
+        await expect(assertOffSharedLoginsOfForm({ sshCredentialId: "nas-key" }, { adapterId: "mysql", config: { connectionMode: "ssh", sshHost: "127.0.0.1" } }))
+            .rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("stays with the form of the shared destination at the address it has stored", async () => {
+        db.configFindUnique.mockImplementation(async ({ select }: { select: Record<string, true> }) => (select.config ? stored : { primaryCredentialId: "nas-key", sshCredentialId: null }));
+
+        await expect(assertOffSharedLoginsOfForm({ primaryCredentialId: "nas-key" }, { adapterId: "sftp", config: { host: "nas.example.test", port: 22 }, configId: "nas" }))
+            .resolves.toBeUndefined();
+    });
+
+    it("asks nothing for a form without a saved login", async () => {
+        await expect(assertOffSharedLoginsOfForm({}, { adapterId: "sftp", config: { host: "127.0.0.1" } })).resolves.toBeUndefined();
+        expect(db.shareFindFirst).not.toHaveBeenCalled();
     });
 });
 

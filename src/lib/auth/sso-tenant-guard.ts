@@ -5,6 +5,7 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { runAsTenant } from "@/lib/tenant/context";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
 import { auditService } from "@/services/audit-service";
+import { tenantClaimingEmail } from "@/services/sso/email-domain-claims";
 import { DISABLED_PROVIDER_URL, isSsoCallback, ssoProviderIdOf, type SsoHookContext } from "./sso-guard";
 
 /**
@@ -118,13 +119,25 @@ const accountOf = (userId: string) =>
 /**
  * Whether another tenant made the account: none of the tenants it works in is this one. An account
  * of no tenant counts as one of the home tenant, whose admins set its password, like `accountRefusal`
- * counts it, so a provider of another tenant never links it. Someone new a provider adds is a member
- * of its tenant before the link, see `placeSsoUser`.
+ * counts it, so a provider of another tenant never links it. A provider of the platform also asks
+ * `placelessOfCustomer`, since such an account whose email a customer's provider claims is the
+ * customer's. Someone new a provider adds is a member of its tenant before the link, see `placeSsoUser`.
  */
 const madeElsewhere = (user: { memberships: { tenantId: string }[] }, tenantId: string) => {
     const tenants = user.memberships.length > 0 ? user.memberships.map((membership) => membership.tenantId) : [HOME_TENANT_ID];
     return !tenants.includes(tenantId);
 };
+
+/**
+ * Whether an account of no tenant that no platform role or group holds counts as one of a customer:
+ * the provider of a tenant other than the home tenant claims its email. Its admins set its password,
+ * like `userService.accountOf` counts it, so it is none of the platform's own people.
+ */
+async function placelessOfCustomer(user: { email: string; platformRole: string | null; platformGroupId: string | null; memberships: { tenantId: string }[] }): Promise<boolean> {
+    if (user.memberships.length > 0 || user.platformRole || user.platformGroupId) return false;
+    const claim = await tenantClaimingEmail(user.email);
+    return claim !== null && claim !== HOME_TENANT_ID;
+}
 
 /** The session the request carries, of someone who links a provider to their own account, with the tenant it works in. */
 export async function signedInSessionOf(context: SsoHookContext | null | undefined): Promise<{ userId: string; activeTenantId: string | null } | null> {
@@ -155,8 +168,10 @@ export async function allowTenantSsoLink(account: { userId: string }, context: S
     // An email the account chose itself vouches for nobody, only its owner links it, see above.
     if (user.emailVerified === false && (await signedInUserOf(context)) !== account.userId) return false;
     if (provider.tenantId) return tenantSignInRefusal(provider, user) === null && !madeElsewhere(user, provider.tenantId);
-    // The people of the platform and of the home tenant are the platform's own.
-    if (user.platformRole || user.platformGroupId || !madeElsewhere(user, HOME_TENANT_ID)) return true;
+    // The people of the platform and of the home tenant are the platform's own. An account of no
+    // tenant whose email a customer's provider claims is the customer's, whose admins set its password.
+    if (user.platformRole || user.platformGroupId) return true;
+    if (!madeElsewhere(user, HOME_TENANT_ID) && !(await placelessOfCustomer(user))) return true;
     return (await signedInUserOf(context)) === account.userId;
 }
 

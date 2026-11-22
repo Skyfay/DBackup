@@ -3,19 +3,18 @@ import { describe, expect, it } from "vitest";
 import { defaultTrustNotice, proxyHeaderFrom, trustedProxiesFrom } from "../../../server/client-address";
 
 /**
- * With TRUSTED_PROXIES unset a device of a private network that reaches DBackup directly names its
- * own address in X-Forwarded-For. The server cannot tell it from a reverse proxy, so it says once
- * which setting pins the proxy and which one reads no forwarded header.
+ * With TRUSTED_PROXIES unset only a reverse proxy on the same machine counts, so a proxy in a
+ * Docker network or the LAN makes every request read as its own address. The server says once
+ * which setting trusts it.
  */
-describe("the line about a forwarded header that counts by the default alone", () => {
+describe("the line about a forwarded header the default ignores", () => {
     const noticeFor = (setting: string | undefined, header?: string) => defaultTrustNotice(setting, trustedProxiesFrom(setting), proxyHeaderFrom(header));
 
-    it("names the private peer and both settings the first time, and stays quiet afterwards", () => {
+    it("names the private peer and the setting that trusts it the first time, and stays quiet afterwards", () => {
         const notice = noticeFor(undefined);
         const line = notice("::ffff:192.168.1.50", "1.2.3.4", undefined);
-        expect(line).toContain("X-Forwarded-For of 192.168.1.50");
+        expect(line).toContain("X-Forwarded-For of 192.168.1.50 is ignored");
         expect(line).toContain("TRUSTED_PROXIES=192.168.1.50");
-        expect(line).toContain("TRUSTED_PROXIES=none");
         expect(notice("192.168.1.50", "5.6.7.8", undefined)).toBeNull();
         expect(notice("10.0.0.9", "5.6.7.8", undefined)).toBeNull();
     });
@@ -29,10 +28,11 @@ describe("the line about a forwarded header that counts by the default alone", (
         expect(notice("172.17.0.1", ["1.2.3.4"], undefined)).toContain("172.17.0.1");
     });
 
-    it("names X-Real-IP when that is the header of the proxy", () => {
+    it("names X-Real-IP when that is the header of the proxy, and never a proxy on this machine, which counts", () => {
         const notice = noticeFor(undefined, "x-real-ip");
-        expect(notice("127.0.0.1", "1.2.3.4", undefined)).toBeNull();
-        expect(notice("127.0.0.1", undefined, "1.2.3.4")).toContain("X-Real-IP of 127.0.0.1");
+        expect(notice("127.0.0.1", undefined, "1.2.3.4")).toBeNull();
+        expect(notice("172.18.0.2", "1.2.3.4", undefined)).toBeNull();
+        expect(notice("172.18.0.2", undefined, "1.2.3.4")).toContain("X-Real-IP of 172.18.0.2");
     });
 
     it.each(["none", "private", "10.0.0.5", "private,cloudflare"])("says nothing once TRUSTED_PROXIES is set to %s", (setting) => {

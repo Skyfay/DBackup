@@ -42,9 +42,9 @@ const now = new Date("2026-10-15T10:00:00.000Z");
 const later = new Date("2026-12-15T10:00:00.000Z");
 
 /** An account with a password, an open session, an authenticator app and a passkey, in these tenants. */
-async function seedAccount(id: string, tenants: string[], platform: { platformRole?: string; platformGroupId?: string } = {}) {
+async function seedAccount(id: string, tenants: string[], platform: { platformRole?: string; platformGroupId?: string } = {}, email = `${id}@msp.test`) {
     await base.user.create({
-        data: { id, name: id, email: `${id}@msp.test`, emailVerified: true, twoFactorEnabled: true, passkeyTwoFactor: true, createdAt: now, updatedAt: now, ...platform },
+        data: { id, name: id, email, emailVerified: true, twoFactorEnabled: true, passkeyTwoFactor: true, createdAt: now, updatedAt: now, ...platform },
     });
     for (const tenantId of tenants) await base.tenantMembership.create({ data: { userId: id, tenantId, groupId: `${tenantId}-group` } });
     await base.account.create({ data: { id: `cred-${id}`, accountId: id, providerId: "credential", userId: id, password: "hash-set-by-customer", createdAt: now, updatedAt: now } });
@@ -90,6 +90,9 @@ beforeAll(async () => {
     await seedAccount("v-tech", ["cust-a"], { platformGroupId: "pg-tech" });
     await seedAccount("v-admin", ["cust-a"], { platformRole: "ADMIN" });
     await seedAccount("v-none", []);
+    // The sign-in provider of cust-a claims acme.test, so an account of no tenant with such an email counts as one of cust-a.
+    await base.ssoProvider.create({ data: { providerId: "acme-sso", adapterId: "authentik", name: "Acme SSO", domain: "acme.test", tenantId: "cust-a" } });
+    await seedAccount("v-claimed", [], {}, "v-claimed@acme.test");
     await tenantService.delete("cust-a", new Date("2026-10-20T10:00:00.000Z"));
 }, 120_000);
 
@@ -109,6 +112,10 @@ describe("the accounts of a deleted customer tenant", () => {
 
     it("keeps the sign-in of the people of the platform who worked in it", async () => {
         for (const id of ["v-tech", "v-admin"]) expect(await signInOf(id), id).toEqual({ ...UNTOUCHED, tenants: [] });
+    });
+
+    it("leaves an account of no tenant that its provider claimed by the email without its sign-in too", async () => {
+        expect(await signInOf("v-claimed")).toEqual({ emailVerified: false, secondFactor: false, tenants: [], credentials: 0, sessions: 0, factors: 0 });
     });
 
     it("touches no account of another tenant or of no tenant", async () => {

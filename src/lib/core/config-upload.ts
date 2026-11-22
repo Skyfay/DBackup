@@ -1,5 +1,5 @@
 /**
- * The largest configuration backup Restore from a file takes. The middleware holds the body of every
+ * The largest configuration backup Restore from a file takes. The proxy holds the body of every
  * request for itself up to proxyClientMaxBodySize, which next.config.ts sets a little above this, so
  * a bigger upload reaches the route whole and is refused there instead of arriving cut off. A bigger
  * file is restored from its destination on the Backups page, which reads it on the server.

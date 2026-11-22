@@ -29,7 +29,7 @@ import { CLIENT_ADDRESS_HEADER, CUSTOM_SERVER_MARK, clientAddressOf, defaultTrus
 // ── Configuration ──────────────────────────────────────────────
 (process.env as Record<string, string | undefined>).NODE_ENV = "production";
 // Tells the app that this server replaces the header of the address on every request. Set before
-// the app is created, since the Edge sandbox of the middleware copies the environment when it starts.
+// the app is created, so every part of the app reads it from the start.
 process.env[CUSTOM_SERVER_MARK] = "1";
 process.chdir(__dirname);
 
@@ -48,7 +48,7 @@ try {
   trustedProxies = trustedProxiesFrom(process.env.TRUSTED_PROXIES);
   proxyHeader = proxyHeaderFrom(process.env.TRUSTED_PROXY_HEADER);
   trustNotice = defaultTrustNotice(process.env.TRUSTED_PROXIES, trustedProxies, proxyHeader);
-  console.log(`[Server] ${proxyHeader === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For"} counts from: ${process.env.TRUSTED_PROXIES?.trim() || "private (the default)"}`);
+  console.log(`[Server] ${proxyHeader === "x-real-ip" ? "X-Real-IP" : "X-Forwarded-For"} counts from: ${process.env.TRUSTED_PROXIES?.trim() || "loopback (the default)"}`);
 } catch (err: unknown) {
   console.error(`[Server] ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);

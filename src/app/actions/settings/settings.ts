@@ -19,6 +19,7 @@ const generalSchema = z.object({
     // 0 disables the watchdog. The upper bound is a week, past which a run that reports no
     // progress is not worth waiting for under any configuration.
     stuckTimeoutMinutes: z.coerce.number().int().min(0).max(10080),
+    maxRunMinutes: z.coerce.number().int().min(0).max(43200),
     checkForUpdates: z.boolean(),
     showQuickSetup: z.boolean(),
 });

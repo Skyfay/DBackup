@@ -23,8 +23,8 @@ import { runRsync, sanitizeCommand, type RsyncCommand } from "./rsync-process";
 import { assertRestoreDirAnswer, restoreDirCommand, writesInPlace } from "./rsync-restore-dir";
 import { restoreFolderOf } from "./common/restore-folder";
 import { rsyncUsernameProblem } from "./rsync-user";
-import type { DialAddress } from "./rsync-pin";
-import type { KnownHosts } from "./rsync-host-key";
+import { DIAL_ADDRESS, type DialAddress } from "./rsync-pin";
+import { KNOWN_HOSTS, type KnownHosts } from "./rsync-host-key";
 import { plainHost, validPort } from "@/lib/adapters/command-values";
 import { assertKeyCost } from "@/lib/transport/key-cost";
 import { opensshHostKeyOptions, opensshRefusal } from "@/lib/transport/host-key-openssh";
@@ -93,14 +93,16 @@ async function writeFileList(relativePaths: string[]): Promise<string> {
  * checked against the `known_hosts` file `rsync-host-key.ts` wrote for the call, or accepted
  * unchecked for a connection with the check switched off, which gets no file.
  */
-const sshHostKeyOptions = (config: RsyncConfig): string[] =>
-    opensshHostKeyOptions(config.knownHostsFile ? { file: config.knownHostsFile, pinned: config.strictHostKey === true } : undefined);
+const sshHostKeyOptions = (config: RsyncConfig): string[] => {
+    const check = config[KNOWN_HOSTS];
+    return opensshHostKeyOptions(check ? { file: check.file, pinned: check.strict } : undefined);
+};
 
 /** Tells the check of the call when ssh refused the host key of the server, see `rsync-host-key.ts`. */
 function noteHostKeyRefusal(config: RsyncConfig, error: unknown): void {
     const failure = error as { message?: unknown; stderr?: unknown } | null;
     const refusal = opensshRefusal(`${String(failure?.message ?? "")}\n${String(failure?.stderr ?? "")}`);
-    if (refusal) config.onHostKeyRefused?.(refusal.presented);
+    if (refusal) config[KNOWN_HOSTS]?.onRefused(refusal.presented);
 }
 
 /**
@@ -198,7 +200,8 @@ export function sshTarget(config: RsyncConfig, inRsyncPath = false): string {
     const host = plainHost(config.host, "rsync");
     // The address checked for a tenant that blocks the local network, see `rsync-pin.ts`. OpenSSH
     // takes an IPv6 address bare, rsync in brackets, since it ends the host of a path at a `:`.
-    const dial = config.dialAddress && inRsyncPath && config.dialAddress.includes(":") ? `[${config.dialAddress}]` : config.dialAddress;
+    const address = config[DIAL_ADDRESS];
+    const dial = address && inRsyncPath && address.includes(":") ? `[${address}]` : address;
     return `${config.username}@${dial ?? host}`;
 }
 
@@ -541,7 +544,8 @@ async function buildRsyncArgs(config: RsyncConfig, keyFile?: string, controlPath
     // combined `-avz` into the option `--avz`, which rsync refuses.
     if (config.options) args.push(...config.options.split(/\s+/).filter(Boolean));
 
-    return { args, ...(env ? { env } : {}), ...(config.onHostKeyRefused ? { onHostKeyRefused: config.onHostKeyRefused } : {}) };
+    const check = config[KNOWN_HOSTS];
+    return { args, ...(env ? { env } : {}), ...(check ? { onHostKeyRefused: check.onRefused } : {}) };
 }
 
 /**

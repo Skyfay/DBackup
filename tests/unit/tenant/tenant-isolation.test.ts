@@ -197,6 +197,19 @@ describe("the boundary between tenants", () => {
             expect(own.tenantId).toBe("globex");
             await expect(runAsTenant("acme", () => scoped.namingTemplate.create({ data: { name: "Weekly", pattern: "{name}" } }))).rejects.toThrow();
         });
+
+        // The import of a configuration backup upserts rows by the ids in the file. An id of another
+        // tenant must not find its row: the upsert creates it anew in its own tenant, where the id
+        // is taken, and fails.
+        it("never changes a row of another tenant by an upsert with its id", async () => {
+            const before = await base.namingTemplate.findUniqueOrThrow({ where: { id: "globex-naming" } });
+            await expect(runAsTenant("acme", () => scoped.namingTemplate.upsert({
+                where: { id: "globex-naming" },
+                create: { id: "globex-naming", name: "Taken over", pattern: "{name}" },
+                update: { name: "Taken over" },
+            }))).rejects.toThrow();
+            expect(await base.namingTemplate.findUniqueOrThrow({ where: { id: "globex-naming" } })).toEqual(before);
+        });
     });
 
     describe("the rows that belong to a tenant through their parent", () => {

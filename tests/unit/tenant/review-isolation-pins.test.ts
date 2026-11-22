@@ -28,6 +28,10 @@ describe("the filter of a tenant", () => {
         expect(() => scopeArgs("Job", "updateMany", { where: {}, data: { tenantId: "globex" } }, "acme")).toThrow(TenantScopeError);
     });
 
+    it("narrows the row an upsert looks for to the tenant", () => {
+        expect(scopeArgs("Execution", "upsert", { where: { id: "r" }, create: {}, update: {} }, "acme").where).toEqual({ id: "r", AND: [{ tenantId: "acme" }] });
+    });
+
     it("narrows an upsert and a delete of a child row through its parent", () => {
         expect(scopeChildArgs("job", "deleteMany", { where: { configId: "nas" } }, "acme").where).toEqual({ configId: "nas", AND: [{ job: { tenantId: "acme" } }] });
         expect(scopeChildArgs("share", "upsert", { where: { id: "x" } }, "acme").where).toEqual({ id: "x", AND: [{ share: { tenantId: "acme" } }] });

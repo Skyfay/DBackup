@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "fs";
 import path from "path";
 import { REPO_ROOT } from "../../../lab/src/config";
-import { DATABASES, DEX, NOTIFY, STORAGE, dexPerson, dexProviderId } from "../../../lab/src/catalog";
+import { DATABASES, DEX, NOTIFY, STORAGE, dexPerson, dexProviderId, dexTenantPerson, dexTenantProviderId } from "../../../lab/src/catalog";
 import { generatePassword } from "../../../lab/src/password";
 import { folderName, workspaceNameFrom } from "../../../lab/src/workspace";
 
@@ -62,6 +62,8 @@ describe("the services of the dev lab", () => {
         for (let attempt = 0; attempt < DEX.attempts; attempt++) {
             expect(text).toContain(`- http://localhost:3300/api/auth/sso/callback/${dexProviderId(attempt)}\n`);
             for (const kind of ["newcomer", "member"] as const) expect(text).toContain(`- email: ${dexPerson(kind, attempt).email}\n`);
+            expect(text).toContain(`- http://localhost:3300/api/auth/sso/callback/${dexTenantProviderId(attempt)}\n`);
+            expect(text).toContain(`- email: ${dexTenantPerson(attempt).email}\n`);
         }
     });
 

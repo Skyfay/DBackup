@@ -34,6 +34,10 @@
 
 - **file backups**: A run leaves out an exclude pattern that is too slow to match, saved before this version, with a warning in its log instead of failing the backup.
 
+### 🧪 Tests
+
+- **SSO**: An end-to-end test signs in through the provider of a tenant that blocks the local network, refused until the range of the provider is allowed.
+
 ### 🐛 Bug Fixes
 
 - **storage**: A backup takes the job, server and lock of the sidecar beside it, also when a backup of the same name lies in another folder.

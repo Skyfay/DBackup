@@ -6,7 +6,8 @@
  *
  * Dex of the lab stands in for the provider of a customer, under a domain of its own
  * (`DEX_TENANT_DOMAIN`), since the provider of the platform in auth-sso.spec.ts adds nobody of a
- * domain a tenant claims. Like there, each attempt of a retry takes its own provider ID and person.
+ * domain a tenant claims. The provider goes again at the end, since a provider with an email domain
+ * turns the login page of every later spec into two steps. Like there, each attempt of a retry takes its own provider ID and person.
  */
 
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
@@ -49,6 +50,8 @@ test.describe("signing in through the provider of a tenant that blocks the local
     let name = "";
     let providerId = "";
     let person = dexTenantPerson(0);
+    /** Whether the provider exists, which `afterAll` deletes again. */
+    let created = false;
     const browsers: BrowserContext[] = [];
 
     test.beforeAll(async ({ browser }, info) => {
@@ -62,8 +65,31 @@ test.describe("signing in through the provider of a tenant that blocks the local
     });
 
     test.afterAll(async () => {
-        await Promise.all([admin, ...browsers].map((context) => context?.close()));
+        // A provider with an email domain turns the login page into two steps, the email first,
+        // which the password sign-ins of the other specs do not expect. So it goes again.
+        try {
+            if (created) await deleteProvider();
+        } finally {
+            await Promise.all([admin, ...browsers].map((context) => context?.close()));
+        }
     });
+
+    /** Deletes the provider of this spec on the SSO tab. */
+    async function deleteProvider(): Promise<void> {
+        await adminPage.goto("/dashboard/users?tab=sso");
+        await adminPage.getByRole("button", { name: `Open menu for ${name}`, exact: true }).first().click();
+        await adminPage.getByRole("menuitem", { name: "Delete", exact: true }).click();
+        const confirm = adminPage.getByRole("alertdialog", { name: `Delete ${name}?` });
+        await confirm.getByRole("button", { name: "Delete provider", exact: true }).click();
+        await expect(adminPage.getByText(`${name} deleted`, { exact: true })).toBeVisible();
+
+        // The login page asks for the password together with the email again, in a browser without a session.
+        const context = await shared.newContext(contextOptions);
+        browsers.push(context);
+        const page = await context.newPage();
+        await page.goto("/");
+        await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+    }
 
     /** Types the email of the person on the login page of a browser of its own, which leads to the provider of its domain. */
     async function startSignIn(): Promise<Page> {
@@ -108,6 +134,7 @@ test.describe("signing in through the provider of a tenant that blocks the local
         await adminPage.getByRole("option", { name: /^Admin\b/ }).click();
         await dialog.getByRole("button", { name: "Create provider", exact: true }).click();
         await expect(adminPage.getByText(`${name} added`, { exact: true })).toBeVisible();
+        created = true;
         await expect(dialog).toBeHidden();
     });
 

@@ -4,7 +4,7 @@
  * runs the after hook of the user only once the link is done. The provider of a tenant puts the
  * person it adds into its tenant in that after hook, so the link hook met them without a tenant
  * and refused them as someone another tenant made. Their first sign-in failed, see the end-to-end
- * test auth-sso-tenant.spec.ts. The link hook now puts that new user into the tenant first.
+ * test tenants-sso.spec.ts. The link hook now puts that new user into the tenant first.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

@@ -9,7 +9,7 @@ A tenant is a customer of the instance and the boundary of its data. Its connect
 Every installation has the **home tenant**, named **Default**. After the update from an earlier version it holds everything the instance held before. It also holds what the platform owns, like the runs of the system tasks and the sign-ins in the audit log, and it cannot be deleted.
 
 ::: info One tenant changes nothing
-With only the home tenant, DBackup looks as before: the head of the sidebar names DBackup. Some permissions check more than they did, see [Before Updating](#before-updating). Whoever may see the tenants finds the up and down arrows at the right of the head, which opens a menu with **Manage tenants**, and whoever may create one also finds **New tenant** there, to create the second one.
+With only the home tenant, DBackup looks as before: the head of the sidebar names DBackup. Some permissions check more than they did, see [Updating to 5.0](/user-guide/updating-to-5#groups-and-permissions). Whoever may see the tenants finds the up and down arrows at the right of the head, which opens a menu with **Manage tenants**, and whoever may create one also finds **New tenant** there, to create the second one.
 :::
 
 ## Platform Admins
@@ -333,70 +333,7 @@ The system notifications of **Settings → Notifications** belong to the platfor
 
 ## Before Updating
 
-The update to this version moves the whole instance into the home tenant:
-
-- Everything DBackup holds becomes the tenant **Default**.
-- Every user with a group becomes a member of Default with that group. A user without a group stays without one.
-- The SuperAdmin group becomes **Admin**, the group with every permission, and its members become platform admins. A group already named Admin is renamed **Admin (before update)** and keeps its members and permissions. A configuration backup from before the update still brings its Admin back into that group.
-- Every API key belongs to Default and keeps its permissions. A key with `settings:read` or `settings:write` also gets `tenant-settings:read` or `tenant-settings:write`, like the groups, so a key that could delete for good still can.
-- Every sign-in provider becomes a provider of the platform. Only platform admins add, change, switch and delete providers, as only the SuperAdmin group did before. Seeing them still needs `settings:read`, and from a browser only, no API key reads them any more.
-- The names of saved logins and templates only need to be unique within a tenant from now on.
-- An account whose owner set its current email themselves, and no admin changed it later, counts as one with an email it picked, as the audit log tells. No [sign-in provider](/user-guide/admin/sso#new-people) links it by that email any more. Its owner links the provider with **Link** under **Profile** while signed in.
-- Sessions, passwords, passkeys, second factors and the settings of the instance stay as they are, so nobody has to sign in again.
-
-Some permissions check more than before, with the home tenant alone too. Look at these before you update:
-
-- **Groups.** Nobody makes, edits, gives or takes a group that may do more than they may. Let a member of **Admin** or a platform admin do it, or give the group of whoever does it what it lacks.
-- **API keys of others.** Only the owner of an API key and a platform admin rotate it, enable it again, change its permissions or let it run longer. Anyone else with `api-keys:write` only renames it, lets it run out sooner, disables or deletes it.
-- **Accounts.** Nobody but a platform admin sets the password, resets the second factor, ends the sessions, changes the name or email of, or deletes an account whose group may do more than they may, like a member of **Admin**. Let a platform admin do it.
-- **Keys and templates.** `settings:read` no longer lists the encryption keys and the templates. Give a group that needs them `vault:read` or `templates:read`.
-- **Test connection** needs the right to change connections of the kind (`sources:write`, `destinations:write` or `notifications:write`), no longer the right to see them.
-- **Storage alerts** of a destination need `destinations:write` instead of `settings:write`.
-- **Configuration backup.** Only a platform admin sets it up, switches it, runs it and restores one, no longer whoever holds `settings:write`. Make whoever does it a platform admin.
-- **Redirects.** Webhook, Slack, Discord, Teams, Gotify and ntfy channels and WebDAV destinations follow a redirect only on the same host. Enter the final address of a server that sends DBackup on to another host.
-- **Admin.** Someone added to **Admin** after the update may do everything in the tenant but is no platform admin, unlike a new member of SuperAdmin before. Pick **Platform admin** for their account under **Platform → Users & Groups** where they need it.
-- **Connections to the server DBackup runs on.** Local Filesystem, SQLite in local mode, Docker Volumes without SSH, a database in direct mode with **Extra options**, SQL Server with a shared folder and the other connections of [Connections to the Server DBackup Runs On](#connections-to-the-server-dbackup-runs-on) are added, changed, copied, tested and browsed by a platform admin with a session alone, no longer by whoever holds the right to change connections of the kind. Their jobs keep running. The file browser of a local path needs a platform admin too, `settings:read` no longer opens it.
-- **SQL Server shared folder.** It counts as a folder of the server DBackup runs on, also when a source saved earlier names none and uses `/tmp`. A customer's source in that mode stops working, switch it to **Over SSH** first.
-- **Local paths.** No run writes into or reads from DBackup's temporary folder (`TMPDIR`, `/tmp` by default) any more, and a Local Filesystem path no longer follows a symbolic link out of its folder. A job whose Local Filesystem destination, folder source or SQLite source reaches the folder of the database, the certificates or the configuration backup fails as well, also for a platform admin, and a job called `config-backups` stops until it is renamed. Move a destination or a directory source that lies there, or that reaches its data through a link, to a folder of its own.
-- **Links in a file restore.** A restore no longer lays a symbolic link whose target is absolute or climbs out of the folder it writes into, it names it in the log instead. Download the files as `.tar.gz` to get such links back.
-- **Job names.** A name with a `.` or `..` folder, like `shop/../nightly`, a folder that starts with a hyphen, like `-nightly`, or one of slashes alone is refused, and a job that has one stops with a message until it is renamed.
-- **Folders of directory sources.** The folder of a directory source in a job stays inside the folder its connection is set to, a folder with `..` is refused on save, and a job saved with one earlier stops with a message until the folder is changed.
-- **SSH agent logins.** A saved SSH login with the authentication **SSH agent** is created or changed by a platform admin alone. A login saved that way earlier keeps working.
-- **Folders of such connections.** Browsing the folders of a saved Local Filesystem or the volumes of Docker Volumes without SSH needs `jobs:write` or `storage:restore` beside `destinations:read`.
-- **Restoring files.** A restore into Docker Volumes without SSH is for a platform admin alone. Any other place than the folder or volume the backup read needs `destinations:write` in the tenant of the connection it writes into. A target folder with `..` is refused, and only a platform admin restores a `.meta.json`, a file named like a backup or its index (`.tar`, `.enc`, `.index`) into a backup destination or a file into a `config-backups` folder or named `config_backup_*` into a storage. Download such files as `.tar.gz` instead.
-- **Docker volumes.** A restore into Docker Volumes names the one volume it writes into, a target of `/` that left the volume to the backup is refused. Restore a backup of several volumes one volume at a time.
-- **Configuration backups at a destination.** The configuration restore opens only an encrypted file there. Download an unencrypted file of an older version and upload it under **Settings → Configuration backup** to restore it.
-- **Vault.** The Credentials tab and `GET /api/vault/credentials` need `vault:read` beside `credentials:read`, like the search. Give a group or key that reads saved logins there `vault:read` too.
-- **Passwords in a connection.** Changing the host, port, SSH server or URL of a connection no longer keeps a password, key or token saved in the connection itself. Type it again with the change, or pick a saved login.
-- **API.** The answers of the API name `viewerPlatformAdmin` instead of `viewerSuperAdmin`, the recovery kit is requested with `POST /api/vault/recovery-kit`, and cancelling a restore run needs `storage:restore`. Change a script that uses them.
-- **Connections saved through the API.** A connection has to fit the fields of its type, with every port a whole number from 1 to 65535. A MySQL or MariaDB password with a line break is refused, also in a saved login.
-- **SMB logins.** A user name or domain with a `%` is refused, change it on the server or use another login.
-- **SMB paths.** A folder, path or address with a semicolon, a double quote or a control character is refused. Such files in an SMB folder source are left out, and a job whose name has one stops until it is renamed.
-- **Client tools outside the Docker image.** A MySQL or MariaDB restore in direct mode needs a client that can turn off the commands of a dump: MariaDB 10.5.25, 10.6.18, 10.11.8, 11.4.2 or newer, or MySQL 8.0.40 or 8.4.3 or newer. Redis needs redis-cli 5 or newer, MongoDB the Database Tools 100.3.0 or newer and rsync a local rsync that takes `--no-links`, like GNU rsync 3. The Docker image ships all of them.
-- **Reverse proxy.** `TRUSTED_PROXIES` trusts only a proxy on the same machine by default, no longer every private network. A proxy in a Docker network or the LAN needs its address or `private` in `TRUSTED_PROXIES`, and so does one on the host in front of the container, which reaches it from the gateway of the Docker network, like `172.17.0.1`. Without it every request counts as one from the address of the proxy, so everyone shares one limit of sign-in attempts and the audit log names the proxy, see [The Address of a Client](/user-guide/installation#the-address-of-a-client).
-- **Long backups.** A backup that runs longer than a day fails, also while it still reports progress. Set a longer time or **No limit** at **Fail a run that takes longer than** under **Settings → General** for a job that takes longer. A restore or an integrity check runs as long as it takes, and an instance whose stuck run watchdog was switched off keeps it off.
-- **Owners of restored files.** A file restore lays the owners of the backup only into the folder or volume the backup read, out of a backup DBackup can prove it made. A backup of an earlier version proves that to a platform admin with a session alone. Anyone else, an API key too, restores it only with `destinations:write`, and its files then get the owner DBackup writes with, which the log of the restore says. Let a platform admin restore such a backup where the owners matter, like the data folder of a database.
-- **Exclude patterns.** A pattern that takes very long to match, or a list of more than 256 patterns with a slash, brackets or braces, is refused on save. A job or exclude preset saved with one earlier leaves that pattern out of its runs with a warning in the log, so the files it excluded land in the backup. Change the pattern.
-- **SSH host keys.** Every SSH, SFTP and rsync connection pins the host key of its server on its first connect after the update and refuses another one from then on. A name that leads to several servers with their own keys, like a cluster behind round-robin DNS, fails on every server but the first. Give each server a connection of its own, the servers the same host key, or turn **Check the host key** off for that connection, see [Host Key Check](/user-guide/destinations/sftp#host-key-check).
-
-A database migration cannot be taken back. A start that is about to apply one first keeps a copy of the database beside it in `/data/db`, named `dbackup.db.before-migrate-<time>`, like `dbackup.db.before-migrate-2026-10-15T08-30-00-000Z`. The three newest copies stay, older ones are deleted. A start without a migration to apply copies nothing, and neither does a start after a migration that failed half way, so restarts of a container that cannot finish its migrations never push the copy from before them out.
-
-::: warning Take a backup as well
-When the copy fails, for example on a full volume, the log of the start says so and the migrations run anyway. Take a [configuration backup](/user-guide/features/system-backup) or [download the database](/user-guide/admin/data-retention#download-the-database) before the update.
-:::
-
-### Going Back
-
-::: danger Put the copy in place first
-Start the older version only on the copy from before the update. The older version finds no migration of its own left to apply on a migrated database and starts as if all were well, so switching only the image tag back breaks once it reads or writes the tables that changed.
-:::
-
-1. Stop DBackup
-2. In `/data/db`, move `dbackup.db` and its `-wal` and `-shm` files away
-3. Copy `dbackup.db.before-migrate-<time>` to `dbackup.db`. It is a single file with nothing in a write-ahead log
-4. Start the image of the version you ran before, like `skyfay/dbackup:v4.0.2`
-
-Everything done since the update is lost. Starting the new version again on that copy migrates it again.
+The update to 5.0 moves the whole instance into the home tenant and keeps every login, job and backup. [Updating to 5.0](/user-guide/updating-to-5) lists in one table which setups need a look, like a reverse proxy, SSH connections or scripts on the API, and how to go back to the version before.
 
 ## Troubleshooting
 

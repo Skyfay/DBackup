@@ -1,5 +1,3 @@
-> ⚠️ **Before updating:** `TRUSTED_PROXIES` trusts only a reverse proxy on the same machine by default. A proxy in a Docker network, on the host in front of the container or in the LAN needs its address or `private` in `TRUSTED_PROXIES`, or every request counts as one from the address of the proxy.
-
 ### 🔒 Security
 
 - **rsync**: A connection config can no longer set the address ssh dials or the options of the host key check itself, which could run a command on the DBackup server. Fields of that kind are refused when a connection is saved or tried.

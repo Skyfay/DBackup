@@ -1,6 +1,6 @@
-> ⚠️ **Before updating:** This version moves everything an installation holds into its first tenant. The first start after the update keeps a copy of the database from before, and going back to an earlier version means starting it on that copy, see [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating).
+> ⚠️ **Before updating:** Most installations update without doing anything. [Updating to 5.0](https://docs.dbackup.app/user-guide/updating-to-5) names in one table the setups that need a look, like a reverse proxy, SSH connections or email with STARTTLS, and how to go back.
 
-> ⚠️ **Breaking:** Many permissions check more than before, some actions are for a platform admin alone, and for API users the group SuperAdmin is now Admin and `viewerSuperAdmin` is now `viewerPlatformAdmin`. [Before Updating](https://docs.dbackup.app/user-guide/admin/tenants#before-updating) lists every change and what to do about it.
+> ⚠️ **Breaking:** Some actions need more rights or a platform admin, and the API answers `viewerPlatformAdmin` instead of `viewerSuperAdmin`. The same page lists every change for groups and API users.
 
 ### ✨ Features
 

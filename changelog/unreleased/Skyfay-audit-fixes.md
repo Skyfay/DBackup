@@ -1,5 +1,3 @@
-> ⚠️ **Before updating:** A reverse proxy that sends only `X-Real-IP` and no `X-Forwarded-For` now needs `TRUSTED_PROXY_HEADER=x-real-ip`, otherwise the audit log and the rate limits see the address of the proxy.
-
 ### 🔒 Security
 
 - **Docker**: A job's source names exactly one Docker volume, so a path like `/etc` no longer reaches folders of the host. A backup never stops the container DBackup runs in.

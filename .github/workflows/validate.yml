@@ -177,13 +177,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        family: [ui, postgres, mysql, mongodb, mssql, small, customer, storage]
+        family: [ui, postgres, mysql, mongodb, mssql, small, customer, storage, cloud]
     env:
       CI: "true"
       E2E_FAMILIES: ${{ matrix.family }}
       E2E_NO_BUILD: "1"
       # The runner is thrown away anyway, and the logs of DBackup are wanted after a failure.
       E2E_KEEP: "1"
+      # The Cloudflare account of the D1 tests, an account just for them. Only the job of the family
+      # cloud gets the token, and a pull request from a fork none, so its D1 test skips.
+      E2E_D1_ACCOUNT_ID: ${{ matrix.family == 'cloud' && vars.E2E_D1_ACCOUNT_ID || '' }}
+      E2E_D1_TOKEN: ${{ matrix.family == 'cloud' && secrets.E2E_D1_TOKEN || '' }}
     steps:
       # The image, its build and the images of the family take more than the free space of a
       # runner leaves, SQL Server alone pulls 4 GB. Deleting takes a while, so it runs in the

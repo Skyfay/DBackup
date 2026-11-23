@@ -34,6 +34,21 @@ describe("the dev lab config", () => {
         expect(config.natives[0].login).toEqual({ user: "dbackup", port: 2222, password: "Real-Password-42" });
     });
 
+    it("reads the Cloudflare account of the D1 source, with the token from the environment", () => {
+        process.env.LAB_TEST_D1_TOKEN = "token-from-env";
+        try {
+            const config = parseConfig({ admin, cloudflareD1: { accountId: "0123456789ABCDEF0123456789ABCDEF", token: "env:LAB_TEST_D1_TOKEN" } }, "test.json");
+            expect(config.cloudflareD1).toEqual({ accountId: "0123456789abcdef0123456789abcdef", token: "token-from-env" });
+        } finally {
+            delete process.env.LAB_TEST_D1_TOKEN;
+        }
+        expect(parseConfig({ admin }, "test.json").cloudflareD1).toBeUndefined();
+    });
+
+    it("refuses an account ID that is not the one of the Cloudflare dashboard", () => {
+        expect(() => parseConfig({ admin, cloudflareD1: { accountId: "my-account", token: "t" } }, "test.json")).toThrow(/cloudflareD1\.accountId/);
+    });
+
     it("says how to move a config that still places the parts on several hosts", () => {
         expect(() => parseConfig({ admin, hosts: { debian: { docker: "lab-debian", address: "100.100.30.1" } }, place: { databases: "debian" } }, "test.json"))
             .toThrow(/one Docker host now/);

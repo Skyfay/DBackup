@@ -56,6 +56,15 @@ const ConfigSchema = z.object({
         /** The OpenSSH login of the sources, a user without root like on a real server. */
         login: SshSchema,
     }).strict()).optional(),
+    /**
+     * A Cloudflare account just for tests, with an API token that has D1 Edit. Without it the lab
+     * has no Cloudflare D1 source, since D1 runs at Cloudflare and nowhere else.
+     */
+    cloudflareD1: z.object({
+        accountId: z.string().regex(/^[0-9a-fA-F]{32}$/, "the 32 hex characters of the Cloudflare dashboard"),
+        /** The token, or `env:NAME`. */
+        token: z.string().min(1),
+    }).strict().optional(),
 }).strict();
 
 export interface SshLogin {
@@ -90,6 +99,8 @@ export interface LabConfig {
     profile: "core" | "full";
     docker: DockerHost;
     natives: NativeHost[];
+    /** The Cloudflare account of the D1 source, when the config has one. */
+    cloudflareD1?: { accountId: string; token: string };
 }
 
 /** A NetBird SSH server takes any password, so a host that only has one of those needs none in the config. */
@@ -148,6 +159,9 @@ export function parseConfig(raw: unknown, source: string): LabConfig {
             ssh: host.ssh ? sshLogin(host.ssh, 22) : undefined,
             login: sshLogin(host.login, 22),
         })),
+        cloudflareD1: config.cloudflareD1
+            ? { accountId: config.cloudflareD1.accountId.toLowerCase(), token: resolveSecret(config.cloudflareD1.token) }
+            : undefined,
     };
 }
 

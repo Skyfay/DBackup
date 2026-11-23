@@ -1,6 +1,6 @@
 {
   "name": "dbackup-docs",
-  "version": "5.0.0-beta.1",
+  "version": "5.0.0",
   "private": true,
   "scripts": {
     "dev": "vitepress dev",

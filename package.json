@@ -1,6 +1,6 @@
 {
   "name": "dbackup",
-  "version": "5.0.0-beta.1",
+  "version": "5.0.0",
   "private": true,
   "scripts": {
     "dev": "node scripts/apply-pending-restore.js && node scripts/backup-before-migrate.js && prisma migrate deploy && prisma generate && next dev",

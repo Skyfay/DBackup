@@ -40,6 +40,8 @@ const NOT_OPTIONS = new Set([
     "databases", "database", "uri", "backupPath", "fileTransferMode", "localBackupPath",
     // The host key check of the SSH login, shown beside it, see `HostKeySwitch`.
     "verifyHostKey",
+    // The Cloudflare account of D1, which takes the place of host and port.
+    "accountId",
 ]);
 
 /**
@@ -97,6 +99,22 @@ function sqliteLayout(config: Record<string, unknown>): SectionLayout[] {
     return [...sections, behavior()];
 }
 
+/** Cloudflare D1 has no server to reach, its connection is an account and a token. */
+function d1Layout(adapter: AdapterDefinition, config: Record<string, unknown>): SectionLayout[] {
+    const sections: SectionLayout[] = [{
+        id: "connection",
+        label: "Connection",
+        description: "The Cloudflare account that holds the D1 databases, and an API token with the permission D1 Edit.",
+        keys: [NAME_KEY, "accountId", LOGIN_KEY],
+        expects: [NAME_KEY, "accountId", LOGIN_KEY],
+    }];
+    const options = optionKeys(adapter, config);
+    if (options.length > 0) {
+        sections.push({ id: "options", label: "Options", description: "Only needed when the defaults do not fit.", keys: options, expects: [] });
+    }
+    return [...sections, behavior()];
+}
+
 /**
  * The parts of the form for a database, for the mode picked so far.
  *
@@ -105,6 +123,7 @@ function sqliteLayout(config: Record<string, unknown>): SectionLayout[] {
  */
 export function databaseLayout(adapter: AdapterDefinition, config: Record<string, unknown>): SectionLayout[] {
     if (adapter.id === "sqlite") return sqliteLayout(config);
+    if (adapter.id === "cloudflare-d1") return d1Layout(adapter, config);
 
     const shape = adapter.configSchema.shape as Record<string, unknown>;
     const hasMode = "connectionMode" in shape;

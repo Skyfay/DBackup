@@ -8,6 +8,7 @@ const ADAPTER_PERMISSIONS: Record<string, Permission> = {
     sqlite: PERMISSIONS.SOURCES.VIEW,
     mssql: PERMISSIONS.SOURCES.VIEW,
     "azure-sql": PERMISSIONS.SOURCES.VIEW,
+    "cloudflare-d1": PERMISSIONS.SOURCES.VIEW,
     redis: PERMISSIONS.SOURCES.VIEW,
     valkey: PERMISSIONS.SOURCES.VIEW,
     firebird: PERMISSIONS.SOURCES.VIEW,

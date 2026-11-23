@@ -26,6 +26,7 @@ export const DUMP_TOOL: Record<DatabaseCardId, string> = {
   valkey: "redis-cli --rdb",
   mssql: "BACKUP DATABASE",
   "azure-sql": "SqlPackage",
+  "cloudflare-d1": "D1 export API",
   firebird: "gbak",
 };
 
@@ -40,6 +41,7 @@ export const DATABASE_COLORS: Record<DatabaseCardId, string> = {
   valkey: "#3b82f6",
   mssql: "#cc2927",
   "azure-sql": "#0089d6",
+  "cloudflare-d1": "#f38020",
   firebird: "#f97316",
 };
 

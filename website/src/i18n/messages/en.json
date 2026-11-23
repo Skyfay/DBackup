@@ -647,6 +647,10 @@
         "versions": "Single database, elastic pool",
         "text": "A BACPAC export through SqlPackage. A restore replaces the target database."
       },
+      "cloudflare-d1": {
+        "versions": "Every D1 database of an account",
+        "text": "The SQL export of Cloudflare through its API, with an API token and nothing to install. A restore replaces the tables and keeps the database ID."
+      },
       "firebird": {
         "versions": "Versions 3, 4 and 5",
         "text": "Backups with gbak, restored through aliases you set up on the server."

@@ -112,6 +112,7 @@ export default defineConfig({
             { text: 'SQLite', link: '/user-guide/sources/sqlite' },
             { text: 'Microsoft SQL Server', link: '/user-guide/sources/mssql' },
             { text: 'Azure SQL Database', link: '/user-guide/sources/azure-sql' },
+            { text: 'Cloudflare D1', link: '/user-guide/sources/cloudflare-d1' },
             { text: 'Firebird', link: '/user-guide/sources/firebird' }
           ]
         },

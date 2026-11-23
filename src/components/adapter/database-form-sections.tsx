@@ -25,11 +25,15 @@ const LABELS: Record<string, string> = {
     backupPath: "Backup folder on the server",
     localBackupPath: "The same folder on this machine",
     sqliteBinaryPath: "sqlite3 binary",
+    accountId: "Account ID",
+    newDatabaseLocation: "Location of new databases",
 };
 
 const DESCRIPTIONS: Record<string, string> = {
     mode: "A single server, or a Sentinel group that points to the current master.",
     localBackupPath: "The server's backup folder as it is mounted here, for example as a Docker volume or an NFS share.",
+    accountId: "On the overview of the account in the Cloudflare dashboard.",
+    newDatabaseLocation: "Where a restore under a new name creates the D1 database. Automatic takes the jurisdiction of the database the backup came from while it still exists.",
 };
 
 /** Booleans of the database schemas, as sentences that are true when the switch is on. */
@@ -47,6 +51,10 @@ const SWITCHES: Record<string, { title: string; description: string }> = {
     disableSsl: { title: "Disable SSL", description: "For development databases with a self-signed certificate." },
     encrypt: { title: "Encrypt the connection", description: "Required by Azure SQL and most hosted servers." },
     trustServerCertificate: { title: "Trust the server certificate", description: "Accepts a self-signed certificate, for development servers." },
+    checkLargeIntegers: {
+        title: "Check for large integers",
+        description: "Warns in the run log when a column holds an integer beyond 2^53, which the export of Cloudflare rounds. Reads every table once more before the export.",
+    },
 };
 
 function Field(props: { adapter: AdapterDefinition; fieldKey: string; label?: string; description?: string; sshCredentialId?: string | null }) {
@@ -91,6 +99,7 @@ function ConnectionPart(props: ConnectionSectionProps) {
     const { adapter } = props;
     const { watch } = useFormContext();
     const isSqlite = adapter.id === "sqlite";
+    const isD1 = adapter.id === "cloudflare-d1";
     const modeKey = isSqlite ? "mode" : "connectionMode";
     const hasMode = modeKey in (adapter.configSchema.shape as Record<string, unknown>);
     const mode = hasMode ? watch(`config.${modeKey}`) : "direct";
@@ -103,7 +112,13 @@ function ConnectionPart(props: ConnectionSectionProps) {
                 <ModeChoice fieldKey={modeKey} label={isSqlite ? "Where the file is" : "How DBackup connects"} options={modeOptions(adapter, mayReachServer)} />
             )}
             {isSqlite && mode === "local" && <Field adapter={adapter} fieldKey="path" label="Database file" />}
-            {!isSqlite && mode === "direct" && (
+            {isD1 && (
+                <>
+                    <Field adapter={adapter} fieldKey="accountId" />
+                    <PrimaryLogin {...props} />
+                </>
+            )}
+            {!isSqlite && !isD1 && mode === "direct" && (
                 <>
                     <HostPortFields adapter={adapter} hostKey="host" portKey="port" />
                     <PrimaryLogin {...props} />

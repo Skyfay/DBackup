@@ -6,6 +6,7 @@ import { MongoDBAdapter } from "./database/mongodb";
 import { SQLiteAdapter } from "./database/sqlite";
 import { MSSQLAdapter } from "./database/mssql";
 import { AzureSQLAdapter } from "./database/azure-sql";
+import { CloudflareD1Adapter } from "./database/cloudflare-d1";
 import { RedisAdapter } from "./database/redis";
 import { ValkeyAdapter } from "./database/valkey";
 import { FirebirdAdapter } from "./database/firebird";
@@ -55,6 +56,8 @@ export function registerAdapters() {
     registry.register(SQLiteAdapter);
     registry.register(MSSQLAdapter);
     registry.register(AzureSQLAdapter);
+    // Reaches only the fixed API of Cloudflare, so there is no host of the customer to pin.
+    registry.register(CloudflareD1Adapter);
     registry.register(withPinnedDatabaseHost(RedisAdapter));
     registry.register(withPinnedDatabaseHost(ValkeyAdapter));
     registry.register(withPinnedDatabaseHost(FirebirdAdapter));

@@ -15,6 +15,7 @@ DBackup supports a wide variety of database engines.
 | [SQLite](/user-guide/sources/sqlite) | 3.x | `sqlite3 .backup`, stores the database file | ✅ |
 | [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022, Azure SQL Edge | `BACKUP DATABASE` | ✅ |
 | [Azure SQL Database](/user-guide/sources/azure-sql) (beta) | Single database, elastic pool | `SqlPackage` BACPAC export | ✅ (drops the target first) |
+| [Cloudflare D1](/user-guide/sources/cloudflare-d1) (beta) | Every D1 database of an account | D1 export API, SQL dump | ✅ (replaces the tables, keeps the database) |
 | [Firebird](/user-guide/sources/firebird) (beta) | 3.x, 4.x, 5.x | `gbak` | ✅ (pre-configured aliases) |
 
 ## Directory Sources

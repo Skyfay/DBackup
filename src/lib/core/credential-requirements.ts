@@ -24,6 +24,7 @@ export const ADAPTER_CREDENTIAL_REQUIREMENTS: Record<
     // No SSH slot: Azure SQL Database is a public PaaS endpoint, and a tunnel would
     // not help anyway since SqlPackage runs in this container, not on a jump host.
     "azure-sql": { primary: "USERNAME_PASSWORD" },
+    "cloudflare-d1": { primary: "TOKEN" },
     redis: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },
     valkey: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },
     firebird: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },

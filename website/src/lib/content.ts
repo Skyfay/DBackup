@@ -41,6 +41,7 @@ export const DATABASES: AdapterItem[] = [
   { id: "valkey", label: "Valkey" },
   { id: "mssql", label: "Microsoft SQL Server" },
   { id: "azure-sql", label: "Azure SQL Database", beta: true },
+  { id: "cloudflare-d1", label: "Cloudflare D1", beta: true },
   { id: "firebird", label: "Firebird", beta: true },
 ];
 

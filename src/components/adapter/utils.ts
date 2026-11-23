@@ -77,6 +77,8 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
     "mssql": mssqlIcon,
     // logos:azure is multi-colour, so no ADAPTER_COLOR_MAP entry is needed.
     "azure-sql": azureIcon,
+    // logos:cloudflare-icon is multi-colour, like the one of R2.
+    "cloudflare-d1": cloudflareIcon,
     "firebird": firebirdIcon,
 
     // Storage - Local

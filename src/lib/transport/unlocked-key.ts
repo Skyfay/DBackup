@@ -13,6 +13,9 @@ import { createHash, createPrivateKey } from "crypto";
 
 import { utils as sshUtils } from "ssh2";
 
+import { assertKeyCost } from "./key-cost";
+import { normalizeSshPrivateKey } from "./pkcs8-compat";
+
 /** How many unlocked keys the process keeps, the oldest dropped first. */
 const MAX_KEPT = 200;
 
@@ -96,4 +99,26 @@ export function unlockedPrivateKey(privateKey: string, passphrase: string): stri
         const check = Array.isArray(again) ? again[0] : again;
         return check && !(check instanceof Error) && check.getPublicSSH().equals(publicBlob) ? plain : null;
     });
+}
+
+/**
+ * The key and passphrase ssh2 gets for a login with a private key, unlocked at most once per
+ * process, for every client of ssh2 alike. ssh2 cannot read a PKCS#8 encrypted key (BEGIN ENCRYPTED
+ * PRIVATE KEY), so that one is decrypted in memory. Any other key with a passphrase goes through
+ * `unlockedPrivateKey`, and to ssh2 as it is when that cannot read it.
+ *
+ * @throws Error for a key whose cost to unlock is too high, see `key-cost.ts`, or a PKCS#8 encrypted key without a passphrase.
+ */
+export function loginKey(privateKey: string | undefined, passphrase: string | undefined): { privateKey?: string; passphrase?: string } {
+    // ssh2 derives the key of an encrypted file on the event loop, so its cost is bounded first.
+    assertKeyCost(privateKey);
+    if (!privateKey) return {};
+    if (privateKey.includes("BEGIN ENCRYPTED PRIVATE KEY")) {
+        if (!passphrase) throw new Error("This private key is passphrase-protected. Please provide the passphrase.");
+        return { privateKey: unlockOnce(privateKey, passphrase, () => normalizeSshPrivateKey(privateKey, passphrase)) ?? privateKey };
+    }
+    if (!passphrase) return { privateKey };
+    // Unlocked once per process, so the cost the key names is not paid on every connect.
+    const unlocked = unlockedPrivateKey(privateKey, passphrase);
+    return unlocked ? { privateKey: unlocked } : { privateKey, passphrase };
 }

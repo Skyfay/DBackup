@@ -26,6 +26,11 @@ describe("when DBackup writes the routines of a MySQL server itself", () => {
         expect(dumpsOwnRoutines({ type: "mariadb", detectedVersion: "11.8.3" }, MARIADB_TOOL)).toBe(false);
         expect(dumpsOwnRoutines({}, MARIADB_TOOL)).toBe(false);
     });
+
+    it("leaves a MariaDB 10 or 11 behind a connection of the type MySQL to the dump tool, whose kept version lost its suffix", () => {
+        expect(dumpsOwnRoutines({ type: "mysql", detectedVersion: "10.11.9" }, MARIADB_TOOL)).toBe(false);
+        expect(dumpsOwnRoutines({ type: "mysql", detectedVersion: "11.8.3" }, MARIADB_TOOL)).toBe(false);
+    });
 });
 
 describe("the batch output of the client", () => {

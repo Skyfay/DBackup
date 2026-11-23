@@ -14,7 +14,7 @@
  */
 
 import { assertRestoreFolder, restoreDestination, safeRemoteJoin } from "@/lib/archive/remote-paths";
-import { originOfBackup, mappingFolder, NO_RESTORE_FOLDER, restoredFileRefusal } from "./restore-targets";
+import { originOfBackup, mappingFolder, NO_RESTORE_FOLDER, OWNERS_NOT_RESTORED, restoredFileRefusal } from "./restore-targets";
 import prisma from "@/lib/prisma";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { formatBytes } from "@/lib/utils";
@@ -271,6 +271,9 @@ export async function restoreArchiveSnapshot(
                 const selectedFiles = mappingEntry.paths && mappingEntry.paths.length > 0
                     ? resolveSelection(index, dir.src, mappingEntry.paths)
                     : index.files.filter((f) => f.src === dir.src);
+                if (!targets.get(dir.src)?.origin && selectedFiles.some((f) => f.u !== undefined || f.g !== undefined)) {
+                    log(`${dir.label}: ${OWNERS_NOT_RESTORED}`, 'warning', 'storage');
+                }
 
                 // Excluded files are dropped here rather than counted as failures: they were
                 // never meant to be written, so they must not colour the run's status.

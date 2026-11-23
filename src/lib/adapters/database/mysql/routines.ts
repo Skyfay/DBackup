@@ -37,13 +37,14 @@ const ROUTINE_LIST =
 
 /**
  * Whether DBackup writes the routines of this server itself: the dump tool is MariaDB's and the
- * server is a MySQL of version 10 or later, which only the versions by year from 26 on are.
+ * server is a MySQL of version 26 or later. The version DBackup keeps drops the `-MariaDB` suffix,
+ * so a MariaDB 10 or 11 behind a connection of the type MySQL reads as one by its number alone.
  */
 export function dumpsOwnRoutines(config: { type?: string; detectedVersion?: string }, client: DumpClient): boolean {
     const version = config.detectedVersion ?? "";
     if (!client.mariadb || config.type === "mariadb" || /mariadb/i.test(version)) return false;
     const major = Number(version.match(/^(\d+)\./)?.[1]);
-    return major >= 10;
+    return major >= 26;
 }
 
 /** A value of the batch output of the client, where a tab, a line break, a NUL and a backslash come escaped. */

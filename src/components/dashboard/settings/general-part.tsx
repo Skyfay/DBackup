@@ -97,7 +97,7 @@ export function GeneralPart({ saved }: { saved: GeneralSettings }) {
                             </Field>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                            Backups wait for a free run. A running restore or integrity check takes one too, and so does a run that stopped reporting until it fails. A run that still reports but takes longer than the longest a run may take fails as well, so a slow source cannot hold the runs of everyone else. The system task Stuck run watchdog follows both times, Never and No limit turn them off.
+                            Backups wait for a free run, and a run that stopped reporting holds its run until it fails. A backup that still reports but takes longer than the longest a run may take fails as well, so a slow source cannot hold the runs of everyone else. A restore or an integrity check takes no run and is never cut short for its length. The system task Stuck run watchdog follows both times, Never and No limit turn them off.
                         </p>
                     </div>
 

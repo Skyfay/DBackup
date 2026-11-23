@@ -581,6 +581,22 @@ describe('import.ts - uncovered branches', () => {
     expect(prismaMock.execution.upsert).not.toHaveBeenCalled();
   });
 
+  it('gives an SSO provider of an older file the scopes DBackup asks for, and keeps a list set by hand', async () => {
+    const backup = makeBackup({
+      ssoProviders: [
+        { id: 'sso-old', providerId: 'google', clientId: null, clientSecret: null, oidcConfig: JSON.stringify({ clientId: 'g', scope: 'openid email' }), name: 'Google', domain: 'example.com' },
+        { id: 'sso-own', providerId: 'okta', clientId: null, clientSecret: null, oidcConfig: JSON.stringify({ clientId: 'o', scopes: ['openid', 'groups'] }), name: 'Okta', domain: 'okta.com' },
+      ],
+    });
+
+    await importConfiguration(backup as any, 'OVERWRITE');
+
+    const written = prismaMock.ssoProvider.upsert.mock.calls.map(([args]: any) => JSON.parse(args.create.oidcConfig));
+    expect(written[0].scopes).toEqual(['openid', 'profile', 'email']);
+    expect(written[0]).not.toHaveProperty('scope');
+    expect(written[1].scopes).toEqual(['openid', 'groups']);
+  });
+
   it('re-encrypts SSO oidcConfig fields - clientId present but no clientSecret (lines 309-310 false branch)', async () => {
     const backup = makeBackup({
       ssoProviders: [{

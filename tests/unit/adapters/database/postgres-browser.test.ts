@@ -153,8 +153,31 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL browser over a %s host", 
             const dataQuery = queries.find(q => q?.startsWith("SELECT * FROM"));
             expect(columnsQuery).toContain("table_catalog = E'sh\\\\op'");
             expect(columnsQuery).toContain("table_name = E'us''ers'");
-            expect(dataQuery).toContain("ILIKE E'%a\\\\'' OR 1=1 --%'");
+            expect(dataQuery).toContain("OPERATOR(pg_catalog.~~*) E'%a\\\\'' OR 1=1 --%'");
         });
+    });
+});
+
+describe("PostgreSQL browser against the objects of the owner of a database", () => {
+    it("reads the catalog with the search path pinned and names every function, type and operator in pg_catalog", async () => {
+        const seen: { query: string; options?: string }[] = [];
+        const host = createFakeHost({
+            onExec: (argv, options) => {
+                const query = queryOf(argv) ?? "";
+                seen.push({ query, options: options?.env?.PGOPTIONS });
+                return { stdout: query.includes("COUNT(*)") ? "0\n" : "" };
+            },
+        });
+        await getTables(baseConfig as never, "shop", host);
+        await getTableData(baseConfig as never, { database: "shop", table: "users", page: 1, pageSize: 10, search: "a", searchColumn: "name", matchMode: "equals" } as never, host);
+
+        const of = (part: string) => seen.find((call) => call.query.includes(part))!;
+        expect(of("table_type").options).toBe("-c search_path=pg_catalog,pg_temp");
+        expect(of("information_schema.columns").options).toBe("-c search_path=pg_catalog,pg_temp");
+        // The table itself is found by the search path of the database.
+        expect(of("COUNT(*)").options).toBeUndefined();
+        expect(of("COUNT(*)").query).toContain("pg_catalog.COUNT(*)");
+        expect(of("SELECT * FROM").query).toContain(`"name"::pg_catalog.text OPERATOR(pg_catalog.=) E'a'`);
     });
 });
 

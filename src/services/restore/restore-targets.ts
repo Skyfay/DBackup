@@ -107,8 +107,11 @@ export interface WriteTarget {
 /** What someone reads whose restore would write into the Docker of the server DBackup runs on. */
 export const HOST_DOCKER_RESTORE_REFUSED = "A restore into Docker Volumes without SSH empties and overwrites volumes of the Docker of the server DBackup runs on, which only a platform admin does.";
 
-/** What someone reads whose restore would write into another volume than the backup read. */
-export const OTHER_VOLUME_REFUSED = "A restore into another Docker volume than the one the backup read needs the right to change the Docker connection.";
+/**
+ * What someone reads whose restore would write into another volume than the backup read, or out of
+ * a backup no recorded run proves, see `originOfBackup`, which also holds one of a version before 5.0.
+ */
+export const OTHER_VOLUME_REFUSED = "A restore into another Docker volume than the one the backup read, or of a backup DBackup cannot prove it made, like one of a version before 5.0, needs the right to change the Docker connection.";
 
 /**
  * What someone reads whose restore into Docker Volumes names no volume, a base path of `/` or
@@ -118,8 +121,15 @@ export const OTHER_VOLUME_REFUSED = "A restore into another Docker volume than t
  */
 export const NO_VOLUME_REFUSED = "A restore into Docker Volumes needs the volume it writes into. Pick a volume as the target.";
 
-/** What someone reads whose restore would write anywhere else than the folder the backup read. */
-export const OTHER_TARGET_REFUSED = "A restore into another place than the folder the backup read needs the right to change the connection it writes into.";
+/** What someone reads whose restore would write anywhere else than the folder the backup read, or out of a backup no recorded run proves. */
+export const OTHER_TARGET_REFUSED = "A restore into another place than the folder the backup read, or of a backup DBackup cannot prove it made, like one of a version before 5.0, needs the right to change the connection it writes into.";
+
+/**
+ * What the log of a restore says when the files get the owner DBackup writes with, since only a
+ * restore into the folder the backup read, out of a backup a recorded run proves, lays the owners of
+ * the archive, see `originOfBackup`.
+ */
+export const OWNERS_NOT_RESTORED = "The owners of the files are not restored, only their modes. DBackup restores them only into the folder the backup read, out of a backup it can prove it made, and one of a version before 5.0 proves that to a platform admin alone.";
 
 /**
  * Whether the caller may write where only a platform admin goes on the server DBackup runs on: a

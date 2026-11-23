@@ -1,6 +1,7 @@
 import { encrypt } from "@/lib/crypto";
 import { PLATFORM_ADMIN_ROLE } from "@/lib/auth/owner-permissions";
 import { HOME_TENANT_ID } from "@/lib/tenant/home";
+import { scopesOf } from "@/lib/auth/oidc-scopes";
 import type { Tx } from "@/lib/prisma-tx";
 import { ensureFullAccessGroup } from "@/services/user/group-service";
 import { counted, exists, idHere, listed, type ImportContext } from "./import-context";
@@ -213,6 +214,9 @@ export async function importSsoProviders({ tx, data, ids, notes }: ImportContext
                 const oidcConfig = JSON.parse(providerData.oidcConfig);
                 if (oidcConfig.clientId) oidcConfig.clientId = encrypt(oidcConfig.clientId);
                 if (oidcConfig.clientSecret) oidcConfig.clientSecret = encrypt(oidcConfig.clientSecret);
+                // A file of an older version holds no list of scopes, like the migration of the providers fills it in, see `oidc-scopes.ts`.
+                oidcConfig.scopes = scopesOf(providerData.oidcConfig);
+                delete oidcConfig.scope;
                 providerData.oidcConfig = JSON.stringify(oidcConfig);
             } catch { /* parse error, keep as-is */ }
         }

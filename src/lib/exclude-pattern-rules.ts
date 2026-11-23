@@ -3,8 +3,9 @@
  *
  * Patterns are matched in the one server process that also answers every request and runs the
  * backups of every tenant, against names that come from the server a source points at. A glob
- * library turns a pattern into a regular expression that backtracks: `*a*a*a*a*a*a*a*b` against a
- * long run of `a` holds the process for many seconds per name. So a plain pattern never reaches the
+ * library pays per name for every `*` and every pattern a brace stands for, and older versions
+ * turned a pattern into a regular expression that backtracks: `*a*a*a*a*a*a*a*b` against a long
+ * run of `a` held the process for many seconds per name. So a plain pattern never reaches the
  * library, and a richer one only in a shape whose cost stays small.
  */
 
@@ -20,7 +21,7 @@ const MAX_BRACE_GROUPS = 4;
 const MAX_BRACE_COMMAS = 16;
 /**
  * The most patterns one with braces stands for, counted the way the glob library expands it, so
- * nested braces count fully: `{a,b}{c,d}` is four. Each becomes a regular expression of its own.
+ * nested braces count fully: `{a,b}{c,d}` is four. Each becomes a matcher of its own.
  */
 const MAX_ALTERNATIVES = 16;
 /** The most patterns all the patterns of one list that are not plain stand for together. */

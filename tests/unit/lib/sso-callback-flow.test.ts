@@ -59,7 +59,6 @@ const { memoryAdapter } = await import("better-auth/adapters/memory");
 const { createAuthEndpoint, createAuthMiddleware } = await import("better-auth/api");
 const { handleOAuthUserInfo } = await import("better-auth/oauth2");
 const { afterSsoLink, afterSsoUser, beforeSsoLink, beforeSsoSession, beforeSsoUser, refusedSsoLinkRedirect } = await import("@/lib/auth/sso-hooks");
-const { TENANT_DOMAIN_SIGN_UP_REFUSED } = await import("@/lib/auth/sso-guard");
 const { NOT_LINKED_URL, TENANT_NOT_MEMBER_URL, refuseSsoSession } = await import("@/lib/auth/sso-tenant-guard");
 const { accountLinkingOptions } = await import("@/lib/auth/account-linking");
 const { beforeUserUpdate } = await import("@/lib/auth/user-update-guard");
@@ -307,7 +306,7 @@ describe("a callback of a provider, through the hooks of DBackup", () => {
         const response = await callback("authentik", "mia@acme.ch", "idp-mia", { signUp: true });
 
         expect(response.status).toBe(302);
-        expect(response.headers.get("location")).toContain(encodeURIComponent(TENANT_DOMAIN_SIGN_UP_REFUSED));
+        expect(response.headers.get("location")).toContain("/?error=sso_tenant_domain");
         expect(state.db.user).toHaveLength(0);
         expect(state.db.session).toHaveLength(0);
     });

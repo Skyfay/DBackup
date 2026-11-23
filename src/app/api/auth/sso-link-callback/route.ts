@@ -62,18 +62,21 @@ export async function GET(request: NextRequest) {
                 log.error("Failed to sign out mismatched SSO connect session", {}, wrapError(error));
             });
         }
-        const loginUrl = new URL("/", request.url);
-        loginUrl.searchParams.set("error", "sso_link_mismatch");
-        return spent(NextResponse.redirect(loginUrl), startedHere);
+        return spent(redirectTo("/?error=sso_link_mismatch"), startedHere);
     }
 
     // The link itself went into the audit log when better-auth made it, see `recordSsoLink`, also
     // for a link that started on another page than the profile.
 
-    const profileUrl = new URL("/dashboard/profile", request.url);
-    profileUrl.searchParams.set("part", "security");
-    profileUrl.searchParams.set("connected", "1");
-    return spent(NextResponse.redirect(profileUrl), startedHere);
+    return spent(redirectTo("/dashboard/profile?part=security&connected=1"), startedHere);
+}
+
+/**
+ * A redirect to a page of DBackup by its path alone. The URL of the request names the address the
+ * server listens on, like 0.0.0.0:3000, not the one the browser used.
+ */
+function redirectTo(path: string): NextResponse {
+    return new NextResponse(null, { status: 307, headers: { Location: path } });
 }
 
 /** Clears the cookie of a connect that ended in the browser that started it. Another flow of the browser keeps its own. */

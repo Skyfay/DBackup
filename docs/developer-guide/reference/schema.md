@@ -692,7 +692,7 @@ model ChannelRecipients {
 
 ### SsoProvider
 
-Stores OIDC / SAML provider configuration. `clientId` and `clientSecret` are encrypted before storage, and the Prisma client decrypts them on every read, so a read that leaves the server selects its fields. See [SSO / OIDC](/developer-guide/advanced/sso).
+Stores OIDC / SAML provider configuration. `clientId` and `clientSecret` are encrypted before storage, and the Prisma client decrypts them in every answer with records, a read or a write, so a read that leaves the server selects its fields. See [SSO / OIDC](/developer-guide/advanced/sso).
 
 ```prisma
 model SsoProvider {

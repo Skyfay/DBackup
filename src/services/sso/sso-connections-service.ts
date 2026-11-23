@@ -4,9 +4,9 @@ import { tenantSignInRefusal } from "@/lib/auth/sso-tenant-guard";
 import { CONNECT_CALLBACK_PATH, CONNECT_TOKEN_TTL_MS, newConnectNonce } from "@/lib/auth/sso-connect-nonce";
 
 export interface SsoConnection {
-    /** Account row's DB id - React list key only, NOT what better-auth matches on for unlink. */
+    /** Account row's DB id, the React list key, which `ownAccountRowId` finds for an unlink. */
     id: string;
-    /** The OAuth/OIDC subject id at the IdP (Account.accountId) - this is what unlinkAccount matches on, together with providerId. */
+    /** The OAuth/OIDC subject id at the IdP (Account.accountId), which names the login to unlink together with providerId. */
     accountId: string;
     providerId: string;
     createdAt: Date;
@@ -89,6 +89,14 @@ export async function listSsoConnections(userId: string): Promise<SsoConnections
 /** The name of a sign-in provider for the audit log, its id once it is gone. */
 export async function providerNameOf(providerId: string): Promise<string> {
     return (await prisma.ssoProvider.findFirst({ where: { providerId }, select: { name: true } }))?.name ?? providerId;
+}
+
+/**
+ * The id of the account row through which a user signs in at a provider with this subject, null
+ * when the user has none. `unlinkAccount` of better-auth takes that id, never the provider and subject.
+ */
+export async function ownAccountRowId(userId: string, providerId: string, accountId: string): Promise<string | null> {
+    return (await prisma.account.findFirst({ where: { userId, providerId, accountId }, select: { id: true } }))?.id ?? null;
 }
 
 /** How many ways a user has to sign in, the password included. */

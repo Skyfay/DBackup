@@ -82,7 +82,7 @@ vi.mock("@/services/auth/auth-service", () => ({ authService: { verifyPassword: 
 vi.mock("@/services/user/preference-service", () => ({ getAutoRedirectOnJobStart: vi.fn(), setAutoRedirectOnJobStart: vi.fn(async () => undefined), setTaskColors: vi.fn() }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 vi.mock("@/services/sso/email-domain-claims", () => ({ claimedEmailRefusal: vi.fn(async () => null) }));
-vi.mock("@/services/sso/sso-connections-service", () => ({ countSignInAccounts: vi.fn(async () => 2), listSsoConnections: vi.fn(), prepareSsoConnect: vi.fn(), providerNameOf: vi.fn(async () => "Keycloak") }));
+vi.mock("@/services/sso/sso-connections-service", () => ({ countSignInAccounts: vi.fn(async () => 2), ownAccountRowId: vi.fn(async () => "account-row-1"), listSsoConnections: vi.fn(), prepareSsoConnect: vi.fn(), providerNameOf: vi.fn(async () => "Keycloak") }));
 vi.mock("@/services/user/avatar-service", () => ({
     AVATAR_MAX_BYTES: 5 * 1024 * 1024,
     saveAvatar: vi.fn(async () => "/api/avatar/x?v=1"),

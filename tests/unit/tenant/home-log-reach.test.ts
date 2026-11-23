@@ -21,7 +21,8 @@ vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 // The services use the client of the app, here the one of the test database with its tenant filter.
-vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
+// better-auth reads the data model of the client once src/lib/auth loads, before beforeAll made it.
+vi.mock("@/lib/prisma", () => ({ get default() { return holder.client ?? {}; } }));
 
 const { logViewOf, FULL_VIEW } = await import("@/services/audit/log-reach");
 const { listAudit, getAuditFacets, getAuditStats, getAuditWhoOptions } = await import("@/services/audit/audit-list-service");

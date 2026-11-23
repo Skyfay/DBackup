@@ -28,10 +28,7 @@ export async function GET(request: NextRequest) {
 
     const errorCode = errorMessages[error.toLowerCase()] || "sso_error";
 
-    // Redirect to home page (login) with error parameter
-    // Note: Login is on the root page ("/"), not "/login"
-    const loginUrl = new URL("/", request.url);
-    loginUrl.searchParams.set("error", errorCode);
-
-    return NextResponse.redirect(loginUrl);
+    // To the login page on the root, with the code. The address is relative, since the URL of the
+    // request names the address the server listens on, like 0.0.0.0:3000, not the one the browser used.
+    return new NextResponse(null, { status: 307, headers: { Location: `/?${new URLSearchParams({ error: errorCode })}` } });
 }

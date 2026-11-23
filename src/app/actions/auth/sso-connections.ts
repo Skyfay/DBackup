@@ -8,7 +8,7 @@ import { getViewer, hasPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { accountLogOrigin } from "@/services/audit/account-log";
-import { countSignInAccounts, listSsoConnections, prepareSsoConnect, providerNameOf, type SsoConnections } from "@/services/sso/sso-connections-service";
+import { countSignInAccounts, listSsoConnections, ownAccountRowId, prepareSsoConnect, providerNameOf, type SsoConnections } from "@/services/sso/sso-connections-service";
 import { CONNECT_CALLBACK_PATH, CONNECT_NONCE_COOKIE, CONNECT_TOKEN_TTL_MS } from "@/lib/auth/sso-connect-nonce";
 import { secureCookiesFor } from "@/lib/auth/secure-cookies";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -57,10 +57,13 @@ export async function unlinkMySsoAccount(providerId: string, accountId: string) 
     }
 
     try {
+        // better-auth unlinks by the id of the account row, which must belong to the caller.
+        const rowId = await ownAccountRowId(currentUser.id, parsed.data.providerId, parsed.data.accountId);
+        if (!rowId) return { success: false, error: "This sign-in provider is not linked to your account." };
         const headersList = await headers();
         await auth.api.unlinkAccount({
             headers: headersList,
-            body: parsed.data,
+            body: { accountId: rowId },
         });
 
         await auditService.log(

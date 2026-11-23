@@ -23,7 +23,8 @@ const mocks = vi.hoisted(() => ({ viewer: null as unknown, ctx: null as unknown 
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
-vi.mock("@/lib/prisma", () => ({ get default() { return holder.client; } }));
+// better-auth reads the data model of the client once src/lib/auth loads, before beforeAll made it.
+vi.mock("@/lib/prisma", () => ({ get default() { return holder.client ?? {}; } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 // No destination keeps a backup here, who holds what is the subject.

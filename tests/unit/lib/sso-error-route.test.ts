@@ -12,8 +12,12 @@ const { ssoProblem } = await import("@/components/auth/login-problems");
 
 /** The problem the login page shows after better-auth sends a refused sign-in to the error route. */
 const problemAfter = async (error: string) => {
-    const response = await GET(new NextRequest(`http://localhost/api/auth/error/error?error=${encodeURIComponent(error)}`));
-    const code = new URL(response.headers.get("location") ?? "").searchParams.get("error") ?? "";
+    // The address the server listens on, which the browser cannot reach, like inside a container.
+    const response = await GET(new NextRequest(`http://0.0.0.0:3000/api/auth/error/error?error=${encodeURIComponent(error)}`));
+    const location = response.headers.get("location") ?? "";
+    // By its path alone, so the browser stays on the address it used.
+    expect(location.startsWith("/?")).toBe(true);
+    const code = new URL(location, "http://dbackup.example").searchParams.get("error") ?? "";
     return { code, problem: ssoProblem(code) };
 };
 
